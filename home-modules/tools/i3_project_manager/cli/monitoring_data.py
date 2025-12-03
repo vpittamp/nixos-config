@@ -1839,6 +1839,157 @@ async def query_projects_data() -> Dict[str, Any]:
         }
 
 
+# Feature 111: Import worktree map service for visual graph generation
+try:
+    from i3_project_manager.services.worktree_map_service import (
+        build_worktree_map,
+        generate_worktree_map_svg,
+        generate_click_overlay_data,
+        compute_hierarchical_layout,
+    )
+    WORKTREE_MAP_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Feature 111: Worktree map service not available: {e}")
+    WORKTREE_MAP_AVAILABLE = False
+
+
+async def query_worktree_map_data() -> Dict[str, Any]:
+    """
+    Query worktree map data for visual graph rendering.
+
+    Feature 111: Generates SVG visualization of worktree relationships.
+
+    Returns:
+        - svg_path: Path to generated SVG file
+        - map_data: JSON representation of the worktree map
+        - status: ok/error
+    """
+    current_timestamp = time.time()
+    friendly_time = format_friendly_timestamp(current_timestamp)
+
+    try:
+        if not WORKTREE_MAP_AVAILABLE:
+            return {
+                "status": "error",
+                "svg_path": None,
+                "map_data": None,
+                "timestamp": current_timestamp,
+                "timestamp_friendly": friendly_time,
+                "error": "Worktree map service not available",
+            }
+
+        # Load discovered repositories to find active repo
+        discovered_repos = load_discovered_repositories()
+        repositories = discovered_repos.get("repositories", [])
+
+        if not repositories:
+            return {
+                "status": "ok",
+                "svg_path": None,
+                "map_data": {"nodes": [], "edges": [], "repository": None},
+                "timestamp": current_timestamp,
+                "timestamp_friendly": friendly_time,
+                "error": None,
+            }
+
+        # Get active project to determine which repo to visualize
+        active_project = None
+        active_repo = None
+        try:
+            result = subprocess.run(
+                ["i3pm", "project", "current"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                active_project = result.stdout.strip()
+                # Parse account/repo from qualified name
+                if "/" in active_project:
+                    parts = active_project.split("/")
+                    if len(parts) >= 2:
+                        # Handle account/repo:branch format
+                        repo_part = parts[1].split(":")[0] if ":" in parts[1] else parts[1]
+                        # Find matching repo
+                        for repo in repositories:
+                            if repo.get("name") == repo_part or repo.get("qualified_name") == f"{parts[0]}/{repo_part}":
+                                active_repo = repo
+                                break
+        except subprocess.TimeoutExpired:
+            pass
+
+        # Default to first repo if no active project
+        if not active_repo and repositories:
+            active_repo = repositories[0]
+
+        if not active_repo:
+            return {
+                "status": "ok",
+                "svg_path": None,
+                "map_data": {"nodes": [], "edges": [], "repository": None},
+                "timestamp": current_timestamp,
+                "timestamp_friendly": friendly_time,
+                "error": None,
+            }
+
+        # Build worktree map from repository path
+        repo_path = active_repo.get("directory")
+        if not repo_path:
+            return {
+                "status": "error",
+                "svg_path": None,
+                "map_data": None,
+                "timestamp": current_timestamp,
+                "timestamp_friendly": friendly_time,
+                "error": f"No directory for repository: {active_repo.get('name')}",
+            }
+
+        # Build map
+        worktree_map = build_worktree_map(repo_path)
+        if not worktree_map:
+            return {
+                "status": "error",
+                "svg_path": None,
+                "map_data": None,
+                "timestamp": current_timestamp,
+                "timestamp_friendly": friendly_time,
+                "error": f"Failed to build map for: {repo_path}",
+            }
+
+        # Generate SVG to cache directory
+        svg_dir = Path.home() / ".cache" / "i3pm" / "worktree-maps"
+        svg_dir.mkdir(parents=True, exist_ok=True)
+        svg_filename = f"{active_repo.get('name', 'repo')}.svg"
+        svg_path = str(svg_dir / svg_filename)
+
+        generate_worktree_map_svg(worktree_map, output_path=svg_path)
+
+        # Feature 111 T048: Generate click overlay data for interactive navigation
+        overlay_nodes = generate_click_overlay_data(worktree_map)
+
+        return {
+            "status": "ok",
+            "svg_path": svg_path,
+            "map_data": worktree_map.to_svg_data(),
+            "overlay_nodes": overlay_nodes,  # Feature 111 US3: Click targets
+            "repository": active_repo.get("qualified_name"),
+            "timestamp": current_timestamp,
+            "timestamp_friendly": friendly_time,
+            "error": None,
+        }
+
+    except Exception as e:
+        logger.error(f"Error querying worktree map data: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "svg_path": None,
+            "map_data": None,
+            "timestamp": current_timestamp,
+            "timestamp_friendly": friendly_time,
+            "error": f"Worktree map query failed: {type(e).__name__}: {e}",
+        }
+
+
 async def query_apps_data() -> Dict[str, Any]:
     """
     Query apps view data.
@@ -3100,9 +3251,9 @@ async def main():
     parser = argparse.ArgumentParser(description="Monitoring panel data backend")
     parser.add_argument(
         "--mode",
-        choices=["windows", "projects", "apps", "health", "events", "traces"],
+        choices=["windows", "projects", "apps", "health", "events", "traces", "worktree_map"],
         default="windows",
-        help="View mode (default: windows)"
+        help="View mode (default: windows). Use worktree_map for Feature 111 visual graph."
     )
     parser.add_argument(
         "--listen",
@@ -3137,6 +3288,8 @@ async def main():
             data = await query_events_data()
         elif args.mode == "traces":
             data = await query_traces_data()
+        elif args.mode == "worktree_map":
+            data = await query_worktree_map_data()
         else:
             raise ValueError(f"Unknown mode: {args.mode}")
 

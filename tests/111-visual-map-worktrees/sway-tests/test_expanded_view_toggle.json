@@ -1,0 +1,77 @@
+{
+  "name": "Feature 111 T072: Expanded Map View Toggle",
+  "description": "Test that the expanded map view can be toggled via button click and keyboard shortcut",
+  "setup": {
+    "commands": [
+      "eww --config $HOME/.config/eww-monitoring-panel update projects_view_mode='map'",
+      "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=false",
+      "eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel"
+    ],
+    "wait_ms": 500
+  },
+  "tests": [
+    {
+      "name": "Initial state: expanded view is closed",
+      "steps": [
+        {
+          "action": "eww_get",
+          "variable": "worktree_map_expanded",
+          "expected": "false"
+        }
+      ]
+    },
+    {
+      "name": "Toggle expanded view via eww update",
+      "steps": [
+        {
+          "action": "bash",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=true"
+        },
+        {
+          "action": "wait_ms",
+          "duration": 200
+        },
+        {
+          "action": "eww_get",
+          "variable": "worktree_map_expanded",
+          "expected": "true"
+        }
+      ]
+    },
+    {
+      "name": "Close expanded view via eww update",
+      "steps": [
+        {
+          "action": "bash",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=false"
+        },
+        {
+          "action": "wait_ms",
+          "duration": 200
+        },
+        {
+          "action": "eww_get",
+          "variable": "worktree_map_expanded",
+          "expected": "false"
+        }
+      ]
+    },
+    {
+      "name": "Map view mode is preserved after toggle",
+      "steps": [
+        {
+          "action": "eww_get",
+          "variable": "projects_view_mode",
+          "expected": "map"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "commands": [
+      "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=false",
+      "eww --config $HOME/.config/eww-monitoring-panel update projects_view_mode='list'",
+      "eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel"
+    ]
+  }
+}

@@ -1042,6 +1042,84 @@ asyncio.run(stream.run())
     echo "Worktree deleted successfully: $PROJECT_NAME"
   '';
 
+  # Feature 111 T052: Worktree context menu script for map right-click
+  worktreeContextMenuScript = pkgs.writeShellScriptBin "worktree-context-menu" ''
+    #!${pkgs.bash}/bin/bash
+    # Display context menu for worktree actions in visual map
+    # Usage: worktree-context-menu <qualified_name> <branch>
+    # Example: worktree-context-menu "vpittamp/nixos:111-visual-map" "111-visual-map"
+
+    QUALIFIED_NAME="$1"
+    BRANCH="$2"
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$QUALIFIED_NAME" ]]; then
+      echo "Usage: worktree-context-menu <qualified_name> <branch>" >&2
+      exit 1
+    fi
+
+    # Parse qualified name to get repo and path from repos.json
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    if [[ ! -f "$REPOS_FILE" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Error" "repos.json not found"
+      exit 1
+    fi
+
+    # Parse account/repo:branch format
+    REPO_PART=$(echo "$QUALIFIED_NAME" | cut -d':' -f1)
+    REPO_ACCOUNT=$(echo "$REPO_PART" | cut -d'/' -f1)
+    REPO_NAME=$(echo "$REPO_PART" | cut -d'/' -f2)
+
+    # Get worktree path from repos.json
+    WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[] | select(.branch == $branch) | .path // empty' "$REPOS_FILE")
+
+    # Fallback to main repo path if not a worktree
+    if [[ -z "$WORKTREE_PATH" ]]; then
+      WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+        '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+    fi
+
+    if [[ -z "$WORKTREE_PATH" ]] || [[ ! -d "$WORKTREE_PATH" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Error" "Could not find path for: $QUALIFIED_NAME"
+      exit 1
+    fi
+
+    # Use dmenu/wofi for context menu
+    MENU_OPTIONS="󰆍 Open Terminal\n Open VS Code\n Open Lazygit\n󰉋 Open Yazi\n󰆏 Copy Path\n󰆴 Delete Worktree"
+
+    SELECTED=$(echo -e "$MENU_OPTIONS" | ${pkgs.wofi}/bin/wofi --show dmenu --prompt "Actions for $BRANCH" --width 250 --height 200)
+
+    case "$SELECTED" in
+      "󰆍 Open Terminal")
+        i3pm project switch "$QUALIFIED_NAME"
+        ghostty --working-directory="$WORKTREE_PATH" &
+        ;;
+      " Open VS Code")
+        code "$WORKTREE_PATH" &
+        ;;
+      " Open Lazygit")
+        i3pm project switch "$QUALIFIED_NAME"
+        ghostty --working-directory="$WORKTREE_PATH" -e lazygit &
+        ;;
+      "󰉋 Open Yazi")
+        i3pm project switch "$QUALIFIED_NAME"
+        ghostty --working-directory="$WORKTREE_PATH" -e yazi &
+        ;;
+      "󰆏 Copy Path")
+        echo -n "$WORKTREE_PATH" | ${pkgs.wl-clipboard}/bin/wl-copy
+        ${pkgs.libnotify}/bin/notify-send "Copied" "$WORKTREE_PATH"
+        ;;
+      "󰆴 Delete Worktree")
+        # Use the existing delete confirmation flow
+        worktree-delete-open "$QUALIFIED_NAME"
+        ;;
+      *)
+        # Cancelled or empty selection
+        ;;
+    esac
+  '';
+
   # Feature 099 T015: Toggle project expand/collapse script
   toggleProjectExpandedScript = pkgs.writeShellScriptBin "toggle-project-expanded" ''
     #!${pkgs.bash}/bin/bash
@@ -2844,6 +2922,10 @@ print(json.dumps(result))
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
     # Debug: log the key to journal
     echo "Monitoring panel key pressed: '$KEY'" | ${pkgs.systemd}/bin/systemd-cat -t eww-keyhandler
+
+    # Feature 111 T078: Check if expanded map is open (Escape closes it first)
+    EXPANDED=$($EWW_CMD get worktree_map_expanded 2>/dev/null || echo "false")
+
     case "$KEY" in
       1|Alt+1) $EWW_CMD update current_view=windows ;;
       2|Alt+2) $EWW_CMD update current_view=projects ;;
@@ -2851,7 +2933,26 @@ print(json.dumps(result))
       4|Alt+4) $EWW_CMD update current_view=health ;;
       5|Alt+5) $EWW_CMD update current_view=events ;;
       6|Alt+6) $EWW_CMD update current_view=traces ;;
-      Escape|q) $EWW_CMD close monitoring-panel ;;
+      # Feature 111 T078: 'e' toggles expanded map view (only when in map view)
+      e)
+        CURRENT_VIEW=$($EWW_CMD get current_view 2>/dev/null || echo "windows")
+        VIEW_MODE=$($EWW_CMD get projects_view_mode 2>/dev/null || echo "list")
+        if [ "$CURRENT_VIEW" = "projects" ] && [ "$VIEW_MODE" = "map" ]; then
+          if [ "$EXPANDED" = "true" ]; then
+            $EWW_CMD update worktree_map_expanded=false
+          else
+            $EWW_CMD update worktree_map_expanded=true
+          fi
+        fi
+        ;;
+      Escape|q)
+        # Feature 111 T076: Close expanded view first, then close panel
+        if [ "$EXPANDED" = "true" ]; then
+          $EWW_CMD update worktree_map_expanded=false
+        else
+          $EWW_CMD close monitoring-panel
+        fi
+        ;;
     esac
   '';
 
@@ -2903,6 +3004,7 @@ in
       worktreeEditOpenScript  # Feature 094 US5: Worktree edit form opener (T059)
       worktreeCreateScript    # Feature 094 US5: Worktree create handler (T057-T058)
       worktreeDeleteScript    # Feature 094 US5: Worktree delete handler (T060)
+      worktreeContextMenuScript # Feature 111 T052: Worktree context menu for map right-click
       worktreeEditSaveScript  # Feature 094 US5: Worktree edit save handler (T059)
       toggleProjectExpandedScript # Feature 099 T015: Toggle project expand/collapse
       toggleExpandAllScript       # Feature 099 UX3: Expand/collapse all projects
@@ -2948,6 +3050,13 @@ in
         :interval "5s"
         :initial "{\"status\":\"loading\",\"projects\":[],\"project_count\":0,\"active_project\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode projects`)
+
+      ;; Feature 111 T031: Defpoll for worktree map SVG path (10s refresh, only when map view active)
+      (defpoll worktree_map_data
+        :interval "10s"
+        :initial "{\"status\":\"loading\",\"svg_path\":null,\"map_data\":null,\"repository\":null}"
+        :run-while {projects_view_mode == "map"}
+        `${monitoringDataScript}/bin/monitoring-data-backend --mode worktree_map`)
 
       ;; Defpoll: Apps view data (5s refresh)
       (defpoll apps_data
@@ -3196,6 +3305,10 @@ in
       (defvar project_selected_name "")           ;; UX2: Name of currently selected project (for highlighting)
       (defvar projects_all_expanded false)        ;; UX3: Toggle state for expand/collapse all
 
+      ;; Feature 111: Visual Worktree Relationship Map (T030)
+      (defvar projects_view_mode "list")          ;; View mode: "list" (default) or "map"
+      (defvar worktree_map_expanded false)        ;; Feature 111 T075: Expanded fullscreen map overlay
+
       ;; Feature 094 US4: Project delete confirmation state (T086-T089)
       (defvar project_deleting false)              ;; True when delete confirmation dialog is visible
       (defvar delete_project_name "")              ;; Name of project to delete
@@ -3290,7 +3403,9 @@ in
             (success-notification-toast)
             ;; Feature 096 T019: Error and warning notification overlays
             (error-notification-toast)
-            (warning-notification-toast))))
+            (warning-notification-toast)
+            ;; Feature 111 T076: Expanded map view overlay
+            (expanded-map-view))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
@@ -4080,9 +4195,25 @@ in
                   :halign "start"
                   :hexpand true
                   :text "Projects")
-                ;; UX3: Expand/Collapse All toggle
+                ;; Feature 111 T033: View toggle buttons (List | Map)
+                (box
+                  :class "view-toggle-container"
+                  :orientation "h"
+                  :space-evenly false
+                  (button
+                    :class {"view-toggle-button" + (projects_view_mode == "list" ? " active" : "")}
+                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update projects_view_mode='list'"
+                    :tooltip "Switch to list view"
+                    "󰙅")
+                  (button
+                    :class {"view-toggle-button" + (projects_view_mode == "map" ? " active" : "")}
+                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update projects_view_mode='map'"
+                    :tooltip "Switch to map view"
+                    "󰈈"))
+                ;; UX3: Expand/Collapse All toggle (only in list mode)
                 (button
                   :class "expand-all-button"
+                  :visible {projects_view_mode == "list"}
                   :onclick "toggle-expand-all-projects"
                   :tooltip {projects_all_expanded ? "Collapse all repositories" : "Expand all repositories"}
                   {projects_all_expanded ? "Collapse" : "Expand"})
@@ -4094,6 +4225,7 @@ in
                   "Refresh")
                 (button
                   :class "new-project-button"
+                  :visible {projects_view_mode == "list"}
                   :onclick "project-create-open"
                   :tooltip "Create a new project"
                   "+ New"))
@@ -4148,12 +4280,14 @@ in
               :class "error-message"
               :visible {projects_data.status == "error"}
               (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
+            ;; Feature 111 T034: Conditional rendering - List View (visible when mode is "list")
             ;; Feature 100: Bare Repositories from repos.json (replaces legacy main_projects)
             ;; Shows repositories discovered via `i3pm discover`
             (box
               :class "projects-list"
               :orientation "v"
               :space-evenly false
+              :visible {projects_view_mode == "list"}
               (for repo in {projects_data.discovered_repositories ?: []}
                 (box
                   :orientation "v"
@@ -4170,7 +4304,245 @@ in
                       :space-evenly false
                       :class "worktrees-container"
                       (for wt in {repo.worktrees ?: []}
-                        (discovered-worktree-card :worktree wt))))))))))
+                        (discovered-worktree-card :worktree wt)))))))
+            ;; Feature 111 T034: Conditional rendering - Map View (visible when mode is "map")
+            (box
+              :visible {projects_view_mode == "map"}
+              :vexpand true
+              (projects-map-view)))))
+
+      ;; Feature 111 T032: Projects Map View widget
+      ;; Displays SVG visualization of worktree relationships
+      (defwidget projects-map-view []
+        (box
+          :class "projects-map-view"
+          :orientation "v"
+          :space-evenly false
+          :vexpand true
+          ;; Map header with toggle back to list
+          (box
+            :class "map-header"
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "map-title"
+              :halign "start"
+              :hexpand true
+              :text {worktree_map_data.repository ?: "Worktree Map"})
+            ;; Feature 111 T083: Refresh button to rebuild map
+            (button
+              :class "refresh-map-button"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_data='{\"status\":\"loading\"}' && sleep 0.5 && ${monitoringDataScript}/bin/monitoring-data-backend --mode worktree_map | xargs -0 -I {} eww --config $HOME/.config/eww-monitoring-panel update worktree_map_data='{}' &"
+              :tooltip "Refresh map"
+              "󰑐")
+            ;; Feature 111 T077: Expand button for fullscreen view
+            (button
+              :class "expand-button"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=true"
+              :tooltip "Expand map to fullscreen (press 'e' in focus mode)"
+              "󰁌")
+            (button
+              :class "view-toggle-button active"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update projects_view_mode='list'"
+              :tooltip "Switch to list view"
+              "󰙅 List"))
+          ;; Map content
+          (box
+            :class "map-content"
+            :orientation "v"
+            :vexpand true
+            :valign "center"
+            :halign "center"
+            (box
+              :visible {worktree_map_data.status == "loading"}
+              (label :text "Loading map..."))
+            (box
+              :visible {worktree_map_data.status == "error"}
+              :class "map-error"
+              (label :text {worktree_map_data.error ?: "Error loading map"}))
+            (box
+              :visible {worktree_map_data.status == "ok" && worktree_map_data.svg_path != null}
+              :class "map-svg-container"
+              :orientation "v"
+              :space-evenly false
+              :vexpand true
+              :valign "center"
+              :halign "center"
+              ;; Feature 111 T049: Overlay with clickable nodes over SVG
+              (overlay
+                :class "map-overlay-container"
+                ;; Base layer: SVG image
+                (image
+                  :path {worktree_map_data.svg_path ?: ""}
+                  :image-width 380
+                  :image-height 500)
+                ;; Feature 111 T049-T051: Invisible click targets positioned over nodes
+                (box
+                  :class "map-click-overlay"
+                  :width 380
+                  :height 500
+                  (for node in {worktree_map_data.overlay_nodes ?: []}
+                    (eventbox
+                      :class {"map-node-button" + (node.is_active ? " active" : "") + (node.is_dirty ? " dirty" : "")}
+                      :tooltip {node.tooltip}
+                      :onclick "i3pm project switch '${"\${node.qualified_name}"}' &"
+                      :onrightclick "${"\${EWW_CONFIG_DIR}"}/scripts/worktree-context-menu.sh '${"\${node.qualified_name}"}' '${"\${node.branch}"}' &"
+                      :halign "center"
+                      :valign "center"
+                      :style "margin-left: ${"\${node.x - node.radius}"}px; margin-top: ${"\${node.y - node.radius}"}px;"
+                      (box
+                        :class "map-node-target"
+                        :width {node.radius * 2}
+                        :height {node.radius * 2}
+                        :tooltip {node.tooltip})))))
+              ;; Feature 111 T043: Legend showing branch type colors
+              (box
+                :class "map-legend"
+                :orientation "h"
+                :space-evenly true
+                :halign "center"
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-main")
+                  (label :class "legend-label" :text "Main"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-feature")
+                  (label :class "legend-label" :text "Feature"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-hotfix")
+                  (label :class "legend-label" :text "Hotfix"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-release")
+                  (label :class "legend-label" :text "Release")))))))
+
+      ;; Feature 111 T076: Expanded Map View (fullscreen overlay)
+      (defwidget expanded-map-view []
+        (box
+          :class "expanded-map-overlay"
+          :visible {worktree_map_expanded}
+          :orientation "v"
+          :space-evenly false
+          :vexpand true
+          :hexpand true
+          ;; Header with close button
+          (box
+            :class "expanded-map-header"
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "expanded-map-title"
+              :halign "start"
+              :hexpand true
+              :text {"󰈈 " + (worktree_map_data.repository ?: "Worktree Map") + " (Expanded)"})
+            (button
+              :class "close-expanded-button"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=false"
+              :tooltip "Close expanded view (Escape)"
+              "󰅖"))
+          ;; Expanded map content with full-size SVG
+          (box
+            :class "expanded-map-content"
+            :orientation "v"
+            :vexpand true
+            :hexpand true
+            :valign "center"
+            :halign "center"
+            (box
+              :visible {worktree_map_data.status == "loading"}
+              (label :text "Loading map..."))
+            (box
+              :visible {worktree_map_data.status == "error"}
+              :class "map-error"
+              (label :text {worktree_map_data.error ?: "Error loading map"}))
+            (box
+              :visible {worktree_map_data.status == "ok" && worktree_map_data.svg_path != null}
+              :class "expanded-svg-container"
+              :orientation "v"
+              :space-evenly false
+              :vexpand true
+              :hexpand true
+              :valign "center"
+              :halign "center"
+              ;; Larger SVG in expanded mode
+              (overlay
+                :class "expanded-map-overlay-container"
+                (image
+                  :path {worktree_map_data.svg_path ?: ""}
+                  :image-width 600
+                  :image-height 700)
+                ;; Click targets for expanded view (larger)
+                (box
+                  :class "expanded-click-overlay"
+                  :width 600
+                  :height 700
+                  (for node in {worktree_map_data.overlay_nodes ?: []}
+                    (eventbox
+                      :class {"expanded-node-button" + (node.is_active ? " active" : "") + (node.is_dirty ? " dirty" : "")}
+                      :tooltip {node.tooltip}
+                      :onclick "i3pm project switch '${"\${node.qualified_name}"}' && eww --config $HOME/.config/eww-monitoring-panel update worktree_map_expanded=false &"
+                      :onrightclick "${"\${EWW_CONFIG_DIR}"}/scripts/worktree-context-menu.sh '${"\${node.qualified_name}"}' '${"\${node.branch}"}' &"
+                      :halign "center"
+                      :valign "center"
+                      :style "margin-left: ${"\${node.x * 1.5 - node.radius}"}px; margin-top: ${"\${node.y * 1.4 - node.radius}"}px;"
+                      (box
+                        :class "expanded-node-target"
+                        :width {node.radius * 2.5}
+                        :height {node.radius * 2.5}
+                        :tooltip {node.tooltip})))))
+              ;; Legend in expanded view
+              (box
+                :class "expanded-map-legend"
+                :orientation "h"
+                :space-evenly true
+                :halign "center"
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-main")
+                  (label :class "legend-label" :text "Main"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-feature")
+                  (label :class "legend-label" :text "Feature"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-hotfix")
+                  (label :class "legend-label" :text "Hotfix"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-release")
+                  (label :class "legend-label" :text "Release"))
+                ;; Additional status indicators in expanded legend
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-merged")
+                  (label :class "legend-label" :text "Merged ✓"))
+                (box
+                  :class "legend-item"
+                  :orientation "h"
+                  :space-evenly false
+                  (box :class "legend-dot legend-stale")
+                  (label :class "legend-label" :text "Stale 💤")))))))
 
       ;; Feature 100: Discovered bare repository card
       (defwidget discovered-repo-card [repo]
@@ -8975,6 +9347,286 @@ in
         background-color: ${mocha.surface1};
         color: ${mocha.blue};
         border-color: ${mocha.blue};
+      }
+
+      /* Feature 111: View Toggle Buttons (List | Map) */
+      .view-toggle-container {
+        margin-right: 8px;
+        background-color: ${mocha.surface0};
+        border-radius: 6px;
+        border: 1px solid ${mocha.surface1};
+        padding: 2px;
+      }
+
+      .view-toggle-button {
+        background-color: transparent;
+        color: ${mocha.subtext0};
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 14px;
+        border: none;
+        transition: all 150ms ease;
+      }
+
+      .view-toggle-button:hover {
+        color: ${mocha.text};
+        background-color: ${mocha.surface1};
+      }
+
+      .view-toggle-button.active {
+        background-color: ${mocha.blue};
+        color: ${mocha.base};
+      }
+
+      /* Feature 111: Projects Map View */
+      .projects-map-view {
+        padding: 12px;
+      }
+
+      .map-header {
+        padding: 8px 12px;
+        border-bottom: 1px solid ${mocha.surface0};
+        margin-bottom: 12px;
+      }
+
+      .map-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: ${mocha.text};
+      }
+
+      .map-content {
+        min-height: 400px;
+      }
+
+      .map-error {
+        padding: 20px;
+        text-align: center;
+        color: ${mocha.red};
+      }
+
+      .map-svg-container {
+        padding: 10px;
+        background-color: ${mocha.mantle};
+        border-radius: 8px;
+        border: 1px solid ${mocha.surface0};
+      }
+
+      /* Feature 111 T043: Map legend for branch types */
+      .map-legend {
+        margin-top: 12px;
+        padding: 8px 16px;
+        background-color: ${mocha.surface0};
+        border-radius: 6px;
+      }
+
+      .legend-item {
+        margin: 0 8px;
+      }
+
+      .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 6px;
+      }
+
+      .legend-main {
+        background-color: ${mocha.mauve};
+      }
+
+      .legend-feature {
+        background-color: ${mocha.blue};
+      }
+
+      .legend-hotfix {
+        background-color: ${mocha.peach};
+      }
+
+      .legend-release {
+        background-color: ${mocha.green};
+      }
+
+      .legend-label {
+        font-size: 11px;
+        color: ${mocha.subtext0};
+      }
+
+      /* Feature 111 T049-T051: Click overlay for interactive map */
+      .map-overlay-container {
+        position: relative;
+      }
+
+      .map-click-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: all;
+      }
+
+      .map-node-button {
+        position: absolute;
+        cursor: pointer;
+        border-radius: 50%;
+        transition: all 0.15s ease;
+      }
+
+      .map-node-button:hover {
+        background-color: rgba(137, 180, 250, 0.3);  /* blue with alpha */
+        box-shadow: 0 0 10px rgba(137, 180, 250, 0.5);
+      }
+
+      .map-node-button.active {
+        box-shadow: 0 0 8px ${mocha.teal};
+      }
+
+      .map-node-button.dirty::after {
+        content: "●";
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        color: ${mocha.red};
+        font-size: 10px;
+      }
+
+      .map-node-target {
+        border-radius: 50%;
+        background-color: transparent;
+      }
+
+      /* Feature 111 T083: Refresh button */
+      .refresh-map-button {
+        background-color: ${mocha.surface1};
+        color: ${mocha.subtext0};
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin-right: 4px;
+        font-size: 14px;
+        transition: all 0.15s ease;
+      }
+
+      .refresh-map-button:hover {
+        background-color: ${mocha.surface2};
+        color: ${mocha.teal};
+      }
+
+      /* Feature 111 T077: Expand button */
+      .expand-button {
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin-right: 8px;
+        font-size: 14px;
+        transition: all 0.15s ease;
+      }
+
+      .expand-button:hover {
+        background-color: ${mocha.surface2};
+        color: ${mocha.blue};
+      }
+
+      /* Feature 111 T076: Expanded map overlay */
+      .expanded-map-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(17, 17, 27, 0.95);  /* base with transparency */
+        z-index: 1000;
+        padding: 20px;
+      }
+
+      .expanded-map-header {
+        padding: 12px 16px;
+        background-color: ${mocha.surface0};
+        border-radius: 8px 8px 0 0;
+        margin-bottom: 0;
+      }
+
+      .expanded-map-title {
+        font-size: 16px;
+        font-weight: bold;
+        color: ${mocha.text};
+      }
+
+      .close-expanded-button {
+        background-color: ${mocha.surface1};
+        color: ${mocha.subtext0};
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 14px;
+        transition: all 0.15s ease;
+      }
+
+      .close-expanded-button:hover {
+        background-color: ${mocha.red};
+        color: ${mocha.base};
+      }
+
+      .expanded-map-content {
+        background-color: ${mocha.base};
+        border: 1px solid ${mocha.surface1};
+        border-radius: 0 0 8px 8px;
+        padding: 20px;
+      }
+
+      .expanded-svg-container {
+        padding: 20px;
+      }
+
+      .expanded-map-overlay-container {
+        position: relative;
+      }
+
+      .expanded-click-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: all;
+      }
+
+      .expanded-node-button {
+        position: absolute;
+        cursor: pointer;
+        border-radius: 50%;
+        transition: all 0.15s ease;
+      }
+
+      .expanded-node-button:hover {
+        background-color: rgba(137, 180, 250, 0.4);
+        box-shadow: 0 0 15px rgba(137, 180, 250, 0.6);
+      }
+
+      .expanded-node-button.active {
+        box-shadow: 0 0 12px ${mocha.teal};
+      }
+
+      .expanded-node-target {
+        border-radius: 50%;
+        background-color: transparent;
+      }
+
+      .expanded-map-legend {
+        margin-top: 16px;
+        padding: 10px 20px;
+        background-color: ${mocha.surface0};
+        border-radius: 6px;
+      }
+
+      /* Additional legend items for merged/stale */
+      .legend-merged {
+        background-color: ${mocha.green};
+        opacity: 0.7;
+      }
+
+      .legend-stale {
+        background-color: ${mocha.overlay0};
+        opacity: 0.5;
       }
 
       /* Feature 099 UX1: Filter/Search row */
