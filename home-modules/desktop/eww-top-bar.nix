@@ -192,6 +192,12 @@ in
       executable = true;
     };
 
+    # Feature 110: Notification monitor script (streaming backend for badge)
+    xdg.configFile."eww/eww-top-bar/scripts/notification-monitor.py" = {
+      source = ./eww-top-bar/scripts/notification-monitor.py;
+      executable = true;
+    };
+
     # Eww widget definitions (Yuck syntax)
     # Generated from eww.yuck.nix module
     xdg.configFile."eww/eww-top-bar/eww.yuck".text = import ./eww-top-bar/eww.yuck.nix {

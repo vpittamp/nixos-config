@@ -1215,6 +1215,8 @@ gh auth status               # Auto-uses 1Password token
 - In-memory daemon state, JSON project files (`~/.config/i3/projects/*.json`) (108-show-worktree-card-detail)
 - Python 3.11+ (daemon/backend), Yuck/GTK3 (Eww widgets), Bash 5.0+ (scripts), Nix (module configuration) + i3ipc.aio (Sway IPC), Pydantic 2.x (data models), Eww 0.4+ (GTK3 widgets), asyncio (event handling), lazygit 0.40+ (git TUI) (109-enhance-worktree-user-experience)
 - JSON files (`~/.config/i3/projects/*.json`), in-memory daemon state (109-enhance-worktree-user-experience)
+- Python 3.11+ (streaming backend, matching Constitution Principle X), Yuck/GTK CSS (Eww widgets) + SwayNC (swaync-client --subscribe), Eww 0.4+ (deflisten), Python subprocess for event streaming (110-improve-notifications-system)
+- N/A (stateless - SwayNC is the source of truth) (110-improve-notifications-system)
 
 ## Recent Changes
 - 109-enhance-worktree-user-experience: Branch number badges with gradient styling (mauve/pink for numbered, blue for main, green for feature), icon alignment fixes, hover transition improvements

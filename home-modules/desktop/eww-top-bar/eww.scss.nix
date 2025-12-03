@@ -432,4 +432,81 @@
                   inset 0 0 8px rgba(137, 180, 250, 0.2);
     }
   }
+
+  /* Feature 110: Notification badge styling */
+
+  /* Has unread notifications - red/peach gradient glow */
+  .notification-has-unread {
+    background: linear-gradient(135deg, rgba(243, 139, 168, 0.25), rgba(250, 179, 135, 0.2));
+    border: 1px solid rgba(243, 139, 168, 0.7);
+    box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
+                inset 0 0 8px rgba(243, 139, 168, 0.15);
+    animation: pulse-unread 2s ease-in-out infinite;
+  }
+
+  .notification-has-unread:hover {
+    background: linear-gradient(135deg, rgba(243, 139, 168, 0.35), rgba(250, 179, 135, 0.3));
+    border-color: rgba(243, 139, 168, 0.9);
+    box-shadow: 0 0 16px rgba(243, 139, 168, 0.6),
+                0 4px 12px rgba(243, 139, 168, 0.3),
+                inset 0 0 12px rgba(243, 139, 168, 0.2);
+  }
+
+  .notification-has-unread .notification-toggle-icon {
+    color: #f38ba8;
+    text-shadow: 0 0 8px rgba(243, 139, 168, 0.8),
+                 0 0 4px rgba(243, 139, 168, 0.5);
+  }
+
+  /* DND mode styling - muted gray */
+  .notification-dnd {
+    background: linear-gradient(135deg, rgba(69, 71, 90, 0.4), rgba(49, 50, 68, 0.5));
+    border: 1px solid rgba(108, 112, 134, 0.5);
+  }
+
+  .notification-dnd:hover {
+    background: linear-gradient(135deg, rgba(69, 71, 90, 0.5), rgba(49, 50, 68, 0.6));
+    border-color: rgba(108, 112, 134, 0.7);
+  }
+
+  .notification-icon-dnd {
+    color: #6c7086;
+  }
+
+  .notification-icon-empty {
+    color: #a6adc8;
+  }
+
+  .notification-icon-active {
+    color: #f38ba8;
+  }
+
+  /* Badge count styling - red/peach gradient pill */
+  .notification-badge-count {
+    background: linear-gradient(135deg, #f38ba8, #fab387);
+    color: #1e1e2e;
+    font-size: 8px;
+    font-weight: 800;
+    padding: 0 4px;
+    margin-left: 2px;
+    border-radius: 6px;
+    min-width: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Pulsing glow animation for unread notifications */
+  @keyframes pulse-unread {
+    0% {
+      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
+                  inset 0 0 8px rgba(243, 139, 168, 0.15);
+    }
+    50% {
+      box-shadow: 0 0 18px rgba(243, 139, 168, 0.6),
+                  inset 0 0 12px rgba(243, 139, 168, 0.25);
+    }
+    100% {
+      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
+                  inset 0 0 8px rgba(243, 139, 168, 0.15);
+    }
+  }
 ''

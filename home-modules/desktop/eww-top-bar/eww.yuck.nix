@@ -101,6 +101,12 @@ in
   :initial '{\"state\":\"disabled\",\"device_count\":0}'
   `python3 ~/.config/eww/eww-top-bar/scripts/bluetooth-monitor.py`)
 
+;; Feature 110: Notification data (real-time via deflisten)
+;; Streams count, dnd, visible status from SwayNC for badge display
+(deflisten notification_data
+  :initial '{\"count\":0,\"dnd\":false,\"visible\":false,\"inhibited\":false,\"has_unread\":false,\"display_count\":\"0\",\"error\":false}'
+  `python3 ~/.config/eww/eww-top-bar/scripts/notification-monitor.py`)
+
 ;; Active outputs (poll swaymsg) - controls and reflects monitor state
 (defpoll active_outputs
   :interval "2s"
@@ -136,13 +142,8 @@ in
   :initial "false"
   `${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | grep -q 'monitoring-panel' && echo true || echo false`)
 
-;; Notification center visibility status (SwayNC)
-;; Uses swaync-client's built-in status API for accurate state
-;; 2s interval to avoid race conditions with 1s timeout
-(defpoll notification_center_visible
-  :interval "2s"
-  :initial "false"
-  `${pkgs.coreutils}/bin/timeout 1 ${pkgs.swaynotificationcenter}/bin/swaync-client --subscribe 2>/dev/null | ${pkgs.coreutils}/bin/head -1 | ${pkgs.jq}/bin/jq -r '.visible' 2>/dev/null || echo false`)
+;; Feature 110: Notification center visibility now provided by notification_data.visible
+;; (deflisten via notification-monitor.py replaces the old polling approach)
 
 ;; Interactions / popups
 (defvar volume_popup_visible false)
@@ -370,16 +371,29 @@ in
          (label :class "icon monitoring-toggle-icon"
                 :text {monitoring_panel_visible == "true" ? "󰍉" : "󰍜"}))))
 
-;; Notification center toggle widget (SwayNC)
-;; Shows current notification center visibility and allows clicking to toggle
-;; Uses toggle-swaync wrapper for mutual exclusivity with monitoring panel
-(defwidget notification-center-toggle []
+;; Feature 110: Notification badge widget (SwayNC integration)
+;; Shows notification count badge with real-time updates via deflisten
+;; Clicking toggles SwayNC control center via toggle-swaync wrapper
+(defwidget notification-badge []
   (eventbox :onclick "toggle-swaync &"
-    (box :class {notification_center_visible == "true" ? "pill metric-pill notification-toggle notification-toggle-active" : "pill metric-pill notification-toggle"}
+    (box :class {notification_data.visible == true ? "pill metric-pill notification-toggle notification-toggle-active" :
+                 notification_data.has_unread == true ? "pill metric-pill notification-toggle notification-has-unread" :
+                 notification_data.dnd == true ? "pill metric-pill notification-toggle notification-dnd" :
+                 "pill metric-pill notification-toggle"}
          :spacing 2
-         :tooltip {notification_center_visible == "true" ? "Hide notifications (Mod+Shift+I)" : "Show notifications (Mod+Shift+I)"}
-         (label :class "icon notification-toggle-icon"
-                :text {notification_center_visible == "true" ? "󰂚" : "󰂜"}))))
+         :tooltip {notification_data.dnd == true ? "Do Not Disturb enabled (Mod+Shift+I)" :
+                   notification_data.count == 0 ? "No notifications (Mod+Shift+I)" :
+                   "''${notification_data.count} unread notification(s) (Mod+Shift+I)"}
+         ;; Icon: changes based on dnd/count state
+         (label :class {notification_data.dnd == true ? "icon notification-toggle-icon notification-icon-dnd" :
+                        notification_data.has_unread == true ? "icon notification-toggle-icon notification-icon-active" :
+                        "icon notification-toggle-icon notification-icon-empty"}
+                :text {notification_data.dnd == true ? "󰂛" :
+                       notification_data.has_unread == true ? "󰂚" : "󰂜"})
+         ;; Badge: only visible when count > 0 and not in DND mode
+         (label :class "notification-badge-count"
+                :visible {notification_data.has_unread == true && notification_data.dnd == false}
+                :text {notification_data.display_count}))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
@@ -432,7 +446,7 @@ in
          :spacing 4
          (project-widget))
 
-    ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Center, and System Tray
+    ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Badge, and System Tray
     (box :class "right"
          :orientation "h"
          :space-evenly false
@@ -440,7 +454,7 @@ in
          :spacing 4
           (monitor-profile-widget)
           (monitoring-panel-toggle)
-          (notification-center-toggle)
+          (notification-badge)
           (datetime-widget)
           (systray-widget :is_primary is_primary))))
 
