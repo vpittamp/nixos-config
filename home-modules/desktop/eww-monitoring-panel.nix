@@ -3262,7 +3262,7 @@ in
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "600px"
+          :width "460px"
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
@@ -3388,21 +3388,19 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses stacked boxes with visibility - only one view visible at a time
-      ;; Removed overlay widget which caused bleed-through rendering issues
+      ;; Uses literal for conditional rendering - only selected view is in widget tree
       (defwidget panel-body []
         (box
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          ;; Use stacked boxes with visibility instead of overlay to prevent bleed-through
-          ;; Each view is rendered but only one is visible at a time
-          (box :class "view-container" :visible {current_view == "windows"} :vexpand true (windows-view))
-          (box :class "view-container" :visible {current_view == "projects"} :vexpand true (projects-view))
-          (box :class "view-container" :visible {current_view == "apps"} :vexpand true (apps-view))
-          (box :class "view-container" :visible {current_view == "health"} :vexpand true (health-view))
-          (box :class "view-container" :visible {current_view == "events"} :vexpand true (events-view))
-          (box :class "view-container" :visible {current_view == "traces"} :vexpand true (traces-view))))
+          (literal
+            :content {current_view == "windows" ? "(box :class 'view-container' :vexpand true (windows-view))" :
+                      current_view == "projects" ? "(box :class 'view-container' :vexpand true (projects-view))" :
+                      current_view == "apps" ? "(box :class 'view-container' :vexpand true (apps-view))" :
+                      current_view == "health" ? "(box :class 'view-container' :vexpand true (health-view))" :
+                      current_view == "events" ? "(box :class 'view-container' :vexpand true (events-view))" :
+                      "(box :class 'view-container' :vexpand true (traces-view))"})))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -4428,7 +4426,7 @@ in
                 ;; Feature 109 T027: Git button - launches lazygit with context-aware view
                 (eventbox
                   :cursor "pointer"
-                  :onclick "worktree-lazygit ''${worktree.path} ''${worktree.git_is_dirty ? \"status\" : (worktree.git_behind > 0 ? \"branch\" : \"status\")}"
+                  :onclick "worktree-lazygit ''${worktree.path} ''${worktree.git_is_dirty == true ? 'status' : (worktree.git_behind ?: 0) > 0 ? 'branch' : 'status'}"
                   :tooltip "Open lazygit (Shift+L)"
                   (label :class "action-btn action-git" :text "󰊢"))
                 ;; Feature 109 T056: Copy Path button
@@ -7347,7 +7345,7 @@ in
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.50);  /* 50% transparent Catppuccin base */
+        background-color: rgba(30, 30, 46, 0.35);  /* 35% transparent Catppuccin base */
         border-radius: 12px;
         padding: 6px;
         margin: 4px;
@@ -7501,15 +7499,15 @@ in
 
       /* Panel Body - Compact */
       .panel-body {
-        background-color: rgba(30, 30, 46, 0.3);
+        background-color: rgba(30, 30, 46, 0.15);
         padding: 4px;
         min-height: 0;  /* Enable proper flex shrinking for scrolling */
         min-width: 0;  /* GTK fix: prevent overflow */
       }
 
-      /* View container - solid background to prevent overlay bleed-through */
+      /* View container - transparent since revealers properly hide content */
       .view-container {
-        background-color: ${mocha.base};
+        background-color: transparent;
       }
 
       .content-container {
@@ -7524,9 +7522,9 @@ in
       .project {
         margin-bottom: 12px;
         padding: 8px;
-        background-color: rgba(49, 50, 68, 0.4);
+        background-color: rgba(49, 50, 68, 0.15);
         border-radius: 8px;
-        border: 1px solid ${mocha.overlay0};
+        border: 1px solid rgba(108, 112, 134, 0.3);
       }
 
       .scoped-project {
