@@ -9401,7 +9401,7 @@ in
 
       .map-error {
         padding: 20px;
-        text-align: center;
+        /* text-align: center; - not supported in GTK CSS, use :halign in yuck */
         color: ${mocha.red};
       }
 
@@ -9425,8 +9425,8 @@ in
       }
 
       .legend-dot {
-        width: 12px;
-        height: 12px;
+        min-width: 12px;
+        min-height: 12px;
         border-radius: 50%;
         margin-right: 6px;
       }
@@ -9459,8 +9459,7 @@ in
       }
 
       .map-click-overlay {
-        /* position: absolute; top; left; - not supported in GTK CSS */
-        pointer-events: all;
+        /* position: absolute; top; left; pointer-events; - not supported in GTK CSS */
       }
 
       .map-node-button {
@@ -9576,8 +9575,7 @@ in
       }
 
       .expanded-click-overlay {
-        /* position: absolute; top; left; - not supported in GTK CSS */
-        pointer-events: all;
+        /* position: absolute; top; left; pointer-events; - not supported in GTK CSS */
       }
 
       .expanded-node-button {
