@@ -9507,7 +9507,7 @@ in
       }
 
       .refresh-map-button:hover {
-        background-color: ${mocha.surface2};
+        background-color: ${mocha.surface1};
         color: ${mocha.teal};
       }
 
@@ -9524,7 +9524,7 @@ in
       }
 
       .expand-button:hover {
-        background-color: ${mocha.surface2};
+        background-color: ${mocha.overlay0};
         color: ${mocha.blue};
       }
 
