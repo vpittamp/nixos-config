@@ -9464,7 +9464,7 @@ in
 
       .map-node-button {
         /* position: absolute; - not supported in GTK CSS */
-        cursor: pointer;
+        /* cursor: pointer; - not supported in GTK CSS */
         border-radius: 50%;
         /* transition: all 0.15s ease; - limited support in GTK CSS */
       }
@@ -9580,7 +9580,7 @@ in
 
       .expanded-node-button {
         /* position: absolute; - not supported in GTK CSS */
-        cursor: pointer;
+        /* cursor: pointer; - not supported in GTK CSS */
         border-radius: 50%;
         /* transition: all 0.15s ease; - limited support in GTK CSS */
       }
