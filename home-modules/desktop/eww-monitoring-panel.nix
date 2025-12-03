@@ -3509,6 +3509,14 @@ in
           :class "panel-body"
           :orientation "v"
           :vexpand true
+          ;; Hidden widget to force defpoll/deflisten initialization
+          ;; Without this, variables only start when their widget is first rendered via literal
+          ;; This ensures health_data, events_data, traces_data start polling immediately
+          (box
+            :visible false
+            (label :text {health_data.status ?: ""})
+            (label :text {events_data.status ?: ""})
+            (label :text {traces_data.status ?: ""}))
           (literal
             :content {current_view == "windows" ? "(box :class 'view-container' :vexpand true (windows-view))" :
                       current_view == "projects" ? "(box :class 'view-container' :vexpand true (projects-view))" :
