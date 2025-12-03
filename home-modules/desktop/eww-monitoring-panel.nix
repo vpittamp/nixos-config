@@ -9453,22 +9453,21 @@ in
       }
 
       /* Feature 111 T049-T051: Click overlay for interactive map */
+      /* Note: GTK CSS doesn't support position: relative/absolute/fixed */
       .map-overlay-container {
-        position: relative;
+        /* position: relative; - not supported in GTK CSS */
       }
 
       .map-click-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
+        /* position: absolute; top; left; - not supported in GTK CSS */
         pointer-events: all;
       }
 
       .map-node-button {
-        position: absolute;
+        /* position: absolute; - not supported in GTK CSS */
         cursor: pointer;
         border-radius: 50%;
-        transition: all 0.15s ease;
+        /* transition: all 0.15s ease; - limited support in GTK CSS */
       }
 
       .map-node-button:hover {
@@ -9481,10 +9480,7 @@ in
       }
 
       .map-node-button.dirty::after {
-        content: "●";
-        position: absolute;
-        top: -4px;
-        right: -4px;
+        /* content/position: not supported in GTK CSS */
         color: ${mocha.red};
         font-size: 10px;
       }
@@ -9529,14 +9525,10 @@ in
       }
 
       /* Feature 111 T076: Expanded map overlay */
+      /* Note: GTK CSS doesn't support position/z-index */
       .expanded-map-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        /* position: fixed; top/left/right/bottom; z-index; - not supported in GTK CSS */
         background-color: rgba(17, 17, 27, 0.95);  /* base with transparency */
-        z-index: 1000;
         padding: 20px;
       }
 
@@ -9560,7 +9552,7 @@ in
         border-radius: 4px;
         padding: 6px 12px;
         font-size: 14px;
-        transition: all 0.15s ease;
+        /* transition: all 0.15s ease; - limited support in GTK CSS */
       }
 
       .close-expanded-button:hover {
@@ -9580,21 +9572,19 @@ in
       }
 
       .expanded-map-overlay-container {
-        position: relative;
+        /* position: relative; - not supported in GTK CSS */
       }
 
       .expanded-click-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
+        /* position: absolute; top; left; - not supported in GTK CSS */
         pointer-events: all;
       }
 
       .expanded-node-button {
-        position: absolute;
+        /* position: absolute; - not supported in GTK CSS */
         cursor: pointer;
         border-radius: 50%;
-        transition: all 0.15s ease;
+        /* transition: all 0.15s ease; - limited support in GTK CSS */
       }
 
       .expanded-node-button:hover {
