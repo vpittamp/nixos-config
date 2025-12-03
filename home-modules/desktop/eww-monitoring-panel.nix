@@ -9478,11 +9478,8 @@ in
         box-shadow: 0 0 8px ${mocha.teal};
       }
 
-      .map-node-button.dirty::after {
-        /* content/position: not supported in GTK CSS */
-        color: ${mocha.red};
-        font-size: 10px;
-      }
+      /* .map-node-button.dirty::after - ::after pseudo-element not supported in GTK CSS */
+      /* Use yuck widget for dirty indicator instead */
 
       .map-node-target {
         border-radius: 50%;
