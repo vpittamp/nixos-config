@@ -564,3 +564,337 @@ def get_git_metadata(directory: str) -> Optional[dict]:
         }
     except (subprocess.TimeoutExpired, OSError):
         return None
+
+
+# =============================================================================
+# Feature 111: Visual Worktree Relationship Map - Git Utilities
+# =============================================================================
+
+
+def get_merge_base(repo_path: str, branch_a: str, branch_b: str) -> Optional[str]:
+    """
+    Feature 111 T013: Get the merge-base commit between two branches.
+
+    The merge-base is the most recent common ancestor of two branches.
+    This is used to determine branch parent relationships and calculate
+    how far branches have diverged.
+
+    Args:
+        repo_path: Path to the repository (any worktree directory works)
+        branch_a: First branch name
+        branch_b: Second branch name
+
+    Returns:
+        Short commit hash (7 chars) of merge-base, or None on error
+    """
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", branch_a, branch_b],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()[:7]  # Short hash
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def get_branch_relationship(
+    repo_path: str,
+    source_branch: str,
+    target_branch: str
+) -> Optional[dict]:
+    """
+    Feature 111 T014: Determine relationship between two branches.
+
+    Uses `git rev-list --left-right --count` with three-dot syntax to
+    get both ahead and behind counts in a single command.
+
+    Args:
+        repo_path: Path to the repository
+        source_branch: Branch being analyzed
+        target_branch: Branch to compare against (usually parent or main)
+
+    Returns:
+        Dictionary with keys:
+        - ahead: Commits in source not in target
+        - behind: Commits in target not in source
+        - merge_base: Common ancestor commit hash
+        - diverged: True if both ahead AND behind
+
+        Returns None on error.
+    """
+    try:
+        # Use three-dot syntax to get ahead/behind in both directions
+        result = subprocess.run(
+            ["git", "rev-list", "--left-right", "--count",
+             f"{target_branch}...{source_branch}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            return None
+
+        parts = result.stdout.strip().split()
+        if len(parts) != 2:
+            return None
+
+        behind_count = int(parts[0])
+        ahead_count = int(parts[1])
+
+        # Get merge-base
+        merge_base = get_merge_base(repo_path, source_branch, target_branch)
+
+        return {
+            "ahead": ahead_count,
+            "behind": behind_count,
+            "merge_base": merge_base,
+            "diverged": ahead_count > 0 and behind_count > 0
+        }
+    except (ValueError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def find_likely_parent_branch(
+    repo_path: str,
+    target_branch: str,
+    candidate_branches: List[str]
+) -> Optional[str]:
+    """
+    Feature 111 T015: Determine which branch is the likely parent of target_branch.
+
+    Uses merge-base distance heuristic: the branch with the smallest commit
+    distance from target_branch to the merge-base is the likely parent.
+
+    This handles cases where a feature branch was created from another
+    feature branch rather than directly from main.
+
+    Args:
+        repo_path: Path to the repository
+        target_branch: Branch to find parent for
+        candidate_branches: List of potential parent branches
+
+    Returns:
+        Name of likely parent branch, or None if inconclusive
+    """
+    if not candidate_branches:
+        return None
+
+    min_distance = float('inf')
+    best_candidate = None
+
+    for candidate in candidate_branches:
+        if candidate == target_branch:
+            continue  # Skip self
+
+        try:
+            # Count commits from candidate to target
+            # Smaller distance = closer parent
+            result = subprocess.run(
+                ["git", "rev-list", "--count",
+                 f"{candidate}..{target_branch}"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                distance = int(result.stdout.strip())
+                if distance < min_distance:
+                    min_distance = distance
+                    best_candidate = candidate
+        except (ValueError, subprocess.TimeoutExpired, OSError):
+            continue
+
+    return best_candidate
+
+
+class WorktreeRelationshipCache:
+    """
+    Feature 111 T016: In-memory cache for branch relationships with TTL.
+
+    Caching is essential for performance because computing branch
+    relationships requires multiple git commands. With 10 worktrees,
+    naive computation would require 45 git merge-base calls (~4-7 seconds).
+
+    Cache invalidation triggers:
+    - TTL expiration (default 5 minutes)
+    - Manual invalidation via invalidate_repo()
+    - Full clear via clear()
+
+    Attributes:
+        ttl_seconds: Time-to-live in seconds (default 300 = 5 minutes)
+    """
+
+    def __init__(self, ttl_seconds: int = 300):
+        """Initialize cache with TTL.
+
+        Args:
+            ttl_seconds: Cache entry lifetime in seconds
+        """
+        from ..models.worktree_relationship import WorktreeRelationship
+        self.ttl_seconds = ttl_seconds
+        self._cache: dict[str, WorktreeRelationship] = {}
+
+    def _make_key(self, repo_path: str, branch_a: str, branch_b: str) -> str:
+        """Generate cache key from repo and branches.
+
+        Args:
+            repo_path: Path to repository
+            branch_a: First branch name
+            branch_b: Second branch name
+
+        Returns:
+            Cache key string
+        """
+        normalized_path = str(Path(repo_path).resolve())
+        return f"{normalized_path}:{branch_a}~{branch_b}"
+
+    def get(self, repo_path: str, branch_a: str, branch_b: str):
+        """Get cached relationship if not stale.
+
+        Args:
+            repo_path: Path to repository
+            branch_a: First branch name
+            branch_b: Second branch name
+
+        Returns:
+            WorktreeRelationship if cached and not stale, None otherwise
+        """
+        key = self._make_key(repo_path, branch_a, branch_b)
+        rel = self._cache.get(key)
+        if rel and not rel.is_stale(self.ttl_seconds):
+            return rel
+        return None
+
+    def set(self, repo_path: str, branch_a: str, branch_b: str, rel) -> None:
+        """Cache a relationship.
+
+        Args:
+            repo_path: Path to repository
+            branch_a: First branch name
+            branch_b: Second branch name
+            rel: WorktreeRelationship to cache
+        """
+        key = self._make_key(repo_path, branch_a, branch_b)
+        rel.computed_at = int(time.time())
+        self._cache[key] = rel
+
+    def invalidate_repo(self, repo_path: str) -> None:
+        """Clear all cached relationships for a repository.
+
+        Use this when git operations (commit, push, pull) have occurred
+        that may have changed branch relationships.
+
+        Args:
+            repo_path: Path to repository
+        """
+        normalized = str(Path(repo_path).resolve())
+        keys_to_delete = [k for k in self._cache if k.startswith(normalized)]
+        for k in keys_to_delete:
+            del self._cache[k]
+
+    def clear(self) -> None:
+        """Clear entire cache."""
+        self._cache.clear()
+
+
+# =============================================================================
+# Feature 111 US4: Merge Flow Visualization (T055-T058)
+# =============================================================================
+
+
+def detect_potential_conflicts(
+    branch1_files: List[str],
+    branch2_files: List[str],
+) -> dict:
+    """Detect potential merge conflicts between two branches.
+
+    Feature 111 T055/T057: Compare changed files between branches to
+    identify overlapping modifications that may cause merge conflicts.
+
+    Args:
+        branch1_files: List of files modified in first branch
+        branch2_files: List of files modified in second branch
+
+    Returns:
+        Dict with:
+        - has_conflict: True if any files overlap
+        - conflicting_files: List of overlapping file paths
+        - conflict_count: Number of conflicting files
+    """
+    # Find intersection of modified files
+    set1 = set(branch1_files)
+    set2 = set(branch2_files)
+    overlapping = set1 & set2
+
+    return {
+        "has_conflict": len(overlapping) > 0,
+        "conflicting_files": sorted(list(overlapping)),
+        "conflict_count": len(overlapping),
+    }
+
+
+def get_merge_ready_status(
+    is_clean: bool,
+    ahead_of_main: int,
+    behind_main: int,
+) -> dict:
+    """Determine if a branch is ready to merge to main.
+
+    Feature 111 T056/T058: Check merge readiness based on:
+    - Branch is clean (no uncommitted changes)
+    - Branch is not behind main (requires rebase/merge first)
+    - Branch has commits to merge
+
+    Args:
+        is_clean: True if no uncommitted changes
+        ahead_of_main: Number of commits ahead of main
+        behind_main: Number of commits behind main
+
+    Returns:
+        Dict with:
+        - is_ready: True if branch can be merged
+        - status: "ready", "dirty", "behind", or "no_changes"
+        - reason: Human-readable explanation if not ready
+        - commits_to_merge: Number of commits to merge (if ready)
+    """
+    # Check dirty status first (highest priority blocker)
+    if not is_clean:
+        return {
+            "is_ready": False,
+            "status": "dirty",
+            "reason": "Has uncommitted changes",
+            "commits_to_merge": 0,
+        }
+
+    # Check if behind main
+    if behind_main > 0:
+        return {
+            "is_ready": False,
+            "status": "behind",
+            "reason": f"Behind main by {behind_main} commit{'s' if behind_main != 1 else ''}",
+            "commits_to_merge": ahead_of_main,
+        }
+
+    # Check if there's anything to merge
+    if ahead_of_main == 0:
+        return {
+            "is_ready": False,
+            "status": "no_changes",
+            "reason": "Nothing to merge - branch is in sync with main",
+            "commits_to_merge": 0,
+        }
+
+    # Ready to merge
+    return {
+        "is_ready": True,
+        "status": "ready",
+        "reason": None,
+        "commits_to_merge": ahead_of_main,
+    }
