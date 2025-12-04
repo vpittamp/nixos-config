@@ -77,6 +77,27 @@ in
     # Install i3pm binary
     home.packages = [ i3pm ];
 
+    # Feature 109: Declarative GitHub accounts configuration
+    # This eliminates the need to manually run `i3pm account add` on each system
+    # The paths use ${config.home.homeDirectory} so they work on any system
+    xdg.configFile."i3/accounts.json".text = builtins.toJSON {
+      version = 1;
+      accounts = [
+        {
+          name = "PittampalliOrg";
+          path = "${config.home.homeDirectory}/repos/PittampalliOrg";
+          is_default = true;
+          ssh_host = "github.com";
+        }
+        {
+          name = "vpittamp";
+          path = "${config.home.homeDirectory}/repos/vpittamp";
+          is_default = false;
+          ssh_host = "github.com";
+        }
+      ];
+    };
+
     # Note: Shell aliases are managed in home-modules/shell/bash.nix
     # to avoid conflicts. The bash.nix file should be updated to use
     # the new i3pm commands instead of the old shell scripts.
