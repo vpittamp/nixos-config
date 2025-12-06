@@ -1055,11 +1055,39 @@ button {
   # Feature 057: User Story 2 - Preview window controlled by daemon via eww open/close
   # Don't open workspace-preview at startup - daemon controls it dynamically
   windowNames = (map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs);
-  openCommand =
-    let
-      args = lib.escapeShellArgs windowNames;
-    in
-      ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} open-many ${args}'';
+
+  # Fix: Gracefully handle missing monitors in single/dual monitor profiles
+  # Query Sway for available outputs and only open bars for those that exist
+  # Note: Use $HOME instead of %h since this is a shell script, not a systemd unit
+  # Also: Open windows one-by-one to avoid eww open-many failing on first missing monitor
+  openCommandScript = pkgs.writeShellScript "eww-workspace-bar-open" ''
+    # Wait for Eww daemon to be ready
+    sleep 0.5
+
+    # Get list of available Sway outputs
+    available_outputs=$(${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[].name' 2>/dev/null || echo "")
+
+    opened=0
+    ${lib.concatMapStringsSep "\n" (output: ''
+      if echo "$available_outputs" | ${pkgs.gnugrep}/bin/grep -q "^${output.name}$"; then
+        echo "Opening workspace bar for ${output.name}..."
+        if ${pkgs.eww}/bin/eww --config "$HOME/.config/${ewwConfigDir}" open "workspace-bar-${sanitize output.name}" 2>/dev/null; then
+          opened=$((opened + 1))
+        else
+          echo "Warning: Failed to open workspace-bar-${sanitize output.name}, continuing..."
+        fi
+      fi
+    '') workspaceOutputs}
+
+    if [ "$opened" -gt 0 ]; then
+      echo "Successfully opened $opened workspace bar window(s)"
+      exit 0
+    else
+      echo "Warning: No workspace bar windows could be opened"
+      exit 1
+    fi
+  '';
+  openCommand = "${openCommandScript}";
 
 in
 {
