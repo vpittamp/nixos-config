@@ -3125,6 +3125,10 @@ in
       ;; Project context menu state - Project name for action bar ("" = none)
       (defvar context_menu_project "")
 
+      ;; Windows view accordion state - Only one project expanded at a time
+      ;; Empty string means show active project, otherwise shows named project
+      (defvar windows_expanded_project "")
+
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
       (defvar copied_window_id 0)
@@ -3585,22 +3589,27 @@ in
 
       ;; Project display widget
       ;; UX Enhancement: Active project gets highlighted
-      ;; Click header to switch to project, right-click reveals actions
+      ;; Accordion behavior: Only one project expanded at a time
+      ;; Click header to toggle expand/collapse, right-click reveals actions
       (defwidget project-widget [project]
         (box
           :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "")}
           :orientation "v"
           :space-evenly false
-          ; Project header - clickable to switch, right-click for actions
+          ; Project header - click to expand/collapse, right-click for actions
           (eventbox
-            :onclick {project.scope == "scoped" ? "switch-project-action ''${project.name} &" : ""}
+            :onclick {windows_expanded_project == project.name ? "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_project=" : "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_project='" + project.name + "'"}
             :onrightclick "toggle-project-context ''${project.name} &"
-            :cursor {project.scope == "scoped" ? "pointer" : "default"}
-            :tooltip {project.scope == "scoped" ? "Click to switch to this worktree" : "Global windows (always visible)"}
+            :cursor "pointer"
+            :tooltip {(windows_expanded_project == project.name || (windows_expanded_project == "" && project.is_active)) ? "Click to collapse" : "Click to expand"}
             (box
               :class "project-header"
               :orientation "h"
               :space-evenly false
+              ;; Expand/collapse icon
+              (label
+                :class "expand-icon"
+                :text {(windows_expanded_project == project.name || (windows_expanded_project == "" && project.is_active)) ? "󰅀" : "󰅂"})
               (label
                 :class "project-name"
                 :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
@@ -3647,13 +3656,18 @@ in
                 :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_project="
                 :tooltip "Close menu"
                 (label :class "action-btn action-dismiss" :text "󰅙"))))
-          ; Windows list
-          (box
-            :class "windows-container"
-            :orientation "v"
-            :space-evenly false
-            (for window in {project.windows ?: []}
-              (window-widget :window window)))))
+          ;; Windows list - Accordion: only shown when this project is expanded
+          ;; Default: show active project when windows_expanded_project is empty
+          (revealer
+            :reveal {windows_expanded_project == project.name || (windows_expanded_project == "" && project.is_active)}
+            :transition "slidedown"
+            :duration "150ms"
+            (box
+              :class "windows-container"
+              :orientation "v"
+              :space-evenly false
+              (for window in {project.windows ?: []}
+                (window-widget :window window))))))
 
       ;; Compact window widget for sidebar - Single line with badges + JSON expand
       ;; Click main area to focus window
