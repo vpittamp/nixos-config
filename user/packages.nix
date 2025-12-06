@@ -136,6 +136,7 @@ let
     kubectl # Kubernetes CLI
     kubernetes-helm # Helm package manager for Kubernetes
     k9s # Terminal UI for Kubernetes
+    talosctl # CLI for Talos Linux Kubernetes OS
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     idpbuilder # IDP builder tool (x86_64 only)
   ];
