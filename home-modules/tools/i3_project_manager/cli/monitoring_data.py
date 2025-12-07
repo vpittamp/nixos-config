@@ -2990,8 +2990,9 @@ async def stream_events():
             event_type = f"window::{change}"
 
             # Extract payload
+            # Note: hasattr returns True even if the attribute is None, so we need to also check for None
             sway_payload = {
-                "container": event.container.ipc_data if hasattr(event, "container") else None,
+                "container": event.container.ipc_data if hasattr(event, "container") and event.container is not None else None,
                 "change": change,
             }
 
@@ -3029,9 +3030,10 @@ async def stream_events():
             event_type = f"workspace::{change}"
 
             # Extract payload
+            # Note: hasattr returns True even if the attribute is None, so we need to also check for None
             sway_payload = {
-                "current": event.current.ipc_data if hasattr(event, "current") else None,
-                "old": event.old.ipc_data if hasattr(event, "old") else None,
+                "current": event.current.ipc_data if hasattr(event, "current") and event.current is not None else None,
+                "old": event.old.ipc_data if hasattr(event, "old") and event.old is not None else None,
                 "change": change,
             }
 
