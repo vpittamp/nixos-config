@@ -1217,11 +1217,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON files (`~/.config/i3/projects/*.json`), in-memory daemon state (109-enhance-worktree-user-experience)
 - Python 3.11+ (streaming backend, matching Constitution Principle X), Yuck/GTK CSS (Eww widgets) + SwayNC (swaync-client --subscribe), Eww 0.4+ (deflisten), Python subprocess for event streaming (110-improve-notifications-system)
 - N/A (stateless - SwayNC is the source of truth) (110-improve-notifications-system)
-- Python 3.11+ (backend), Yuck/GTK3 CSS (Eww widgets), Bash (scripts) + i3ipc.aio (Sway IPC), Pydantic 2.x (data models), Eww 0.4+ (GTK3 widgets), drawsvg (SVG generation) (111-visual-map-worktrees)
-- In-memory cache with TTL, SVG files in `/tmp/worktree-map-*.svg` (111-visual-map-worktrees)
 
 ## Recent Changes
-- 111-visual-map-worktrees: Visual worktree relationship map with SVG rendering, hierarchical layout algorithm, click-to-switch interactivity, merge flow visualization (merged branches with checkmark), activity heatmap (30-day staleness with 💤 badge), compact/expanded views, branch type coloring (mauve=main, blue=feature, peach=hotfix, green=release), right-click context menu (terminal, vscode, lazygit, yazi, copy path, delete), keyboard toggle (e for expand), 111 unit tests, Catppuccin Mocha styling
 - 109-enhance-worktree-user-experience: Branch number badges with gradient styling (mauve/pink for numbered, blue for main, green for feature), icon alignment fixes, hover transition improvements
 - 108-show-worktree-card-detail: Enhanced worktree card status display with at-a-glance indicators (dirty ●, sync ↑↓, merged ✓, stale 💤, conflict ⚠), tooltips with file count breakdown and commit info, 30-day staleness threshold, hover-visible last commit message, git_utils.py format_relative_time() helper, is_merged/is_stale/has_conflicts detection, Catppuccin Mocha styling (teal merged, red conflict/dirty, gray stale)
 - 107-fix-progress-indicator: Progress indicator focus state and event efficiency enhancement with focus-aware badge styling (.badge-focused-window CSS class for dimmed display when window focused), IPC-first hook communication with file fallback, decoupled spinner animation via separate defvar/defpoll (<1% CPU vs 5-10%), has_working_badge flag for conditional spinner polling
