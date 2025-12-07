@@ -11505,7 +11505,9 @@ in
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
-        ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel'";
+        # Note: Suppress stderr because eww has a known race condition where the CLI exits
+        # before receiving the daemon's response, causing "channel closed" errors
+        ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null || true'";
         # Feature 101: Clean shutdown to prevent stale sockets
         ExecStopPost = "${pkgs.bash}/bin/bash -c 'rm -f /run/user/1000/eww-server_*'";
         Restart = "on-failure";
