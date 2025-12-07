@@ -13,18 +13,21 @@ import { WorktreeCreateRequestSchema, type WorktreeCreateRequest } from "../../.
 export async function worktreeCreate(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
     string: ["from", "repo"],
+    boolean: ["speckit"],  // Feature 112: Speckit scaffolding flag
     default: {
       from: "main",
+      speckit: false,  // CLI default is opt-in (false)
     },
   });
 
   const positionalArgs = parsed._ as string[];
 
   if (positionalArgs.length < 1) {
-    console.error("Usage: i3pm worktree create <branch> [--from <base>] [--repo <account/repo>]");
+    console.error("Usage: i3pm worktree create <branch> [--from <base>] [--repo <account/repo>] [--speckit]");
     console.error("");
     console.error("Examples:");
     console.error("  i3pm worktree create 100-feature");
+    console.error("  i3pm worktree create 100-feature --speckit   # Create with speckit scaffolding");
     console.error("  i3pm worktree create 101-bugfix --from develop");
     console.error("  i3pm worktree create review --repo vpittamp/nixos");
     return 1;
@@ -112,6 +115,21 @@ export async function worktreeCreate(args: string[]): Promise<number> {
     console.error("");
     console.error("Warning: Failed to update repos.json (worktree still created)");
     console.error(stderr);
+  }
+
+  // Feature 112: Create speckit directory structure if --speckit flag provided
+  if (parsed.speckit) {
+    const specsDir = `${worktreePath}/specs/${branch}`;
+    const checklistsDir = `${specsDir}/checklists`;
+
+    try {
+      await Deno.mkdir(checklistsDir, { recursive: true });
+      console.log(`Created speckit directory: ${specsDir}`);
+    } catch (error) {
+      // Non-fatal warning - worktree was created successfully
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Warning: Failed to create speckit directory: ${message}`);
+    }
   }
 
   console.log("");

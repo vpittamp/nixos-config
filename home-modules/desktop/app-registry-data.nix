@@ -257,6 +257,23 @@ let
       description = "Terminal UI for git commands";
     })
 
+    # WS5: Docker Tools (lazydocker)
+    (mkApp {
+      name = "lazydocker";
+      display_name = "Lazydocker";
+      command = "ghostty";
+      parameters = "-e lazydocker";
+      scope = "global";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 5;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "lazydocker.svg";
+      nix_package = "pkgs.lazydocker";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Terminal UI for Docker container management";
+    })
+
     # WS6: GUI File Managers (Primary: thunar)
     (mkApp {
       name = "thunar";

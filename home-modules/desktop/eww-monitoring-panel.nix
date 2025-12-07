@@ -780,6 +780,7 @@ asyncio.run(stream.run())
     PARENT_PROJECT=$($EWW get worktree_form_parent_project)
     DISPLAY_NAME=$($EWW get edit_form_display_name)
     ICON=$($EWW get edit_form_icon)
+    SETUP_SPECKIT=$($EWW get worktree_form_speckit)  # Feature 112: Speckit scaffolding
 
     # Validate required fields
     if [[ -z "$BRANCH_NAME" ]]; then
@@ -916,6 +917,17 @@ asyncio.run(stream.run())
       exit 1
     fi
 
+    # Feature 112: Create speckit directory structure if enabled
+    if [[ "$SETUP_SPECKIT" == "true" ]]; then
+      SPECS_DIR="$WORKTREE_PATH/specs/$BRANCH_NAME"
+      if mkdir -p "$SPECS_DIR/checklists" 2>/dev/null; then
+        echo "Created speckit directory: $SPECS_DIR"
+      else
+        # Non-fatal warning - worktree was successfully created
+        echo "Warning: Failed to create speckit directory: $SPECS_DIR"
+      fi
+    fi
+
     # Success: clear form state and refresh
     $EWW update worktree_creating=false
     $EWW update worktree_form_description=""
@@ -923,6 +935,7 @@ asyncio.run(stream.run())
     $EWW update worktree_form_path=""
     $EWW update worktree_form_parent_project=""
     $EWW update worktree_form_repo_path=""
+    $EWW update worktree_form_speckit=true  # Feature 112: Reset to default (checked)
     $EWW update edit_form_display_name=""
     $EWW update edit_form_icon=""
     $EWW update edit_form_error=""
@@ -3291,6 +3304,7 @@ in
       (defvar worktree_form_path "")              ;; Worktree path (auto-generated, editable)
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
       (defvar worktree_form_repo_path "")         ;; Feature 102: Repo path for auto-populating worktree path
+      (defvar worktree_form_speckit true)         ;; Feature 112: Speckit scaffolding checkbox (default: checked)
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
       ;; Feature 102: Worktree hover state (using Eww events instead of CSS :hover for nested for loop compatibility)
       (defvar hover_worktree_name "")           ;; Qualified name of currently hovered worktree
@@ -3507,27 +3521,30 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses literal for conditional rendering - only selected view is in widget tree
+      ;; Uses revealer for proper tab view switching with smooth transitions
       (defwidget panel-body []
         (box
           :class "panel-body"
           :orientation "v"
           :vexpand true
           ;; Hidden widget to force defpoll/deflisten initialization
-          ;; Without this, variables only start when their widget is first rendered via literal
+          ;; Without this, variables only start when their widget is first rendered
           ;; This ensures health_data, events_data, traces_data start polling immediately
           (box
             :visible false
             (label :text {health_data.status ?: ""})
             (label :text {events_data.status ?: ""})
             (label :text {traces_data.status ?: ""}))
-          (literal
-            :content {current_view == "windows" ? "(box :class 'view-container' :vexpand true (windows-view))" :
-                      current_view == "projects" ? "(box :class 'view-container' :vexpand true (projects-view))" :
-                      current_view == "apps" ? "(box :class 'view-container' :vexpand true (apps-view))" :
-                      current_view == "health" ? "(box :class 'view-container' :vexpand true (health-view))" :
-                      current_view == "events" ? "(box :class 'view-container' :vexpand true (events-view))" :
-                      "(box :class 'view-container' :vexpand true (traces-view))"})))
+          ;; Tab views using overlay box with visibility toggling
+          ;; Use overlay widget so views stack on top of each other, only visible one shows
+          (overlay
+            :vexpand true
+            (box :class "view-container" :vexpand true :visible {current_view == "windows"} (windows-view))
+            (box :class "view-container" :vexpand true :visible {current_view == "projects"} (projects-view))
+            (box :class "view-container" :vexpand true :visible {current_view == "apps"} (apps-view))
+            (box :class "view-container" :vexpand true :visible {current_view == "health"} (health-view))
+            (box :class "view-container" :vexpand true :visible {current_view == "events"} (events-view))
+            (box :class "view-container" :vexpand true :visible {current_view == "traces"} (traces-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -5767,6 +5784,19 @@ in
               :class "field-input"
               :value edit_form_icon
               :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon='{}'"))
+          ;; Feature 112: Speckit scaffolding checkbox (checked by default)
+          (box
+            :class "form-field form-field-checkbox"
+            :orientation "h"
+            :space-evenly false
+            (checkbox
+              :checked worktree_form_speckit
+              :onchecked "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=true"
+              :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=false")
+            (label
+              :class "field-label checkbox-label"
+              :halign "start"
+              :text "Setup speckit (creates specs directory)"))
           ;; Error message display
           (revealer
             :reveal {edit_form_error != ""}
@@ -5785,7 +5815,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=true && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
@@ -10565,6 +10595,23 @@ in
 
       .form-field {
         margin-bottom: 12px;
+      }
+
+      /* Feature 112: Checkbox field styling for speckit option */
+      .form-field-checkbox {
+        margin-top: 8px;
+        margin-bottom: 8px;
+
+        checkbox {
+          min-width: 18px;
+          min-height: 18px;
+        }
+
+        .checkbox-label {
+          margin-left: 8px;
+          color: ${mocha.subtext0};
+          font-size: 12px;
+        }
       }
 
       .field-label {

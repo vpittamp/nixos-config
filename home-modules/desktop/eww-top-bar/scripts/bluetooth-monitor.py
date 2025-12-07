@@ -18,6 +18,7 @@ Exits with code 0 on normal termination, 1 on errors.
 
 import json
 import sys
+import time
 from typing import Optional
 
 try:
@@ -36,6 +37,9 @@ class BluetoothMonitor:
         self.state = "disabled"
         self.device_count = 0
         self.adapter_path = None
+        self._last_update = 0
+        self._pending_update = None
+        self._debounce_ms = 500  # Debounce updates to prevent CPU spin
 
         try:
             # Connect to BlueZ
@@ -105,20 +109,41 @@ class BluetoothMonitor:
         except Exception as e:
             print(json.dumps({"state": "disabled", "device_count": 0, "error": f"State update failed: {e}"}), flush=True)
 
+    def _schedule_update(self):
+        """Schedule a debounced state update to prevent CPU spin from rapid events"""
+        now = time.monotonic() * 1000  # ms
+        elapsed = now - self._last_update
+
+        if elapsed >= self._debounce_ms:
+            # Enough time passed, update immediately
+            self._last_update = now
+            self._update_state()
+        elif self._pending_update is None:
+            # Schedule update for later
+            delay_ms = int(self._debounce_ms - elapsed)
+            self._pending_update = GLib.timeout_add(delay_ms, self._do_pending_update)
+
+    def _do_pending_update(self):
+        """Execute pending update"""
+        self._pending_update = None
+        self._last_update = time.monotonic() * 1000
+        self._update_state()
+        return False  # Don't repeat
+
     def _on_adapter_properties_changed(self, interface, changed_properties, invalidated_properties):
         """Handle adapter property changes (e.g., Powered on/off)"""
         if "Powered" in changed_properties:
-            self._update_state()
+            self._schedule_update()
 
     def _on_interfaces_added(self, path, interfaces):
         """Handle new interfaces (e.g., device connected)"""
         if "org.bluez.Device1" in interfaces:
-            self._update_state()
+            self._schedule_update()
 
     def _on_interfaces_removed(self, path, interfaces):
         """Handle removed interfaces (e.g., device disconnected)"""
         if "org.bluez.Device1" in interfaces:
-            self._update_state()
+            self._schedule_update()
 
     def _output_state(self):
         """Output current Bluetooth state as JSON"""
