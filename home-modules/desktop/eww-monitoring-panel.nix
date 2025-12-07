@@ -2156,6 +2156,52 @@ print(json.dumps(result))
     fi
   '';
 
+  # Toggle individual project expand/collapse in Windows view
+  # Handles: "all" mode (switch to array), array mode (add/remove project)
+  toggleWindowsProjectExpandScript = pkgs.writeShellScriptBin "toggle-windows-project-expand" ''
+    #!${pkgs.bash}/bin/bash
+    # Toggle individual project expand/collapse state
+    PROJECT_NAME="''${1:-}"
+    if [[ -z "$PROJECT_NAME" ]]; then
+        exit 1
+    fi
+
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Get current state
+    CURRENT=$($EWW get windows_expanded_projects 2>/dev/null || echo "all")
+
+    if [[ "$CURRENT" == "all" ]]; then
+        # Currently all expanded - clicking collapses this one only
+        # Get all project names and remove the clicked one
+        ALL_PROJECTS=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -r '[.projects[].name]')
+        NEW_LIST=$(echo "$ALL_PROJECTS" | ${pkgs.jq}/bin/jq -c --arg name "$PROJECT_NAME" '[.[] | select(. != $name)]')
+        $EWW update "windows_expanded_projects=$NEW_LIST" "windows_all_expanded=false"
+    else
+        # Array mode - toggle this project in/out
+        IS_EXPANDED=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -e --arg name "$PROJECT_NAME" '. | index($name) != null' 2>/dev/null || echo "false")
+
+        if [[ "$IS_EXPANDED" == "true" ]]; then
+            # Remove from array
+            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg name "$PROJECT_NAME" '[.[] | select(. != $name)]')
+        else
+            # Add to array
+            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg name "$PROJECT_NAME" '. + [$name]')
+        fi
+
+        # Check if all projects are now expanded
+        PROJECT_COUNT=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq '.projects | length')
+        EXPANDED_COUNT=$(echo "$NEW_LIST" | ${pkgs.jq}/bin/jq 'length')
+
+        if [[ "$EXPANDED_COUNT" -ge "$PROJECT_COUNT" ]]; then
+            # All expanded - switch to "all" mode
+            $EWW update "windows_expanded_projects=all" "windows_all_expanded=true"
+        else
+            $EWW update "windows_expanded_projects=$NEW_LIST" "windows_all_expanded=false"
+        fi
+    fi
+  '';
+
   # SwayNC toggle wrapper
   swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
     #!${pkgs.bash}/bin/bash
@@ -2910,6 +2956,7 @@ in
       closeWorktreeScript     # Close all windows for a worktree
       closeAllWindowsScript   # Close all scoped windows
       toggleProjectContextScript # Toggle project context menu in Windows view
+      toggleWindowsProjectExpandScript # Toggle individual project expand in Windows view
       projectCrudScript     # Feature 094: Project CRUD handler (T037)
       projectEditOpenScript # Feature 094: Project edit form opener (T038)
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
@@ -3029,9 +3076,12 @@ in
       ;; Project context menu state - Project name for action bar ("" = none)
       (defvar context_menu_project "")
 
-      ;; Windows view accordion state - Only one project expanded at a time
-      ;; Empty string means show active project, otherwise shows named project
-      (defvar windows_expanded_project "")
+      ;; Windows view expand state - Multiple projects can be expanded simultaneously
+      ;; JSON array of expanded project names, or "all" to expand all
+      ;; Default "all" means all projects expanded by default
+      (defvar windows_expanded_projects "all")
+      ;; Track if all are expanded (for toggle button state)
+      (defvar windows_all_expanded true)
 
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
@@ -3068,6 +3118,10 @@ in
       ;; Updated independently from monitoring_data via defpoll when working badge exists
       ;; Reduces CPU overhead from 5-10% (full refresh) to <1% (single var update)
       (defvar spinner_frame "⠋")
+
+      ;; Panel transparency control (0-100, default 35%)
+      ;; Adjustable via slider in header - persists across tabs
+      (defvar panel_opacity 35)
 
       ;; Feature 092: Event filter state (all enabled by default)
       ;; Individual event type filters (true = show, false = hide)
@@ -3291,12 +3345,14 @@ in
 
       ;; Main panel content widget with keyboard navigation
       ;; Feature 086: Dynamic class changes when panel has focus
+      ;; Dynamic opacity controlled by panel_opacity variable (10-100%)
       (defwidget monitoring-panel-content []
         (eventbox
           :onkeypress "${handleKeyScript} {}"
           :cursor "default"
           (box
             :class {panel_focused ? "panel-container focused" : "panel-container"}
+            :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
             :orientation "v"
             :space-evenly false
             (panel-header)
@@ -3374,18 +3430,38 @@ in
           (box
             :class "summary-counts"
             :orientation "h"
-            :space-evenly true
-            (label
-              :class "count-badge"
-              :text "''${current_view == 'windows' ? monitoring_data.project_count ?: 0 : current_view == 'projects' ? projects_data.project_count ?: 0 : current_view == 'apps' ? apps_data.app_count ?: 0 : 0} ''${current_view == 'windows' || current_view == 'projects' ? 'PRJ' : current_view == 'apps' ? 'APPS' : 'ITEMS'}")
-            (label
-              :class "count-badge"
-              :text "''${current_view == 'windows' ? monitoring_data.workspace_count ?: 0 : 0} WS"
-              :visible {current_view == "windows"})
-            (label
-              :class "count-badge"
-              :text "''${current_view == 'windows' ? monitoring_data.window_count ?: 0 : 0} WIN"
-              :visible {current_view == "windows"}))
+            :space-evenly false
+            (box
+              :orientation "h"
+              :space-evenly true
+              :hexpand true
+              (label
+                :class "count-badge"
+                :text "''${current_view == 'windows' ? monitoring_data.project_count ?: 0 : current_view == 'projects' ? projects_data.project_count ?: 0 : current_view == 'apps' ? apps_data.app_count ?: 0 : 0} ''${current_view == 'windows' || current_view == 'projects' ? 'PRJ' : current_view == 'apps' ? 'APPS' : 'ITEMS'}")
+              (label
+                :class "count-badge"
+                :text "''${current_view == 'windows' ? monitoring_data.workspace_count ?: 0 : 0} WS"
+                :visible {current_view == "windows"})
+              (label
+                :class "count-badge"
+                :text "''${current_view == 'windows' ? monitoring_data.window_count ?: 0 : 0} WIN"
+                :visible {current_view == "windows"}))
+            ;; Opacity slider - small unobtrusive control
+            (box
+              :class "opacity-control"
+              :orientation "h"
+              :space-evenly false
+              :tooltip "Panel opacity: ''${panel_opacity}%"
+              (label
+                :class "opacity-icon"
+                :text "󰃞")
+              (scale
+                :class "opacity-slider"
+                :min 10
+                :max 100
+                :value panel_opacity
+                :orientation "h"
+                :onchange "eww --config $HOME/.config/eww-monitoring-panel update panel_opacity={}")))
           ;; UX Enhancement: Workspace Pills - full implementation
           (scroll
             :hscroll true
@@ -3467,13 +3543,26 @@ in
                 :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) > 0}
                 :orientation "v"
                 :space-evenly false
-                ;; Close All button row at top
+                ;; Action button row at top
                 (box
                   :class "windows-actions-row"
                   :orientation "h"
                   :space-evenly false
                   :halign "end"
                   :spacing 8
+                  ;; Expand/Collapse All button
+                  (eventbox
+                    :cursor "pointer"
+                    :onclick {windows_all_expanded ? "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false" : "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true"}
+                    :tooltip {windows_all_expanded ? "Collapse all worktrees" : "Expand all worktrees"}
+                    (box
+                      :class "expand-all-btn"
+                      :orientation "h"
+                      :space-evenly false
+                      :spacing 4
+                      (label :class "expand-all-icon" :text {windows_all_expanded ? "󰅀" : "󰅂"})
+                      (label :class "expand-all-text" :text {windows_all_expanded ? "Collapse" : "Expand"})))
+                  ;; Close All button
                   (eventbox
                     :cursor "pointer"
                     :onclick "close-all-windows-action &"
@@ -3491,19 +3580,19 @@ in
 
       ;; Project display widget
       ;; UX Enhancement: Active project gets highlighted
-      ;; Accordion behavior: Only one project expanded at a time
+      ;; Multiple projects can be expanded simultaneously
       ;; Click header to toggle expand/collapse, right-click reveals actions
       (defwidget project-widget [project]
         (box
           :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "")}
           :orientation "v"
           :space-evenly false
-          ; Project header - click to expand/collapse, right-click for actions
+          ; Project header - click to toggle individual expand/collapse, right-click for actions
           (eventbox
-            :onclick {windows_expanded_project == project.name ? "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_project=" : "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_project='" + project.name + "'"}
+            :onclick "toggle-windows-project-expand ''${project.name} &"
             :onrightclick "toggle-project-context ''${project.name} &"
             :cursor "pointer"
-            :tooltip {(windows_expanded_project == project.name || (windows_expanded_project == "" && project.is_active)) ? "Click to collapse" : "Click to expand"}
+            :tooltip {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "Click to collapse" : "Click to expand"}
             (box
               :class "project-header"
               :orientation "h"
@@ -3511,7 +3600,7 @@ in
               ;; Expand/collapse icon
               (label
                 :class "expand-icon"
-                :text {(windows_expanded_project == project.name || (windows_expanded_project == "" && project.is_active)) ? "󰅀" : "󰅂"})
+                :text {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "󰅀" : "󰅂"})
               (label
                 :class "project-name"
                 :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
@@ -3558,10 +3647,10 @@ in
                 :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_project="
                 :tooltip "Close menu"
                 (label :class "action-btn action-dismiss" :text "󰅙"))))
-          ;; Windows list - Accordion: only shown when this project is expanded
-          ;; Default: show active project when windows_expanded_project is empty
+          ;; Windows list - shown when this project is expanded
+          ;; Expanded when: "all" mode OR project name is in the expanded array
           (revealer
-            :reveal {windows_expanded_project == project.name || (windows_expanded_project == "" && project.is_active)}
+            :reveal {windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")}
             :transition "slidedown"
             :duration "150ms"
             (box
@@ -7457,6 +7546,48 @@ in
         border-radius: 3px;
       }
 
+      /* Opacity Control Slider */
+      .opacity-control {
+        margin-left: 8px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background-color: rgba(49, 50, 68, 0.3);
+      }
+
+      .opacity-icon {
+        font-size: 12px;
+        color: ${mocha.subtext0};
+        margin-right: 4px;
+      }
+
+      .opacity-slider {
+        min-width: 60px;
+        min-height: 8px;
+      }
+
+      .opacity-slider trough {
+        min-height: 4px;
+        background-color: rgba(49, 50, 68, 0.6);
+        border-radius: 2px;
+      }
+
+      .opacity-slider highlight {
+        background-color: ${mocha.blue};
+        border-radius: 2px;
+      }
+
+      .opacity-slider slider {
+        min-width: 10px;
+        min-height: 10px;
+        background-color: ${mocha.lavender};
+        border-radius: 50%;
+        margin: -3px;
+      }
+
+      .opacity-slider slider:hover {
+        background-color: ${mocha.blue};
+      }
+
       /* UX Enhancement: Workspace Pills (CSS only test) */
       .workspace-pills-scroll {
         margin-top: 6px;
@@ -7660,6 +7791,29 @@ in
       .windows-actions-row {
         padding: 4px 8px;
         margin-bottom: 8px;
+      }
+
+      .expand-all-btn {
+        padding: 4px 10px;
+        background-color: rgba(137, 180, 250, 0.15);
+        border: 1px solid ${mocha.blue};
+        border-radius: 4px;
+        transition: background-color 0.15s ease;
+      }
+
+      .expand-all-btn:hover {
+        background-color: rgba(137, 180, 250, 0.3);
+      }
+
+      .expand-all-icon {
+        color: ${mocha.blue};
+        font-size: 12px;
+      }
+
+      .expand-all-text {
+        color: ${mocha.text};
+        font-size: 11px;
+        font-weight: 500;
       }
 
       .close-all-btn {
