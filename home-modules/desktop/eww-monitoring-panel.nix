@@ -97,34 +97,22 @@ let
   '';
 
   # Toggle script for panel visibility
-  # Use eww active-windows to check if panel is actually open (not just defined)
-  # Feature 101: Fixed to prevent spawning duplicate daemons
+  # Uses CSS-based visibility (panel_visible variable) instead of open/close
+  # which was crashing the eww daemon under rapid toggling
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
-    set -euo pipefail
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
-    # eww socket path is based on hash of config path
-    SOCKET="/run/user/$(id -u)/eww-server_58b4a301d946d189"
 
-    # Check if eww daemon socket exists and service is running
-    # If socket missing or stale, restart the service
-    if [[ ! -S "$SOCKET" ]] || ! systemctl --user is-active --quiet eww-monitoring-panel.service; then
-      # Kill any orphan eww processes for this config
-      ${pkgs.procps}/bin/pkill -9 -f "eww.*eww-monitoring-panel" 2>/dev/null || true
-      rm -f "$SOCKET" 2>/dev/null || true
-      systemctl --user restart eww-monitoring-panel.service
-      sleep 2
-    fi
+    # Get current visibility state
+    VISIBLE=$($EWW --config "$CONFIG" get panel_visible 2>/dev/null)
 
-    # Now safely toggle using the service-managed daemon
-    if $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Panel is open - close it
-      $EWW --config "$CONFIG" close monitoring-panel
+    # Toggle: true -> false, false/empty -> true
+    if [[ "$VISIBLE" == "true" ]]; then
+      $EWW --config "$CONFIG" update panel_visible=false
     else
-      # Panel is closed - open it
-      $EWW --config "$CONFIG" open monitoring-panel
+      $EWW --config "$CONFIG" update panel_visible=true
     fi
   '';
 
@@ -171,6 +159,52 @@ let
 
     # Return focus to previous window
     ${pkgs.sway}/bin/swaymsg 'focus prev'
+  '';
+
+  # Wrapper script: Switch monitoring panel tab by index
+  # Usage: monitor-panel-tab <index>
+  # Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+  # This centralizes the variable name so Sway keybindings don't need to know it
+  monitorPanelTabScript = pkgs.writeShellScriptBin "monitor-panel-tab" ''
+    #!${pkgs.bash}/bin/bash
+    # Switch monitoring panel to specified tab index
+    # Usage: monitor-panel-tab <index>
+    # Index: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+
+    INDEX="''${1:-0}"
+
+    # Validate index is 0-5
+    if [[ ! "$INDEX" =~ ^[0-5]$ ]]; then
+      echo "Error: Invalid tab index '$INDEX'. Must be 0-5." >&2
+      exit 1
+    fi
+
+    ${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" update current_view_index="$INDEX"
+  '';
+
+  # Wrapper script: Get current monitoring panel view index
+  # Usage: monitor-panel-get-view
+  # Returns: 0-5 (or empty if panel not running)
+  # Used by Sway keybindings for conditional routing (e.g., projects tab-specific actions)
+  monitorPanelGetViewScript = pkgs.writeShellScriptBin "monitor-panel-get-view" ''
+    #!${pkgs.bash}/bin/bash
+    # Get current monitoring panel view index
+    # Returns: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+
+    ${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null || echo "-1"
+  '';
+
+  # Wrapper script: Check if current view is projects tab
+  # Usage: monitor-panel-is-projects && do_something
+  # Exit code: 0 if on projects tab, 1 otherwise
+  # Simplifies Sway keybinding conditionals
+  monitorPanelIsProjectsScript = pkgs.writeShellScriptBin "monitor-panel-is-projects" ''
+    #!${pkgs.bash}/bin/bash
+    # Check if monitoring panel is on projects tab (index 1)
+    # Exit code: 0 = on projects tab, 1 = not on projects tab
+
+    VIEW=$(${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null)
+    [ "$VIEW" = "1" ]
   '';
 
   # Feature 094: Project CRUD handler wrapper (T037)
@@ -2202,11 +2236,13 @@ print(json.dumps(result))
     fi
   '';
 
-  # SwayNC toggle wrapper
+  # SwayNC toggle wrapper - DISABLED pending removal
+  # Notification center is being removed, so this is now a no-op
   swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
     #!${pkgs.bash}/bin/bash
-    # Toggle SwayNC notification center
-    ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw
+    # DISABLED: Notification center is being removed
+    # This is now a no-op to prevent any interaction
+    exit 0
   '';
 
   # Feature 088 US3: Service restart script with sudo handling (T025)
@@ -2264,7 +2300,7 @@ print(json.dumps(result))
 
     # Get current state
     current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "0")
-    current_view=$($EWW_CMD get current_view 2>/dev/null || echo "windows")
+    current_view_index=$($EWW_CMD get current_view_index 2>/dev/null || echo "0")
     selected_window=$($EWW_CMD get selected_window_id 2>/dev/null || echo "0")
 
     # Get window count from monitoring data
@@ -2741,8 +2777,8 @@ print(json.dumps(result))
     # Show success notification
     ${pkgs.libnotify}/bin/notify-send -t 3000 "Trace Started" "Tracing window: $WINDOW_TITLE\nTrace ID: $TRACE_ID"
 
-    # Switch to Traces tab to show the new trace
-    $EWW_CMD update current_view=traces
+    # Switch to Traces tab to show the new trace (index 5)
+    $EWW_CMD update current_view_index=5
   '';
 
   # Feature 101: Fetch trace events for expanded trace card
@@ -2825,9 +2861,9 @@ print(json.dumps(result))
       exit 0
     fi
 
-    # Set highlight state and switch to traces tab
+    # Set highlight state and switch to traces tab (index 5)
     $EWW_CMD update highlight_trace_id="$TRACE_ID"
-    $EWW_CMD update current_view=traces
+    $EWW_CMD update current_view_index=5
 
     # Clear highlight after 2 seconds
     (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update highlight_trace_id="") &
@@ -2843,9 +2879,9 @@ print(json.dumps(result))
       exit 0
     fi
 
-    # Set highlight state and switch to events tab
+    # Set highlight state and switch to events tab (index 4)
     $EWW_CMD update highlight_event_id="$EVENT_ID"
-    $EWW_CMD update current_view=events
+    $EWW_CMD update current_view_index=4
 
     # Clear highlight after 2 seconds
     (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update highlight_event_id="") &
@@ -2898,18 +2934,19 @@ print(json.dumps(result))
   '';
 
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
+  # Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
     # Debug: log the key to journal
     echo "Monitoring panel key pressed: '$KEY'" | ${pkgs.systemd}/bin/systemd-cat -t eww-keyhandler
     case "$KEY" in
-      1|Alt+1) $EWW_CMD update current_view=windows ;;
-      2|Alt+2) $EWW_CMD update current_view=projects ;;
-      3|Alt+3) $EWW_CMD update current_view=apps ;;
-      4|Alt+4) $EWW_CMD update current_view=health ;;
-      5|Alt+5) $EWW_CMD update current_view=events ;;
-      6|Alt+6) $EWW_CMD update current_view=traces ;;
+      1|Alt+1) $EWW_CMD update current_view_index=0 ;;
+      2|Alt+2) $EWW_CMD update current_view_index=1 ;;
+      3|Alt+3) $EWW_CMD update current_view_index=2 ;;
+      4|Alt+4) $EWW_CMD update current_view_index=3 ;;
+      5|Alt+5) $EWW_CMD update current_view_index=4 ;;
+      6|Alt+6) $EWW_CMD update current_view_index=5 ;;
       Escape|q) $EWW_CMD close monitoring-panel ;;
     esac
   '';
@@ -2948,6 +2985,9 @@ in
       toggleScript          # Toggle visibility script
       toggleFocusScript     # Feature 086: Toggle focus script
       exitMonitorModeScript # Feature 086: Exit monitoring mode
+      monitorPanelTabScript       # Tab switching wrapper (centralizes variable name)
+      monitorPanelGetViewScript   # Get current view index
+      monitorPanelIsProjectsScript # Check if on projects tab (for conditional routing)
       monitorPanelNavScript # Feature 086: Navigation within panel
       swayNCToggleScript    # SwayNC toggle with mutual exclusivity
       restartServiceScript  # Feature 088 US3: Service restart script
@@ -2995,68 +3035,78 @@ in
       ;; Feature 085: Sway Monitoring Widget
       ;; Build: 2025-11-29 02:40 UTC - Fix action icons
 
-      ;; Deflisten: Real-time event stream for Windows view (<100ms latency)
-      ;; Backend subscribes to Sway window/workspace/output events
-      ;; Automatic reconnection with exponential backoff
-      ;; Heartbeat every 5s to detect stale connections
-      (deflisten monitoring_data
+      ;; Defpoll: Windows view data (3s refresh)
+      ;; Changed from deflisten to defpoll to prevent process spawning issues
+      ;; Only runs when Windows tab is active (index 0)
+      ;; Note: 3s interval reduces "channel closed" errors while still providing reasonable updates
+      (defpoll monitoring_data
+        :interval "3s"
+        :run-while {current_view_index == 0}
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
+        `${monitoringDataScript}/bin/monitoring-data-backend`)
 
       ;; Defpoll: Projects view data (5s refresh)
+      ;; Only runs when Projects tab is active (index 1) to reduce CPU/process overhead
       (defpoll projects_data
         :interval "5s"
+        :run-while {current_view_index == 1}
         :initial "{\"status\":\"loading\",\"projects\":[],\"project_count\":0,\"active_project\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode projects`)
 
       ;; Defpoll: Apps view data (5s refresh)
+      ;; Only runs when Apps tab is active (index 2)
       (defpoll apps_data
         :interval "5s"
+        :run-while {current_view_index == 2}
         :initial "{\"status\":\"loading\",\"apps\":[],\"app_count\":0}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode apps`)
 
-      ;; Defpoll: Health view data (5s refresh)
+      ;; Defpoll: Health view data (30s refresh)
+      ;; Only runs when Health tab is active (index 3) - queries systemctl which can be slow
       (defpoll health_data
-        :interval "5s"
+        :interval "30s"
+        :run-while {current_view_index == 3}
         :initial "{\"status\":\"loading\",\"health\":{}}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
 
       ;; Feature 101: Defpoll: Window traces view data (2s refresh)
+      ;; Only runs when Traces tab is active (index 5)
       ;; Lists active and stopped traces from daemon's WindowTracer
       (defpoll traces_data
         :interval "2s"
+        :run-while {current_view_index == 5}
         :initial "{\"status\":\"loading\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode traces`)
 
-      ;; Feature 107: Decoupled spinner animation via defpoll
-      ;; Only runs when monitoring_data indicates a "working" badge exists
-      ;; Uses separate spinner_frame variable to avoid full data refresh overhead
-      ;; Reduces CPU from 5-10% to <1% during animation
-      (defpoll _spinner_driver
-        :interval "120ms"
-        :run-while {monitoring_data.has_working_badge ?: false}
-        :onchange "eww --config $HOME/.config/eww-monitoring-panel update spinner_frame='$value'"
-        `/etc/nixos/scripts/eww/spinner-update.sh`)
+      ;; Feature 107: Spinner animation variable
+      ;; Changed from defpoll to defvar to prevent process issues
+      ;; Static spinner - no animation but no resource usage
+      (defvar spinner_frame "⠋")
 
-      ;; Feature 092: Deflisten: Real-time Sway event log stream
-      ;; Subscribes to window/workspace/output IPC events with <100ms latency
-      ;; Maintains circular buffer of 500 most recent events (FIFO eviction)
-      (deflisten events_data
+      ;; Feature 092: Defpoll: Sway event log (2s refresh)
+      ;; Changed from deflisten to defpoll to prevent process spawning issues
+      ;; Only runs when Events tab is active (index 4)
+      (defpoll events_data
+        :interval "2s"
+        :run-while {current_view_index == 4}
         :initial "{\"status\":\"connecting\",\"events\":[],\"event_count\":0,\"daemon_available\":true,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\"}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode events --listen`)
+        `${monitoringDataScript}/bin/monitoring-data-backend --mode events`)
 
-      ;; Feature 094 T039: Deflisten: Real-time form validation stream
-      ;; Monitors form variable changes and streams validation results with 300ms debouncing
-      ;; Provides live validation feedback for project edit forms
-      (deflisten validation_state
-        :initial "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}"
-        `${formValidationStreamScript}/bin/form-validation-stream`)
+      ;; Feature 094 T039: Form validation state
+      ;; Changed from deflisten to defvar - validation is rarely used and causes process issues
+      ;; Validation handled via explicit update commands when forms are opened
+      (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}")
 
-      ;; Current view state (windows, projects, apps, health, events)
-      (defvar current_view "windows")
+      ;; Current view state - INDEX based (0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces)
+      ;; eww stack widget requires integer index for :selected attribute
+      (defvar current_view_index 0)
 
       ;; Selected window ID for detail view (0 = none selected)
       (defvar selected_window_id 0)
+
+      ;; Panel visibility state (toggled by Mod+M)
+      ;; Uses CSS-based hiding instead of open/close which crashes eww daemon
+      (defvar panel_visible true)
 
       ;; Feature 086: Panel focus state (updated by toggle-panel-focus script)
       ;; When true, panel has keyboard focus and shows visual indicator
@@ -3113,11 +3163,6 @@ in
 
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
-
-      ;; Feature 107: Decoupled spinner animation variable
-      ;; Updated independently from monitoring_data via defpoll when working badge exists
-      ;; Reduces CPU overhead from 5-10% (full refresh) to <1% (single var update)
-      (defvar spinner_frame "⠋")
 
       ;; Panel transparency control (0-100, default 35%)
       ;; Adjustable via slider in header - persists across tabs
@@ -3346,27 +3391,32 @@ in
       ;; Main panel content widget with keyboard navigation
       ;; Feature 086: Dynamic class changes when panel has focus
       ;; Dynamic opacity controlled by panel_opacity variable (10-100%)
+      ;; Note: Keyboard input is handled via Sway mode (📊 Panel), not eventbox
+      ;; since eww layer-shell windows cannot capture keyboard events directly
+      ;; Visibility controlled by panel_visible variable (CSS-based toggle, avoids daemon crashes)
       (defwidget monitoring-panel-content []
-        (eventbox
-          :onkeypress "${handleKeyScript} {}"
-          :cursor "default"
-          (box
-            :class {panel_focused ? "panel-container focused" : "panel-container"}
-            :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
-            :orientation "v"
-            :space-evenly false
-            (panel-header)
-            (panel-body)
-            (panel-footer)
-            ;; Feature 094 T040: Conflict resolution dialog overlay
-            (conflict-resolution-dialog)
-            ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-            (success-notification-toast)
-            ;; Feature 096 T019: Error and warning notification overlays
-            (error-notification-toast)
-            (warning-notification-toast))))
+        (box
+          :visible panel_visible
+          (eventbox
+            :cursor "default"
+            (box
+              :class {panel_focused ? "panel-container focused" : "panel-container"}
+              :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
+              :orientation "v"
+              :space-evenly false
+              (panel-header)
+              (panel-body)
+              (panel-footer)
+              ;; Feature 094 T040: Conflict resolution dialog overlay
+              (conflict-resolution-dialog)
+              ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
+              (success-notification-toast)
+              ;; Feature 096 T019: Error and warning notification overlays
+              (error-notification-toast)
+              (warning-notification-toast)))))
 
       ;; Panel header with tab navigation
+      ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
       (defwidget panel-header []
         (box
           :class "panel-header"
@@ -3379,46 +3429,46 @@ in
             :space-evenly true
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=windows"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=0"
               (button
-                :class "tab ''${current_view == 'windows' ? 'active' : ""}"
+                :class "tab ''${current_view_index == 0 ? 'active' : ""}"
                 :tooltip "Windows (Alt+1)"
                 "󰖯"))
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=projects"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=1"
               (button
-                :class "tab ''${current_view == 'projects' ? 'active' : ""}"
+                :class "tab ''${current_view_index == 1 ? 'active' : ""}"
                 :tooltip "Projects (Alt+2)"
                 "󱂬"))
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=apps"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=2"
               (button
-                :class "tab ''${current_view == 'apps' ? 'active' : ""}"
+                :class "tab ''${current_view_index == 2 ? 'active' : ""}"
                 :tooltip "Apps (Alt+3)"
                 "󰀻"))
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=health"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=3"
               (button
-                :class "tab ''${current_view == 'health' ? 'active' : ""}"
+                :class "tab ''${current_view_index == 3 ? 'active' : ""}"
                 :tooltip "Health (Alt+4)"
                 "󰓙"))
             ;; Feature 092: Logs tab (5th tab)
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=events"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=4"
               (button
-                :class "tab ''${current_view == 'events' ? 'active' : ""}"
+                :class "tab ''${current_view_index == 4 ? 'active' : ""}"
                 :tooltip "Logs (Alt+5)"
                 "󰌱"))
             ;; Feature 101: Traces tab (6th tab)
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=traces"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=5"
               (button
-                :class "tab ''${current_view == 'traces' ? 'active' : ""}"
+                :class "tab ''${current_view_index == 5 ? 'active' : ""}"
                 :tooltip "Traces (Alt+6)"
                 "󱂛"))
             ;; Feature 086: Focus mode indicator badge
@@ -3435,17 +3485,18 @@ in
               :orientation "h"
               :space-evenly true
               :hexpand true
+              ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
               (label
                 :class "count-badge"
-                :text "''${current_view == 'windows' ? monitoring_data.project_count ?: 0 : current_view == 'projects' ? projects_data.project_count ?: 0 : current_view == 'apps' ? apps_data.app_count ?: 0 : 0} ''${current_view == 'windows' || current_view == 'projects' ? 'PRJ' : current_view == 'apps' ? 'APPS' : 'ITEMS'}")
+                :text "''${current_view_index == 0 ? monitoring_data.project_count ?: 0 : current_view_index == 1 ? projects_data.project_count ?: 0 : current_view_index == 2 ? apps_data.app_count ?: 0 : 0} ''${current_view_index == 0 || current_view_index == 1 ? 'PRJ' : current_view_index == 2 ? 'APPS' : 'ITEMS'}")
               (label
                 :class "count-badge"
-                :text "''${current_view == 'windows' ? monitoring_data.workspace_count ?: 0 : 0} WS"
-                :visible {current_view == "windows"})
+                :text "''${current_view_index == 0 ? monitoring_data.workspace_count ?: 0 : 0} WS"
+                :visible {current_view_index == 0})
               (label
                 :class "count-badge"
-                :text "''${current_view == 'windows' ? monitoring_data.window_count ?: 0 : 0} WIN"
-                :visible {current_view == "windows"}))
+                :text "''${current_view_index == 0 ? monitoring_data.window_count ?: 0 : 0} WIN"
+                :visible {current_view_index == 0}))
             ;; Opacity slider - small unobtrusive control
             (box
               :class "opacity-control"
@@ -3461,12 +3512,13 @@ in
                 :max 100
                 :value panel_opacity
                 :orientation "h"
+                :round-digits 0
                 :onchange "eww --config $HOME/.config/eww-monitoring-panel update panel_opacity={}")))
           ;; UX Enhancement: Workspace Pills - full implementation
           (scroll
             :hscroll true
             :vscroll false
-            :visible {current_view == "windows"}
+            :visible {current_view_index == 0}
             :class "workspace-pills-scroll"
             (box
               :class "workspace-pills"
@@ -3482,30 +3534,19 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses revealer for proper tab view switching with smooth transitions
+      ;; Uses overlay with conditional visibility - revealers cause height collapse issues
+      ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
       (defwidget panel-body []
-        (box
-          :class "panel-body"
-          :orientation "v"
+        (overlay
           :vexpand true
-          ;; Hidden widget to force defpoll/deflisten initialization
-          ;; Without this, variables only start when their widget is first rendered
-          ;; This ensures health_data, events_data, traces_data start polling immediately
-          (box
-            :visible false
-            (label :text {health_data.status ?: ""})
-            (label :text {events_data.status ?: ""})
-            (label :text {traces_data.status ?: ""}))
-          ;; Tab views using overlay box with visibility toggling
-          ;; Use overlay widget so views stack on top of each other, only visible one shows
-          (overlay
-            :vexpand true
-            (box :class "view-container" :vexpand true :visible {current_view == "windows"} (windows-view))
-            (box :class "view-container" :vexpand true :visible {current_view == "projects"} (projects-view))
-            (box :class "view-container" :vexpand true :visible {current_view == "apps"} (apps-view))
-            (box :class "view-container" :vexpand true :visible {current_view == "health"} (health-view))
-            (box :class "view-container" :vexpand true :visible {current_view == "events"} (events-view))
-            (box :class "view-container" :vexpand true :visible {current_view == "traces"} (traces-view)))))
+          ;; Each view occupies the full overlay space, only one visible at a time
+          ;; Using overlay ensures proper height allocation for scrollable content
+          (box :class "view-container" :vexpand true :visible {current_view_index == 0} (windows-view))
+          (box :class "view-container" :vexpand true :visible {current_view_index == 1} (projects-view))
+          (box :class "view-container" :vexpand true :visible {current_view_index == 2} (apps-view))
+          (box :class "view-container" :vexpand true :visible {current_view_index == 3} (health-view))
+          (box :class "view-container" :vexpand true :visible {current_view_index == 4} (events-view))
+          (box :class "view-container" :vexpand true :visible {current_view_index == 5} (traces-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -3828,7 +3869,7 @@ in
                   :text "Window JSON (ID: ''${window.id})")
                 (eventbox
                   :cursor "pointer"
-                  :onclick "${copyWindowJsonScript} ''${window.json_base64} ''${window.id} &"
+                  :onclick "notify-send 'JSON Preview Disabled' 'JSON copy is temporarily disabled to reduce CPU usage' &"
                   :tooltip "Copy JSON to clipboard"
                   (label
                     :class "json-copy-btn''${copied_window_id == window.id ? ' copied' : ""}"
@@ -3842,7 +3883,7 @@ in
                 (label
                   :class "json-content"
                   :halign "start"
-                  :markup "''${window.json_repr}"
+                  :text "(JSON preview disabled to reduce CPU)"
                   :wrap false))))
           ;; Feature 099: Environment variables panel (slides down when env icon is clicked)
           (revealer
@@ -4925,7 +4966,7 @@ in
                     (label
                       :class "json-content"
                       :halign "start"
-                      :markup "''${project.json_repr}"
+                      :text "(JSON preview disabled to reduce CPU)"
                       :wrap false)))))
             ;; Feature 094: Inline edit form (T038)
             (revealer
@@ -5639,7 +5680,8 @@ in
             :space-evenly false
             (checkbox
               :checked create_form_remote_enabled
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled={}")
+              :onchecked "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled=true"
+              :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled=false")
             (label
               :class "field-label"
               :halign "start"
@@ -5799,7 +5841,8 @@ in
                   (checkbox
                     :class "force-delete-checkbox"
                     :checked delete_force
-                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update delete_force={}")
+                    :onchecked "eww --config $HOME/.config/eww-monitoring-panel update delete_force=true"
+                    :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update delete_force=false")
                   (label
                     :class "force-delete-label"
                     :halign "start"
@@ -7485,8 +7528,8 @@ in
       }
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
+      /* Background controlled by inline :style for dynamic opacity slider */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.35);  /* 35% transparent Catppuccin base */
         border-radius: 12px;
         padding: 6px;
         margin: 4px;
@@ -7500,12 +7543,12 @@ in
       }
 
       /* Feature 086: Focused state with glowing border effect */
+      /* Background still controlled by inline :style - just add border/shadow effects */
       .panel-container.focused {
         border: 2px solid ${mocha.mauve};
         box-shadow: 0 0 20px rgba(203, 166, 247, 0.4),
                     0 0 40px rgba(203, 166, 247, 0.2),
                     inset 0 0 15px rgba(203, 166, 247, 0.05);
-        background-color: rgba(30, 30, 46, 0.70);
       }
 
       /* Focus mode indicator badge */
@@ -7690,7 +7733,7 @@ in
 
       /* View container - transparent since revealers properly hide content */
       .view-container {
-        background-color: transparent;
+        background-color: ${mocha.base};
       }
 
       .content-container {

@@ -148,10 +148,12 @@ in
     # Additional bindings injected via monitoringPanelBindings below
 
     # Feature 085: Monitoring panel view switching (Alt+1-4)
-    "Alt+1" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows";
-    "Alt+2" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=projects";
-    "Alt+3" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps";
-    "Alt+4" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=health";
+    # Uses wrapper script to centralize variable name management
+    # Index: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+    "Alt+1" = "exec monitor-panel-tab 0";
+    "Alt+2" = "exec monitor-panel-tab 1";
+    "Alt+3" = "exec monitor-panel-tab 2";
+    "Alt+4" = "exec monitor-panel-tab 3";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
