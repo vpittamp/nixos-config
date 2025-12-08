@@ -326,19 +326,17 @@
   }
 
   .monitoring-toggle-active {
-    background: linear-gradient(135deg, rgba(203, 166, 247, 0.35), rgba(137, 180, 250, 0.25));
+    background-color: rgba(203, 166, 247, 0.3);
     border: 1px solid rgba(203, 166, 247, 0.8);
-    box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                inset 0 0 8px rgba(203, 166, 247, 0.2);
+    box-shadow: 0 0 10px rgba(203, 166, 247, 0.4);
     animation: pulse-glow 3s ease-in-out infinite;
   }
 
   .monitoring-toggle-active:hover {
-    background: linear-gradient(135deg, rgba(203, 166, 247, 0.45), rgba(137, 180, 250, 0.35));
+    background-color: rgba(203, 166, 247, 0.45);
     border-color: rgba(203, 166, 247, 0.95);
-    box-shadow: 0 0 16px rgba(203, 166, 247, 0.7),
-                0 4px 12px rgba(203, 166, 247, 0.4),
-                inset 0 0 12px rgba(203, 166, 247, 0.3);
+    box-shadow: 0 0 14px rgba(203, 166, 247, 0.5);
+    animation-play-state: paused;
   }
 
   .monitoring-toggle-icon {
@@ -357,18 +355,17 @@
                  0 0 4px rgba(203, 166, 247, 0.6);
   }
 
+  /* GTK3-compatible pulse animation using opacity + background-color + border-color */
   @keyframes pulse-glow {
-    0% {
-      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                  inset 0 0 8px rgba(203, 166, 247, 0.2);
+    0%, 100% {
+      opacity: 1.0;
+      background-color: rgba(203, 166, 247, 0.3);
+      border-color: rgba(203, 166, 247, 0.8);
     }
     50% {
-      box-shadow: 0 0 18px rgba(203, 166, 247, 0.7),
-                  inset 0 0 12px rgba(203, 166, 247, 0.3);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                  inset 0 0 8px rgba(203, 166, 247, 0.2);
+      opacity: 0.85;
+      background-color: rgba(203, 166, 247, 0.45);
+      border-color: rgba(137, 180, 250, 0.9);
     }
   }
 
@@ -387,19 +384,17 @@
   }
 
   .notification-toggle-active {
-    background: linear-gradient(135deg, rgba(137, 180, 250, 0.35), rgba(166, 227, 161, 0.25));
+    background-color: rgba(137, 180, 250, 0.3);
     border: 1px solid rgba(137, 180, 250, 0.8);
-    box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                inset 0 0 8px rgba(137, 180, 250, 0.2);
+    box-shadow: 0 0 10px rgba(137, 180, 250, 0.4);
     animation: pulse-notification 3s ease-in-out infinite;
   }
 
   .notification-toggle-active:hover {
-    background: linear-gradient(135deg, rgba(137, 180, 250, 0.45), rgba(166, 227, 161, 0.35));
+    background-color: rgba(137, 180, 250, 0.45);
     border-color: rgba(137, 180, 250, 0.95);
-    box-shadow: 0 0 16px rgba(137, 180, 250, 0.7),
-                0 4px 12px rgba(137, 180, 250, 0.4),
-                inset 0 0 12px rgba(137, 180, 250, 0.3);
+    box-shadow: 0 0 14px rgba(137, 180, 250, 0.5);
+    animation-play-state: paused;
   }
 
   .notification-toggle-icon {
@@ -418,44 +413,43 @@
                  0 0 4px rgba(137, 180, 250, 0.6);
   }
 
+  /* GTK3-compatible pulse animation using opacity + background-color + border-color */
   @keyframes pulse-notification {
-    0% {
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                  inset 0 0 8px rgba(137, 180, 250, 0.2);
+    0%, 100% {
+      opacity: 1.0;
+      background-color: rgba(137, 180, 250, 0.3);
+      border-color: rgba(137, 180, 250, 0.8);
     }
     50% {
-      box-shadow: 0 0 18px rgba(137, 180, 250, 0.7),
-                  inset 0 0 12px rgba(137, 180, 250, 0.3);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                  inset 0 0 8px rgba(137, 180, 250, 0.2);
+      opacity: 0.85;
+      background-color: rgba(137, 180, 250, 0.45);
+      border-color: rgba(166, 227, 161, 0.9);
     }
   }
 
   /* Feature 110: Notification badge styling */
 
-  /* Has unread notifications - red/peach gradient glow */
+  /* Has unread notifications - animated pulse using GTK-compatible properties */
+  /* Uses opacity + background-color + border-color (all animatable in GTK3) */
   .notification-has-unread {
-    background: linear-gradient(135deg, rgba(243, 139, 168, 0.25), rgba(250, 179, 135, 0.2));
+    background-color: rgba(243, 139, 168, 0.25);
     border: 1px solid rgba(243, 139, 168, 0.7);
-    box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                inset 0 0 8px rgba(243, 139, 168, 0.15);
+    /* Static box-shadow for glow effect (not animated) */
+    box-shadow: 0 0 10px rgba(243, 139, 168, 0.35);
     animation: pulse-unread 2s ease-in-out infinite;
   }
 
   .notification-has-unread:hover {
-    background: linear-gradient(135deg, rgba(243, 139, 168, 0.35), rgba(250, 179, 135, 0.3));
-    border-color: rgba(243, 139, 168, 0.9);
-    box-shadow: 0 0 16px rgba(243, 139, 168, 0.6),
-                0 4px 12px rgba(243, 139, 168, 0.3),
-                inset 0 0 12px rgba(243, 139, 168, 0.2);
+    background-color: rgba(243, 139, 168, 0.4);
+    border-color: rgba(250, 179, 135, 0.95);
+    box-shadow: 0 0 14px rgba(243, 139, 168, 0.5);
+    /* Pause animation on hover for cleaner interaction */
+    animation-play-state: paused;
   }
 
   .notification-has-unread .notification-toggle-icon {
     color: #f38ba8;
-    text-shadow: 0 0 8px rgba(243, 139, 168, 0.8),
-                 0 0 4px rgba(243, 139, 168, 0.5);
+    text-shadow: 0 0 6px rgba(243, 139, 168, 0.7);
   }
 
   /* DND mode styling - muted gray */
@@ -494,19 +488,19 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
-  /* Pulsing glow animation for unread notifications */
+  /* Pulsing animation for unread notifications */
+  /* Uses GTK3-compatible animatable properties: opacity, background-color, border-color */
+  /* Research: box-shadow animation unreliable in Eww/GTK, these properties work consistently */
   @keyframes pulse-unread {
-    0% {
-      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                  inset 0 0 8px rgba(243, 139, 168, 0.15);
+    0%, 100% {
+      opacity: 1.0;
+      background-color: rgba(243, 139, 168, 0.25);
+      border-color: rgba(243, 139, 168, 0.7);
     }
     50% {
-      box-shadow: 0 0 18px rgba(243, 139, 168, 0.6),
-                  inset 0 0 12px rgba(243, 139, 168, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                  inset 0 0 8px rgba(243, 139, 168, 0.15);
+      opacity: 0.8;
+      background-color: rgba(243, 139, 168, 0.4);
+      border-color: rgba(250, 179, 135, 0.9);
     }
   }
 ''
