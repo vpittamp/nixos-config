@@ -218,6 +218,7 @@ in
 
           # Reduce GPU process crashes
           "layers.gpu-process.enabled" = false;  # Disable GPU process
+          "layers.acceleration.force-enabled" = lib.mkForce false;  # Match software rendering mode
           "gfx.canvas.azure.backends" = "skia";  # Use Skia backend instead of Cairo
 
           # Disable hardware video decoding on M1 (override above settings)

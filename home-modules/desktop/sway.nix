@@ -412,6 +412,13 @@ in
         titlebar = false;
       };
 
+      # Focus behavior - must be in config block to override home-manager defaults
+      # (extraConfig settings come after home-manager defaults and don't override them)
+      focus = {
+        followMouse = "no";  # Focus only changes on mouse click, not hover
+        mouseWarping = "output";  # Move cursor to output center on keyboard focus change
+      };
+
       # Output configuration (FR-005, FR-006)
       # Conditional configuration for headless vs physical displays
       output = if isHeadless then {
@@ -747,17 +754,8 @@ in
       # Behavior: Workspace automatically switches to show newly launched app
       focus_on_window_activation focus
 
-      # Mouse focus behavior - focus on click, not hover
-      # no = focus only changes on mouse click (prevents hover-based focus stealing)
-      # yes = focus changes when mouse hovers over window (default Sway behavior)
-      # always = focus follows mouse even for unfocused outputs
-      focus_follows_mouse no
-
-      # Mouse warping - move cursor when switching focus via keyboard
-      # none = cursor stays where it is (natural keyboard navigation)
-      # output = cursor moves to center of output when switching focus (BEST for multi-monitor)
-      # container = cursor moves to center of container when switching focus
-      mouse_warping output
+      # NOTE: focus_follows_mouse and mouse_warping are now set in config.focus block
+      # to properly override home-manager defaults (see lines 415-420)
 
       # Workspace names - numbers only for clean display
       set $ws1 "1"
