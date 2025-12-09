@@ -357,7 +357,7 @@
 
   /* GTK3-compatible pulse animation using opacity + background-color + border-color */
   @keyframes pulse-glow {
-    0%, 100% {
+    0% {
       opacity: 1.0;
       background-color: rgba(203, 166, 247, 0.3);
       border-color: rgba(203, 166, 247, 0.8);
@@ -366,6 +366,11 @@
       opacity: 0.85;
       background-color: rgba(203, 166, 247, 0.45);
       border-color: rgba(137, 180, 250, 0.9);
+    }
+    100% {
+      opacity: 1.0;
+      background-color: rgba(203, 166, 247, 0.3);
+      border-color: rgba(203, 166, 247, 0.8);
     }
   }
 
@@ -415,7 +420,7 @@
 
   /* GTK3-compatible pulse animation using opacity + background-color + border-color */
   @keyframes pulse-notification {
-    0%, 100% {
+    0% {
       opacity: 1.0;
       background-color: rgba(137, 180, 250, 0.3);
       border-color: rgba(137, 180, 250, 0.8);
@@ -424,6 +429,11 @@
       opacity: 0.85;
       background-color: rgba(137, 180, 250, 0.45);
       border-color: rgba(166, 227, 161, 0.9);
+    }
+    100% {
+      opacity: 1.0;
+      background-color: rgba(137, 180, 250, 0.3);
+      border-color: rgba(137, 180, 250, 0.8);
     }
   }
 
@@ -491,8 +501,9 @@
   /* Pulsing animation for unread notifications */
   /* Uses GTK3-compatible animatable properties: opacity, background-color, border-color */
   /* Research: box-shadow animation unreliable in Eww/GTK, these properties work consistently */
+  /* Note: GTK CSS doesn't support combined keyframe syntax (0%, 100%), must use separate blocks */
   @keyframes pulse-unread {
-    0%, 100% {
+    0% {
       opacity: 1.0;
       background-color: rgba(243, 139, 168, 0.25);
       border-color: rgba(243, 139, 168, 0.7);
@@ -501,6 +512,11 @@
       opacity: 0.8;
       background-color: rgba(243, 139, 168, 0.4);
       border-color: rgba(250, 179, 135, 0.9);
+    }
+    100% {
+      opacity: 1.0;
+      background-color: rgba(243, 139, 168, 0.25);
+      border-color: rgba(243, 139, 168, 0.7);
     }
   }
 ''

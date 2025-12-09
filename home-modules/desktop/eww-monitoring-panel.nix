@@ -8022,17 +8022,39 @@ in
         /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 095: Working state - animated spinner with cool teal glow */
+      /* Feature 095: Working state - animated pulse with teal glow */
+      /* Uses GTK3-compatible CSS animation (opacity + background-color + border-color) */
+      /* No polling needed - pure CSS animation is lightweight and stable */
       .badge-working {
         color: ${mocha.base};
-        background: linear-gradient(135deg, ${mocha.teal}, ${mocha.sky});
+        background-color: rgba(148, 226, 213, 0.9);
         border: 1px solid ${mocha.teal};
+        /* Static box-shadow for glow effect (not animated - GTK limitation) */
         box-shadow: 0 0 10px rgba(148, 226, 213, 0.7),
                     0 0 20px rgba(148, 226, 213, 0.4),
-                    0 0 30px rgba(148, 226, 213, 0.2),
                     inset 0 1px 0 rgba(255, 255, 255, 0.3);
-        /* GTK CSS doesn't support text-shadow or letter-spacing */
         font-size: 11px;
+        /* CSS animation - runs on GPU, no polling required */
+        animation: badge-pulse 1.5s ease-in-out infinite;
+      }
+
+      /* GTK3-compatible keyframes using separate 0% and 100% blocks */
+      @keyframes badge-pulse {
+        0% {
+          opacity: 1.0;
+          background-color: rgba(148, 226, 213, 0.9);
+          border-color: rgba(148, 226, 213, 1.0);
+        }
+        50% {
+          opacity: 0.7;
+          background-color: rgba(137, 220, 235, 0.95);
+          border-color: rgba(137, 220, 235, 1.0);
+        }
+        100% {
+          opacity: 1.0;
+          background-color: rgba(148, 226, 213, 0.9);
+          border-color: rgba(148, 226, 213, 1.0);
+        }
       }
 
       /* Feature 107: Dimmed badge when window is already focused */
