@@ -1080,15 +1080,9 @@ def transform_window(window: Dict[str, Any], badge_state: Optional[Dict[str, Any
         "marks": window_data["marks"]
     }
 
-    # Generate colorized JSON (Pango markup)
-    window_data["json_repr"] = colorize_json_pango(json_data)
-
-    # Also generate plain JSON for clipboard copy
-    window_data["json_plain"] = json.dumps(json_data, indent=2)
-
-    # Base64-encoded JSON for safe shell passing (avoids quoting issues)
-    import base64
-    window_data["json_base64"] = base64.b64encode(window_data["json_plain"].encode()).decode('ascii')
+    # Note: json_repr, json_plain, json_base64 removed to reduce output size from ~200KB to ~20KB
+    # These were causing "channel closed" errors due to large data transfers
+    # If needed for copy functionality, generate on-demand via separate endpoint
 
     return window_data
 
