@@ -274,6 +274,23 @@ let
       description = "Terminal UI for Docker container management";
     })
 
+    # WS5: GUI Git Client (gittyup)
+    (mkApp {
+      name = "gittyup";
+      display_name = "Gittyup";
+      command = "gittyup";
+      parameters = "$PROJECT_DIR";
+      scope = "scoped";
+      expected_class = "Gittyup";
+      preferred_workspace = 5;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "git.svg";
+      nix_package = "pkgs.gittyup";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      description = "Qt-based GUI git client";
+    })
+
     # WS6: GUI File Managers (Primary: thunar)
     (mkApp {
       name = "thunar";

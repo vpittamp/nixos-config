@@ -3393,13 +3393,15 @@ in
       ;; Dynamic opacity controlled by panel_opacity variable (10-100%)
       ;; Note: Keyboard input is handled via Sway mode (📊 Panel), not eventbox
       ;; since eww layer-shell windows cannot capture keyboard events directly
-      ;; Visibility controlled by panel_visible variable via CSS opacity (not :visible which collapses size)
+      ;; Visibility controlled by panel_visible variable via :visible attribute
+      ;; This properly hides the widget AND stops it from intercepting mouse events
       (defwidget monitoring-panel-content []
         (eventbox
           :cursor "default"
+          :visible {panel_visible}
           (box
             :class {panel_focused ? "panel-container focused" : "panel-container"}
-            :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100}); opacity: ''${panel_visible ? 1 : 0};"
+            :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
             :orientation "v"
             :space-evenly false
             (panel-header)

@@ -127,6 +127,7 @@ let
     delta
     diff-so-fancy
     lazygit
+    gittyup # GUI git client (Qt-based, lightweight alternative to GitKraken)
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     gitkraken # Git GUI client (x86_64 only)
   ];
