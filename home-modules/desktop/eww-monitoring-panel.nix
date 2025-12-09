@@ -11702,9 +11702,9 @@ in
         # This is required for deflisten to start streaming window data
         # Note: Suppress stderr because eww has a known race condition where the CLI exits
         # before receiving the daemon's response, causing "channel closed" errors
-        ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null || true'";
+        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null || true'";
         # Feature 101: Clean shutdown to prevent stale sockets
-        ExecStopPost = "${pkgs.bash}/bin/bash -c 'rm -f /run/user/1000/eww-server_*'";
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_*'";
         Restart = "on-failure";
         RestartSec = "3s";
         # Ensure all child processes are killed when service stops
