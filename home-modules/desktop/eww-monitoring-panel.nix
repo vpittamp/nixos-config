@@ -3393,27 +3393,25 @@ in
       ;; Dynamic opacity controlled by panel_opacity variable (10-100%)
       ;; Note: Keyboard input is handled via Sway mode (📊 Panel), not eventbox
       ;; since eww layer-shell windows cannot capture keyboard events directly
-      ;; Visibility controlled by panel_visible variable (CSS-based toggle, avoids daemon crashes)
+      ;; Visibility controlled by panel_visible variable via CSS opacity (not :visible which collapses size)
       (defwidget monitoring-panel-content []
-        (box
-          :visible panel_visible
-          (eventbox
-            :cursor "default"
-            (box
-              :class {panel_focused ? "panel-container focused" : "panel-container"}
-              :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
-              :orientation "v"
-              :space-evenly false
-              (panel-header)
-              (panel-body)
-              (panel-footer)
-              ;; Feature 094 T040: Conflict resolution dialog overlay
-              (conflict-resolution-dialog)
-              ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-              (success-notification-toast)
-              ;; Feature 096 T019: Error and warning notification overlays
-              (error-notification-toast)
-              (warning-notification-toast)))))
+        (eventbox
+          :cursor "default"
+          (box
+            :class {panel_focused ? "panel-container focused" : "panel-container"}
+            :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100}); opacity: ''${panel_visible ? 1 : 0};"
+            :orientation "v"
+            :space-evenly false
+            (panel-header)
+            (panel-body)
+            (panel-footer)
+            ;; Feature 094 T040: Conflict resolution dialog overlay
+            (conflict-resolution-dialog)
+            ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
+            (success-notification-toast)
+            ;; Feature 096 T019: Error and warning notification overlays
+            (error-notification-toast)
+            (warning-notification-toast))))
 
       ;; Panel header with tab navigation
       ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
