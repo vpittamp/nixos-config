@@ -3397,7 +3397,7 @@ in
       ;; Revealer collapses the widget completely when hidden (no mouse interception)
       (defwidget monitoring-panel-content []
         (revealer
-          :transition "slideleft"
+          :transition "crossfade"
           :reveal {panel_visible}
           :duration "150ms"
           (eventbox
