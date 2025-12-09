@@ -298,6 +298,25 @@ let
         builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
   in {
     version = "1.0";
+    # Feature 001: Explicit output preferences to ensure deterministic role→output mapping
+    # Without this, the daemon falls back to connection order which can vary
+    output_preferences =
+      if isHeadless then {
+        primary = [ headlessPrimaryOutput ];     # HEADLESS-1
+        secondary = [ headlessSecondaryOutput ]; # HEADLESS-2
+        tertiary = [ headlessTertiaryOutput ];   # HEADLESS-3
+      }
+      else if isHybridMode then {
+        primary = [ "eDP-1" ];
+        secondary = [ "HEADLESS-1" ];
+        tertiary = [ "HEADLESS-2" ];
+      }
+      else {
+        # Standard laptop with optional external monitor
+        primary = [ "eDP-1" ];
+        secondary = [ "HDMI-A-1" "DP-1" "DP-2" ];
+        tertiary = [ ];
+      };
     assignments =
       # App registry assignments
       (map (app: {

@@ -1450,6 +1450,46 @@ async def on_window_new(
                                 f'[con_id="{container.id}"] move to workspace number {preferred_ws}; [con_id="{container.id}"] focus'
                             )
 
+                            # Feature 001: Also move workspace to correct output based on output_preferences
+                            # The "workspace N output OUTPUT" command only sets preferred output for FUTURE switches,
+                            # it doesn't move existing/newly-created workspaces. We need to explicitly move
+                            # the workspace to the correct output after creating it.
+                            try:
+                                from pathlib import Path
+                                import json as json_module
+                                config_path = Path.home() / ".config" / "sway" / "workspace-assignments.json"
+                                if config_path.exists():
+                                    with open(config_path) as f:
+                                        ws_config = json_module.load(f)
+                                    output_prefs = ws_config.get("output_preferences", {})
+
+                                    # Determine target output based on workspace number rules
+                                    if preferred_ws <= 2:
+                                        role = "primary"
+                                    elif preferred_ws <= 5:
+                                        role = "secondary"
+                                    else:
+                                        role = "tertiary"
+
+                                    # Check for explicit role override from app assignment
+                                    for assignment in ws_config.get("assignments", []):
+                                        if assignment.get("workspace_number") == preferred_ws:
+                                            explicit_role = assignment.get("monitor_role")
+                                            if explicit_role:
+                                                role = explicit_role
+                                            break
+
+                                    target_output = output_prefs.get(role, [None])[0] if output_prefs.get(role) else None
+                                    if target_output:
+                                        # Move the workspace to the correct output
+                                        await conn.command(f'move workspace to output {target_output}')
+                                        logger.debug(
+                                            f"Feature 001: Moved workspace {preferred_ws} to output {target_output} "
+                                            f"(role: {role})"
+                                        )
+                            except Exception as e:
+                                logger.warning(f"Feature 001: Failed to move workspace to correct output: {e}")
+
                             # Feature 056: Validate workspace assignment with retry (PWA race condition fix)
                             # PWAs may not be on any workspace yet (workspace_num=?) during window::new
                             # Wait for Sway to process the move, then verify it succeeded
