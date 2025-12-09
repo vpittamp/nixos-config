@@ -359,6 +359,22 @@ in
       preferred_workspace = 70;
     }
 
+    # ArgoCD (Talos/ai401kchat)
+    {
+      name = "ArgoCD Talos";
+      url = "https://argocd.ai401kchat.com";
+      domain = "argocd.ai401kchat.com";
+      icon = iconPath "argocd-talos.svg";
+      description = "ArgoCD GitOps controller for Talos Kubernetes cluster";
+      categories = "Development;Network;System;";
+      keywords = "argocd;gitops;cd;kubernetes;devops;talos;ai401kchat;";
+      scope = "https://argocd.ai401kchat.com/";
+      ulid = "3YBB66K55HEZRW2GC25M8W53NJ";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 77;
+    }
+
     # Gitea (Tailscale)
     {
       name = "Gitea";
@@ -453,6 +469,91 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 76;
+    }
+
+    # ============================================
+    # Talos Cluster PWAs (ai401kchat.com)
+    # Purple-themed icons to distinguish from Tailscale variants
+    # ============================================
+
+    # Backstage (Talos/ai401kchat)
+    {
+      name = "Backstage Talos";
+      url = "https://backstage.ai401kchat.com";
+      domain = "backstage.ai401kchat.com";
+      icon = iconPath "backstage-talos.svg";
+      description = "Backstage developer portal for Talos Kubernetes cluster";
+      categories = "Development;Network;";
+      keywords = "backstage;developer-portal;sdp;platform;kubernetes;talos;ai401kchat;";
+      scope = "https://backstage.ai401kchat.com/";
+      ulid = "7KZ3PBQKJKQJKQ7ZA831VYAFXC";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 78;
+    }
+
+    # Kargo (Talos/ai401kchat)
+    {
+      name = "Kargo Talos";
+      url = "https://kargo.ai401kchat.com";
+      domain = "kargo.ai401kchat.com";
+      icon = iconPath "kargo.png";  # Using same PNG (no SVG available)
+      description = "Kargo continuous delivery and promotion engine for Talos cluster";
+      categories = "Development;Network;System;";
+      keywords = "kargo;kubernetes;cd;gitops;promotion;delivery;talos;ai401kchat;";
+      scope = "https://kargo.ai401kchat.com/";
+      ulid = "45XFC05KF4YM4GK9SMKW8S4EPZ";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 79;
+    }
+
+    # Headlamp (Talos/ai401kchat)
+    {
+      name = "Headlamp Talos";
+      url = "https://headlamp.ai401kchat.com";
+      domain = "headlamp.ai401kchat.com";
+      icon = iconPath "headlamp-talos.svg";
+      description = "Headlamp Kubernetes dashboard for Talos cluster";
+      categories = "Development;Network;System;";
+      keywords = "headlamp;kubernetes;dashboard;k8s;cluster;talos;ai401kchat;";
+      scope = "https://headlamp.ai401kchat.com/";
+      ulid = "7Q27F97E9F496X7ZQ47ANH88CP";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 80;
+    }
+
+    # Gitea (Talos/ai401kchat)
+    {
+      name = "Gitea Talos";
+      url = "https://gitea.ai401kchat.com";
+      domain = "gitea.ai401kchat.com";
+      icon = iconPath "gitea-talos.svg";
+      description = "Gitea self-hosted git service for Talos cluster";
+      categories = "Development;Network;";
+      keywords = "gitea;git;scm;code;devops;kubernetes;talos;ai401kchat;";
+      scope = "https://gitea.ai401kchat.com/";
+      ulid = "72TGWGVAMBGEA9T1M4MS75S8PG";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 81;
+    }
+
+    # Keycloak (Talos/ai401kchat)
+    {
+      name = "Keycloak Talos";
+      url = "https://keycloak.ai401kchat.com";
+      domain = "keycloak.ai401kchat.com";
+      icon = iconPath "keycloak-talos.svg";
+      description = "Keycloak identity and access management for Talos cluster";
+      categories = "Security;Network;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;talos;ai401kchat;";
+      scope = "https://keycloak.ai401kchat.com/";
+      ulid = "514S283M0EGKNVDMYKAR3635H6";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 82;
     }
   ];
 

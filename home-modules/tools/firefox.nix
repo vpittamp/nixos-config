@@ -21,10 +21,6 @@ in
     package = pkgs.firefox;
     nativeMessagingHosts = [
       pkgs.firefoxpwa  # PWA native messaging host
-      # NOTE: plasma-browser-integration removed in Feature 009 (i3wm migration)
-      # M1 configuration temporarily retains KDE Plasma integration
-    ] ++ lib.optionals (isM1) [
-      pkgs.kdePackages.plasma-browser-integration  # KDE Plasma 6 browser integration (M1 only)
     ];
     policies = {
       Extensions = {
@@ -32,25 +28,26 @@ in
           "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
           "https://addons.mozilla.org/firefox/downloads/latest/pwas-for-firefox/latest.xpi"
           "https://addons.mozilla.org/firefox/downloads/latest/gitingest/latest.xpi"
-          # NOTE: plasma-integration extension removed in Feature 009 (i3wm migration)
-        ] ++ lib.optionals (isM1) [
-          "https://addons.mozilla.org/firefox/downloads/latest/plasma-integration/latest.xpi"
         ];
       };
       PasswordManagerEnabled = false;
-      # Grant permissions to extensions
+      # Grant permissions to extensions - 1Password with full access
+      # See: https://mozilla.github.io/policy-templates/#extensionsettings
       ExtensionSettings = {
+        # 1Password extension - force install with maximum permissions
         "{d634138d-c276-4fc8-924b-40a0ea21d284}" = {
           installation_mode = "force_installed";
           install_url = "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi";
           default_area = "navbar";
-          allowed_in_private_browsing = true;
+          # Allow in private browsing (Firefox 136+, ESR 128.8+)
+          private_browsing = true;
+          # Note: updates_disabled is NOT set, allowing automatic updates (default behavior)
         };
-      } // lib.optionalAttrs (isM1) {
-        # Plasma Browser Integration (M1 only - temporarily retained for KDE Plasma)
-        "plasma-browser-integration@kde.org" = {
-          installation_mode = "allowed";
-          allowed_types = ["extension"];
+        # Default settings for all extensions
+        "*" = {
+          # Clear restricted domains for 1Password to work everywhere
+          # By default, extensions can't run on addons.mozilla.org and certain Mozilla sites
+          restricted_domains = [];
         };
       };
       # Allow native messaging hosts for PWAsForFirefox and 1Password
@@ -142,11 +139,6 @@ in
           # Privacy and history settings
           "privacy.history.enabled" = true;
           "places.history.enabled" = true;
-        }
-        // lib.optionalAttrs (isM1) {
-          # Plasma Browser Integration settings (M1 only)
-          "extensions.plasma-browser-integration.native-messaging-hosts" = true;
-          "extensions.webextensions.ExtensionStorageIDB.migrated.plasma-browser-integration@kde.org" = true;
         }
         // {
 
