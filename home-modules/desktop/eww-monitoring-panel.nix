@@ -3393,27 +3393,30 @@ in
       ;; Dynamic opacity controlled by panel_opacity variable (10-100%)
       ;; Note: Keyboard input is handled via Sway mode (📊 Panel), not eventbox
       ;; since eww layer-shell windows cannot capture keyboard events directly
-      ;; Visibility controlled by panel_visible variable via :visible attribute
-      ;; This properly hides the widget AND stops it from intercepting mouse events
+      ;; Visibility controlled by revealer widget for proper show/hide behavior
+      ;; Revealer collapses the widget completely when hidden (no mouse interception)
       (defwidget monitoring-panel-content []
-        (eventbox
-          :cursor "default"
-          :visible {panel_visible}
-          (box
-            :class {panel_focused ? "panel-container focused" : "panel-container"}
-            :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
-            :orientation "v"
-            :space-evenly false
-            (panel-header)
-            (panel-body)
-            (panel-footer)
-            ;; Feature 094 T040: Conflict resolution dialog overlay
-            (conflict-resolution-dialog)
-            ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-            (success-notification-toast)
-            ;; Feature 096 T019: Error and warning notification overlays
-            (error-notification-toast)
-            (warning-notification-toast))))
+        (revealer
+          :transition "slideleft"
+          :reveal {panel_visible}
+          :duration "150ms"
+          (eventbox
+            :cursor "default"
+            (box
+              :class {panel_focused ? "panel-container focused" : "panel-container"}
+              :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
+              :orientation "v"
+              :space-evenly false
+              (panel-header)
+              (panel-body)
+              (panel-footer)
+              ;; Feature 094 T040: Conflict resolution dialog overlay
+              (conflict-resolution-dialog)
+              ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
+              (success-notification-toast)
+              ;; Feature 096 T019: Error and warning notification overlays
+              (error-notification-toast)
+              (warning-notification-toast)))))
 
       ;; Panel header with tab navigation
       ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
@@ -11699,6 +11702,10 @@ in
 
       Service = {
         Type = "simple";
+        # Clean up stale sockets before starting (prevents "address already in use" errors)
+        # Note: pkill is NOT used here because systemd's KillMode=control-group handles process cleanup,
+        # and pkill in ExecStartPre would kill the service's own processes during restart
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data

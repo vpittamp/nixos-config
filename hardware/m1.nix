@@ -103,6 +103,22 @@
   # Graphics - using new API (hardware.graphics instead of hardware.opengl)
   hardware.graphics.enable = true;
 
+  # Workaround for Mesa 25.3.0 regression causing Firefox crashes on Asahi GPUs
+  # https://github.com/nix-community/nixos-apple-silicon/issues/380
+  # Pin Mesa to 25.2.x from a known-good nixpkgs commit
+  hardware.graphics.package =
+    let
+      # Assertion will fail when Mesa is updated past 25.3.x, reminding us to check if the fix landed
+      assertMesa = pkgs.lib.assertMsg
+        (builtins.match "25\\.3\\..+" pkgs.mesa.version != null)
+        "Mesa ${pkgs.mesa.version} detected - check if issue #380 is resolved and remove this workaround";
+      pinnedPkgs = import (builtins.fetchTarball {
+        url = "https://github.com/NixOS/nixpkgs/archive/c5ae371f1a6a7fd27823bc500d9390b38c05fa55.tar.gz";
+        sha256 = "sha256:18g0f8cb9m8mxnz9cf48sks0hib79b282iajl2nysyszph993yp0";
+      }) { localSystem = pkgs.stdenv.hostPlatform; };
+    in
+    if assertMesa then pinnedPkgs.mesa else pkgs.mesa;
+
   # Firmware updates
   hardware.enableRedistributableFirmware = true;
   
