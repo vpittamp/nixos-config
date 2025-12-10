@@ -536,10 +536,11 @@ PY
             enabled_protocol_handlers = [];
             custom_protocol_handlers = [];
             launch_on_login = false;
-            # Feature 113: Enable automatic launching when visiting matching domains
-            # This is the per-app setting for "Launch this web app on matching website"
-            # The global "Enable automatic web app launching" must also be enabled in the extension
-            launch_on_browser = true;
+            # Feature 113: DISABLED - causes infinite loops with URL routing
+            # When enabled, PWAs auto-launch when visiting matching domains,
+            # which conflicts with pwa-url-router and causes cascading opens.
+            # PWAs are launched explicitly via tmux-url-open or app launcher.
+            launch_on_browser = false;
           };
           manifest = generateManifest pwa;
         };

@@ -107,8 +107,8 @@ let
     # ============================================================================
     if [[ -n "$URL" ]]; then
       # Feature 113: Launch with URL for deep linking
-      # The -- separator ensures URL is passed as argument, not option
-      exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID" -- "$URL"
+      # Use --url option to open the PWA at a specific URL
+      exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID" --url "$URL"
     else
       # Standard launch without URL
       exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID"

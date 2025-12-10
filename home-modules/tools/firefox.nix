@@ -372,9 +372,11 @@ in
       "text/html" = "firefox.desktop";
       "application/xhtml+xml" = "firefox.desktop";
 
-      # Feature 113: URL schemes → PWA URL Router (checks domain, falls back to Firefox)
-      "x-scheme-handler/http" = "pwa-url-router.desktop";
-      "x-scheme-handler/https" = "pwa-url-router.desktop";
+      # URL schemes → Firefox directly (pwa-url-router only used for explicit external calls)
+      # Feature 113: pwa-url-router is invoked explicitly from tmux-url-open, not as default handler
+      # This prevents infinite loops during Firefox/PWA session restore
+      "x-scheme-handler/http" = "firefox.desktop";
+      "x-scheme-handler/https" = "firefox.desktop";
 
       # Non-web schemes → Firefox directly
       "x-scheme-handler/about" = "firefox.desktop";

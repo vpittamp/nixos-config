@@ -153,8 +153,9 @@ let
     if [ ''${#SELECTED[@]} -gt 0 ]; then
       for url in "''${SELECTED[@]}"; do
         # Use swaymsg exec to launch in detached context (survives popup close)
-        # xdg-open routes through pwa-url-router (Feature 113)
-        ${pkgs.sway}/bin/swaymsg exec "${pkgs.xdg-utils}/bin/xdg-open '$url'" > /dev/null 2>&1
+        # Feature 113: Explicitly call pwa-url-router for PWA domain routing
+        # (pwa-url-router is NOT the default URL handler to avoid session restore loops)
+        ${pkgs.sway}/bin/swaymsg exec "pwa-url-router '$url'" > /dev/null 2>&1
         sleep 0.3  # Small delay between opens to prevent overwhelming
       done
     fi

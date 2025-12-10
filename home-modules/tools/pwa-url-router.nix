@@ -70,41 +70,15 @@ let
     fi
 
     # ============================================================================
-    # GLOBAL RATE LIMITER - Prevent URL cascade/flood
-    # ============================================================================
-    # AGGRESSIVE: Only allow 2 URLs per 60 seconds, then DROP everything.
-    # This is intentionally restrictive to prevent cascade storms.
-    RATE_LIMIT_FILE="$LOCK_DIR/.rate_limit"
-    RATE_LIMIT_MAX=2
-    RATE_LIMIT_WINDOW=60
-
-    # Count recent URL opens
-    NOW=$(date +%s)
-    if [ -f "$RATE_LIMIT_FILE" ]; then
-      # Filter to only lines within the time window and count
-      RECENT_COUNT=$(awk -v now="$NOW" -v window="$RATE_LIMIT_WINDOW" '$1 > (now - window)' "$RATE_LIMIT_FILE" 2>/dev/null | wc -l)
-      if [ "$RECENT_COUNT" -ge "$RATE_LIMIT_MAX" ]; then
-        log "RATE LIMITED: $RECENT_COUNT URLs in last ''${RATE_LIMIT_WINDOW}s (max $RATE_LIMIT_MAX) - DROPPING URL: $URL"
-        exit 0  # Drop the URL entirely, don't open anything
-      fi
-    fi
-    # Record this URL open
-    echo "$NOW" >> "$RATE_LIMIT_FILE"
-    # Prune old entries (keep only last 60 seconds)
-    if [ -f "$RATE_LIMIT_FILE" ]; then
-      awk -v now="$NOW" '$1 > (now - 60)' "$RATE_LIMIT_FILE" > "$RATE_LIMIT_FILE.tmp" 2>/dev/null && mv "$RATE_LIMIT_FILE.tmp" "$RATE_LIMIT_FILE"
-    fi
-
-    # ============================================================================
     # INFINITE LOOP PREVENTION
     # ============================================================================
-    # Detect if we're being called in a loop to prevent:
+    # Detect if we're being called repeatedly to prevent loops:
     # PWA → xdg-open → pwa-url-router → PWA → xdg-open → ... (infinite!)
     #
     # Detection methods:
     # 1. Check if we're already in a PWA launch context (I3PM_PWA_URL set)
-    # 2. Check lock file for SAME URL routed recently (unconditional check)
-    # 3. Check if parent process is firefoxpwa (PWA opened external link)
+    # 2. UNCONDITIONAL lock file check - if URL was routed recently, bypass to Firefox
+    #    This prevents loops regardless of how the router was invoked
 
     # Method 1: Already in PWA URL launch context - go directly to Firefox
     if [ -n "''${I3PM_PWA_URL:-}" ]; then
@@ -112,58 +86,24 @@ let
       exec ${pkgs.firefox}/bin/firefox "$URL"
     fi
 
-    # Method 2: ATOMIC domain-based lock using mkdir (race-condition safe)
-    # This is the primary loop prevention mechanism
-    # Use DOMAIN-based hashing (not full URL) because URLs may have different query params
-    # (e.g., GitHub auth URLs have different requestId each time, causing loop)
+    # Method 2: UNCONDITIONAL lock file check
+    # If this exact URL was routed within the last 30 seconds, bypass to Firefox
+    # This prevents loops regardless of the parent process
     if [ -n "$URL" ]; then
-      # Extract domain for lock file (ignore path and query params)
-      LOCK_DOMAIN=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://||' | ${pkgs.gnused}/bin/sed -E 's|/.*||' | ${pkgs.gnused}/bin/sed -E 's|:.*||')
-      DOMAIN_HASH=$(echo -n "$LOCK_DOMAIN" | md5sum | cut -d' ' -f1)
-      LOCK_DIR_ATOMIC="$LOCK_DIR/$DOMAIN_HASH.lock"
+      URL_HASH=$(echo -n "$URL" | md5sum | cut -d' ' -f1)
+      LOCK_FILE="$LOCK_DIR/$URL_HASH"
 
-      # Try to atomically acquire lock using mkdir (atomic on POSIX)
-      if mkdir "$LOCK_DIR_ATOMIC" 2>/dev/null; then
-        # We got the lock - record timestamp for cleanup
-        echo "$$" > "$LOCK_DIR_ATOMIC/pid"
-        log "LOCK ACQUIRED: Domain $LOCK_DOMAIN (hash: $DOMAIN_HASH)"
-      else
-        # Lock exists - check if it's stale (older than 120 seconds)
-        # 120 seconds is long enough for PWA to load and complete auth flows
-        if [ -d "$LOCK_DIR_ATOMIC" ]; then
-          LOCK_AGE=$(($(date +%s) - $(stat -c%Y "$LOCK_DIR_ATOMIC" 2>/dev/null || echo 0)))
-          if [ "$LOCK_AGE" -lt 120 ]; then
-            log "LOOP PREVENTION: Domain $LOCK_DOMAIN locked $LOCK_AGE seconds ago, bypassing to Firefox"
-            exec ${pkgs.firefox}/bin/firefox "$URL"
-          else
-            # Stale lock - remove and retry
-            rm -rf "$LOCK_DIR_ATOMIC" 2>/dev/null
-            if mkdir "$LOCK_DIR_ATOMIC" 2>/dev/null; then
-              echo "$$" > "$LOCK_DIR_ATOMIC/pid"
-              log "LOCK ACQUIRED (stale removed): Domain $LOCK_DOMAIN"
-            else
-              # Another process beat us to it
-              log "LOOP PREVENTION: Domain $LOCK_DOMAIN locked by another process, bypassing to Firefox"
-              exec ${pkgs.firefox}/bin/firefox "$URL"
-            fi
-          fi
+      if [ -f "$LOCK_FILE" ]; then
+        LOCK_AGE=$(($(date +%s) - $(stat -c%Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+        if [ "$LOCK_AGE" -lt 30 ]; then
+          log "LOOP PREVENTION: URL was routed $LOCK_AGE seconds ago, bypassing to Firefox"
+          exec ${pkgs.firefox}/bin/firefox "$URL"
         fi
       fi
     fi
 
-    # Method 3: Check if parent process chain includes firefox
-    # Additional safety: if called from firefox/PWA, always bypass to Firefox
-    if [ -n "$URL" ]; then
-      PARENT_CHAIN=$(ps -o comm= -p $PPID 2>/dev/null || echo "")
-      GRANDPARENT_CHAIN=$(ps -o comm= -p $(ps -o ppid= -p $PPID 2>/dev/null) 2>/dev/null || echo "")
-      if [[ "$PARENT_CHAIN" == *"firefox"* ]] || [[ "$GRANDPARENT_CHAIN" == *"firefox"* ]]; then
-        log "LOOP PREVENTION: Called from firefox process chain, bypassing to Firefox"
-        exec ${pkgs.firefox}/bin/firefox "$URL"
-      fi
-    fi
-
-    # Clean up old lock directories (older than 3 minutes)
-    find "$LOCK_DIR" -maxdepth 1 -type d -name "*.lock" -mmin +3 -exec rm -rf {} \; 2>/dev/null || true
+    # Clean up old lock files (older than 2 minutes)
+    find "$LOCK_DIR" -type f -mmin +2 -delete 2>/dev/null || true
 
     if [ -z "$URL" ]; then
       log "ERROR: No URL provided"
@@ -183,7 +123,7 @@ let
     # ============================================================================
     # These domains are used for SSO/OAuth flows and should ALWAYS open in Firefox
     # to prevent authentication loops and ensure proper session handling.
-    AUTH_DOMAINS="accounts.google.com accounts.youtube.com login.microsoftonline.com login.live.com github.com/login github.com/session github.com/auth auth0.com login.tailscale.com"
+    AUTH_DOMAINS="accounts.google.com accounts.youtube.com login.microsoftonline.com login.live.com github.com/login github.com/session auth0.com login.tailscale.com"
 
     for auth_domain in $AUTH_DOMAINS; do
       if [[ "$DOMAIN" == "$auth_domain" ]] || [[ "$URL" == *"$auth_domain"* ]]; then
@@ -202,27 +142,18 @@ let
         PWA_ULID=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.ulid')
         log "Match found: $DOMAIN → $PWA_APP_NAME ($PWA_DISPLAY, ULID: $PWA_ULID)"
 
-        # ============================================================================
-        # CRITICAL: Check if PWA is ALREADY RUNNING
-        # ============================================================================
-        # If the PWA is already running, DO NOT launch another instance.
-        # This prevents infinite loops when PWAs trigger auth flows or external URLs.
-        # Route to Firefox instead so the existing PWA can handle it via session cookies.
-        #
-        # ONLY use process detection - lock files are unreliable (persist after crashes)
-        # Check for Firefox process with this PWA's ULID in command line
-        if ${pkgs.procps}/bin/pgrep -f "firefox.*--pwa.*$PWA_ULID" >/dev/null 2>&1; then
-          log "PWA ALREADY RUNNING: $PWA_DISPLAY (ULID: $PWA_ULID) - routing to Firefox"
-          exec ${pkgs.firefox}/bin/firefox "$URL"
-        fi
+        # Create lock file BEFORE launching to prevent loops
+        # This marks that we're actively routing this URL
+        URL_HASH=$(echo -n "$URL" | md5sum | cut -d' ' -f1)
+        touch "$LOCK_DIR/$URL_HASH"
 
-        # Lock already acquired atomically at the start (Method 2)
-        # Launch PWA with URL for deep linking
-        # Use launch-pwa-by-name directly with URL argument
-        # (app-launcher-wrapper uses swaymsg exec which loses I3PM_PWA_URL env var)
+        # Launch PWA directly with URL for deep linking
+        # We call launch-pwa-by-name directly (not through app-launcher-wrapper)
+        # because swaymsg exec doesn't preserve environment variables
         if command -v launch-pwa-by-name >/dev/null 2>&1; then
-          log "Launching: launch-pwa-by-name \"$PWA_DISPLAY\" \"$URL\""
-          exec launch-pwa-by-name "$PWA_DISPLAY" "$URL"
+          log "Launching via launch-pwa-by-name: $PWA_ULID with URL: $URL"
+          export I3PM_PWA_URL="$URL"
+          exec launch-pwa-by-name "$PWA_ULID"
         else
           log "ERROR: launch-pwa-by-name not found, falling back to Firefox"
           exec ${pkgs.firefox}/bin/firefox "$URL"

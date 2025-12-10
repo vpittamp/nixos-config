@@ -44,6 +44,8 @@ in
           Extensions = {
             Install = [
               "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+              "https://addons.mozilla.org/firefox/downloads/latest/pwas-for-firefox/latest.xpi"
+              "https://addons.mozilla.org/firefox/downloads/latest/gitingest/latest.xpi"
             ];
           };
 
