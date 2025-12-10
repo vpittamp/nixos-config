@@ -15,6 +15,163 @@ let
 
   inherit (lib.hm.dag) entryAfter;
 
+  # Feature 113: Google redirect URL interceptor extension for PWAs
+  # This extension extracts the real URL from Google tracking/redirect links
+  # and opens them externally, allowing PWA URL routing to work correctly
+  googleRedirectInterceptorExtension = pkgs.runCommand "pwa-google-redirect-interceptor" {} ''
+    mkdir -p $out
+
+    # manifest.json - Extension manifest
+    cat > $out/manifest.json << 'MANIFEST'
+    {
+      "manifest_version": 2,
+      "name": "PWA Link Interceptor",
+      "version": "1.0.0",
+      "description": "Intercepts Google/tracking redirect URLs and opens the real destination externally (Feature 113)",
+      "permissions": [
+        "activeTab",
+        "<all_urls>"
+      ],
+      "content_scripts": [
+        {
+          "matches": ["*://*.google.com/*", "*://*.youtube.com/*", "*://*.bing.com/*"],
+          "js": ["content.js"],
+          "run_at": "document_start",
+          "all_frames": true
+        }
+      ],
+      "browser_specific_settings": {
+        "gecko": {
+          "id": "pwa-link-interceptor@nixos-config"
+        }
+      }
+    }
+    MANIFEST
+
+    # content.js - Content script that intercepts redirect links
+    cat > $out/content.js << 'CONTENTJS'
+    // Feature 113: PWA Link Interceptor
+    // Intercepts Google/tracking redirect URLs and opens them externally
+
+    (function() {
+      'use strict';
+
+      // Patterns for redirect URLs that contain the real destination
+      const REDIRECT_PATTERNS = [
+        // Google redirect: google.com/url?...&url=<real_url>
+        { pattern: /[?&]url=([^&]+)/i, decode: true },
+        // Google redirect: google.com/url?...&q=<real_url>
+        { pattern: /[?&]q=([^&]+)/i, decode: true },
+        // YouTube redirect
+        { pattern: /[?&]redir_token=[^&]+.*[?&]q=([^&]+)/i, decode: true },
+      ];
+
+      // Domains that should be opened externally (not same-origin)
+      // These are domains we have PWAs for
+      const PWA_DOMAINS = [
+        'github.com', 'www.github.com',
+        'claude.ai', 'www.claude.ai',
+        'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be',
+        'chatgpt.com', 'www.chatgpt.com', 'chat.openai.com',
+        'mail.google.com',
+        'calendar.google.com',
+        'outlook.office.com', 'outlook.live.com',
+        'perplexity.ai', 'www.perplexity.ai',
+        'github.dev',
+        'vscode.dev', 'insiders.vscode.dev'
+      ];
+
+      function extractRealUrl(href) {
+        for (const {pattern, decode} of REDIRECT_PATTERNS) {
+          const match = href.match(pattern);
+          if (match && match[1]) {
+            try {
+              const url = decode ? decodeURIComponent(match[1]) : match[1];
+              // Validate it's actually a URL
+              if (url.startsWith('http://') || url.startsWith('https://')) {
+                return url;
+              }
+            } catch (e) {
+              // Decoding failed, continue to next pattern
+            }
+          }
+        }
+        return null;
+      }
+
+      function getDomain(url) {
+        try {
+          const parsed = new URL(url);
+          return parsed.hostname.toLowerCase();
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function shouldOpenExternally(realUrl) {
+        const domain = getDomain(realUrl);
+        if (!domain) return false;
+
+        // Check if the real URL's domain is different from current page
+        const currentDomain = window.location.hostname.toLowerCase();
+
+        // If same domain, don't intercept
+        if (domain === currentDomain) return false;
+
+        // If real URL points to a PWA domain, open externally
+        if (PWA_DOMAINS.some(d => domain === d || domain.endsWith('.' + d))) {
+          return true;
+        }
+
+        // For any cross-domain link from a Google property, open externally
+        // This allows pwa-url-router to handle it
+        if (currentDomain.includes('google.com') || currentDomain.includes('youtube.com')) {
+          return true;
+        }
+
+        return false;
+      }
+
+      function handleClick(event) {
+        // Find the clicked link (may be nested in other elements)
+        let target = event.target;
+        while (target && target.tagName !== 'A') {
+          target = target.parentElement;
+        }
+
+        if (!target || !target.href) return;
+
+        const href = target.href;
+
+        // Check if this is a redirect URL
+        const realUrl = extractRealUrl(href);
+
+        if (realUrl && shouldOpenExternally(realUrl)) {
+          // Prevent default navigation
+          event.preventDefault();
+          event.stopPropagation();
+
+          // Open the real URL externally (will trigger xdg-open → pwa-url-router)
+          console.log('[PWA Link Interceptor] Redirecting:', href, '→', realUrl);
+          window.open(realUrl, '_blank');
+        }
+      }
+
+      // Intercept clicks on document
+      document.addEventListener('click', handleClick, true);
+
+      // Also handle mousedown for middle-click
+      document.addEventListener('mousedown', function(event) {
+        if (event.button === 1) { // Middle click
+          handleClick(event);
+        }
+      }, true);
+
+      console.log('[PWA Link Interceptor] Feature 113 active');
+    })();
+    CONTENTJS
+  '';
+
   pwaDialogFixScript = pkgs.writeShellScriptBin "pwa-fix-dialogs" ''
     # Fix thin sliver dialog rendering on Wayland with fractional scaling
     # Applies user.js fixes to all PWA profiles
@@ -130,6 +287,17 @@ user_pref("extensions.webextensions.remote", true);
 
 // Pin 1Password button on toolbar by default
 user_pref("browser.uiCustomization.state", "{\"placements\":{\"widget-overflow-fixed-list\":[],\"nav-bar\":[\"back-button\",\"forward-button\",\"urlbar-container\",\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"toolbar-menubar\":[\"menubar-items\"],\"TabsToolbar\":[\"tabbrowser-tabs\",\"new-tab-button\",\"alltabs-button\"],\"PersonalToolbar\":[\"personal-bookmarks\"],\"unified-extensions-area\":[]},\"seen\":[\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"dirtyAreaCache\":[\"nav-bar\",\"TabsToolbar\",\"PersonalToolbar\"],\"currentVersion\":23,\"newElementCount\":2}");
+
+// === Feature 113: PWA External Link Handling ===
+// Open out-of-scope URLs in the default system browser
+// This allows pwa-url-router to intercept and route them appropriately
+user_pref("firefoxpwa.openOutOfScopeInDefaultBrowser", true);
+
+// IMPORTANT: Do NOT set firefoxpwa.allowedDomains here!
+// Per https://github.com/filips123/PWAsForFirefox/discussions/197
+// Setting allowedDomains breaks openOutOfScopeInDefaultBrowser functionality.
+// SSO flows will open in the default browser, but pwa-url-router will
+// route them back to the appropriate PWA if the domain matches.
 EOF
         echo "Updated: $profile/user.js"
         ((count++))
@@ -224,6 +392,59 @@ PY
     echo "  2. Restart PWAs (close and relaunch from Walker)"
   '';
 
+  # Feature 113: Script to install link interceptor extension into PWA profiles
+  pwaInstallLinkInterceptorScript = pkgs.writeShellScriptBin "pwa-install-link-interceptor" ''
+    #!/usr/bin/env bash
+    # Feature 113: Install PWA Link Interceptor extension
+    # This extension intercepts Google/tracking redirect URLs and opens them externally
+
+    set -euo pipefail
+
+    PROFILES_DIR="$HOME/.local/share/firefoxpwa/profiles"
+    EXTENSION_SRC="${googleRedirectInterceptorExtension}"
+    EXTENSION_ID="pwa-link-interceptor@nixos-config"
+
+    echo "Installing PWA Link Interceptor extension (Feature 113)..."
+    echo "Source: $EXTENSION_SRC"
+
+    if [ ! -d "$PROFILES_DIR" ]; then
+      echo "No PWA profiles found at $PROFILES_DIR"
+      echo "Install some PWAs first, then run this script."
+      exit 0
+    fi
+
+    count=0
+    for profile in "$PROFILES_DIR"/*/; do
+      if [ -d "$profile" ]; then
+        profile_name=$(basename "$profile")
+        ext_dir="$profile/extensions/$EXTENSION_ID"
+
+        echo "  Installing to profile: $profile_name"
+
+        # Create extensions directory
+        mkdir -p "$profile/extensions"
+
+        # Remove old installation if exists
+        rm -rf "$ext_dir"
+
+        # Copy extension files
+        mkdir -p "$ext_dir"
+        cp "$EXTENSION_SRC/manifest.json" "$ext_dir/"
+        cp "$EXTENSION_SRC/content.js" "$ext_dir/"
+
+        ((count++))
+      fi
+    done
+
+    echo ""
+    echo "✓ Installed link interceptor to $count PWA profiles"
+    echo ""
+    echo "The extension will intercept Google/tracking redirect URLs"
+    echo "and open the real destination externally (via pwa-url-router)."
+    echo ""
+    echo "Restart your PWAs to activate the extension."
+  '';
+
   #
   # Core Functions
   #
@@ -315,7 +536,10 @@ PY
             enabled_protocol_handlers = [];
             custom_protocol_handlers = [];
             launch_on_login = false;
-            launch_on_browser = false;
+            # Feature 113: Enable automatic launching when visiting matching domains
+            # This is the per-app setting for "Launch this web app on matching website"
+            # The global "Enable automatic web app launching" must also be enabled in the extension
+            launch_on_browser = true;
           };
           manifest = generateManifest pwa;
         };
@@ -372,6 +596,7 @@ in
     home.packages = [
       pkgs.firefoxpwa
       pwaDialogFixScript
+      pwaInstallLinkInterceptorScript  # Feature 113: Google redirect interceptor
     ];
 
     home.activation.firefoxpwaWaylandPrefs = entryAfter [ "writeBoundary" ] ''
@@ -383,6 +608,13 @@ in
     home.activation.firefoxpwaEnsure1Password = entryAfter [ "firefoxpwaWaylandPrefs" ] ''
       if command -v pwa-enable-1password >/dev/null 2>&1; then
         pwa-enable-1password >/dev/null 2>&1 || true
+      fi
+    '';
+
+    # Feature 113: Install link interceptor extension to all PWA profiles
+    home.activation.firefoxpwaInstallLinkInterceptor = entryAfter [ "firefoxpwaEnsure1Password" ] ''
+      if [ -x "${pwaInstallLinkInterceptorScript}/bin/pwa-install-link-interceptor" ]; then
+        "${pwaInstallLinkInterceptorScript}/bin/pwa-install-link-interceptor" || true
       fi
     '';
 
