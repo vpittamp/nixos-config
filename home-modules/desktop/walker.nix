@@ -1346,20 +1346,37 @@ in
 
     -- Load PWA domain registry for icon lookup
     local pwa_icons = {}
-    local registry_path = os.getenv("HOME") .. "/.config/i3/pwa-domains.json"
+    local home = os.getenv("HOME")
+    local registry_path = home .. "/.config/i3/pwa-domains.json"
     local registry_file = io.open(registry_path, "r")
     if registry_file then
         local content = registry_file:read("*all")
         registry_file:close()
-        -- Simple JSON parsing for domain -> icon mapping
-        -- Format: "domain": {"name": "...", "pwa": "...-pwa", ...}
-        for domain, pwa_name in content:gmatch('"([^"]+)":%s*{[^}]*"pwa":%s*"([^"]+)"') do
-            -- Icon path: ~/.local/share/icons/hicolor/128x128/apps/<pwa_name>.svg
-            local icon_path = os.getenv("HOME") .. "/.local/share/icons/hicolor/128x128/apps/" .. pwa_name .. ".svg"
-            local f = io.open(icon_path, "r")
-            if f then
-                f:close()
-                pwa_icons[domain] = icon_path
+        -- Parse minified JSON: "domain":{"name":"...","pwa":"...-pwa","ulid":"..."}
+        -- Pattern matches: "domain":{"name":"Name","pwa":"pwa-name",...}
+        for domain, pwa_name in content:gmatch('"([^"]+)":%{"name":"[^"]*","pwa":"([^"]+)"') do
+            -- Try multiple icon locations (scalable SVG preferred, then PNG sizes)
+            local icon_dirs = {
+                home .. "/.local/share/icons/hicolor/scalable/apps/",
+                home .. "/.local/share/icons/hicolor/256x256/apps/",
+                home .. "/.local/share/icons/hicolor/128x128/apps/",
+                home .. "/.local/share/icons/hicolor/64x64/apps/",
+            }
+            for _, dir in ipairs(icon_dirs) do
+                local svg_path = dir .. pwa_name .. ".svg"
+                local png_path = dir .. pwa_name .. ".png"
+                local f = io.open(svg_path, "r")
+                if f then
+                    f:close()
+                    pwa_icons[domain] = svg_path
+                    break
+                end
+                f = io.open(png_path, "r")
+                if f then
+                    f:close()
+                    pwa_icons[domain] = png_path
+                    break
+                end
             end
         end
     end
