@@ -848,6 +848,71 @@ in
     walkerClaudeSessions
     walkerMonitorList
     walkerMonitorSwitch
+
+    # Feature 113: Browser history helper scripts
+    # walker-history-list: Lists recent browser history entries
+    (pkgs.writeShellScriptBin "walker-history-list" ''
+      #!/usr/bin/env bash
+      # Feature 113: Firefox browser history provider for Walker
+      # Outputs tab-separated: icon\ttitle\turl
+      set -euo pipefail
+
+      FIREFOX_PROFILE="$HOME/.mozilla/firefox/default"
+      PLACES_DB="$FIREFOX_PROFILE/places.sqlite"
+      CACHE_DIR="$HOME/.cache/walker-history"
+      CACHE_DB="$CACHE_DIR/places_copy.sqlite"
+      MAX_ENTRIES="''${1:-100}"
+
+      # Ensure cache directory exists
+      mkdir -p "$CACHE_DIR"
+
+      # Copy places.sqlite to avoid locking issues with Firefox
+      # Only copy if source is newer than cache (or cache doesn't exist)
+      if [[ ! -f "$CACHE_DB" ]] || [[ "$PLACES_DB" -nt "$CACHE_DB" ]]; then
+        cp "$PLACES_DB" "$CACHE_DB" 2>/dev/null || {
+          echo "ERROR: Cannot access Firefox history database" >&2
+          exit 1
+        }
+      fi
+
+      # Query recent history, excluding:
+      # - Internal Firefox pages (about:, moz-extension:)
+      # - OAuth/auth redirects (long query strings)
+      # - Duplicate Google searches
+      ${pkgs.sqlite}/bin/sqlite3 -separator $'\t' "$CACHE_DB" "
+        SELECT DISTINCT
+          '🌐',
+          COALESCE(NULLIF(title, ''''''), url),
+          url
+        FROM moz_places
+        WHERE visit_count > 0
+          AND url LIKE 'http%'
+          AND url NOT LIKE '%accounts.google.com%'
+          AND url NOT LIKE '%oauth%'
+          AND url NOT LIKE '%/authorize?%'
+          AND length(url) < 500
+        ORDER BY last_visit_date DESC
+        LIMIT $MAX_ENTRIES
+      " 2>/dev/null || echo "ERROR: Query failed" >&2
+    '')
+
+    # walker-history-open: Opens a URL through pwa-url-router
+    (pkgs.writeShellScriptBin "walker-history-open" ''
+      #!/usr/bin/env bash
+      # Feature 113: Open browser history URL via pwa-url-router
+      # Routes to appropriate PWA if domain matches, otherwise Firefox
+      set -euo pipefail
+
+      URL="$1"
+
+      if [[ -z "$URL" ]]; then
+        echo "Usage: walker-history-open <url>" >&2
+        exit 1
+      fi
+
+      # Route through pwa-url-router for PWA detection
+      exec pwa-url-router "$URL"
+    '')
   ];
 
   # Desktop file for walker-open-in-nvim - manual creation
@@ -981,6 +1046,11 @@ in
         [[providers.prefixes]]
         prefix = ";m "
         provider = "menus:monitors"
+
+        # Feature 113: Browser history menu
+        [[providers.prefixes]]
+        prefix = ";h "
+        provider = "menus:history"
 
         [[providers.actions.desktopapplications]]
         action = "open"
@@ -1249,6 +1319,48 @@ in
                         Value = line,  -- Pass full line to walker-monitor-switch
                         Icon = icon,
                         Keywords = {"monitor", "profile", "display", profile_name}
+                    })
+                end
+            end
+            handle:close()
+        end
+
+        return entries
+    end
+  '';
+
+  # Feature 113: Browser history menu (Elephant Lua menu)
+  # Access: Meta+D → ;h → select from recent browser history
+  # Opens URLs through pwa-url-router for PWA detection
+  xdg.configFile."elephant/menus/history.lua".text = ''
+    Name = "history"
+    NamePretty = "Browser History"
+    Icon = "web-browser"
+    Cache = false  -- Always refresh history
+    Action = "walker-history-open '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "Recent browser history (routes to PWAs)"
+    SearchName = true
+    GlobalSearch = false  -- Keep local to ;h prefix
+
+    function GetEntries()
+        local entries = {}
+
+        -- Get history from walker-history-list
+        local handle = io.popen("walker-history-list 100 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                -- Parse tab-separated format: "icon\ttitle\turl"
+                local icon, title, url = line:match("^(.+)\t(.+)\t(.+)$")
+                if icon and title and url then
+                    -- Extract domain for keywords
+                    local domain = url:match("https?://([^/]+)")
+
+                    table.insert(entries, {
+                        Text = title,
+                        Value = url,
+                        Icon = icon,
+                        Keywords = {domain or "", "history", "browser", "recent"}
                     })
                 end
             end
