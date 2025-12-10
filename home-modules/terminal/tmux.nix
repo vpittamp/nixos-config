@@ -228,6 +228,11 @@ in
       # -S - means capture from beginning of scrollback history (not just visible screen)
       bind u run-shell "tmux capture-pane -J -p -S - > /tmp/tmux-buffer-scan.txt && tmux display-popup -E -h 95% -w 95% tmux-url-scan"
 
+      # URL opener (prefix + o) - extract HTTP/HTTPS URLs and open with PWA routing (Feature 113)
+      # URLs matching PWA domains open in PWAs, others open in Firefox
+      # Uses fzf with multi-select, shows PWA indicators (🌐 = PWA, 🦊 = Firefox)
+      bind o run-shell "tmux capture-pane -J -p -S - > /tmp/tmux-buffer-scan.txt && tmux display-popup -E -h 95% -w 95% tmux-url-open"
+
 
       # Mouse scroll sensitivity - reduce scroll speed for precision
       # By default, tmux scrolls too fast (3 lines per wheel event)

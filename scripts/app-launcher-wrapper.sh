@@ -460,6 +460,13 @@ if [[ -n "${I3PM_RESTORE_MARK:-}" ]]; then
     ENV_EXPORTS+=("export I3PM_RESTORE_MARK='$I3PM_RESTORE_MARK'")
 fi
 
+# Feature 113: Forward I3PM_PWA_URL for deep linking in PWAs
+# This allows pwa-url-router to pass the full URL to launch-pwa-by-name
+if [[ -n "${I3PM_PWA_URL:-}" ]]; then
+    ENV_EXPORTS+=("export I3PM_PWA_URL='$I3PM_PWA_URL'")
+    log "DEBUG" "Feature 113: Forwarding PWA URL for deep linking: $I3PM_PWA_URL"
+fi
+
 # Feature 101: All projects are now worktrees (using active-worktree.json as single source of truth)
 # I3PM_IS_WORKTREE is always true when we have an active worktree context
 if [[ -n "$WORKTREE_BRANCH" ]]; then

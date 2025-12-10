@@ -103,6 +103,99 @@ let
     fi
   '';
 
+  # Tmux URL opener using fzf - extracts HTTP/HTTPS URLs and routes through PWA router
+  # Feature 113: URLs matching PWA domains open in PWAs, others open in Firefox
+  tmux-url-open = pkgs.writeShellScriptBin "tmux-url-open" ''
+    set -euo pipefail
+
+    # Use a fixed temp file name (shared with tmux-url-scan)
+    TEMPFILE="/tmp/tmux-buffer-scan.txt"
+    DOMAIN_REGISTRY="$HOME/.config/i3/pwa-domains.json"
+
+    # Extract HTTP/HTTPS URLs from tmux buffer
+    # Pattern matches: http:// and https:// URLs
+    # Preserves terminal order (most recent last), removes duplicates
+    URLS=$(cat "$TEMPFILE" 2>/dev/null | \
+      grep -oE 'https?://[^[:space:]<>"]+' | \
+      sed 's/[.,;:!?\)\]]*$//' | \
+      grep -v '^https\?://,$' | \
+      awk '!seen[$0]++')
+
+    # Check if we found any URLs
+    if [[ -z "$URLS" ]]; then
+      echo "No URLs found in scrollback"
+      echo ""
+      echo "Tip: This tool extracts HTTP/HTTPS URLs from terminal output."
+      sleep 2
+      exit 0
+    fi
+
+    # Function to check if domain has a PWA
+    check_pwa() {
+      local url="$1"
+      local domain
+      domain=$(echo "$url" | ${pkgs.gnused}/bin/sed -E 's|^https?://||' | ${pkgs.gnused}/bin/sed -E 's|/.*||' | ${pkgs.gnused}/bin/sed -E 's|:.*||')
+
+      if [[ -f "$DOMAIN_REGISTRY" ]]; then
+        local pwa_info
+        pwa_info=$(${pkgs.jq}/bin/jq -r --arg d "$domain" '.[$d].name // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+        if [[ -n "$pwa_info" ]]; then
+          echo "🌐 $pwa_info"
+        else
+          echo "🦊 Firefox"
+        fi
+      else
+        echo "🦊 Firefox"
+      fi
+    }
+
+    # Build display list with PWA indicators
+    DISPLAY_LIST=""
+    while IFS= read -r url; do
+      pwa_status=$(check_pwa "$url")
+      DISPLAY_LIST="$DISPLAY_LIST$pwa_status | $url"$'\n'
+    done <<< "$URLS"
+
+    # Use fzf with multi-select
+    # Tab=select, Enter=confirm
+    # Full-screen layout with URL preview
+    SELECTED=$(echo -n "$DISPLAY_LIST" | \
+      ${pkgs.fzf}/bin/fzf \
+        --multi \
+        --prompt='Open URLs (Tab=select, Enter=confirm): ' \
+        --height=100% \
+        --layout=reverse \
+        --border=rounded \
+        --info=inline \
+        --header='🌐 = Opens in PWA | 🦊 = Opens in Firefox' \
+        --preview='url=$(echo {} | ${pkgs.gnused}/bin/sed "s/^[^|]*| //"); echo "URL: $url"; echo ""; domain=$(echo "$url" | ${pkgs.gnused}/bin/sed -E "s|^https?://||" | ${pkgs.gnused}/bin/sed -E "s|/.*||"); echo "Domain: $domain"; echo ""; if [[ -f "'"$DOMAIN_REGISTRY"'" ]]; then pwa=$(${pkgs.jq}/bin/jq -r --arg d "$domain" ".[\$d] // empty" "'"$DOMAIN_REGISTRY"'" 2>/dev/null); if [[ -n "$pwa" && "$pwa" != "null" ]]; then echo "PWA Match:"; echo "$pwa" | ${pkgs.jq}/bin/jq .; else echo "No PWA match - will open in Firefox"; fi; fi' \
+        --preview-window=right:40%:wrap || true)
+
+    # Cleanup
+    rm -f "$TEMPFILE"
+
+    # Process selected URLs
+    if [[ -n "$SELECTED" ]]; then
+      while IFS= read -r line; do
+        # Extract URL from display format "🌐 PWA | https://..."
+        url=$(echo "$line" | ${pkgs.gnused}/bin/sed 's/^[^|]*| //')
+
+        if [[ -n "$url" ]]; then
+          # Route through pwa-url-router (opens in PWA or Firefox)
+          # Use setsid to detach from terminal so process survives popup close
+          if command -v pwa-url-router >/dev/null 2>&1; then
+            ${pkgs.util-linux}/bin/setsid pwa-url-router "$url" </dev/null >/dev/null 2>&1 &
+          else
+            # Fallback to xdg-open
+            ${pkgs.util-linux}/bin/setsid ${pkgs.xdg-utils}/bin/xdg-open "$url" </dev/null >/dev/null 2>&1 &
+          fi
+        fi
+      done <<< "$SELECTED"
+      # Small delay to ensure processes are spawned before popup closes
+      sleep 0.2
+    fi
+  '';
+
   # Smart opener for Ghostty - handles relative paths, ~, URLs
   ghostty-smart-open = pkgs.writeShellScriptBin "ghostty-smart-open" ''
     set -euo pipefail
@@ -203,10 +296,11 @@ in
     };
   };
 
-  # Install the smart opener script and URL scanner
+  # Install the smart opener script and URL scanners
   home.packages = with pkgs; [
     ghostty-smart-open
-    tmux-url-scan  # FZF-based URL/path scanner for tmux
+    tmux-url-scan  # FZF-based file path scanner for tmux (prefix + u)
+    tmux-url-open  # FZF-based URL opener with PWA routing (prefix + o) - Feature 113
   ];
 
   # Configure urlscan to use our smart opener
