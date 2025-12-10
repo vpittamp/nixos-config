@@ -55,9 +55,10 @@ let
     DOMAIN_REGISTRY="$HOME/.config/i3/pwa-domains.json"
     LOG_DIR="$HOME/.local/state"
     LOG_FILE="$LOG_DIR/pwa-url-router.log"
+    LOCK_DIR="$LOG_DIR/pwa-router-locks"
 
-    # Ensure log directory exists
-    mkdir -p "$LOG_DIR"
+    # Ensure directories exist
+    mkdir -p "$LOG_DIR" "$LOCK_DIR"
 
     log() {
       echo "[$(date -Iseconds)] $*" >> "$LOG_FILE"
@@ -67,6 +68,48 @@ let
     if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null)" -gt 1048576 ]; then
       mv "$LOG_FILE" "$LOG_FILE.old"
     fi
+
+    # ============================================================================
+    # INFINITE LOOP PREVENTION
+    # ============================================================================
+    # Detect if we're being called from within a PWA context to prevent loops:
+    # PWA → xdg-open → pwa-url-router → PWA → xdg-open → ... (infinite!)
+    #
+    # Detection methods:
+    # 1. Check if we're already in a PWA launch context (I3PM_PWA_URL set)
+    # 2. Check if parent process is firefoxpwa (PWA opened external link)
+    # 3. Use temporary lock file for the same URL within a short window
+
+    # Method 1: Already in PWA URL launch context - go directly to Firefox
+    if [ -n "''${I3PM_PWA_URL:-}" ]; then
+      log "LOOP PREVENTION: I3PM_PWA_URL already set, bypassing to Firefox"
+      exec ${pkgs.firefox}/bin/firefox "$URL"
+    fi
+
+    # Method 2: Check if parent process chain includes firefoxpwa
+    # This catches when a PWA opens an external link
+    if [ -n "$URL" ]; then
+      PARENT_CHAIN=$(ps -o comm= -p $PPID 2>/dev/null || echo "")
+      GRANDPARENT_CHAIN=$(ps -o comm= -p $(ps -o ppid= -p $PPID 2>/dev/null) 2>/dev/null || echo "")
+      if [[ "$PARENT_CHAIN" == *"firefox"* ]] || [[ "$GRANDPARENT_CHAIN" == *"firefox"* ]]; then
+        # Called from within Firefox/PWA - check if this is a PWA instance
+        # PWA windows have class FFPWA-*, but we can't easily check that here
+        # Instead, check if the URL was JUST routed (lock file)
+        URL_HASH=$(echo -n "$URL" | md5sum | cut -d' ' -f1)
+        LOCK_FILE="$LOCK_DIR/$URL_HASH"
+
+        if [ -f "$LOCK_FILE" ]; then
+          LOCK_AGE=$(($(date +%s) - $(stat -c%Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+          if [ "$LOCK_AGE" -lt 5 ]; then
+            log "LOOP PREVENTION: URL was routed $LOCK_AGE seconds ago, bypassing to Firefox"
+            exec ${pkgs.firefox}/bin/firefox "$URL"
+          fi
+        fi
+      fi
+    fi
+
+    # Clean up old lock files (older than 30 seconds)
+    find "$LOCK_DIR" -type f -mmin +1 -delete 2>/dev/null || true
 
     if [ -z "$URL" ]; then
       log "ERROR: No URL provided"
@@ -81,6 +124,20 @@ let
 
     log "Extracted domain: $DOMAIN"
 
+    # ============================================================================
+    # AUTHENTICATION DOMAIN BYPASS
+    # ============================================================================
+    # These domains are used for SSO/OAuth flows and should ALWAYS open in Firefox
+    # to prevent authentication loops and ensure proper session handling.
+    AUTH_DOMAINS="accounts.google.com accounts.youtube.com login.microsoftonline.com login.live.com github.com/login github.com/session auth0.com login.tailscale.com"
+
+    for auth_domain in $AUTH_DOMAINS; do
+      if [[ "$DOMAIN" == "$auth_domain" ]] || [[ "$URL" == *"$auth_domain"* ]]; then
+        log "AUTH BYPASS: $DOMAIN is an authentication domain, opening in Firefox"
+        exec ${pkgs.firefox}/bin/firefox "$URL"
+      fi
+    done
+
     # Look up domain in registry
     if [ -f "$DOMAIN_REGISTRY" ]; then
       PWA_INFO=$(${pkgs.jq}/bin/jq -r --arg d "$DOMAIN" '.[$d] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
@@ -90,6 +147,11 @@ let
         PWA_APP_NAME=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.pwa')
         PWA_ULID=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.ulid')
         log "Match found: $DOMAIN → $PWA_APP_NAME ($PWA_DISPLAY, ULID: $PWA_ULID)"
+
+        # Create lock file BEFORE launching to prevent loops
+        # This marks that we're actively routing this URL
+        URL_HASH=$(echo -n "$URL" | md5sum | cut -d' ' -f1)
+        touch "$LOCK_DIR/$URL_HASH"
 
         # Launch PWA through app-launcher-wrapper for proper i3pm tracking
         # Set I3PM_PWA_URL for deep linking - launch-pwa-by-name will pick this up
