@@ -1342,6 +1342,38 @@ in
     Description = "Recent browser history (routes to PWAs)"
     SearchName = true
     GlobalSearch = false  -- Keep local to ;h prefix
+    FixedOrder = true  -- Keep chronological order (most recent first)
+
+    -- Load PWA domain registry for icon lookup
+    local pwa_icons = {}
+    local registry_path = os.getenv("HOME") .. "/.config/i3/pwa-domains.json"
+    local registry_file = io.open(registry_path, "r")
+    if registry_file then
+        local content = registry_file:read("*all")
+        registry_file:close()
+        -- Simple JSON parsing for domain -> icon mapping
+        -- Format: "domain": {"name": "...", "pwa": "...-pwa", ...}
+        for domain, pwa_name in content:gmatch('"([^"]+)":%s*{[^}]*"pwa":%s*"([^"]+)"') do
+            -- Icon path: ~/.local/share/icons/hicolor/128x128/apps/<pwa_name>.svg
+            local icon_path = os.getenv("HOME") .. "/.local/share/icons/hicolor/128x128/apps/" .. pwa_name .. ".svg"
+            local f = io.open(icon_path, "r")
+            if f then
+                f:close()
+                pwa_icons[domain] = icon_path
+            end
+        end
+    end
+
+    -- Fallback icons for common domains without PWAs
+    local fallback_icons = {
+        ["google.com"] = "google",
+        ["www.google.com"] = "google",
+        ["stackoverflow.com"] = "help-browser",
+        ["reddit.com"] = "applications-internet",
+        ["www.reddit.com"] = "applications-internet",
+        ["wikipedia.org"] = "accessories-dictionary",
+        ["en.wikipedia.org"] = "accessories-dictionary",
+    }
 
     function GetEntries()
         local entries = {}
@@ -1351,13 +1383,35 @@ in
         if handle then
             for line in handle:lines() do
                 -- Parse tab-separated format: "icon\ttitle\turl"
-                local icon, title, url = line:match("^(.+)\t(.+)\t(.+)$")
-                if icon and title and url then
-                    -- Extract domain for keywords
+                local _, title, url = line:match("^(.+)\t(.+)\t(.+)$")
+                if title and url then
+                    -- Extract domain for icon lookup and keywords
                     local domain = url:match("https?://([^/]+)")
+
+                    -- Find the best icon for this domain
+                    local icon = "web-browser"  -- default
+
+                    if domain then
+                        -- Try exact domain match first
+                        if pwa_icons[domain] then
+                            icon = pwa_icons[domain]
+                        -- Try without www prefix
+                        elseif domain:match("^www%.") then
+                            local bare_domain = domain:gsub("^www%.", "")
+                            if pwa_icons[bare_domain] then
+                                icon = pwa_icons[bare_domain]
+                            end
+                        end
+
+                        -- Check fallback icons
+                        if icon == "web-browser" and fallback_icons[domain] then
+                            icon = fallback_icons[domain]
+                        end
+                    end
 
                     table.insert(entries, {
                         Text = title,
+                        Subtext = url,  -- Show full URL as subtitle
                         Value = url,
                         Icon = icon,
                         Keywords = {domain or "", "history", "browser", "recent"}
