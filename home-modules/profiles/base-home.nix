@@ -71,6 +71,7 @@ in
     ../tools/docker.nix # Docker with 1Password authentication
     ../tools/pwa-helpers.nix  # PWA validation and helper commands (manual installation via Firefox GUI)
     ../tools/pwa-launcher.nix  # Dynamic PWA launcher with cross-machine compatibility
+    ../tools/pwa-url-router.nix  # Feature 113: Route external URLs to PWAs by domain
     # ../tools/web-apps-declarative.nix  # Chromium-based web app launcher - DISABLED (using Firefox PWAs instead)
     ../tools/clipcat.nix  # Clipboard history manager with X11 support (Feature 007)
     ../tools/screenshot-ocr.nix  # Screenshot (Spectacle) and OCR (gImageReader) tools
@@ -108,6 +109,7 @@ in
   modules.tools.fzf-file-search.enable = true;  # Floating fzf file search
   modules.tools.docker.enable = true; # Docker with 1Password integration
   modules.tools.remoteKubeconfig.enable = true;
+  programs.pwa-url-router.enable = true;  # Feature 113: Route external URLs to PWAs by domain
 
   # VSCode profile configuration
   # All VSCode instances (including activity-aware launchers) use this profile

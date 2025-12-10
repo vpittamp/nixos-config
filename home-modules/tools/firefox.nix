@@ -357,17 +357,28 @@ in
   # Set Firefox as the default browser for all browser-based activities
   # Using both defaultApplications (enforced) and associations.added (preferences)
   # This ensures OAuth flows work while allowing PWAs to register themselves
+  #
+  # Feature 113: URL scheme handlers (http/https) now route through pwa-url-router
+  # which opens PWAs for matching domains and falls back to Firefox for others.
+  # HTML files opened directly still use Firefox.
   xdg.mimeApps = {
     enable = true;
 
-    # Enforced defaults - critical for OAuth/authentication flows
+    # Enforced defaults
+    # Feature 113: http/https schemes route through PWA URL router for external app links
+    # The router checks if the URL domain matches a PWA, otherwise falls back to Firefox
     defaultApplications = {
+      # HTML files opened directly → Firefox (not affected by URL routing)
       "text/html" = "firefox.desktop";
-      "x-scheme-handler/http" = "firefox.desktop";
-      "x-scheme-handler/https" = "firefox.desktop";
+      "application/xhtml+xml" = "firefox.desktop";
+
+      # Feature 113: URL schemes → PWA URL Router (checks domain, falls back to Firefox)
+      "x-scheme-handler/http" = "pwa-url-router.desktop";
+      "x-scheme-handler/https" = "pwa-url-router.desktop";
+
+      # Non-web schemes → Firefox directly
       "x-scheme-handler/about" = "firefox.desktop";
       "x-scheme-handler/unknown" = "firefox.desktop";
-      "application/xhtml+xml" = "firefox.desktop";
     };
 
     # Additional associations - preferences, not enforced defaults
