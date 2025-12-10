@@ -96,6 +96,48 @@ let
     exec ${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} "$@"
   '';
 
+  # Feature 110: Spinner animation script for pulsating circle
+  # Outputs both the circle character and opacity value (space-separated)
+  # Larger base circle with opacity fade effect
+  spinnerScript = pkgs.writeShellScriptBin "eww-spinner-frame" ''
+    #!/usr/bin/env bash
+    IDX_FILE="/tmp/eww-spinner-idx"
+    IDX=$(cat "$IDX_FILE" 2>/dev/null || echo 0)
+    # 8-frame animation: large circle with opacity pulse
+    # All frames use the same large circle, opacity creates the pulse
+    case $IDX in
+      0)  echo "⬤" ;;  # opacity: 0.4
+      1)  echo "⬤" ;;  # opacity: 0.6
+      2)  echo "⬤" ;;  # opacity: 0.8
+      3)  echo "⬤" ;;  # opacity: 1.0 (peak)
+      4)  echo "⬤" ;;  # opacity: 1.0 (peak)
+      5)  echo "⬤" ;;  # opacity: 0.8
+      6)  echo "⬤" ;;  # opacity: 0.6
+      7)  echo "⬤" ;;  # opacity: 0.4
+      *)  echo "⬤" ;;
+    esac
+    NEXT=$(( (IDX + 1) % 8 ))
+    echo "$NEXT" > "$IDX_FILE"
+  '';
+
+  # Feature 110: Opacity script for fade effect
+  spinnerOpacityScript = pkgs.writeShellScriptBin "eww-spinner-opacity" ''
+    #!/usr/bin/env bash
+    IDX=$(cat /tmp/eww-spinner-idx 2>/dev/null || echo 0)
+    # Opacity values matching frame index
+    case $IDX in
+      0)  echo "0.4" ;;
+      1)  echo "0.6" ;;
+      2)  echo "0.8" ;;
+      3)  echo "1.0" ;;
+      4)  echo "1.0" ;;
+      5)  echo "0.8" ;;
+      6)  echo "0.6" ;;
+      7)  echo "0.4" ;;
+      *)  echo "1.0" ;;
+    esac
+  '';
+
   # Toggle script for panel visibility
   # Uses CSS-based visibility (panel_visible variable) instead of open/close
   # which was crashing the eww daemon under rapid toggling
@@ -3078,15 +3120,21 @@ in
         :initial "{\"status\":\"loading\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode traces`)
 
-      ;; Feature 107: Spinner animation variable
-      ;; Defpoll with conditional run-while to minimize CPU usage
-      ;; Only polls when has_working_badge is true (from monitoring_data)
-      ;; Pulsing circle frames (6 total): ◌○⊙●⊙○
+      ;; Feature 110: Pulsating red circle animation with opacity fade
+      ;; Large circle with opacity pulse for smooth "breathing" effect
+      ;; 120ms interval with 8 frames = ~1s full cycle
       (defpoll spinner_frame
-        :interval "300ms"
+        :interval "120ms"
         :run-while {monitoring_data.has_working_badge ?: false}
-        :initial "◌"
-        `FRAMES=(◌ ○ ⊙ ● ⊙ ○); echo "''${FRAMES[$(( $(date +%s%N | cut -c10-12) / 30 % 6 ))]}"`)
+        :initial "⬤"
+        `${spinnerScript}/bin/eww-spinner-frame`)
+
+      ;; Feature 110: Opacity value for fade effect (synced with spinner_frame)
+      (defpoll spinner_opacity
+        :interval "120ms"
+        :run-while {monitoring_data.has_working_badge ?: false}
+        :initial "1.0"
+        `${spinnerOpacityScript}/bin/eww-spinner-opacity`)
 
       ;; Feature 092: Defpoll: Sway event log (2s refresh)
       ;; Changed from deflisten to defpoll to prevent process spawning issues
@@ -3786,8 +3834,9 @@ in
                   ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
                   ;; Feature 107: spinner_frame now updated via separate defpoll (not monitoring_data)
                   ;; Feature 107: Focus-aware badge styling (dimmed when window is focused)
+                  ;; Feature 110: Added opacity class for pulsating fade effect
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working" : " badge-stopped") + ((window.focused ?: false) ? " badge-focused-window" : "")}
+                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : " badge-stopped") + ((window.focused ?: false) ? " badge-focused-window" : "")}
                     :text {((window.badge?.state ?: "stopped") == "working" ? spinner_frame : "󰂚 " + (window.badge?.count ?: ""))}
                     :tooltip {(window.badge?.state ?: "stopped") == "working"
                       ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
@@ -8020,33 +8069,30 @@ in
       .badge-stopped {
         color: ${mocha.base};
         background: linear-gradient(135deg, ${mocha.peach}, ${mocha.red});
-        border: 2px solid ${mocha.peach};
-        border-radius: 10px;
-        padding: 2px 8px;
-        margin-left: 8px;
-        box-shadow: 0 0 10px rgba(250, 179, 135, 0.7),
-                    0 0 20px rgba(235, 160, 172, 0.4),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-        font-size: 12px;
-        font-weight: bold;
-        min-width: 24px;
+        border: 1px solid ${mocha.peach};
+        box-shadow: 0 0 8px rgba(250, 179, 135, 0.6),
+                    0 0 16px rgba(250, 179, 135, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 095: Working state - pulsing circle spinner */
-      /* Uses pulsing circle animation ◌○⊙●⊙○ via defpoll */
-      /* Transparent background - only the pulsing circle is visible */
+      /* Feature 110: Working state - pulsating red circle on subtle background */
       .badge-working {
-        /* Bright red for maximum visibility against dark backgrounds */
         color: ${mocha.red};
         background: transparent;
         border: none;
-        padding: 0px 2px;
-        margin-left: 4px;
-        /* Compact size to prevent layout disruption */
-        font-size: 16px;
+        box-shadow: none;
+        font-size: 28px;
         font-weight: bold;
-        min-width: 0;
+        min-width: 32px;
+        min-height: 32px;
       }
+
+      /* Feature 110: Opacity classes for pulsating fade effect */
+      .badge-opacity-04 { opacity: 0.4; }
+      .badge-opacity-06 { opacity: 0.6; }
+      .badge-opacity-08 { opacity: 0.8; }
+      .badge-opacity-10 { opacity: 1.0; }
 
       /* Feature 107: Dimmed badge when window is already focused */
       .badge-focused-window {

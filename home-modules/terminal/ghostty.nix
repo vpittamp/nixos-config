@@ -103,6 +103,63 @@ let
     fi
   '';
 
+  # Tmux URL opener using fzf - extracts and opens URLs from scrollback
+  # Complementary to tmux-url-scan (file paths), this extracts http/https URLs
+  tmux-url-open = pkgs.writeShellScriptBin "tmux-url-open" ''
+    set -euo pipefail
+
+    # Use a fixed temp file name
+    TEMPFILE="/tmp/tmux-url-buffer.txt"
+
+    # Extract URLs from tmux buffer
+    # Pattern matches: http:// and https:// URLs
+    # Preserves terminal order (most recent last), removes duplicates
+    # Note: Using simpler pattern to avoid escaping issues in Nix
+    URLS=$(cat "$TEMPFILE" 2>/dev/null | \
+      grep -oE 'https?://[^[:space:]"<>]+' | \
+      sed -E 's/[.,;:!?)]+$//' | \
+      sed -E 's/\]$//' | \
+      awk '!seen[$0]++')
+
+    # Check if we found any URLs
+    if [[ -z "$URLS" ]]; then
+      echo "No URLs found in scrollback"
+      echo ""
+      echo "Tip: This tool extracts http:// and https:// URLs."
+      echo "For file paths, use prefix + u instead."
+      sleep 2
+      exit 0
+    fi
+
+    # Use fzf with multi-select
+    # Tab=select, Enter=confirm
+    # Full-screen layout with URL preview
+    mapfile -t SELECTED < <(echo "$URLS" | \
+      ${pkgs.fzf}/bin/fzf \
+        --multi \
+        --prompt='Open URLs (Tab=select, Enter=confirm): ' \
+        --height=100% \
+        --layout=reverse \
+        --border=rounded \
+        --info=inline \
+        --header='Select URLs to open in browser/PWA' \
+        --preview='echo "URL: {}"; echo ""; echo "Domain: $(echo {} | sed -E "s|https?://([^/]+).*|\1|")"; echo ""; if command -v pwa-route-test &>/dev/null; then pwa-route-test "{}" 2>/dev/null || echo "Will open in Firefox"; fi' \
+        --preview-window=right:50%:wrap || true)
+
+    # Cleanup
+    rm -f "$TEMPFILE"
+
+    # Open selected URLs
+    if [ ''${#SELECTED[@]} -gt 0 ]; then
+      for url in "''${SELECTED[@]}"; do
+        # Use swaymsg exec to launch in detached context (survives popup close)
+        # xdg-open routes through pwa-url-router (Feature 113)
+        ${pkgs.sway}/bin/swaymsg exec "${pkgs.xdg-utils}/bin/xdg-open '$url'" > /dev/null 2>&1
+        sleep 0.3  # Small delay between opens to prevent overwhelming
+      done
+    fi
+  '';
+
   # Smart opener for Ghostty - handles relative paths, ~, URLs
   ghostty-smart-open = pkgs.writeShellScriptBin "ghostty-smart-open" ''
     set -euo pipefail
@@ -203,10 +260,11 @@ in
     };
   };
 
-  # Install the smart opener script and URL scanner
+  # Install the smart opener script and URL/path scanners
   home.packages = with pkgs; [
     ghostty-smart-open
-    tmux-url-scan  # FZF-based URL/path scanner for tmux
+    tmux-url-scan   # FZF-based file path scanner for tmux (prefix + u)
+    tmux-url-open   # FZF-based URL opener for tmux (prefix + o)
   ];
 
   # Configure urlscan to use our smart opener

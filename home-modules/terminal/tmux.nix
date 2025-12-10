@@ -228,6 +228,10 @@ in
       # -S - means capture from beginning of scrollback history (not just visible screen)
       bind u run-shell "tmux capture-pane -J -p -S - > /tmp/tmux-buffer-scan.txt && tmux display-popup -E -h 95% -w 95% tmux-url-scan"
 
+      # URL opener (prefix + o) - extract URLs from scrollback and open in browser
+      # Complementary to prefix + u (file paths), this extracts http/https URLs
+      # Uses fzf for selection, xdg-open to launch in default browser (or PWA via pwa-url-router)
+      bind o run-shell "tmux capture-pane -J -p -S - > /tmp/tmux-url-buffer.txt && tmux display-popup -E -h 95% -w 95% tmux-url-open"
 
       # Mouse scroll sensitivity - reduce scroll speed for precision
       # By default, tmux scrolls too fast (3 lines per wheel event)

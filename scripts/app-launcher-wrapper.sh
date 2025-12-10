@@ -493,6 +493,11 @@ if [[ -n "$GIT_BEHIND" ]] && [[ "$GIT_BEHIND" != "null" ]]; then
     ENV_EXPORTS+=("export I3PM_GIT_BEHIND='$GIT_BEHIND'")
 fi
 
+# NOTE: I3PM_PWA_URL is intentionally NOT passed through ENV_EXPORTS
+# It's read directly by launch-pwa-by-name from the calling environment
+# Passing it through swaymsg exec would cause infinite loops when PWAs open
+# external links (child processes inherit it and trigger loop prevention)
+
 ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 
 # ============================================================================
