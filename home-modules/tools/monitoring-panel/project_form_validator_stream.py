@@ -36,18 +36,23 @@ class FormValidationStream:
         self.validation_task: Optional[asyncio.Task] = None
 
     def get_eww_variable(self, var_name: str) -> str:
-        """Get current value of an Eww variable"""
+        """Get current value of an Eww variable
+
+        Uses short timeout to prevent blocking if eww daemon is overloaded.
+        Returns empty string on any error to allow graceful degradation.
+        """
         try:
             result = subprocess.run(
                 ["eww", "--config", self.eww_config, "get", var_name],
                 capture_output=True,
                 text=True,
-                timeout=1.0
+                timeout=0.5  # Short timeout to prevent IPC congestion
             )
             if result.returncode == 0:
                 return result.stdout.strip()
             return ""
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError):
+            # Gracefully handle daemon unavailable/overloaded
             return ""
 
     def get_current_form_state(self) -> Dict[str, Any]:
@@ -108,11 +113,23 @@ class FormValidationStream:
         print(json.dumps(result), flush=True)
 
     async def watch_form_changes(self) -> None:
-        """Watch for form state changes and trigger validation"""
+        """Watch for form state changes and trigger validation
+
+        Uses adaptive polling to reduce IPC load:
+        - 2s interval when no form is being edited (idle)
+        - 500ms interval when actively editing a form
+        This prevents eww daemon IPC congestion that can cause hangs.
+        """
+        IDLE_POLL_INTERVAL = 2.0  # Slow poll when not editing
+        ACTIVE_POLL_INTERVAL = 0.5  # Fast poll when form is open
+
         while True:
             try:
                 # Get current form state
                 current_state = self.get_current_form_state()
+
+                # Determine if a form is being edited (project name is set)
+                is_editing = bool(current_state.get("name"))
 
                 # Check if state changed
                 if self.form_state_changed(current_state):
@@ -129,8 +146,10 @@ class FormValidationStream:
                         self.validate_and_emit(current_state)
                     )
 
-                # Poll every 100ms for changes (validation itself is debounced 300ms)
-                await asyncio.sleep(0.1)
+                # Adaptive polling: fast when editing, slow when idle
+                # This reduces eww IPC load from 10 req/s to 0.5-2 req/s
+                poll_interval = ACTIVE_POLL_INTERVAL if is_editing else IDLE_POLL_INTERVAL
+                await asyncio.sleep(poll_interval)
 
             except Exception as e:
                 # Emit error state
@@ -142,7 +161,7 @@ class FormValidationStream:
                     "timestamp": datetime.now().isoformat()
                 })
                 # Continue watching despite errors
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(2.0)
 
     async def run(self) -> None:
         """Run the validation stream"""

@@ -7222,6 +7222,10 @@ class IPCServer:
 
         Feature 001: T067 (monitors.reassign RPC handler)
 
+        This now uses force_move_existing_workspaces to actually move workspaces
+        that are on the wrong output to their correct output based on
+        workspace-assignments.json and output_preferences.
+
         Returns:
             {
                 "workspaces_moved": int,
@@ -7230,43 +7234,46 @@ class IPCServer:
                     "primary": str,    # Output name
                     "secondary": str,
                     "tertiary": str
-                }
+                },
+                "moved_details": list  # Details of each move
             }
         """
+        from .workspace_manager import (
+            assign_workspaces_with_monitor_roles,
+            force_move_existing_workspaces,
+        )
+
         start_time = time.perf_counter()
         error_msg = None
 
         try:
-            # Get active outputs from Sway IPC
-            outputs = await self.i3_connection.conn.get_outputs()
-            active_outputs = [o for o in outputs if o.active and not o.name.startswith("__")]
+            # First, re-apply workspace preferences from config
+            await assign_workspaces_with_monitor_roles(self.i3_connection.conn)
 
-            # Sort by name to get consistent connection order
-            active_outputs.sort(key=lambda o: o.name)
+            # Then force-move any existing workspaces that are on the wrong output
+            move_result = await force_move_existing_workspaces(self.i3_connection.conn)
 
-            # Build role assignments (connection order for now)
+            # Load output_preferences for monitor_assignments in response
+            from pathlib import Path
+            import json
+            config_path = Path.home() / ".config" / "sway" / "workspace-assignments.json"
             monitor_assignments = {}
-            if len(active_outputs) >= 1:
-                monitor_assignments["primary"] = active_outputs[0].name
-            if len(active_outputs) >= 2:
-                monitor_assignments["secondary"] = active_outputs[1].name
-            if len(active_outputs) >= 3:
-                monitor_assignments["tertiary"] = active_outputs[2].name
-
-            # Get workspaces
-            workspaces = await self.i3_connection.conn.get_workspaces()
-            workspaces_moved = 0
-
-            # TODO: Implement actual workspace reassignment logic
-            # For now, return success with 0 moves
-            # This requires integrating MonitorRoleResolver and loading workspace-assignments.json
+            if config_path.exists():
+                with open(config_path) as f:
+                    data = json.load(f)
+                output_prefs = data.get("output_preferences", {})
+                for role in ["primary", "secondary", "tertiary"]:
+                    if role in output_prefs and output_prefs[role]:
+                        monitor_assignments[role] = output_prefs[role][0]
 
             duration_ms = (time.perf_counter() - start_time) * 1000
 
             result = {
-                "workspaces_moved": workspaces_moved,
+                "workspaces_moved": len(move_result.get("moved", [])),
                 "duration_ms": duration_ms,
-                "monitor_assignments": monitor_assignments
+                "monitor_assignments": monitor_assignments,
+                "moved_details": move_result.get("moved", []),
+                "errors": move_result.get("errors", 0),
             }
 
             return result

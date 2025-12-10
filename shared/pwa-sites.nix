@@ -1,6 +1,7 @@
 # PWA Site Definitions - Single Source of Truth
 # This file contains all PWA metadata with ULID identifiers for cross-machine portability
 # Feature 106: Portable icon paths via assetsPackage
+# Feature 113: URL routing - routing_domains defines which domains open in this PWA
 { lib, assetsPackage ? null }:
 
 let
@@ -17,6 +18,8 @@ in
   #   - preferred_workspace: workspace number (50+ for PWAs, no upper bound; regular apps use 1-50)
   #   - preferred_monitor_role: (optional) "primary", "secondary", or "tertiary" - Feature 001: User Story 3
   #       If omitted, role is inferred from workspace number (WS 1-2→primary, 3-5→secondary, 6+→tertiary)
+  #   - routing_domains: (optional) list of domains that should open in this PWA - Feature 113
+  #       If omitted, defaults to [ domain ]. Use this to include www variants or related subdomains.
   pwaSites = [
     # YouTube
     {
@@ -33,6 +36,8 @@ in
       app_scope = "scoped";
       preferred_workspace = 50;
       preferred_monitor_role = "tertiary";  # Feature 001: Explicit tertiary assignment
+      # Feature 113: URL routing domains
+      routing_domains = [ "youtube.com" "www.youtube.com" "youtu.be" "m.youtube.com" ];
     }
 
     # Google AI (AI Mode Search)
@@ -49,6 +54,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 51;
+      # Feature 113: URL routing - only AI-specific paths, not general google.com
+      routing_domains = [ ];  # Disabled - google.com is too broad
     }
 
     # Claude (Anthropic AI)
@@ -66,6 +73,8 @@ in
       app_scope = "scoped";
       preferred_workspace = 52;
       preferred_monitor_role = "secondary";  # Feature 001: Explicit secondary assignment (dev tools on center monitor)
+      # Feature 113: URL routing domains
+      routing_domains = [ "claude.ai" "www.claude.ai" ];
     }
 
     # ChatGPT
@@ -82,6 +91,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 53;
+      # Feature 113: URL routing domains
+      routing_domains = [ "chatgpt.com" "www.chatgpt.com" "chat.openai.com" ];
     }
 
     # GitHub
@@ -98,6 +109,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 54;
+      # Feature 113: URL routing domains
+      routing_domains = [ "github.com" "www.github.com" ];
     }
 
     # GitHub Codespaces
@@ -114,6 +127,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 55;
+      # Feature 113: URL routing domains
+      routing_domains = [ "github.dev" ];
     }
 
     # Gmail
@@ -130,6 +145,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 56;
+      # Feature 113: URL routing domains
+      routing_domains = [ "mail.google.com" ];
     }
 
     # Google Calendar
@@ -146,6 +163,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 57;
+      # Feature 113: URL routing domains
+      routing_domains = [ "calendar.google.com" ];
     }
 
     # LinkedIn Learning
@@ -162,6 +181,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 58;
+      # Feature 113: URL routing - only learning subdomain, not all of linkedin
+      routing_domains = [ ];  # Disabled - linkedin.com is too broad
     }
 
     # Boston Dog Butlers
@@ -178,6 +199,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 59;
+      # Feature 113: URL routing domains
+      routing_domains = [ "bostondogbutlers.com" "www.bostondogbutlers.com" "www.timetopet.com" ];
     }
 
     # Microsoft Outlook
@@ -195,6 +218,8 @@ in
       app_scope = "global";
       preferred_workspace = 60;
       preferred_monitor_role = "secondary";  # Email client on center monitor
+      # Feature 113: URL routing domains
+      routing_domains = [ "outlook.office.com" "outlook.live.com" ];
     }
 
     # Hetzner Cloud Console
@@ -212,6 +237,8 @@ in
       app_scope = "global";
       preferred_workspace = 61;
       preferred_monitor_role = "tertiary";  # Infrastructure tools on tertiary monitor
+      # Feature 113: URL routing domains
+      routing_domains = [ "console.hetzner.cloud" ];
     }
 
     # Tailscale Admin Console
@@ -229,6 +256,8 @@ in
       app_scope = "global";
       preferred_workspace = 62;
       preferred_monitor_role = "tertiary";  # Network admin tools on tertiary monitor
+      # Feature 113: URL routing domains
+      routing_domains = [ "login.tailscale.com" "tailscale.com" "www.tailscale.com" ];
     }
 
     # Uber Eats
@@ -245,6 +274,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 63;
+      # Feature 113: URL routing domains
+      routing_domains = [ "ubereats.com" "www.ubereats.com" ];
     }
 
     # Home Assistant
@@ -261,6 +292,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 64;
+      # Feature 113: URL routing - localhost is too generic
+      routing_domains = [ ];  # Disabled - localhost:8123 would conflict with other local services
     }
 
     # 1Password
@@ -277,6 +310,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 65;
+      # Feature 113: URL routing domains
+      routing_domains = [ "pittampalli.1password.com" "my.1password.com" ];
     }
 
     # Perplexity
@@ -293,6 +328,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 66;
+      # Feature 113: URL routing domains
+      routing_domains = [ "perplexity.ai" "www.perplexity.ai" ];
     }
 
     # VS Code Web
@@ -309,6 +346,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 67;
+      # Feature 113: URL routing domains
+      routing_domains = [ "vscode.dev" "insiders.vscode.dev" ];
     }
 
     # Keycloak (Tailscale)
@@ -325,6 +364,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 68;
+      # Feature 113: URL routing domains
+      routing_domains = [ "keycloak.tail286401.ts.net" ];
     }
 
     # Backstage (Tailscale)
@@ -341,6 +382,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 69;
+      # Feature 113: URL routing domains
+      routing_domains = [ "cnoe.tail286401.ts.net" ];
     }
 
     # ArgoCD (Tailscale)
@@ -357,6 +400,26 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 70;
+      # Feature 113: URL routing domains
+      routing_domains = [ "argocd.tail286401.ts.net" ];
+    }
+
+    # ArgoCD (Talos/ai401kchat)
+    {
+      name = "ArgoCD Talos";
+      url = "https://argocd.ai401kchat.com";
+      domain = "argocd.ai401kchat.com";
+      icon = iconPath "argocd-talos.svg";
+      description = "ArgoCD GitOps controller for Talos Kubernetes cluster";
+      categories = "Development;Network;System;";
+      keywords = "argocd;gitops;cd;kubernetes;devops;talos;ai401kchat;";
+      scope = "https://argocd.ai401kchat.com/";
+      ulid = "3YBB66K55HEZRW2GC25M8W53NJ";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 77;
+      # Feature 113: URL routing domains
+      routing_domains = [ "argocd.ai401kchat.com" ];
     }
 
     # Gitea (Tailscale)
@@ -373,6 +436,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 71;
+      # Feature 113: URL routing domains
+      routing_domains = [ "gitea.tail286401.ts.net" ];
     }
 
     # CVS Pharmacy
@@ -389,6 +454,8 @@ in
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 72;
+      # Feature 113: URL routing domains
+      routing_domains = [ "cvs.com" "www.cvs.com" ];
     }
 
     # Kargo (Tailscale)
@@ -405,6 +472,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 73;
+      # Feature 113: URL routing domains
+      routing_domains = [ "kargo.tail286401.ts.net" ];
     }
 
     # Headlamp (Tailscale)
@@ -421,6 +490,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 74;
+      # Feature 113: URL routing domains
+      routing_domains = [ "headlamp.tail286401.ts.net" ];
     }
 
     # Kagent (Tailscale)
@@ -437,6 +508,8 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 75;
+      # Feature 113: URL routing domains
+      routing_domains = [ "kagent.tail286401.ts.net" ];
     }
 
     # Agent Gateway (Tailscale)
@@ -453,6 +526,103 @@ in
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 76;
+      # Feature 113: URL routing domains
+      routing_domains = [ "agentgateway.tail286401.ts.net" ];
+    }
+
+    # ============================================
+    # Talos Cluster PWAs (ai401kchat.com)
+    # Purple-themed icons to distinguish from Tailscale variants
+    # ============================================
+
+    # Backstage (Talos/ai401kchat)
+    {
+      name = "Backstage Talos";
+      url = "https://backstage.ai401kchat.com";
+      domain = "backstage.ai401kchat.com";
+      icon = iconPath "backstage-talos.svg";
+      description = "Backstage developer portal for Talos Kubernetes cluster";
+      categories = "Development;Network;";
+      keywords = "backstage;developer-portal;sdp;platform;kubernetes;talos;ai401kchat;";
+      scope = "https://backstage.ai401kchat.com/";
+      ulid = "7KZ3PBQKJKQJKQ7ZA831VYAFXC";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 78;
+      # Feature 113: URL routing domains
+      routing_domains = [ "backstage.ai401kchat.com" ];
+    }
+
+    # Kargo (Talos/ai401kchat)
+    {
+      name = "Kargo Talos";
+      url = "https://kargo.ai401kchat.com";
+      domain = "kargo.ai401kchat.com";
+      icon = iconPath "kargo.png";  # Using same PNG (no SVG available)
+      description = "Kargo continuous delivery and promotion engine for Talos cluster";
+      categories = "Development;Network;System;";
+      keywords = "kargo;kubernetes;cd;gitops;promotion;delivery;talos;ai401kchat;";
+      scope = "https://kargo.ai401kchat.com/";
+      ulid = "45XFC05KF4YM4GK9SMKW8S4EPZ";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 79;
+      # Feature 113: URL routing domains
+      routing_domains = [ "kargo.ai401kchat.com" ];
+    }
+
+    # Headlamp (Talos/ai401kchat)
+    {
+      name = "Headlamp Talos";
+      url = "https://headlamp.ai401kchat.com";
+      domain = "headlamp.ai401kchat.com";
+      icon = iconPath "headlamp-talos.svg";
+      description = "Headlamp Kubernetes dashboard for Talos cluster";
+      categories = "Development;Network;System;";
+      keywords = "headlamp;kubernetes;dashboard;k8s;cluster;talos;ai401kchat;";
+      scope = "https://headlamp.ai401kchat.com/";
+      ulid = "7Q27F97E9F496X7ZQ47ANH88CP";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 80;
+      # Feature 113: URL routing domains
+      routing_domains = [ "headlamp.ai401kchat.com" ];
+    }
+
+    # Gitea (Talos/ai401kchat)
+    {
+      name = "Gitea Talos";
+      url = "https://gitea.ai401kchat.com";
+      domain = "gitea.ai401kchat.com";
+      icon = iconPath "gitea-talos.svg";
+      description = "Gitea self-hosted git service for Talos cluster";
+      categories = "Development;Network;";
+      keywords = "gitea;git;scm;code;devops;kubernetes;talos;ai401kchat;";
+      scope = "https://gitea.ai401kchat.com/";
+      ulid = "72TGWGVAMBGEA9T1M4MS75S8PG";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 81;
+      # Feature 113: URL routing domains
+      routing_domains = [ "gitea.ai401kchat.com" ];
+    }
+
+    # Keycloak (Talos/ai401kchat)
+    {
+      name = "Keycloak Talos";
+      url = "https://keycloak.ai401kchat.com";
+      domain = "keycloak.ai401kchat.com";
+      icon = iconPath "keycloak-talos.svg";
+      description = "Keycloak identity and access management for Talos cluster";
+      categories = "Security;Network;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;talos;ai401kchat;";
+      scope = "https://keycloak.ai401kchat.com/";
+      ulid = "514S283M0EGKNVDMYKAR3635H6";  # Generated 2025-12-09
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 82;
+      # Feature 113: URL routing domains
+      routing_domains = [ "keycloak.ai401kchat.com" ];
     }
   ];
 

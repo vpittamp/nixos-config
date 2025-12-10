@@ -7,6 +7,7 @@
 # 1. Resolves PWA display name → app registry name (e.g., "Claude" → "claude-pwa")
 # 2. Delegates to app-launcher-wrapper.sh for unified launch logic
 # 3. Falls back to direct firefoxpwa launch if PWA not in registry
+# 4. Feature 113: Optionally accepts a URL argument for deep linking
 #
 # Benefits of unified approach:
 # - Consistent I3PM_* environment variable injection
@@ -19,16 +20,20 @@ let
   launch-pwa-by-name = pkgs.writeShellScriptBin "launch-pwa-by-name" ''
     #!/usr/bin/env bash
     # PWA Launcher - Routes to unified app-launcher-wrapper
-    # Usage: launch-pwa-by-name <PWA Name or ULID>
+    # Usage: launch-pwa-by-name <PWA Name or ULID> [URL]
+    # Feature 113: Optional URL argument for deep linking
 
     set -euo pipefail
 
     if [[ $# -lt 1 ]]; then
-      echo "Usage: launch-pwa-by-name <PWA Name or ULID>" >&2
+      echo "Usage: launch-pwa-by-name <PWA Name or ULID> [URL]" >&2
+      echo "  URL: Optional URL to open in the PWA (Feature 113)" >&2
       exit 1
     fi
 
     NAME="$1"
+    # Feature 113: URL for deep linking - check env var first (from pwa-url-router), then argument
+    URL="''${I3PM_PWA_URL:-''${2:-}}"
 
     # ============================================================================
     # PHASE 1: Resolve PWA ULID from name
@@ -97,7 +102,17 @@ let
     export EGL_PLATFORM=wayland
     export GDK_BACKEND=wayland
 
-    exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID"
+    # ============================================================================
+    # PHASE 3: Launch PWA (Feature 113: with optional URL for deep linking)
+    # ============================================================================
+    if [[ -n "$URL" ]]; then
+      # Feature 113: Launch with URL for deep linking
+      # The -- separator ensures URL is passed as argument, not option
+      exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID" -- "$URL"
+    else
+      # Standard launch without URL
+      exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID"
+    fi
   '';
 in
 {

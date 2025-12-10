@@ -119,14 +119,16 @@ let
   headlessSingleOutputMode =
     headlessOutputStateDefaults."HEADLESS-2" == false
     && headlessOutputStateDefaults."HEADLESS-3" == false;
+  # Feature 001: Map monitor roles to outputs for workspace assignments
+  # Always use full triple-monitor mapping - daemon handles profile switching at runtime
+  # DO NOT use headlessSingleOutputMode here as it would incorrectly map all roles to primary
   headlessRoleToOutput = role:
-    if headlessSingleOutputMode then headlessPrimaryOutput
-    else if role == "primary" then headlessPrimaryOutput
+    if role == "primary" then headlessPrimaryOutput
     else if role == "secondary" then headlessSecondaryOutput
     else headlessTertiaryOutput;
+  # Feature 001: Always include all fallback outputs (daemon handles profile switching at runtime)
   headlessFallbackOutputs = primary:
-    if headlessSingleOutputMode then [ ]
-    else builtins.filter (o: o != primary) [ headlessPrimaryOutput headlessSecondaryOutput headlessTertiaryOutput ];
+    builtins.filter (o: o != primary) [ headlessPrimaryOutput headlessSecondaryOutput headlessTertiaryOutput ];
   headlessMonitorProfiles = {
     single = {
       name = "single";
@@ -298,6 +300,25 @@ let
         builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
   in {
     version = "1.0";
+    # Feature 001: Explicit output preferences to ensure deterministic role→output mapping
+    # Without this, the daemon falls back to connection order which can vary
+    output_preferences =
+      if isHeadless then {
+        primary = [ headlessPrimaryOutput ];     # HEADLESS-1
+        secondary = [ headlessSecondaryOutput ]; # HEADLESS-2
+        tertiary = [ headlessTertiaryOutput ];   # HEADLESS-3
+      }
+      else if isHybridMode then {
+        primary = [ "eDP-1" ];
+        secondary = [ "HEADLESS-1" ];
+        tertiary = [ "HEADLESS-2" ];
+      }
+      else {
+        # Standard laptop with optional external monitor
+        primary = [ "eDP-1" ];
+        secondary = [ "HDMI-A-1" "DP-1" "DP-2" ];
+        tertiary = [ ];
+      };
     assignments =
       # App registry assignments
       (map (app: {

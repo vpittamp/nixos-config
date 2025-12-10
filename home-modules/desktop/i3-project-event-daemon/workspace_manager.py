@@ -302,6 +302,25 @@ async def assign_workspaces_with_monitor_roles(
 
     logger.info(f"[Feature 001] Loaded {len(configs)} workspace assignments")
 
+    # Parse output_preferences for deterministic role→output mapping
+    # Without this, the daemon falls back to connection order which can vary
+    output_preferences_raw = data.get("output_preferences", {})
+    output_preferences = {}
+    if output_preferences_raw:
+        from .models import MonitorRole
+        role_mapping = {
+            "primary": MonitorRole.PRIMARY,
+            "secondary": MonitorRole.SECONDARY,
+            "tertiary": MonitorRole.TERTIARY,
+        }
+        for role_name, output_list in output_preferences_raw.items():
+            if role_name in role_mapping and isinstance(output_list, list):
+                output_preferences[role_mapping[role_name]] = output_list
+        logger.info(
+            f"[Feature 001] Loaded output preferences: "
+            f"{', '.join([f'{k.value}→{v}' for k, v in output_preferences.items()])}"
+        )
+
     # Get active outputs from Sway IPC
     # Use output-states.json to determine which outputs are "active"
     # This works around the limitation that headless outputs can't be disabled via DPMS
@@ -335,8 +354,8 @@ async def assign_workspaces_with_monitor_roles(
         f"{', '.join([o.name for o in outputs])}"
     )
 
-    # Initialize MonitorRoleResolver
-    resolver = MonitorRoleResolver()
+    # Initialize MonitorRoleResolver with output preferences for deterministic mapping
+    resolver = MonitorRoleResolver(output_preferences=output_preferences)
 
     # Resolve monitor roles to physical outputs
     role_assignments = resolver.resolve_role(configs, outputs)
@@ -388,10 +407,6 @@ async def assign_workspaces_with_monitor_roles(
                     f"[Feature 001] Assigned workspace {ws_num} → {output_name} "
                     f"(app: {config.app_name}, source: {config.source})"
                 )
-
-                # Note: Sway workspaces cannot be moved between outputs once created.
-                # Setting preferred output ensures future switches go to the correct output.
-                # Existing workspaces on disabled outputs will remain until empty or user moves windows.
             except Exception as e:
                 logger.error(
                     f"[Feature 001] Failed to assign workspace {ws_num} to {output_name}: {e}"
@@ -486,6 +501,153 @@ async def persist_monitor_state_v2(
 
     except Exception as e:
         logger.error(f"[Feature 001] Failed to persist MonitorStateV2: {e}")
+
+
+async def force_move_existing_workspaces(
+    i3,
+    config_path: Optional[Path] = None
+) -> Dict[str, Any]:
+    """Force-move existing workspaces to their configured outputs.
+
+    Unlike assign_workspaces_with_monitor_roles which only sets preferred output
+    for future switches, this function actually moves existing workspaces that
+    are on the wrong output to their correct output.
+
+    This is useful when:
+    - Workspaces were created before monitor assignments were configured
+    - Monitor role mapping changed and existing workspaces need to move
+    - After a nixos-rebuild to apply new workspace-assignments.json
+
+    Args:
+        i3: i3ipc.aio.Connection instance
+        config_path: Optional path to workspace-assignments.json
+
+    Returns:
+        Dict with 'moved' (list of moved workspaces), 'skipped', 'errors' counts
+    """
+    from .models import MonitorRole
+    from .models.monitor_config import MonitorRoleConfig
+
+    result = {
+        "moved": [],
+        "skipped": 0,
+        "errors": 0,
+        "total": 0,
+    }
+
+    # Load workspace-assignments.json
+    if config_path is None:
+        config_path = Path.home() / ".config" / "sway" / "workspace-assignments.json"
+
+    if not config_path.exists():
+        logger.warning(f"Force-move: workspace-assignments.json not found: {config_path}")
+        return result
+
+    with open(config_path) as f:
+        data = json.load(f)
+
+    # Parse output_preferences
+    output_preferences_raw = data.get("output_preferences", {})
+    output_preferences = {}
+    if output_preferences_raw:
+        role_mapping = {
+            "primary": MonitorRole.PRIMARY,
+            "secondary": MonitorRole.SECONDARY,
+            "tertiary": MonitorRole.TERTIARY,
+        }
+        for role_name, output_list in output_preferences_raw.items():
+            if role_name in role_mapping and isinstance(output_list, list):
+                output_preferences[role_mapping[role_name]] = output_list
+
+    # Build workspace → target output mapping
+    # Use workspace number rules: WS 1-2 → primary, WS 3-5 → secondary, WS 6+ → tertiary
+    # This ensures ALL workspaces get a target output, not just those with explicit assignments
+    def get_target_output_for_workspace(ws_num: int) -> Optional[str]:
+        """Determine target output for a workspace based on number rules."""
+        if ws_num <= 2:
+            role = MonitorRole.PRIMARY
+        elif ws_num <= 5:
+            role = MonitorRole.SECONDARY
+        else:
+            role = MonitorRole.TERTIARY
+
+        if role in output_preferences and output_preferences[role]:
+            return output_preferences[role][0]
+        return None
+
+    # Also build explicit assignments from config (these override the default rules)
+    assignments_data = data.get("assignments", [])
+    explicit_workspace_to_output = {}
+
+    for item in assignments_data:
+        workspace = item.get("workspace_number") or item.get("workspace")
+        if workspace is None:
+            continue
+
+        monitor_role_str = item.get("monitor_role")
+        if monitor_role_str:
+            role_mapping = {
+                "primary": MonitorRole.PRIMARY,
+                "secondary": MonitorRole.SECONDARY,
+                "tertiary": MonitorRole.TERTIARY,
+            }
+            monitor_role = role_mapping.get(monitor_role_str)
+            if monitor_role and monitor_role in output_preferences:
+                target_outputs = output_preferences[monitor_role]
+                if target_outputs:
+                    explicit_workspace_to_output[workspace] = target_outputs[0]
+
+    if not output_preferences:
+        logger.warning("Force-move: No output_preferences found - cannot determine target outputs")
+        return result
+
+    # Get current workspaces from Sway
+    workspaces = await i3.get_workspaces()
+
+    # Check each existing workspace
+    for ws in workspaces:
+        ws_num = ws.num
+        current_output = ws.output
+
+        # First check explicit assignment, then fall back to workspace number rules
+        target_output = explicit_workspace_to_output.get(ws_num) or get_target_output_for_workspace(ws_num)
+
+        if not target_output:
+            result["skipped"] += 1
+            logger.debug(f"Force-move: No target output for WS {ws_num}, skipping")
+            continue
+
+        result["total"] += 1
+
+        if current_output == target_output:
+            result["skipped"] += 1
+            logger.debug(f"Force-move: WS {ws_num} already on correct output {target_output}")
+            continue
+
+        # Need to move this workspace
+        try:
+            # Focus the workspace, then move it to target output
+            await i3.command(f"workspace number {ws_num}")
+            await i3.command(f"move workspace to output {target_output}")
+
+            result["moved"].append({
+                "workspace": ws_num,
+                "from": current_output,
+                "to": target_output,
+            })
+            logger.info(
+                f"Force-move: Moved workspace {ws_num} from {current_output} → {target_output}"
+            )
+        except Exception as e:
+            result["errors"] += 1
+            logger.error(f"Force-move: Failed to move workspace {ws_num}: {e}")
+
+    logger.info(
+        f"Force-move complete: {len(result['moved'])} moved, "
+        f"{result['skipped']} skipped, {result['errors']} errors"
+    )
+
+    return result
 
 
 async def validate_target_workspace(
