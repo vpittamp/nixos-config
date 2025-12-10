@@ -3079,9 +3079,14 @@ in
         `${monitoringDataScript}/bin/monitoring-data-backend --mode traces`)
 
       ;; Feature 107: Spinner animation variable
-      ;; Changed from defpoll to defvar to prevent process issues
-      ;; Static spinner - no animation but no resource usage
-      (defvar spinner_frame "⠋")
+      ;; Defpoll with conditional run-while to minimize CPU usage
+      ;; Only polls when has_working_badge is true (from monitoring_data)
+      ;; Pulsing circle frames (6 total): ◌○⊙●⊙○
+      (defpoll spinner_frame
+        :interval "300ms"
+        :run-while {monitoring_data.has_working_badge ?: false}
+        :initial "◌"
+        `FRAMES=(◌ ○ ⊙ ● ⊙ ○); echo "''${FRAMES[$(( $(date +%s%N | cut -c10-12) / 30 % 6 ))]}"`)
 
       ;; Feature 092: Defpoll: Sway event log (2s refresh)
       ;; Changed from deflisten to defpoll to prevent process spawning issues
@@ -8015,24 +8020,32 @@ in
       .badge-stopped {
         color: ${mocha.base};
         background: linear-gradient(135deg, ${mocha.peach}, ${mocha.red});
-        border: 1px solid ${mocha.peach};
-        box-shadow: 0 0 8px rgba(250, 179, 135, 0.6),
-                    0 0 16px rgba(250, 179, 135, 0.3),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-        /* GTK CSS doesn't support text-shadow */
+        border: 2px solid ${mocha.peach};
+        border-radius: 10px;
+        padding: 2px 8px;
+        margin-left: 8px;
+        box-shadow: 0 0 10px rgba(250, 179, 135, 0.7),
+                    0 0 20px rgba(235, 160, 172, 0.4),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        font-size: 12px;
+        font-weight: bold;
+        min-width: 24px;
       }
 
-      /* Feature 095: Working state - animated spinner with cool teal glow */
+      /* Feature 095: Working state - pulsing circle spinner */
+      /* Uses pulsing circle animation ◌○⊙●⊙○ via defpoll */
+      /* Transparent background - only the pulsing circle is visible */
       .badge-working {
-        color: ${mocha.base};
-        background: linear-gradient(135deg, ${mocha.teal}, ${mocha.sky});
-        border: 1px solid ${mocha.teal};
-        box-shadow: 0 0 10px rgba(148, 226, 213, 0.7),
-                    0 0 20px rgba(148, 226, 213, 0.4),
-                    0 0 30px rgba(148, 226, 213, 0.2),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-        /* GTK CSS doesn't support text-shadow or letter-spacing */
-        font-size: 11px;
+        /* Bright red for maximum visibility against dark backgrounds */
+        color: ${mocha.red};
+        background: transparent;
+        border: none;
+        padding: 0px 2px;
+        margin-left: 4px;
+        /* Compact size to prevent layout disruption */
+        font-size: 16px;
+        font-weight: bold;
+        min-width: 0;
       }
 
       /* Feature 107: Dimmed badge when window is already focused */
