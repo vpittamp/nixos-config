@@ -45,6 +45,24 @@ in
     ];
   };
 
+  # Acer Swift Go 16 (Intel Core Ultra + Intel Arc)
+  # Physical laptop with Sway/Wayland desktop
+  # Build: sudo nixos-rebuild switch --flake .#acer
+  acer = helpers.mkSystem {
+    hostname = "nixos-acer";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/acer.nix
+
+      # Home Manager integration with Acer-specific config
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-modules/acer.nix ];
+      })
+    ];
+  };
+
   # ARCHIVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)
