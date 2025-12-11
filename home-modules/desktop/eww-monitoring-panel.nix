@@ -83,7 +83,10 @@ let
   # Version: 2025-11-26-v12 (Feature 097: Optional chaining for remote fields)
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
     #!${pkgs.bash}/bin/bash
-    # Version: 2025-11-26-v12 (Feature 097: Optional chaining for remote fields)
+    # Version: 2025-12-10-v13 (Fix: Add i3pm to PATH for subprocess calls)
+
+    # Add user profile bin to PATH so i3pm can be found by subprocess calls
+    export PATH="${config.home.profileDirectory}/bin:$PATH"
 
     # Set PYTHONPATH to tools directory for i3_project_manager imports
     export PYTHONPATH="${../tools}"
@@ -3485,28 +3488,28 @@ in
             :space-evenly true
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=0"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=0"
               (button
                 :class "tab ''${current_view_index == 0 ? 'active' : ""}"
                 :tooltip "Windows (Alt+1)"
                 "󰖯"))
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=1"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=1"
               (button
                 :class "tab ''${current_view_index == 1 ? 'active' : ""}"
                 :tooltip "Projects (Alt+2)"
                 "󱂬"))
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=2"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=2"
               (button
                 :class "tab ''${current_view_index == 2 ? 'active' : ""}"
                 :tooltip "Apps (Alt+3)"
                 "󰀻"))
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=3"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=3"
               (button
                 :class "tab ''${current_view_index == 3 ? 'active' : ""}"
                 :tooltip "Health (Alt+4)"
@@ -3514,7 +3517,7 @@ in
             ;; Feature 092: Logs tab (5th tab)
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=4"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=4"
               (button
                 :class "tab ''${current_view_index == 4 ? 'active' : ""}"
                 :tooltip "Logs (Alt+5)"
@@ -3522,7 +3525,7 @@ in
             ;; Feature 101: Traces tab (6th tab)
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=5"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=5"
               (button
                 :class "tab ''${current_view_index == 5 ? 'active' : ""}"
                 :tooltip "Traces (Alt+6)"
@@ -3662,7 +3665,7 @@ in
                   ;; Close All button
                   (eventbox
                     :cursor "pointer"
-                    :onclick "close-all-windows-action &"
+                    :onclick "${closeAllWindowsScript}/bin/close-all-windows-action &"
                     :tooltip "Close all scoped windows"
                     (box
                       :class "close-all-btn"
@@ -3686,8 +3689,8 @@ in
           :space-evenly false
           ; Project header - click to toggle individual expand/collapse, right-click for actions
           (eventbox
-            :onclick "toggle-windows-project-expand ''${project.name} &"
-            :onrightclick "toggle-project-context ''${project.name} &"
+            :onclick "${toggleWindowsProjectExpandScript}/bin/toggle-windows-project-expand ''${project.name} &"
+            :onrightclick "${toggleProjectContextScript}/bin/toggle-project-context ''${project.name} &"
             :cursor "pointer"
             :tooltip {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "Click to collapse" : "Click to expand"}
             (box
@@ -3729,19 +3732,19 @@ in
               (eventbox
                 :visible {project.scope == "scoped"}
                 :cursor "pointer"
-                :onclick "switch-project-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
+                :onclick "${switchProjectScript}/bin/switch-project-action ''${project.name}; ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
                 :tooltip "Switch to this worktree"
                 (label :class "action-btn action-switch" :text "󰌑"))
               ;; Close all windows for this project
               (eventbox
                 :cursor "pointer"
-                :onclick "close-worktree-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
+                :onclick "${closeWorktreeScript}/bin/close-worktree-action ''${project.name}; ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
                 :tooltip "Close all windows for this project"
                 (label :class "action-btn action-close-project" :text "󰅖"))
               ;; Dismiss action bar
               (eventbox
                 :cursor "pointer"
-                :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_project="
+                :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_project="
                 :tooltip "Close menu"
                 (label :class "action-btn action-dismiss" :text "󰅙"))))
           ;; Windows list - shown when this project is expanded
@@ -3775,8 +3778,8 @@ in
             ;; Feature 093: Added click handler for window focus with project switching
             ;; Right-click toggles inline action bar for this specific window
             (eventbox
-              :onclick "focus-window-action ''${window.project} ''${window.id} &"
-              :onrightclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"
+              :onclick "${focusWindowScript}/bin/focus-window-action ''${window.project} ''${window.id} &"
+              :onrightclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"
               :cursor "pointer"
               :hexpand true
               (box
@@ -4120,7 +4123,7 @@ in
             :text "Create a project to manage workspaces")
           (button
             :class "empty-action-button"
-            :onclick "project-create-open"
+            :onclick "${projectCreateOpenScript}/bin/project-create-open"
             "+ Create Project")))
 
       ;; Feature 094 Phase 12 T102: Empty state for apps tab
@@ -4142,7 +4145,7 @@ in
             :text "Add applications to manage workspaces")
           (button
             :class "empty-action-button"
-            :onclick "app-create-open"
+            :onclick "${appCreateOpenScript}/bin/app-create-open"
             "+ Add Application")))
 
       ;; Error state display (T042)
@@ -4309,18 +4312,18 @@ in
                 ;; UX3: Expand/Collapse All toggle
                 (button
                   :class "expand-all-button"
-                  :onclick "toggle-expand-all-projects"
+                  :onclick "${toggleExpandAllScript}/bin/toggle-expand-all-projects"
                   :tooltip {projects_all_expanded ? "Collapse all repositories" : "Expand all repositories"}
                   {projects_all_expanded ? "Collapse" : "Expand"})
                 ;; Feature 099 T016: Refresh button
                 (button
                   :class "refresh-button"
-                  :onclick "systemctl --user restart eww-monitoring-panel &"
+                  :onclick "${pkgs.systemd}/bin/systemctl --user restart eww-monitoring-panel &"
                   :tooltip "Refresh all projects"
                   "Refresh")
                 (button
                   :class "new-project-button"
-                  :onclick "project-create-open"
+                  :onclick "${projectCreateOpenScript}/bin/project-create-open"
                   :tooltip "Create a new project"
                   "+ New"))
               ;; Row 2: UX1 - Filter/search input
@@ -4415,7 +4418,7 @@ in
               ;; Expand/collapse toggle
               (eventbox
                 :cursor "pointer"
-                :onclick "toggle-project-expanded ''${repo.qualified_name}"
+                :onclick "${toggleProjectExpandedScript}/bin/toggle-project-expanded ''${repo.qualified_name}"
                 :tooltip {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
                 (box
                   :class "expand-toggle"
@@ -4471,13 +4474,13 @@ in
                 ;; Copy directory path to clipboard
                 (eventbox
                   :cursor "pointer"
-                  :onclick "echo -n ''\'''${repo.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${repo.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                  :onclick "echo -n ''\'''${repo.directory}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${repo.directory}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                   :tooltip "Copy directory path"
                   (label :class "action-btn action-copy" :text "󰆏"))
                 ;; [+ New Worktree] button
                 (eventbox
                   :cursor "pointer"
-                  :onclick "worktree-create-open ''${repo.qualified_name}"
+                  :onclick "${worktreeCreateOpenScript}/bin/worktree-create-open ''${repo.qualified_name}"
                   :tooltip "Create new worktree"
                   (label :class "action-btn action-add" :text "󰐕")))
               ;; Status badges
@@ -4506,8 +4509,8 @@ in
           (eventbox
             :cursor "pointer"
             :onclick "i3pm worktree switch ''${worktree.qualified_name}"
-            :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
-            :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
+            :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
+            :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
             (box
               :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
               :orientation "h"
@@ -4652,19 +4655,19 @@ in
                 ;; Feature 109 T027: Git button - launches lazygit with context-aware view
                 (eventbox
                   :cursor "pointer"
-                  :onclick "worktree-lazygit ''${worktree.path} ''${worktree.git_is_dirty == true ? 'status' : (worktree.git_behind ?: 0) > 0 ? 'branch' : 'status'}"
+                  :onclick "${pkgs.ghostty}/bin/ghostty -e lazygit -p ''${worktree.path}"
                   :tooltip "Open lazygit (Shift+L)"
                   (label :class "action-btn action-git" :text "󰊢"))
                 ;; Feature 109 T056: Copy Path button
                 (eventbox
                   :cursor "pointer"
-                  :onclick "echo -n ''\'''${worktree.path}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${worktree.path}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                  :onclick "echo -n ''\'''${worktree.path}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${worktree.path}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                   :tooltip "Copy path (y)"
                   (label :class "action-btn action-copy" :text "󰆏"))
                 ;; Delete button with confirmation
                 (eventbox
                   :cursor "pointer"
-                  :onclick "worktree-delete-open ''${worktree.qualified_name} ''${worktree.branch} ''${worktree.git_is_dirty}"
+                  :onclick "${worktreeDeleteOpenScript}/bin/worktree-delete-open ''${worktree.qualified_name} ''${worktree.branch} ''${worktree.git_is_dirty}"
                   :tooltip "Delete worktree (d)"
                   (label :class "action-btn action-delete" :text "󰆴")))
               ;; Status badges
@@ -4686,8 +4689,8 @@ in
       ;; Feature 099 T012: Repository project card with expand/collapse toggle, worktree count badge
       (defwidget repository-project-card [project]
         (eventbox
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
+          :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
+          :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
             ;; UX2: Add "selected" class when this project is keyboard-selected
             :class {"repository-card project-card" + (project.is_active ? " active-project" : "") + (project.has_dirty_worktrees ? " has-dirty" : "") + (project_selected_name == project.name ? " selected" : "")}
@@ -4702,7 +4705,7 @@ in
               ;; Feature 099 T015: Expand/collapse toggle
               (eventbox
                 :cursor "pointer"
-                :onclick "toggle-project-expanded ''${project.name}"
+                :onclick "${toggleProjectExpandedScript}/bin/toggle-project-expanded ''${project.name}"
                 :tooltip {jq(expanded_projects, "index(\"" + project.name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
                 (box
                   :class "expand-toggle"
@@ -4766,23 +4769,23 @@ in
                 ;; UX4: Copy directory path to clipboard
                 (eventbox
                   :cursor "pointer"
-                  :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                  :onclick "echo -n ''\'''${project.directory}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                   :tooltip "Copy directory path"
                   (label :class "action-btn action-copy" :text "󰆏"))
                 ;; Feature 099 T019: [+ New Worktree] button
                 (eventbox
                   :cursor "pointer"
-                  :onclick "worktree-create-open ''${project.name}"
+                  :onclick "${worktreeCreateOpenScript}/bin/worktree-create-open ''${project.name}"
                   :tooltip "Create new worktree"
                   (label :class "action-btn action-add" :text "󰐕"))
                 (eventbox
                   :cursor "pointer"
-                  :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
+                  :onclick "${projectEditOpenScript}/bin/project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
                   :tooltip "Edit project"
                   (label :class "action-btn action-edit" :text "󰏫"))
                 (eventbox
                   :cursor "pointer"
-                  :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
+                  :onclick "${projectDeleteOpenScript}/bin/project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
                   :tooltip "Delete project"
                   (label :class "action-btn action-delete" :text "󰆴")))
               ;; Status badges
@@ -4859,15 +4862,15 @@ in
               (label :class "action-btn action-recover" :text "󰑓"))
             (eventbox
               :cursor "pointer"
-              :onclick "worktree-delete ''${project.name}"
+              :onclick "${worktreeDeleteScript}/bin/worktree-delete ''${project.name}"
               :tooltip "Delete orphaned entry"
               (label :class "action-btn action-delete" :text "󰆴")))))
 
       ;; Original project-card kept for backward compatibility
       (defwidget project-card [project]
         (eventbox
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
+          :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
+          :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
             :class {"project-card" + (project.is_active ? " active-project" : "")}
             :orientation "v"
@@ -4923,19 +4926,19 @@ in
                     :visible {hover_project_name == project.name && editing_project_name != project.name && !project_deleting}
                     (eventbox
                       :cursor "pointer"
-                      :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
+                      :onclick "${projectEditOpenScript}/bin/project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
                       :tooltip "Edit project"
                       (label :class "action-btn action-edit" :text "󰏫"))
                     (eventbox
                       :cursor "pointer"
-                      :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
+                      :onclick "${projectDeleteOpenScript}/bin/project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
                       :tooltip "Delete project"
                       (label :class "action-btn action-delete" :text "󰆴")))))
               ;; JSON expand trigger icon - SIBLING at header level (like Windows tab)
               ;; NO halign/width - let GTK box layout handle positioning naturally
               (eventbox
-                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
-                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+                :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+                :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
                 :tooltip "Hover to view JSON"
                 (box
                   :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
@@ -5127,17 +5130,17 @@ in
               ;; UX4: Copy directory path to clipboard
               (eventbox
                 :cursor "pointer"
-                :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                :onclick "echo -n ''\'''${project.directory}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                 :tooltip "Copy directory path"
                 (label :class "action-btn action-copy" :text "󰆏"))
               (eventbox
                 :cursor "pointer"
-                :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
+                :onclick "${worktreeEditOpenScript}/bin/worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
                 :tooltip "Edit worktree"
                 (label :class "action-btn action-edit" :text "󰏫"))
               (eventbox
                 :cursor "pointer"
-                :onclick "worktree-delete ''${project.name}"
+                :onclick "${worktreeDeleteScript}/bin/worktree-delete ''${project.name}"
                 :tooltip "''${worktree_delete_confirm == project.name ? 'Click again to confirm' : 'Delete worktree'}"
                 (label :class {"action-btn action-delete" + (worktree_delete_confirm == project.name ? " confirm" : "")} :text "''${worktree_delete_confirm == project.name ? '❗' : '󰆴'}")))
             ;; Active indicator
@@ -5830,13 +5833,13 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "project-create-cancel"
+              :onclick "${projectCreateCancelScript}/bin/project-create-cancel"
               "Cancel")
             ;; Feature 096: Save button with loading state
             ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
               :class "''${save_in_progress ? 'save-button-loading' : 'save-button'}"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && project-create-save &"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && ${projectCreateSaveScript}/bin/project-create-save &"
               "''${save_in_progress ? 'Creating...' : 'Create'}"))))
 
       ;; Feature 094 US4: Project delete confirmation dialog (T088-T089)
@@ -5898,8 +5901,8 @@ in
                   (checkbox
                     :class "force-delete-checkbox"
                     :checked delete_force
-                    :onchecked "eww --config $HOME/.config/eww-monitoring-panel update delete_force=true"
-                    :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update delete_force=false")
+                    :onchecked "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update delete_force=true"
+                    :onunchecked "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update delete_force=false")
                   (label
                     :class "force-delete-label"
                     :halign "start"
@@ -5922,12 +5925,12 @@ in
               :halign "end"
               (button
                 :class "cancel-delete-button"
-                :onclick "project-delete-cancel"
+                :onclick "${projectDeleteCancelScript}/bin/project-delete-cancel"
                 "Cancel")
               ;; Run in background (&) to avoid eww onclick timeout (2s default)
               (button
                 :class "confirm-delete-button ''${delete_project_has_worktrees && !delete_force ? 'disabled' : '''}"
-                :onclick {delete_project_has_worktrees && !delete_force ? "" : "project-delete-confirm &"}
+                :onclick {delete_project_has_worktrees && !delete_force ? "" : "${projectDeleteConfirmScript}/bin/project-delete-confirm &"}
                 :tooltip "''${delete_project_has_worktrees && !delete_force ? 'Check force delete to proceed' : 'Permanently delete project'}"
                 "🗑 Delete")))))
 
@@ -5990,12 +5993,12 @@ in
               :halign "end"
               (button
                 :class "cancel-delete-button"
-                :onclick "worktree-delete-cancel"
+                :onclick "${worktreeDeleteCancelScript}/bin/worktree-delete-cancel"
                 "Cancel")
               ;; Run in background (&) to avoid eww onclick timeout (2s default)
               (button
                 :class "confirm-delete-button"
-                :onclick "worktree-delete-confirm &"
+                :onclick "${worktreeDeleteConfirmScript}/bin/worktree-delete-confirm &"
                 :tooltip "Permanently delete worktree"
                 "🗑 Delete")))))
 
@@ -6068,11 +6071,11 @@ in
               :halign "end"
               (button
                 :class "cancel-delete-app-button"
-                :onclick "app-delete-cancel"
+                :onclick "${appDeleteCancelScript}/bin/app-delete-cancel"
                 "Cancel")
               (button
                 :class "confirm-delete-app-button"
-                :onclick "app-delete-confirm"
+                :onclick "${appDeleteConfirmScript}/bin/app-delete-confirm"
                 :tooltip "Permanently remove application from registry"
                 "🗑 Delete")))))
 
@@ -6374,11 +6377,11 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "app-create-cancel"
+              :onclick "${appCreateCancelScript}/bin/app-create-cancel"
               "Cancel")
             (button
               :class "save-button"
-              :onclick "app-create-save"
+              :onclick "${appCreateSaveScript}/bin/app-create-save"
               "Create"))))
 
       ;; Feature 094 T040: Conflict resolution dialog widget
@@ -6465,15 +6468,15 @@ in
                 :halign "center"
                 (button
                   :class "conflict-button conflict-keep-file"
-                  :onclick "project-conflict-resolve keep-file ''${conflict_project_name}"
+                  :onclick "${projectConflictResolveScript}/bin/project-conflict-resolve keep-file ''${conflict_project_name}"
                   "Keep File Changes")
                 (button
                   :class "conflict-button conflict-keep-ui"
-                  :onclick "project-conflict-resolve keep-ui ''${conflict_project_name}"
+                  :onclick "${projectConflictResolveScript}/bin/project-conflict-resolve keep-ui ''${conflict_project_name}"
                   "Keep My Changes")
                 (button
                   :class "conflict-button conflict-merge"
-                  :onclick "project-conflict-resolve merge-manual ''${conflict_project_name}"
+                  :onclick "${projectConflictResolveScript}/bin/project-conflict-resolve merge-manual ''${conflict_project_name}"
                   "Merge Manually"))))))
 
       ;; Feature 094 Phase 12 T099: Success notification toast (auto-dismiss after 3s)
@@ -6566,7 +6569,7 @@ in
                 :text "Applications")
               (button
                 :class "new-app-button"
-                :onclick "app-create-open"
+                :onclick "${appCreateOpenScript}/bin/app-create-open"
                 :tooltip "Create a new application"
                 "+ New Application"))
             ;; Feature 094 US8: Application create form (T077-T080)
@@ -6686,7 +6689,7 @@ in
               (button
                 :class "delete-app-button"
                 :visible {editing_app_name != app.name && !app_deleting}
-                :onclick "app-delete-open ''${app.name} ''${app.display_name} ''${app.ulid}"
+                :onclick "${appDeleteOpenScript}/bin/app-delete-open ''${app.name} ''${app.display_name} ''${app.ulid}"
                 :tooltip "Delete application"
                 "🗑")))))
 
@@ -6816,7 +6819,7 @@ in
             (button
               :class "restart-button"
               :visible {service.can_restart ?: false}
-              :onclick "restart-service ''${service.service_name} ''${service.is_user_service ? 'true' : 'false'} &"
+              :onclick "${restartServiceScript}/bin/restart-service ''${service.service_name} ''${service.is_user_service ? 'true' : 'false'} &"
               :tooltip "Restart ''${service.display_name}"
               "⟳"))))
 
@@ -6836,7 +6839,7 @@ in
             ;; Filter header (always visible)
             (eventbox
               :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_panel_expanded=''${!filter_panel_expanded}"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update filter_panel_expanded=''${!filter_panel_expanded}"
               (box
                 :class "filter-header"
                 :orientation "h"

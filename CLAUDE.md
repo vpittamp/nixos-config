@@ -112,12 +112,12 @@ Real-time hierarchical view of all windows, workspaces, and monitors with projec
 |-----|--------|
 | `Mod+M` | Toggle panel visibility |
 | `Mod+Shift+M` | Enter monitoring focus mode (📊 Monitor) |
-| `Alt+1-4` | Switch panel tabs (Windows/Projects/Apps/Health) |
+| `Alt+1-6` | Switch panel tabs (Windows/Projects/Apps/Health/Events/Traces) |
 
 **Focus Mode Keys** (when in 📊 Monitor mode):
 | Key | Action |
 |-----|--------|
-| `1-4` | Switch tabs |
+| `1-6` | Switch tabs |
 | `j`/`↓` | Navigate down |
 | `k`/`↑` | Navigate up |
 | `Enter`/`l`/`→` | Select item |

@@ -147,13 +147,15 @@ in
     # Feature 085: Toggle monitoring panel (T017)
     # Additional bindings injected via monitoringPanelBindings below
 
-    # Feature 085: Monitoring panel view switching (Alt+1-4)
+    # Feature 085: Monitoring panel view switching (Alt+1-6)
     # Uses wrapper script to centralize variable name management
     # Index: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
     "Alt+1" = "exec monitor-panel-tab 0";
     "Alt+2" = "exec monitor-panel-tab 1";
     "Alt+3" = "exec monitor-panel-tab 2";
     "Alt+4" = "exec monitor-panel-tab 3";
+    "Alt+5" = "exec monitor-panel-tab 4";
+    "Alt+6" = "exec monitor-panel-tab 5";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
