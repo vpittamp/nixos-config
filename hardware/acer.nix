@@ -31,13 +31,13 @@
   #
   # Using labels (set during partitioning with mkfs commands)
   fileSystems."/" = {
-    device = "/dev/disk/by-label/nixos";
+    device = "/dev/disk/by-label/root";
     fsType = "ext4";
     options = [ "noatime" "nodiratime" ];
   };
 
   fileSystems."/boot" = {
-    device = "/dev/disk/by-label/boot";
+    device = "/dev/disk/by-label/EFI";
     fsType = "vfat";
     options = [ "fmask=0022" "dmask=0022" ];
   };
