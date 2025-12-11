@@ -2,6 +2,14 @@
 # Apple Silicon variant with desktop environment
 { config, lib, pkgs, inputs, ... }:
 
+let
+  # Firefox 146+ overlay for native Wayland fractional scaling support
+  # Firefox 146 fixes click/input coordinate issues at scale 2.0
+  pkgs-unstable = import inputs.nixpkgs-bleeding {
+    system = pkgs.stdenv.hostPlatform.system;
+    config.allowUnfree = true;
+  };
+in
 {
   imports = [
     # Base configuration
@@ -34,6 +42,17 @@
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix  # Firefox with 1Password (consolidated, with PWA support)
+  ];
+
+  # Firefox 146+ overlay for native Wayland fractional scaling support
+  # This fixes click/input coordinate issues when running Firefox at scale 2.0
+  # See: https://www.mozilla.org/firefox/146.0/releasenotes/
+  nixpkgs.overlays = [
+    (final: prev: {
+      # Override Firefox to use version from nixpkgs-unstable (146+)
+      firefox = pkgs-unstable.firefox;
+      firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
+    })
   ];
 
   # Provide DisplayLink binaries automatically by fetching from Synaptics.

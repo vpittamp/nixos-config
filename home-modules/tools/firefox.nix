@@ -216,6 +216,7 @@ in
           # Disable hardware video decoding on M1 (override above settings)
           "media.hardware-video-decoding.force-enabled" = lib.mkForce false;
           "media.ffmpeg.vaapi.enabled" = lib.mkForce false;
+
         }
         // {
           # Developer settings
