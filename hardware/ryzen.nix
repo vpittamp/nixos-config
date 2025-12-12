@@ -57,25 +57,18 @@
   hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
   # Hardware acceleration - AMD GPU (RDNA/RDNA2/RDNA3)
-  # If using NVIDIA, comment out this section and configure NVIDIA in the main config
+  # RADV (Mesa Vulkan) is enabled by default - no need for amdvlk
   hardware.graphics = {
     enable = true;
-    enable32Bit = true;  # For 32-bit application compatibility (Steam, Wine, etc.)
+    enable32Bit = true;  # For 32-bit application compatibility (Wine, etc.)
 
     extraPackages = with pkgs; [
-      amdvlk                # AMD Vulkan driver
       rocmPackages.clr.icd  # OpenCL support for AMD (ROCm)
-    ];
-
-    extraPackages32 = with pkgs.pkgsi686Linux; [
-      amdvlk
     ];
   };
 
-  # AMD GPU specific - use RADV (Mesa Vulkan) by default, can override to AMDVLK
+  # AMD GPU specific - RADV is the default and recommended Vulkan driver
   environment.variables = {
-    # Use RADV by default (better performance in most cases)
-    # Set to "amdvlk" to use AMDVLK instead
     AMD_VULKAN_ICD = "RADV";
   };
 
