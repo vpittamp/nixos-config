@@ -50,6 +50,7 @@ Both commits add the same 9 files with 1,154 insertions:
  home-modules/thinkpad.nix   | 129 ++++++++
  lib/helpers.nix             |  12 +++
  nixos/default.nix           |  36 +++++
+ 9 files changed, 1154 insertions(+)
 ```
 
 ### What Was Added
@@ -102,7 +103,8 @@ git show ef2de6be --stat
 # Verify no differences between PR and main
 git diff db0438f8 ef2de6be
 
-# Confirm PR commit is in main's history
+# Confirm PR commit is ancestor of main's merge commit
+# (4b934552 is the parent commit where both branches converge)
 git merge-base --is-ancestor db0438f8 4b934552  # Returns 0 (true)
 ```
 
