@@ -103,9 +103,8 @@ git show ef2de6be --stat
 # Verify no differences between PR and main
 git diff db0438f8 ef2de6be
 
-# Confirm PR commit is ancestor of main's merge commit
-# (4b934552 is the parent commit where both branches converge)
-git merge-base --is-ancestor db0438f8 4b934552  # Returns 0 (true)
+# Confirm main has incorporated the PR (both share common history)
+git merge-base db0438f8 ef2de6be  # Returns 4b934552 (their common ancestor)
 ```
 
 ---
