@@ -63,6 +63,42 @@ in
     ];
   };
 
+  # Lenovo ThinkPad (Intel Core Ultra 7 155U + Intel Arc)
+  # Physical laptop with Sway/Wayland desktop
+  # Build: sudo nixos-rebuild switch --flake .#thinkpad
+  thinkpad = helpers.mkSystem {
+    hostname = "thinkpad";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/thinkpad.nix
+
+      # Home Manager integration with ThinkPad-specific config
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-modules/thinkpad.nix ];
+      })
+    ];
+  };
+
+  # AMD Ryzen Desktop (AMD Ryzen 5 7600X3D + AMD GPU)
+  # Physical desktop with Sway/Wayland desktop
+  # Build: sudo nixos-rebuild switch --flake .#ryzen
+  ryzen = helpers.mkSystem {
+    hostname = "ryzen";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/ryzen.nix
+
+      # Home Manager integration with Ryzen-specific config
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-modules/ryzen.nix ];
+      })
+    ];
+  };
+
   # ARCHIVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)

@@ -67,6 +67,10 @@
       url = "github:abenz1267/walker";
       inputs.elephant.follows = "elephant";
     };
+
+    # Hardware-specific NixOS modules
+    # Provides optimized configurations for various hardware platforms
+    nixos-hardware.url = "github:NixOS/nixos-hardware/master";
   };
 
   outputs = inputs @ { self, flake-parts, ... }:
