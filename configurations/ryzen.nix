@@ -6,7 +6,6 @@
 # - Full KVM virtualization with virt-manager and GPU passthrough
 # - Hardware video encoding/decoding (AMD VCE/VCN)
 # - TPM 2.0 for secure boot and encryption
-# - Full gaming support (Steam, Proton, GameMode)
 # - Native Vulkan with RADV driver
 # - Full PipeWire with low-latency audio
 # - Printing support
@@ -82,10 +81,8 @@ in
     # Printing support with CUPS
     enablePrinting = true;
 
-    # Gaming support - ENABLED for desktop (no battery constraints!)
-    # (Hetzner: no GPU, M1: limited game support, WSL2: no native gaming)
-    # Includes: Steam, GameMode, MangoHud, Proton, Lutris
-    enableGaming = true;
+    # No gaming needed
+    enableGaming = false;
 
     # No fingerprint reader on desktop
     enableFingerprint = false;
@@ -338,17 +335,6 @@ in
 
     # USB device management
     udiskie        # Automount USB drives
-
-    # Gaming extras (complements bare-metal.enableGaming)
-    # Note: Steam, MangoHud, GameMode are in bare-metal module
-    heroic         # Epic Games / GOG launcher
-    bottles        # Wine prefix manager
-    dxvk           # DirectX to Vulkan translation
-    vkbasalt       # Vulkan post-processing (sharpening)
-
-    # Controller support
-    sc-controller  # Steam Controller configuration
-    antimicrox     # Gamepad to keyboard/mouse mapping
   ];
 
   # Firefox configuration with PWA support
@@ -401,17 +387,6 @@ in
   # Automatic mounting of USB drives
   services.udisks2.enable = true;
   services.gvfs.enable = true;  # For GUI file managers
-
-  # ========== CONTROLLER SUPPORT ==========
-  # Steam Controller, Xbox, PlayStation controllers
-  hardware.steam-hardware.enable = true;
-
-  # Xbox controller wireless adapter
-  hardware.xpadneo.enable = true;
-
-  # ========== OPENRGB (if you have RGB hardware) ==========
-  # Uncomment if you have RGB peripherals
-  # services.hardware.openrgb.enable = true;
 
   # System state version
   system.stateVersion = "25.11";
