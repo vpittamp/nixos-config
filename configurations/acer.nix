@@ -112,6 +112,9 @@ in
     "i915.enable_fbc=1"           # Enable framebuffer compression
     # Power management
     "intel_pstate=active"         # Use Intel P-state driver
+    # NVMe power state fix for Kingston OM8PGP41024Q
+    # Prevents I/O timeout errors caused by APST (Autonomous Power State Transitions)
+    "nvme_core.default_ps_max_latency_us=0"
   ];
 
   # Fix intermittent home-manager activation failures during nixos-rebuild
