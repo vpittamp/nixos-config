@@ -1,6 +1,16 @@
 # Lenovo ThinkPad Configuration
 # Intel Core Ultra 7 155U (Meteor Lake) with Intel Arc integrated graphics
 # Physical laptop with Sway/Wayland desktop environment
+#
+# BARE METAL ADVANTAGES over Hetzner VM / M1 / WSL2:
+# - Full KVM virtualization with virt-manager
+# - Hardware video encoding/decoding (Intel QuickSync)
+# - TPM 2.0 for secure boot and encryption
+# - Native suspend/hibernate to disk
+# - Fingerprint reader support
+# - Full PipeWire with low-latency audio
+# - Printing and scanning support
+#
 { config, lib, pkgs, inputs, ... }:
 
 let
@@ -33,6 +43,9 @@ in
     ../modules/services/i3-project-daemon.nix
     ../modules/services/speech-to-text-safe.nix
 
+    # Bare metal optimizations (KVM, Podman, printing, TPM, etc.)
+    ../modules/services/bare-metal.nix
+
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
   ];
@@ -50,6 +63,30 @@ in
 
   # Enable Sway Wayland compositor
   services.sway.enable = true;
+
+  # ========== BARE METAL FEATURES ==========
+  # These are NOT possible on Hetzner VM, M1/Asahi, or WSL2
+  services.bare-metal = {
+    enable = true;
+
+    # Full KVM virtualization with virt-manager
+    # (Hetzner: no nested KVM, M1: ARM only, WSL2: no KVM)
+    enableVirtualization = true;
+
+    # Podman rootless containers (complement to Docker)
+    enablePodman = true;
+
+    # Printing support with CUPS
+    # (Hetzner: headless server, WSL2: use Windows printing)
+    enablePrinting = true;
+
+    # Fingerprint reader (ThinkPad has built-in fingerprint sensor)
+    # Enable after enrolling fingerprint with: fprintd-enroll
+    enableFingerprint = true;
+
+    # No gaming on laptop (battery life)
+    enableGaming = false;
+  };
 
   # i3 Project Management Daemon
   services.i3ProjectDaemon = {
@@ -94,12 +131,20 @@ in
     }
   ];
 
+  # ========== HIBERNATION SUPPORT ==========
+  # Full suspend-to-disk (not available on Hetzner VM or WSL2)
+  boot.resumeDevice = "/var/lib/swapfile";
+  # Note: After installation, get swap offset with: filefrag -v /var/lib/swapfile
+  # Then add: boot.kernelParams = [ "resume_offset=XXXXX" ];
+
   # Memory management tweaks
   boot.kernel.sysctl = {
     "vm.swappiness" = 10;
     "vm.vfs_cache_pressure" = 50;
     "vm.dirty_background_ratio" = 5;
     "vm.dirty_ratio" = 10;
+    # Laptop-optimized writeback (less aggressive)
+    "vm.laptop_mode" = 5;
   };
 
   # Boot configuration for standard x86_64 UEFI
@@ -341,14 +386,43 @@ in
     # Power management utilities
     powertop
     acpi
+    tlp               # TLP CLI
 
     # ThinkPad specific tools
-    tpacpi-bat  # ThinkPad ACPI battery control
+    tpacpi-bat        # ThinkPad ACPI battery control
+    thinkfan          # ThinkPad fan control (optional, TLP handles most)
 
     # Hardware info
     pciutils
     usbutils
     lshw
+
+    # ========== BARE METAL EXCLUSIVE PACKAGES ==========
+    # These require physical hardware (not available on Hetzner/M1/WSL)
+
+    # Hardware video acceleration (Intel QuickSync)
+    intel-gpu-tools   # Intel GPU debugging (intel_gpu_top)
+    libva-utils       # VA-API verification (vainfo)
+    vdpauinfo         # VDPAU verification
+
+    # Disk encryption and security
+    cryptsetup        # LUKS disk encryption
+    yubikey-manager   # YubiKey management (if you have one)
+
+    # Hardware monitoring
+    s-tui             # Stress test + monitoring TUI
+    stress-ng         # CPU stress testing
+
+    # Laptop-specific power tools
+    acpid             # ACPI daemon
+    upower            # Power device info
+
+    # USB device management
+    udiskie           # Automount USB drives
+
+    # Webcam (if present)
+    v4l-utils         # Video4Linux utilities
+    cameractrls       # Webcam controls
   ];
 
   # Firefox configuration with PWA support
@@ -369,6 +443,65 @@ in
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
     checkReversePath = "loose";  # For Tailscale
+  };
+
+  # ========== ADVANCED AUDIO (BARE METAL) ==========
+  # Full PipeWire with low-latency and Bluetooth codecs
+  # (Hetzner: audio streaming only, M1: limited codec support)
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+    jack.enable = true;  # For pro audio applications
+
+    # Low-latency audio configuration
+    extraConfig.pipewire = {
+      "92-low-latency" = {
+        "context.properties" = {
+          "default.clock.rate" = 48000;
+          "default.clock.quantum" = 256;
+          "default.clock.min-quantum" = 32;
+          "default.clock.max-quantum" = 1024;
+        };
+      };
+    };
+
+    # WirePlumber configuration for better Bluetooth
+    wireplumber.extraConfig = {
+      "10-bluez" = {
+        "monitor.bluez.properties" = {
+          "bluez5.enable-sbc-xq" = true;
+          "bluez5.enable-msbc" = true;
+          "bluez5.enable-hw-volume" = true;
+          "bluez5.codecs" = [ "sbc" "sbc_xq" "aac" "ldac" "aptx" "aptx_hd" ];
+        };
+      };
+    };
+  };
+
+  # Enable rtkit for real-time audio scheduling
+  security.rtkit.enable = true;
+
+  # ========== USB AUTOMOUNT ==========
+  # Automatic mounting of USB drives
+  services.udisks2.enable = true;
+  services.gvfs.enable = true;  # For GUI file managers
+
+  # ========== ACPI EVENTS ==========
+  # Handle lid close, power button, etc.
+  services.acpid = {
+    enable = true;
+    handlers = {
+      lid-close = {
+        event = "button/lid.*";
+        action = ''
+          case "$3" in
+            close) systemctl suspend ;;
+          esac
+        '';
+      };
+    };
   };
 
   # System state version
