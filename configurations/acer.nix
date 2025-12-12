@@ -41,7 +41,7 @@ in
   ];
 
   # System identification
-  networking.hostName = "nixos-acer";
+  networking.hostName = "acer";
 
   # Enable Sway Wayland compositor
   services.sway.enable = true;
@@ -350,6 +350,7 @@ in
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "client";
+    extraUpFlags = [ "--ssh" "--accept-routes" ];
   };
 
   # Firewall configuration

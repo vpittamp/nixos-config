@@ -49,7 +49,7 @@ in
   # Physical laptop with Sway/Wayland desktop
   # Build: sudo nixos-rebuild switch --flake .#acer
   acer = helpers.mkSystem {
-    hostname = "nixos-acer";
+    hostname = "acer";
     system = "x86_64-linux";
     modules = [
       ../configurations/acer.nix

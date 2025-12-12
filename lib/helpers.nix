@@ -74,7 +74,7 @@ let
       secondary = "HDMI-A-1";
       tertiary = "HDMI-A-1";  # Fallback to secondary if no tertiary
     };
-    "nixos-acer" = {
+    "acer" = {
       outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];
       primary = "eDP-1";
       secondary = "HDMI-A-1";
