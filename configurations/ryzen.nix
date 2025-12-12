@@ -1,6 +1,15 @@
 # AMD Ryzen Desktop Configuration
 # AMD Ryzen 5 7600X3D (Zen 4 with 3D V-Cache) - 6 cores, 4.1GHz base, 96MB L3
 # Physical desktop with Sway/Wayland desktop environment
+#
+# BARE METAL ADVANTAGES over Hetzner VM / M1 / WSL2:
+# - Full KVM virtualization with virt-manager and GPU passthrough
+# - Hardware video encoding/decoding (AMD VCE/VCN)
+# - TPM 2.0 for secure boot and encryption
+# - Native Vulkan with RADV driver
+# - Full PipeWire with low-latency audio
+# - Printing support
+#
 { config, lib, pkgs, inputs, ... }:
 
 let
@@ -36,6 +45,9 @@ in
     ../modules/services/i3-project-daemon.nix
     ../modules/services/speech-to-text-safe.nix
 
+    # Bare metal optimizations (KVM, Podman, gaming, printing, TPM, etc.)
+    ../modules/services/bare-metal.nix
+
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
   ];
@@ -53,6 +65,28 @@ in
 
   # Enable Sway Wayland compositor
   services.sway.enable = true;
+
+  # ========== BARE METAL FEATURES ==========
+  # These are NOT possible on Hetzner VM, M1/Asahi, or WSL2
+  services.bare-metal = {
+    enable = true;
+
+    # Full KVM virtualization with virt-manager
+    # (Hetzner: no nested KVM, M1: ARM only, WSL2: no KVM)
+    enableVirtualization = true;
+
+    # Podman rootless containers (complement to Docker)
+    enablePodman = true;
+
+    # Printing support with CUPS
+    enablePrinting = true;
+
+    # No gaming needed
+    enableGaming = false;
+
+    # No fingerprint reader on desktop
+    enableFingerprint = false;
+  };
 
   # i3 Project Management Daemon
   services.i3ProjectDaemon = {
@@ -178,8 +212,19 @@ in
     # Electron apps
     ELECTRON_FORCE_IS_PACKAGED = "true";
 
-    # AMD Vulkan ICD (RADV for better performance in most cases)
+    # ========== AMD GPU OPTIMIZATIONS ==========
+    # AMD Vulkan ICD - RADV (Mesa) for better compatibility with games
     AMD_VULKAN_ICD = "RADV";
+
+    # Enable ACO shader compiler (faster compilation)
+    RADV_PERFTEST = "aco";
+
+    # Enable FreeSync/VRR if monitor supports it
+    # vblank_mode=0 disables vsync (for benchmarking), remove for normal use
+    # vblank_mode = "0";
+
+    # Force Vulkan for OpenGL games via Zink
+    # Uncomment if needed: MESA_LOADER_DRIVER_OVERRIDE = "zink";
   };
 
   # Platform configuration
@@ -269,6 +314,27 @@ in
     pciutils
     usbutils
     lshw
+
+    # ========== BARE METAL EXCLUSIVE PACKAGES ==========
+    # These require physical hardware (not available on Hetzner/M1/WSL)
+
+    # AMD GPU tools
+    radeontop      # AMD GPU monitoring (like nvidia-smi)
+    libva-utils    # VA-API verification (vainfo)
+    vdpauinfo      # VDPAU verification
+    vulkan-tools   # Vulkan verification (vulkaninfo)
+    clinfo         # OpenCL verification
+
+    # Disk encryption and security
+    cryptsetup     # LUKS disk encryption
+    yubikey-manager  # YubiKey management (if you have one)
+
+    # Hardware monitoring
+    s-tui          # Stress test + monitoring TUI
+    stress-ng      # CPU stress testing
+
+    # USB device management
+    udiskie        # Automount USB drives
   ];
 
   # Firefox configuration with PWA support
@@ -290,6 +356,37 @@ in
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
     checkReversePath = "loose";  # For Tailscale
   };
+
+  # ========== ADVANCED AUDIO (BARE METAL) ==========
+  # Full PipeWire with low-latency for gaming
+  # (Hetzner: audio streaming only, M1: limited support)
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;  # Required for 32-bit games
+    pulse.enable = true;
+    jack.enable = true;
+
+    # Low-latency audio configuration (good for gaming)
+    extraConfig.pipewire = {
+      "92-low-latency" = {
+        "context.properties" = {
+          "default.clock.rate" = 48000;
+          "default.clock.quantum" = 256;
+          "default.clock.min-quantum" = 32;
+          "default.clock.max-quantum" = 1024;
+        };
+      };
+    };
+  };
+
+  # Enable rtkit for real-time audio scheduling
+  security.rtkit.enable = true;
+
+  # ========== USB AUTOMOUNT ==========
+  # Automatic mounting of USB drives
+  services.udisks2.enable = true;
+  services.gvfs.enable = true;  # For GUI file managers
 
   # System state version
   system.stateVersion = "25.11";
