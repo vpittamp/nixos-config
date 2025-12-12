@@ -329,6 +329,7 @@ in
     # Remote access
     tailscale
     remmina
+    wayvnc  # VNC server for Wayland remote access
 
     # 1Password GUI
     _1password-gui
@@ -359,7 +360,7 @@ in
   # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 ];
+    allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
     checkReversePath = "loose";  # For Tailscale
   };
 
