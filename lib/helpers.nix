@@ -80,6 +80,18 @@ let
       secondary = "HDMI-A-1";
       tertiary = "DP-1";  # USB-C/Thunderbolt display
     };
+    "thinkpad" = {
+      outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];
+      primary = "eDP-1";
+      secondary = "HDMI-A-1";
+      tertiary = "DP-1";  # USB-C/Thunderbolt display
+    };
+    "ryzen" = {
+      outputs = [ "DP-1" "HDMI-A-1" "DP-2" ];
+      primary = "DP-1";      # Primary monitor (adjust based on actual setup)
+      secondary = "HDMI-A-1";
+      tertiary = "DP-2";
+    };
   };
 in
 {
