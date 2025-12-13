@@ -374,6 +374,16 @@ in
 
     # USB device management
     udiskie        # Automount USB drives
+
+    # ========== SCREEN RECORDING (Feature 115) ==========
+    # Hardware-accelerated screen recording with NVIDIA NVENC
+    wf-recorder       # Wayland screen recorder with NVENC support
+    grim              # Screenshot utility for Wayland
+    slurp             # Region selection for screenshots/recording
+
+    # ========== WEBCAM SUPPORT (Feature 115) ==========
+    # V4L2 support for USB webcams
+    v4l-utils         # Video4Linux utilities
   ];
 
   # Firefox configuration with PWA support
