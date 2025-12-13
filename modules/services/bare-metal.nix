@@ -67,13 +67,10 @@ in
     virtualisation.libvirtd = mkIf cfg.enableVirtualization {
       enable = true;
       qemu = {
-        package = pkgs.qemu_kvm;
-        runAsRoot = true;
-        swtpm.enable = true;  # Software TPM for VM testing
-        ovmf = {
-          enable = true;  # UEFI support for VMs
-          packages = [ pkgs.OVMFFull.fd ];
-        };
+        package = lib.mkDefault pkgs.qemu_kvm;
+        runAsRoot = lib.mkDefault true;
+        swtpm.enable = lib.mkDefault true;  # Software TPM for VM testing
+        # OVMF (UEFI) images are now automatically available with QEMU
       };
     };
 
@@ -162,11 +159,6 @@ in
       # Don't enable for greetd - it can cause issues with auto-login
     };
 
-    # ========== SECURE BOOT TOOLING ==========
-    environment.systemPackages = mkIf cfg.enableSecureBoot [
-      pkgs.sbctl  # Secure Boot key management
-    ];
-
     # ========== HARDWARE VIDEO ACCELERATION ==========
     # Full hardware video encoding/decoding (not available on Hetzner pixman renderer)
     hardware.graphics = {
@@ -187,16 +179,18 @@ in
     services.logind = {
       lidSwitch = "suspend";
       lidSwitchExternalPower = "lock";
-      extraConfig = ''
-        HandlePowerKey=suspend
-        IdleAction=suspend
-        IdleActionSec=30min
-      '';
+      settings.Login = {
+        HandlePowerKey = "suspend";
+        IdleAction = "suspend";
+        IdleActionSec = "30min";
+      };
     };
 
     # ========== ADDITIONAL PACKAGES ==========
     environment.systemPackages = with pkgs; [
-      # Virtualization tools (when enabled)
+      # Secure Boot tooling (when enabled)
+    ] ++ optionals cfg.enableSecureBoot [
+      sbctl  # Secure Boot key management
     ] ++ optionals cfg.enableVirtualization [
       virt-viewer      # Remote VM viewer
       spice-gtk        # SPICE client for VMs

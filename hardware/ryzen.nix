@@ -2,9 +2,6 @@
 # AMD Ryzen 5 7600X3D (Zen 4 with 3D V-Cache) - 6 cores, 4.1GHz base, 96MB L3 cache
 # 32GB RAM
 #
-# Note: UUIDs need to be set after actual NixOS installation
-# Use 'blkid' to get the correct UUIDs from your installed system
-#
 # GPU Configuration:
 # - If using AMD GPU: This config includes AMD GPU support
 # - If using NVIDIA: Comment out AMD GPU section and enable NVIDIA in configuration file
@@ -29,16 +26,15 @@
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
-  # File systems - PLACEHOLDER UUIDs (must be updated after installation)
-  # Run 'sudo blkid' after installation to get actual UUIDs
+  # File systems
   fileSystems."/" = {
-    device = "/dev/disk/by-uuid/PLACEHOLDER-ROOT-UUID";
+    device = "/dev/disk/by-uuid/9b21906c-50e4-4fe1-9973-2663eec204cb";
     fsType = "ext4";
     options = [ "noatime" "nodiratime" ];
   };
 
   fileSystems."/boot" = {
-    device = "/dev/disk/by-uuid/PLACEHOLDER-BOOT-UUID";
+    device = "/dev/disk/by-uuid/98CD-6F3E";
     fsType = "vfat";
     options = [ "fmask=0077" "dmask=0077" ];
   };

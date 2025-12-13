@@ -1442,9 +1442,8 @@ in
     end
   '';
 
-  # Create symlink to /etc/nixos in home directory for easy access
-  # Access via: /nixos-config/ in file search
-  home.file."nixos-config".source = config.lib.file.mkOutOfStoreSymlink "/etc/nixos";
+  # NOTE: ~/nixos-config symlink removed - the actual git repo lives there
+  # If you need /etc/nixos access, cd to ~/nixos-config directly
 
   # Feature 050: Custom commands provider configuration
   # NOTE: commands.toml is now managed dynamically via walker-cmd CLI tool
