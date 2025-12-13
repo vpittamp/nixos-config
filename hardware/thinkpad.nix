@@ -1,10 +1,6 @@
 # Hardware configuration for Lenovo ThinkPad
 # Intel Core Ultra 7 155U (Meteor Lake) with Intel Arc integrated graphics
 # 32GB RAM
-#
-# Note: UUIDs need to be set after actual NixOS installation
-# Use 'blkid' to get the correct UUIDs from your installed system
-#
 { config, lib, pkgs, modulesPath, ... }:
 
 {
@@ -26,22 +22,23 @@
   boot.kernelModules = [ "kvm-intel" ];
   boot.extraModulePackages = [ ];
 
-  # File systems - PLACEHOLDER UUIDs (must be updated after installation)
-  # Run 'sudo blkid' after installation to get actual UUIDs
+  # File systems
   fileSystems."/" = {
-    device = "/dev/disk/by-uuid/PLACEHOLDER-ROOT-UUID";
+    device = "/dev/disk/by-uuid/b85a5c34-00ee-4cce-98c2-7815b2725ba7";
     fsType = "ext4";
     options = [ "noatime" "nodiratime" ];
   };
 
   fileSystems."/boot" = {
-    device = "/dev/disk/by-uuid/PLACEHOLDER-BOOT-UUID";
+    device = "/dev/disk/by-uuid/77C0-A1FE";
     fsType = "vfat";
     options = [ "fmask=0077" "dmask=0077" ];
   };
 
-  # Swap - using swap file as configured in configurations/thinkpad.nix
-  swapDevices = [ ];
+  # Swap partition
+  swapDevices = [
+    { device = "/dev/disk/by-uuid/2d05acef-3fb1-4264-be73-8a71fcaeab1d"; }
+  ];
 
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";

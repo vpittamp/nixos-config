@@ -33,6 +33,9 @@ in
     inputs.nixos-hardware.nixosModules.common-pc-laptop
     inputs.nixos-hardware.nixosModules.common-pc-laptop-ssd
 
+    # ThinkPad-specific optimizations (TrackPoint, etc.)
+    inputs.nixos-hardware.nixosModules.lenovo-thinkpad
+
     # Desktop environment (Sway - Wayland compositor)
     ../modules/desktop/sway.nix
 
@@ -123,13 +126,7 @@ in
     source = "${pkgs.wshowkeys}/bin/wshowkeys";
   };
 
-  # Swap configuration - 32GB swap for 32GB RAM (hibernation support)
-  swapDevices = [
-    {
-      device = "/var/lib/swapfile";
-      size = 32768; # 32GB swap for hibernation support
-    }
-  ];
+  # Swap configured in hardware/thinkpad.nix (uses dedicated partition)
 
   # ========== HIBERNATION SUPPORT ==========
   # Full suspend-to-disk (not available on Hetzner VM or WSL2)
@@ -263,6 +260,47 @@ in
 
   # Enable fwupd for firmware updates (LVFS)
   services.fwupd.enable = true;
+
+  # Fingerprint reader support (Elan 04f3:0c8c MOC Sensor)
+  # Enroll fingerprint with: fprintd-enroll
+  # Verify with: fprintd-verify
+  services.fprintd.enable = true;
+
+  # PAM integration for fingerprint authentication
+  # Keep separate from fprintd to avoid login conflicts
+  # Reference: https://github.com/NixOS/nixpkgs/issues/171136
+  security.pam.services = {
+    # Sudo with fingerprint (fingerprint OR password)
+    sudo.fprintAuth = true;
+
+    # Screen lock (swaylock)
+    swaylock.fprintAuth = true;
+
+    # Polkit for GUI privilege escalation
+    polkit-1.fprintAuth = true;
+
+    # Login fingerprint - enable cautiously (can cause issues with some display managers)
+    # greetd.fprintAuth = true;
+  };
+
+  # Polkit rules for fingerprint and 1Password integration
+  security.polkit.extraConfig = lib.mkAfter ''
+    // Allow wheel users to enroll fingerprints without password
+    polkit.addRule(function(action, subject) {
+      if (action.id == "net.reactivated.fprint.device.enroll" &&
+          subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+      }
+    });
+
+    // Allow 1Password CLI to use biometric unlock via polkit
+    polkit.addRule(function(action, subject) {
+      if (action.id == "com.1password.1Password.unlock" &&
+          subject.isInGroup("wheel")) {
+        return polkit.Result.AUTH_SELF;
+      }
+    });
+  '';
 
   # Automatic garbage collection
   nix.gc = {

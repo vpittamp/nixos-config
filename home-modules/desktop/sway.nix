@@ -1,5 +1,4 @@
 # Sway Wayland Compositor Home Manager Configuration
-# Parallel to i3.nix - adapted for Wayland on M1 MacBook Pro
 # Works with Sway native Wayland session (no XRDP)
 #
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -83,8 +82,8 @@
 # │                                                                              │
 # │ For Nix-managed settings (this file):                                       │
 # │   1. Edit this file: nvim /etc/nixos/home-modules/desktop/sway.nix          │
-# │   2. Test: sudo nixos-rebuild dry-build --flake .#m1                         │
-# │   3. Apply: sudo nixos-rebuild switch --flake .#m1 --impure                  │
+# │   2. Test: sudo nixos-rebuild dry-build --flake .#thinkpad                   │
+# │   3. Apply: sudo nixos-rebuild switch --flake .#thinkpad                     │
 # │   4. Restart Sway (Mod+Shift+r) to apply changes                             │
 # │                                                                              │
 # │ For runtime-managed settings (Feature 047):                                 │
@@ -101,10 +100,8 @@
 let
   # Detect headless Sway configuration (Feature 046)
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
-  # Feature 084: Detect M1 hybrid mode (physical + virtual displays)
-  isHybridMode = osConfig != null && (osConfig.networking.hostName or "") == "nixos-m1";
-  # Check if virtual outputs are supported (either headless or hybrid mode)
-  hasVirtualOutputs = isHeadless || isHybridMode;
+  # Check if virtual outputs are supported (headless mode only)
+  hasVirtualOutputs = isHeadless;
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
@@ -163,78 +160,14 @@ let
   };
   headlessProfileDefault = if headlessSingleOutputMode then "single" else "triple";
 
-  # Feature 084: M1 hybrid mode profiles (physical + virtual displays)
-  m1HybridMonitorProfiles = {
-    "local-only" = {
-      name = "local-only";
-      description = "Physical display only (eDP-1)";
-      outputs = [
-        { name = "eDP-1"; type = "physical"; enabled = true;
-          position = { x = 0; y = 0; width = 2560; height = 1600; };
-          scale = 2.0; }
-      ];
-      default = true;
-      workspace_assignments = [
-        { output = "eDP-1"; workspaces = [ 1 2 3 4 5 6 7 8 9 ]; }
-      ];
-    };
-    "local+1vnc" = {
-      name = "local+1vnc";
-      description = "Physical display plus one VNC output";
-      outputs = [
-        { name = "eDP-1"; type = "physical"; enabled = true;
-          position = { x = 0; y = 0; width = 2560; height = 1600; };
-          scale = 2.0; }
-        { name = "HEADLESS-1"; type = "virtual"; enabled = true;
-          position = { x = 1280; y = 0; width = 1920; height = 1080; };
-          scale = 1.0; vnc_port = 5900; }
-      ];
-      default = false;
-      workspace_assignments = [
-        { output = "eDP-1"; workspaces = [ 1 2 3 4 ]; }
-        { output = "HEADLESS-1"; workspaces = [ 5 6 7 8 9 ]; }
-      ];
-    };
-    "local+2vnc" = {
-      name = "local+2vnc";
-      description = "Physical display plus two VNC outputs";
-      outputs = [
-        { name = "eDP-1"; type = "physical"; enabled = true;
-          position = { x = 0; y = 0; width = 2560; height = 1600; };
-          scale = 2.0; }
-        { name = "HEADLESS-1"; type = "virtual"; enabled = true;
-          position = { x = 1280; y = 0; width = 1920; height = 1080; };
-          scale = 1.0; vnc_port = 5900; }
-        { name = "HEADLESS-2"; type = "virtual"; enabled = true;
-          position = { x = 3200; y = 0; width = 1920; height = 1080; };
-          scale = 1.0; vnc_port = 5901; }
-      ];
-      default = false;
-      workspace_assignments = [
-        { output = "eDP-1"; workspaces = [ 1 2 3 ]; }
-        { output = "HEADLESS-1"; workspaces = [ 4 5 6 ]; }
-        { output = "HEADLESS-2"; workspaces = [ 7 8 9 ]; }
-      ];
-    };
-  };
-  m1HybridProfileDefault = "local-only";
-
-  # Generate profile files based on mode
+  # Generate profile files for headless mode
   monitorProfileFiles =
-    if isHybridMode then
-      lib.listToAttrs (map (name: {
-        name = "sway/monitor-profiles/${name}.json";
-        value = {
-          text = builtins.toJSON (m1HybridMonitorProfiles.${name});
-        };
-      }) (builtins.attrNames m1HybridMonitorProfiles))
-    else
-      lib.listToAttrs (map (name: {
-        name = "sway/monitor-profiles/${name}.json";
-        value = {
-          text = builtins.toJSON (headlessMonitorProfiles.${name});
-        };
-      }) (builtins.attrNames headlessMonitorProfiles));
+    lib.listToAttrs (map (name: {
+      name = "sway/monitor-profiles/${name}.json";
+      value = {
+        text = builtins.toJSON (headlessMonitorProfiles.${name});
+      };
+    }) (builtins.attrNames headlessMonitorProfiles));
   mkWayvncWrapper = output: port: socket:
     pkgs.writeShellScript ("wayvnc-" + lib.strings.toLower output + "-wrapper") ''
       set -euo pipefail
@@ -307,11 +240,6 @@ let
         primary = [ headlessPrimaryOutput ];     # HEADLESS-1
         secondary = [ headlessSecondaryOutput ]; # HEADLESS-2
         tertiary = [ headlessTertiaryOutput ];   # HEADLESS-3
-      }
-      else if isHybridMode then {
-        primary = [ "eDP-1" ];
-        secondary = [ "HEADLESS-1" ];
-        tertiary = [ "HEADLESS-2" ];
       }
       else {
         # Standard laptop with optional external monitor
@@ -466,10 +394,10 @@ in
           scale = "1.0";
         };
       } else {
-        # M1 MacBook Pro physical displays
+        # Standard laptop display (1920x1200 @ ~162 PPI on 14" panel)
+        # 1.25 scale provides comfortable UI size without sacrificing too much screen real estate
         "eDP-1" = {
-          scale = "2.0";                    # 2x scaling for Retina
-          resolution = "2560x1600@60Hz";    # Native resolution
+          scale = "1.25";                   # 1.25x scaling for comfortable readability
           position = "0,0";
         };
 
@@ -477,14 +405,14 @@ in
         "HDMI-A-1" = {
           scale = "1.0";
           mode = "1920x1080@60Hz";
-          position = "1280,0";  # Right of built-in (1280 = 2560/2)
+          position = "1536,0";  # Right of built-in (1920/1.25 = 1536 logical pixels)
         };
       };
 
       # Input configuration (FR-006)
       input =
         {
-        # Touchpad configuration for M1 MacBook Pro
+        # Touchpad configuration
         "type:touchpad" = {
           natural_scroll = "enabled";   # Natural scrolling
           scroll_method = "two_finger";  # Enable two-finger scrolling
@@ -530,7 +458,7 @@ in
           # Convert all workspace assignments to Sway output assignments
           map assignmentToOutput workspaceAssignments.assignments
       else [
-        # M1 MacBook Pro: Single display (eDP-1) for all workspaces
+        # Standard laptop: Single display (eDP-1) for all workspaces
         # All workspace assignments use primary role → eDP-1
         { workspace = "1"; output = "eDP-1"; }
         { workspace = "2"; output = "eDP-1"; }
@@ -758,7 +686,6 @@ in
     extraConfig = ''
       ${lib.optionalString (!isHeadless) ''
         # Disable laptop lid close action (keep running when closed)
-        # Only for M1 MacBook Pro, not headless mode
         bindswitch lid:on output eDP-1 disable
         bindswitch lid:off output eDP-1 enable
       ''}
@@ -1041,11 +968,11 @@ in
 
       # Platform-conditional workspace mode keybindings
       # NOTE: Control+0/Shift+0 moved to sway-keybindings.nix (works on all platforms)
-      # M1-specific CapsLock binding remains here (requires bindcode, not available in keybindings attr)
+      # CapsLock binding remains here (requires bindcode, not available in keybindings attr)
       ${if isHeadless then ''
         # Hetzner: Control+0 keybindings now in sway-keybindings.nix
       '' else ''
-        # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
+        # Physical laptop: Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
         # Feature 072: Call enter command to trigger all-windows preview
@@ -1065,6 +992,7 @@ in
     swayidle         # Idle management
     sov              # Workspace overview
     wshowkeys        # Visual key overlay for workspace mode
+    lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
   ] ++ lib.optionals isHeadless [
     # wayvnc for headless mode (Feature 046)
@@ -1104,21 +1032,10 @@ in
   };
 
   xdg.configFile =
-    # Monitor profile files for headless or hybrid mode
+    # Monitor profile files for headless mode
     (lib.optionalAttrs isHeadless monitorProfileFiles)
-    // (lib.optionalAttrs isHybridMode monitorProfileFiles)
     // (lib.optionalAttrs isHeadless {
       "sway/monitor-profile.default".text = "${headlessProfileDefault}\n";
-      "wayvnc/config" = {
-        text = ''
-          address=0.0.0.0
-          enable_auth=false
-        '';
-      };
-    })
-    # Feature 084: M1 hybrid mode default profile
-    // (lib.optionalAttrs isHybridMode {
-      "sway/monitor-profile.default".text = "${m1HybridProfileDefault}\n";
       "wayvnc/config" = {
         text = ''
           address=0.0.0.0
@@ -1235,69 +1152,52 @@ PY
     fi
   '');
 
-  # wayvnc systemd services for headless and hybrid modes (Features 048, 084)
-  # Headless: Three independent VNC instances (auto-started)
-  # Hybrid: Two VNC instances for virtual displays (manually started by profile switch)
+  # wayvnc systemd services for headless mode (Feature 048)
+  # Three independent VNC instances (auto-started)
 
   # HEADLESS-1 (Port 5900)
-  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf (isHeadless || isHybridMode) (lib.mkMerge [
-    {
-      Unit = {
-        Description = if isHybridMode then "wayvnc VNC server for virtual display V1" else "wayvnc VNC server for HEADLESS-1";
-        Documentation = "https://github.com/any1/wayvnc";
-        After = [ "sway-session.target" ];
-        Requires = [ "sway-session.target" ];
-        PartOf = [ "sway-session.target" ];
-      };
+  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf isHeadless {
+    Unit = {
+      Description = "wayvnc VNC server for HEADLESS-1";
+      Documentation = "https://github.com/any1/wayvnc";
+      After = [ "sway-session.target" ];
+      Requires = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
 
-      Service = {
-        Type = "simple";
-        ExecStart = mkWayvncWrapper "HEADLESS-1" 5900 (if isHybridMode then "/run/user/1000/wayvnc-v1.sock" else "/run/user/1000/wayvnc-headless-1.sock");
-        Restart = "on-failure";
-        RestartSec = "1";
-      };
-    }
-    # Headless mode: auto-start with session
-    (lib.mkIf isHeadless {
-      Install = {
-        WantedBy = [ "sway-session.target" ];
-      };
-    })
-    # Hybrid mode: manually started by set-monitor-profile
-    (lib.mkIf isHybridMode {
-      Install = { };
-    })
-  ]);
+    Service = {
+      Type = "simple";
+      ExecStart = mkWayvncWrapper "HEADLESS-1" 5900 "/run/user/1000/wayvnc-headless-1.sock";
+      Restart = "on-failure";
+      RestartSec = "1";
+    };
+
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
+  };
 
   # HEADLESS-2 (Port 5901)
-  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf (isHeadless || isHybridMode) (lib.mkMerge [
-    {
-      Unit = {
-        Description = if isHybridMode then "wayvnc VNC server for virtual display V2" else "wayvnc VNC server for HEADLESS-2";
-        Documentation = "https://github.com/any1/wayvnc";
-        After = [ "sway-session.target" ];
-        Requires = [ "sway-session.target" ];
-        PartOf = [ "sway-session.target" ];
-      };
+  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf isHeadless {
+    Unit = {
+      Description = "wayvnc VNC server for HEADLESS-2";
+      Documentation = "https://github.com/any1/wayvnc";
+      After = [ "sway-session.target" ];
+      Requires = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
 
-      Service = {
-        Type = "simple";
-        ExecStart = mkWayvncWrapper "HEADLESS-2" 5901 (if isHybridMode then "/run/user/1000/wayvnc-v2.sock" else "/run/user/1000/wayvnc-headless-2.sock");
-        Restart = "on-failure";
-        RestartSec = "1";
-      };
-    }
-    # Headless mode: auto-start with session
-    (lib.mkIf isHeadless {
-      Install = {
-        WantedBy = [ "sway-session.target" ];
-      };
-    })
-    # Hybrid mode: manually started by set-monitor-profile
-    (lib.mkIf isHybridMode {
-      Install = { };
-    })
-  ]);
+    Service = {
+      Type = "simple";
+      ExecStart = mkWayvncWrapper "HEADLESS-2" 5901 "/run/user/1000/wayvnc-headless-2.sock";
+      Restart = "on-failure";
+      RestartSec = "1";
+    };
+
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
+  };
 
   # HEADLESS-3 (Tertiary display, workspaces 6-9, port 5902)
   systemd.user.services."wayvnc@HEADLESS-3" = lib.mkIf isHeadless {
@@ -1320,8 +1220,6 @@ PY
       WantedBy = [ "sway-session.target" ];
     };
   };
-
-  # Feature 084: M1 hybrid mode WayVNC services are merged into HEADLESS-1 and HEADLESS-2 above
 
   systemd.user.services."tailscale-rtp-default-sink" = lib.mkIf (isHeadless && tailscaleAudioEnabled) {
     Unit = {
@@ -1364,6 +1262,28 @@ PY
       BindsTo = [ "graphical-session.target" ];
       Wants = [ "graphical-session-pre.target" ];
       After = [ "graphical-session-pre.target" ];
+    };
+  };
+
+  # Polkit authentication agent (required for 1Password fingerprint/system auth)
+  # Without this, polkit-based authentication dialogs won't appear
+  systemd.user.services.polkit-agent = {
+    Unit = {
+      Description = "Polkit Authentication Agent";
+      Documentation = "https://wiki.archlinux.org/title/Polkit";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.lxqt.lxqt-policykit}/bin/lxqt-policykit-agent";
+      Restart = "on-failure";
+      RestartSec = 1;
+    };
+
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
     };
   };
 
