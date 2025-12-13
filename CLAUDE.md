@@ -1217,6 +1217,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON files (`~/.config/i3/projects/*.json`), in-memory daemon state (109-enhance-worktree-user-experience)
 - Python 3.11+ (streaming backend, matching Constitution Principle X), Yuck/GTK CSS (Eww widgets) + SwayNC (swaync-client --subscribe), Eww 0.4+ (deflisten), Python subprocess for event streaming (110-improve-notifications-system)
 - N/A (stateless - SwayNC is the source of truth) (110-improve-notifications-system)
+- Bash 5.0+ (pwa-url-router script), Nix (home-manager modules), Python 3.11+ (if daemon integration needed) + firefoxpwa (PWA runtime), Firefox 120+ (browser), tmux 3.3+ (terminal multiplexer), fzf (fuzzy finder), jq (JSON processing), swaymsg (Sway IPC) (115-improve-pwa-url-router)
+- JSON files (`~/.config/i3/pwa-domains.json`, `~/.local/state/pwa-router-locks/`) (115-improve-pwa-url-router)
 
 ## Recent Changes
 - 109-enhance-worktree-user-experience: Branch number badges with gradient styling (mauve/pink for numbered, blue for main, green for feature), icon alignment fixes, hover transition improvements

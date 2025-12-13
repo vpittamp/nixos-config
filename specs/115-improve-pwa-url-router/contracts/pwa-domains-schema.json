@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PWA Domain Registry",
+  "description": "Mapping of domains to PWA metadata for URL routing (Feature 113/115)",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "pwa": {
+        "type": "string",
+        "description": "App registry name (e.g., 'github-pwa')",
+        "pattern": "^[a-z0-9-]+-pwa$"
+      },
+      "ulid": {
+        "type": "string",
+        "description": "26-character ULID for firefoxpwa",
+        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "name": {
+        "type": "string",
+        "description": "Human-readable display name",
+        "minLength": 1
+      }
+    },
+    "required": ["pwa", "ulid", "name"],
+    "additionalProperties": false
+  },
+  "examples": [
+    {
+      "github.com": {
+        "pwa": "github-pwa",
+        "ulid": "01JCYF9A3P8T5W7XH0KMQRNZC6",
+        "name": "GitHub"
+      },
+      "www.github.com": {
+        "pwa": "github-pwa",
+        "ulid": "01JCYF9A3P8T5W7XH0KMQRNZC6",
+        "name": "GitHub"
+      },
+      "youtube.com": {
+        "pwa": "youtube-pwa",
+        "ulid": "01K666N2V6BQMDSBMX3AY74TY7",
+        "name": "YouTube"
+      }
+    }
+  ]
+}
