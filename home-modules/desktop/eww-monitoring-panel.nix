@@ -142,22 +142,34 @@ let
   '';
 
   # Toggle script for panel visibility
-  # Uses CSS-based visibility (panel_visible variable) instead of open/close
-  # which was crashing the eww daemon under rapid toggling
+  # Feature 114: Uses actual open/close instead of CSS visibility
+  # CSS-based hiding kept the window intercepting input even when "hidden"
+  # Added debounce to prevent crashes from rapid toggling
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
+    LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
 
-    # Get current visibility state
-    VISIBLE=$($EWW --config "$CONFIG" get panel_visible 2>/dev/null)
+    # Debounce: prevent rapid toggling (crashes eww daemon)
+    if [[ -f "$LOCK_FILE" ]]; then
+      LOCK_AGE=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+      if [[ $LOCK_AGE -lt 1 ]]; then
+        exit 0
+      fi
+    fi
+    touch "$LOCK_FILE"
 
-    # Toggle: true -> false, false/empty -> true
-    if [[ "$VISIBLE" == "true" ]]; then
-      $EWW --config "$CONFIG" update panel_visible=false
+    # Check if window is actually open (not just the variable)
+    if $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      # Window is open - close it
+      $EWW --config "$CONFIG" close monitoring-panel
+      $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false
     else
-      $EWW --config "$CONFIG" update panel_visible=true
+      # Window is closed - open it
+      $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=true
+      $EWW --config "$CONFIG" open monitoring-panel
     fi
   '';
 
@@ -179,6 +191,9 @@ let
     # Update eww variable to show focus indicator
     $EWW_CMD update panel_focused=true
 
+    # Feature 114: Enable panel focus mode (interactive, receives clicks)
+    $EWW_CMD update panel_focus_mode=true
+
     # Reset selection index
     $EWW_CMD update selected_index=0
 
@@ -195,6 +210,9 @@ let
 
     # Update eww variable to hide focus indicator
     $EWW_CMD update panel_focused=false
+
+    # Feature 114: Disable panel focus mode (return to click-through)
+    $EWW_CMD update panel_focus_mode=false
 
     # Clear selection
     $EWW_CMD update selected_index=-1
@@ -3168,6 +3186,11 @@ in
       ;; When true, panel has keyboard focus and shows visual indicator
       (defvar panel_focused false)
 
+      ;; Feature 114: Panel focus mode for click-through behavior
+      ;; When false (default), clicks pass through to windows beneath
+      ;; When true, panel receives clicks (interactive mode via Mod+M)
+      (defvar panel_focus_mode false)
+
       ;; Feature 086: Selected index for keyboard navigation (-1 = none)
       ;; Updated by j/k or up/down in monitoring mode
       (defvar selected_index -1)
@@ -3439,7 +3462,8 @@ in
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
-        :focusable "ondemand"
+        ;; Feature 114: Default to click-through (false = clicks pass through to windows beneath)
+        :focusable false
         :exclusive false
         :windowtype "dock"
         (monitoring-panel-content))
