@@ -59,38 +59,46 @@ let
   };
 
   # Monitor role definitions per hostname
-  # Role indices: primary=0, secondary=1, tertiary=2
+  # Role indices: primary=0, secondary=1, tertiary=2, quaternary=3
   # Widgets should reference roles, not hardcoded output names
+  # 4-tier system: primary (WS 1-2), secondary (WS 3-4), tertiary (WS 5-6), quaternary (WS 7+)
   monitorConfig = {
     "nixos-hetzner-sway" = {
       outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
       primary = "HEADLESS-1";
       secondary = "HEADLESS-2";
       tertiary = "HEADLESS-3";
+      quaternary = "HEADLESS-3";  # Fallback to tertiary (headless has 3 virtual displays)
     };
     "nixos-m1" = {
       outputs = [ "eDP-1" "HDMI-A-1" ];
       primary = "eDP-1";
       secondary = "HDMI-A-1";
       tertiary = "HDMI-A-1";  # Fallback to secondary if no tertiary
+      quaternary = "HDMI-A-1"; # Fallback to secondary
     };
     "acer" = {
       outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];
       primary = "eDP-1";
       secondary = "HDMI-A-1";
       tertiary = "DP-1";  # USB-C/Thunderbolt display
+      quaternary = "DP-1"; # Fallback to tertiary
     };
     "thinkpad" = {
       outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];
       primary = "eDP-1";
       secondary = "HDMI-A-1";
       tertiary = "DP-1";  # USB-C/Thunderbolt display
+      quaternary = "DP-1"; # Fallback to tertiary
     };
+    # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
+    # Physical connections: 1x HDMI + 3x DisplayPort (DP-1, DP-2, DP-3)
     "ryzen" = {
-      outputs = [ "DP-1" "HDMI-A-1" "DP-2" ];
-      primary = "DP-1";      # Primary monitor (adjust based on actual setup)
-      secondary = "HDMI-A-1";
-      tertiary = "DP-2";
+      outputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ];
+      primary = "DP-1";       # Main center monitor (DisplayPort 1)
+      secondary = "HDMI-A-1"; # Left monitor (HDMI)
+      tertiary = "DP-2";      # Right monitor (DisplayPort 2)
+      quaternary = "DP-3";    # Far right/top monitor (DisplayPort 3)
     };
   };
 in

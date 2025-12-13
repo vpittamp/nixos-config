@@ -1,7 +1,7 @@
 """Monitor role configuration models for Feature 001.
 
 This module defines Pydantic models for workspace-to-monitor assignment
-based on logical monitor roles (primary/secondary/tertiary).
+based on logical monitor roles (primary/secondary/tertiary/quaternary).
 """
 
 from enum import Enum
@@ -13,17 +13,19 @@ from pydantic import BaseModel, Field, validator
 class MonitorRole(str, Enum):
     """Logical monitor positions for workspace assignment.
 
-    Three-tier role system independent of physical output names:
+    Four-tier role system independent of physical output names:
     - PRIMARY: Main monitor (fallback for all workspaces)
-    - SECONDARY: Second monitor (fallback for tertiary)
-    - TERTIARY: Third monitor (no fallback source)
+    - SECONDARY: Second monitor (fallback for tertiary/quaternary)
+    - TERTIARY: Third monitor (fallback for quaternary)
+    - QUATERNARY: Fourth monitor (no fallback source)
 
-    Fallback chain: tertiary → secondary → primary
+    Fallback chain: quaternary → tertiary → secondary → primary
     """
 
     PRIMARY = "primary"
     SECONDARY = "secondary"
     TERTIARY = "tertiary"
+    QUATERNARY = "quaternary"
 
     @classmethod
     def from_str(cls, value: str) -> "MonitorRole":

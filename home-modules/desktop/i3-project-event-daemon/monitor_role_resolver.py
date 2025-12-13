@@ -1,6 +1,6 @@
 """Monitor role resolution logic for Feature 001.
 
-This module resolves logical monitor roles (primary/secondary/tertiary) to
+This module resolves logical monitor roles (primary/secondary/tertiary/quaternary) to
 physical output names based on connection order and configuration preferences.
 """
 
@@ -20,9 +20,9 @@ class MonitorRoleResolver:
     """Resolves monitor roles to physical outputs with fallback logic.
 
     Responsibilities:
-    - Map logical roles (primary/secondary/tertiary) to physical outputs
+    - Map logical roles (primary/secondary/tertiary/quaternary) to physical outputs
     - Infer monitor roles from workspace numbers when not explicitly configured
-    - Apply fallback chain when monitors disconnect: tertiary → secondary → primary
+    - Apply fallback chain when monitors disconnect: quaternary → tertiary → secondary → primary
     - Log all role assignments and fallbacks for debugging
     """
 
@@ -88,8 +88,8 @@ class MonitorRoleResolver:
         2. Try each preferred output in order (fallback chain within preferences)
         3. If no preferences match, fall back to connection order
 
-        First output = primary, second = secondary, third = tertiary.
-        If fewer than 3 outputs, some roles won't be assigned (fallback applies).
+        First output = primary, second = secondary, third = tertiary, fourth = quaternary.
+        If fewer than 4 outputs, some roles won't be assigned (fallback applies).
 
         Args:
             outputs: Active outputs in connection order
@@ -100,8 +100,8 @@ class MonitorRoleResolver:
         assignments = {}
         assigned_outputs = set()  # Track which outputs have been assigned
 
-        # Role order for assignment
-        role_order = [MonitorRole.PRIMARY, MonitorRole.SECONDARY, MonitorRole.TERTIARY]
+        # Role order for assignment (4-tier system)
+        role_order = [MonitorRole.PRIMARY, MonitorRole.SECONDARY, MonitorRole.TERTIARY, MonitorRole.QUATERNARY]
 
         # Phase 1: Assign preferred outputs (Feature US5)
         if self.output_preferences:
@@ -164,10 +164,11 @@ class MonitorRoleResolver:
     def infer_monitor_role_from_workspace(self, workspace_num: int) -> MonitorRole:
         """Infer monitor role from workspace number.
 
-        Inference rules:
-        - WS 1-2: primary
-        - WS 3-5: secondary
-        - WS 6+: tertiary
+        Inference rules (4-tier system):
+        - WS 1-2: primary (main focus workspaces)
+        - WS 3-4: secondary (secondary tasks)
+        - WS 5-6: tertiary (reference/monitoring)
+        - WS 7+: quaternary (overflow/additional)
 
         Args:
             workspace_num: Workspace number (1-70)
@@ -177,10 +178,12 @@ class MonitorRoleResolver:
         """
         if workspace_num <= 2:
             role = MonitorRole.PRIMARY
-        elif workspace_num <= 5:
+        elif workspace_num <= 4:
             role = MonitorRole.SECONDARY
-        else:
+        elif workspace_num <= 6:
             role = MonitorRole.TERTIARY
+        else:
+            role = MonitorRole.QUATERNARY
 
         logger.debug(
             f"Inferred monitor role for workspace {workspace_num}: {role.value}"
@@ -194,7 +197,7 @@ class MonitorRoleResolver:
     ) -> Optional[str]:
         """Apply fallback logic when target role is unavailable.
 
-        Fallback chain: tertiary → secondary → primary → None
+        Fallback chain: quaternary → tertiary → secondary → primary → None
 
         Args:
             role_assignments: Current role→output assignments
@@ -203,8 +206,9 @@ class MonitorRoleResolver:
         Returns:
             Output name to use, or None if no fallback available
         """
-        # Fallback chain
+        # Fallback chain (4-tier system)
         fallback_chain = {
+            MonitorRole.QUATERNARY: MonitorRole.TERTIARY,
             MonitorRole.TERTIARY: MonitorRole.SECONDARY,
             MonitorRole.SECONDARY: MonitorRole.PRIMARY,
             MonitorRole.PRIMARY: None,  # Primary has no fallback

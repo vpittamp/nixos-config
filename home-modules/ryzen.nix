@@ -1,4 +1,5 @@
 # Home-manager configuration for AMD Ryzen Desktop
+# 4-monitor bare-metal setup with NVIDIA RTX 5070
 # Desktop with Sway, i3pm daemon, walker launcher
 { pkgs, ... }:
 {

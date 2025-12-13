@@ -89,24 +89,29 @@
 
   # Monitor configuration for M1, Hetzner, and Ryzen
   # Passed to eww-monitoring-panel for correct display output
+  # 4-tier system: primary (WS 1-2), secondary (WS 3-4), tertiary (WS 5-6), quaternary (WS 7+)
   _module.args.monitorConfig = {
     "nixos-hetzner-sway" = {
       primary = "HEADLESS-1";
       secondary = "HEADLESS-2";
       tertiary = "HEADLESS-3";
+      quaternary = "HEADLESS-3";  # Fallback to tertiary
       outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
     };
     "nixos-m1" = {
       primary = "eDP-1";
       secondary = "HEADLESS-1";
       tertiary = "HEADLESS-2";
+      quaternary = "HEADLESS-2";  # Fallback to tertiary
       outputs = [ "eDP-1" "HEADLESS-1" "HEADLESS-2" ];
     };
+    # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
     "ryzen" = {
-      primary = "DP-1";       # Primary NVIDIA output (DisplayPort)
-      secondary = "HDMI-A-1"; # HDMI output
-      tertiary = "DP-2";      # Additional DisplayPort
-      outputs = [ "DP-1" "HDMI-A-1" "DP-2" ];
+      primary = "DP-1";       # Main center monitor (DisplayPort 1)
+      secondary = "HDMI-A-1"; # Left monitor (HDMI)
+      tertiary = "DP-2";      # Right monitor (DisplayPort 2)
+      quaternary = "DP-3";    # Far right/top monitor (DisplayPort 3)
+      outputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ];
     };
   };
 }

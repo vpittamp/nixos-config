@@ -30,8 +30,11 @@ let
       { name = "HEADLESS-2"; label = "Headless 2"; }
       { name = "HEADLESS-3"; label = "Headless 3"; }
     ] else if isRyzen then [
-      # Ryzen desktop with NVIDIA GPU
-      { name = "DP-1"; label = "DisplayPort"; }
+      # Ryzen desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
+      { name = "DP-1"; label = "Primary"; }
+      { name = "HDMI-A-1"; label = "HDMI"; }
+      { name = "DP-2"; label = "DP-2"; }
+      { name = "DP-3"; label = "DP-3"; }
     ] else [
       { name = "eDP-1"; label = "Built-in"; }
     ];

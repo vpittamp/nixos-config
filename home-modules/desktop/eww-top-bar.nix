@@ -34,15 +34,18 @@ let
 
   # Multi-monitor output configuration
   # Headless: HEADLESS-1/2/3 (Hetzner VNC)
-  # Ryzen Desktop: DP-1, HDMI-A-1 (NVIDIA outputs)
+  # Ryzen Desktop: DP-1, HDMI-A-1, DP-2, DP-3 (NVIDIA 4-monitor setup)
   # Laptop: eDP-1 (built-in), HDMI-A-1 (external - only when connected)
   topBarOutputs =
     if isHeadless then [
       { name = "HEADLESS-1"; showTray = true; }
     ] else if isRyzen then [
-      # Ryzen desktop with NVIDIA GPU - common display outputs
-      # DP-1 is typically the primary DisplayPort output
-      { name = "DP-1"; showTray = true; }
+      # Ryzen desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
+      # Show top bar on all monitors, tray only on primary
+      { name = "DP-1"; showTray = true; }    # Primary - shows system tray
+      { name = "HDMI-A-1"; showTray = false; }
+      { name = "DP-2"; showTray = false; }
+      { name = "DP-3"; showTray = false; }
     ] else [
       # Laptop: built-in display (eDP-1)
       # TODO: Auto-detect connected monitors and open windows dynamically

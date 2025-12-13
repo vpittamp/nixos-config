@@ -13,13 +13,15 @@ let
     primary = "HEADLESS-1";
     secondary = "HEADLESS-2";
     tertiary = "HEADLESS-3";
+    quaternary = "HEADLESS-3";  # Fallback to tertiary
     outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
   };
 
-  # Export role-based outputs for use in widget config
+  # Export role-based outputs for use in widget config (4-tier system)
   primaryOutput = hostMonitors.primary;
   secondaryOutput = hostMonitors.secondary;
   tertiaryOutput = hostMonitors.tertiary;
+  quaternaryOutput = hostMonitors.quaternary or hostMonitors.tertiary;
 
   # Feature 057: Catppuccin Mocha theme colors (consistent with unified bar system)
   mocha = {
