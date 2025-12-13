@@ -1,10 +1,7 @@
 # Hardware configuration for AMD Ryzen Desktop
 # AMD Ryzen 5 7600X3D (Zen 4 with 3D V-Cache) - 6 cores, 4.1GHz base, 96MB L3 cache
+# NVIDIA GeForce RTX 5070 (GB205, Blackwell architecture)
 # 32GB RAM
-#
-# GPU Configuration:
-# - If using AMD GPU: This config includes AMD GPU support
-# - If using NVIDIA: Comment out AMD GPU section and enable NVIDIA in configuration file
 #
 { config, lib, pkgs, modulesPath, ... }:
 
@@ -22,7 +19,7 @@
     "usb_storage"   # USB storage
     "sd_mod"        # SATA/SCSI disk support
   ];
-  boot.initrd.kernelModules = [ "amdgpu" ];  # Early load for AMD GPU
+  boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];  # Early load for NVIDIA GPU
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
@@ -52,21 +49,17 @@
   # AMD CPU microcode updates
   hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
-  # Hardware acceleration - AMD GPU (RDNA/RDNA2/RDNA3)
-  # RADV (Mesa Vulkan) is enabled by default - no need for amdvlk
+  # Hardware acceleration - NVIDIA GPU (RTX 5070 Blackwell)
   hardware.graphics = {
     enable = true;
     enable32Bit = true;  # For 32-bit application compatibility (Wine, etc.)
-
-    extraPackages = with pkgs; [
-      rocmPackages.clr.icd  # OpenCL support for AMD (ROCm)
-    ];
   };
 
-  # AMD GPU specific - RADV is the default and recommended Vulkan driver
-  environment.variables = {
-    AMD_VULKAN_ICD = "RADV";
-  };
+  # NVIDIA kernel parameters for Wayland
+  boot.kernelParams = [
+    "nvidia-drm.modeset=1"                              # DRM KMS support (required for Wayland)
+    "nvidia.NVreg_PreserveVideoMemoryAllocations=1"     # Preserve VRAM on sleep
+  ];
 
   # Firmware updates - essential for modern AMD hardware
   hardware.enableRedistributableFirmware = true;

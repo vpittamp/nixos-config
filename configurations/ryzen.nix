@@ -1,12 +1,13 @@
 # AMD Ryzen Desktop Configuration
 # AMD Ryzen 5 7600X3D (Zen 4 with 3D V-Cache) - 6 cores, 4.1GHz base, 96MB L3
+# NVIDIA GeForce RTX 5070 (GB205, Blackwell architecture)
 # Physical desktop with Sway/Wayland desktop environment
 #
 # BARE METAL ADVANTAGES over Hetzner VM / M1 / WSL2:
 # - Full KVM virtualization with virt-manager and GPU passthrough
-# - Hardware video encoding/decoding (AMD VCE/VCN)
+# - Hardware video encoding/decoding (NVENC/NVDEC)
 # - TPM 2.0 for secure boot and encryption
-# - Native Vulkan with RADV driver
+# - Native Vulkan with NVIDIA driver
 # - Full PipeWire with low-latency audio
 # - Printing support
 #
@@ -27,11 +28,10 @@ in
     # Hardware
     ../hardware/ryzen.nix
 
-    # nixos-hardware modules for AMD desktop
+    # nixos-hardware modules for AMD CPU + NVIDIA GPU desktop
     inputs.nixos-hardware.nixosModules.common-cpu-amd
     inputs.nixos-hardware.nixosModules.common-cpu-amd-pstate
     inputs.nixos-hardware.nixosModules.common-cpu-amd-zenpower
-    inputs.nixos-hardware.nixosModules.common-gpu-amd
     inputs.nixos-hardware.nixosModules.common-pc
     inputs.nixos-hardware.nixosModules.common-pc-ssd
 
@@ -100,7 +100,8 @@ in
     enable = true;
     settings = {
       default_session = {
-        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd sway";
+        # Use --unsupported-gpu flag for NVIDIA GPUs with Wayland
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd 'sway --unsupported-gpu'";
         user = "greeter";
       };
     };
@@ -198,7 +199,26 @@ in
       Option "DPI" "96 x 96"
     '';
 
-    videoDrivers = [ "amdgpu" ];  # AMD GPU driver
+    videoDrivers = [ "nvidia" ];  # NVIDIA GPU driver
+  };
+
+  # ========== NVIDIA GPU CONFIGURATION ==========
+  hardware.nvidia = {
+    # Use the stable driver (580.x supports RTX 5070)
+    package = config.boot.kernelPackages.nvidiaPackages.stable;
+
+    # Modesetting is required for Wayland
+    modesetting.enable = true;
+
+    # Enable power management (experimental but recommended for newer cards)
+    powerManagement.enable = true;
+
+    # Use the open source kernel modules (recommended for RTX 30+ series)
+    # RTX 5070 (Blackwell) should work with open modules
+    open = true;
+
+    # Enable the nvidia-settings GUI
+    nvidiaSettings = true;
   };
 
   # Display scaling configuration for Wayland
@@ -212,19 +232,17 @@ in
     # Electron apps
     ELECTRON_FORCE_IS_PACKAGED = "true";
 
-    # ========== AMD GPU OPTIMIZATIONS ==========
-    # AMD Vulkan ICD - RADV (Mesa) for better compatibility with games
-    AMD_VULKAN_ICD = "RADV";
+    # ========== NVIDIA WAYLAND ENVIRONMENT ==========
+    # Required for NVIDIA on Wayland
+    GBM_BACKEND = "nvidia-drm";
+    __GLX_VENDOR_LIBRARY_NAME = "nvidia";
+    LIBVA_DRIVER_NAME = "nvidia";
 
-    # Enable ACO shader compiler (faster compilation)
-    RADV_PERFTEST = "aco";
+    # Enable Wayland for Electron apps
+    NIXOS_OZONE_WL = "1";
 
-    # Enable FreeSync/VRR if monitor supports it
-    # vblank_mode=0 disables vsync (for benchmarking), remove for normal use
-    # vblank_mode = "0";
-
-    # Force Vulkan for OpenGL games via Zink
-    # Uncomment if needed: MESA_LOADER_DRIVER_OVERRIDE = "zink";
+    # For hardware cursors on NVIDIA Wayland
+    WLR_NO_HARDWARE_CURSORS = "1";
   };
 
   # Platform configuration
@@ -318,12 +336,13 @@ in
     # ========== BARE METAL EXCLUSIVE PACKAGES ==========
     # These require physical hardware (not available on Hetzner/M1/WSL)
 
-    # AMD GPU tools
-    radeontop      # AMD GPU monitoring (like nvidia-smi)
+    # NVIDIA GPU tools
+    nvtopPackages.nvidia  # NVIDIA GPU monitoring TUI
     libva-utils    # VA-API verification (vainfo)
     vdpauinfo      # VDPAU verification
     vulkan-tools   # Vulkan verification (vulkaninfo)
     clinfo         # OpenCL verification
+    cudaPackages.cuda_nvcc  # CUDA compiler (optional, for CUDA development)
 
     # Disk encryption and security
     cryptsetup     # LUKS disk encryption

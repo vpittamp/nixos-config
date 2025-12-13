@@ -111,7 +111,7 @@
 
   # WayVNC systemd user service
   # Note: Adjust output (-o flag) based on your monitor setup
-  # Common outputs: DP-1, HDMI-A-1, DP-2
+  # Common NVIDIA outputs: DP-1, HDMI-A-1, DP-2
   # Run 'swaymsg -t get_outputs' to see available outputs
   systemd.user.services.wayvnc = {
     Unit = {
@@ -122,10 +122,13 @@
     };
     Service = {
       Type = "simple";
-      # Using DP-1 as default - change to HDMI-A-1 or appropriate output
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o DP-1 0.0.0.0 5900";
+      # Dynamically detect primary output (DP-1 preferred, fallback to first available)
+      ExecStart = "${pkgs.writeShellScript "wayvnc-start" ''
+        OUTPUT=$(${pkgs.sway}/bin/swaymsg -t get_outputs -r | ${pkgs.jq}/bin/jq -r '.[0].name // "DP-1"')
+        exec ${pkgs.wayvnc}/bin/wayvnc -o "$OUTPUT" 0.0.0.0 5900
+      ''}";
       Restart = "on-failure";
-      RestartSec = "3s";
+      RestartSec = "5s";
     };
     Install = {
       WantedBy = [ "sway-session.target" ];

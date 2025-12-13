@@ -27,17 +27,24 @@ let
     mauve = "#cba6f7";     # Border accent
   };
 
-  # Detect headless Sway configuration (Feature 046)
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  # Detect host type from hostname
+  hostname = osConfig.networking.hostName or "";
+  isHeadless = hostname == "nixos-hetzner-sway";
+  isRyzen = hostname == "ryzen";
 
   # Multi-monitor output configuration
   # Headless: HEADLESS-1/2/3 (Hetzner VNC)
+  # Ryzen Desktop: DP-1, HDMI-A-1 (NVIDIA outputs)
   # Laptop: eDP-1 (built-in), HDMI-A-1 (external - only when connected)
   topBarOutputs =
     if isHeadless then [
       { name = "HEADLESS-1"; showTray = true; }
+    ] else if isRyzen then [
+      # Ryzen desktop with NVIDIA GPU - common display outputs
+      # DP-1 is typically the primary DisplayPort output
+      { name = "DP-1"; showTray = true; }
     ] else [
-      # Only open on built-in display (eDP-1)
+      # Laptop: built-in display (eDP-1)
       # TODO: Auto-detect connected monitors and open windows dynamically
       { name = "eDP-1"; showTray = true; }
     ];

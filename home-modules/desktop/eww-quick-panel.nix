@@ -2,7 +2,9 @@
 
 let
   cfg = config.programs.eww-quick-panel;
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  hostname = osConfig.networking.hostName or "";
+  isHeadless = hostname == "nixos-hetzner-sway";
+  isRyzen = hostname == "ryzen";
 
   ewwConfigDir = "eww-quick-panel";
   ewwConfigPath = "%h/.config/${ewwConfigDir}";
@@ -92,7 +94,7 @@ let
         (quick-action-button :label "Close Panel" :icon "${icons.lock}" :command "toggle-quick-panel"))))
 
 (defwindow quick-panel
-  :monitor "${if isHeadless then "HEADLESS-1" else "eDP-1"}"
+  :monitor "${if isHeadless then "HEADLESS-1" else if isRyzen then "DP-1" else "eDP-1"}"
   :geometry (geometry :x "50%"
                       :y "5%"
                       :width "420px"

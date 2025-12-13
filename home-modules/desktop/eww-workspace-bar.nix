@@ -2,7 +2,9 @@
 
 let
   cfg = config.programs.eww-workspace-bar;
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  hostname = osConfig.networking.hostName or "";
+  isHeadless = hostname == "nixos-hetzner-sway";
+  isRyzen = hostname == "ryzen";
 
   # Feature 057: Import unified theme colors (Catppuccin Mocha)
   # Use the same color palette as unified-bar-theme.nix
@@ -27,6 +29,9 @@ let
       { name = "HEADLESS-1"; label = "Headless 1"; }
       { name = "HEADLESS-2"; label = "Headless 2"; }
       { name = "HEADLESS-3"; label = "Headless 3"; }
+    ] else if isRyzen then [
+      # Ryzen desktop with NVIDIA GPU
+      { name = "DP-1"; label = "DisplayPort"; }
     ] else [
       { name = "eDP-1"; label = "Built-in"; }
     ];
@@ -496,7 +501,7 @@ ${workspacePreviewDefs}
 ;; Window visibility controlled by eww open/close commands (not :visible property)
 ;; This ensures GTK creates window surface that Sway can see in its tree
 (defwindow workspace-preview
-  :monitor "${if isHeadless then "HEADLESS-1" else "eDP-1"}"
+  :monitor "${if isHeadless then "HEADLESS-1" else if isRyzen then "DP-1" else "eDP-1"}"
   :windowtype "dock"
   :stacking "overlay"
   :focusable false

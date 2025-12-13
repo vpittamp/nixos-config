@@ -87,7 +87,7 @@
     enable = true;  # Toggle with Mod+m, F10 for focus mode
   };
 
-  # Monitor configuration for both M1 and Hetzner
+  # Monitor configuration for M1, Hetzner, and Ryzen
   # Passed to eww-monitoring-panel for correct display output
   _module.args.monitorConfig = {
     "nixos-hetzner-sway" = {
@@ -101,6 +101,12 @@
       secondary = "HEADLESS-1";
       tertiary = "HEADLESS-2";
       outputs = [ "eDP-1" "HEADLESS-1" "HEADLESS-2" ];
+    };
+    "ryzen" = {
+      primary = "DP-1";       # Primary NVIDIA output (DisplayPort)
+      secondary = "HDMI-A-1"; # HDMI output
+      tertiary = "DP-2";      # Additional DisplayPort
+      outputs = [ "DP-1" "HDMI-A-1" "DP-2" ];
     };
   };
 }
