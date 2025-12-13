@@ -100,6 +100,8 @@
 let
   # Detect headless Sway configuration (Feature 046)
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  # Detect Ryzen multi-monitor desktop (Feature 001 extension for 4-tier system)
+  isRyzen = osConfig != null && (osConfig.networking.hostName or "") == "ryzen";
   # Check if virtual outputs are supported (headless mode only)
   hasVirtualOutputs = isHeadless;
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
@@ -393,6 +395,52 @@ in
           position = "3840,0";  # Right-most display
           scale = "1.0";
         };
+      } else if isRyzen then {
+        # Ryzen 4-monitor desktop layout (Feature 001 extension for 4-tier system)
+        # Physical layout:
+        #   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+        #   │   HDMI-A-1  │  │    DP-1     │  │    DP-2     │
+        #   │   (Left)    │  │  (Primary)  │  │   (Right)   │
+        #   │  1920x1080  │  │  1920x1200  │  │  1920x1200  │
+        #   └─────────────┘  └─────────────┘  └─────────────┘
+        #                    ┌─────────────┐
+        #                    │    DP-3     │
+        #                    │  (Bottom)   │
+        #                    │  1920x1080  │
+        #                    └─────────────┘
+        #
+        # Monitor roles (4-tier system):
+        #   - Primary:    DP-1 (Center, main workspace)
+        #   - Secondary:  HDMI-A-1 (Left, supporting windows)
+        #   - Tertiary:   DP-2 (Right, reference/docs)
+        #   - Quaternary: DP-3 (Bottom, monitoring/terminals)
+        #
+        # Position calculations for natural mouse movement:
+        #   - HDMI-A-1: 0,0 (leftmost)
+        #   - DP-1: 1920,0 (after HDMI-A-1's 1920px width)
+        #   - DP-2: 3840,0 (after DP-1's 1920px, total 1920+1920=3840)
+        #   - DP-3: 1920,1200 (below DP-1, aligned to DP-1's X position)
+        #           Y offset = DP-1 height (1200px)
+        "HDMI-A-1" = {
+          mode = "1920x1080@60Hz";
+          position = "0,0";
+          scale = "1.0";
+        };
+        "DP-1" = {
+          mode = "1920x1200@60Hz";
+          position = "1920,0";
+          scale = "1.0";
+        };
+        "DP-2" = {
+          mode = "1920x1200@60Hz";
+          position = "3840,0";
+          scale = "1.0";
+        };
+        "DP-3" = {
+          mode = "1920x1080@60Hz";
+          position = "1920,1200";  # Centered below DP-1
+          scale = "1.0";
+        };
       } else {
         # Standard laptop display (1920x1200 @ ~162 PPI on 14" panel)
         # 1.25 scale provides comfortable UI size without sacrificing too much screen real estate
@@ -453,6 +501,24 @@ in
           assignmentToOutput = assignment: {
             workspace = toString assignment.workspace_number;
             output = roleToOutput assignment.monitor_role;
+          };
+        in
+          # Convert all workspace assignments to Sway output assignments
+          map assignmentToOutput workspaceAssignments.assignments
+      else if isRyzen then
+        let
+          # Ryzen 4-monitor role-to-output mapping
+          # Based on physical layout: HDMI-A-1 (left), DP-1 (center), DP-2 (right), DP-3 (bottom)
+          ryzenRoleToOutput = role:
+            if role == "primary" then "DP-1"
+            else if role == "secondary" then "HDMI-A-1"
+            else if role == "tertiary" then "DP-2"
+            else "DP-3";  # quaternary
+
+          # Generate workspace assignment from app/PWA data
+          assignmentToOutput = assignment: {
+            workspace = toString assignment.workspace_number;
+            output = ryzenRoleToOutput assignment.monitor_role;
           };
         in
           # Convert all workspace assignments to Sway output assignments

@@ -93,12 +93,21 @@ let
     };
     # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
     # Physical connections: 1x HDMI + 3x DisplayPort (DP-1, DP-2, DP-3)
+    # Physical layout:
+    #   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+    #   │   HDMI-A-1  │  │    DP-1     │  │    DP-2     │
+    #   │   (Left)    │  │  (Primary)  │  │   (Right)   │
+    #   └─────────────┘  └─────────────┘  └─────────────┘
+    #                    ┌─────────────┐
+    #                    │    DP-3     │
+    #                    │  (Bottom)   │
+    #                    └─────────────┘
     "ryzen" = {
       outputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ];
-      primary = "DP-1";       # Main center monitor (DisplayPort 1)
-      secondary = "HDMI-A-1"; # Left monitor (HDMI)
-      tertiary = "DP-2";      # Right monitor (DisplayPort 2)
-      quaternary = "DP-3";    # Far right/top monitor (DisplayPort 3)
+      primary = "DP-1";       # Center monitor (main workspace, WS 1-2)
+      secondary = "HDMI-A-1"; # Left monitor (supporting windows, WS 3-4)
+      tertiary = "DP-2";      # Right monitor (reference/docs, WS 5-6)
+      quaternary = "DP-3";    # Bottom monitor (monitoring/terminals, WS 7+)
     };
   };
 in
