@@ -230,6 +230,13 @@ in
 
     # Electron apps
     ELECTRON_FORCE_IS_PACKAGED = "true";
+
+    # ========== VA-API HARDWARE VIDEO ACCELERATION ==========
+    # Intel Arc (Meteor Lake) uses the iHD VA-API driver
+    LIBVA_DRIVER_NAME = "iHD";
+
+    # Enable Wayland for Electron apps
+    NIXOS_OZONE_WL = "1";
   };
 
   # Touchpad configuration with natural scrolling (ThinkPad trackpad + TrackPoint)
@@ -260,6 +267,11 @@ in
 
   # Enable fwupd for firmware updates (LVFS)
   services.fwupd.enable = true;
+
+  # ========== THUNDERBOLT/USB4 SUPPORT (Feature 115) ==========
+  # Enable bolt daemon for Thunderbolt device authorization
+  # Allows docking stations and external displays via Thunderbolt
+  services.hardware.bolt.enable = true;
 
   # Fingerprint reader support (Elan 04f3:0c8c MOC Sensor)
   # Enroll fingerprint with: fprintd-enroll
@@ -461,6 +473,12 @@ in
     # Webcam (if present)
     v4l-utils         # Video4Linux utilities
     cameractrls       # Webcam controls
+
+    # ========== SCREEN RECORDING (Feature 115) ==========
+    # Hardware-accelerated screen recording with Intel QuickSync
+    wf-recorder       # Wayland screen recorder with VAAPI support
+    grim              # Screenshot utility for Wayland
+    slurp             # Region selection for screenshots/recording
   ];
 
   # Firefox configuration with PWA support

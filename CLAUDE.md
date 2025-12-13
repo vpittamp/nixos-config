@@ -1217,6 +1217,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON files (`~/.config/i3/projects/*.json`), in-memory daemon state (109-enhance-worktree-user-experience)
 - Python 3.11+ (streaming backend, matching Constitution Principle X), Yuck/GTK CSS (Eww widgets) + SwayNC (swaync-client --subscribe), Eww 0.4+ (deflisten), Python subprocess for event streaming (110-improve-notifications-system)
 - N/A (stateless - SwayNC is the source of truth) (110-improve-notifications-system)
+- Nix (NixOS 25.11), Bash 5.0+ for helper scripts + nixos-hardware modules, home-manager, PipeWire, Firefox, NVIDIA drivers, Intel media-driver (115-enable-advanced-hardware-features)
+- N/A (configuration management, no data storage) (115-enable-advanced-hardware-features)
 
 ## Recent Changes
 - 109-enhance-worktree-user-experience: Branch number badges with gradient styling (mauve/pink for numbered, blue for main, green for feature), icon alignment fixes, hover transition improvements
