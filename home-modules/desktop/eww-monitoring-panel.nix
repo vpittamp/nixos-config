@@ -169,8 +169,8 @@ let
       $EWW --config "$CONFIG" close monitoring-panel
       $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false
     else
-      # Window is closed - open it
-      $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=true
+      # Window is closed - open it (click-through by default, forms enable focus mode)
+      $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false
       $EWW --config "$CONFIG" open monitoring-panel
     fi
   '';
@@ -301,6 +301,9 @@ let
 
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
+    # Feature 114: Enable focus mode so form inputs are clickable
+    $EWW_CMD update panel_focus_mode=true
+
     # Update all eww variables
     $EWW_CMD update editing_project_name="$NAME"
     $EWW_CMD update edit_form_display_name="$DISPLAY_NAME"
@@ -387,6 +390,8 @@ let
       fi
 
       # Success: Clear editing state and refresh
+      # Feature 114: Disable focus mode to return to click-through
+      $EWW update panel_focus_mode=false
       $EWW update editing_project_name='''
       $EWW update edit_form_error='''
 
@@ -445,6 +450,8 @@ let
       keep-file)
         # Discard UI changes, reload from file
         # Close edit form and conflict dialog
+        # Feature 114: Disable focus mode to return to click-through
+        $EWW_CMD update panel_focus_mode=false
         $EWW_CMD update conflict_dialog_visible=false
         $EWW_CMD update editing_project_name='''
         $EWW_CMD update edit_form_error='''
@@ -470,6 +477,8 @@ let
           # Use default editor or fallback to nano
           ''${EDITOR:-nano} "$REPOS_FILE"
           # Close dialog - project list will be refreshed by the deflisten stream automatically
+          # Feature 114: Disable focus mode to return to click-through
+          $EWW_CMD update panel_focus_mode=false
           $EWW_CMD update conflict_dialog_visible=false
           $EWW_CMD update editing_project_name='''
           # Trigger rediscovery to ensure state is consistent
@@ -540,6 +549,8 @@ asyncio.run(stream.run())
     fi
 
     # Clear form fields and set parent project
+    # Feature 114: Enable focus mode so form inputs are clickable
+    $EWW_CMD update panel_focus_mode=true
     $EWW_CMD update worktree_creating=true
     $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
     $EWW_CMD update edit_form_icon="🌿"
@@ -851,6 +862,9 @@ asyncio.run(stream.run())
 
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
+    # Feature 114: Enable focus mode so form inputs are clickable
+    $EWW_CMD update panel_focus_mode=true
+
     # Update all eww variables for worktree edit
     $EWW_CMD update editing_project_name="$NAME"
     $EWW_CMD update edit_form_display_name="$DISPLAY_NAME"
@@ -1028,6 +1042,8 @@ asyncio.run(stream.run())
     fi
 
     # Success: clear form state and refresh
+    # Feature 114: Disable focus mode to return to click-through
+    $EWW update panel_focus_mode=false
     $EWW update worktree_creating=false
     $EWW update worktree_form_description=""
     $EWW update worktree_form_branch_name=""
@@ -1252,6 +1268,8 @@ asyncio.run(stream.run())
       fi
 
       # Success: clear editing state and refresh
+      # Feature 114: Disable focus mode to return to click-through
+      $EWW update panel_focus_mode=false
       $EWW update editing_project_name=""
       $EWW update edit_form_error=""
 
@@ -1289,6 +1307,9 @@ asyncio.run(stream.run())
     # Usage: project-create-open
 
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Feature 114: Enable focus mode so form inputs are clickable
+    $EWW_CMD update panel_focus_mode=true
 
     # Clear all form fields for new project
     $EWW_CMD update create_form_name=""
@@ -1423,6 +1444,8 @@ EOF
     SUCCESS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.success')
     if [[ "$SUCCESS" == "true" ]]; then
       # Success: clear form state and refresh
+      # Feature 114: Disable focus mode to return to click-through
+      $EWW update panel_focus_mode=false
       $EWW update project_creating=false
       $EWW update create_form_name=""
       $EWW update create_form_display_name=""
@@ -1487,6 +1510,9 @@ EOF
 
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
+    # Feature 114: Disable focus mode to return to click-through
+    $EWW update panel_focus_mode=false
+
     # Hide form and clear all fields
     $EWW update project_creating=false
     $EWW update create_form_name=""
@@ -1509,6 +1535,9 @@ EOF
     # Usage: app-create-open
 
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Feature 114: Enable focus mode so form inputs are clickable
+    $EWW_CMD update panel_focus_mode=true
 
     # Clear any previous form state
     $EWW_CMD update create_app_type="regular"
@@ -1677,6 +1706,8 @@ print(json.dumps(result))
     SUCCESS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.success')
     if [[ "$SUCCESS" == "true" ]]; then
       # Success: clear form state and refresh
+      # Feature 114: Disable focus mode to return to click-through
+      $EWW update panel_focus_mode=false
       $EWW update app_creating=false
       $EWW update create_app_type="regular"
       $EWW update create_app_name=""
@@ -1728,6 +1759,9 @@ print(json.dumps(result))
     # Usage: app-create-cancel
 
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Feature 114: Disable focus mode to return to click-through
+    $EWW update panel_focus_mode=false
 
     # Hide form and clear all fields
     $EWW update app_creating=false
@@ -3464,8 +3498,9 @@ in
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
-        ;; Feature 114: Default to click-through (false = clicks pass through to windows beneath)
-        :focusable false
+        ;; Feature 114: Use ondemand - clicks are received when user clicks on panel
+        ;; The panel is now properly closed (not just hidden) so it won't intercept clicks when not visible
+        :focusable "ondemand"
         :exclusive false
         :windowtype "dock"
         (monitoring-panel-content))
@@ -5403,7 +5438,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             ;; Feature 096 T021: Save button with loading state
             ;; Script reads editing_project_name from eww variable internally
@@ -5509,7 +5544,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
@@ -5659,7 +5694,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=true && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=true && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
