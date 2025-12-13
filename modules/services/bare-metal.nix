@@ -176,14 +176,13 @@ in
 
     # ========== SUSPEND/HIBERNATE ==========
     # Full power management (not useful on: Hetzner server, WSL2)
-    services.logind = {
-      lidSwitch = "suspend";
-      lidSwitchExternalPower = "lock";
-      settings.Login = {
-        HandlePowerKey = "suspend";
-        IdleAction = "suspend";
-        IdleActionSec = "30min";
-      };
+    # Note: Using new settings.Login format (NixOS 24.11+)
+    services.logind.settings.Login = {
+      HandleLidSwitch = "suspend";
+      HandleLidSwitchExternalPower = "lock";
+      HandlePowerKey = "suspend";
+      IdleAction = "suspend";
+      IdleActionSec = "30min";
     };
 
     # ========== ADDITIONAL PACKAGES ==========
