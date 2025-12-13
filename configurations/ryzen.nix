@@ -58,6 +58,26 @@ in
       firefox = pkgs-unstable.firefox;
       firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
     })
+    # Disable flaky tests for i3ipc Python package
+    # The test_scratchpad test fails with ConnectionResetError in sandboxed builds
+    (final: prev: {
+      python3 = prev.python3.override {
+        packageOverrides = python-final: python-prev: {
+          i3ipc = python-prev.i3ipc.overridePythonAttrs (old: {
+            doCheck = false;
+          });
+        };
+      };
+      python3Packages = final.python3.pkgs;
+      python311 = prev.python311.override {
+        packageOverrides = python-final: python-prev: {
+          i3ipc = python-prev.i3ipc.overridePythonAttrs (old: {
+            doCheck = false;
+          });
+        };
+      };
+      python311Packages = final.python311.pkgs;
+    })
   ];
 
   # System identification
