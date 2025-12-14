@@ -12577,16 +12577,16 @@ in
 
       Service = {
         Type = "simple";
-        # Kill orphaned eww processes and clean stale sockets before starting
-        # This prevents "address already in use" errors and cleans up processes that escaped cgroup
-        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.procps}/bin/pkill -f \"eww.*eww-monitoring-panel\" 2>/dev/null || true; ${pkgs.coreutils}/bin/sleep 0.5; ${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
+        # Clean stale sockets before starting (prevents "address already in use" errors)
+        # Note: Orphan cleanup removed - was causing self-kill. Rely on systemd cgroup cleanup.
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
         # Open panel and re-sync stack index (workaround for eww #1192: index resets on reopen)
         ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
-        # Clean shutdown: kill orphaned processes and remove stale sockets
-        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.procps}/bin/pkill -f \"eww.*eww-monitoring-panel\" 2>/dev/null || true; ${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
+        # Clean shutdown: remove stale sockets
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         Restart = "on-failure";
         RestartSec = "3s";
         # Ensure all child processes are killed when service stops
