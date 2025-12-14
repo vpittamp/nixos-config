@@ -4437,11 +4437,11 @@ in
                     :onclick "eww --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
                     :tooltip "Clear filter"
                     "󰅖"))
-                ;; Result count when filtering
+                ;; Result count when filtering - count matching worktrees
                 (label
                   :class "filter-count"
                   :visible {project_filter != ""}
-                  :text "''${arraylength(projects_data.discovered_repositories ?: [])} repos")))
+                  :text {jq(projects_data.discovered_repositories ?: [], "[.[].worktrees[]? | select((.branch // \"\") | test(\"(?i).*" + project_filter + ".*\") or ((.branch_number // \"\") | test(\"^" + project_filter + "\")))] | length")})))
             ;; Feature 094 US3: Project create form (T067)
             (revealer
               :transition "slidedown"
