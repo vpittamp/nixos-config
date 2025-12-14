@@ -4492,7 +4492,12 @@ in
                       :space-evenly false
                       :class "worktrees-container"
                       (for wt in {repo.worktrees ?: []}
-                        (discovered-worktree-card :worktree wt))))))))))
+                        (box
+                          :visible {project_filter == "" ||
+                                    matches(wt.branch ?: "", "(?i).*" + project_filter + ".*") ||
+                                    matches(wt.branch_number ?: "", "^" + project_filter) ||
+                                    matches(wt.display_name ?: "", "(?i).*" + project_filter + ".*")}
+                          (discovered-worktree-card :worktree wt)))))))))))
 
       ;; Feature 100: Discovered bare repository card
       (defwidget discovered-repo-card [repo]
