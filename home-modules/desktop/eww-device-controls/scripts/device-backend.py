@@ -121,6 +121,9 @@ class NetworkState:
     wifi_ssid: Optional[str] = None
     wifi_signal: Optional[int] = None  # 0-100
     wifi_icon: str = "󰤭"
+    ethernet_connected: bool = False
+    ethernet_ip: Optional[str] = None
+    ethernet_interface: Optional[str] = None
     tailscale_connected: bool = False
     tailscale_ip: Optional[str] = None
 
@@ -837,6 +840,9 @@ def query_network() -> NetworkState:
     wifi_connected = False
     wifi_ssid = None
     wifi_signal = None
+    ethernet_connected = False
+    ethernet_ip = None
+    ethernet_interface = None
     tailscale_connected = False
     tailscale_ip = None
 
@@ -882,6 +888,41 @@ def query_network() -> NetworkState:
                             except (ValueError, IndexError):
                                 pass
                             break
+
+        # Get Ethernet status - check for active ethernet connections
+        # First get device list with status
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split(":")
+                if len(parts) >= 3:
+                    device, dev_type, state = parts[0], parts[1], parts[2]
+                    # Look for connected ethernet devices
+                    if dev_type == "ethernet" and state == "connected":
+                        ethernet_connected = True
+                        ethernet_interface = device
+                        # Get IP address for this device
+                        ip_result = subprocess.run(
+                            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show", device],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if ip_result.returncode == 0:
+                            for ip_line in ip_result.stdout.strip().split("\n"):
+                                if ip_line.startswith("IP4.ADDRESS"):
+                                    # Format: IP4.ADDRESS[1]:192.168.1.100/24
+                                    ip_parts = ip_line.split(":", 1)
+                                    if len(ip_parts) >= 2:
+                                        ip_with_mask = ip_parts[1]
+                                        ethernet_ip = ip_with_mask.split("/")[0] if "/" in ip_with_mask else ip_with_mask
+                                        break
+                        break  # Found first connected ethernet, stop searching
     except Exception:
         pass
 
@@ -909,6 +950,9 @@ def query_network() -> NetworkState:
         wifi_ssid=wifi_ssid,
         wifi_signal=wifi_signal,
         wifi_icon=get_wifi_icon(wifi_signal, wifi_enabled, wifi_connected),
+        ethernet_connected=ethernet_connected,
+        ethernet_ip=ethernet_ip,
+        ethernet_interface=ethernet_interface,
         tailscale_connected=tailscale_connected,
         tailscale_ip=tailscale_ip
     )
