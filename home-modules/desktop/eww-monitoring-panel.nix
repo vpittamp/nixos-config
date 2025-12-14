@@ -172,6 +172,12 @@ let
       # Window is closed - open it (click-through by default, forms enable focus mode)
       $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false
       $EWW --config "$CONFIG" open monitoring-panel
+      # Workaround for eww 0.6.0 stack widget bug (GitHub #1192):
+      # Stack selection resets to 0 on window reopen. Force re-sync by
+      # getting current index and setting it again after a brief delay
+      (sleep 0.1 && \
+        INDEX=$($EWW --config "$CONFIG" get current_view_index 2>/dev/null || echo 0) && \
+        $EWW --config "$CONFIG" update "current_view_index=$INDEX") &
     fi
   '';
 
@@ -3682,24 +3688,24 @@ in
                     :class {"workspace-pill" + (ws.focused ? " focused" : "") + (ws.urgent ? " urgent" : "")}
                     :text "''${ws.name}")))))))
 
-      ;; Panel body with multi-view container
-      ;; Uses explicit visibility conditions instead of stack widget for reliable tab switching
+      ;; Panel body with multi-view container using stack widget
       ;; NOTE: eww 0.6.0 has a bug where stack selection index resets on window close/reopen
       ;; (GitHub issue #1192, fixed in commit 3673639 but not released yet)
-      ;; Using :visible conditions ensures only one tab shows at a time reliably
+      ;; Workaround: toggle script forces re-sync of current_view_index after window open
       ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
       (defwidget panel-body []
-        (box
-          :class "panel-body"
-          :orientation "v"
+        (stack
+          :selected current_view_index
+          :transition "none"
           :vexpand true
-          (revealer :reveal {current_view_index == 0} :transition "none" (box :class "view-container" :vexpand true (windows-view)))
-          (revealer :reveal {current_view_index == 1} :transition "none" (box :class "view-container" :vexpand true (projects-view)))
-          (revealer :reveal {current_view_index == 2} :transition "none" (box :class "view-container" :vexpand true (apps-view)))
-          (revealer :reveal {current_view_index == 3} :transition "none" (box :class "view-container" :vexpand true (health-view)))
-          (revealer :reveal {current_view_index == 4} :transition "none" (box :class "view-container" :vexpand true (events-view)))
-          (revealer :reveal {current_view_index == 5} :transition "none" (box :class "view-container" :vexpand true (traces-view)))
-          (revealer :reveal {current_view_index == 6} :transition "none" (box :class "view-container" :vexpand true (devices-view)))))
+          :same-size false
+          (box :class "view-container" :vexpand true (windows-view))
+          (box :class "view-container" :vexpand true (projects-view))
+          (box :class "view-container" :vexpand true (apps-view))
+          (box :class "view-container" :vexpand true (health-view))
+          (box :class "view-container" :vexpand true (events-view))
+          (box :class "view-container" :vexpand true (traces-view))
+          (box :class "view-container" :vexpand true (devices-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -12587,7 +12593,8 @@ in
         # This is required for deflisten to start streaming window data
         # Note: Suppress stderr because eww has a known race condition where the CLI exits
         # before receiving the daemon's response, causing "channel closed" errors
-        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null || true'";
+        # Workaround for eww 0.6.0 stack widget bug (GitHub #1192): force re-sync index after open
+        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null && ${pkgs.coreutils}/bin/sleep 0.2 && IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0) && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
         # Feature 101: Clean shutdown to prevent stale sockets
         ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_*'";
         Restart = "on-failure";
