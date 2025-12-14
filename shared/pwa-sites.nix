@@ -2,6 +2,7 @@
 # This file contains all PWA metadata with ULID identifiers for cross-machine portability
 # Feature 106: Portable icon paths via assetsPackage
 # Feature 113: URL routing - routing_domains defines which domains open in this PWA
+# Feature 118: Path-based routing (routing_paths) and internal auth (auth_domains)
 { lib, assetsPackage ? null }:
 
 let
@@ -20,6 +21,10 @@ in
   #       If omitted, role is inferred from workspace number (WS 1-2→primary, 3-5→secondary, 6+→tertiary)
   #   - routing_domains: (optional) list of domains that should open in this PWA - Feature 113
   #       If omitted, defaults to [ domain ]. Use this to include www variants or related subdomains.
+  #   - routing_paths: (optional) list of path prefixes for path-based routing - Feature 118
+  #       Example: routing_paths = [ "/ai" ] to match google.com/ai/*
+  #   - auth_domains: (optional) list of auth provider domains - Feature 118
+  #       PWAs can navigate to these domains without opening external browser (for OAuth/SSO)
   pwaSites = [
     # YouTube
     {
@@ -38,6 +43,8 @@ in
       preferred_monitor_role = "tertiary";  # Feature 001: Explicit tertiary assignment
       # Feature 113: URL routing domains
       routing_domains = [ "youtube.com" "www.youtube.com" "youtu.be" "m.youtube.com" ];
+      # Feature 118: Auth domains
+      auth_domains = [ "accounts.google.com" ];
     }
 
     # Google AI (AI Mode Search)
@@ -56,6 +63,9 @@ in
       preferred_workspace = 51;
       # Feature 113: URL routing - only AI-specific paths, not general google.com
       routing_domains = [ ];  # Disabled - google.com is too broad
+      # Feature 118: Path-based routing and auth
+      routing_paths = [ "/ai" ];  # Match google.com/ai/*
+      auth_domains = [ "accounts.google.com" ];
     }
 
     # Claude (Anthropic AI)
@@ -147,6 +157,8 @@ in
       preferred_workspace = 56;
       # Feature 113: URL routing domains
       routing_domains = [ "mail.google.com" ];
+      # Feature 118: Auth domains
+      auth_domains = [ "accounts.google.com" ];
     }
 
     # Google Calendar
@@ -165,6 +177,8 @@ in
       preferred_workspace = 57;
       # Feature 113: URL routing domains
       routing_domains = [ "calendar.google.com" ];
+      # Feature 118: Auth domains
+      auth_domains = [ "accounts.google.com" ];
     }
 
     # LinkedIn Learning
@@ -183,6 +197,8 @@ in
       preferred_workspace = 58;
       # Feature 113: URL routing - only learning subdomain, not all of linkedin
       routing_domains = [ ];  # Disabled - linkedin.com is too broad
+      # Feature 118: Path-based routing for /learning paths
+      routing_paths = [ "/learning" ];  # Match linkedin.com/learning/*
     }
 
     # Boston Dog Butlers
@@ -220,6 +236,8 @@ in
       preferred_monitor_role = "secondary";  # Email client on center monitor
       # Feature 113: URL routing domains
       routing_domains = [ "outlook.office.com" "outlook.live.com" ];
+      # Feature 118: Microsoft auth domains
+      auth_domains = [ "login.microsoftonline.com" "login.live.com" ];
     }
 
     # Hetzner Cloud Console
