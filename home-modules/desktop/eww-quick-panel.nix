@@ -1,3 +1,15 @@
+# DEPRECATED: Feature 116 - This module is superseded by eww-device-controls
+# Device controls (brightness, volume, bluetooth) are now handled by the unified
+# eww-device-controls module. This module is kept for backwards compatibility
+# but is disabled by default.
+#
+# Migration: Enable programs.eww-device-controls instead of this module.
+# The new device controls provide:
+# - Hardware-adaptive controls (only shows available hardware)
+# - Expandable top bar panels
+# - Comprehensive Devices tab in monitoring panel
+#
+# See: specs/116-use-eww-device/quickstart.md
 { config, lib, pkgs, osConfig ? null, ... }:
 
 let
@@ -214,7 +226,20 @@ grim -g "$(slurp)" - | wl-copy
 '';
 
 in {
-  options.programs.eww-quick-panel.enable = lib.mkEnableOption "Quick settings Eww panel";
+  options.programs.eww-quick-panel.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;  # DEPRECATED: Feature 116 - Disabled by default, use eww-device-controls instead
+    description = ''
+      DEPRECATED: Enable Quick settings Eww panel.
+
+      This module is superseded by programs.eww-device-controls which provides:
+      - Hardware-adaptive controls (only shows available hardware)
+      - Expandable top bar panels for volume, brightness, bluetooth, battery
+      - Comprehensive Devices tab in monitoring panel (Alt+7)
+
+      Migration: Set programs.eww-device-controls.enable = true instead.
+    '';
+  };
 
   config = lib.mkIf cfg.enable {
     home.packages = [ pkgs.eww toggleScript screenshotScript ];
