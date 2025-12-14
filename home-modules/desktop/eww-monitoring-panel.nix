@@ -7747,6 +7747,38 @@ in
                 :orientation "v"
                 :space-evenly false
                 :spacing 8
+                ;; WiFi row
+                (box
+                  :class "network-row wifi-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  :visible {devices_state.hardware.has_wifi ?: true}
+                  (label :class "''${devices_state.network.wifi_connected ?: false ? 'network-icon connected' : 'network-icon disconnected'}"
+                         :text "''${devices_state.network.wifi_icon ?: '󰤯'}")
+                  (box
+                    :class "network-info"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "network-type" :halign "start" :text "WiFi")
+                    (label :class "network-value" :halign "start"
+                           :text "''${devices_state.network.wifi_connected ?: false ? devices_state.network.wifi_ssid ?: 'Connected' : (devices_state.network.wifi_enabled ?: false ? 'Not Connected' : 'Disabled')}")))
+                ;; Ethernet row (if connected)
+                (box
+                  :class "network-row ethernet-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  :visible {devices_state.network.ethernet_connected ?: false}
+                  (label :class "network-icon connected" :text "󰈀")
+                  (box
+                    :class "network-info"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "network-type" :halign "start" :text "Ethernet")
+                    (label :class "network-value" :halign "start"
+                           :text "''${devices_state.network.ethernet_ip ?: 'Connected'}")))
+                ;; Tailscale row
                 (box
                   :class "network-row tailscale-row"
                   :orientation "h"
