@@ -3682,21 +3682,23 @@ in
                     :class {"workspace-pill" + (ws.focused ? " focused" : "") + (ws.urgent ? " urgent" : "")}
                     :text "''${ws.name}")))))))
 
-      ;; Panel body - simple conditional visibility (no stack widget due to eww 0.6.0 bugs)
+      ;; Panel body - uses stack widget for proper tab switching
+      ;; Note: Previous "multiple tabs" issue was caused by orphaned eww processes, not stack bugs
+      ;; GitHub #1192 (index reset on reopen) is handled by ExecStartPost re-sync
       ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
       (defwidget panel-body []
-        (box
-          :class "panel-body"
-          :orientation "v"
+        (stack
+          :selected current_view_index
+          :transition "none"
           :vexpand true
-          ;; Only render the active view - hidden views collapse to 0 height
-          (box :visible {current_view_index == 0} :vexpand {current_view_index == 0} (windows-view))
-          (box :visible {current_view_index == 1} :vexpand {current_view_index == 1} (projects-view))
-          (box :visible {current_view_index == 2} :vexpand {current_view_index == 2} (apps-view))
-          (box :visible {current_view_index == 3} :vexpand {current_view_index == 3} (health-view))
-          (box :visible {current_view_index == 4} :vexpand {current_view_index == 4} (events-view))
-          (box :visible {current_view_index == 5} :vexpand {current_view_index == 5} (traces-view))
-          (box :visible {current_view_index == 6} :vexpand {current_view_index == 6} (devices-view))))
+          :same-size false
+          (box :class "view-container" :vexpand true (windows-view))
+          (box :class "view-container" :vexpand true (projects-view))
+          (box :class "view-container" :vexpand true (apps-view))
+          (box :class "view-container" :vexpand true (health-view))
+          (box :class "view-container" :vexpand true (events-view))
+          (box :class "view-container" :vexpand true (traces-view))
+          (box :class "view-container" :vexpand true (devices-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -12581,7 +12583,8 @@ in
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
-        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null || true'";
+        # Open panel and re-sync stack index (workaround for eww #1192: index resets on reopen)
+        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
         # Clean shutdown: kill orphaned processes and remove stale sockets
         ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.procps}/bin/pkill -f \"eww.*eww-monitoring-panel\" 2>/dev/null || true; ${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         Restart = "on-failure";
