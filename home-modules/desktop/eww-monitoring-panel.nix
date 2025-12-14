@@ -3074,6 +3074,16 @@ in
         Updates are now real-time via event stream (<100ms latency).
       '';
     };
+
+    panelWidth = mkOption {
+      type = types.int;
+      default = if hostname == "thinkpad" then 360 else 460;
+      description = ''
+        Width of the monitoring panel in pixels.
+        Default is 360px for ThinkPad (1.25 scale) and 460px for other hosts.
+        Adjust based on display scaling to prevent panel from being too wide.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
@@ -3504,7 +3514,7 @@ in
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "460px"
+          :width "${toString cfg.panelWidth}px"
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
