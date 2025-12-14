@@ -4473,12 +4473,14 @@ in
                 (box
                   :orientation "v"
                   :space-evenly false
-                  ;; Filter matches: repo name, qualified name, account, display name
+                  ;; Filter matches: repo fields OR any worktree branch/number
                   :visible {project_filter == "" ||
                             matches(repo.name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
                             matches(repo.qualified_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
                             matches(repo.account ?: "", "(?i).*" + project_filter + ".*") ||
-                            matches(repo.display_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*")}
+                            matches(repo.display_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
+                            jq(repo.worktrees ?: [], "any(.[]; (.branch // \"\") | test(\"(?i).*" + project_filter + ".*\"))") ||
+                            jq(repo.worktrees ?: [], "any(.[]; (.branch_number // \"\") | test(\"^" + project_filter + "\"))")}
                   (discovered-repo-card :repo repo)
                   ;; Nested worktrees (visible when parent is expanded)
                   (revealer
