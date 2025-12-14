@@ -109,9 +109,13 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
 
-        # Create socket directory before starting
+        # Create runtime directories before starting
         # %t expands to $XDG_RUNTIME_DIR in user services
-        ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p %t/i3-project-daemon";
+        # Feature 117: Also create badge directory for file-based badge storage
+        ExecStartPre = [
+          "${pkgs.coreutils}/bin/mkdir -p %t/i3-project-daemon"
+          "${pkgs.coreutils}/bin/mkdir -p %t/i3pm-badges"
+        ];
 
         # Direct Python invocation (no wrapper script needed)
         # Session environment (SWAYSOCK, WAYLAND_DISPLAY, XDG_RUNTIME_DIR) inherited automatically

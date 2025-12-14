@@ -2188,18 +2188,27 @@ async def on_window_focus(
         if current_ws and hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
             await state_manager.focus_tracker.track_window_focus(current_ws.num, window_id)
 
-        # Feature 095: Auto-clear notification badge on window focus
-        # Use min_age_seconds=2.0 to ensure badge is visible for at least 2 seconds
-        # This prevents immediate clearing when badge is created on an already-focused window
-        # but still clears the badge when user returns to the window after seeing the notification
-        if ipc_server and hasattr(ipc_server, 'badge_state') and ipc_server.badge_state:
-            cleared_count = ipc_server.badge_state.clear_badge(window_id, min_age_seconds=2.0)
-            if cleared_count > 0:
-                logger.info(f"[Feature 095] Cleared badge for window {window_id} (count was {cleared_count})")
-                # Trigger monitoring panel update after badge clear
-                if monitoring_panel_publisher:
-                    await monitoring_panel_publisher.publish(conn)
-                    logger.debug(f"[Feature 095] Triggered monitoring panel update after badge clear")
+        # Feature 117: Focus-aware badge dismissal using file-based storage
+        # Clear badge file if it exists and is old enough (prevents race on badge creation)
+        # This replaces the Feature 095 in-memory approach with file-based single source of truth
+        from .badge_service import (
+            read_badge_file,
+            delete_badge_file,
+            BADGE_MIN_AGE_FOR_DISMISS,
+        )
+
+        badge = read_badge_file(window_id)
+        if badge:
+            age = time.time() - badge.timestamp
+            if age >= BADGE_MIN_AGE_FOR_DISMISS:
+                if delete_badge_file(window_id):
+                    logger.info(f"[Feature 117] Cleared badge for window {window_id} on focus (age: {age:.1f}s)")
+                    # Trigger monitoring panel update after badge clear
+                    if monitoring_panel_publisher:
+                        await monitoring_panel_publisher.publish(conn)
+                        logger.debug(f"[Feature 117] Triggered monitoring panel update after badge clear")
+            else:
+                logger.debug(f"[Feature 117] Badge for window {window_id} too young to dismiss (age: {age:.1f}s < {BADGE_MIN_AGE_FOR_DISMISS}s)")
 
     except Exception as e:
         error_msg = str(e)

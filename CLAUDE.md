@@ -175,3 +175,10 @@ journalctl --user -u i3-project-event-listener -f
 - **CLI**: TypeScript/Deno 1.40+, Zod
 - **UI**: Eww 0.4+ (GTK3), SwayNC
 - **Config**: Nix flakes, JSON files in `~/.config/{i3,sway}/`
+
+## Active Technologies
+- Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools (117-improve-notification-progress-indicators)
+- File-based badges at `$XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json` (117-improve-notification-progress-indicators)
+
+## Recent Changes
+- 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools

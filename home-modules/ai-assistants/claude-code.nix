@@ -103,30 +103,32 @@ lib.mkIf enableClaudeCode {
           }];
         }];
 
-        # UserPromptSubmit hook - Feature 095: Activity indicator for Claude Code
+        # UserPromptSubmit hook - Feature 095/117: Activity indicator for Claude Code
         # Creates "working" badge in monitoring panel when user submits a prompt
         # Shows spinner animation indicating Claude Code is processing
         UserPromptSubmit = [{
           hooks = [{
             type = "command";
-            # Hook script creates "working" badge via daemon IPC
+            # Feature 117: Hook creates badge file at $XDG_RUNTIME_DIR/i3pm-badges/
+            # File-based storage is single source of truth (no IPC)
             command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
-            # Short timeout - IPC call is quick
+            # Short timeout - file write is quick
             timeout = 3;
           }];
         }];
 
         # Stop hook - Notify when Claude Code finishes and awaits input
-        # Feature 095: Changes badge state from "working" to "stopped"
-        # Sends desktop notification with limited output preview and action to return to terminal
+        # Feature 095/117: Changes badge state from "working" to "stopped"
+        # Sends concise desktop notification with action to return to terminal
         Stop = [{
           hooks = [{
             type = "command";
-            # Hook script changes badge to "stopped" state (bell icon) and sends notification
-            # Notification handler runs in background with "Return to Terminal" action button
+            # Feature 117: Hook updates badge file to "stopped" state (bell icon)
+            # Sends notification with project name only (concise format)
+            # notify-send -w blocks until user clicks action or dismisses
             command = "${self}/scripts/claude-hooks/stop-notification.sh";
-            # Short timeout - script spawns background handler and exits immediately
-            timeout = 3;
+            # Longer timeout - notify-send -w blocks until user responds
+            timeout = 300;
           }];
         }];
       };
