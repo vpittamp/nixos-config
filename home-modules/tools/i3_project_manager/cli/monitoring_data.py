@@ -226,11 +226,12 @@ except ImportError:
 SERVICE_REGISTRY = {
     "core": [
         {
+            # Feature 117: Converted to user service (no longer socket-activated)
             "name": "i3-project-daemon",
             "display_name": "i3 Project Daemon",
-            "is_user_service": False,
-            "socket_activated": True,
-            "socket_name": "i3-project-daemon.socket",
+            "is_user_service": True,
+            "socket_activated": False,
+            "socket_name": None,
             "conditional": False,
             "description": "Window management and project context daemon",
         },
@@ -318,6 +319,23 @@ SERVICE_REGISTRY = {
             "socket_activated": False,
             "conditional": False,
             "description": "Hot-reloadable Sway configuration manager",
+        },
+        {
+            # Feature 117: Audio services for bare metal machines
+            "name": "pipewire",
+            "display_name": "PipeWire",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Audio/video server daemon",
+        },
+        {
+            "name": "wireplumber",
+            "display_name": "WirePlumber",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "PipeWire session manager",
         },
     ],
     "optional": [
