@@ -1218,14 +1218,11 @@ asyncio.run(stream.run())
     if [[ "$CURRENT_STATE" == "true" ]]; then
       # Currently expanded, collapse all
       $EWW update projects_all_expanded=false
-      $EWW update expanded_projects='[]'
+      $EWW update 'expanded_projects=[]'
     else
-      # Currently collapsed, expand all
-      # Get all main project names from projects_data
-      PROJECTS_DATA=$($EWW get projects_data)
-      ALL_NAMES=$(echo "$PROJECTS_DATA" | ${pkgs.jq}/bin/jq -c '[.main_projects[]?.name] // []')
+      # Currently collapsed, expand all - use "all" marker
       $EWW update projects_all_expanded=true
-      $EWW update "expanded_projects=$ALL_NAMES"
+      $EWW update 'expanded_projects=all'
     fi
   '';
 
