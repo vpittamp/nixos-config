@@ -172,12 +172,6 @@ let
       # Window is closed - open it (click-through by default, forms enable focus mode)
       $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false
       $EWW --config "$CONFIG" open monitoring-panel
-      # Workaround for eww 0.6.0 stack widget bug (GitHub #1192):
-      # Stack selection resets to 0 on window reopen. Force re-sync by
-      # getting current index and setting it again after a brief delay
-      (sleep 0.1 && \
-        INDEX=$($EWW --config "$CONFIG" get current_view_index 2>/dev/null || echo 0) && \
-        $EWW --config "$CONFIG" update "current_view_index=$INDEX") &
     fi
   '';
 
@@ -3693,14 +3687,16 @@ in
       (defwidget panel-body []
         (box
           :class "panel-body"
+          :orientation "v"
           :vexpand true
-          (box :visible {current_view_index == 0} :vexpand true (windows-view))
-          (box :visible {current_view_index == 1} :vexpand true (projects-view))
-          (box :visible {current_view_index == 2} :vexpand true (apps-view))
-          (box :visible {current_view_index == 3} :vexpand true (health-view))
-          (box :visible {current_view_index == 4} :vexpand true (events-view))
-          (box :visible {current_view_index == 5} :vexpand true (traces-view))
-          (box :visible {current_view_index == 6} :vexpand true (devices-view))))
+          ;; Only render the active view - hidden views collapse to 0 height
+          (box :visible {current_view_index == 0} :vexpand {current_view_index == 0} (windows-view))
+          (box :visible {current_view_index == 1} :vexpand {current_view_index == 1} (projects-view))
+          (box :visible {current_view_index == 2} :vexpand {current_view_index == 2} (apps-view))
+          (box :visible {current_view_index == 3} :vexpand {current_view_index == 3} (health-view))
+          (box :visible {current_view_index == 4} :vexpand {current_view_index == 4} (events-view))
+          (box :visible {current_view_index == 5} :vexpand {current_view_index == 5} (traces-view))
+          (box :visible {current_view_index == 6} :vexpand {current_view_index == 6} (devices-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -12579,19 +12575,15 @@ in
 
       Service = {
         Type = "simple";
-        # Clean up stale sockets before starting (prevents "address already in use" errors)
-        # Note: pkill is NOT used here because systemd's KillMode=control-group handles process cleanup,
-        # and pkill in ExecStartPre would kill the service's own processes during restart
-        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
+        # Kill orphaned eww processes and clean stale sockets before starting
+        # This prevents "address already in use" errors and cleans up processes that escaped cgroup
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.procps}/bin/pkill -f \"eww.*eww-monitoring-panel\" 2>/dev/null || true; ${pkgs.coreutils}/bin/sleep 0.5; ${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
-        # Note: Suppress stderr because eww has a known race condition where the CLI exits
-        # before receiving the daemon's response, causing "channel closed" errors
-        # Workaround for eww 0.6.0 stack widget bug (GitHub #1192): force re-sync index after open
-        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null && ${pkgs.coreutils}/bin/sleep 0.2 && IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0) && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
-        # Feature 101: Clean shutdown to prevent stale sockets
-        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_*'";
+        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null || true'";
+        # Clean shutdown: kill orphaned processes and remove stale sockets
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.procps}/bin/pkill -f \"eww.*eww-monitoring-panel\" 2>/dev/null || true; ${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         Restart = "on-failure";
         RestartSec = "3s";
         # Ensure all child processes are killed when service stops
