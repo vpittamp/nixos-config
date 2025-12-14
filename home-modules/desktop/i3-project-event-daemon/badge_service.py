@@ -1,6 +1,8 @@
 """Badge service for visual notification badges in monitoring panel.
 
 Feature 095: Visual Notification Badges in Monitoring Panel
+Feature 117: File-based badge storage as single source of truth
+
 Implements notification-agnostic badge state management with Pydantic models.
 
 Badge States:
@@ -8,9 +10,25 @@ Badge States:
 - "stopped": Claude Code finished and is waiting for input (shows bell icon)
 """
 
+import json
+import logging
+import os
 import time
+from pathlib import Path
 from typing import Dict, Optional, Literal
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+# Feature 117: Badge timing constants
+BADGE_MIN_AGE_FOR_DISMISS = 1.0  # Minimum age (seconds) before focus dismissal
+BADGE_MAX_AGE = 300  # Maximum badge age (5 minutes) for TTL cleanup
+
+# Badge directory path
+def get_badge_dir() -> Path:
+    """Get the badge directory path from XDG_RUNTIME_DIR."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    return Path(runtime_dir) / "i3pm-badges"
 
 
 # Badge state type - determines visual representation
@@ -201,3 +219,173 @@ class BadgeState(BaseModel):
             }
             for window_id, badge in self.badges.items()
         }
+
+
+# ============================================================================
+# Feature 117: File-based badge utilities
+# ============================================================================
+
+def read_badge_file(window_id: int) -> Optional[WindowBadge]:
+    """Read badge from file.
+
+    Args:
+        window_id: Sway window container ID
+
+    Returns:
+        WindowBadge if file exists and is valid, None otherwise
+    """
+    badge_dir = get_badge_dir()
+    badge_file = badge_dir / f"{window_id}.json"
+
+    if not badge_file.exists():
+        return None
+
+    try:
+        with open(badge_file, "r") as f:
+            data = json.load(f)
+        return WindowBadge(**data)
+    except (json.JSONDecodeError, Exception) as e:
+        logger.warning(f"Failed to read badge file {badge_file}: {e}")
+        return None
+
+
+def write_badge_file(badge: WindowBadge) -> bool:
+    """Write badge to file.
+
+    Args:
+        badge: WindowBadge to write
+
+    Returns:
+        True if successful, False otherwise
+    """
+    badge_dir = get_badge_dir()
+    badge_dir.mkdir(parents=True, exist_ok=True)
+    badge_file = badge_dir / f"{badge.window_id}.json"
+
+    try:
+        with open(badge_file, "w") as f:
+            json.dump(badge.model_dump(), f)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to write badge file {badge_file}: {e}")
+        return False
+
+
+def delete_badge_file(window_id: int) -> bool:
+    """Delete badge file.
+
+    Args:
+        window_id: Sway window container ID
+
+    Returns:
+        True if file was deleted, False if it didn't exist or error occurred
+    """
+    badge_dir = get_badge_dir()
+    badge_file = badge_dir / f"{window_id}.json"
+
+    try:
+        if badge_file.exists():
+            badge_file.unlink()
+            logger.debug(f"[Feature 117] Deleted badge file for window {window_id}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Failed to delete badge file {badge_file}: {e}")
+        return False
+
+
+def read_all_badge_files() -> Dict[int, WindowBadge]:
+    """Read all badge files from the badge directory.
+
+    Returns:
+        Dictionary mapping window_id to WindowBadge
+    """
+    badge_dir = get_badge_dir()
+    badges: Dict[int, WindowBadge] = {}
+
+    if not badge_dir.exists():
+        return badges
+
+    for badge_file in badge_dir.glob("*.json"):
+        try:
+            window_id = int(badge_file.stem)
+            with open(badge_file, "r") as f:
+                data = json.load(f)
+            badges[window_id] = WindowBadge(**data)
+        except (ValueError, json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Skipping invalid badge file {badge_file}: {e}")
+
+    return badges
+
+
+def get_badge_age(window_id: int) -> Optional[float]:
+    """Get the age of a badge in seconds.
+
+    Args:
+        window_id: Sway window container ID
+
+    Returns:
+        Age in seconds if badge exists, None otherwise
+    """
+    badge = read_badge_file(window_id)
+    if badge:
+        return time.time() - badge.timestamp
+    return None
+
+
+def cleanup_orphaned_badge_files(valid_window_ids: set[int]) -> int:
+    """Remove badge files for windows that no longer exist.
+
+    Args:
+        valid_window_ids: Set of window IDs from current Sway tree
+
+    Returns:
+        Number of orphaned badge files removed
+    """
+    badge_dir = get_badge_dir()
+    removed = 0
+
+    if not badge_dir.exists():
+        return 0
+
+    for badge_file in badge_dir.glob("*.json"):
+        try:
+            window_id = int(badge_file.stem)
+            if window_id not in valid_window_ids:
+                badge_file.unlink()
+                logger.info(f"[Feature 117] Removed orphaned badge for window {window_id}")
+                removed += 1
+        except (ValueError, Exception) as e:
+            logger.warning(f"Error processing badge file {badge_file}: {e}")
+
+    return removed
+
+
+def cleanup_stale_badge_files() -> int:
+    """Remove badge files older than BADGE_MAX_AGE.
+
+    Returns:
+        Number of stale badge files removed
+    """
+    badge_dir = get_badge_dir()
+    removed = 0
+    now = time.time()
+
+    if not badge_dir.exists():
+        return 0
+
+    for badge_file in badge_dir.glob("*.json"):
+        try:
+            with open(badge_file, "r") as f:
+                data = json.load(f)
+            timestamp = data.get("timestamp", 0)
+            age = now - timestamp
+
+            if age > BADGE_MAX_AGE:
+                badge_file.unlink()
+                logger.info(f"[Feature 117] Removed stale badge {badge_file.stem} (age: {age:.0f}s)")
+                removed += 1
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Error processing badge file {badge_file}: {e}")
+
+    return removed

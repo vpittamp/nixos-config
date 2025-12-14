@@ -1408,6 +1408,54 @@ async def query_monitoring_data() -> Dict[str, Any]:
         badge_state = load_badge_state_from_files()
         logger.debug(f"Feature 095: Loaded {len(badge_state)} badges from filesystem")
 
+        # Feature 117: Stale badge cleanup during refresh cycle
+        # Remove badges for windows that no longer exist (orphan cleanup)
+        # Remove badges older than 5 minutes (TTL cleanup)
+        valid_window_ids = set()
+        for output in tree_data.get("outputs", []):
+            for ws in output.get("workspaces", []):
+                for win in ws.get("windows", []):
+                    win_id = win.get("id")
+                    if win_id:
+                        valid_window_ids.add(int(win_id))
+
+        # Orphan cleanup: remove badges for non-existent windows
+        orphan_count = 0
+        for window_id_str in list(badge_state.keys()):
+            try:
+                window_id = int(window_id_str)
+                if window_id not in valid_window_ids:
+                    badge_file = BADGE_STATE_DIR / f"{window_id}.json"
+                    if badge_file.exists():
+                        badge_file.unlink()
+                        del badge_state[window_id_str]
+                        orphan_count += 1
+                        logger.info(f"[Feature 117] Removed orphaned badge for window {window_id}")
+            except (ValueError, OSError) as e:
+                logger.warning(f"[Feature 117] Error cleaning orphan badge {window_id_str}: {e}")
+
+        # TTL cleanup: remove badges older than 5 minutes (300 seconds)
+        MAX_BADGE_AGE = 300
+        now = time.time()
+        ttl_count = 0
+        for window_id_str in list(badge_state.keys()):
+            badge = badge_state.get(window_id_str, {})
+            timestamp = badge.get("timestamp", 0)
+            age = now - timestamp
+            if age > MAX_BADGE_AGE:
+                try:
+                    badge_file = BADGE_STATE_DIR / f"{window_id_str}.json"
+                    if badge_file.exists():
+                        badge_file.unlink()
+                        del badge_state[window_id_str]
+                        ttl_count += 1
+                        logger.info(f"[Feature 117] Removed stale badge {window_id_str} (age: {age:.0f}s)")
+                except OSError as e:
+                    logger.warning(f"[Feature 117] Error cleaning stale badge {window_id_str}: {e}")
+
+        if orphan_count > 0 or ttl_count > 0:
+            logger.debug(f"[Feature 117] Badge cleanup: {orphan_count} orphans, {ttl_count} stale removed")
+
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
 
