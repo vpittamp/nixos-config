@@ -12,6 +12,7 @@
     ./home-modules/desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
     ./home-modules/desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
     ./home-modules/desktop/eww-monitoring-panel.nix  # Feature 085: Live monitoring panel
+    ./home-modules/desktop/eww-device-controls.nix  # Feature 116: Unified device controls
     ./home-modules/desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
     ./home-modules/profiles/declarative-cleanup.nix  # Automatic XDG cleanup
 
@@ -86,6 +87,10 @@
   programs.eww-monitoring-panel = {
     enable = true;  # Toggle with Mod+m, F10 for focus mode
   };
+
+  # Feature 116: Unified device controls
+  # Hardware-adaptive device controls for bare metal NixOS machines
+  programs.eww-device-controls.enable = true;
 
   # Monitor configuration for M1, Hetzner, and Ryzen
   # Passed to eww-monitoring-panel for correct display output

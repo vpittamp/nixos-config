@@ -331,6 +331,72 @@ journalctl --user -u eww-top-bar -f        # Follow logs
 
 **Docs**: `/etc/nixos/specs/060-eww-top-bar/quickstart.md`
 
+### Eww Device Controls (Feature 116)
+
+Unified device controls for bare metal NixOS machines. Provides quick access via top bar expandable panels and comprehensive Devices tab in monitoring panel.
+
+**Enable**:
+```nix
+# File: /etc/nixos/home-vpittamp.nix
+programs.eww-device-controls.enable = true;
+```
+
+**Top Bar Controls**:
+| Control | Action |
+|---------|--------|
+| 󰕾 Volume | Click to expand slider, scroll to adjust |
+| 󰃟 Brightness | Click to expand (laptops only) |
+| 󰂯 Bluetooth | Click to expand device list |
+| 󰁹 Battery | Click to expand status (laptops only) |
+
+**Devices Tab** (Monitoring Panel):
+| Key | Action |
+|-----|--------|
+| `Mod+M` | Open monitoring panel |
+| `Alt+7` | Switch to Devices tab |
+| `j`/`k` | Navigate up/down |
+| `Enter` | Select/toggle item |
+
+**Dashboard Sections**:
+- **Audio**: Output device, volume slider, microphone status
+- **Display**: Display brightness, keyboard backlight (laptops)
+- **Bluetooth**: Adapter toggle, paired devices list
+- **Power**: Battery status, power profiles (laptops)
+- **Thermal**: CPU temperature, fan speed
+- **Network**: WiFi status, Tailscale connection
+
+**Hardware-Adaptive**: Controls automatically adapt based on detected hardware:
+- Laptops (M1, ThinkPad): All controls available
+- Desktops (Ryzen): Volume, Bluetooth, Thermal, Tailscale only
+
+**CLI Scripts** (installed to `~/.config/eww/eww-device-controls/scripts/`):
+```bash
+# Backend queries
+device-backend.py --mode volume     # Volume state JSON
+device-backend.py --mode bluetooth  # Bluetooth state JSON
+device-backend.py --mode full       # All device states
+
+# Device control
+volume-control.sh set 50            # Set volume to 50%
+brightness-control.sh set 75        # Set brightness to 75%
+bluetooth-control.sh power toggle   # Toggle Bluetooth
+power-profile-control.sh cycle      # Cycle power profile
+```
+
+**Troubleshooting**:
+```bash
+# Check PipeWire (volume)
+systemctl --user status pipewire
+
+# Check brightness devices
+brightnessctl -l
+
+# Check Bluetooth
+bluetoothctl show | grep Powered
+```
+
+**Docs**: `/etc/nixos/specs/116-use-eww-device/quickstart.md`
+
 ## ⌨️ Event-Driven Workspace Mode Navigation (Feature 042)
 
 Navigate to workspace 1-70 by typing digits (<20ms latency).
@@ -1219,8 +1285,11 @@ gh auth status               # Auto-uses 1Password token
 - N/A (stateless - SwayNC is the source of truth) (110-improve-notifications-system)
 - Nix (NixOS 25.11), Bash 5.0+ for helper scripts + nixos-hardware modules, home-manager, PipeWire, Firefox, NVIDIA drivers, Intel media-driver (115-enable-advanced-hardware-features)
 - N/A (configuration management, no data storage) (115-enable-advanced-hardware-features)
+- Nix (flakes), Python 3.11+ (backend scripts), Yuck/SCSS (Eww widgets) + Eww 0.4+ (GTK3 widgets), PipeWire/WirePlumber (audio), BlueZ (Bluetooth), UPower (battery), brightnessctl (brightness), TLP (power profiles), lm_sensors (thermals) (116-use-eww-device)
+- N/A (stateless - queries system state in real-time) (116-use-eww-device)
 
 ## Recent Changes
+- 116-use-eww-device: Unified device control system with hardware-adaptive detection, top bar expandable panels (volume/brightness/bluetooth/battery), monitoring panel Devices tab (Alt+7), Python device-backend.py for state queries, Bash control scripts (volume-control.sh, brightness-control.sh, bluetooth-control.sh, power-profile-control.sh), Catppuccin Mocha styling, deprecates eww-quick-panel
 - 109-enhance-worktree-user-experience: Branch number badges with gradient styling (mauve/pink for numbered, blue for main, green for feature), icon alignment fixes, hover transition improvements
 - 108-show-worktree-card-detail: Enhanced worktree card status display with at-a-glance indicators (dirty ●, sync ↑↓, merged ✓, stale 💤, conflict ⚠), tooltips with file count breakdown and commit info, 30-day staleness threshold, hover-visible last commit message, git_utils.py format_relative_time() helper, is_merged/is_stale/has_conflicts detection, Catppuccin Mocha styling (teal merged, red conflict/dirty, gray stale)
 - 107-fix-progress-indicator: Progress indicator focus state and event efficiency enhancement with focus-aware badge styling (.badge-focused-window CSS class for dimmed display when window focused), IPC-first hook communication with file fallback, decoupled spinner animation via separate defvar/defpoll (<1% CPU vs 5-10%), has_working_badge flag for conditional spinner polling

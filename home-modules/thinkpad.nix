@@ -17,6 +17,7 @@
     ./desktop/eww-quick-panel.nix
     ./desktop/eww-top-bar.nix
     ./desktop/eww-monitoring-panel.nix
+    ./desktop/eww-device-controls.nix  # Feature 116: Unified device controls
     ./desktop/swaync.nix
     ./desktop/sway-config-manager.nix
 
@@ -68,6 +69,9 @@
 
   # eww monitoring panel
   programs.eww-monitoring-panel.enable = true;
+
+  # eww device controls (Feature 116)
+  programs.eww-device-controls.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

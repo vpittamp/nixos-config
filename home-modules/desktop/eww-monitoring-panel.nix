@@ -3032,8 +3032,8 @@ print(json.dumps(result))
     ${pkgs.libnotify}/bin/notify-send -t 3000 "Trace Started" "Template: $TEMPLATE_NAME\nTrace ID: $TRACE_ID"
   '';
 
-  # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
-  # Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+  # Keyboard handler script for view switching (Alt+1-7 or just 1-7)
+  # Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
@@ -3046,6 +3046,7 @@ print(json.dumps(result))
       4|Alt+4) $EWW_CMD update current_view_index=3 ;;
       5|Alt+5) $EWW_CMD update current_view_index=4 ;;
       6|Alt+6) $EWW_CMD update current_view_index=5 ;;
+      7|Alt+7) $EWW_CMD update current_view_index=6 ;;
       Escape|q) $EWW_CMD close monitoring-panel ;;
     esac
   '';
@@ -3207,7 +3208,16 @@ in
       ;; Validation handled via explicit update commands when forms are opened
       (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}")
 
-      ;; Current view state - INDEX based (0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces)
+      ;; Feature 116: Defpoll: Device state (500ms refresh for responsive controls)
+      ;; Only runs when Devices tab is active (index 6)
+      ;; Uses device-backend.py from eww-device-controls module
+      (defpoll devices_state
+        :interval "500ms"
+        :run-while {current_view_index == 6}
+        :initial "{\"volume\":{\"volume\":50,\"muted\":false,\"icon\":\"󰕾\",\"current_device\":\"Unknown\"},\"bluetooth\":{\"enabled\":false,\"scanning\":false,\"devices\":[]},\"brightness\":{\"display\":50,\"keyboard\":0},\"battery\":{\"percentage\":100,\"state\":\"full\",\"icon\":\"󰁹\",\"level\":\"normal\",\"time_remaining\":\"\"},\"thermal\":{\"cpu_temp\":0,\"level\":\"normal\",\"icon\":\"󰔏\"},\"network\":{\"tailscale_connected\":false,\"wifi_connected\":false},\"hardware\":{\"has_battery\":false,\"has_brightness\":false,\"has_keyboard_backlight\":false,\"has_bluetooth\":true,\"has_power_profiles\":false,\"has_thermal_sensors\":true},\"power_profile\":{\"current\":\"balanced\",\"available\":[],\"icon\":\"󰾅\"}}"
+        `$HOME/.config/eww/eww-device-controls/scripts/device-backend.py 2>/dev/null || echo '{}'`)
+
+      ;; Current view state - INDEX based (0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices)
       ;; eww stack widget requires integer index for :selected attribute
       (defvar current_view_index 0)
 
@@ -3591,6 +3601,14 @@ in
                 :class "tab ''${current_view_index == 5 ? 'active' : ""}"
                 :tooltip "Traces (Alt+6)"
                 "󱂛"))
+            ;; Feature 116: Devices tab (7th tab)
+            (eventbox
+              :cursor "pointer"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=6"
+              (button
+                :class "tab ''${current_view_index == 6 ? 'active' : ""}"
+                :tooltip "Devices (Alt+7)"
+                "󰒓"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -3654,19 +3672,21 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses overlay with conditional visibility - revealers cause height collapse issues
-      ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+      ;; Uses stack widget for proper tab switching (overlay had visibility issues)
+      ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
       (defwidget panel-body []
-        (overlay
+        (stack
+          :selected current_view_index
+          :transition "none"
           :vexpand true
-          ;; Each view occupies the full overlay space, only one visible at a time
-          ;; Using overlay ensures proper height allocation for scrollable content
-          (box :class "view-container" :vexpand true :visible {current_view_index == 0} (windows-view))
-          (box :class "view-container" :vexpand true :visible {current_view_index == 1} (projects-view))
-          (box :class "view-container" :vexpand true :visible {current_view_index == 2} (apps-view))
-          (box :class "view-container" :vexpand true :visible {current_view_index == 3} (health-view))
-          (box :class "view-container" :vexpand true :visible {current_view_index == 4} (events-view))
-          (box :class "view-container" :vexpand true :visible {current_view_index == 5} (traces-view))))
+          :same-size false
+          (box :class "view-container" :vexpand true (windows-view))
+          (box :class "view-container" :vexpand true (projects-view))
+          (box :class "view-container" :vexpand true (apps-view))
+          (box :class "view-container" :vexpand true (health-view))
+          (box :class "view-container" :vexpand true (events-view))
+          (box :class "view-container" :vexpand true (traces-view))
+          (box :class "view-container" :vexpand true (devices-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -7452,6 +7472,274 @@ in
               (for trace in {traces_data.traces ?: []}
                 (trace-card :trace trace))))))
 
+      ;; Feature 116: Devices View - Comprehensive device controls dashboard
+      ;; Shows volume, brightness, bluetooth, battery, thermal, and network status
+      ;; Uses device-backend.py from eww-device-controls module
+      (defwidget devices-view []
+        (scroll
+          :vscroll true
+          :hscroll false
+          :vexpand true
+          (box
+            :class "content-container devices-content"
+            :orientation "v"
+            :space-evenly false
+            :spacing 16
+            ;; Audio section
+            (box
+              :class "devices-section"
+              :orientation "v"
+              :space-evenly false
+              (label :class "section-title" :halign "start" :text "󰕾 Audio")
+              (box
+                :class "section-content"
+                :orientation "v"
+                :space-evenly false
+                :spacing 8
+                (box
+                  :class "device-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  (label :class "device-label" :text "Output")
+                  (label :class "device-value" :hexpand true :halign "end" :text "''${devices_state.volume.current_device ?: 'Unknown'}"))
+                (box
+                  :class "slider-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  (label :class "slider-icon" :text "''${devices_state.volume.icon ?: '󰕾'}")
+                  (scale
+                    :class "device-slider"
+                    :hexpand true
+                    :min 0 :max 100
+                    :value "''${devices_state.volume.volume ?: 50}"
+                    :onchange "$HOME/.config/eww/eww-device-controls/scripts/volume-control.sh set {} &")
+                  (label :class "slider-value" :text "''${devices_state.volume.volume ?: 50}%")
+                  (eventbox
+                    :cursor "pointer"
+                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/volume-control.sh mute &"
+                    (label :class "''${devices_state.volume.muted ?: false ? 'mute-btn muted' : 'mute-btn'}"
+                           :text "''${devices_state.volume.muted ?: false ? '󰝟' : '󰕾'}")))))
+            ;; Display section (laptop only - brightness controls)
+            (box
+              :class "devices-section"
+              :orientation "v"
+              :space-evenly false
+              :visible {devices_state.hardware.has_brightness ?: false}
+              (label :class "section-title" :halign "start" :text "󰛨 Display")
+              (box
+                :class "section-content"
+                :orientation "v"
+                :space-evenly false
+                :spacing 8
+                (box
+                  :class "slider-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  (label :class "slider-icon" :text "󰃞")
+                  (label :class "slider-label" :text "Screen")
+                  (scale
+                    :class "device-slider"
+                    :hexpand true
+                    :min 5 :max 100
+                    :value "''${devices_state.brightness.display ?: 50}"
+                    :onchange "$HOME/.config/eww/eww-device-controls/scripts/brightness-control.sh set {} &")
+                  (label :class "slider-value" :text "''${devices_state.brightness.display ?: 50}%"))
+                (box
+                  :class "slider-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  :visible {devices_state.hardware.has_keyboard_backlight ?: false}
+                  (label :class "slider-icon" :text "󰌌")
+                  (label :class "slider-label" :text "Keyboard")
+                  (scale
+                    :class "device-slider"
+                    :hexpand true
+                    :min 0 :max 100
+                    :value "''${devices_state.brightness.keyboard ?: 0}"
+                    :onchange "$HOME/.config/eww/eww-device-controls/scripts/brightness-control.sh set {} --device keyboard &")
+                  (label :class "slider-value" :text "''${devices_state.brightness.keyboard ?: 0}%"))))
+            ;; Bluetooth section
+            (box
+              :class "devices-section"
+              :orientation "v"
+              :space-evenly false
+              (label :class "section-title" :halign "start" :text "󰂯 Bluetooth")
+              (box
+                :class "section-content"
+                :orientation "v"
+                :space-evenly false
+                :spacing 8
+                (box
+                  :class "toggle-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 12
+                  (label :class "toggle-icon" :text "󰂯")
+                  (label :class "toggle-label" :hexpand true :text "Bluetooth")
+                  (button
+                    :class "''${devices_state.bluetooth.enabled ?: false ? 'toggle-btn on' : 'toggle-btn off'}"
+                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/bluetooth-control.sh power toggle &"
+                    (label :text "''${devices_state.bluetooth.enabled ?: false ? '󰔡' : '󰨙'}")))
+                (box
+                  :class "device-list"
+                  :orientation "v"
+                  :space-evenly false
+                  :spacing 4
+                  :visible "''${devices_state.bluetooth.enabled ?: false}"
+                  (for device in "''${devices_state.bluetooth.devices ?: []}"
+                    (box
+                      :class "''${device.connected ? 'device-item connected' : 'device-item'}"
+                      :orientation "h"
+                      :space-evenly false
+                      :spacing 8
+                      (label :class "device-icon" :text "''${device.icon ?: '󰂯'}")
+                      (label :class "device-name" :hexpand true :text "''${device.name}")
+                      (eventbox
+                        :cursor "pointer"
+                        :onclick "$HOME/.config/eww/eww-device-controls/scripts/bluetooth-control.sh ''${device.connected ? 'disconnect' : 'connect'} ''${device.mac} &"
+                        (label :class "connect-btn" :text "''${device.connected ? 'Disconnect' : 'Connect'}")))))))
+            ;; Power section (laptop only - battery and power profiles)
+            (box
+              :class "devices-section"
+              :orientation "v"
+              :space-evenly false
+              :visible {devices_state.hardware.has_battery ?: false}
+              (label :class "section-title" :halign "start" :text "󰂄 Power")
+              (box
+                :class "section-content"
+                :orientation "v"
+                :space-evenly false
+                :spacing 8
+                ;; Battery status row
+                (box
+                  :class "battery-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  (label :class {"battery-icon " + (devices_state.battery.level ?: "normal") + (devices_state.battery.state == "charging" ? " charging" : "")}
+                         :text "''${devices_state.battery.icon ?: '󰁹'}")
+                  (box
+                    :class "battery-info"
+                    :orientation "v"
+                    :space-evenly false
+                    :hexpand true
+                    (box
+                      :orientation "h"
+                      :space-evenly false
+                      :spacing 8
+                      (label :class "battery-percent" :text "''${devices_state.battery.percentage ?: 100}%")
+                      (label :class "battery-state"
+                             :text "''${devices_state.battery.state == 'charging' ? '󰂄 Charging' : devices_state.battery.state == 'discharging' ? '󰂃 Discharging' : '󰁹 Full'}"))
+                    (label :class "battery-time"
+                           :halign "start"
+                           :visible {devices_state.battery.time_remaining != "null"}
+                           :text {devices_state.battery.time_remaining ?: ""})))
+                ;; Battery details (health, cycles, power draw)
+                (box
+                  :class "battery-details"
+                  :orientation "h"
+                  :space-evenly true
+                  :visible {devices_state.battery.health != "null"}
+                  (box
+                    :class "detail-item"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-label" :text "Health")
+                    (label :class "detail-value" :text "''${devices_state.battery.health ?: 100}%"))
+                  (box
+                    :class "detail-item"
+                    :orientation "v"
+                    :space-evenly false
+                    :visible {devices_state.battery.power_draw != "null"}
+                    (label :class "detail-label" :text "Power")
+                    (label :class "detail-value" :text "''${devices_state.battery.power_draw ?: 0}W")))
+                ;; Power profile selector
+                (box
+                  :class "power-profiles"
+                  :orientation "h"
+                  :space-evenly true
+                  :spacing 6
+                  :visible {devices_state.hardware.has_power_profiles ?: false}
+                  (button
+                    :class {"profile-btn profile-saver " + (devices_state.power_profile.current == "power-saver" ? "active" : "")}
+                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/power-profile-control.sh set power-saver &"
+                    (label :text "󰾆"))
+                  (button
+                    :class {"profile-btn profile-balanced " + (devices_state.power_profile.current == "balanced" ? "active" : "")}
+                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/power-profile-control.sh set balanced &"
+                    (label :text "󰾅"))
+                  (button
+                    :class {"profile-btn profile-performance " + (devices_state.power_profile.current == "performance" ? "active" : "")}
+                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/power-profile-control.sh set performance &"
+                    (label :text "󱐋")))))
+            ;; Thermal section
+            (box
+              :class "devices-section"
+              :orientation "v"
+              :space-evenly false
+              (label :class "section-title" :halign "start" :text "󰔐 Thermal")
+              (box
+                :class "section-content"
+                :orientation "v"
+                :space-evenly false
+                :spacing 8
+                (box
+                  :class "thermal-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  (label :class "thermal-icon" :text "󰔐")
+                  (box
+                    :class "thermal-info"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "thermal-label" :halign "start" :text "CPU")
+                    (label :class "thermal-value" :halign "start" :text "''${devices_state.thermal.cpu_temp ?: 0}°C"))
+                  (progress
+                    :class "thermal-bar"
+                    :hexpand true
+                    :value "''${devices_state.thermal.cpu_temp ?: 0}"
+                    :min 0
+                    :max 100))
+                (box
+                  :class "fan-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  :visible "''${devices_state.thermal.fan_speed != 'null'}"
+                  (label :class "fan-icon" :text "󰈐")
+                  (label :class "fan-label" :text "Fan")
+                  (label :class "fan-value" :hexpand true :halign "end" :text "''${devices_state.thermal.fan_speed ?: 0} RPM"))))
+            ;; Network section
+            (box
+              :class "devices-section"
+              :orientation "v"
+              :space-evenly false
+              (label :class "section-title" :halign "start" :text "󰖩 Network")
+              (box
+                :class "section-content"
+                :orientation "v"
+                :space-evenly false
+                :spacing 8
+                (box
+                  :class "network-row tailscale-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  (label :class "''${devices_state.network.tailscale_connected ?: false ? 'network-icon connected' : 'network-icon disconnected'}"
+                         :text "󰖂")
+                  (box
+                    :class "network-info"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "network-type" :halign "start" :text "Tailscale")
+                    (label :class "network-value" :halign "start"
+                           :text "''${devices_state.network.tailscale_connected ?: false ? devices_state.network.tailscale_ip ?: 'Connected' : 'Disconnected'}"))))))))
+
       ;; Feature 101: Trace card widget - displays single trace info with expandable events
       ;; Feature 102 (T031): Added highlight class for navigation animation
       (defwidget trace-card [trace]
@@ -7646,6 +7934,12 @@ in
       label, box, button {
         color: ${mocha.text};
         background-color: transparent;
+        background-image: none;
+      }
+
+      /* GTK3 button reset - removes theme gradients that override background-color */
+      button {
+        background-image: none;
       }
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
@@ -7802,10 +8096,10 @@ in
         padding: 8px 16px;
         min-width: 60px;
         background-color: rgba(49, 50, 68, 0.4);
+        background-image: none;
         color: ${mocha.subtext0};
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
-        /* transition not supported in GTK CSS */
       }
 
       .tab label {
@@ -7814,6 +8108,7 @@ in
 
       .tab:hover {
         background-color: rgba(69, 71, 90, 0.5);
+        background-image: none;
         color: ${mocha.text};
         border-color: ${mocha.overlay0};
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
@@ -7825,6 +8120,7 @@ in
 
       .tab.active {
         background-color: rgba(137, 180, 250, 0.6);
+        background-image: none;
         color: ${mocha.base};
         border-color: ${mocha.blue};
         font-weight: bold;
@@ -7837,6 +8133,7 @@ in
 
       .tab.active:hover {
         background-color: rgba(137, 180, 250, 0.7);
+        background-image: none;
         box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
       }
 
@@ -11811,6 +12108,465 @@ in
         color: ${mocha.subtext0};
         font-family: monospace;
         margin-top: 2px;
+      }
+
+      /* ========================================
+       * Feature 116: Devices Tab Styling
+       * ======================================== */
+
+      .devices-content {
+        padding: 10px;
+      }
+
+      .devices-section {
+        background-color: ${mocha.surface0};
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        border: 1px solid ${mocha.surface1};
+
+        .section-title {
+          font-size: 11px;
+          font-weight: 600;
+          color: ${mocha.blue};
+          margin-bottom: 8px;
+          padding-bottom: 6px;
+          border-bottom: 1px solid ${mocha.surface1};
+          letter-spacing: 0.5px;
+        }
+
+        .section-content {
+          padding: 2px 0;
+        }
+      }
+
+      /* Audio Section */
+      .device-row {
+        padding: 4px 6px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-bottom: 6px;
+
+        .device-label {
+          font-size: 10px;
+          color: ${mocha.subtext0};
+          min-width: 45px;
+        }
+
+        .device-value {
+          font-size: 10px;
+          color: ${mocha.text};
+        }
+      }
+
+      .slider-row {
+        padding: 4px 2px;
+
+        .slider-icon {
+          font-size: 14px;
+          color: ${mocha.blue};
+          min-width: 20px;
+        }
+
+        .device-slider {
+          min-width: 100px;
+          margin: 0 6px;
+
+          trough {
+            background-color: ${mocha.surface1};
+            border-radius: 3px;
+            min-height: 4px;
+          }
+
+          highlight {
+            background-color: ${mocha.blue};
+            border-radius: 3px;
+          }
+
+          slider {
+            background-color: ${mocha.text};
+            border-radius: 50%;
+            min-width: 10px;
+            min-height: 10px;
+            margin: -3px;
+          }
+        }
+
+        .slider-value {
+          font-size: 10px;
+          font-weight: 600;
+          color: ${mocha.text};
+          min-width: 28px;
+          margin-right: 4px;
+        }
+
+        .mute-btn {
+          font-size: 12px;
+          color: ${mocha.subtext0};
+          padding: 3px 6px;
+          border-radius: 4px;
+          background-color: ${mocha.surface1};
+
+          &:hover {
+            background-color: ${mocha.overlay0};
+            color: ${mocha.text};
+          }
+
+          &.muted {
+            color: ${mocha.red};
+            background-color: shade(${mocha.red}, 0.3);
+          }
+        }
+      }
+
+      /* Bluetooth Section */
+      .toggle-row {
+        padding: 4px 2px;
+
+        .toggle-icon {
+          font-size: 14px;
+          color: ${mocha.blue};
+          min-width: 20px;
+        }
+
+        .toggle-label {
+          font-size: 11px;
+          font-weight: 500;
+          color: ${mocha.text};
+        }
+
+        .toggle-btn {
+          min-width: 32px;
+          min-height: 20px;
+          border-radius: 10px;
+          border: none;
+          padding: 2px 8px;
+
+          label {
+            font-size: 11px;
+          }
+
+          &.on {
+            background-color: ${mocha.green};
+            color: ${mocha.base};
+          }
+
+          &.off {
+            background-color: ${mocha.surface1};
+            color: ${mocha.overlay0};
+          }
+
+          &:hover {
+            opacity: 0.9;
+          }
+        }
+      }
+
+      .device-list {
+        padding-top: 4px;
+        margin-top: 2px;
+
+        .device-item {
+          background-color: ${mocha.mantle};
+          border-radius: 5px;
+          padding: 6px 8px;
+          margin-bottom: 4px;
+
+          &.connected {
+            border-left: 2px solid ${mocha.green};
+            background-color: shade(${mocha.green}, 0.2);
+          }
+
+          .device-icon {
+            font-size: 12px;
+            color: ${mocha.subtext0};
+            min-width: 18px;
+          }
+
+          .device-name {
+            font-size: 10px;
+            color: ${mocha.text};
+          }
+
+          .connect-btn {
+            font-size: 9px;
+            font-weight: 500;
+            color: ${mocha.blue};
+            padding: 3px 6px;
+            background-color: ${mocha.surface1};
+            border-radius: 4px;
+
+            &:hover {
+              background-color: ${mocha.blue};
+              color: ${mocha.base};
+            }
+          }
+        }
+      }
+
+      /* Power Section */
+      .battery-row {
+        padding: 6px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-bottom: 6px;
+
+        .battery-icon {
+          font-size: 18px;
+          color: ${mocha.green};
+          min-width: 26px;
+
+          &.low {
+            color: ${mocha.yellow};
+          }
+
+          &.critical {
+            color: ${mocha.red};
+          }
+
+          &.charging {
+            color: ${mocha.teal};
+          }
+        }
+
+        .battery-info {
+          .battery-percent {
+            font-size: 14px;
+            font-weight: 600;
+            color: ${mocha.text};
+          }
+
+          .battery-state {
+            font-size: 10px;
+            color: ${mocha.subtext0};
+          }
+
+          .battery-time {
+            font-size: 9px;
+            color: ${mocha.subtext0};
+            margin-top: 2px;
+          }
+        }
+      }
+
+      .battery-details {
+        padding: 6px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-bottom: 6px;
+
+        .detail-item {
+          .detail-label {
+            font-size: 9px;
+            color: ${mocha.subtext0};
+          }
+
+          .detail-value {
+            font-size: 11px;
+            font-weight: 600;
+            color: ${mocha.text};
+          }
+        }
+      }
+
+      .power-profiles {
+        padding: 4px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+
+        .profile-btn {
+          padding: 6px 12px;
+          border-radius: 5px;
+          border: none;
+          background-image: none;
+
+          label {
+            font-size: 14px;
+          }
+        }
+
+        /* Power Saver - Green theme */
+        .profile-btn.profile-saver {
+          background-color: ${mocha.surface0};
+          background-image: none;
+
+          label {
+            color: ${mocha.green};
+          }
+        }
+
+        .profile-btn.profile-saver:hover {
+          background-color: ${mocha.surface1};
+          background-image: none;
+        }
+
+        .profile-btn.profile-saver.active {
+          background-color: ${mocha.green};
+          background-image: none;
+
+          label {
+            color: ${mocha.base};
+          }
+        }
+
+        /* Balanced - Blue theme */
+        .profile-btn.profile-balanced {
+          background-color: ${mocha.surface0};
+          background-image: none;
+
+          label {
+            color: ${mocha.blue};
+          }
+        }
+
+        .profile-btn.profile-balanced:hover {
+          background-color: ${mocha.surface1};
+          background-image: none;
+        }
+
+        .profile-btn.profile-balanced.active {
+          background-color: ${mocha.blue};
+          background-image: none;
+
+          label {
+            color: ${mocha.base};
+          }
+        }
+
+        /* Performance - Peach/Orange theme */
+        .profile-btn.profile-performance {
+          background-color: ${mocha.surface0};
+          background-image: none;
+
+          label {
+            color: ${mocha.peach};
+          }
+        }
+
+        .profile-btn.profile-performance:hover {
+          background-color: ${mocha.surface1};
+          background-image: none;
+        }
+
+        .profile-btn.profile-performance.active {
+          background-color: ${mocha.peach};
+          background-image: none;
+
+          label {
+            color: ${mocha.base};
+          }
+        }
+      }
+
+      /* Display Section */
+      .slider-label {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        min-width: 50px;
+      }
+
+      /* Thermal Section */
+      .thermal-row {
+        padding: 6px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-bottom: 6px;
+
+        .thermal-icon {
+          font-size: 16px;
+          color: ${mocha.peach};
+          min-width: 22px;
+        }
+
+        .thermal-info {
+          min-width: 50px;
+          margin-right: 8px;
+
+          .thermal-label {
+            font-size: 9px;
+            color: ${mocha.subtext0};
+          }
+
+          .thermal-value {
+            font-size: 12px;
+            font-weight: 600;
+            color: ${mocha.text};
+          }
+        }
+
+        .thermal-bar {
+          min-height: 6px;
+          border-radius: 3px;
+
+          trough {
+            background-color: ${mocha.surface1};
+            border-radius: 3px;
+            min-height: 6px;
+          }
+
+          progress {
+            background-color: ${mocha.peach};
+            border-radius: 3px;
+          }
+        }
+      }
+
+      .fan-row {
+        padding: 6px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+
+        .fan-icon {
+          font-size: 14px;
+          color: ${mocha.sapphire};
+          min-width: 22px;
+        }
+
+        .fan-label {
+          font-size: 10px;
+          color: ${mocha.subtext0};
+          min-width: 30px;
+        }
+
+        .fan-value {
+          font-size: 11px;
+          font-weight: 500;
+          color: ${mocha.text};
+        }
+      }
+
+      /* Network Section */
+      .network-row {
+        padding: 6px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-bottom: 6px;
+
+        .network-icon {
+          font-size: 16px;
+          min-width: 22px;
+
+          &.connected {
+            color: ${mocha.green};
+          }
+
+          &.disconnected {
+            color: ${mocha.overlay0};
+          }
+        }
+
+        .network-info {
+          .network-type {
+            font-size: 9px;
+            color: ${mocha.subtext0};
+          }
+
+          .network-value {
+            font-size: 11px;
+            font-weight: 500;
+            color: ${mocha.text};
+          }
+        }
       }
     '';
 
