@@ -1184,20 +1184,24 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Get current expanded projects array
+    # Get current expanded projects state
     CURRENT=$($EWW get expanded_projects)
 
-    # Check if project is in the array and toggle
-    if echo "$CURRENT" | ${pkgs.jq}/bin/jq -e "index(\"$PROJECT_NAME\")" > /dev/null 2>&1; then
+    # Handle "all" case - when all expanded, clicking collapses just this one
+    if [[ "$CURRENT" == "all" ]]; then
+      # Get all project names and remove the clicked one
+      ALL_NAMES=$($EWW get projects_data | ${pkgs.jq}/bin/jq -r '[.repositories[]?.qualified_name // empty, .projects[]?.name // empty] | unique')
+      NEW=$(echo "$ALL_NAMES" | ${pkgs.jq}/bin/jq -c "del(.[] | select(. == \"$PROJECT_NAME\"))")
+      $EWW update "expanded_projects=$NEW" "projects_all_expanded=false"
+    elif echo "$CURRENT" | ${pkgs.jq}/bin/jq -e "index(\"$PROJECT_NAME\")" > /dev/null 2>&1; then
       # Remove from array (collapse)
       NEW=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c "del(.[] | select(. == \"$PROJECT_NAME\"))")
+      $EWW update "expanded_projects=$NEW"
     else
       # Add to array (expand)
       NEW=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c ". + [\"$PROJECT_NAME\"]")
+      $EWW update "expanded_projects=$NEW"
     fi
-
-    # Update eww variable
-    $EWW update "expanded_projects=$NEW"
   '';
 
   # Feature 099 UX3: Expand/collapse all repositories script
@@ -3077,10 +3081,10 @@ in
 
     panelWidth = mkOption {
       type = types.int;
-      default = if hostname == "thinkpad" then 360 else 460;
+      default = if hostname == "thinkpad" then 320 else 460;
       description = ''
         Width of the monitoring panel in pixels.
-        Default is 360px for ThinkPad (1.25 scale) and 460px for other hosts.
+        Default is 320px for ThinkPad (1.25 scale) and 460px for other hosts.
         Adjust based on display scaling to prevent panel from being too wide.
       '';
     };
@@ -3440,13 +3444,13 @@ in
       (defvar worktree_delete_is_dirty false)     ;; Whether worktree has uncommitted changes
 
       ;; Feature 099 T008: Expanded projects state (list of expanded project names as JSON array)
-      (defvar expanded_projects "[]")             ;; JSON array of expanded project names
+      (defvar expanded_projects "all")            ;; "all" = all expanded, or JSON array of expanded names
 
       ;; Feature 099 UX Enhancements
       (defvar project_filter "")                  ;; UX1: Filter text for projects search
       (defvar project_selected_index -1)          ;; UX2: Currently selected project index for keyboard nav
       (defvar project_selected_name "")           ;; UX2: Name of currently selected project (for highlighting)
-      (defvar projects_all_expanded false)        ;; UX3: Toggle state for expand/collapse all
+      (defvar projects_all_expanded true)         ;; UX3: Toggle state for expand/collapse all (default: expanded)
 
       ;; Feature 094 US4: Project delete confirmation state (T086-T089)
       (defvar project_deleting false)              ;; True when delete confirmation dialog is visible
@@ -4484,7 +4488,7 @@ in
                   (revealer
                     :transition "slidedown"
                     :duration "150ms"
-                    :reveal {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null")}
+                    :reveal {expanded_projects == "all" || jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null")}
                     (box
                       :orientation "v"
                       :space-evenly false
@@ -4510,13 +4514,13 @@ in
               (eventbox
                 :cursor "pointer"
                 :onclick "${toggleProjectExpandedScript}/bin/toggle-project-expanded ''${repo.qualified_name}"
-                :tooltip {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
+                :tooltip {(expanded_projects == "all" || jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null")) ? "Collapse worktrees" : "Expand worktrees"}
                 (box
                   :class "expand-toggle"
                   :valign "center"
                   (label
                     :class "expand-icon"
-                    :text {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "󰅀" : "󰅂"})))
+                    :text {(expanded_projects == "all" || jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null")) ? "󰅀" : "󰅂"})))
               ;; Main content
               (box
                 :class "project-main-content"
@@ -4797,13 +4801,13 @@ in
               (eventbox
                 :cursor "pointer"
                 :onclick "${toggleProjectExpandedScript}/bin/toggle-project-expanded ''${project.name}"
-                :tooltip {jq(expanded_projects, "index(\"" + project.name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
+                :tooltip {(expanded_projects == "all" || jq(expanded_projects, "index(\"" + project.name + "\") != null")) ? "Collapse worktrees" : "Expand worktrees"}
                 (box
                   :class "expand-toggle"
                   :valign "center"
                   (label
                     :class "expand-icon"
-                    :text {jq(expanded_projects, "index(\"" + project.name + "\") != null") ? "󰅀" : "󰅂"})))
+                    :text {(expanded_projects == "all" || jq(expanded_projects, "index(\"" + project.name + "\") != null")) ? "󰅀" : "󰅂"})))
               ;; Main content area - clickable for project switch
               (eventbox
                 :cursor "pointer"
