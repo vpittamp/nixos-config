@@ -76,11 +76,11 @@
     }
 
     # Azure CLI wrapper
+    # Note: Azure CLI is provided by azure-cli-bin (pinned to nixos-24.11 for Python 3.12 compatibility)
+    # We use 'command az' to call the PATH version (azure-cli-bin) instead of this function recursively
+    # This avoids using ${pkgs.azure-cli} which would pull from unstable with Python 3.13
     az() {
-      # Note: Azure CLI uses interactive login by default
-      # Service Principal auth requires: az login --service-principal -u CLIENT_ID -p PASSWORD --tenant TENANT_ID
-      # For now, pass through to the actual command
-      ${pkgs.azure-cli}/bin/az "$@"
+      command az "$@"
     }
 
     # MySQL CLI wrapper

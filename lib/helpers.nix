@@ -63,26 +63,12 @@ let
   # Widgets should reference roles, not hardcoded output names
   # 4-tier system: primary (WS 1-2), secondary (WS 3-4), tertiary (WS 5-6), quaternary (WS 7+)
   monitorConfig = {
-    "nixos-hetzner-sway" = {
+    "hetzner" = {
       outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
       primary = "HEADLESS-1";
       secondary = "HEADLESS-2";
       tertiary = "HEADLESS-3";
       quaternary = "HEADLESS-3";  # Fallback to tertiary (headless has 3 virtual displays)
-    };
-    "nixos-m1" = {
-      outputs = [ "eDP-1" "HDMI-A-1" ];
-      primary = "eDP-1";
-      secondary = "HDMI-A-1";
-      tertiary = "HDMI-A-1";  # Fallback to secondary if no tertiary
-      quaternary = "HDMI-A-1"; # Fallback to secondary
-    };
-    "acer" = {
-      outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];
-      primary = "eDP-1";
-      secondary = "HDMI-A-1";
-      tertiary = "DP-1";  # USB-C/Thunderbolt display
-      quaternary = "DP-1"; # Fallback to tertiary
     };
     "thinkpad" = {
       outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];

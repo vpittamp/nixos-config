@@ -4,7 +4,6 @@ let
   # Primary profile used by all VSCode instances
   # This ensures consistent extension/settings across all activities
   primaryProfile = config.modules.tools.vscode.defaultProfile or "default";
-  isM1 = osConfig.networking.hostName or "" == "nixos-m1";
 
   # Chromium is only available on Linux
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
@@ -562,7 +561,7 @@ in
   config = {
     programs.vscode = {
       enable = true;
-      package = if isM1 then vscodeWithFlags else vscodeNoDesktop;
+      package = vscodeNoDesktop;
 
     # Allow extensions to be installed/updated manually or by VSCode
     # This is required when using profiles to avoid read-only filesystem conflicts

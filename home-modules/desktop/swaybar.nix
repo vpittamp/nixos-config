@@ -17,7 +17,7 @@ let
   };
 
   # Detect headless Sway configuration (Feature 046)
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "hetzner";
 
   # Top bar: Enhanced system status (Feature 052)
   # Uses Python-based status generator with D-Bus integration

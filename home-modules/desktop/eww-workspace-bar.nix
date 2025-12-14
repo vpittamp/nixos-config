@@ -3,7 +3,7 @@
 let
   cfg = config.programs.eww-workspace-bar;
   hostname = osConfig.networking.hostName or "";
-  isHeadless = hostname == "nixos-hetzner-sway";
+  isHeadless = hostname == "hetzner";
   isRyzen = hostname == "ryzen";
 
   # Feature 057: Import unified theme colors (Catppuccin Mocha)

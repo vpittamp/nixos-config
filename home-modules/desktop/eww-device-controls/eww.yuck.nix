@@ -6,7 +6,7 @@
 # - widgets/indicators/*.yuck.nix - Top bar indicator widgets
 # - widgets/sections/*.yuck.nix - Devices tab section widgets
 #
-{ config, lib, pkgs, mocha, isLaptop, isRyzen, isThinkPad, isM1, isHeadless, scriptsDir, ... }:
+{ config, lib, pkgs, mocha, isLaptop, isRyzen, isThinkPad, isHeadless, scriptsDir, ... }:
 
 let
   cfg = config.programs.eww-device-controls;

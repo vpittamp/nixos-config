@@ -8,57 +8,21 @@ let
   helpers = import ../lib/helpers.nix { inherit inputs self; };
 in
 {
-  # Hetzner Cloud Server with Sway (Feature 046)
+  # Hetzner Cloud Server with Sway
   # Headless Wayland with VNC remote access
-  # Build: sudo nixos-rebuild switch --flake .#hetzner-sway
-  hetzner-sway = helpers.mkSystem {
-    hostname = "nixos-hetzner-sway";
+  # Build: sudo nixos-rebuild switch --flake .#hetzner
+  hetzner = helpers.mkSystem {
+    hostname = "hetzner";
     system = "x86_64-linux";
     modules = [
       disko.nixosModules.disko
-      ../configurations/hetzner-sway.nix
+      ../configurations/hetzner.nix
 
-      # Home Manager integration with Sway-specific config
+      # Home Manager integration
       (helpers.mkHomeManagerConfig {
         system = "x86_64-linux";
         user = "vpittamp";
-        modules = [ ../home-modules/hetzner-sway.nix ];
-      })
-    ];
-  };
-
-  # M1 MacBook Pro (Apple Silicon)
-  # Native NixOS on Apple Silicon with Sway/Wayland
-  # Build: sudo nixos-rebuild switch --flake .#m1 --impure
-  m1 = helpers.mkSystem {
-    hostname = "nixos-m1";
-    system = "aarch64-linux";
-    modules = [
-      ../configurations/m1.nix
-
-      # Home Manager integration with M1-specific config
-      (helpers.mkHomeManagerConfig {
-        system = "aarch64-linux";
-        user = "vpittamp";
-        modules = [ ../home-modules/m1.nix ];
-      })
-    ];
-  };
-
-  # Acer Swift Go 16 (Intel Core Ultra + Intel Arc)
-  # Physical laptop with Sway/Wayland desktop
-  # Build: sudo nixos-rebuild switch --flake .#acer
-  acer = helpers.mkSystem {
-    hostname = "acer";
-    system = "x86_64-linux";
-    modules = [
-      ../configurations/acer.nix
-
-      # Home Manager integration with Acer-specific config
-      (helpers.mkHomeManagerConfig {
-        system = "x86_64-linux";
-        user = "vpittamp";
-        modules = [ ../home-modules/acer.nix ];
+        modules = [ ../home-modules/hetzner.nix ];
       })
     ];
   };
@@ -99,11 +63,15 @@ in
     ];
   };
 
-  # ARCHIVED CONFIGURATIONS:
+  # ARCHIVED/REMOVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)
   # - hetzner-mangowc.nix (MangoWC experimental compositor)
   # - hetzner-minimal.nix, hetzner-example.nix (nixos-anywhere templates)
   # - wsl.nix (WSL2 environment)
   # - vm-*.nix, kubevirt-*.nix (VM/KubeVirt deployments)
+  #
+  # The following have been removed (no longer in use):
+  # - acer.nix (Acer Swift Go 16 - replaced by thinkpad)
+  # - m1.nix (M1 MacBook Pro - Apple Silicon, no longer in use)
 }

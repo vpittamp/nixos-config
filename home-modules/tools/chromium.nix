@@ -1,8 +1,6 @@
 { config, pkgs, lib, ... }:
 
 let
-  # Detect if we're on M1 or Hetzner based on hostname
-  isM1 = config.networking.hostName or "" == "nixos-m1";
   # Use Nix package reference for 1Password browser support
   onePasswordBrowserSupport = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
   chromiumBin = "${pkgs.chromium}/bin/chromium";
@@ -28,10 +26,7 @@ in
     ];
     
     # Command line arguments for better performance and privacy
-    commandLineArgs = (if isM1 then [
-      # M1-specific: Force scaling to compensate for GDK_SCALE=2
-      "--force-device-scale-factor=0.75"
-    ] else []) ++ [
+    commandLineArgs = [
       # Disable KDE Wallet to prevent errors - use basic password store
       "--password-store=basic"
       

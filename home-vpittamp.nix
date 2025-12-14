@@ -39,7 +39,7 @@
   # programs.i3pm.enable = true;  # Old Python version - replaced by Deno rewrite
 
   # Feature 015: i3 project event listener daemon
-  # Managed by system service (Feature 037) - see configurations/m1.nix: services.i3ProjectDaemon.enable
+  # Managed by system service (Feature 037) - see configurations/thinkpad.nix: services.i3ProjectDaemon.enable
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
@@ -92,23 +92,16 @@
   # Hardware-adaptive device controls for bare metal NixOS machines
   programs.eww-device-controls.enable = true;
 
-  # Monitor configuration for M1, Hetzner, and Ryzen
+  # Monitor configuration for Hetzner and Ryzen
   # Passed to eww-monitoring-panel for correct display output
   # 4-tier system: primary (WS 1-2), secondary (WS 3-4), tertiary (WS 5-6), quaternary (WS 7+)
   _module.args.monitorConfig = {
-    "nixos-hetzner-sway" = {
+    "hetzner" = {
       primary = "HEADLESS-1";
       secondary = "HEADLESS-2";
       tertiary = "HEADLESS-3";
       quaternary = "HEADLESS-3";  # Fallback to tertiary
       outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
-    };
-    "nixos-m1" = {
-      primary = "eDP-1";
-      secondary = "HEADLESS-1";
-      tertiary = "HEADLESS-2";
-      quaternary = "HEADLESS-2";  # Fallback to tertiary
-      outputs = [ "eDP-1" "HEADLESS-1" "HEADLESS-2" ];
     };
     # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
     "ryzen" = {

@@ -5,11 +5,9 @@ let
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else "";
-  isM1 = hostname == "nixos-m1";
   # Match monitoring widget dimensions (450px width, 90% height)
-  # M1: 800px logical height * 0.9 = 720px
   # Hetzner: 1080px height * 0.9 = 972px
-  controlCenterHeight = if isM1 then 720 else 972;
+  controlCenterHeight = 972;
   controlCenterWidth = 450;
   arinAssets = builtins.path { path = ../../assets/swaync/arin; name = "swaync-arin-assets"; };
   dashboardAssets = builtins.path { path = ../../assets/swaync/dashboard/images; name = "swaync-dashboard-images"; };
@@ -46,16 +44,6 @@ let
         min = 5;
       };
     }
-  ] ++ lib.optionals isM1 [
-    {
-      name = "backlight#display-sidecar";
-      config = {
-        label = "Stage Manager Display";
-        device = "228600000.dsi.0";
-        min = 5;
-      };
-    }
-  ] ++ [
     {
       name = "backlight#keyboard";
       config = {

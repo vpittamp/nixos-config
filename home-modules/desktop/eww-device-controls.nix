@@ -29,13 +29,12 @@ let
 
   # Detect host type from hostname
   hostname = osConfig.networking.hostName or "";
-  isHeadless = hostname == "nixos-hetzner-sway";
+  isHeadless = hostname == "hetzner";
   isRyzen = hostname == "ryzen";
-  isThinkPad = hostname == "thinkpad" || hostname == "nixos-thinkpad";
-  isM1 = hostname == "m1" || hostname == "nixos-m1";
+  isThinkPad = hostname == "thinkpad";
 
   # Determine if this is a laptop (has battery)
-  isLaptop = isThinkPad || isM1;
+  isLaptop = isThinkPad;
 
   # Scripts paths
   scriptsDir = "${config.xdg.configHome}/eww/eww-device-controls/scripts";
@@ -177,7 +176,7 @@ in
       # Eww widget definitions
       "eww/eww-device-controls/eww.yuck".text = import ./eww-device-controls/eww.yuck.nix {
         inherit config lib pkgs mocha;
-        inherit isLaptop isRyzen isThinkPad isM1 isHeadless;
+        inherit isLaptop isRyzen isThinkPad isHeadless;
         inherit scriptsDir;
       };
 

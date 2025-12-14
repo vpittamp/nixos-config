@@ -5,20 +5,14 @@ let
     if osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else null;
-  isM1 = hostName == "nixos-m1";
   sessionConfig = {
-    # Don't set GDK_SCALE - KDE Wayland already handles 200% scaling
-    # Setting both causes double-scaling for Electron apps
-    # GDK_DPI_SCALE = if isM1 then "0.5" else "1.0";  # Not needed with Wayland
-    # GDK_SCALE = if isM1 then "2" else "1";  # Causes double-scaling
-
-    # Qt settings for KDE
+    # Qt settings for Wayland
     QT_AUTO_SCREEN_SCALE_FACTOR = "1"; # Let Qt detect from Wayland
     QT_ENABLE_HIGHDPI_SCALING = "1"; # Enable HiDPI support
     PLASMA_USE_QT_SCALING = "1"; # Let Plasma handle Qt scaling
 
     # Cursor size
-    XCURSOR_SIZE = if isM1 then "48" else "24"; # 48 for 200% scaling
+    XCURSOR_SIZE = "24";
 
     # UV (Python package manager) configuration for NixOS
     # Use system Python - managed downloads won't work on NixOS due to dynamic linking
@@ -44,7 +38,7 @@ in
     # Desktop configurations
     ../desktop/dunst.nix       # Notification daemon for i3
     ../desktop/i3-window-rules.nix  # Auto-generate i3 window rules from app-registry (Feature 035)
-    # Event-driven daemon now managed by system service (Feature 037) - see configurations/m1.nix
+    # Event-driven daemon now managed by system service (Feature 037) - see configurations/thinkpad.nix
     ../tools/i3-project-monitor.nix  # Terminal monitoring tool for i3 project system (Feature 017)
     ../tools/i3-project-test.nix     # Test framework for i3 project system (Feature 018)
     ../tools/window-env.nix          # Helper to query window PIDs and environment variables

@@ -1,8 +1,6 @@
 { config, pkgs, lib, osConfig, ... }:
 
 let
-  isM1 = osConfig.networking.hostName or "" == "nixos-m1";
-
   # Import centralized PWA site definitions
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
 
@@ -199,24 +197,6 @@ in
           "widget.use-xdg-desktop-portal.mime-handler" = 1;  # Use XDG portal for mime handling
           "media.ffmpeg.vaapi.enabled" = true;
           "media.hardware-video-decoding.force-enabled" = true;
-        }
-        // lib.optionalAttrs (isM1) {
-          # M1/Asahi GPU driver workarounds - prevent PWA crashes
-          # The mesa/asahi driver (as of 25.3.0.0) has instability with WebRender compositor
-          # Crash signature: FEATURE_FAILURE_WEBRENDER_COMPOSITOR_DISABLED
-          "gfx.webrender.compositor" = false;  # Disable WebRender compositor
-          "gfx.webrender.compositor.force-enabled" = false;  # Don't force compositor
-          "gfx.webrender.software" = true;  # Use software WebRender backend
-
-          # Reduce GPU process crashes
-          "layers.gpu-process.enabled" = false;  # Disable GPU process
-          "layers.acceleration.force-enabled" = lib.mkForce false;  # Match software rendering mode
-          "gfx.canvas.azure.backends" = "skia";  # Use Skia backend instead of Cairo
-
-          # Disable hardware video decoding on M1 (override above settings)
-          "media.hardware-video-decoding.force-enabled" = lib.mkForce false;
-          "media.ffmpeg.vaapi.enabled" = lib.mkForce false;
-
         }
         // {
           # Developer settings

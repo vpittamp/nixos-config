@@ -30,8 +30,7 @@ in
   # REMOVED: vpittamp standalone configuration
   # Rationale: This was redundant with nixosConfigurations.*.home-manager
   # For NixOS systems, use:
-  #   sudo nixos-rebuild switch --flake .#hetzner-sway
-  #   sudo nixos-rebuild switch --flake .#m1
+  #   sudo nixos-rebuild switch --flake .#hetzner
   #
   # This eliminates duplication and ensures system/user config consistency
 }

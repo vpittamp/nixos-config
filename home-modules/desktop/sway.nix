@@ -99,7 +99,7 @@
 
 let
   # Detect headless Sway configuration (Feature 046)
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "hetzner";
   # Detect Ryzen multi-monitor desktop (Feature 001 extension for 4-tier system)
   isRyzen = osConfig != null && (osConfig.networking.hostName or "") == "ryzen";
   # Check if virtual outputs are supported (headless mode only)

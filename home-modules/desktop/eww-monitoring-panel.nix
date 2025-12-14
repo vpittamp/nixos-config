@@ -6,7 +6,7 @@ let
   cfg = config.programs.eww-monitoring-panel;
 
   # Get hostname for monitor config lookup
-  hostname = osConfig.networking.hostName or "nixos-hetzner-sway";
+  hostname = osConfig.networking.hostName or "hetzner";
 
   # Get monitor configuration for this host (with fallback)
   hostMonitors = monitorConfig.${hostname} or {
@@ -8143,15 +8143,15 @@ in
 
       /* Panel Body - Compact */
       .panel-body {
-        background-color: rgba(30, 30, 46, 0.15);
+        background-color: transparent;  /* Transparent to allow panel_opacity slider to work */
         padding: 4px;
         min-height: 0;  /* Enable proper flex shrinking for scrolling */
         min-width: 0;  /* GTK fix: prevent overflow */
       }
 
-      /* View container - transparent since revealers properly hide content */
+      /* View container - transparent to allow panel_opacity slider to work */
       .view-container {
-        background-color: ${mocha.base};
+        background-color: transparent;
       }
 
       .content-container {

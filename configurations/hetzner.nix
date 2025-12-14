@@ -36,7 +36,7 @@
   ];
 
   # System identification
-  networking.hostName = "nixos-hetzner-sway";
+  networking.hostName = "hetzner";
 
   # Boot configuration for Hetzner - GRUB for nixos-anywhere compatibility
   boot.loader.grub = {
@@ -295,7 +295,7 @@
     enable = true;
     destinationAddress = "100.122.146.117";
     destinationPort = 4010;
-    sessionName = "hetzner-sway";
+    sessionName = "hetzner";
   };
 
   # Ensure user is in required groups

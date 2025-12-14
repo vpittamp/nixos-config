@@ -12,12 +12,6 @@
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
 
-    # Platform support
-    nixos-apple-silicon = {
-      url = "github:tpwrules/nixos-apple-silicon";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # Home Manager
     home-manager = {
       url = "github:nix-community/home-manager/master";

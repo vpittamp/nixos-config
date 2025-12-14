@@ -56,7 +56,7 @@ let
           echo ""
           echo "[[snippets]]"
           echo "name = \"rebuild nixos\""
-          echo "snippet = \"cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner-sway\""
+          echo "snippet = \"cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner\""
           echo "description = \"Rebuild NixOS configuration\""
         } > "$SNIPPETS_FILE"
         echo "✓ Created snippets file with examples: $SNIPPETS_FILE"

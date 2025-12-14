@@ -29,7 +29,7 @@ let
 
   # Detect host type from hostname
   hostname = osConfig.networking.hostName or "";
-  isHeadless = hostname == "nixos-hetzner-sway";
+  isHeadless = hostname == "hetzner";
   isRyzen = hostname == "ryzen";
 
   # Multi-monitor output configuration

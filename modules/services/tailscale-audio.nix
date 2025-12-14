@@ -26,7 +26,7 @@ in {
 
     sessionName = mkOption {
       type = types.str;
-      default = "hetzner-sway";
+      default = "hetzner";
       description = "Friendly name advertised in the RTP session metadata";
     };
 

@@ -27,8 +27,9 @@
       shellHook = ''
         echo "NixOS Development Shell"
         echo "Available configurations:"
-        echo "  - hetzner-sway: Hetzner Cloud with Sway (x86_64)"
-        echo "  - m1: Apple Silicon (aarch64)"
+        echo "  - hetzner: Hetzner Cloud with Sway (x86_64)"
+        echo "  - thinkpad: Lenovo ThinkPad (x86_64)"
+        echo "  - ryzen: AMD Ryzen Desktop (x86_64)"
         echo ""
         echo "Build with: nixos-rebuild switch --flake .#<config>"
         echo "Check flake: nix flake check"

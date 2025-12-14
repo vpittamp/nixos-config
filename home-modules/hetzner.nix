@@ -90,7 +90,7 @@ in
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
-    # NOTE: i3-project-daemon runs as system service (configurations/hetzner-sway.nix line 126)
+    # NOTE: i3-project-daemon runs as system service (configurations/hetzner.nix line 126)
     # Home-manager module removed to prevent Python environment conflicts
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
@@ -146,7 +146,7 @@ in
   };
 
   # Feature 015: i3 project event listener daemon
-  # NOTE: Runs as system service (configurations/hetzner-sway.nix: services.i3ProjectDaemon.enable)
+  # NOTE: Runs as system service (configurations/hetzner.nix: services.i3ProjectDaemon.enable)
   # Home-manager module removed to prevent Python environment conflicts
 
   # Feature 047: Sway Dynamic Configuration Management
