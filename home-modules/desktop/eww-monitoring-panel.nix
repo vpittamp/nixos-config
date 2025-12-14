@@ -3683,21 +3683,23 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses stack widget for proper tab switching (overlay had visibility issues)
+      ;; Uses explicit visibility conditions instead of stack widget for reliable tab switching
+      ;; NOTE: eww 0.6.0 has a bug where stack selection index resets on window close/reopen
+      ;; (GitHub issue #1192, fixed in commit 3673639 but not released yet)
+      ;; Using :visible conditions ensures only one tab shows at a time reliably
       ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
       (defwidget panel-body []
-        (stack
-          :selected current_view_index
-          :transition "none"
+        (box
+          :class "panel-body"
+          :orientation "v"
           :vexpand true
-          :same-size false
-          (box :class "view-container" :vexpand true (windows-view))
-          (box :class "view-container" :vexpand true (projects-view))
-          (box :class "view-container" :vexpand true (apps-view))
-          (box :class "view-container" :vexpand true (health-view))
-          (box :class "view-container" :vexpand true (events-view))
-          (box :class "view-container" :vexpand true (traces-view))
-          (box :class "view-container" :vexpand true (devices-view))))
+          (revealer :reveal {current_view_index == 0} :transition "none" (box :class "view-container" :vexpand true (windows-view)))
+          (revealer :reveal {current_view_index == 1} :transition "none" (box :class "view-container" :vexpand true (projects-view)))
+          (revealer :reveal {current_view_index == 2} :transition "none" (box :class "view-container" :vexpand true (apps-view)))
+          (revealer :reveal {current_view_index == 3} :transition "none" (box :class "view-container" :vexpand true (health-view)))
+          (revealer :reveal {current_view_index == 4} :transition "none" (box :class "view-container" :vexpand true (events-view)))
+          (revealer :reveal {current_view_index == 5} :transition "none" (box :class "view-container" :vexpand true (traces-view)))
+          (revealer :reveal {current_view_index == 6} :transition "none" (box :class "view-container" :vexpand true (devices-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
