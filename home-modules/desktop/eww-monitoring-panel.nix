@@ -3688,25 +3688,19 @@ in
                     :class {"workspace-pill" + (ws.focused ? " focused" : "") + (ws.urgent ? " urgent" : "")}
                     :text "''${ws.name}")))))))
 
-      ;; Panel body with multi-view container using stack widget
-      ;; NOTE: eww 0.6.0 has a bug where stack selection index resets on window close/reopen
-      ;; (GitHub issue #1192, fixed in commit 3673639 but not released yet)
-      ;; Workaround: toggle script forces re-sync of current_view_index after window open
-      ;; Additional fix: explicit :visible on each child to prevent bleed-through
+      ;; Panel body - simple conditional visibility (no stack widget due to eww 0.6.0 bugs)
       ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
       (defwidget panel-body []
-        (stack
-          :selected current_view_index
-          :transition "none"
+        (box
+          :class "panel-body"
           :vexpand true
-          :same-size false
-          (box :class "view-container" :visible {current_view_index == 0} :vexpand true (windows-view))
-          (box :class "view-container" :visible {current_view_index == 1} :vexpand true (projects-view))
-          (box :class "view-container" :visible {current_view_index == 2} :vexpand true (apps-view))
-          (box :class "view-container" :visible {current_view_index == 3} :vexpand true (health-view))
-          (box :class "view-container" :visible {current_view_index == 4} :vexpand true (events-view))
-          (box :class "view-container" :visible {current_view_index == 5} :vexpand true (traces-view))
-          (box :class "view-container" :visible {current_view_index == 6} :vexpand true (devices-view))))
+          (box :visible {current_view_index == 0} :vexpand true (windows-view))
+          (box :visible {current_view_index == 1} :vexpand true (projects-view))
+          (box :visible {current_view_index == 2} :vexpand true (apps-view))
+          (box :visible {current_view_index == 3} :vexpand true (health-view))
+          (box :visible {current_view_index == 4} :vexpand true (events-view))
+          (box :visible {current_view_index == 5} :vexpand true (traces-view))
+          (box :visible {current_view_index == 6} :vexpand true (devices-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
