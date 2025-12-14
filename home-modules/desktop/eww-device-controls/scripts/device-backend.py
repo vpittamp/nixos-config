@@ -359,15 +359,19 @@ def query_brightness() -> Optional[BrightnessState]:
     display_brightness = 50
 
     try:
-        # Get display brightness
+        # Get display brightness using machine-readable format
+        # Format: device,class,current,percent,max
         result = subprocess.run(
-            ["brightnessctl", "-d", display_device, "-P", "get"],
+            ["brightnessctl", "-d", display_device, "-m"],
             capture_output=True,
             text=True,
             timeout=5
         )
         if result.returncode == 0:
-            display_brightness = int(result.stdout.strip().replace("%", ""))
+            parts = result.stdout.strip().split(",")
+            if len(parts) >= 4:
+                # Column 4 is percentage like "42%"
+                display_brightness = int(parts[3].replace("%", ""))
     except Exception:
         pass
 
@@ -375,13 +379,15 @@ def query_brightness() -> Optional[BrightnessState]:
     if keyboard_device:
         try:
             result = subprocess.run(
-                ["brightnessctl", "-d", keyboard_device, "-P", "get"],
+                ["brightnessctl", "-d", keyboard_device, "-m"],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
             if result.returncode == 0:
-                keyboard_brightness = int(result.stdout.strip().replace("%", ""))
+                parts = result.stdout.strip().split(",")
+                if len(parts) >= 4:
+                    keyboard_brightness = int(parts[3].replace("%", ""))
         except Exception:
             pass
 
