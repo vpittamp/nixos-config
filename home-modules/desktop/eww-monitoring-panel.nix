@@ -12575,7 +12575,10 @@ in
       Unit = {
         Description = "Eww Monitoring Panel for Window/Project State";
         Documentation = "file:///etc/nixos/specs/085-sway-monitoring-widget/quickstart.md";
-        After = [ "graphical-session.target" ];
+        # Feature 117: Depend on i3-project-daemon for IPC connectivity
+        # Without this, deflisten/defpoll scripts fail on startup
+        After = [ "graphical-session.target" "i3-project-daemon.service" ];
+        Wants = [ "i3-project-daemon.service" ];
         PartOf = [ "graphical-session.target" ];
       };
 
