@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-# IPC socket path (system service)
-SOCKET_PATH="/run/i3-project-daemon/ipc.sock"
+# IPC socket path - Feature 117: User socket only (daemon runs as user service)
+SOCKET_PATH="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
 
 # Usage information
 usage() {

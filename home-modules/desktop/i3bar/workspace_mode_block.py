@@ -15,8 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-# Daemon socket path (system service socket)
-DAEMON_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
+# Feature 117: Daemon socket path - user service at XDG_RUNTIME_DIR
+import os
+_runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+DAEMON_SOCKET = Path(f"{_runtime_dir}/i3-project-daemon/ipc.sock")
 
 # Catppuccin Mocha colors
 COLOR_GREEN = "#a6e3a1"  # Active mode
@@ -26,14 +28,16 @@ COLOR_DIM = "#6c7086"    # Inactive mode
 async def main():
     """Subscribe to daemon events and output workspace mode state."""
 
-    if not DAEMON_SOCKET.exists():
+    # Feature 117: User socket only (daemon runs as user service)
+    socket_path = DAEMON_SOCKET
+    if not socket_path.exists():
         # Daemon not running - output empty block and exit
         print(json.dumps({"full_text": "", "short_text": ""}))
         sys.stdout.flush()
         return
 
     try:
-        reader, writer = await asyncio.open_unix_connection(str(DAEMON_SOCKET))
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
     except Exception:
         # Connection failed - output empty block and exit
         print(json.dumps({"full_text": "", "short_text": ""}))

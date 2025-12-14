@@ -44,9 +44,9 @@ EOF
   };
 
   # Launcher wrapper script (bash)
-  # Feature 037: Socket path for system service daemon
-  # Single source of truth - matches modules/services/i3-project-daemon.nix
-  daemonSocketPath = "/run/i3-project-daemon/ipc.sock";
+  # Feature 117: Socket path for user service daemon
+  # User socket at XDG_RUNTIME_DIR with fallback to system socket
+  daemonSocketPath = "\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock";
 
   wrapper-script = pkgs.writeScriptBin "app-launcher-wrapper" (
     let

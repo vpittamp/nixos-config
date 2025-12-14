@@ -368,7 +368,8 @@ notify_launch() {
         }')
 
     # Send to daemon via Unix socket
-    local socket="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    local socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
     local response
 
     if [[ ! -S "$socket" ]]; then

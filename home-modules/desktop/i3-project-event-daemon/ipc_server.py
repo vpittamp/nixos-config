@@ -159,8 +159,9 @@ class IPCServer:
                 self._handle_client, sock=sock  # type: ignore
             )
         else:
-            # Create new socket
-            socket_path = Path.home() / ".cache" / "i3-project-daemon" / "ipc.sock"
+            # Feature 117: Create new socket at XDG_RUNTIME_DIR (user service)
+            runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+            socket_path = Path(runtime_dir) / "i3-project-daemon" / "ipc.sock"
             socket_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Remove old socket if it exists

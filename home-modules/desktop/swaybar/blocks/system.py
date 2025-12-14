@@ -293,7 +293,10 @@ def check_daemon_health() -> Optional[tuple]:
     Returns:
         Tuple of (is_healthy, response_time_ms) or None on error
     """
-    socket_path = "/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    import os
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    socket_path = f"{runtime_dir}/i3-project-daemon/ipc.sock"
 
     try:
         # Create ping request

@@ -17,7 +17,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
-    ../modules/services/i3-project-daemon.nix
+    # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix
     ../modules/services/sway-tree-monitor.nix
 
@@ -124,12 +124,8 @@
     "f /var/lib/systemd/linger/vpittamp 0644 root root - -"
   ];
 
-  # i3 Project Daemon (Feature 037) - System service for cross-namespace access
-  services.i3ProjectDaemon = {
-    enable = true;
-    user = "vpittamp";
-    logLevel = "DEBUG";  # Temporary for testing
-  };
+  # Feature 117: i3 Project Daemon now runs as home-manager user service
+  # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
   # Sway Tree Diff Monitor (Feature 064) - Real-time window state monitoring
   services.sway-tree-monitor = {

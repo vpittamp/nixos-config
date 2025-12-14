@@ -22,7 +22,8 @@
     # ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
 
     # Project management (works with both i3 and Sway)
-    # Feature 015: Event-driven daemon - now managed by system service (Feature 037)
+    # Feature 117: Event-driven daemon - now user service (was system service in Feature 037)
+    ./home-modules/services/i3-project-daemon.nix  # Feature 117: User-level daemon service
     ./home-modules/tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./home-modules/tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
 
@@ -38,8 +39,9 @@
   # Feature 019: Enable i3pm CLI/TUI tool (unified project management) - DISABLED for Feature 027
   # programs.i3pm.enable = true;  # Old Python version - replaced by Deno rewrite
 
-  # Feature 015: i3 project event listener daemon
-  # Managed by system service (Feature 037) - see configurations/thinkpad.nix: services.i3ProjectDaemon.enable
+  # Feature 117: i3 project event listener daemon (user service)
+  # Converted from system service (Feature 037) to user service for better session integration
+  programs.i3-project-daemon.enable = true;
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''

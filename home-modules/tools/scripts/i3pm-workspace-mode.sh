@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOCK="/run/i3-project-daemon/ipc.sock"
+# Feature 117: User socket only (daemon runs as user service)
+SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
 workspace_visual="@workspace_visual_bin@"
 socat_bin="@socat@"
 jq_bin="@jq@"

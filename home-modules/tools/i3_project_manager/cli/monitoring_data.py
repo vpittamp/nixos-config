@@ -2517,7 +2517,10 @@ async def query_traces_data() -> Dict[str, Any]:
         Dict with status, traces list, and metadata
     """
     current_timestamp = time.time()
-    socket_path = os.environ.get("I3PM_DAEMON_SOCKET", "/run/i3-project-daemon/ipc.sock")
+    # Feature 117: User socket only (daemon runs as user service)
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    default_socket = f"{runtime_dir}/i3-project-daemon/ipc.sock"
+    socket_path = os.environ.get("I3PM_DAEMON_SOCKET", default_socket)
 
     try:
         logging.info("Feature 101: Starting traces query")

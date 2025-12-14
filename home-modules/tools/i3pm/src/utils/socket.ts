@@ -6,10 +6,11 @@
 
 /**
  * Get the daemon socket path from environment
+ * Feature 117: User socket only (daemon runs as user service)
  */
 export function getSocketPath(): string {
-  // Feature 037: System service socket location (not user runtime dir)
-  return `/run/i3-project-daemon/ipc.sock`;
+  const runtimeDir = Deno.env.get("XDG_RUNTIME_DIR") ?? `/run/user/${Deno.uid()}`;
+  return `${runtimeDir}/i3-project-daemon/ipc.sock`;
 }
 
 /**

@@ -21,7 +21,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
-    ../modules/services/i3-project-daemon.nix  # Feature 037: System service for cross-namespace /proc access
+    # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
     ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
 
@@ -144,21 +144,10 @@
     "f /var/lib/systemd/linger/vpittamp 0644 root root - -"
   ];
 
-  # i3 Project Daemon (Feature 037) - System service for cross-namespace access
-  # NOTE: Daemon is Sway-compatible (Feature 045), no code changes needed
-  services.i3ProjectDaemon = {
-    enable = true;
-    user = "vpittamp";
-    logLevel = "DEBUG";  # Temporary for testing
-  };
+  # Feature 117: i3 Project Daemon now runs as home-manager user service
+  # No systemd dependency needed - user service binds to graphical-session.target
 
-  # Fix intermittent home-manager activation failures during nixos-rebuild
-  # The checkLinkTargets phase occasionally fails when services are being
-  # stopped/restarted concurrently (same issue as M1 config).
-  # Fix: Ensure home-manager waits for i3-project-daemon to stabilize
   systemd.services.home-manager-vpittamp = {
-    wants = [ "i3-project-daemon.socket" ];
-    after = [ "i3-project-daemon.socket" ];
     serviceConfig = {
       Restart = "on-failure";
       RestartSec = "2s";

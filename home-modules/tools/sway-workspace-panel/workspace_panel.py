@@ -28,8 +28,10 @@ except ImportError:
 # Feature 058: Global pending workspace state (thread-safe)
 _pending_workspace_lock = threading.Lock()
 _pending_workspace_state: Optional[Dict[str, Any]] = None
-# Socket path matches systemd socket unit configuration
-_daemon_ipc_socket = Path("/run/i3-project-daemon/ipc.sock")
+# Feature 117: Socket path - user service at XDG_RUNTIME_DIR
+import os
+_runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+_daemon_ipc_socket = Path(f"{_runtime_dir}/i3-project-daemon/ipc.sock")
 
 
 def read_i3pm_app_name(pid: Optional[int]) -> Optional[str]:

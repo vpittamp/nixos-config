@@ -43,7 +43,7 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/i3-project-daemon.nix
+    # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
 
     # Bare metal optimizations (KVM, Podman, printing, TPM, etc.)
@@ -91,12 +91,8 @@ in
     enableGaming = false;
   };
 
-  # i3 Project Management Daemon
-  services.i3ProjectDaemon = {
-    enable = true;
-    user = "vpittamp";
-    logLevel = "DEBUG";
-  };
+  # Feature 117: i3 Project Daemon now runs as home-manager user service
+  # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
@@ -163,10 +159,9 @@ in
     "i915.force_probe=*"          # Force probe for newer Intel GPUs if needed
   ];
 
-  # Fix intermittent home-manager activation failures during nixos-rebuild
+  # Feature 117: i3-project-daemon now runs as home-manager user service
+  # No systemd dependency needed - user service binds to graphical-session.target
   systemd.services.home-manager-vpittamp = {
-    wants = [ "i3-project-daemon.socket" ];
-    after = [ "i3-project-daemon.socket" ];
     serviceConfig = {
       Restart = "on-failure";
       RestartSec = "2s";

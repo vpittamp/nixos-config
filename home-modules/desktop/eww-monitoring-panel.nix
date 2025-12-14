@@ -93,8 +93,8 @@ let
     # Set PYTHONPATH to tools directory for i3_project_manager imports
     export PYTHONPATH="${../tools}"
 
-    # Set daemon socket path (system service location, not user service)
-    export I3PM_DAEMON_SOCKET="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: Set daemon socket path (user service at XDG_RUNTIME_DIR)
+    export I3PM_DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
 
     # Use Python with i3ipc package included
     # Pass through all arguments (e.g., --listen flag)
@@ -2777,7 +2777,8 @@ print(json.dumps(result))
     fi
 
     # Query daemon for full trace data in timeline format
-    SOCKET="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
     if [[ ! -S "$SOCKET" ]]; then
       echo "Daemon not running" >&2
       exit 1
@@ -2822,7 +2823,8 @@ print(json.dumps(result))
     $EWW_CMD update env_error=""
 
     # Query daemon for environment variables
-    SOCKET="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
     if [[ ! -S "$SOCKET" ]]; then
       $EWW_CMD update env_loading=false
       $EWW_CMD update env_error="Daemon not running"
@@ -2909,7 +2911,8 @@ print(json.dumps(result))
     $EWW_CMD update trace_events="[]"
 
     # Query daemon for trace events
-    SOCKET="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
     if [[ ! -S "$SOCKET" ]]; then
       $EWW_CMD update trace_events_loading=false
       $EWW_CMD update trace_events='[{"time_display":"Error","event_type":"error","description":"Daemon not running"}]'
@@ -3004,7 +3007,8 @@ print(json.dumps(result))
     $EWW_CMD update template_dropdown_open=false
 
     # Query daemon to start trace from template
-    SOCKET="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
     if [[ ! -S "$SOCKET" ]]; then
       ${pkgs.libnotify}/bin/notify-send -u critical "Trace Error" "i3pm daemon not running"
       exit 1

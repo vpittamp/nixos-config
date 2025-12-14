@@ -32,10 +32,13 @@ class DaemonClient:
         Initialize daemon client.
 
         Args:
-            socket_path: Path to daemon socket (default: /run/i3-project-daemon/ipc.sock for system service)
+            socket_path: Path to daemon socket (default: $XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock)
         """
         if socket_path is None:
-            socket_path = Path("/run/i3-project-daemon/ipc.sock")
+            # Feature 117: User socket only (daemon runs as user service)
+            import os
+            runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+            socket_path = Path(f"{runtime_dir}/i3-project-daemon/ipc.sock")
         self.socket_path = socket_path
         self.request_id = 0
 

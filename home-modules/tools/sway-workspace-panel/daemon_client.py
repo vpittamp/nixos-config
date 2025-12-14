@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-# Socket path matches i3pm daemon configuration
-DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
+# Feature 117: Socket path - user service at XDG_RUNTIME_DIR
+import os
+_runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+DAEMON_IPC_SOCKET = Path(f"{_runtime_dir}/i3-project-daemon/ipc.sock")
 
 
 class DaemonIPCError(Exception):
@@ -37,7 +39,8 @@ class DaemonClient:
         Args:
             socket_path: Path to daemon IPC socket (defaults to DAEMON_IPC_SOCKET)
         """
-        self.socket_path = socket_path or DAEMON_IPC_SOCKET
+        # Feature 117: User socket only (daemon runs as user service)
+        self.socket_path = socket_path if socket_path is not None else DAEMON_IPC_SOCKET
         self._request_id = 0
 
     def _next_request_id(self) -> int:

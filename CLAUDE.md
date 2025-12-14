@@ -1287,6 +1287,8 @@ gh auth status               # Auto-uses 1Password token
 - N/A (configuration management, no data storage) (115-enable-advanced-hardware-features)
 - Nix (flakes), Python 3.11+ (backend scripts), Yuck/SCSS (Eww widgets) + Eww 0.4+ (GTK3 widgets), PipeWire/WirePlumber (audio), BlueZ (Bluetooth), UPower (battery), brightnessctl (brightness), TLP (power profiles), lm_sensors (thermals) (116-use-eww-device)
 - N/A (stateless - queries system state in real-time) (116-use-eww-device)
+- Nix (NixOS 25.11), Python 3.11+ (daemon), Bash 5.0+ (scripts), TypeScript/Deno 1.40+ (CLI) + home-manager (user service definition), systemd (socket activation), i3ipc.aio (Sway IPC), Pydantic (data validation) (117-convert-project-daemon)
+- Socket file at `$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock`, JSON config files in `~/.config/i3/` (117-convert-project-daemon)
 
 ## Recent Changes
 - 116-use-eww-device: Unified device control system with hardware-adaptive detection, top bar expandable panels (volume/brightness/bluetooth/battery), monitoring panel Devices tab (Alt+7), Python device-backend.py for state queries, Bash control scripts (volume-control.sh, brightness-control.sh, bluetooth-control.sh, power-profile-control.sh), Catppuccin Mocha styling, deprecates eww-quick-panel

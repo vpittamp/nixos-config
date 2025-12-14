@@ -22,6 +22,8 @@
     ./desktop/sway-config-manager.nix
 
     # Project management (works with Sway via IPC)
+    # Feature 117: i3-project-daemon now runs as user service
+    ./services/i3-project-daemon.nix
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
     ./tools/i3pm-workspace-mode-wrapper.nix
@@ -44,6 +46,12 @@
   home.file.".local/bin/i3-msg" = {
     source = "${pkgs.sway}/bin/swaymsg";
     executable = true;
+  };
+
+  # Feature 117: i3 project event listener daemon (user service)
+  programs.i3-project-daemon = {
+    enable = true;
+    logLevel = "DEBUG";  # Temporary for testing
   };
 
   # Sway Dynamic Configuration Management

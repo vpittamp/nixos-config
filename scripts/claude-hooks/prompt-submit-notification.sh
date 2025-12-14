@@ -77,7 +77,8 @@ if [ -n "$WINDOW_ID" ]; then
 EOF
 
     # Also notify daemon via IPC (for fast update, but file is source of truth)
-    IPC_SOCKET="/run/i3-project-daemon/ipc.sock"
+    # Feature 117: User socket only (daemon runs as user service)
+    IPC_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
     if [ -S "$IPC_SOCKET" ]; then
         /etc/nixos/scripts/claude-hooks/badge-ipc-client.sh create "$WINDOW_ID" "claude-code" --state working >/dev/null 2>&1 || true
     fi
