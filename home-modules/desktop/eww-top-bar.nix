@@ -231,7 +231,9 @@ in
         Description = "Eww top bar with system metrics";
         Documentation = "https://github.com/elkowar/eww";
         PartOf = [ "sway-session.target" ];
-        After = [ "sway-session.target" ];
+        # Feature 117: Depend on i3-project-daemon for health checks
+        After = [ "sway-session.target" "i3-project-daemon.service" ];
+        Wants = [ "i3-project-daemon.service" ];
       };
 
       Service = {

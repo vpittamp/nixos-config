@@ -1111,7 +1111,9 @@ in
     systemd.user.services.eww-workspace-bar = {
       Unit = {
         Description = "Eww workspace bar";
-        After = [ "graphical-session.target" "sway-session.target" ];
+        # Feature 117: Depend on i3-project-daemon for workspace-preview-daemon IPC
+        After = [ "graphical-session.target" "sway-session.target" "i3-project-daemon.service" ];
+        Wants = [ "i3-project-daemon.service" ];
         PartOf = [ "sway-session.target" ];
       };
       Service = {
