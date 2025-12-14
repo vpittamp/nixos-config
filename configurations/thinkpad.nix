@@ -51,6 +51,9 @@ in
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
+
+    # Sunshine game streaming (Intel Quick Sync hardware encoding)
+    ../modules/desktop/sunshine.nix
   ];
 
   # Firefox 146+ overlay for native Wayland fractional scaling support
@@ -89,6 +92,23 @@ in
 
     # No gaming on laptop (battery life)
     enableGaming = false;
+  };
+
+  # ========== SUNSHINE REMOTE DESKTOP (Quick Sync) ==========
+  # Hardware-accelerated game streaming with Intel Arc Quick Sync encoder
+  # Client: Moonlight (available on all platforms)
+  # Access: moonlight://<tailscale-ip>
+  services.sunshine-streaming = {
+    enable = true;
+    hardwareType = "intel";
+    captureMethod = "kms";  # Direct KMS capture for lowest latency
+    tailscaleOnly = true;   # Only allow via Tailscale for security
+    extraSettings = {
+      # Intel Arc supports HEVC but not AV1 in Sunshine yet
+      av1_mode = 0;
+      # Moderate bitrate for laptop (balance quality/bandwidth)
+      bitrate = 30000;
+    };
   };
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service

@@ -28,6 +28,7 @@
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
     ../modules/desktop/wayvnc.nix     # VNC server for headless Wayland (from Feature 045)
+    ../modules/desktop/sunshine.nix   # Sunshine streaming (software encoding for headless)
     ../modules/desktop/firefox-1password.nix  # Firefox with 1Password (consolidated, with PWA support)
 
     # Services
@@ -61,8 +62,30 @@
   # Enable Sway compositor
   programs.sway.enable = true;
 
-  # Enable wayvnc VNC server for remote access
+  # Enable wayvnc VNC server for remote access (fallback, lower quality)
   services.wayvnc.enable = true;
+
+  # ========== SUNSHINE REMOTE DESKTOP (Software Encoding) ==========
+  # Software-encoded streaming for headless server (no GPU)
+  # Better than VNC due to video codec compression, but higher CPU usage
+  # Client: Moonlight (available on all platforms)
+  # Access: moonlight://<tailscale-ip>
+  services.sunshine-streaming = {
+    enable = true;
+    hardwareType = "software";
+    captureMethod = "wlroots";  # Use wlroots screencopy for headless Sway
+    tailscaleOnly = true;       # Only allow via Tailscale for security
+    extraSettings = {
+      # Software encoding - optimize for low latency
+      sw_preset = "superfast";
+      sw_tune = "zerolatency";
+      # Lower bitrate for cloud server bandwidth
+      bitrate = 15000;
+      # Limit to 1080p for software encoding performance
+      resolutions = "[1920x1080]";
+      fps = "[30, 60]";
+    };
+  };
 
   # Enable dotool for keyboard/mouse automation (no daemon required)
   # Simpler and faster than ydotool - uses direct uinput access

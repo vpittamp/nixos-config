@@ -143,4 +143,11 @@
       WantedBy = [ "sway-session.target" ];
     };
   };
+
+  # Sunshine NVENC drop-in configuration
+  # Adds NVIDIA library path for CUDA/NVENC hardware encoding
+  xdg.configFile."systemd/user/sunshine.service.d/nvidia.conf".text = ''
+    [Service]
+    Environment="LD_LIBRARY_PATH=/run/opengl-driver/lib"
+  '';
 }
