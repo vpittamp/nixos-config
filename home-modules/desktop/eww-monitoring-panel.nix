@@ -4387,8 +4387,7 @@ in
             :space-evenly false
             :vexpand true
             ;; Feature 094 US3: Projects tab header with New Project button (T066)
-            ;; Feature 099 T016: Added Refresh button
-            ;; Feature 099 UX: Added filter, expand/collapse all
+            ;; Feature 099 UX: Added filter, expand/collapse all (icons only)
             (box
               :class "projects-header-container"
               :orientation "v"
@@ -4404,24 +4403,19 @@ in
                   :halign "start"
                   :hexpand true
                   :text "Projects")
-                ;; UX3: Expand/Collapse All toggle
+                ;; Expand/Collapse All toggle (icon only)
                 (button
-                  :class "expand-all-button"
+                  :class "header-icon-button expand-collapse-btn"
                   :onclick "${toggleExpandAllScript}/bin/toggle-expand-all-projects"
-                  :tooltip {projects_all_expanded ? "Collapse all repositories" : "Expand all repositories"}
-                  {projects_all_expanded ? "Collapse" : "Expand"})
-                ;; Feature 099 T016: Refresh button
+                  :tooltip {projects_all_expanded ? "Collapse all" : "Expand all"}
+                  {projects_all_expanded ? "󰅀" : "󰅂"})
+                ;; New project button (icon only)
                 (button
-                  :class "refresh-button"
-                  :onclick "${pkgs.systemd}/bin/systemctl --user restart eww-monitoring-panel &"
-                  :tooltip "Refresh all projects"
-                  "Refresh")
-                (button
-                  :class "new-project-button"
+                  :class "header-icon-button new-project-btn"
                   :onclick "${projectCreateOpenScript}/bin/project-create-open"
-                  :tooltip "Create a new project"
-                  "+ New"))
-              ;; Row 2: UX1 - Filter/search input
+                  :tooltip "Create new project"
+                  "󰐕"))
+              ;; Row 2: Filter/search input
               (box
                 :class "projects-filter-row"
                 :orientation "h"
@@ -4433,7 +4427,7 @@ in
                   :hexpand true
                   (label
                     :class "filter-icon"
-                    :text "Filter:")
+                    :text "󰍉")
                   (input
                     :class "project-filter-input"
                     :hexpand true
@@ -4444,13 +4438,13 @@ in
                     :class "filter-clear-button"
                     :visible {project_filter != ""}
                     :onclick "eww --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
-                    :tooltip "Clear filter (Esc)"
-                    "x"))
-                ;; Filter count indicator - shows total count when filtering
+                    :tooltip "Clear filter"
+                    "󰅖"))
+                ;; Result count when filtering
                 (label
                   :class "filter-count"
                   :visible {project_filter != ""}
-                  :text "''${arraylength(projects_data.main_projects ?: [])} projects")))
+                  :text "''${arraylength(projects_data.discovered_repositories ?: [])} repos")))
             ;; Feature 094 US3: Project create form (T067)
             (revealer
               :transition "slidedown"
@@ -4482,7 +4476,12 @@ in
                 (box
                   :orientation "v"
                   :space-evenly false
-                  :visible {project_filter == "" || strlength(project_filter) < 1 || matches(repo.name, "(?i).*" + project_filter + ".*") || matches(repo.qualified_name ?: "", "(?i).*" + project_filter + ".*") || matches(repo.account ?: "", "(?i).*" + project_filter + ".*")}
+                  ;; Filter matches: repo name, qualified name, account, display name
+                  :visible {project_filter == "" ||
+                            matches(repo.name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
+                            matches(repo.qualified_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
+                            matches(repo.account ?: "", "(?i).*" + project_filter + ".*") ||
+                            matches(repo.display_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*")}
                   (discovered-repo-card :repo repo)
                   ;; Nested worktrees (visible when parent is expanded)
                   (revealer
@@ -9646,21 +9645,28 @@ in
         color: ${mocha.text};
       }
 
-      /* Feature 099 UX3: Expand/Collapse All button */
-      .expand-all-button {
-        background-color: ${mocha.surface0};
-        color: ${mocha.text};
-        padding: 4px 10px;
+      /* Header icon buttons (expand/collapse, new project) */
+      .header-icon-button {
+        background-color: transparent;
+        color: ${mocha.subtext0};
+        padding: 4px 8px;
         border-radius: 6px;
-        font-size: 11px;
-        border: 1px solid ${mocha.surface1};
-        margin-right: 6px;
+        font-size: 16px;
+        border: none;
+        margin-left: 4px;
       }
 
-      .expand-all-button:hover {
-        background-color: ${mocha.surface1};
+      .header-icon-button:hover {
+        background-color: ${mocha.surface0};
         color: ${mocha.blue};
-        border-color: ${mocha.blue};
+      }
+
+      .expand-collapse-btn:hover {
+        color: ${mocha.teal};
+      }
+
+      .new-project-btn:hover {
+        color: ${mocha.green};
       }
 
       /* Feature 099 UX1: Filter/Search row */
@@ -9683,8 +9689,8 @@ in
 
       .filter-icon {
         color: ${mocha.subtext0};
-        font-size: 11px;
-        margin-right: 6px;
+        font-size: 14px;
+        margin-right: 8px;
       }
 
       .project-filter-input {
@@ -9769,36 +9775,7 @@ in
         margin-right: 4px;
       }
 
-      /* Feature 099 T016: Refresh button */
-      .refresh-button {
-        background-color: ${mocha.surface0};
-        color: ${mocha.text};
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 11px;
-        border: 1px solid ${mocha.surface1};
-        margin-right: 6px;
-      }
-
-      .refresh-button:hover {
-        background-color: ${mocha.surface1};
-        color: ${mocha.blue};
-        border-color: ${mocha.blue};
-      }
-
-      .new-project-button {
-        background-color: ${mocha.green};
-        color: ${mocha.base};
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 11px;
-        font-weight: bold;
-        border: none;
-      }
-
-      .new-project-button:hover {
-        background-color: ${mocha.teal};
-      }
+      /* Old button styles removed - using header-icon-button now */
 
       .project-create-form {
         border-color: ${mocha.green};
