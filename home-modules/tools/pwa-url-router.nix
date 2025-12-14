@@ -13,26 +13,61 @@ let
   # Generate PWA app name from display name (e.g., "GitHub" → "github-pwa")
   mkPwaAppName = name: "${toLower (replaceStrings [" "] ["-"] name)}-pwa";
 
-  # Build domain → PWA mapping from routing_domains
-  # Only include PWAs that have non-empty routing_domains
+  # Build domain/path → PWA mapping from routing_domains and routing_paths
+  # Feature 118: Added path-based routing support
   domainMapping = let
-    # For each PWA with routing_domains, create entries for each domain
+    # For each PWA, create entries for:
+    # 1. Each domain in routing_domains (domain-only key)
+    # 2. Each path in routing_paths combined with domain (domain/path key)
     pwaEntries = builtins.concatMap (pwa:
       let
         domains = if pwa ? routing_domains then pwa.routing_domains else [ pwa.domain ];
+        paths = if pwa ? routing_paths then pwa.routing_paths else [];
         appName = mkPwaAppName pwa.name;
+
+        # Domain-only entries (from routing_domains)
+        domainEntries = if domains == [] then []
+          else builtins.map (domain: {
+            key = domain;
+            pwa = appName;
+            ulid = pwa.ulid;
+            name = pwa.name;
+          }) domains;
+
+        # Path-based entries (from routing_paths, combined with primary domain)
+        # Format: "google.com/ai" for routing_paths = [ "/ai" ]
+        # Also generates www variant if domain doesn't start with www
+        pathEntries = builtins.concatMap (path:
+          let
+            # Normalize path: ensure it starts with / and remove trailing /
+            normalizedPath = if builtins.substring 0 1 path == "/"
+              then path
+              else "/${path}";
+            cleanPath = builtins.replaceStrings ["//"] ["/"] normalizedPath;
+            baseEntry = {
+              key = "${pwa.domain}${cleanPath}";
+              pwa = appName;
+              ulid = pwa.ulid;
+              name = pwa.name;
+            };
+            # Add www variant if domain doesn't already have www prefix
+            wwwEntry = if !(lib.hasPrefix "www." pwa.domain)
+              then [{
+                key = "www.${pwa.domain}${cleanPath}";
+                pwa = appName;
+                ulid = pwa.ulid;
+                name = pwa.name;
+              }]
+              else [];
+          in
+          [ baseEntry ] ++ wwwEntry
+        ) paths;
       in
-      if domains == [] then []
-      else builtins.map (domain: {
-        inherit domain;
-        pwa = appName;
-        ulid = pwa.ulid;
-        name = pwa.name;
-      }) domains
+      domainEntries ++ pathEntries
     ) pwas;
   in
   builtins.listToAttrs (builtins.map (entry: {
-    name = entry.domain;
+    name = entry.key;
     value = {
       pwa = entry.pwa;
       ulid = entry.ulid;
@@ -44,24 +79,36 @@ let
   domainRegistryJson = builtins.toJSON domainMapping;
 
   # URL Router shell script
+  # Feature 118: Simplified URL routing with path-based matching, no lock files
   urlRouterScript = pkgs.writeShellScriptBin "pwa-url-router" ''
     #!/usr/bin/env bash
-    # Feature 113: URL Router - Open URLs in PWAs when domain matches
-    # Only handles external app links; Firefox internal links stay in Firefox
+    # Feature 118: URL Router - Open URLs in PWAs based on domain/path matching
+    # Simplified from Feature 113: removed lock files, auth bypass (PWAs handle auth internally)
 
     set -euo pipefail
 
-    URL="''${1:-}"
+    # Parse arguments
+    VERBOSE=false
+    URL=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -v|--verbose) VERBOSE=true; shift ;;
+        *) URL="$1"; shift ;;
+      esac
+    done
+
     DOMAIN_REGISTRY="$HOME/.config/i3/pwa-domains.json"
     LOG_DIR="$HOME/.local/state"
     LOG_FILE="$LOG_DIR/pwa-url-router.log"
-    LOCK_DIR="$LOG_DIR/pwa-router-locks"
 
-    # Ensure directories exist
-    mkdir -p "$LOG_DIR" "$LOCK_DIR"
+    # Ensure log directory exists
+    mkdir -p "$LOG_DIR"
 
     log() {
       echo "[$(date -Iseconds)] $*" >> "$LOG_FILE"
+      if $VERBOSE; then
+        echo "[pwa-url-router] $*" >&2
+      fi
     }
 
     # Rotate log if too large (>1MB)
@@ -70,86 +117,68 @@ let
     fi
 
     # ============================================================================
-    # INFINITE LOOP PREVENTION
+    # LOOP PREVENTION (Simplified - Feature 118)
     # ============================================================================
-    # Detect if we're being called repeatedly to prevent loops:
-    # PWA → xdg-open → pwa-url-router → PWA → xdg-open → ... (infinite!)
-    #
-    # Detection methods:
-    # 1. Check if we're already in a PWA launch context (I3PM_PWA_URL set)
-    # 2. UNCONDITIONAL lock file check - if URL was routed recently, bypass to Firefox
-    #    This prevents loops regardless of how the router was invoked
-
-    # Method 1: Already in PWA URL launch context - go directly to Firefox
+    # Single check: if I3PM_PWA_URL is set, we're already in a PWA launch context
     if [ -n "''${I3PM_PWA_URL:-}" ]; then
       log "LOOP PREVENTION: I3PM_PWA_URL already set, bypassing to Firefox"
       exec ${pkgs.firefox}/bin/firefox "$URL"
     fi
 
-    # Method 2: UNCONDITIONAL lock file check
-    # If this exact URL was routed within the last 30 seconds, bypass to Firefox
-    # This prevents loops regardless of the parent process
-    if [ -n "$URL" ]; then
-      URL_HASH=$(echo -n "$URL" | md5sum | cut -d' ' -f1)
-      LOCK_FILE="$LOCK_DIR/$URL_HASH"
-
-      if [ -f "$LOCK_FILE" ]; then
-        LOCK_AGE=$(($(date +%s) - $(stat -c%Y "$LOCK_FILE" 2>/dev/null || echo 0)))
-        if [ "$LOCK_AGE" -lt 30 ]; then
-          log "LOOP PREVENTION: URL was routed $LOCK_AGE seconds ago, bypassing to Firefox"
-          exec ${pkgs.firefox}/bin/firefox "$URL"
-        fi
-      fi
-    fi
-
-    # Clean up old lock files (older than 2 minutes)
-    find "$LOCK_DIR" -type f -mmin +2 -delete 2>/dev/null || true
-
     if [ -z "$URL" ]; then
-      log "ERROR: No URL provided"
-      # Still open Firefox with no URL (new window)
+      log "No URL provided, opening Firefox"
       exec ${pkgs.firefox}/bin/firefox
     fi
 
     log "Routing URL: $URL"
 
-    # Extract domain from URL (handles http://, https://, and URLs with ports/paths)
-    DOMAIN=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://||' | ${pkgs.gnused}/bin/sed -E 's|/.*||' | ${pkgs.gnused}/bin/sed -E 's|:.*||')
+    # Extract domain and path from URL
+    # Domain: everything between :// and first / or : (port)
+    DOMAIN=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://||' | ${pkgs.gnused}/bin/sed -E 's|[/:?#].*||')
+    # Path: everything after domain, before query string
+    PATH_PART=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://[^/]*||' | ${pkgs.gnused}/bin/sed -E 's|\?.*||')
 
-    log "Extracted domain: $DOMAIN"
+    log "Extracted domain: $DOMAIN, path: $PATH_PART"
 
-    # ============================================================================
-    # AUTHENTICATION DOMAIN BYPASS
-    # ============================================================================
-    # These domains are used for SSO/OAuth flows and should ALWAYS open in Firefox
-    # to prevent authentication loops and ensure proper session handling.
-    AUTH_DOMAINS="accounts.google.com accounts.youtube.com login.microsoftonline.com login.live.com github.com/login github.com/session auth0.com login.tailscale.com"
-
-    for auth_domain in $AUTH_DOMAINS; do
-      if [[ "$DOMAIN" == "$auth_domain" ]] || [[ "$URL" == *"$auth_domain"* ]]; then
-        log "AUTH BYPASS: $DOMAIN is an authentication domain, opening in Firefox"
-        exec ${pkgs.firefox}/bin/firefox "$URL"
-      fi
-    done
-
-    # Look up domain in registry
+    # Look up in registry with path-based matching
     if [ -f "$DOMAIN_REGISTRY" ]; then
-      PWA_INFO=$(${pkgs.jq}/bin/jq -r --arg d "$DOMAIN" '.[$d] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+      # Try longest prefix match: domain/path1/path2, then domain/path1, then domain
+      MATCH_KEY=""
+      PWA_INFO=""
 
-      if [ -n "$PWA_INFO" ] && [ "$PWA_INFO" != "null" ]; then
+      # Build list of keys to try (longest to shortest)
+      # Start with domain + full path, progressively shorten
+      CURRENT_PATH="$PATH_PART"
+      while true; do
+        if [ -n "$CURRENT_PATH" ] && [ "$CURRENT_PATH" != "/" ]; then
+          TRY_KEY="$DOMAIN$CURRENT_PATH"
+          RESULT=$(${pkgs.jq}/bin/jq -r --arg k "$TRY_KEY" '.[$k] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+          if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+            MATCH_KEY="$TRY_KEY"
+            PWA_INFO="$RESULT"
+            break
+          fi
+          # Remove last path segment
+          CURRENT_PATH=$(echo "$CURRENT_PATH" | ${pkgs.gnused}/bin/sed -E 's|/[^/]*$||')
+        else
+          # Try domain-only match
+          TRY_KEY="$DOMAIN"
+          RESULT=$(${pkgs.jq}/bin/jq -r --arg k "$TRY_KEY" '.[$k] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+          if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+            MATCH_KEY="$TRY_KEY"
+            PWA_INFO="$RESULT"
+          fi
+          break
+        fi
+      done
+
+      if [ -n "$PWA_INFO" ]; then
         PWA_DISPLAY=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.name')
         PWA_APP_NAME=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.pwa')
         PWA_ULID=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.ulid')
-        log "Match found: $DOMAIN → $PWA_APP_NAME ($PWA_DISPLAY, ULID: $PWA_ULID)"
+        log "Match found: $MATCH_KEY → $PWA_APP_NAME ($PWA_DISPLAY, ULID: $PWA_ULID)"
 
-        # Create lock file BEFORE launching to prevent loops
-        # This marks that we're actively routing this URL
-        URL_HASH=$(echo -n "$URL" | md5sum | cut -d' ' -f1)
-        touch "$LOCK_DIR/$URL_HASH"
-
-        # Launch PWA directly with URL for deep linking
-        # We call launch-pwa-by-name directly (not through app-launcher-wrapper)
-        # because swaymsg exec doesn't preserve environment variables
+        # Launch PWA with URL for deep linking
         if command -v launch-pwa-by-name >/dev/null 2>&1; then
           log "Launching via launch-pwa-by-name: $PWA_ULID with URL: $URL"
           export I3PM_PWA_URL="$URL"
@@ -164,14 +193,16 @@ let
     fi
 
     # No match - fallback to Firefox
-    log "No PWA match for $DOMAIN, opening in Firefox"
+    log "No PWA match for $DOMAIN$PATH_PART, opening in Firefox"
     exec ${pkgs.firefox}/bin/firefox "$URL"
   '';
 
   # Diagnostic tool for testing routing
+  # Feature 118: Updated to show path-based matching
   routeTestScript = pkgs.writeShellScriptBin "pwa-route-test" ''
     #!/usr/bin/env bash
-    # Feature 113: Test PWA URL routing without actually opening anything
+    # Feature 118: Test PWA URL routing without actually opening anything
+    # Shows domain, path, and matched registry key
 
     URL="''${1:-}"
     DOMAIN_REGISTRY="$HOME/.config/i3/pwa-domains.json"
@@ -179,14 +210,17 @@ let
     if [ -z "$URL" ]; then
       echo "Usage: pwa-route-test <url>"
       echo "Example: pwa-route-test https://github.com/user/repo"
+      echo "         pwa-route-test https://google.com/ai/chat"
       exit 1
     fi
 
-    # Extract domain from URL
-    DOMAIN=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://||' | ${pkgs.gnused}/bin/sed -E 's|/.*||' | ${pkgs.gnused}/bin/sed -E 's|:.*||')
+    # Extract domain and path from URL
+    DOMAIN=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://||' | ${pkgs.gnused}/bin/sed -E 's|[/:?#].*||')
+    PATH_PART=$(echo "$URL" | ${pkgs.gnused}/bin/sed -E 's|^https?://[^/]*||' | ${pkgs.gnused}/bin/sed -E 's|\?.*||')
 
     echo "URL: $URL"
     echo "Domain: $DOMAIN"
+    echo "Path: $PATH_PART"
     echo ""
 
     if [ ! -f "$DOMAIN_REGISTRY" ]; then
@@ -195,15 +229,45 @@ let
       exit 1
     fi
 
-    PWA_INFO=$(${pkgs.jq}/bin/jq -r --arg d "$DOMAIN" '.[$d] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+    # Try longest prefix match: domain/path1/path2, then domain/path1, then domain
+    MATCH_KEY=""
+    PWA_INFO=""
+    MATCH_TYPE=""
 
-    if [ -n "$PWA_INFO" ] && [ "$PWA_INFO" != "null" ]; then
+    CURRENT_PATH="$PATH_PART"
+    while true; do
+      if [ -n "$CURRENT_PATH" ] && [ "$CURRENT_PATH" != "/" ]; then
+        TRY_KEY="$DOMAIN$CURRENT_PATH"
+        RESULT=$(${pkgs.jq}/bin/jq -r --arg k "$TRY_KEY" '.[$k] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+        if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+          MATCH_KEY="$TRY_KEY"
+          PWA_INFO="$RESULT"
+          MATCH_TYPE="path match"
+          break
+        fi
+        # Remove last path segment
+        CURRENT_PATH=$(echo "$CURRENT_PATH" | ${pkgs.gnused}/bin/sed -E 's|/[^/]*$||')
+      else
+        # Try domain-only match
+        TRY_KEY="$DOMAIN"
+        RESULT=$(${pkgs.jq}/bin/jq -r --arg k "$TRY_KEY" '.[$k] // empty' "$DOMAIN_REGISTRY" 2>/dev/null || echo "")
+        if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+          MATCH_KEY="$TRY_KEY"
+          PWA_INFO="$RESULT"
+          MATCH_TYPE="domain match"
+        fi
+        break
+      fi
+    done
+
+    if [ -n "$PWA_INFO" ]; then
       PWA_NAME=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.pwa')
       PWA_DISPLAY=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.name')
       PWA_ULID=$(echo "$PWA_INFO" | ${pkgs.jq}/bin/jq -r '.ulid')
       echo "✓ Would route to: $PWA_NAME"
       echo "  Display name: $PWA_DISPLAY"
       echo "  ULID: $PWA_ULID"
+      echo "  Match: $MATCH_KEY ($MATCH_TYPE)"
     else
       echo "✗ No PWA match - would open in Firefox"
     fi
