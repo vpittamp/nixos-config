@@ -1503,19 +1503,27 @@ async def query_monitoring_data() -> Dict[str, Any]:
             for badge in badge_state.values()
         ) if badge_state else False
 
-        # Feature 117 Enhancement: Collect windows with "working" badges for summary bar
-        # This provides a pre-computed list for the Active AI Processes bar in EWW
-        working_windows = []
+        # Feature 117 Enhancement: Collect all windows with AI session badges
+        # This provides a pre-computed list for the Active AI Sessions bar in EWW
+        # Includes all badge states: working, stopped+needs_attention, stopped+idle
+        # Visual state is determined by: state, needs_attention fields
+        ai_sessions = []
         for window in all_windows:
             badge = window.get("badge", {})
-            if badge.get("state") == "working":
-                working_windows.append({
+            # Include window if it has any badge (any state = active AI session)
+            if badge:
+                ai_sessions.append({
                     "id": window.get("id"),
                     "project": window.get("project", ""),
                     "title": window.get("title", ""),
                     "app_id": window.get("app_id", ""),
                     "workspace_number": window.get("workspace_number", 0),
                     "source": badge.get("source", "ai"),  # claude-code, codex, etc.
+                    # Badge state info for visual styling
+                    "state": badge.get("state", "unknown"),  # working, stopped
+                    "needs_attention": badge.get("needs_attention", False),
+                    "count": badge.get("count", 0),  # Number of completions
+                    "session_started": badge.get("session_started", 0),
                 })
 
         # Return success state with project-based view
@@ -1535,8 +1543,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": has_working_badge,
-            # Feature 117 Enhancement: Pre-computed list for Active AI Processes bar
-            "working_windows": working_windows,
+            # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
+            "ai_sessions": ai_sessions,
         }
 
     except DaemonError as e:
@@ -1556,7 +1564,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": str(e),
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
-            "working_windows": [],
+            "ai_sessions": [],
         }
 
     except Exception as e:
@@ -1576,7 +1584,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": f"Unexpected error: {type(e).__name__}: {e}",
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
-            "working_windows": [],
+            "ai_sessions": [],
         }
 
 

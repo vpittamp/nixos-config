@@ -6,6 +6,16 @@
 # are running as foreground processes. It creates badge files for the EWW
 # monitoring panel to display progress indicators.
 #
+# Badge States:
+#   - working: AI is actively processing (pulsating indicator)
+#   - stopped + needs_attention: AI finished, window not yet focused (bell icon)
+#   - stopped + !needs_attention: AI session idle, ready for more work (muted icon)
+#
+# Badges persist indefinitely until:
+#   - Window is closed
+#   - tmux session is terminated
+#   - User explicitly dismisses (via notification action)
+#
 # Usage: monitor.sh [--poll-interval <ms>]
 # Default poll interval: 300ms
 #
@@ -130,38 +140,65 @@ get_project_name() {
 }
 
 # Write badge file for "working" state
+# Preserves session start time for tracking session duration
 write_working_badge() {
     local window_id="$1"
     local source="$2"
     local badge_file="$BADGE_DIR/$window_id.json"
+
+    # Preserve session_started if badge already exists
+    local session_started=""
+    if [[ -f "$badge_file" ]]; then
+        session_started=$(jq -r '.session_started // empty' "$badge_file" 2>/dev/null || echo "")
+    fi
+    if [[ -z "$session_started" ]]; then
+        session_started=$(date +%s.%N)
+    fi
 
     cat > "$badge_file" <<EOF
 {
   "window_id": $window_id,
   "state": "working",
   "source": "$source",
+  "needs_attention": false,
+  "session_started": $session_started,
   "timestamp": $(date +%s.%N)
 }
 EOF
     log "Created working badge for window $window_id (source: $source)"
 }
 
-# Write badge file for "stopped" state and send notification
+# Write badge file for "stopped" state with needs_attention flag
+# Preserves session_started and increments completion count
 write_stopped_badge() {
     local window_id="$1"
     local source="$2"
     local badge_file="$BADGE_DIR/$window_id.json"
+
+    # Preserve session_started and increment count from existing badge
+    local session_started=""
+    local count=0
+    if [[ -f "$badge_file" ]]; then
+        session_started=$(jq -r '.session_started // empty' "$badge_file" 2>/dev/null || echo "")
+        count=$(jq -r '.count // 0' "$badge_file" 2>/dev/null || echo "0")
+    fi
+    if [[ -z "$session_started" ]]; then
+        session_started=$(date +%s.%N)
+    fi
+    count=$((count + 1))
 
     cat > "$badge_file" <<EOF
 {
   "window_id": $window_id,
   "state": "stopped",
   "source": "$source",
-  "count": 1,
+  "needs_attention": true,
+  "count": $count,
+  "session_started": $session_started,
   "timestamp": $(date +%s.%N)
 }
 EOF
-    log "Created stopped badge for window $window_id (source: $source)"
+    log "Created stopped badge for window $window_id (source: $source, count: $count)"
 
     # Get project name for notification
     local project_name
@@ -264,12 +301,64 @@ poll_tmux_panes() {
     done
 }
 
+# Clear needs_attention for a window when focused
+clear_needs_attention() {
+    local window_id="$1"
+    local badge_file="$BADGE_DIR/$window_id.json"
+
+    if [[ -f "$badge_file" ]]; then
+        # Only update if needs_attention is currently true
+        local needs_attention
+        needs_attention=$(jq -r '.needs_attention // false' "$badge_file" 2>/dev/null || echo "false")
+
+        if [[ "$needs_attention" == "true" ]]; then
+            # Update needs_attention to false, preserving all other fields
+            local updated
+            updated=$(jq '.needs_attention = false' "$badge_file" 2>/dev/null)
+            if [[ -n "$updated" ]]; then
+                echo "$updated" > "$badge_file"
+                log "Cleared needs_attention for window $window_id (focus)"
+            fi
+        fi
+    fi
+}
+
+# Window focus listener - runs as background process
+# Clears needs_attention when a badged window receives focus
+focus_listener() {
+    log "Starting focus listener"
+
+    # Subscribe to window focus events from sway
+    swaymsg -t subscribe '["window"]' --monitor 2>/dev/null | while read -r event; do
+        # Extract change type and container ID
+        local change container_id
+        change=$(echo "$event" | jq -r '.change // empty' 2>/dev/null || echo "")
+        container_id=$(echo "$event" | jq -r '.container.id // empty' 2>/dev/null || echo "")
+
+        # Only process focus events
+        if [[ "$change" == "focus" ]] && [[ -n "$container_id" ]]; then
+            # Check if this window has a badge with needs_attention
+            clear_needs_attention "$container_id"
+        fi
+    done
+
+    log "Focus listener terminated"
+}
+
 # Main polling loop
 main() {
     log "Starting tmux-ai-monitor (poll interval: ${POLL_INTERVAL_MS}ms)"
 
     # Initialize badge directory (T008)
     init_badge_dir
+
+    # Start focus listener in background
+    focus_listener &
+    FOCUS_LISTENER_PID=$!
+    log "Started focus listener (PID: $FOCUS_LISTENER_PID)"
+
+    # Cleanup on exit
+    trap 'log "Shutting down..."; kill $FOCUS_LISTENER_PID 2>/dev/null || true; exit 0' SIGTERM SIGINT EXIT
 
     # Convert ms to seconds for sleep (with fractional support)
     local sleep_seconds
