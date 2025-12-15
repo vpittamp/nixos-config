@@ -12872,9 +12872,9 @@ in
 
       Service = {
         Type = "simple";
-        # Clean stale sockets before starting (prevents "address already in use" errors)
-        # Note: Orphan cleanup removed - was causing self-kill. Rely on systemd cgroup cleanup.
-        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
+        # NOTE: No ExecStartPre socket cleanup needed - eww handles stale sockets internally
+        # by removing the socket file before binding (see eww commit 5b3344f)
+        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
@@ -12882,8 +12882,9 @@ in
         # Fixed sleep caused race conditions where 'eww open' would start its own daemon
         # Open panel and re-sync stack index (workaround for eww #1192: index resets on reopen)
         ExecStartPost = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 30); do ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel ping 2>/dev/null && break; ${pkgs.coreutils}/bin/sleep 0.2; done; ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
-        # Clean shutdown: remove stale sockets
-        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
+        # Clean shutdown: use 'eww kill' which properly cleans up THIS service's socket
+        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
+        ExecStopPost = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true";
         Restart = "on-failure";
         RestartSec = "3s";
         # Ensure all child processes are killed when service stops
