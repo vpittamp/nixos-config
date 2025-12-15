@@ -11,6 +11,31 @@ if [[ ! -d "$BADGE_DIR" ]]; then
     exit 0
 fi
 
+# Get sway tree once for all window lookups
+SWAY_TREE=$(swaymsg -t get_tree 2>/dev/null)
+
+# Function to extract project from window marks
+get_window_project() {
+    local win_id="$1"
+    # Find window marks and extract project from scoped mark format:
+    # scoped:app_type:owner/repo:branch:window_id -> owner/repo:branch
+    local marks=$(echo "$SWAY_TREE" | jq -r ".. | objects | select(.id == $win_id) | .marks[]?" 2>/dev/null)
+    for mark in $marks; do
+        if [[ "$mark" == scoped:* ]]; then
+            # Extract project: scoped:type:owner/repo:branch:id -> owner/repo:branch
+            # Format: scoped:terminal:vpittamp/nixos-config:117-branch:7
+            local parts
+            IFS=':' read -ra parts <<< "$mark"
+            if [[ ${#parts[@]} -ge 4 ]]; then
+                # parts[2] = owner/repo, parts[3] = branch
+                echo "${parts[2]}:${parts[3]}"
+                return
+            fi
+        fi
+    done
+    echo "global"
+}
+
 # Collect all badge files
 sessions="[]"
 has_working=false
@@ -27,7 +52,9 @@ for badge_file in "$BADGE_DIR"/*.json; do
     state=$(echo "$badge_content" | jq -r '.state // "stopped"')
     source=$(echo "$badge_content" | jq -r '.source // "unknown"')
     count=$(echo "$badge_content" | jq -r '.count // 0')
-    project=$(echo "$badge_content" | jq -r '.project // ""')
+
+    # Get project from window marks (not badge file)
+    project=$(get_window_project "$window_id")
 
     # Track if any session is working
     if [[ "$state" == "working" ]]; then
