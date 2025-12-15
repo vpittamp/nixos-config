@@ -12844,8 +12844,10 @@ in
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
+        # IMPORTANT: Use eww ping to wait for daemon readiness instead of fixed sleep
+        # Fixed sleep caused race conditions where 'eww open' would start its own daemon
         # Open panel and re-sync stack index (workaround for eww #1192: index resets on reopen)
-        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
+        ExecStartPost = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 30); do ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel ping 2>/dev/null && break; ${pkgs.coreutils}/bin/sleep 0.2; done; ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
         # Clean shutdown: remove stale sockets
         ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/rm -f /run/user/1000/eww-server_* 2>/dev/null || true'";
         Restart = "on-failure";
