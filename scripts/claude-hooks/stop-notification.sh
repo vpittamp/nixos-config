@@ -79,24 +79,26 @@ logger -t claude-stop "[Feature 120] Window detection: TMUX=${TMUX:-unset}, WIND
 # Feature 117: File-only badge storage (removed IPC dual-write)
 # Files at $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json are the single source of truth
 
+# Get project name from environment (set by app-launcher-wrapper.sh)
+PROJECT_NAME="${I3PM_PROJECT_NAME:-}"
+
 if [ -n "$WINDOW_ID" ]; then
     # Update badge file to stopped state (monitoring_data.py reads via inotify)
     BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
     mkdir -p "$BADGE_STATE_DIR"
     BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
+    # Feature 117: Include project in badge for efficient lookup
     cat > "$BADGE_FILE" <<EOF
 {
   "window_id": $WINDOW_ID,
   "state": "stopped",
   "source": "claude-code",
+  "project": "$PROJECT_NAME",
   "count": 1,
   "timestamp": $(date +%s.%N)
 }
 EOF
 fi
-
-# Get project name from environment
-PROJECT_NAME="${I3PM_PROJECT_NAME:-}"
 
 # Get tmux context if running in tmux (kept for callback, not shown in notification)
 TMUX_SESSION=""
