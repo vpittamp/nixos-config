@@ -3298,7 +3298,11 @@ in
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
-      ;; Build: 2025-11-29 02:40 UTC - Fix action icons
+      ;; Build: 2025-12-15 - Fix run-while variable ordering
+
+      ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
+      ;; Otherwise :run-while conditions don't work and all polls run continuously
+      (defvar current_view_index 0)
 
       ;; Defpoll: Windows view data (3s refresh)
       ;; Changed from deflisten to defpoll to prevent process spawning issues
@@ -3373,18 +3377,18 @@ in
       ;; Validation handled via explicit update commands when forms are opened
       (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}")
 
-      ;; Feature 116: Defpoll: Device state (500ms refresh for responsive controls)
+      ;; Feature 116: Defpoll: Device state (2s refresh - reduced from 500ms)
       ;; Only runs when Devices tab is active (index 6)
       ;; Uses device-backend.py from eww-device-controls module
+      ;; Note: 500ms was too aggressive and caused daemon overload
       (defpoll devices_state
-        :interval "500ms"
+        :interval "2s"
         :run-while {current_view_index == 6}
         :initial "{\"volume\":{\"volume\":50,\"muted\":false,\"icon\":\"󰕾\",\"current_device\":\"Unknown\"},\"bluetooth\":{\"enabled\":false,\"scanning\":false,\"devices\":[]},\"brightness\":{\"display\":50,\"keyboard\":0},\"battery\":{\"percentage\":100,\"state\":\"full\",\"icon\":\"󰁹\",\"level\":\"normal\",\"time_remaining\":\"\"},\"thermal\":{\"cpu_temp\":0,\"level\":\"normal\",\"icon\":\"󰔏\"},\"network\":{\"tailscale_connected\":false,\"wifi_connected\":false},\"hardware\":{\"has_battery\":false,\"has_brightness\":false,\"has_keyboard_backlight\":false,\"has_bluetooth\":true,\"has_power_profiles\":false,\"has_thermal_sensors\":true},\"power_profile\":{\"current\":\"balanced\",\"available\":[],\"icon\":\"󰾅\"}}"
         `$HOME/.config/eww/eww-device-controls/scripts/device-backend.py 2>/dev/null || echo '{}'`)
 
-      ;; Current view state - INDEX based (0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices)
-      ;; eww stack widget requires integer index for :selected attribute
-      (defvar current_view_index 0)
+      ;; NOTE: current_view_index is defined at the TOP of this file (before defpolls)
+      ;; This is required for :run-while conditions to work correctly
 
       ;; Selected window ID for detail view (0 = none selected)
       (defvar selected_window_id 0)
