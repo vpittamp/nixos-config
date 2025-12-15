@@ -163,6 +163,22 @@ let
     fi
     touch "$LOCK_FILE"
 
+    # CRITICAL: Ensure daemon is running before any eww commands
+    # Without this, eww commands will spawn their own daemon, causing duplicates
+    if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+      # Daemon not responding - try to start the service
+      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel 2>/dev/null
+      # Wait for daemon to be ready (max 6 seconds)
+      for i in $(seq 1 30); do
+        $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
+        ${pkgs.coreutils}/bin/sleep 0.2
+      done
+      # If still not ready, exit to avoid spawning duplicate daemon
+      if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+        exit 1
+      fi
+    fi
+
     # Check if window is actually open (not just the variable)
     if $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
       # Window is open - close it
@@ -183,6 +199,12 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 086: Enter monitoring focus mode
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Only proceed if daemon is running (avoid spawning duplicate daemon)
+    if ! $EWW_CMD ping >/dev/null 2>&1; then
+      echo "Monitoring panel daemon not running"
+      exit 0
+    fi
 
     # Check if panel is visible first
     if ! $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
@@ -210,16 +232,19 @@ let
     # Feature 086: Exit monitoring focus mode
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
-    # Update eww variable to hide focus indicator
-    $EWW_CMD update panel_focused=false
+    # Only update eww if daemon is running (avoid spawning duplicate daemon)
+    if $EWW_CMD ping >/dev/null 2>&1; then
+      # Update eww variable to hide focus indicator
+      $EWW_CMD update panel_focused=false
 
-    # Feature 114: Disable panel focus mode (return to click-through)
-    $EWW_CMD update panel_focus_mode=false
+      # Feature 114: Disable panel focus mode (return to click-through)
+      $EWW_CMD update panel_focus_mode=false
 
-    # Clear selection
-    $EWW_CMD update selected_index=-1
+      # Clear selection
+      $EWW_CMD update selected_index=-1
+    fi
 
-    # Exit Sway mode (return to default)
+    # Exit Sway mode (return to default) - always do this
     ${pkgs.sway}/bin/swaymsg 'mode "default"'
 
     # Return focus to previous window
@@ -236,15 +261,22 @@ let
     # Usage: monitor-panel-tab <index>
     # Index: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
 
+    EWW="${pkgs.eww}/bin/eww"
+    CONFIG="$HOME/.config/eww-monitoring-panel"
     INDEX="''${1:-0}"
 
-    # Validate index is 0-5
-    if [[ ! "$INDEX" =~ ^[0-5]$ ]]; then
-      echo "Error: Invalid tab index '$INDEX'. Must be 0-5." >&2
+    # Validate index is 0-6
+    if [[ ! "$INDEX" =~ ^[0-6]$ ]]; then
+      echo "Error: Invalid tab index '$INDEX'. Must be 0-6." >&2
       exit 1
     fi
 
-    ${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" update current_view_index="$INDEX"
+    # Only proceed if daemon is running (avoid spawning duplicate daemon)
+    if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+      exit 0
+    fi
+
+    $EWW --config "$CONFIG" update current_view_index="$INDEX"
   '';
 
   # Wrapper script: Get current monitoring panel view index
