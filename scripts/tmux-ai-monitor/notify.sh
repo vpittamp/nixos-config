@@ -6,6 +6,10 @@
 # from "working" to "stopped"). Sends a desktop notification with "Return to
 # Window" action that focuses the correct terminal.
 #
+# When user clicks "Return to Window":
+#   - Focuses the terminal window
+#   - Clears needs_attention flag (but preserves the badge for session tracking)
+#
 # Usage: notify.sh <window_id> <source> [project_name]
 #   window_id    - Sway window ID for the terminal
 #   source       - AI assistant source (claude-code, codex)
@@ -32,8 +36,24 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] notify.sh: $*" >&2
 }
 
-# T026: Focus window and clear badge
-focus_window_and_clear_badge() {
+# Clear needs_attention flag in badge (preserves badge for session tracking)
+clear_needs_attention() {
+    local window_id="$1"
+    local badge_file="$BADGE_DIR/$window_id.json"
+
+    if [[ -f "$badge_file" ]]; then
+        # Update needs_attention to false, preserving all other fields
+        local updated
+        updated=$(jq '.needs_attention = false' "$badge_file" 2>/dev/null)
+        if [[ -n "$updated" ]]; then
+            echo "$updated" > "$badge_file"
+            log "Cleared needs_attention for window $window_id"
+        fi
+    fi
+}
+
+# T026: Focus window and clear needs_attention (preserves badge for session tracking)
+focus_window_and_clear_attention() {
     local window_id="$1"
 
     # Get the workspace number for this window
@@ -52,17 +72,18 @@ focus_window_and_clear_badge() {
     # Focus the window via swaymsg
     if swaymsg "[con_id=$window_id] focus" 2>/dev/null; then
         log "Focused window $window_id"
+        # Clear needs_attention but keep the badge
+        clear_needs_attention "$window_id"
     else
         log "Failed to focus window $window_id (may be closed)"
+        # Window closed - remove the badge entirely
+        local badge_file="$BADGE_DIR/$window_id.json"
+        if [[ -f "$badge_file" ]]; then
+            rm -f "$badge_file"
+            log "Removed badge for closed window $window_id"
+        fi
         # Show brief error notification
         notify-send -u low -t 3000 "Terminal unavailable" "The terminal window was closed"
-    fi
-
-    # Clear the badge file
-    local badge_file="$BADGE_DIR/$window_id.json"
-    if [[ -f "$badge_file" ]]; then
-        rm -f "$badge_file"
-        log "Cleared badge for window $window_id"
     fi
 }
 
@@ -100,9 +121,12 @@ send_notification() {
     # T026: Handle action click
     if [[ "$action_result" == "return" ]]; then
         log "User clicked 'Return to Window' action"
-        focus_window_and_clear_badge "$window_id"
+        focus_window_and_clear_attention "$window_id"
     else
         log "Notification dismissed without action (result: ${action_result:-none})"
+        # User dismissed notification without returning - still mark as attended
+        # (They saw the notification, they know it's done)
+        clear_needs_attention "$window_id"
     fi
 }
 

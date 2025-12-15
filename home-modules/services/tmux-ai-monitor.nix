@@ -17,8 +17,18 @@ with lib;
 let
   cfg = config.services.tmux-ai-monitor;
 
-  # Script paths
-  scriptDir = ../../scripts/tmux-ai-monitor;
+  # Package the monitor scripts - use lib.cleanSource to detect content changes
+  monitorPackage = pkgs.stdenv.mkDerivation {
+    pname = "tmux-ai-monitor";
+    version = "0.3.0";
+    src = lib.cleanSource ../../scripts/tmux-ai-monitor;
+
+    installPhase = ''
+      mkdir -p $out
+      cp -r . $out/
+      chmod +x $out/*.sh
+    '';
+  };
 
   # Default AI processes to detect
   defaultProcesses = [
@@ -80,7 +90,7 @@ in
         ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p %t/i3pm-badges";
 
         # Main monitor script
-        ExecStart = "${pkgs.bash}/bin/bash ${scriptDir}/monitor.sh";
+        ExecStart = "${pkgs.bash}/bin/bash ${monitorPackage}/monitor.sh";
 
         # Quick restart on failure
         Restart = "on-failure";
