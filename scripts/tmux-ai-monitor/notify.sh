@@ -36,6 +36,19 @@ log() {
 focus_window_and_clear_badge() {
     local window_id="$1"
 
+    # Get the workspace number for this window
+    local workspace
+    workspace=$(swaymsg -t get_tree | jq -r --arg id "$window_id" \
+        '.. | objects | select(.type == "workspace") as $ws |
+         $ws | .. | objects | select(.id == ($id | tonumber)) |
+         $ws.num' 2>/dev/null | head -1)
+
+    if [[ -n "$workspace" ]] && [[ "$workspace" != "null" ]]; then
+        # Switch to workspace first (triggers i3pm project context switch)
+        swaymsg "workspace number $workspace" 2>/dev/null
+        log "Switched to workspace $workspace"
+    fi
+
     # Focus the window via swaymsg
     if swaymsg "[con_id=$window_id] focus" 2>/dev/null; then
         log "Focused window $window_id"

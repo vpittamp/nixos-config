@@ -69,7 +69,7 @@ Based on plan.md structure:
 - [x] T016 [US1] Wire monitor.sh into systemd service in `home-modules/services/tmux-ai-monitor.nix` with ExecStart and Environment
 - [x] T017 [US1] Add configurable options to `home-modules/services/tmux-ai-monitor.nix`: enable, pollInterval, processes list per quickstart.md configuration section
 - [x] T018 [US1] Run `sudo nixos-rebuild dry-build --flake .#hetzner-sway` to verify compilation
-- [ ] T019 [US1] Manual test: Start tmux-ai-monitor service, run claude in tmux, verify spinner appears via `monitoring-data-backend --mode windows | jq '.windows[].badge'`
+- [x] T019 [US1] Manual test: Start tmux-ai-monitor service, run claude in tmux, verify spinner appears via `monitoring-data-backend --mode windows | jq '.windows[].badge'`
 
 **Checkpoint**: User Story 1 complete - AI process detection working for both Claude Code and Codex
 
@@ -85,7 +85,7 @@ Based on plan.md structure:
 
 - [x] T020 [US2] Verify existing focus-aware dismissal logic in `home-modules/desktop/i3-project-event-daemon/handlers.py` handles badge files correctly
 - [x] T021 [US2] Verify BADGE_MIN_AGE_FOR_DISMISS constant is set to 1.0 seconds in handlers.py per quickstart.md configuration section
-- [ ] T022 [US2] Manual test: Create stopped badge via quickstart.md test script, verify focus dismisses it after 1s but not before
+- [x] T022 [US2] Manual test: Create stopped badge via quickstart.md test script, verify focus dismisses it after 1s but not before
 
 **Checkpoint**: User Story 2 complete - focus-aware dismissal working
 
@@ -103,7 +103,7 @@ Based on plan.md structure:
 - [x] T024 [US3] Implement project name detection in `scripts/tmux-ai-monitor/notify.sh` (read from i3pm project context if available)
 - [x] T025 [US3] Add call to notify.sh from monitor.sh when badge transitions from working to stopped state
 - [x] T026 [US3] Implement notification action handler in `scripts/tmux-ai-monitor/notify.sh` to focus window via swaymsg and clear badge file
-- [ ] T027 [US3] Manual test: Run AI assistant, wait for completion, click "Return to Window" action, verify window focused and badge cleared
+- [x] T027 [US3] Manual test: Run AI assistant, wait for completion, click "Return to Window" action, verify window focused and badge cleared
 
 **Checkpoint**: User Story 3 complete - desktop notifications with navigation working
 
@@ -119,7 +119,7 @@ Based on plan.md structure:
 
 - [x] T028 [US4] Implement assistant name mapping in `scripts/tmux-ai-monitor/notify.sh` (claude → "Claude Code Ready", codex → "Codex Ready") per spec.md Supported AI Assistants table
 - [x] T029 [US4] Ensure notification body is single line: project name or "Awaiting input" if no project per research.md R4
-- [ ] T030 [US4] Manual test: Trigger notifications from both claude and codex, verify correct titles and concise content
+- [x] T030 [US4] Manual test: Trigger notifications from both claude and codex, verify correct titles and concise content
 
 **Checkpoint**: User Story 4 complete - notifications are concise and clear
 
@@ -135,7 +135,7 @@ Based on plan.md structure:
 
 - [x] T031 [US5] Verify existing orphan cleanup logic in `home-modules/tools/monitoring-panel/monitoring_data.py` validates badges against window tree
 - [x] T032 [US5] Verify BADGE_MAX_AGE (TTL) constant is set to 300 seconds in monitoring_data.py per quickstart.md configuration section
-- [ ] T033 [US5] Manual test: Create badge for window via quickstart.md test script, close window, verify badge removed within cleanup cycle
+- [x] T033 [US5] Manual test: Create badge for window via quickstart.md test script, close window, verify badge removed within cleanup cycle
 
 **Checkpoint**: User Story 5 complete - stale badge cleanup working
 
@@ -153,7 +153,7 @@ Based on plan.md structure:
 - [x] T035 [US6] Modify `home-modules/ai-assistants/claude-code.nix` to suppress hooks when `config.services.tmux-ai-monitor.enable` is true per research.md R9
 - [x] T036 [US6] Ensure hooks remain in code but wrapped with `lib.mkIf (!config.services.tmux-ai-monitor.enable)` for easy rollback
 - [x] T037 [US6] Run `sudo nixos-rebuild dry-build --flake .#hetzner-sway` to verify conditional compilation
-- [ ] T038 [US6] Manual test: Run claude, verify no hook output in `journalctl --user -t claude-callback`
+- [x] T038 [US6] Manual test: Run claude, verify no hook output in `journalctl --user -t claude-callback`
 
 **Checkpoint**: User Story 6 complete - legacy hooks suppressed, rollback path available
 
