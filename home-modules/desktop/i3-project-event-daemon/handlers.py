@@ -2189,8 +2189,8 @@ async def on_window_focus(
             await state_manager.focus_tracker.track_window_focus(current_ws.num, window_id)
 
         # Feature 117: Focus-aware badge dismissal using file-based storage
-        # Clear badge file if it exists and is old enough (prevents race on badge creation)
-        # This replaces the Feature 095 in-memory approach with file-based single source of truth
+        # Only clear "stopped" badges (AI finished) on focus - NOT "working" badges (AI still running)
+        # This allows the pulsating indicator to continue while AI is processing
         from .badge_service import (
             read_badge_file,
             delete_badge_file,
@@ -2199,16 +2199,20 @@ async def on_window_focus(
 
         badge = read_badge_file(window_id)
         if badge:
-            age = time.time() - badge.timestamp
-            if age >= BADGE_MIN_AGE_FOR_DISMISS:
-                if delete_badge_file(window_id):
-                    logger.info(f"[Feature 117] Cleared badge for window {window_id} on focus (age: {age:.1f}s)")
-                    # Trigger monitoring panel update after badge clear
-                    if monitoring_panel_publisher:
-                        await monitoring_panel_publisher.publish(conn)
-                        logger.debug(f"[Feature 117] Triggered monitoring panel update after badge clear")
+            # Only dismiss "stopped" badges - working badges should persist while AI is running
+            if badge.state == "stopped":
+                age = time.time() - badge.timestamp
+                if age >= BADGE_MIN_AGE_FOR_DISMISS:
+                    if delete_badge_file(window_id):
+                        logger.info(f"[Feature 117] Cleared stopped badge for window {window_id} on focus (age: {age:.1f}s)")
+                        # Trigger monitoring panel update after badge clear
+                        if monitoring_panel_publisher:
+                            await monitoring_panel_publisher.publish(conn)
+                            logger.debug(f"[Feature 117] Triggered monitoring panel update after badge clear")
+                else:
+                    logger.debug(f"[Feature 117] Stopped badge for window {window_id} too young to dismiss (age: {age:.1f}s < {BADGE_MIN_AGE_FOR_DISMISS}s)")
             else:
-                logger.debug(f"[Feature 117] Badge for window {window_id} too young to dismiss (age: {age:.1f}s < {BADGE_MIN_AGE_FOR_DISMISS}s)")
+                logger.debug(f"[Feature 117] Badge for window {window_id} is '{badge.state}' - not dismissing on focus (AI still running)")
 
     except Exception as e:
         error_msg = str(e)
