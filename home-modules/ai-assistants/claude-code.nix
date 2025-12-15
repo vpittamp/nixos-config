@@ -88,50 +88,52 @@ lib.mkIf enableClaudeCode {
       # 3. Validate and sanitize inputs in hook scripts
       # 4. Set explicit timeouts for commands
       # 5. Use external scripts for complex logic (maintainability)
-      hooks = {
-        PostToolUse = [{
-          # Match all Bash tool executions (case-sensitive)
-          matcher = "Bash";
-          hooks = [{
-            type = "command";
-            # Use path to hook script stored in NixOS config
-            # This script receives JSON via stdin with structure:
-            # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
-            command = "${self}/scripts/claude-hooks/bash-history.sh";
-            # Set 5-second timeout (hook is simple, shouldn't take long)
-            timeout = 5;
-          }];
-        }];
-
-        # UserPromptSubmit hook - Feature 095/117: Activity indicator for Claude Code
-        # Creates "working" badge in monitoring panel when user submits a prompt
-        # Shows spinner animation indicating Claude Code is processing
-        UserPromptSubmit = [{
-          hooks = [{
-            type = "command";
-            # Feature 117: Hook creates badge file at $XDG_RUNTIME_DIR/i3pm-badges/
-            # File-based storage is single source of truth (no IPC)
-            command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
-            # Short timeout - file write is quick
-            timeout = 3;
-          }];
-        }];
-
-        # Stop hook - Notify when Claude Code finishes and awaits input
-        # Feature 095/117: Changes badge state from "working" to "stopped"
-        # Sends concise desktop notification with action to return to terminal
-        Stop = [{
-          hooks = [{
-            type = "command";
-            # Feature 117: Hook updates badge file to "stopped" state (bell icon)
-            # Sends notification with project name only (concise format)
-            # notify-send -w blocks until user clicks action or dismisses
-            command = "${self}/scripts/claude-hooks/stop-notification.sh";
-            # Longer timeout - notify-send -w blocks until user responds
-            timeout = 300;
-          }];
-        }];
-      };
+      #
+      # TEMPORARILY DISABLED - uncomment to re-enable
+      # hooks = {
+      #   PostToolUse = [{
+      #     # Match all Bash tool executions (case-sensitive)
+      #     matcher = "Bash";
+      #     hooks = [{
+      #       type = "command";
+      #       # Use path to hook script stored in NixOS config
+      #       # This script receives JSON via stdin with structure:
+      #       # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
+      #       command = "${self}/scripts/claude-hooks/bash-history.sh";
+      #       # Set 5-second timeout (hook is simple, shouldn't take long)
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # UserPromptSubmit hook - Feature 095/117: Activity indicator for Claude Code
+      #   # Creates "working" badge in monitoring panel when user submits a prompt
+      #   # Shows spinner animation indicating Claude Code is processing
+      #   UserPromptSubmit = [{
+      #     hooks = [{
+      #       type = "command";
+      #       # Feature 117: Hook creates badge file at $XDG_RUNTIME_DIR/i3pm-badges/
+      #       # File-based storage is single source of truth (no IPC)
+      #       command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
+      #       # Short timeout - file write is quick
+      #       timeout = 3;
+      #     }];
+      #   }];
+      #
+      #   # Stop hook - Notify when Claude Code finishes and awaits input
+      #   # Feature 095/117: Changes badge state from "working" to "stopped"
+      #   # Sends concise desktop notification with action to return to terminal
+      #   Stop = [{
+      #     hooks = [{
+      #       type = "command";
+      #       # Feature 117: Hook updates badge file to "stopped" state (bell icon)
+      #       # Sends notification with project name only (concise format)
+      #       # notify-send -w blocks until user clicks action or dismisses
+      #       command = "${self}/scripts/claude-hooks/stop-notification.sh";
+      #       # Longer timeout - notify-send -w blocks until user responds
+      #       timeout = 300;
+      #     }];
+      #   }];
+      # };
 
       # Permissions configuration for sandboxed environment
       # WARNING: This grants broad permissions. Only use in trusted/sandboxed environments.
