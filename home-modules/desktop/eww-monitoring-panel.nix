@@ -3976,7 +3976,7 @@ in
                           :class "ai-session-source-icon"
                           :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
                           :image-width 14
-                          :image-height 14))))))
+                          :image-height 14)))))
                 ;; Projects list
                 (for project in {monitoring_data.projects ?: []}
                   (project-widget :project project)))))))
