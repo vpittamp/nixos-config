@@ -425,9 +425,9 @@ in
        :space-evenly false
        :spacing 4
        (for session in {ai_sessions_data.sessions ?: []}
-         (eventbox :onclick "swaymsg '[con_id=''${session.id}]' focus &"
+         (eventbox :onclick "focus-window-action ''\'''${session.project}' ''\'''${session.id}' &"
                    :cursor "pointer"
-                   :tooltip {session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source) + " - " + (session.state == "working" ? "Processing..." : (session.needs_attention ? "Needs attention" : "Ready"))}
+                   :tooltip {session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source) + " - " + (session.state == "working" ? "Processing..." : (session.needs_attention ? "Needs attention" : "Ready")) + " [" + session.project + "]"}
            (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
                 :orientation "h"
                 :space-evenly false
