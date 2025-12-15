@@ -8,7 +8,7 @@ let
   # Python package with i3pm and all dependencies
   i3pmPackage = pkgs.python3Packages.buildPythonApplication {
     pname = "i3-project-manager";
-    version = "0.3.0";
+    version = "0.4.0";  # Feature 117: ai_sessions lifecycle tracking
 
     # Source is the tools directory containing both pyproject.toml and i3_project_manager/
     src = ./.;

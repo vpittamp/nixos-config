@@ -85,7 +85,7 @@ let
   # Version: 2025-11-26-v12 (Feature 097: Optional chaining for remote fields)
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
     #!${pkgs.bash}/bin/bash
-    # Version: 2025-12-10-v13 (Fix: Add i3pm to PATH for subprocess calls)
+    # Version: 2025-12-15-v15 (Feature 117: AI Sessions bar with 3 states - working/attention/idle)
 
     # Add user profile bin to PATH so i3pm can be found by subprocess calls
     export PATH="${config.home.profileDirectory}/bin:$PATH"
@@ -3943,6 +3943,40 @@ in
                       :spacing 4
                       (label :class "close-all-icon" :text "󰅖")
                       (label :class "close-all-text" :text "Close All"))))
+                ;; Feature 117: Active AI Sessions bar - shows all windows with AI assistant badges
+                ;; Three visual states:
+                ;;   - working: AI actively processing (pulsating red indicator)
+                ;;   - needs_attention: AI finished, awaiting user (bell icon, highlight border)
+                ;;   - idle: AI session ready for more work (muted indicator)
+                (box
+                  :class "ai-sessions-bar"
+                  :visible {arraylength(monitoring_data.ai_sessions ?: []) > 0}
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 6
+                  ;; Chips for each AI session
+                  (for session in {monitoring_data.ai_sessions ?: []}
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "${focusWindowScript}/bin/focus-window-action ''${session.project} ''${session.id} &"
+                      :tooltip {"󱜙 Click to focus\n󰙅 " + (session.project != "" ? session.project : "Unknown") + "\n󰚩 " + (session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source)) + "\n" + (session.state == "working" ? "⏳ Processing..." : (session.needs_attention ? "🔔 Needs attention" : "💤 Ready for input"))}
+                      (box
+                        ;; Dynamic class based on state: working, attention, idle
+                        :class {"ai-session-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
+                        :orientation "h"
+                        :space-evenly false
+                        :spacing 4
+                        ;; State indicator icon
+                        ;; Working: pulsating spinner, Attention: bell, Idle: moon
+                        (label
+                          :class {"ai-session-indicator" + (session.state == "working" ? " badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : "")}
+                          :text {session.state == "working" ? spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
+                        ;; Source icon (SVG images for claude and codex)
+                        (image
+                          :class "ai-session-source-icon"
+                          :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
+                          :image-width 14
+                          :image-height 14)))))
                 ;; Projects list
                 (for project in {monitoring_data.projects ?: []}
                   (project-widget :project project)))))))
@@ -8725,6 +8759,85 @@ in
         opacity: 0.4;
         box-shadow: none;
         /* GTK CSS doesn't support filter: grayscale() */
+      }
+
+      /* Feature 117: AI Sessions bar - minimal, refined design */
+      /* Three visual states: working (red pulsing), attention (warm glow), idle (subtle) */
+      .ai-sessions-bar {
+        padding: 4px 0;
+        margin-bottom: 8px;
+      }
+
+      /* Base chip styling - minimal, pill-shaped */
+      .ai-session-chip {
+        background: rgba(49, 50, 68, 0.5);
+        border-radius: 12px;
+        padding: 3px 8px;
+        border: none;
+        transition: all 150ms ease;
+      }
+
+      .ai-session-chip:hover {
+        background: rgba(69, 71, 90, 0.7);
+      }
+
+      /* Working state: subtle red glow, pulsing indicator */
+      .ai-session-chip.working {
+        background: rgba(243, 139, 168, 0.12);
+      }
+
+      .ai-session-chip.working:hover {
+        background: rgba(243, 139, 168, 0.2);
+      }
+
+      .ai-session-chip.working .ai-session-indicator {
+        color: ${mocha.red};
+      }
+
+      /* Attention state: warm peach/yellow glow */
+      .ai-session-chip.attention {
+        background: linear-gradient(135deg, rgba(250, 179, 135, 0.15), rgba(249, 226, 175, 0.1));
+      }
+
+      .ai-session-chip.attention:hover {
+        background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(249, 226, 175, 0.15));
+      }
+
+      .ai-session-chip.attention .ai-session-indicator {
+        color: ${mocha.peach};
+      }
+
+      /* Idle state: very subtle, muted */
+      .ai-session-chip.idle {
+        background: rgba(49, 50, 68, 0.3);
+      }
+
+      .ai-session-chip.idle:hover {
+        background: rgba(69, 71, 90, 0.5);
+      }
+
+      .ai-session-chip.idle .ai-session-indicator {
+        color: ${mocha.overlay0};
+      }
+
+      /* Session indicator - small like inline badges */
+      .ai-session-indicator {
+        font-size: 12px;
+        font-weight: bold;
+      }
+
+      /* Source icon styling - SVG image */
+      .ai-session-source-icon {
+        opacity: 0.7;
+        margin-top: 1px;
+      }
+
+      .ai-session-chip.working .ai-session-source-icon {
+        opacity: 1.0;
+      }
+
+      .ai-session-chip.attention .ai-session-source-icon {
+        opacity: 1.0;
       }
 
       /* JSON Expand Trigger Icon - Intentional hover target */

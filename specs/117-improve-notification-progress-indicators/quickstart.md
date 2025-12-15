@@ -2,38 +2,44 @@
 
 **Feature**: 117-improve-notification-progress-indicators
 **Date**: 2025-12-14
+**Updated**: 2025-12-15 (tmux-based detection)
 
 ## Overview
 
-This feature consolidates and simplifies the Claude Code notification system:
+This feature implements **tmux-based universal AI assistant detection**:
 
-1. **Single badge mechanism** - File-only storage (remove IPC dual-write)
-2. **Focus-aware dismissal** - Badges clear when you focus the window
-3. **Concise notifications** - Just project name, not verbose details
-4. **Stale cleanup** - Orphaned badges automatically removed
+1. **Universal detection** - Works with both Claude Code and Codex CLI
+2. **tmux polling** - Detects AI processes via `tmux list-panes`
+3. **Focus-aware dismissal** - Badges clear when you focus the window
+4. **Concise notifications** - Just project name, not verbose details
+5. **Legacy hook suppression** - Claude Code hooks disabled when tmux monitor active
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `scripts/claude-hooks/prompt-submit-notification.sh` | Creates "working" badge |
-| `scripts/claude-hooks/stop-notification.sh` | Updates to "stopped", sends notification |
-| `scripts/claude-hooks/swaync-action-callback.sh` | Handles "Return to Window" action |
-| `home-modules/desktop/i3-project-event-daemon/handlers.py` | Focus event handling |
-| `home-modules/desktop/i3-project-event-daemon/monitoring_data.py` | Badge cleanup |
-| `home-modules/desktop/eww-monitoring-panel.nix` | Badge display in EWW |
+| `home-modules/services/tmux-ai-monitor.nix` | **NEW**: systemd service for process monitoring |
+| `scripts/tmux-ai-monitor/monitor.sh` | **NEW**: Main polling loop |
+| `scripts/tmux-ai-monitor/notify.sh` | **NEW**: Notification sender |
+| `home-modules/ai-assistants/claude-code.nix` | **MODIFIED**: Hooks suppressed |
+| `home-modules/desktop/i3-project-event-daemon/handlers.py` | Focus event handling (unchanged) |
+| `home-modules/desktop/i3-project-event-daemon/monitoring_data.py` | Badge cleanup (unchanged) |
 
-## Badge Lifecycle
+## Badge Lifecycle (tmux-based)
 
 ```
-User submits prompt → Working badge appears (spinner)
-                            ↓
-Claude completes → Stopped badge (bell) + Desktop notification
-                            ↓
+AI process detected in tmux pane → Working badge appears (spinner)
+                                        ↓
+ALL AI processes exit (return to shell) → Stopped badge (bell) + Notification
+                                        ↓
 User focuses window → Badge dismissed (auto)
     OR
 User clicks notification → Badge dismissed + Window focused
 ```
+
+**Multi-pane behavior**:
+- Badge shows "working" if ANY pane has AI assistant running
+- Badge shows "stopped" only when ALL panes return to shell
 
 ## Testing
 
@@ -141,27 +147,32 @@ rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges/"*.json
 
 ## Configuration
 
-### Hook Timeout
+### tmux-ai-monitor Service
 
-In `home-modules/ai-assistants/claude-code.nix`:
+In `home-modules/services/tmux-ai-monitor.nix`:
 
 ```nix
-hooks = {
-  UserPromptSubmit = [{
-    hooks = [{
-      type = "command";
-      command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
-      timeout = 3;  # 3 seconds max
-    }];
-  }];
-  Stop = [{
-    hooks = [{
-      type = "command";
-      command = "${self}/scripts/claude-hooks/stop-notification.sh";
-      timeout = 3;  # 3 seconds max
-    }];
-  }];
+services.tmux-ai-monitor = {
+  enable = true;  # Enables monitor, suppresses legacy hooks
+
+  # Polling interval (milliseconds)
+  pollInterval = 300;
+
+  # AI processes to detect
+  processes = [
+    { name = "claude"; title = "Claude Code Ready"; source = "claude-code"; }
+    { name = "codex"; title = "Codex Ready"; source = "codex"; }
+  ];
 };
+```
+
+### Legacy Hook Suppression
+
+Hooks are automatically suppressed when `services.tmux-ai-monitor.enable = true`:
+
+```nix
+# In claude-code.nix - hooks conditional on monitor NOT being enabled
+enableLegacyHooks = !config.services.tmux-ai-monitor.enable;
 ```
 
 ### Focus Dismiss Delay
@@ -184,9 +195,26 @@ BADGE_MAX_AGE = 300  # 5 minutes
 
 | Criterion | How to Verify |
 |-----------|---------------|
-| SC-001: 600ms latency | Time from prompt submit to spinner visible |
-| SC-002: 500ms focus dismiss | Time from focus to badge removal |
-| SC-003: 30s orphan cleanup | Close window, check badge removed |
-| SC-004: 95% action success | Click notification, verify window focus |
-| SC-005: Project in notification | Check notification body content |
-| SC-006: No stale after 5 min | Run multiple sessions, check panel |
+| SC-001: 500ms latency | Time from AI process start to spinner visible |
+| SC-002: Works for Claude + Codex | Run both tools, verify badges appear |
+| SC-003: 500ms focus dismiss | Time from focus to badge removal |
+| SC-004: 30s orphan cleanup | Close window, check badge removed |
+| SC-005: 95% action success | Click notification, verify window focus |
+| SC-006: Identify assistant | Check notification title shows "Claude Code Ready" or "Codex Ready" |
+| SC-007: No stale after 5 min | Run multiple sessions, check panel |
+| SC-008: Degraded mode | Stop monitor service, verify system continues |
+| SC-009: Hooks suppressed | Verify no hook output in logs when monitor active |
+
+## Monitor Service Management
+
+```bash
+# Start/stop the tmux-ai-monitor service
+systemctl --user start tmux-ai-monitor
+systemctl --user stop tmux-ai-monitor
+
+# View logs
+journalctl --user -u tmux-ai-monitor -f
+
+# Check status
+systemctl --user status tmux-ai-monitor
+```

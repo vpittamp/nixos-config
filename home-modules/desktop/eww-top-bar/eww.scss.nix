@@ -509,4 +509,132 @@
                   inset 0 0 8px rgba(243, 139, 168, 0.15);
     }
   }
+
+  /* Feature 117: AI Sessions widget styling */
+  .ai-sessions-container {
+    margin-left: 8px;
+  }
+
+  /* AI chip base styling */
+  .ai-chip {
+    background: rgba(49, 50, 68, 0.65);
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    border-radius: 10px;
+    padding: 2px 6px;
+    min-height: 16px;
+    transition: all 150ms ease;
+  }
+
+  .ai-chip:hover {
+    background: rgba(69, 71, 90, 0.7);
+    border-color: rgba(148, 226, 213, 0.6);
+    box-shadow: 0 2px 8px rgba(148, 226, 213, 0.3);
+  }
+
+  /* Working state - teal pulsating glow */
+  .ai-chip.working {
+    background: linear-gradient(135deg, rgba(148, 226, 213, 0.2), rgba(137, 180, 250, 0.15));
+    border: 1px solid rgba(148, 226, 213, 0.6);
+    box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
+                inset 0 0 6px rgba(148, 226, 213, 0.15);
+    animation: ai-working-pulse 2s ease-in-out infinite;
+  }
+
+  .ai-chip.working:hover {
+    background: linear-gradient(135deg, rgba(148, 226, 213, 0.3), rgba(137, 180, 250, 0.2));
+    box-shadow: 0 0 14px rgba(148, 226, 213, 0.6);
+  }
+
+  /* Attention state - peach/red highlight */
+  .ai-chip.attention {
+    background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(243, 139, 168, 0.2));
+    border: 1px solid rgba(250, 179, 135, 0.7);
+    box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
+                inset 0 0 6px rgba(250, 179, 135, 0.15);
+    animation: ai-attention-pulse 2s ease-in-out infinite;
+  }
+
+  .ai-chip.attention:hover {
+    background: linear-gradient(135deg, rgba(250, 179, 135, 0.35), rgba(243, 139, 168, 0.3));
+    box-shadow: 0 0 14px rgba(250, 179, 135, 0.6);
+  }
+
+  /* Idle state - muted/dimmed */
+  .ai-chip.idle {
+    background: rgba(49, 50, 68, 0.4);
+    border: 1px solid rgba(108, 112, 134, 0.35);
+    opacity: 0.7;
+  }
+
+  .ai-chip.idle:hover {
+    opacity: 1;
+    background: rgba(69, 71, 90, 0.5);
+  }
+
+  /* Indicator icon styling */
+  .ai-chip-indicator {
+    font-size: 10px;
+    color: #94e2d5;
+    transition: opacity 120ms ease;
+  }
+
+  .ai-chip.working .ai-chip-indicator {
+    color: #94e2d5;
+  }
+
+  .ai-chip.attention .ai-chip-indicator {
+    color: #fab387;
+  }
+
+  .ai-chip.idle .ai-chip-indicator {
+    color: #6c7086;
+  }
+
+  /* Opacity classes for pulsating fade effect */
+  .ai-opacity-04 { opacity: 0.4; }
+  .ai-opacity-06 { opacity: 0.6; }
+  .ai-opacity-08 { opacity: 0.8; }
+  .ai-opacity-10 { opacity: 1.0; }
+
+  /* Source icon styling (SVG images) */
+  .ai-chip-source-icon {
+    min-width: 14px;
+    min-height: 14px;
+  }
+
+  .ai-chip.idle .ai-chip-source-icon {
+    opacity: 0.6;
+  }
+
+  /* AI working pulse animation */
+  @keyframes ai-working-pulse {
+    0% {
+      box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
+                  inset 0 0 6px rgba(148, 226, 213, 0.15);
+    }
+    50% {
+      box-shadow: 0 0 16px rgba(148, 226, 213, 0.6),
+                  inset 0 0 10px rgba(148, 226, 213, 0.25);
+    }
+    100% {
+      box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
+                  inset 0 0 6px rgba(148, 226, 213, 0.15);
+    }
+  }
+
+  /* AI attention pulse animation */
+  @keyframes ai-attention-pulse {
+    0% {
+      box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
+                  inset 0 0 6px rgba(250, 179, 135, 0.15);
+    }
+    50% {
+      box-shadow: 0 0 16px rgba(250, 179, 135, 0.6),
+                  inset 0 0 10px rgba(250, 179, 135, 0.25);
+    }
+    100% {
+      box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
+                  inset 0 0 6px rgba(250, 179, 135, 0.15);
+    }
+  }
 ''
