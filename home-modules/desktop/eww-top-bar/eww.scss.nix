@@ -596,22 +596,14 @@
   .ai-opacity-08 { opacity: 0.8; }
   .ai-opacity-10 { opacity: 1.0; }
 
-  /* Source icon styling */
-  .ai-chip-source {
-    font-size: 11px;
-    color: #cdd6f4;
+  /* Source icon styling (SVG images) */
+  .ai-chip-source-icon {
+    min-width: 14px;
+    min-height: 14px;
   }
 
-  .ai-chip.working .ai-chip-source {
-    color: #94e2d5;
-  }
-
-  .ai-chip.attention .ai-chip-source {
-    color: #fab387;
-  }
-
-  .ai-chip.idle .ai-chip-source {
-    color: #a6adc8;
+  .ai-chip.idle .ai-chip-source-icon {
+    opacity: 0.6;
   }
 
   /* AI working pulse animation */

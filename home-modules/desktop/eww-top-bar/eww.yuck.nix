@@ -435,9 +435,12 @@ in
                 ;; State indicator
                 (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
                        :text {session.state == "working" ? topbar_spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
-                ;; Source icon (text for now - SVG requires full path)
-                (label :class "ai-chip-source"
-                       :text {session.source == "claude-code" ? "󰧑" : (session.source == "codex" ? "󰭹" : "󰚩")}))))))
+                ;; Source icon (SVG images for claude and codex)
+                (image
+                  :class "ai-chip-source-icon"
+                  :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
+                  :image-width 14
+                  :image-height 14)))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
