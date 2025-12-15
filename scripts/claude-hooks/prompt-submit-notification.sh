@@ -72,11 +72,15 @@ if [ -n "$WINDOW_ID" ]; then
     BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
     mkdir -p "$BADGE_STATE_DIR"
     BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
+    # Feature 117: Include project from I3PM_PROJECT_NAME environment variable
+    # This is set by app-launcher-wrapper.sh when terminal was launched
+    PROJECT_NAME="${I3PM_PROJECT_NAME:-}"
     cat > "$BADGE_FILE" <<EOF
 {
   "window_id": $WINDOW_ID,
   "state": "working",
   "source": "claude-code",
+  "project": "$PROJECT_NAME",
   "timestamp": $(date +%s.%N)
 }
 EOF

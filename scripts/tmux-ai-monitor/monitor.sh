@@ -49,6 +49,8 @@ declare -A PROCESS_SOURCES=(
 declare -A WINDOW_ACTIVE_PANES
 # Track last known source per window (for notification title)
 declare -A WINDOW_LAST_SOURCE
+# Track tmux session name per window (for project lookup)
+declare -A WINDOW_SESSION_NAME
 # Track AI process PIDs per window for network monitoring
 declare -A WINDOW_AI_PIDS
 # Track last network bytes per window (for idle detection)
@@ -182,17 +184,20 @@ find_ai_process_pid() {
     echo "${ai_pid:-}"
 }
 
-# Get project name from i3pm context (if available)
-get_project_name() {
-    local window_id="$1"
-    # Try to get project name from i3pm project context
-    # For now, use a simple approach - read from window marks or env
-    local project_name
-    project_name=$(swaymsg -t get_tree | jq -r --arg wid "$window_id" \
-        '.. | objects | select(.id == ($wid | tonumber)) | .marks[]? | select(startswith("i3pm_project:"))' 2>/dev/null | head -1 | sed 's/i3pm_project://')
-
-    if [[ -n "$project_name" ]]; then
-        echo "$project_name"
+# Get project name from tmux session environment
+# The app-launcher-wrapper.sh sets I3PM_PROJECT_NAME when launching terminals
+get_project_name_from_session() {
+    local session_name="$1"
+    if [[ -z "$session_name" ]]; then
+        echo ""
+        return
+    fi
+    # Query tmux environment for I3PM_PROJECT_NAME
+    # Format: I3PM_PROJECT_NAME=owner/repo:branch
+    local env_value
+    env_value=$(tmux show-environment -t "$session_name" I3PM_PROJECT_NAME 2>/dev/null | cut -d= -f2-)
+    if [[ -n "$env_value" ]] && [[ "$env_value" != "-I3PM_PROJECT_NAME" ]]; then
+        echo "$env_value"
     else
         echo ""
     fi
@@ -203,6 +208,7 @@ get_project_name() {
 write_working_badge() {
     local window_id="$1"
     local source="$2"
+    local session_name="$3"
     local badge_file="$BADGE_DIR/$window_id.json"
 
     # Preserve session_started if badge already exists
@@ -214,17 +220,22 @@ write_working_badge() {
         session_started=$(date +%s.%N)
     fi
 
+    # Get project from tmux session environment
+    local project_name
+    project_name=$(get_project_name_from_session "$session_name")
+
     cat > "$badge_file" <<EOF
 {
   "window_id": $window_id,
   "state": "working",
   "source": "$source",
+  "project": "$project_name",
   "needs_attention": false,
   "session_started": $session_started,
   "timestamp": $(date +%s.%N)
 }
 EOF
-    log "Created working badge for window $window_id (source: $source)"
+    log "Created working badge for window $window_id (source: $source, project: $project_name)"
 }
 
 # Write badge file for "stopped" state with needs_attention flag
@@ -232,6 +243,7 @@ EOF
 write_stopped_badge() {
     local window_id="$1"
     local source="$2"
+    local session_name="$3"
     local badge_file="$BADGE_DIR/$window_id.json"
 
     # Preserve session_started and increment count from existing badge
@@ -246,22 +258,23 @@ write_stopped_badge() {
     fi
     count=$((count + 1))
 
+    # Get project from tmux session environment
+    local project_name
+    project_name=$(get_project_name_from_session "$session_name")
+
     cat > "$badge_file" <<EOF
 {
   "window_id": $window_id,
   "state": "stopped",
   "source": "$source",
+  "project": "$project_name",
   "needs_attention": true,
   "count": $count,
   "session_started": $session_started,
   "timestamp": $(date +%s.%N)
 }
 EOF
-    log "Created stopped badge for window $window_id (source: $source, count: $count)"
-
-    # Get project name for notification
-    local project_name
-    project_name=$(get_project_name "$window_id")
+    log "Created stopped badge for window $window_id (source: $source, project: $project_name, count: $count)"
 
     # Send notification via notify.sh
     if [[ -x "$SCRIPT_DIR/notify.sh" ]]; then
@@ -285,6 +298,10 @@ update_pane_state() {
         return
     fi
 
+    # Get session name for project lookup (from pane_id)
+    local session_name
+    session_name=$(tmux display-message -t "$pane_id" -p '#{session_name}' 2>/dev/null) || true
+
     if is_ai_process "$process_name"; then
         # AI process running - add pane to active set
         local source="${PROCESS_SOURCES[$process_name]:-$process_name}"
@@ -297,6 +314,7 @@ update_pane_state() {
         if [[ ! " ${WINDOW_ACTIVE_PANES[$window_id]:-} " =~ " $pane_id " ]]; then
             WINDOW_ACTIVE_PANES[$window_id]="${WINDOW_ACTIVE_PANES[$window_id]:-} $pane_id"
             WINDOW_LAST_SOURCE[$window_id]="$source"
+            WINDOW_SESSION_NAME[$window_id]="$session_name"
 
             # Initialize network tracking for this window
             if [[ -n "$ai_pid" ]]; then
@@ -305,7 +323,7 @@ update_pane_state() {
                 WINDOW_IDLE_COUNT[$window_id]=0
             fi
 
-            write_working_badge "$window_id" "$source"
+            write_working_badge "$window_id" "$source" "$session_name"
         elif [[ -n "$ai_pid" ]]; then
             # Update AI PID if changed (process may have restarted)
             WINDOW_AI_PIDS[$window_id]="$ai_pid"
@@ -325,7 +343,8 @@ update_pane_state() {
             if [[ -z "$active_panes" ]]; then
                 # All AI processes exited - write stopped badge
                 local source="${WINDOW_LAST_SOURCE[$window_id]:-unknown}"
-                write_stopped_badge "$window_id" "$source"
+                local sess="${WINDOW_SESSION_NAME[$window_id]:-}"
+                write_stopped_badge "$window_id" "$source" "$sess"
             fi
         fi
     fi
@@ -414,7 +433,8 @@ check_network_activity() {
             if [[ ${WINDOW_IDLE_COUNT[$window_id]} -ge $NET_IDLE_THRESHOLD ]] && [[ "$current_state" == "working" ]]; then
                 # Transition to stopped state with needs_attention
                 local source="${WINDOW_LAST_SOURCE[$window_id]:-unknown}"
-                write_stopped_badge "$window_id" "$source"
+                local sess="${WINDOW_SESSION_NAME[$window_id]:-}"
+                write_stopped_badge "$window_id" "$source" "$sess"
                 log "Network idle detected for window $window_id (no activity for ${NET_IDLE_THRESHOLD} cycles)"
             fi
         else
@@ -425,7 +445,8 @@ check_network_activity() {
             # If was stopped, transition back to working
             if [[ "$current_state" == "stopped" ]]; then
                 local source="${WINDOW_LAST_SOURCE[$window_id]:-unknown}"
-                write_working_badge "$window_id" "$source"
+                local sess="${WINDOW_SESSION_NAME[$window_id]:-}"
+                write_working_badge "$window_id" "$source" "$sess"
                 log "Network activity resumed for window $window_id"
             fi
         fi
