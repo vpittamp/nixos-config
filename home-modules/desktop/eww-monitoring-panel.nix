@@ -3952,7 +3952,16 @@ in
                 :space-evenly false
                 (label
                   :class "window-count-badge"
-                  :text "''${project.window_count}"))))
+                  :text "''${project.window_count}")
+                ;; Feature 119: Hover-visible close button for quick project close
+                (eventbox
+                  :cursor "pointer"
+                  :class "hover-close-btn project-hover-close"
+                  :onclick "${closeWorktreeScript}/bin/close-worktree-action ''${project.name} &"
+                  :tooltip "Close all windows in this project"
+                  (label
+                    :class "hover-close-icon"
+                    :text "󰅖")))))
           ;; Project action bar (reveals on right-click)
           (revealer
             :reveal {context_menu_project == project.name}
@@ -4104,7 +4113,16 @@ in
                 :valign "center"
                 (label
                   :class "env-expand-icon"
-                  :text {env_window_id == window.id ? "󰘵" : "󰀫"}))))
+                  :text {env_window_id == window.id ? "󰘵" : "󰀫"})))
+            ;; Feature 119: Hover-visible close button for quick window close
+            (eventbox
+              :cursor "pointer"
+              :class "hover-close-btn"
+              :onclick "${closeWindowScript}/bin/close-window-action ''${window.id}"
+              :tooltip "Close window"
+              (label
+                :class "hover-close-icon"
+                :text "󰅖")))
           ;; Inline action bar (slides down on right-click)
           (revealer
             :reveal {context_menu_window_id == window.id}
@@ -10742,6 +10760,49 @@ in
       .action-close:hover {
         background-color: rgba(243, 139, 168, 0.2);
         color: ${mocha.red};
+      }
+
+      /* Feature 119: Hover-visible close buttons */
+      .hover-close-btn {
+        opacity: 0;
+        padding: 4px 8px;
+        margin-left: 4px;
+        border-radius: 6px;
+        background-color: transparent;
+        transition: opacity 150ms ease-in-out, background-color 150ms ease-in-out;
+      }
+
+      .hover-close-icon {
+        font-size: 14px;
+        color: ${mocha.overlay0};
+        transition: color 150ms ease-in-out;
+      }
+
+      /* Show close button on window row hover */
+      .window-row:hover .hover-close-btn {
+        opacity: 1;
+      }
+
+      /* Show close button on project header hover */
+      .project-header:hover .hover-close-btn {
+        opacity: 1;
+      }
+
+      .hover-close-btn:hover {
+        background-color: rgba(243, 139, 168, 0.2);
+      }
+
+      .hover-close-btn:hover .hover-close-icon {
+        color: ${mocha.red};
+      }
+
+      /* Project close button slightly larger */
+      .project-hover-close {
+        padding: 2px 6px;
+      }
+
+      .project-hover-close .hover-close-icon {
+        font-size: 12px;
       }
 
       /* Feature 094 Phase 12 T098: Loading spinner styles */
