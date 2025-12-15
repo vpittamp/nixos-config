@@ -1,7 +1,8 @@
 # Contract: Badge State File
 
-**Version**: 1.0.0
+**Version**: 2.0.0
 **Feature**: 117-improve-notification-progress-indicators
+**Updated**: 2025-12-15 (tmux-based detection)
 
 ## Overview
 
@@ -91,35 +92,46 @@ Badge indicates completion awaiting user attention. Visual: bell icon with count
 
 ### Create Badge (Working)
 
-**When**: Claude Code UserPromptSubmit hook fires
-**Actor**: `prompt-submit-notification.sh`
+**When**: tmux-ai-monitor detects AI process as foreground in any pane
+**Actor**: `tmux-ai-monitor/monitor.sh`
 
 ```bash
 cat > "$BADGE_FILE" <<EOF
 {
   "window_id": $WINDOW_ID,
   "state": "working",
-  "source": "claude-code",
+  "source": "$SOURCE_ID",
   "timestamp": $(date +%s.%N)
 }
 EOF
 ```
 
+Where `$SOURCE_ID` is:
+- `claude-code` for `claude` process
+- `codex` for `codex` process
+
 ### Update Badge (Stopped)
 
-**When**: Claude Code Stop hook fires
-**Actor**: `stop-notification.sh`
+**When**: tmux-ai-monitor detects ALL AI processes have exited (returned to shell) in all panes of window
+**Actor**: `tmux-ai-monitor/monitor.sh`
 
 ```bash
 cat > "$BADGE_FILE" <<EOF
 {
   "window_id": $WINDOW_ID,
   "state": "stopped",
-  "source": "claude-code",
+  "source": "$LAST_SOURCE_ID",
   "count": 1,
   "timestamp": $(date +%s.%N)
 }
 EOF
+
+# Send notification
+notify-send -w \
+  -a "i3pm" \
+  --action="return=Return to Window" \
+  "$NOTIFICATION_TITLE" \
+  "$PROJECT_NAME"
 ```
 
 ### Delete Badge (Focus Dismiss)
@@ -177,4 +189,21 @@ if window_id not in valid_window_ids:
 
 ## Migration
 
-This contract replaces the previous dual file+IPC approach. No migration needed - badge directory is ephemeral (runtime dir).
+### v1.0 → v2.0
+
+This contract replaces Claude Code hook-based detection with tmux-based polling:
+
+| Aspect | v1.0 (hooks) | v2.0 (tmux) |
+|--------|--------------|-------------|
+| Detection method | Claude Code hooks | tmux process polling |
+| Supported tools | Claude Code only | Claude Code + Codex |
+| Actor | Hook scripts | tmux-ai-monitor service |
+| Latency | ~100ms (event-driven) | ~300ms (polling) |
+
+**No data migration needed** - badge directory is ephemeral (runtime dir).
+
+**Hook suppression**: Claude Code hooks are disabled when tmux-ai-monitor is active:
+```nix
+# home-modules/ai-assistants/claude-code.nix
+enableLegacyHooks = !config.services.tmux-ai-monitor.enable;
+```

@@ -2,6 +2,7 @@
 
 **Feature**: 117-improve-notification-progress-indicators
 **Date**: 2025-12-14
+**Updated**: 2025-12-15 (tmux-based detection)
 
 ## Entities
 
@@ -19,21 +20,26 @@ Visual notification indicator associated with a Sway window.
 | timestamp | float | Yes | Unix timestamp of badge creation/update |
 | count | integer | No | Number of notifications (default: 1, max: 9999) |
 
-**State Machine**:
+**State Machine** (tmux-based):
 
 ```
-                  prompt-submit
-    [No Badge] ───────────────────> [Working]
-                                        │
-                                        │ stop-hook
-                                        ▼
-                                    [Stopped]
-                                        │
-                    ┌───────────────────┴───────────────────┐
-                    │ focus window          │ click action  │
-                    ▼                       ▼               │
-               [No Badge] <──────────────[No Badge] <──────┘
+                  AI process detected
+    [No Badge] ───────────────────────> [Working]
+                                             │
+                                             │ AI process exits (all panes)
+                                             ▼
+                                        [Stopped]
+                                             │
+                    ┌────────────────────────┴─────────────────────┐
+                    │ focus window          │ click action        │
+                    ▼                       ▼                     │
+               [No Badge] <──────────────[No Badge] <─────────────┘
 ```
+
+**Multi-Pane Logic**:
+- "Working" if ANY pane in window has AI assistant running
+- "Stopped" only when ALL panes return to shell
+- Source shows last-to-finish assistant
 
 **Validation Rules**:
 - `window_id` must be > 0
@@ -69,23 +75,47 @@ Sway container representing a window. Not stored by this feature, but queried fr
 
 ---
 
-### Hook Event (Conceptual)
+### Monitored Process (NEW in tmux-based approach)
 
-Claude Code lifecycle events that trigger badge operations.
+Configuration for AI assistant process detection.
 
-| Event | Trigger | Badge Action |
-|-------|---------|--------------|
-| UserPromptSubmit | User submits prompt | Create/update badge with `state: "working"` |
-| Stop | Claude completes, awaits input | Update badge to `state: "stopped"`, send notification |
+| Field | Type | Description |
+|-------|------|-------------|
+| process_name | string | Command name to detect (e.g., "claude", "codex") |
+| notification_title | string | Title for desktop notification |
+| source_id | string | Source identifier for badge |
 
-**Data passed to hooks** (via stdin JSON):
-```json
-{
-  "tool_input": { "command": "..." },
-  "tool_name": "Bash",
-  "session_id": "..."
-}
-```
+**Default Configuration**:
+| Process Name | Notification Title | Source ID |
+|-------------|-------------------|-----------|
+| `claude` | Claude Code Ready | claude-code |
+| `codex` | Codex Ready | codex |
+
+---
+
+### tmux Pane State (Runtime - not persisted)
+
+State tracked by tmux-ai-monitor service for each pane.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| pane_id | string | tmux pane identifier (e.g., "%0") |
+| pane_pid | integer | PID of pane's shell process |
+| current_command | string | Foreground process name |
+| window_id | integer | Associated Sway window ID |
+
+---
+
+### Hook Event (Legacy - Suppressed)
+
+Claude Code lifecycle events - **suppressed when tmux-ai-monitor is active**.
+
+| Event | Trigger | Badge Action | Status |
+|-------|---------|--------------|--------|
+| UserPromptSubmit | User submits prompt | Create badge | **SUPPRESSED** |
+| Stop | Claude completes | Update badge | **SUPPRESSED** |
+
+**Replaced by**: tmux-ai-monitor polling detection
 
 ---
 

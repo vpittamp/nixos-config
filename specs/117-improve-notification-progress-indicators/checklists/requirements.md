@@ -2,6 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2025-12-14
+**Updated**: 2025-12-15
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -32,13 +33,14 @@
 ## Notes
 
 - All items pass validation
-- Spec is ready for `/speckit.plan`
-- **Design Philosophy**: Clean-slate optimization - no backwards compatibility, single optimal path
-- Key improvement areas addressed:
-  - Timing synchronization (SC-001: 600ms latency requirement)
-  - Stale notification cleanup (SC-003, SC-006, FR-008)
-  - Focus-aware dismissal (US2, FR-003, SC-002)
-  - Concise notifications (US4, FR-009)
-  - Multi-process handling (US1 scenario 4, FR-004)
-  - Navigation back to window (US3, FR-006, FR-007)
-  - Legacy code removal (FR-013, FR-014) - consolidate dual mechanisms
+- Spec is ready for `/speckit.clarify` or `/speckit.plan`
+- **Updated Approach**: Replaced hook-based detection with tmux process monitoring
+- Key changes from previous spec:
+  - Detection method: Claude Code hooks → tmux foreground process polling
+  - Scope: Claude Code only → Claude Code + Codex CLI (universal)
+  - Latency target: 600ms → 500ms (faster with direct process monitoring)
+  - New requirements: FR-015 (suppress legacy hooks), FR-016 (configurable processes), FR-017 (polling interval)
+- Assumptions documented:
+  - tmux required for AI assistant detection
+  - 300ms polling interval default
+  - Ghostty as terminal emulator
