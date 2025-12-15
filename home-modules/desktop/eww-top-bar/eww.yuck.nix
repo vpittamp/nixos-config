@@ -440,7 +440,7 @@ in
                   :class "ai-chip-source-icon"
                   :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
                   :image-width 14
-                  :image-height 14)))))))
+                  :image-height 14))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
