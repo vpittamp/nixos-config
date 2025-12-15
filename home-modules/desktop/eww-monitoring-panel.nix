@@ -85,7 +85,7 @@ let
   # Version: 2025-11-26-v12 (Feature 097: Optional chaining for remote fields)
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
     #!${pkgs.bash}/bin/bash
-    # Version: 2025-12-10-v13 (Fix: Add i3pm to PATH for subprocess calls)
+    # Version: 2025-12-15-v14 (Feature 117: Add working_windows for Active AI Processes bar)
 
     # Add user profile bin to PATH so i3pm can be found by subprocess calls
     export PATH="${config.home.profileDirectory}/bin:$PATH"
@@ -3943,6 +3943,39 @@ in
                       :spacing 4
                       (label :class "close-all-icon" :text "󰅖")
                       (label :class "close-all-text" :text "Close All"))))
+                ;; Feature 117: Active AI Processes bar - compact summary of windows with working badges
+                ;; Shows clickable chips for each window running an AI assistant
+                (box
+                  :class "active-processes-bar"
+                  :visible {arraylength(monitoring_data.working_windows ?: []) > 0}
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 8
+                  ;; Label
+                  (label :class "active-processes-label" :text "󰚩 AI Active:")
+                  ;; Chips for each working window
+                  (box
+                    :orientation "h"
+                    :space-evenly false
+                    :spacing 6
+                    (for win in {monitoring_data.working_windows ?: []}
+                      (eventbox
+                        :cursor "pointer"
+                        :onclick "${focusWindowScript}/bin/focus-window-action ''${win.project} ''${win.id} &"
+                        :tooltip {"Click to focus: " + (win.project != "" ? win.project : win.title)}
+                        (box
+                          :class "active-process-chip"
+                          :orientation "h"
+                          :space-evenly false
+                          :spacing 4
+                          ;; Pulsing indicator (synced with badge animation)
+                          (label
+                            :class {"active-process-indicator badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))}
+                            :text {spinner_frame})
+                          ;; Project name (or title if no project)
+                          (label
+                            :class "active-process-name"
+                            :text {win.project != "" ? win.project : "Window"}))))))
                 ;; Projects list
                 (for project in {monitoring_data.projects ?: []}
                   (project-widget :project project)))))))
@@ -8725,6 +8758,49 @@ in
         opacity: 0.4;
         box-shadow: none;
         /* GTK CSS doesn't support filter: grayscale() */
+      }
+
+      /* Feature 117: Active AI Processes bar - compact summary at top of windows view */
+      .active-processes-bar {
+        background: alpha(${mocha.red}, 0.1);
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
+        border: 1px solid alpha(${mocha.red}, 0.3);
+      }
+
+      .active-processes-label {
+        color: ${mocha.subtext0};
+        font-size: 12px;
+        font-weight: 500;
+        margin-right: 4px;
+      }
+
+      .active-process-chip {
+        background: alpha(${mocha.surface0}, 0.8);
+        border-radius: 6px;
+        padding: 4px 10px;
+        border: 1px solid alpha(${mocha.red}, 0.4);
+        transition: all 200ms ease;
+      }
+
+      .active-process-chip:hover {
+        background: alpha(${mocha.surface1}, 0.9);
+        border-color: ${mocha.red};
+        box-shadow: 0 2px 8px alpha(${mocha.red}, 0.3);
+      }
+
+      .active-process-indicator {
+        color: ${mocha.red};
+        font-size: 14px;
+        font-weight: bold;
+      }
+
+      .active-process-name {
+        color: ${mocha.text};
+        font-size: 12px;
+        font-weight: 500;
+        max-width: 120px;
       }
 
       /* JSON Expand Trigger Icon - Intentional hover target */
