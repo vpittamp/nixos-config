@@ -70,28 +70,70 @@ fi
 # This mirrors the focusWindowScript logic exactly
 CURRENT_PROJECT=$(jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
+# Debug: Log the currently focused window and its marks BEFORE switch
+FOCUSED_BEFORE=$(swaymsg -t get_tree | jq -r '.. | objects | select(.focused==true) | "\(.id) \(.app_id // .window_class) \(.marks)"' 2>/dev/null | head -1)
+logger -t claude-callback "[Feature 119] Before switch: focused=$FOCUSED_BEFORE, current_project=$CURRENT_PROJECT, target_project=$PROJECT_NAME"
+
 # Feature 119: Only switch projects if different (avoid unnecessary switches)
 if [ -n "$PROJECT_NAME" ] && [ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]; then
     # Check if i3pm daemon is available
     if command -v i3pm >/dev/null 2>&1; then
+        # Log before switch for debugging
+        logger -t claude-callback "[Feature 119] Switching project: $CURRENT_PROJECT -> $PROJECT_NAME (window_id=$WINDOW_ID)"
+
         # Feature 119: Synchronous project switch (no arbitrary sleep)
         # i3pm worktree switch completes synchronously
-        if ! i3pm worktree switch "$PROJECT_NAME" 2>/dev/null; then
-            # Project switch failed - show warning but still try to focus window
-            notify-send -u normal "Project Switch Warning" \
-                "Failed to switch to project $PROJECT_NAME, attempting to focus window anyway"
+        # NOTE: Removed 2>/dev/null to ensure errors are visible for debugging
+        SWITCH_OUTPUT=$(i3pm worktree switch "$PROJECT_NAME" 2>&1)
+        SWITCH_EXIT=$?
+
+        if [ $SWITCH_EXIT -ne 0 ]; then
+            # Project switch failed - log error and show critical notification
+            # Match eww focusWindowScript behavior: exit on failure rather than continue
+            logger -t claude-callback "[Feature 119] Project switch FAILED (exit=$SWITCH_EXIT): $SWITCH_OUTPUT"
+            notify-send -u critical "Project Switch Failed" \
+                "Failed to switch to project $PROJECT_NAME (exit code: $SWITCH_EXIT). Please return to terminal manually."
+            exit 1
         fi
 
-        # Log to systemd journal
-        logger -t claude-callback "[Feature 119] Project switched from $CURRENT_PROJECT to $PROJECT_NAME"
+        # Log success
+        logger -t claude-callback "[Feature 119] Project switched successfully from $CURRENT_PROJECT to $PROJECT_NAME"
+
+        # Verify the switch happened by re-reading the active project
+        NEW_ACTIVE=$(jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
+        if [ "$NEW_ACTIVE" != "$PROJECT_NAME" ]; then
+            logger -t claude-callback "[Feature 119] WARNING: After switch, active project is $NEW_ACTIVE, expected $PROJECT_NAME"
+        fi
+
+        # Debug: Check if any visible windows still belong to the origin project (CURRENT_PROJECT)
+        # These windows should have been hidden by the project switch
+        ORIGIN_WINDOWS=$(swaymsg -t get_tree | jq -r --arg proj "$CURRENT_PROJECT" \
+            '.. | objects | select(.type=="con") | select(.app_id != null) |
+             select(.marks[] | contains($proj)) |
+             select(.marks[] | startswith("scoped:")) |
+             "\(.id) \(.app_id)"' 2>/dev/null || echo "")
+        if [ -n "$ORIGIN_WINDOWS" ]; then
+            logger -t claude-callback "[Feature 119] WARNING: Found visible windows from origin project ($CURRENT_PROJECT): $ORIGIN_WINDOWS"
+        fi
     fi
+else
+    logger -t claude-callback "[Feature 119] No project switch needed: current=$CURRENT_PROJECT, target=$PROJECT_NAME"
 fi
 
 # Feature 119: Focus terminal window immediately (no sleep/delay)
-if ! swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1; then
+logger -t claude-callback "[Feature 119] Attempting to focus window $WINDOW_ID"
+FOCUS_OUTPUT=$(swaymsg "[con_id=$WINDOW_ID] focus" 2>&1)
+FOCUS_EXIT=$?
+
+if [ $FOCUS_EXIT -ne 0 ]; then
+    logger -t claude-callback "[Feature 119] Focus FAILED (exit=$FOCUS_EXIT): $FOCUS_OUTPUT"
     notify-send -u critical "Focus Failed" "Could not focus window $WINDOW_ID"
     exit 1
 fi
+
+# Debug: Log the state AFTER focus
+FOCUSED_AFTER=$(swaymsg -t get_tree | jq -r '.. | objects | select(.focused==true) | "\(.id) \(.app_id // .window_class) \(.marks)"' 2>/dev/null | head -1)
+logger -t claude-callback "[Feature 119] After focus: focused=$FOCUSED_AFTER"
 
 # Feature 119: Clear badge file after successfully focusing window
 # This removes the notification badge since the user has returned to the window

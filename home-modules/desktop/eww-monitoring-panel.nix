@@ -153,6 +153,7 @@ let
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
     LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
 
     # Debounce: prevent rapid toggling (crashes eww daemon)
     if [[ -f "$LOCK_FILE" ]]; then
@@ -165,29 +166,30 @@ let
 
     # CRITICAL: Ensure daemon is running before any eww commands
     # Without this, eww commands will spawn their own daemon, causing duplicates
-    if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
       # Daemon not responding - try to start the service
       ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel 2>/dev/null
       # Wait for daemon to be ready (max 6 seconds)
       for i in $(seq 1 30); do
-        $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
+        $TIMEOUT 1s $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
         ${pkgs.coreutils}/bin/sleep 0.2
       done
       # If still not ready, exit to avoid spawning duplicate daemon
-      if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+      if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
         exit 1
       fi
     fi
 
     # Check if window is actually open (not just the variable)
-    if $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Window is open - close it
-      $EWW --config "$CONFIG" close monitoring-panel
-      $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false
+    # Use timeout to prevent hanging on overloaded daemon
+    if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      # Window is open - close it (run in background to avoid blocking)
+      $TIMEOUT 3s $EWW --config "$CONFIG" close monitoring-panel &
+      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false &
     else
-      # Window is closed - open it (click-through by default, forms enable focus mode)
-      $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false
-      $EWW --config "$CONFIG" open monitoring-panel
+      # Window is closed - open it (run in background to avoid blocking)
+      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false &
+      $TIMEOUT 3s $EWW --config "$CONFIG" open monitoring-panel &
     fi
   '';
 
@@ -199,27 +201,24 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 086: Enter monitoring focus mode
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
 
     # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $EWW_CMD ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
       echo "Monitoring panel daemon not running"
       exit 0
     fi
 
     # Check if panel is visible first
-    if ! $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+    if ! $TIMEOUT 2s $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
       echo "Panel not visible - use Mod+M to show it first"
       exit 0
     fi
 
-    # Update eww variable to show focus indicator
-    $EWW_CMD update panel_focused=true
-
-    # Feature 114: Enable panel focus mode (interactive, receives clicks)
-    $EWW_CMD update panel_focus_mode=true
-
-    # Reset selection index
-    $EWW_CMD update selected_index=0
+    # Update eww variables (run in background with timeout to avoid blocking)
+    $TIMEOUT 2s $EWW_CMD update panel_focused=true &
+    $TIMEOUT 2s $EWW_CMD update panel_focus_mode=true &
+    $TIMEOUT 2s $EWW_CMD update selected_index=0 &
 
     # Enter Sway monitoring mode (captures all keys)
     # This provides keyboard capture - eww layer-shell handles the rest
@@ -231,17 +230,14 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 086: Exit monitoring focus mode
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
 
     # Only update eww if daemon is running (avoid spawning duplicate daemon)
-    if $EWW_CMD ping >/dev/null 2>&1; then
-      # Update eww variable to hide focus indicator
-      $EWW_CMD update panel_focused=false
-
-      # Feature 114: Disable panel focus mode (return to click-through)
-      $EWW_CMD update panel_focus_mode=false
-
-      # Clear selection
-      $EWW_CMD update selected_index=-1
+    if $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
+      # Update eww variables (run in background with timeout to avoid blocking)
+      $TIMEOUT 2s $EWW_CMD update panel_focused=false &
+      $TIMEOUT 2s $EWW_CMD update panel_focus_mode=false &
+      $TIMEOUT 2s $EWW_CMD update selected_index=-1 &
     fi
 
     # Exit Sway mode (return to default) - always do this
@@ -263,6 +259,7 @@ let
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
     INDEX="''${1:-0}"
 
     # Validate index is 0-6
@@ -272,11 +269,12 @@ let
     fi
 
     # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
       exit 0
     fi
 
-    $EWW --config "$CONFIG" update current_view_index="$INDEX"
+    # Run in background with timeout to avoid blocking
+    $TIMEOUT 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" &
   '';
 
   # Wrapper script: Get current monitoring panel view index
@@ -3300,7 +3298,11 @@ in
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
-      ;; Build: 2025-11-29 02:40 UTC - Fix action icons
+      ;; Build: 2025-12-15 - Fix run-while variable ordering
+
+      ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
+      ;; Otherwise :run-while conditions don't work and all polls run continuously
+      (defvar current_view_index 0)
 
       ;; Defpoll: Windows view data (3s refresh)
       ;; Changed from deflisten to defpoll to prevent process spawning issues
@@ -3375,18 +3377,18 @@ in
       ;; Validation handled via explicit update commands when forms are opened
       (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}")
 
-      ;; Feature 116: Defpoll: Device state (500ms refresh for responsive controls)
+      ;; Feature 116: Defpoll: Device state (2s refresh - reduced from 500ms)
       ;; Only runs when Devices tab is active (index 6)
       ;; Uses device-backend.py from eww-device-controls module
+      ;; Note: 500ms was too aggressive and caused daemon overload
       (defpoll devices_state
-        :interval "500ms"
+        :interval "2s"
         :run-while {current_view_index == 6}
         :initial "{\"volume\":{\"volume\":50,\"muted\":false,\"icon\":\"󰕾\",\"current_device\":\"Unknown\"},\"bluetooth\":{\"enabled\":false,\"scanning\":false,\"devices\":[]},\"brightness\":{\"display\":50,\"keyboard\":0},\"battery\":{\"percentage\":100,\"state\":\"full\",\"icon\":\"󰁹\",\"level\":\"normal\",\"time_remaining\":\"\"},\"thermal\":{\"cpu_temp\":0,\"level\":\"normal\",\"icon\":\"󰔏\"},\"network\":{\"tailscale_connected\":false,\"wifi_connected\":false},\"hardware\":{\"has_battery\":false,\"has_brightness\":false,\"has_keyboard_backlight\":false,\"has_bluetooth\":true,\"has_power_profiles\":false,\"has_thermal_sensors\":true},\"power_profile\":{\"current\":\"balanced\",\"available\":[],\"icon\":\"󰾅\"}}"
         `$HOME/.config/eww/eww-device-controls/scripts/device-backend.py 2>/dev/null || echo '{}'`)
 
-      ;; Current view state - INDEX based (0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices)
-      ;; eww stack widget requires integer index for :selected attribute
-      (defvar current_view_index 0)
+      ;; NOTE: current_view_index is defined at the TOP of this file (before defpolls)
+      ;; This is required for :run-while conditions to work correctly
 
       ;; Selected window ID for detail view (0 = none selected)
       (defvar selected_window_id 0)
