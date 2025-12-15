@@ -1503,6 +1503,21 @@ async def query_monitoring_data() -> Dict[str, Any]:
             for badge in badge_state.values()
         ) if badge_state else False
 
+        # Feature 117 Enhancement: Collect windows with "working" badges for summary bar
+        # This provides a pre-computed list for the Active AI Processes bar in EWW
+        working_windows = []
+        for window in all_windows:
+            badge = window.get("badge", {})
+            if badge.get("state") == "working":
+                working_windows.append({
+                    "id": window.get("id"),
+                    "project": window.get("project", ""),
+                    "title": window.get("title", ""),
+                    "app_id": window.get("app_id", ""),
+                    "workspace_number": window.get("workspace_number", 0),
+                    "source": badge.get("source", "ai"),  # claude-code, codex, etc.
+                })
+
         # Return success state with project-based view
         return {
             "status": "ok",
@@ -1520,6 +1535,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": has_working_badge,
+            # Feature 117 Enhancement: Pre-computed list for Active AI Processes bar
+            "working_windows": working_windows,
         }
 
     except DaemonError as e:
@@ -1539,6 +1556,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": str(e),
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
+            "working_windows": [],
         }
 
     except Exception as e:
@@ -1558,6 +1576,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": f"Unexpected error: {type(e).__name__}: {e}",
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
+            "working_windows": [],
         }
 
 
