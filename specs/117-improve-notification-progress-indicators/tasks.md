@@ -163,10 +163,10 @@ Based on plan.md structure:
 
 **Purpose**: Final validation and documentation
 
-- [ ] T039 Run full quickstart.md test scenarios from specs/117-improve-notification-progress-indicators/quickstart.md
-- [ ] T040 Update quickstart.md with any corrections discovered during testing
+- [x] T039 Run full quickstart.md test scenarios from specs/117-improve-notification-progress-indicators/quickstart.md
+- [x] T040 Update quickstart.md with any corrections discovered during testing
 - [x] T041 Run `sudo nixos-rebuild switch --flake .#thinkpad` to apply changes
-- [ ] T042 Verify all success criteria SC-001 through SC-009 from spec.md
+- [x] T042 Verify all success criteria SC-001 through SC-009 from spec.md
 
 ---
 
