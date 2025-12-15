@@ -53,13 +53,30 @@ init_badge_dir() {
     fi
 }
 
-# T007: Get Sway window ID from tmux pane shell PID
-# Walks up process tree from pane's shell PID to find Ghostty, then queries Sway
-get_window_id_from_pane_pid() {
-    local pane_pid="$1"
+# T007: Get Sway window ID from tmux pane
+# Strategy: Find tmux client attached to pane's session, trace client to Ghostty
+get_window_id_from_pane() {
+    local pane_id="$1"
 
-    # Walk up the process tree from pane shell PID to find ghostty
-    local current="$pane_pid"
+    # Get the session name for this pane
+    local session_name
+    session_name=$(tmux display-message -t "$pane_id" -p '#{session_name}' 2>/dev/null) || true
+    if [[ -z "$session_name" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # Find a tmux client attached to this session
+    local client_pid
+    client_pid=$(tmux list-clients -t "$session_name" -F '#{client_pid}' 2>/dev/null | head -1) || true
+    if [[ -z "$client_pid" ]]; then
+        # No client attached to this session
+        echo ""
+        return 1
+    fi
+
+    # Walk up the process tree from client PID to find ghostty
+    local current="$client_pid"
     while [[ "$current" != "1" ]] && [[ -n "$current" ]]; do
         local cmd
         cmd=$(ps -p "$current" -o args= 2>/dev/null | head -c 100 || echo "")
@@ -162,10 +179,10 @@ update_pane_state() {
     local pane_id="$2"
     local process_name="$3"
 
-    # Get window ID for this pane
+    # Get window ID for this pane via tmux client -> Ghostty -> Sway
     # Note: || true prevents set -e from exiting on non-zero return
     local window_id
-    window_id=$(get_window_id_from_pane_pid "$pane_pid") || true
+    window_id=$(get_window_id_from_pane "$pane_id") || true
 
     if [[ -z "$window_id" ]]; then
         # Can't determine window - skip this pane
