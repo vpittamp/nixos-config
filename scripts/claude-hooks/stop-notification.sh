@@ -73,6 +73,9 @@ get_terminal_window_id() {
 
 WINDOW_ID=$(get_terminal_window_id)
 
+# Debug: Log window detection result
+logger -t claude-stop "[Feature 120] Window detection: TMUX=${TMUX:-unset}, WINDOW_ID=${WINDOW_ID:-empty}"
+
 # Feature 117: File-only badge storage (removed IPC dual-write)
 # Files at $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json are the single source of truth
 
@@ -123,6 +126,9 @@ RESPONSE=$(notify-send \
     "Claude Code Ready" \
     "$MESSAGE" 2>&1 || echo "")
 
+# Debug: Log notification response
+logger -t claude-stop "[Feature 120] Notification response: '$RESPONSE'"
+
 # If user clicked the "Return to Window" button, execute callback
 if [ "$RESPONSE" = "focus" ]; then
     # Call the callback script directly, passing metadata via environment variables
@@ -132,8 +138,12 @@ if [ "$RESPONSE" = "focus" ]; then
     export CALLBACK_TMUX_SESSION="$TMUX_SESSION"
     export CALLBACK_TMUX_WINDOW="$TMUX_WINDOW"
 
+    logger -t claude-stop "[Feature 120] Executing callback with WINDOW_ID=$WINDOW_ID, PROJECT_NAME=$PROJECT_NAME"
+
     # Execute callback script (Feature 119: Use SCRIPT_DIR for reliable path)
     "$SCRIPT_DIR/swaync-action-callback.sh"
+
+    logger -t claude-stop "[Feature 120] Callback completed with exit code $?"
 fi
 
 exit 0
