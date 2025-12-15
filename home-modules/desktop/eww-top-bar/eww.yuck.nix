@@ -145,6 +145,26 @@ in
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)
 
+;; Feature 117: AI sessions data (reads badge files for AI assistant status)
+(defpoll ai_sessions_data
+  :interval "2s"
+  :initial '{"sessions":[],"has_working":false}'
+  `bash ~/.config/eww/eww-top-bar/scripts/ai-sessions-status.sh`)
+
+;; Feature 117: Spinner animation for working AI sessions
+(defpoll topbar_spinner_frame
+  :interval "120ms"
+  :run-while {ai_sessions_data.has_working ?: false}
+  :initial "⬤"
+  `bash ~/.config/eww/eww-top-bar/scripts/spinner-frame.sh`)
+
+;; Feature 117: Spinner opacity for fade effect
+(defpoll topbar_spinner_opacity
+  :interval "120ms"
+  :run-while {ai_sessions_data.has_working ?: false}
+  :initial "1.0"
+  `bash ~/.config/eww/eww-top-bar/scripts/spinner-opacity.sh`)
+
 ;; Interactions / popups
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
@@ -395,6 +415,30 @@ in
                 :visible {notification_data.has_unread == true && notification_data.dnd == false}
                 :text {notification_data.display_count}))))
 
+;; Feature 117: AI Sessions widget for top bar
+;; Compact chips showing active AI assistants (Claude Code, Codex)
+;; Three states: working (pulsating), attention (bell), idle (muted)
+(defwidget ai-sessions-widget []
+  (box :class "ai-sessions-container"
+       :visible {arraylength(ai_sessions_data.sessions ?: []) > 0}
+       :orientation "h"
+       :space-evenly false
+       :spacing 4
+       (for session in {ai_sessions_data.sessions ?: []}
+         (eventbox :onclick "swaymsg '[con_id=''${session.id}]' focus &"
+                   :cursor "pointer"
+                   :tooltip {session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source) + " - " + (session.state == "working" ? "Processing..." : (session.needs_attention ? "Needs attention" : "Ready"))}
+           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
+                :orientation "h"
+                :space-evenly false
+                :spacing 3
+                ;; State indicator
+                (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
+                       :text {session.state == "working" ? topbar_spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
+                ;; Source icon (text for now - SVG requires full path)
+                (label :class "ai-chip-source"
+                       :text {session.source == "claude-code" ? "󰧑" : (session.source == "codex" ? "󰭹" : "󰚩")}))))))
+
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
 (defwidget main-bar [is_primary]
@@ -438,13 +482,14 @@ in
            ;; Health widget stays visible with text
            (build-health-widget)))
 
-    ;; Center: Active Project
+    ;; Center: Active Project + AI Sessions
     (box :class "center"
          :orientation "h"
          :space-evenly false
          :halign "center"
-         :spacing 4
-         (project-widget))
+         :spacing 6
+         (project-widget)
+         (ai-sessions-widget))
 
     ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Badge, and System Tray
     (box :class "right"
