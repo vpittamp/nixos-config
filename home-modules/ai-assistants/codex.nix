@@ -76,9 +76,12 @@ in
         web_search_request = true;
       };
 
+      # MCP Servers configuration
+      # Note: Codex does NOT support a `disabled` flag for MCP servers
+      # Servers are either defined (always active) or not defined (unavailable)
+      # Only Linux is supported due to Chromium dependency
       mcp_servers = lib.optionalAttrs enableChromiumMcpServers {
-        # Playwright and Chrome DevTools MCP servers only available on Linux
-        # where Chromium is available via Nix
+        # Playwright MCP server for browser automation
         playwright = {
           command = "npx";
           args = [
