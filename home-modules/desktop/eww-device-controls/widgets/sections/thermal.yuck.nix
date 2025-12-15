@@ -20,9 +20,7 @@
           (label :class "thermal-value ''${device_state.thermal.level ?: "cool"}"
                  :text "''${device_state.thermal.cpu_temp ?: 0}C"))
         (progress :class "thermal-bar ''${device_state.thermal.level ?: "cool"}"
-                  :value {device_state.thermal.cpu_temp ?: 0}
-                  :min 0
-                  :max {device_state.thermal.cpu_temp_max ?: 100}))
+                  :value {device_state.thermal.cpu_temp ?: 0}))
       ; Fan speed (if available)
       (revealer :reveal {device_state.thermal.fan_speed != "null" && device_state.thermal.fan_speed != null}
                 :transition "slidedown"

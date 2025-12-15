@@ -7725,9 +7725,7 @@ in
                   (progress
                     :class "thermal-bar"
                     :hexpand true
-                    :value "''${devices_state.thermal.cpu_temp ?: 0}"
-                    :min 0
-                    :max 100))
+                    :value "''${devices_state.thermal.cpu_temp ?: 0}"))
                 (box
                   :class "fan-row"
                   :orientation "h"
