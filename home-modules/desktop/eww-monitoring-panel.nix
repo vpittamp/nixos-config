@@ -8793,6 +8793,21 @@ in
         font-size: 14px;
       }
 
+      /* GTK tooltip styling - applies to all :tooltip attributes */
+      /* mocha.crust = #11111b = rgb(17, 17, 27) */
+      /* mocha.text = #cdd6f4 = rgb(205, 214, 244) */
+      tooltip {
+        background-color: rgba(17, 17, 27, 0.95);
+        border-radius: 8px;
+        border: 1px solid rgba(243, 139, 168, 0.3);
+        padding: 8px 12px;
+      }
+
+      tooltip label {
+        color: rgb(205, 214, 244);
+        font-size: 12px;
+      }
+
       /* JSON Expand Trigger Icon - Intentional hover target */
       .window-row {
         /* Ensure row aligns items properly */
