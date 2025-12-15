@@ -2,7 +2,153 @@
 
 **Feature**: 117-improve-notification-progress-indicators
 **Date**: 2025-12-14
+**Updated**: 2025-12-15
 **Status**: Complete
+
+---
+
+## Phase 2 Research: tmux-Based Universal Detection
+
+### R6: tmux Process Detection Method
+
+**Decision**: Use `tmux list-panes -F` with `#{pane_current_command}` format
+
+**Rationale**: tmux natively tracks the foreground process name for each pane. This is the most reliable and lightweight approach.
+
+**Implementation**:
+```bash
+# Get all panes with their window PID, pane ID, and current command
+tmux list-panes -a -F '#{pane_pid}|#{pane_id}|#{pane_current_command}'
+# Output: 12345|%0|claude
+#         12346|%1|bash
+#         12347|%2|codex
+```
+
+**Alternatives considered**:
+- `/proc/<pid>/stat` parsing → Requires knowing pane shell PID, more complex
+- `ps` commands → Higher overhead, less integrated with tmux
+- `ydotool`/input simulation → Overkill, meant for UI automation
+
+---
+
+### R7: tmux Pane to Sway Window Mapping
+
+**Decision**: Walk process tree from tmux server PID to Ghostty, then lookup Sway window by PID
+
+**Rationale**: All panes in a tmux session share the same terminal window, so we resolve window ID once per tmux server.
+
+**Process flow**:
+1. Get tmux server PID: `tmux display-message -p '#{pid}'`
+2. Get tmux client PID: `tmux list-clients -t $session -F '#{client_pid}'`
+3. Walk process tree up from client PID to find Ghostty
+4. Query Sway tree for window with matching Ghostty PID
+
+**Reused code**: Existing logic from `prompt-submit-notification.sh:22-62`
+
+---
+
+### R8: Multi-Assistant State Management
+
+**Decision**: Track window-level state with ANY/ALL semantics (per spec clarification)
+
+- "working" if ANY pane has AI assistant running
+- "stopped" only when ALL AI assistants exit
+- Source shows last-to-finish assistant
+
+**Implementation**: Track set of active pane IDs per window:
+
+```bash
+# Associative array: window_id -> space-separated pane IDs
+declare -A WINDOW_ACTIVE_PANES
+
+update_state() {
+    local window_id=$1 pane_id=$2 process=$3
+
+    if is_ai_process "$process"; then
+        # Add pane to active set
+        WINDOW_ACTIVE_PANES[$window_id]+=" $pane_id"
+        set_badge_working "$window_id" "$process"
+    else
+        # Remove pane from active set
+        WINDOW_ACTIVE_PANES[$window_id]=${WINDOW_ACTIVE_PANES[$window_id]// $pane_id/}
+        if [[ -z "${WINDOW_ACTIVE_PANES[$window_id]// /}" ]]; then
+            # All AI processes finished
+            set_badge_stopped "$window_id" "$process"
+        fi
+    fi
+}
+```
+
+---
+
+### R9: Hook Suppression Strategy
+
+**Decision**: Conditional flag in Nix configuration (not code deletion)
+
+**Rationale**: Per constitution Principle XII, suppress cleanly but allow easy rollback.
+
+**Implementation**:
+```nix
+# home-modules/ai-assistants/claude-code.nix
+let
+  enableLegacyHooks = !config.services.tmux-ai-monitor.enable;
+in {
+  programs.claude-code.settings.hooks = lib.mkIf enableLegacyHooks {
+    UserPromptSubmit = [ ... ];
+    Stop = [ ... ];
+  };
+}
+```
+
+---
+
+### R10: Optimal Polling Interval
+
+**Decision**: 300ms default, configurable
+
+**Benchmarks**:
+| Interval | Max Latency | CPU Impact |
+|----------|-------------|------------|
+| 100ms    | ~300ms      | ~0.5%      |
+| 300ms    | ~500ms      | ~0.2%      |
+| 500ms    | ~700ms      | ~0.1%      |
+
+**Rationale**: 300ms + file write + inotify ≤ 500ms target latency.
+
+---
+
+### R11: Notification on Completion
+
+**Decision**: Reuse existing `notify-send` pattern when process transitions from AI to shell
+
+**Implementation**:
+```bash
+notify-send -w \
+  -a "i3pm" \
+  -c "ai-assistant" \
+  --action="return=Return to Window" \
+  "${ASSISTANT_NAME} Ready" \
+  "$project_name"
+```
+
+Where ASSISTANT_NAME is "Claude Code" for `claude` process or "Codex" for `codex` process.
+
+---
+
+## Phase 2 Summary
+
+| Topic | Decision | Rationale |
+|-------|----------|-----------|
+| Process detection | tmux list-panes | Native, lightweight |
+| Window mapping | Process tree walk | Reuse existing code |
+| Multi-assistant | ANY/ALL semantics | Per clarification |
+| Hook suppression | Nix conditional | Easy rollback |
+| Polling interval | 300ms | Meets 500ms target |
+| Notifications | notify-send | Proven pattern |
+
+---
+
+## Phase 1 Research (Original)
 
 ## R1: Badge Storage Mechanism - File-Only vs File+IPC
 

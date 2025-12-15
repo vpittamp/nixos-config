@@ -1,6 +1,10 @@
 { config, pkgs, lib, inputs, self, pkgs-unstable ? pkgs, ... }:
 
 let
+  # Feature 117: Suppress legacy hooks when tmux-ai-monitor is enabled
+  # This allows easy rollback by just disabling the monitor service
+  tmuxMonitorEnabled = config.services.tmux-ai-monitor.enable or false;
+
   # Use claude-code from the dedicated flake for latest version (2.0.1)
   # Fall back to nixpkgs-unstable if flake not available
   claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
@@ -102,6 +106,10 @@ lib.mkIf enableClaudeCode {
             timeout = 5;
           }];
         }];
+      } // lib.optionalAttrs (!tmuxMonitorEnabled) {
+        # Feature 117: Legacy hooks suppressed when tmux-ai-monitor is enabled
+        # The tmux-based detection is more reliable and works for both Claude Code and Codex
+        # These hooks remain available for easy rollback by disabling tmux-ai-monitor
 
         # UserPromptSubmit hook - Feature 095/117: Activity indicator for Claude Code
         # Creates "working" badge in monitoring panel when user submits a prompt
