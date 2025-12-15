@@ -79,7 +79,9 @@ user_pref("privacy.resistFingerprinting", false);
 
 // Force use of XDG desktop portals for better Wayland integration
 user_pref("widget.use-xdg-desktop-portal.file-picker", 1);
-user_pref("widget.use-xdg-desktop-portal.mime-handler", 1);
+// DISABLED for PWAs: mime-handler = 1 causes system handler dialogs during auth
+// The portal mime handler shows an app chooser when PWAs navigate to auth URLs
+user_pref("widget.use-xdg-desktop-portal.mime-handler", 0);
 
 // Ensure native Wayland backend
 user_pref("gfx.webrender.all", true);
@@ -132,14 +134,14 @@ user_pref("extensions.webextensions.remote", true);
 user_pref("browser.uiCustomization.state", "{\"placements\":{\"widget-overflow-fixed-list\":[],\"nav-bar\":[\"back-button\",\"forward-button\",\"urlbar-container\",\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"toolbar-menubar\":[\"menubar-items\"],\"TabsToolbar\":[\"tabbrowser-tabs\",\"new-tab-button\",\"alltabs-button\"],\"PersonalToolbar\":[\"personal-bookmarks\"],\"unified-extensions-area\":[]},\"seen\":[\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"dirtyAreaCache\":[\"nav-bar\",\"TabsToolbar\",\"PersonalToolbar\"],\"currentVersion\":23,\"newElementCount\":2}");
 
 // === Feature 118: PWA External Link Handling ===
-// Open out-of-scope URLs in the default system browser
-// This works in combination with allowed_domains (set per-PWA in config.json)
-// - URLs to allowed_domains (auth providers) stay within PWA
-// - Other out-of-scope URLs open in default browser
-user_pref("firefoxpwa.openOutOfScopeInDefaultBrowser", true);
+// DISABLED: openOutOfScopeInDefaultBrowser causes system handler dialogs
+// even with allowedDomains set. Keep all navigation within PWA instead.
+// Auth flows (OAuth/SSO) will complete within the PWA window.
+user_pref("firefoxpwa.openOutOfScopeInDefaultBrowser", false);
 
-// NOTE: allowed_domains is now configured per-PWA in config.json via auth_domains
-// in pwa-sites.nix. This allows each PWA to handle its own auth providers internally.
+// Control how _blank target links are handled (OAuth popups)
+// 0=preserve, 1=force current tab (default), 2=force new window, 3=force new tab
+user_pref("firefoxpwa.linksTarget", 1);
 EOF
         echo "Updated: $profile/user.js"
         ((count++))
@@ -300,12 +302,9 @@ PY
       }) pwaList);
 
       # Convert PWA list to sites attrset keyed by ULID
-      # Feature 118: Added allowed_domains from auth_domains for internal auth
       sitesAttrset = builtins.listToAttrs (builtins.map (pwa:
         let
           iconUrl = ensureFileUrl pwa.icon;
-          # Feature 118: Get auth_domains for this PWA (allows internal OAuth/SSO navigation)
-          authDomains = if pwa ? auth_domains then pwa.auth_domains else [];
         in {
           name = pwa.ulid;
           value = {
@@ -333,9 +332,8 @@ PY
             # which conflicts with pwa-url-router and causes cascading opens.
             # PWAs are launched explicitly via tmux-url-open or app launcher.
             launch_on_browser = false;
-            # Feature 118: Allow PWAs to navigate to auth provider domains without opening external browser
-            # This enables OAuth/SSO flows to complete within the PWA
-            allowed_domains = authDomains;
+            # Note: allowed_domains is NOT used here - firefoxpwa reads it from
+            # user.js preference firefoxpwa.allowedDomains (set in pwa-update-profiles)
           };
           manifest = generateManifest pwa;
         };
@@ -440,7 +438,6 @@ in
           Icon=${pwa.icon}
           Terminal=false
           Categories=${categoriesStr}
-          MimeType=x-scheme-handler/http;x-scheme-handler/https;
           StartupNotify=true
         '';
       }) pwas);

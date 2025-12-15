@@ -50,6 +50,9 @@ in
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
+
+    # Sunshine game streaming (NVIDIA NVENC hardware encoding)
+    ../modules/desktop/sunshine.nix
   ];
 
   # Firefox 146+ overlay for native Wayland fractional scaling support
@@ -106,6 +109,25 @@ in
 
     # No fingerprint reader on desktop
     enableFingerprint = false;
+  };
+
+  # ========== SUNSHINE REMOTE DESKTOP (Software Encoding) ==========
+  # Software-encoded streaming (NVENC requires proprietary drivers)
+  # Still better than VNC due to H.264 video compression
+  # Client: Moonlight (available on all platforms)
+  # Access: moonlight://<tailscale-ip>
+  services.sunshine-streaming = {
+    enable = true;
+    hardwareType = "software";  # Using open NVIDIA drivers, can't use NVENC
+    captureMethod = "kms";      # Direct KMS capture for lowest latency
+    tailscaleOnly = true;       # Only allow via Tailscale for security
+    extraSettings = {
+      # Software encoding - optimize for quality on powerful CPU
+      sw_preset = "faster";     # Ryzen 7600X can handle better quality
+      sw_tune = "zerolatency";
+      # Higher bitrate for local network streaming
+      bitrate = 30000;
+    };
   };
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service

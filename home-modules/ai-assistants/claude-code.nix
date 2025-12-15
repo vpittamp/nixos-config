@@ -174,11 +174,10 @@ lib.mkIf enableClaudeCode {
           # Slash commands
           "SlashCommand"
 
-          # MCP Servers disabled by default - uncomment permissions if you enable mcpServers above
-          # "mcp__context7"
-          # "mcp__ide"
-          # "mcp__playwright"  # Linux only
-          # "mcp__chrome-devtools"  # Linux only
+          # MCP Server permissions - servers start disabled but need permissions when enabled via /mcp
+          "mcp__context7"
+          "mcp__playwright"  # Linux only
+          "mcp__chrome-devtools"  # Linux only
         ];
       };
 
@@ -351,54 +350,57 @@ lib.mkIf enableClaudeCode {
     };
 
     # MCP Servers configuration - using npx for cross-platform compatibility
-    # Note: All servers disabled by default to save context tokens (~33k tokens when enabled)
-    # Uncomment servers below if you need them
-    # mcpServers = {
-    #   # Context7 - Lightweight documentation lookup (~1.7k tokens)
-    #   # Available on all platforms
-    #   context7 = {
-    #     command = "npx";
-    #     args = [
-    #       "-y"
-    #       "@upstash/context7-mcp@latest"
-    #     ];
-    #   };
-    # } // lib.optionalAttrs enableChromiumMcpServers {
-    #   # Playwright MCP server for browser automation (~13.7k tokens)
-    #   # Only enabled on Linux where Chromium is available via Nix
-    #   playwright = {
-    #     transport = "stdio";
-    #     command = "npx";
-    #     args = [
-    #       "-y"
-    #       "@playwright/mcp@latest"
-    #       "--isolated"
-    #       "--browser"
-    #       "chromium"
-    #       "--executable-path"
-    #       chromiumConfig.chromiumBin
-    #     ];
-    #     env = {
-    #       PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
-    #       PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-    #       NODE_ENV = "production";
-    #       LOG_DIR = "/tmp/mcp-puppeteer-logs";
-    #     };
-    #   };
-    #
-    #   # Chrome DevTools MCP server for debugging and performance (~17k tokens)
-    #   # Only enabled on Linux where Chromium is available via Nix
-    #   chrome-devtools = {
-    #     command = "npx";
-    #     args = [
-    #       "-y"
-    #       "chrome-devtools-mcp@latest"
-    #       "--isolated"
-    #       "--headless"
-    #       "--executablePath"
-    #       chromiumConfig.chromiumBin
-    #     ];
-    #   };
-    # };
+    # Servers are defined with `disabled = true` by default to save context tokens
+    # Enable interactively via `/mcp` command or `@` menu when needed
+    # Note: Due to bug #11370, disabled servers may still consume some context tokens
+    mcpServers = {
+      # Context7 - Lightweight documentation lookup (~1.7k tokens)
+      # Available on all platforms
+      context7 = {
+        command = "npx";
+        args = [
+          "-y"
+          "@upstash/context7-mcp@latest"
+        ];
+        disabled = true;
+      };
+    } // lib.optionalAttrs enableChromiumMcpServers {
+      # Playwright MCP server for browser automation (~13.7k tokens)
+      # Only available on Linux where Chromium is available via Nix
+      playwright = {
+        command = "npx";
+        args = [
+          "-y"
+          "@playwright/mcp@latest"
+          "--isolated"
+          "--browser"
+          "chromium"
+          "--executable-path"
+          chromiumConfig.chromiumBin
+        ];
+        env = {
+          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          NODE_ENV = "production";
+          LOG_DIR = "/tmp/mcp-puppeteer-logs";
+        };
+        disabled = true;
+      };
+
+      # Chrome DevTools MCP server for debugging and performance (~17k tokens)
+      # Only available on Linux where Chromium is available via Nix
+      chrome-devtools = {
+        command = "npx";
+        args = [
+          "-y"
+          "chrome-devtools-mcp@latest"
+          "--isolated"
+          "--headless"
+          "--executablePath"
+          chromiumConfig.chromiumBin
+        ];
+        disabled = true;
+      };
+    };
   };
 }

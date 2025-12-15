@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SwayNC Action Callback for Claude Code Notifications
 # Feature 090: Enhanced Notification Callback
+# Feature 119: Rewritten to mirror focusWindowScript logic for reliable window focusing
 #
 # This script is triggered by SwayNC when the user clicks the "Return to Window"
 # action button or presses Enter on a Claude Code notification.
@@ -10,14 +11,18 @@
 #   SWAYNC_SUMMARY - Notification summary/title
 #   SWAYNC_ID - Notification ID
 #
-# We store the window context in a state file that the notification can reference.
+# We receive callback context via environment variables from stop-notification.sh:
+#   CALLBACK_WINDOW_ID - Sway window ID to focus
+#   CALLBACK_PROJECT_NAME - Project name for context switch
+#   CALLBACK_TMUX_SESSION - Tmux session name (if applicable)
+#   CALLBACK_TMUX_WINDOW - Tmux window index (if applicable)
 
 set -euo pipefail
 
 # Fix PATH for systemd service execution (SwayNC may have limited PATH)
 export PATH="/run/current-system/sw/bin:/etc/profiles/per-user/$USER/bin:$PATH"
 
-# Feature 090: Support two notification callback methods
+# Feature 119: Two notification callback methods
 # Method 1: Environment variables (preferred - set by stop-notification.sh)
 # Method 2: Metadata files (fallback - for manual testing)
 
@@ -50,10 +55,10 @@ else
     exit 1
 fi
 
-# Check if window still exists
+# Feature 119: Verify window still exists before attempting to focus
 WINDOW_EXISTS=$(swaymsg -t get_tree | jq -r --arg id "$WINDOW_ID" '
     .. | objects | select(.type=="con") | select(.id == ($id | tonumber)) | .id
-' | head -1)
+' 2>/dev/null | head -1 || echo "")
 
 if [ -z "$WINDOW_EXISTS" ]; then
     notify-send -u critical "Claude Code Terminal Unavailable" \
@@ -61,35 +66,34 @@ if [ -z "$WINDOW_EXISTS" ]; then
     exit 0
 fi
 
-# Switch to i3pm project if specified
-if [ -n "$PROJECT_NAME" ]; then
-    # Check if i3pm daemon is available (command exists and daemon is responding)
-    if command -v i3pm >/dev/null 2>&1 && i3pm worktree current >/dev/null 2>&1; then
-        # Feature 091 US3 T033: Log project switch timing
-        SWITCH_START=$(date +%s%N)
+# Feature 119: Get current project from active-worktree.json (single source of truth)
+# This mirrors the focusWindowScript logic exactly
+CURRENT_PROJECT=$(jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
-        i3pm worktree switch "$PROJECT_NAME" 2>/dev/null || true
+# Feature 119: Only switch projects if different (avoid unnecessary switches)
+if [ -n "$PROJECT_NAME" ] && [ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]; then
+    # Check if i3pm daemon is available
+    if command -v i3pm >/dev/null 2>&1; then
+        # Feature 119: Synchronous project switch (no arbitrary sleep)
+        # i3pm worktree switch completes synchronously
+        if ! i3pm worktree switch "$PROJECT_NAME" 2>/dev/null; then
+            # Project switch failed - show warning but still try to focus window
+            notify-send -u normal "Project Switch Warning" \
+                "Failed to switch to project $PROJECT_NAME, attempting to focus window anyway"
+        fi
 
-        # Feature 091: Wait for project switch to complete
-        # With Feature 091 optimizations, project switching completes in <200ms.
-        # We wait 1 second to ensure the switch is fully complete before focusing.
-        # Previous requirement: Would have been 6s for 5.3s baseline performance.
-        # Current requirement: 1s is sufficient with <200ms optimized switching.
-        sleep 1
-
-        # Feature 091 US3 T033: Calculate total callback time
-        SWITCH_END=$(date +%s%N)
-        SWITCH_DURATION_MS=$(( (SWITCH_END - SWITCH_START) / 1000000 ))
-
-        # Log to systemd journal (visible with: journalctl --user -t claude-callback)
-        logger -t claude-callback "[Feature 091] Notification callback completed in ${SWITCH_DURATION_MS}ms (project: $PROJECT_NAME)"
+        # Log to systemd journal
+        logger -t claude-callback "[Feature 119] Project switched from $CURRENT_PROJECT to $PROJECT_NAME"
     fi
 fi
 
-# Focus terminal window
-swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
+# Feature 119: Focus terminal window immediately (no sleep/delay)
+if ! swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1; then
+    notify-send -u critical "Focus Failed" "Could not focus window $WINDOW_ID"
+    exit 1
+fi
 
-# Feature 095: Clear badge file after focusing window
+# Feature 119: Clear badge file after successfully focusing window
 # This removes the notification badge since the user has returned to the window
 BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
 BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
@@ -97,7 +101,7 @@ if [ -f "$BADGE_FILE" ]; then
     rm -f "$BADGE_FILE"
 fi
 
-# Select tmux window if specified
+# Feature 119: Select tmux window if specified (after focusing the terminal)
 if [ -n "$TMUX_SESSION" ] && [ -n "$TMUX_WINDOW" ]; then
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
         tmux select-window -t "${TMUX_SESSION}:${TMUX_WINDOW}" 2>/dev/null || true

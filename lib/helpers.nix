@@ -77,23 +77,17 @@ let
       tertiary = "DP-1";  # USB-C/Thunderbolt display
       quaternary = "DP-1"; # Fallback to tertiary
     };
-    # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
-    # Physical connections: 1x HDMI + 3x DisplayPort (DP-1, DP-2, DP-3)
-    # Physical layout:
-    #   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-    #   │   HDMI-A-1  │  │    DP-1     │  │    DP-2     │
-    #   │   (Left)    │  │  (Primary)  │  │   (Right)   │
-    #   └─────────────┘  └─────────────┘  └─────────────┘
-    #                    ┌─────────────┐
-    #                    │    DP-3     │
-    #                    │  (Bottom)   │
-    #                    └─────────────┘
+    # Ryzen Desktop: 3-monitor bare-metal setup with NVIDIA RTX 5070
+    # Actual outputs (swaymsg -t get_outputs):
+    #   DP-3 = Verbatim MT17 (main)
+    #   DP-2 = HP Z24i G2
+    #   HDMI-A-1 = HP Z24i G2
     "ryzen" = {
-      outputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ];
-      primary = "DP-1";       # Center monitor (main workspace, WS 1-2)
-      secondary = "HDMI-A-1"; # Left monitor (supporting windows, WS 3-4)
-      tertiary = "DP-2";      # Right monitor (reference/docs, WS 5-6)
-      quaternary = "DP-3";    # Bottom monitor (monitoring/terminals, WS 7+)
+      outputs = [ "DP-3" "DP-2" "HDMI-A-1" ];
+      primary = "DP-3";       # Verbatim MT17 (main monitor)
+      secondary = "DP-2";     # HP Z24i G2 (left)
+      tertiary = "HDMI-A-1";  # HP Z24i G2 (right)
+      quaternary = "HDMI-A-1"; # Fallback to tertiary
     };
   };
 in

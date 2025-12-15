@@ -132,8 +132,8 @@ if [ "$RESPONSE" = "focus" ]; then
     export CALLBACK_TMUX_SESSION="$TMUX_SESSION"
     export CALLBACK_TMUX_WINDOW="$TMUX_WINDOW"
 
-    # Execute callback script (Feature 106: Use FLAKE_ROOT for portable path)
-    "$FLAKE_ROOT/scripts/claude-hooks/swaync-action-callback.sh"
+    # Execute callback script (Feature 119: Use SCRIPT_DIR for reliable path)
+    "$SCRIPT_DIR/swaync-action-callback.sh"
 fi
 
 exit 0

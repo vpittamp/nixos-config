@@ -1,7 +1,13 @@
 { config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 let
-  chromiumBin = "${pkgs.chromium}/bin/chromium";
+  # Chromium is only available on Linux
+  # On Darwin, MCP servers requiring Chromium will be disabled
+  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+
+  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+    chromiumBin = "${pkgs.chromium}/bin/chromium";
+  };
 in
 {
   # Force overwrite settings.json to prevent conflicts with manually-created files
@@ -31,7 +37,11 @@ in
       };
 
       # MCP Servers configuration
-      mcpServers = {
+      # Note: Gemini CLI does NOT support a `disabled` flag for MCP servers (issue #6352)
+      # Workaround: Use --allowed-mcp-server-names flag at runtime to selectively enable
+      # Example: gemini --allowed-mcp-server-names playwright
+      # Only Linux is supported due to Chromium dependency
+      mcpServers = lib.optionalAttrs enableChromiumMcpServers {
         # Chrome DevTools MCP server for browser debugging and performance analysis
         chrome-devtools = {
           command = "npx";
@@ -41,7 +51,7 @@ in
             "--isolated"
             "--headless"  # Run without GUI (learned from Codex fix)
             "--executablePath"
-            chromiumBin
+            chromiumConfig.chromiumBin
           ];
         };
 
@@ -55,7 +65,7 @@ in
             "--browser"
             "chromium"
             "--executable-path"
-            chromiumBin
+            chromiumConfig.chromiumBin
           ];
           env = {
             PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
