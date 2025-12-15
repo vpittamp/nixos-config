@@ -2183,9 +2183,11 @@ print(json.dumps(result))
   '';
 
   # Close worktree action script - closes all windows for a specific project/worktree
+  # Feature 119: Improved close worktree script with rate limiting and error handling
   closeWorktreeScript = pkgs.writeShellScriptBin "close-worktree-action" ''
     #!${pkgs.bash}/bin/bash
-    # Close all windows belonging to a specific worktree/project
+    # Feature 119: Close all windows belonging to a specific worktree/project
+    # Improved with rate limiting, error handling, and state validation
     set -euo pipefail
 
     PROJECT_NAME="''${1:-}"
@@ -2196,19 +2198,29 @@ print(json.dumps(result))
         exit 1
     fi
 
-    # Lock file for debouncing
+    # Feature 119: Rate limiting instead of lock file (1 second debounce for batch operations)
     LOCK_FILE="/tmp/eww-close-worktree-''${PROJECT_NAME//\//_}.lock"
+    CURRENT_TIME=$(date +%s%N)
+
     if [[ -f "$LOCK_FILE" ]]; then
-        exit 1
+        LAST_TIME=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+        TIME_DIFF=$(( (CURRENT_TIME - LAST_TIME) / 1000000000 ))  # Convert to seconds
+        if [[ $TIME_DIFF -lt 1 ]]; then
+            # Within rate limit window, silently ignore
+            exit 0
+        fi
     fi
-    touch "$LOCK_FILE"
+
+    # Update lock file with current timestamp
+    echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
     # Get all window IDs with marks matching this project
-    # Marks are in format: scoped:<project_name>:<window_id>
+    # Feature 119: Marks are in format: scoped:<app_name>:<project_name>:<window_id>
+    # The regex must skip the app name component between scoped: and project name
     WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" '
       .. | objects | select(.marks? != null) |
-      select(.marks | map(test("^scoped:" + $proj + ":")) | any) |
+      select(.marks | map(test("^scoped:[^:]+:" + $proj + ":")) | any) |
       .id
     ' 2>/dev/null || echo "")
 
@@ -2220,29 +2232,59 @@ print(json.dumps(result))
     # Count windows to close
     WINDOW_COUNT=$(echo "$WINDOW_IDS" | wc -l)
 
-    # Close each window
+    # Feature 119: Close each window with explicit error handling
     CLOSED=0
+    FAILED=0
     for WID in $WINDOW_IDS; do
         if ${pkgs.sway}/bin/swaymsg "[con_id=$WID] kill" 2>/dev/null; then
             ((CLOSED++)) || true
+        else
+            ((FAILED++)) || true
+            # Log failure but continue
+            echo "Failed to close window $WID" >&2
         fi
     done
 
-    ${pkgs.libnotify}/bin/notify-send -u normal "Worktree Closed" "Closed $CLOSED/$WINDOW_COUNT windows for $PROJECT_NAME"
+    # Feature 119: Re-query sway tree to confirm close
+    sleep 0.2  # Brief wait for window close to propagate
+    REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" '
+      .. | objects | select(.marks? != null) |
+      select(.marks | map(test("^scoped:" + $proj + ":")) | any) |
+      .id
+    ' 2>/dev/null | wc -l || echo "0")
+
+    # Feature 119: Send notification with actual close count
+    if [[ "$REMAINING" -gt 0 ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u normal "Worktree Closed" \
+            "Closed $CLOSED/$WINDOW_COUNT windows for $PROJECT_NAME\n$REMAINING windows still open"
+    else
+        ${pkgs.libnotify}/bin/notify-send -u normal "Worktree Closed" \
+            "Closed all $CLOSED windows for $PROJECT_NAME"
+    fi
   '';
 
-  # Close all windows action script - closes all windows across all projects
+  # Feature 119: Improved close all windows script with rate limiting and error handling
   closeAllWindowsScript = pkgs.writeShellScriptBin "close-all-windows-action" ''
     #!${pkgs.bash}/bin/bash
-    # Close all windows tracked by the monitoring panel
+    # Feature 119: Close all windows tracked by the monitoring panel
+    # Improved with rate limiting, error handling, and state validation
     set -euo pipefail
 
-    # Lock file for debouncing
+    # Feature 119: Rate limiting instead of lock file (1 second debounce)
     LOCK_FILE="/tmp/eww-close-all-windows.lock"
+    CURRENT_TIME=$(date +%s%N)
+
     if [[ -f "$LOCK_FILE" ]]; then
-        exit 1
+        LAST_TIME=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+        TIME_DIFF=$(( (CURRENT_TIME - LAST_TIME) / 1000000000 ))  # Convert to seconds
+        if [[ $TIME_DIFF -lt 1 ]]; then
+            # Within rate limit window, silently ignore
+            exit 0
+        fi
     fi
-    touch "$LOCK_FILE"
+
+    # Update lock file with current timestamp
+    echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
     # Get all window IDs with i3pm marks (scoped windows)
@@ -2260,15 +2302,90 @@ print(json.dumps(result))
     # Count windows to close
     WINDOW_COUNT=$(echo "$WINDOW_IDS" | wc -l)
 
-    # Close each window
+    # Feature 119: Close each window with explicit error handling
     CLOSED=0
+    FAILED=0
     for WID in $WINDOW_IDS; do
         if ${pkgs.sway}/bin/swaymsg "[con_id=$WID] kill" 2>/dev/null; then
             ((CLOSED++)) || true
+        else
+            ((FAILED++)) || true
+            echo "Failed to close window $WID" >&2
         fi
     done
 
-    ${pkgs.libnotify}/bin/notify-send -u normal "All Windows Closed" "Closed $CLOSED/$WINDOW_COUNT scoped windows"
+    # Feature 119: Re-query sway tree to confirm close
+    sleep 0.2  # Brief wait for window close to propagate
+    REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '
+      .. | objects | select(.marks? != null) |
+      select(.marks | map(startswith("scoped:")) | any) |
+      .id
+    ' 2>/dev/null | wc -l || echo "0")
+
+    # Feature 119: Send notification with actual close count
+    if [[ "$REMAINING" -gt 0 ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u normal "All Windows Closed" \
+            "Closed $CLOSED/$WINDOW_COUNT scoped windows\n$REMAINING windows still open"
+    else
+        ${pkgs.libnotify}/bin/notify-send -u normal "All Windows Closed" \
+            "Closed all $CLOSED scoped windows"
+    fi
+  '';
+
+  # Feature 119: Close individual window script with rate limiting
+  # Prevents double-click race conditions and handles missing windows gracefully
+  closeWindowScript = pkgs.writeShellScriptBin "close-window-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 119: Close individual window with rate limiting and error handling
+    set -euo pipefail
+
+    WINDOW_ID="''${1:-}"
+
+    # Validate input
+    if [[ -z "$WINDOW_ID" ]] || [[ "$WINDOW_ID" == "0" ]]; then
+        exit 1
+    fi
+
+    # Rate limiting: Use lock file with timestamp check (200ms debounce)
+    LOCK_FILE="/tmp/eww-close-window-''${WINDOW_ID}.lock"
+    CURRENT_TIME=$(date +%s%N)
+
+    if [[ -f "$LOCK_FILE" ]]; then
+        LAST_TIME=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+        TIME_DIFF=$(( (CURRENT_TIME - LAST_TIME) / 1000000 ))  # Convert to ms
+        if [[ $TIME_DIFF -lt 200 ]]; then
+            # Within rate limit window, silently ignore
+            exit 0
+        fi
+    fi
+
+    # Update lock file with current timestamp
+    echo "$CURRENT_TIME" > "$LOCK_FILE"
+
+    # Clear context menu state first (optimistic update)
+    ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0 &
+
+    # Check if window still exists before trying to close
+    WINDOW_EXISTS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg id "$WINDOW_ID" '
+        .. | objects | select(.type=="con") | select(.id == ($id | tonumber)) | .id
+    ' 2>/dev/null | head -1 || echo "")
+
+    if [[ -z "$WINDOW_EXISTS" ]]; then
+        # Window already gone, just clean up state
+        rm -f "$LOCK_FILE"
+        exit 0
+    fi
+
+    # Close the window
+    if ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] kill" 2>/dev/null; then
+        # Success - clean up lock file after brief delay
+        (sleep 0.5 && rm -f "$LOCK_FILE") &
+        exit 0
+    else
+        # Failed to close - clean up lock file
+        rm -f "$LOCK_FILE"
+        exit 1
+    fi
   '';
 
   # Toggle context menu for project in Windows view
@@ -3082,10 +3199,12 @@ in
 
     panelWidth = mkOption {
       type = types.int;
-      default = if hostname == "thinkpad" then 320 else 460;
+      # Feature 119: Reduced default width by ~33%
+      default = if hostname == "thinkpad" then 213 else 307;
       description = ''
         Width of the monitoring panel in pixels.
-        Default is 320px for ThinkPad (1.25 scale) and 460px for other hosts.
+        Default is 213px for ThinkPad (1.25 scale) and 307px for other hosts.
+        Feature 119: Reduced by ~33% from previous defaults (320/460).
         Adjust based on display scaling to prevent panel from being too wide.
       '';
     };
@@ -3110,6 +3229,7 @@ in
       switchProjectScript   # Feature 093: Switch project action
       closeWorktreeScript     # Close all windows for a worktree
       closeAllWindowsScript   # Close all scoped windows
+      closeWindowScript       # Feature 119: Close individual window with rate limiting
       toggleProjectContextScript # Toggle project context menu in Windows view
       toggleWindowsProjectExpandScript # Toggle individual project expand in Windows view
       projectCrudScript     # Feature 094: Project CRUD handler (T037)
@@ -3255,6 +3375,11 @@ in
       ;; Feature 086: Selected index for keyboard navigation (-1 = none)
       ;; Updated by j/k or up/down in monitoring mode
       (defvar selected_index -1)
+
+      ;; Feature 119: Debug mode toggle - Controls visibility of JSON and env var features
+      ;; When false (default), JSON inspect and env var features are hidden
+      ;; When true, debug features are visible
+      (defvar debug_mode false)
 
       ;; Hover tooltip state - Window ID being hovered (0 = none)
       ;; Updated by onhover/onhoverlost events on window items
@@ -3638,18 +3763,31 @@ in
               :orientation "h"
               :space-evenly true
               :hexpand true
+              ;; Feature 119: Removed PRJ/WS/WIN text labels - show just counts with icons
               ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
               (label
                 :class "count-badge"
-                :text "''${current_view_index == 0 ? monitoring_data.project_count ?: 0 : current_view_index == 1 ? projects_data.project_count ?: 0 : current_view_index == 2 ? apps_data.app_count ?: 0 : 0} ''${current_view_index == 0 || current_view_index == 1 ? 'PRJ' : current_view_index == 2 ? 'APPS' : 'ITEMS'}")
+                :tooltip "Projects"
+                :text "󰉋 ''${current_view_index == 0 ? monitoring_data.project_count ?: 0 : current_view_index == 1 ? projects_data.project_count ?: 0 : current_view_index == 2 ? apps_data.app_count ?: 0 : 0}")
               (label
                 :class "count-badge"
-                :text "''${current_view_index == 0 ? monitoring_data.workspace_count ?: 0 : 0} WS"
+                :tooltip "Workspaces"
+                :text "󰍹 ''${current_view_index == 0 ? monitoring_data.workspace_count ?: 0 : 0}"
                 :visible {current_view_index == 0})
               (label
                 :class "count-badge"
-                :text "''${current_view_index == 0 ? monitoring_data.window_count ?: 0 : 0} WIN"
+                :tooltip "Windows"
+                :text "󱂬 ''${current_view_index == 0 ? monitoring_data.window_count ?: 0 : 0}"
                 :visible {current_view_index == 0}))
+            ;; Feature 119: Debug mode toggle button
+            ;; When toggling OFF: also clear hover_window_id and env_window_id to collapse panels
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update debug_mode=''${debug_mode ? 'false' : 'true'} hover_window_id=0 env_window_id=0"
+              :tooltip {debug_mode ? "Debug mode ON - click to hide debug features" : "Debug mode OFF - click to show JSON/env features"}
+              (label
+                :class {"debug-toggle" + (debug_mode ? " active" : "")}
+                :text {debug_mode ? "󰃤" : "󰃠"}))
             ;; Opacity slider - small unobtrusive control
             (box
               :class "opacity-control"
@@ -3921,9 +4059,7 @@ in
                   :orientation "h"
                   :space-evenly false
                   :halign "end"
-                  (label
-                    :class "badge badge-workspace"
-                    :text "WS''${window.workspace_number}")
+                  ;; Feature 119: Removed workspace badge - user doesn't use workspace numbers
                   (label
                     :class "badge badge-pwa"
                     :text "PWA"
@@ -3944,8 +4080,10 @@ in
                       : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
                     :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
             ;; JSON expand trigger icon - click to toggle (Feature 109: Changed from hover to click for stability)
+            ;; Feature 119: Hidden when debug_mode is false
             (eventbox
               :cursor "pointer"
+              :visible debug_mode
               :onclick "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${hover_window_id == window.id ? 0 : window.id}"
               :tooltip "Click to view JSON"
               (box
@@ -3955,8 +4093,10 @@ in
                   :class "json-expand-icon"
                   :text {hover_window_id == window.id ? "󰅀" : "󰅂"})))
             ;; Feature 099: Environment variables trigger icon - click to expand
+            ;; Feature 119: Hidden when debug_mode is false
             (eventbox
               :cursor "pointer"
+              :visible debug_mode
               :onclick "${fetchWindowEnvScript} ''${window.pid ?: 0} ''${window.id} &"
               :tooltip "Click to view environment variables"
               (box
@@ -4003,12 +4143,13 @@ in
                 (label :class "action-btn action-trace" :text "󱂛"))
               (eventbox
                 :cursor "pointer"
-                :onclick "swaymsg [con_id=''${window.id}] kill && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
+                :onclick "${closeWindowScript}/bin/close-window-action ''${window.id}"
                 :tooltip "Close window"
                 (label :class "action-btn action-close" :text "󰅖"))))
           ;; JSON panel (slides down when expand icon is clicked - Feature 109: Removed hover handlers for stability)
+          ;; Feature 119: Only visible when debug_mode is enabled
           (revealer
-            :reveal {hover_window_id == window.id}
+            :reveal {debug_mode && hover_window_id == window.id}
             :transition "slidedown"
             :duration "150ms"
             (box
@@ -4044,8 +4185,9 @@ in
                   :text "(JSON preview disabled to reduce CPU)"
                   :wrap false))))
           ;; Feature 099: Environment variables panel (slides down when env icon is clicked)
+          ;; Feature 119: Only visible when debug_mode is enabled
           (revealer
-            :reveal {env_window_id == window.id}
+            :reveal {debug_mode && env_window_id == window.id}
             :transition "slidedown"
             :duration "150ms"
             (box
@@ -8057,6 +8199,27 @@ in
         border-radius: 3px;
       }
 
+      /* Feature 119: Debug Mode Toggle Button */
+      .debug-toggle {
+        font-size: 14px;
+        color: ${mocha.subtext0};
+        padding: 2px 6px;
+        margin-left: 8px;
+        border-radius: 4px;
+        background-color: rgba(49, 50, 68, 0.3);
+        transition: all 150ms ease;
+      }
+
+      .debug-toggle:hover {
+        color: ${mocha.text};
+        background-color: rgba(49, 50, 68, 0.5);
+      }
+
+      .debug-toggle.active {
+        color: ${mocha.yellow};
+        background-color: rgba(249, 226, 175, 0.2);
+      }
+
       /* Opacity Control Slider */
       .opacity-control {
         margin-left: 8px;
@@ -8465,10 +8628,7 @@ in
         background-color: rgba(148, 226, 213, 0.15);
       }
 
-      .badge-workspace {
-        color: ${mocha.blue};
-        background-color: rgba(137, 180, 250, 0.15);
-      }
+      /* Feature 119: .badge-workspace removed - workspace badges no longer used */
 
       /* Feature 095: Notification badge base styling */
       .badge-notification {
@@ -10475,7 +10635,8 @@ in
         border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 8px 0;
-        min-width: 200px;
+        /* Feature 119: Reduced min-width for narrower panel */
+        min-width: 150px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
       }
 
@@ -11774,7 +11935,8 @@ in
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
         padding: 4px;
-        min-width: 250px;
+        /* Feature 119: Reduced min-width for narrower panel */
+        min-width: 180px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
       }
 
