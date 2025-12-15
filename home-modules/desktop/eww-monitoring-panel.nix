@@ -153,6 +153,7 @@ let
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
     LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
 
     # Debounce: prevent rapid toggling (crashes eww daemon)
     if [[ -f "$LOCK_FILE" ]]; then
@@ -165,29 +166,30 @@ let
 
     # CRITICAL: Ensure daemon is running before any eww commands
     # Without this, eww commands will spawn their own daemon, causing duplicates
-    if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
       # Daemon not responding - try to start the service
       ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel 2>/dev/null
       # Wait for daemon to be ready (max 6 seconds)
       for i in $(seq 1 30); do
-        $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
+        $TIMEOUT 1s $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
         ${pkgs.coreutils}/bin/sleep 0.2
       done
       # If still not ready, exit to avoid spawning duplicate daemon
-      if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+      if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
         exit 1
       fi
     fi
 
     # Check if window is actually open (not just the variable)
-    if $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Window is open - close it
-      $EWW --config "$CONFIG" close monitoring-panel
-      $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false
+    # Use timeout to prevent hanging on overloaded daemon
+    if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      # Window is open - close it (run in background to avoid blocking)
+      $TIMEOUT 3s $EWW --config "$CONFIG" close monitoring-panel &
+      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false &
     else
-      # Window is closed - open it (click-through by default, forms enable focus mode)
-      $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false
-      $EWW --config "$CONFIG" open monitoring-panel
+      # Window is closed - open it (run in background to avoid blocking)
+      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false &
+      $TIMEOUT 3s $EWW --config "$CONFIG" open monitoring-panel &
     fi
   '';
 
@@ -199,27 +201,24 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 086: Enter monitoring focus mode
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
 
     # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $EWW_CMD ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
       echo "Monitoring panel daemon not running"
       exit 0
     fi
 
     # Check if panel is visible first
-    if ! $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+    if ! $TIMEOUT 2s $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
       echo "Panel not visible - use Mod+M to show it first"
       exit 0
     fi
 
-    # Update eww variable to show focus indicator
-    $EWW_CMD update panel_focused=true
-
-    # Feature 114: Enable panel focus mode (interactive, receives clicks)
-    $EWW_CMD update panel_focus_mode=true
-
-    # Reset selection index
-    $EWW_CMD update selected_index=0
+    # Update eww variables (run in background with timeout to avoid blocking)
+    $TIMEOUT 2s $EWW_CMD update panel_focused=true &
+    $TIMEOUT 2s $EWW_CMD update panel_focus_mode=true &
+    $TIMEOUT 2s $EWW_CMD update selected_index=0 &
 
     # Enter Sway monitoring mode (captures all keys)
     # This provides keyboard capture - eww layer-shell handles the rest
@@ -231,17 +230,14 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 086: Exit monitoring focus mode
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
 
     # Only update eww if daemon is running (avoid spawning duplicate daemon)
-    if $EWW_CMD ping >/dev/null 2>&1; then
-      # Update eww variable to hide focus indicator
-      $EWW_CMD update panel_focused=false
-
-      # Feature 114: Disable panel focus mode (return to click-through)
-      $EWW_CMD update panel_focus_mode=false
-
-      # Clear selection
-      $EWW_CMD update selected_index=-1
+    if $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
+      # Update eww variables (run in background with timeout to avoid blocking)
+      $TIMEOUT 2s $EWW_CMD update panel_focused=false &
+      $TIMEOUT 2s $EWW_CMD update panel_focus_mode=false &
+      $TIMEOUT 2s $EWW_CMD update selected_index=-1 &
     fi
 
     # Exit Sway mode (return to default) - always do this
@@ -263,6 +259,7 @@ let
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
     INDEX="''${1:-0}"
 
     # Validate index is 0-6
@@ -272,11 +269,12 @@ let
     fi
 
     # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
       exit 0
     fi
 
-    $EWW --config "$CONFIG" update current_view_index="$INDEX"
+    # Run in background with timeout to avoid blocking
+    $TIMEOUT 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" &
   '';
 
   # Wrapper script: Get current monitoring panel view index
