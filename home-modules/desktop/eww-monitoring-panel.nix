@@ -3943,37 +3943,32 @@ in
                       (label :class "close-all-text" :text "Close All"))))
                 ;; Feature 117: Active AI Processes bar - compact summary of windows with working badges
                 ;; Shows clickable chips for each window running an AI assistant
+                ;; Compact design: short label + source icon, full details on hover
                 (box
                   :class "active-processes-bar"
                   :visible {arraylength(monitoring_data.working_windows ?: []) > 0}
                   :orientation "h"
                   :space-evenly false
-                  :spacing 8
-                  ;; Label
-                  (label :class "active-processes-label" :text "󰚩 AI Active:")
-                  ;; Chips for each working window
-                  (box
-                    :orientation "h"
-                    :space-evenly false
-                    :spacing 6
-                    (for win in {monitoring_data.working_windows ?: []}
-                      (eventbox
-                        :cursor "pointer"
-                        :onclick "${focusWindowScript}/bin/focus-window-action ''${win.project} ''${win.id} &"
-                        :tooltip {"Click to focus: " + (win.project != "" ? win.project : win.title)}
-                        (box
-                          :class "active-process-chip"
-                          :orientation "h"
-                          :space-evenly false
-                          :spacing 4
-                          ;; Pulsing indicator (synced with badge animation)
-                          (label
-                            :class {"active-process-indicator badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))}
-                            :text {spinner_frame})
-                          ;; Project name (or title if no project)
-                          (label
-                            :class "active-process-name"
-                            :text {win.project != "" ? win.project : "Window"}))))))
+                  :spacing 6
+                  ;; Chips for each working window (no label, just chips)
+                  (for win in {monitoring_data.working_windows ?: []}
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "${focusWindowScript}/bin/focus-window-action ''${win.project} ''${win.id} &"
+                      :tooltip {"󱜙 Click to focus\n󰙅 " + (win.project != "" ? win.project : "Unknown") + "\n󰚩 " + (win.source == "claude-code" ? "Claude Code" : (win.source == "codex" ? "Codex" : win.source))}
+                      (box
+                        :class "active-process-chip"
+                        :orientation "h"
+                        :space-evenly false
+                        :spacing 4
+                        ;; Pulsing indicator (synced with badge animation)
+                        (label
+                          :class {"active-process-indicator badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))}
+                          :text {spinner_frame})
+                        ;; Source icon (claude = 󰚩, codex = 󰘦)
+                        (label
+                          :class "active-process-source"
+                          :text {win.source == "claude-code" ? "󰚩" : (win.source == "codex" ? "󰘦" : "󰙅")})))))
                 ;; Projects list
                 (for project in {monitoring_data.projects ?: []}
                   (project-widget :project project)))))))
@@ -8759,46 +8754,41 @@ in
       }
 
       /* Feature 117: Active AI Processes bar - compact summary at top of windows view */
+      /* mocha.red = #f38ba8 = rgb(243, 139, 168) */
+      /* mocha.surface0 = #313244 = rgb(49, 50, 68) */
+      /* mocha.surface1 = #45475a = rgb(69, 71, 90) */
       .active-processes-bar {
-        background: alpha(${mocha.red}, 0.1);
+        background: rgba(243, 139, 168, 0.08);
         border-radius: 8px;
-        padding: 8px 12px;
-        margin-bottom: 12px;
-        border: 1px solid alpha(${mocha.red}, 0.3);
-      }
-
-      .active-processes-label {
-        color: ${mocha.subtext0};
-        font-size: 12px;
-        font-weight: 500;
-        margin-right: 4px;
+        padding: 6px 10px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(243, 139, 168, 0.25);
       }
 
       .active-process-chip {
-        background: alpha(${mocha.surface0}, 0.8);
-        border-radius: 6px;
+        background: rgba(49, 50, 68, 0.9);
+        border-radius: 16px;
         padding: 4px 10px;
-        border: 1px solid alpha(${mocha.red}, 0.4);
-        transition: all 200ms ease;
+        border: 1px solid rgba(243, 139, 168, 0.5);
+        transition: all 150ms ease;
       }
 
       .active-process-chip:hover {
-        background: alpha(${mocha.surface1}, 0.9);
+        background: rgba(69, 71, 90, 0.95);
         border-color: ${mocha.red};
-        box-shadow: 0 2px 8px alpha(${mocha.red}, 0.3);
+        box-shadow: 0 2px 10px rgba(243, 139, 168, 0.4);
+        /* GTK CSS doesn't support transform */
       }
 
       .active-process-indicator {
         color: ${mocha.red};
-        font-size: 14px;
+        font-size: 16px;
         font-weight: bold;
       }
 
-      .active-process-name {
-        color: ${mocha.text};
-        font-size: 12px;
-        font-weight: 500;
-        max-width: 120px;
+      .active-process-source {
+        color: ${mocha.peach};
+        font-size: 14px;
       }
 
       /* JSON Expand Trigger Icon - Intentional hover target */
