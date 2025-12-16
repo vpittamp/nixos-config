@@ -72,8 +72,10 @@ in
       theme = "dark";
       vim_mode = false;
       # Enable new web search tool (replaces deprecated tools.web_search)
+      # rmcp_client is REQUIRED for MCP server support
       features = {
         web_search_request = true;
+        rmcp_client = true;  # Required for MCP servers to work
       };
 
       # MCP Servers configuration
@@ -98,6 +100,9 @@ in
             PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
             PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           };
+          enabled = true;
+          startup_timeout_sec = 30;
+          tool_timeout_sec = 60;
         };
 
         # Chrome DevTools MCP server for browser debugging and performance analysis
@@ -111,8 +116,9 @@ in
             "--executablePath"
             chromiumConfig.chromiumBin
           ];
-          startup_timeout_ms = 30000;  # 30 seconds for browser startup
-          tool_timeout_sec = 60;        # 60 seconds for tool operations
+          enabled = true;
+          startup_timeout_sec = 30;  # 30 seconds for browser startup
+          tool_timeout_sec = 60;     # 60 seconds for tool operations
         };
       };
     };

@@ -6,13 +6,13 @@
 # - Processes window/workspace events in real-time
 # - Automatically marks windows with project context
 # - Exposes IPC socket for CLI tool queries
-# - Uses session environment (SWAYSOCK, WAYLAND_DISPLAY) directly
+# - Dynamically discovers SWAYSOCK at startup (robust to Sway restarts)
 #
 # Benefits over system service (Feature 037):
-# - No socket discovery wrapper needed (inherits session environment)
 # - PartOf=graphical-session.target works correctly
 # - Socket at $XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock
 # - Lifecycle aligned with graphical session
+# - SWAYSOCK discovery ensures connectivity even after Sway restarts
 #
 { config, lib, pkgs, ... }:
 
@@ -52,6 +52,39 @@ let
       cp -r ${../tools/i3_project_manager}/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager/
     '';
   };
+
+  # Wrapper script that discovers SWAYSOCK dynamically before starting daemon
+  # This ensures the daemon can reconnect to Sway even after Sway restarts
+  daemonWrapper = pkgs.writeShellScriptBin "i3-project-daemon-wrapper" ''
+    # Find user runtime directory
+    USER_ID=$(${pkgs.coreutils}/bin/id -u)
+    USER_RUNTIME_DIR="/run/user/$USER_ID"
+
+    # Dynamically discover Sway IPC socket (matches pattern: sway-ipc.*.sock)
+    # Use newest socket to handle Sway restarts
+    SWAY_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null | ${pkgs.coreutils}/bin/sort -r | ${pkgs.coreutils}/bin/head -n1)
+
+    if [ -n "$SWAY_SOCK" ]; then
+      export SWAYSOCK="$SWAY_SOCK"
+      export I3SOCK="$SWAY_SOCK"  # i3ipc library checks both
+      echo "Found Sway IPC socket: $SWAY_SOCK" >&2
+    else
+      echo "ERROR: No Sway IPC socket found in $USER_RUNTIME_DIR" >&2
+      exit 1
+    fi
+
+    # Set WAYLAND_DISPLAY if not already set
+    if [ -z "$WAYLAND_DISPLAY" ]; then
+      WAYLAND_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'wayland-*' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+      if [ -n "$WAYLAND_SOCK" ]; then
+        export WAYLAND_DISPLAY=$(${pkgs.coreutils}/bin/basename "$WAYLAND_SOCK")
+        export XDG_RUNTIME_DIR="$USER_RUNTIME_DIR"
+      fi
+    fi
+
+    # Execute the Python daemon
+    exec ${pythonEnv}/bin/python3 -m i3_project_daemon "$@"
+  '';
 
 in
 {
@@ -117,9 +150,9 @@ in
           "${pkgs.coreutils}/bin/mkdir -p %t/i3pm-badges"
         ];
 
-        # Direct Python invocation (no wrapper script needed)
-        # Session environment (SWAYSOCK, WAYLAND_DISPLAY, XDG_RUNTIME_DIR) inherited automatically
-        ExecStart = "${pythonEnv}/bin/python3 -m i3_project_daemon";
+        # Use wrapper script that dynamically discovers SWAYSOCK
+        # This ensures the daemon works even after Sway restarts
+        ExecStart = "${daemonWrapper}/bin/i3-project-daemon-wrapper";
 
         # Working directory for project config
         WorkingDirectory = "%h/.config/i3";
