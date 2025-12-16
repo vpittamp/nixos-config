@@ -99,7 +99,8 @@ class OTLPReceiver:
             return self._create_logs_response(content_type, rejected=0)
 
         except Exception as e:
-            logger.error(f"Error processing logs: {e}")
+            import traceback
+            logger.error(f"Error processing logs: {e}\n{traceback.format_exc()}")
             return web.Response(status=400, text=str(e))
 
     async def _handle_traces(self, request: web.Request) -> web.Response:
@@ -177,9 +178,16 @@ class OTLPReceiver:
 
     def _extract_service_name(self, resource: Any) -> Optional[str]:
         """Extract service.name from protobuf resource attributes."""
-        for attr in resource.attributes:
-            if attr.key == "service.name":
-                return attr.value.string_value
+        try:
+            for attr in resource.attributes:
+                if attr.key == "service.name":
+                    # Handle AnyValue - check for string_value field
+                    if hasattr(attr.value, 'string_value'):
+                        return attr.value.string_value
+                    elif hasattr(attr.value, 'HasField') and attr.value.HasField("string_value"):
+                        return attr.value.string_value
+        except Exception as e:
+            logger.debug(f"Error extracting service name: {e}")
         return None
 
     def _extract_service_name_json(self, resource: dict) -> Optional[str]:
@@ -197,33 +205,57 @@ class OTLPReceiver:
         session_id = None
         event_name = None
 
-        for attr in log_record.attributes:
-            key = attr.key
-            # Handle different value types
-            if attr.value.HasField("string_value"):
-                value = attr.value.string_value
-            elif attr.value.HasField("int_value"):
-                value = attr.value.int_value
-            elif attr.value.HasField("bool_value"):
-                value = attr.value.bool_value
-            elif attr.value.HasField("double_value"):
-                value = attr.value.double_value
-            else:
-                continue
+        try:
+            for attr in log_record.attributes:
+                key = attr.key
+                value = None
 
-            attributes[key] = value
+                # Handle AnyValue - try different accessor patterns
+                av = attr.value
+                if hasattr(av, 'string_value') and av.string_value:
+                    value = av.string_value
+                elif hasattr(av, 'int_value') and av.int_value:
+                    value = av.int_value
+                elif hasattr(av, 'bool_value'):
+                    value = av.bool_value
+                elif hasattr(av, 'double_value') and av.double_value:
+                    value = av.double_value
+                elif hasattr(av, 'HasField'):
+                    # Try HasField for proper protobuf messages
+                    if av.HasField("string_value"):
+                        value = av.string_value
+                    elif av.HasField("int_value"):
+                        value = av.int_value
+                    elif av.HasField("bool_value"):
+                        value = av.bool_value
+                    elif av.HasField("double_value"):
+                        value = av.double_value
 
-            # Look for session identifiers
-            if key in ("thread_id", "conversation_id", "conversation.id"):
-                session_id = str(value)
+                if value is None:
+                    continue
 
-            # Look for event name
-            if key == "event.name" or key == "name":
-                event_name = str(value)
+                attributes[key] = value
+
+                # Look for session identifiers (Claude Code uses session.id)
+                if key in ("session.id", "thread_id", "conversation_id", "conversation.id"):
+                    session_id = str(value)
+
+                # Look for event name
+                if key == "event.name" or key == "name":
+                    event_name = str(value)
+        except Exception as e:
+            logger.debug(f"Error parsing log record attributes: {e}")
 
         # If no event name in attributes, try the log record body
-        if not event_name and log_record.body.HasField("string_value"):
-            event_name = log_record.body.string_value
+        try:
+            if not event_name:
+                body = log_record.body
+                if hasattr(body, 'string_value') and body.string_value:
+                    event_name = body.string_value
+                elif hasattr(body, 'HasField') and body.HasField("string_value"):
+                    event_name = body.string_value
+        except Exception as e:
+            logger.debug(f"Error parsing log record body: {e}")
 
         if not event_name:
             return None

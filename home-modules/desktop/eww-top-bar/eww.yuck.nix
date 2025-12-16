@@ -429,7 +429,7 @@ in
        :space-evenly false
        :spacing 4
        (for session in {ai_sessions_data.sessions ?: []}
-         (eventbox :onclick "focus-window-action ''\'''${session.project ?: \"Global\"}' ''\'''${session.session_id}' &"
+         (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + session.session_id + "' &"}
                    :cursor "pointer"
                    :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Processing..." : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]"}
            (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle"))}

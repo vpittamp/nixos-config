@@ -21,14 +21,40 @@ let
   pythonEnv = pkgs.python311.withPackages (ps: with ps; [
     aiohttp
     pydantic
-    # opentelemetry-proto for protobuf parsing
-    # Note: May need to add this if not in nixpkgs
+    protobuf  # For OTLP protobuf parsing
+    pip       # For installing opentelemetry-proto at build time
   ]);
+
+  # opentelemetry-proto package from PyPI (not in nixpkgs)
+  # Version 1.34.1 - protobuf constraint is <6.0 but 6.x works in practice
+  opentelemetryProto = pkgs.python311Packages.buildPythonPackage rec {
+    pname = "opentelemetry-proto";
+    version = "1.34.1";
+    pyproject = true;
+
+    src = pkgs.fetchPypi {
+      inherit version;
+      pname = "opentelemetry_proto";
+      hash = "sha256-FihiFOQFwhH8d0GH8+S7sTUSkLjfuI6JSK8gnOhbcZ4=";
+    };
+
+    nativeBuildInputs = [ pkgs.python311Packages.pythonRelaxDepsHook ];
+    build-system = [ pkgs.python311Packages.hatchling ];
+    dependencies = [ pkgs.python311Packages.protobuf ];
+
+    # Don't run tests
+    doCheck = false;
+
+    # Relax protobuf version constraint - protobuf 6.x works despite <6.0 constraint
+    pythonRelaxDeps = [ "protobuf" ];
+
+    pythonImportsCheck = [ "opentelemetry.proto" ];
+  };
 
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.1.0";
+    version = "0.2.0";  # Working protobuf parsing with session.id identification
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -41,7 +67,7 @@ let
       mkdir -p $out/bin
       makeWrapper ${pythonEnv}/bin/python $out/bin/otel-ai-monitor \
         --add-flags "-m otel_ai_monitor" \
-        --set PYTHONPATH "$out/lib"
+        --set PYTHONPATH "$out/lib:${opentelemetryProto}/${pythonEnv.sitePackages}"
     '';
   };
 

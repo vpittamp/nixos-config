@@ -122,7 +122,8 @@ class SessionTracker:
         session_id = event.session_id
         if not session_id:
             # Generate from tool + timestamp
-            tool_name = event.tool.value if event.tool else "unknown"
+            # Note: event.tool is already a string due to use_enum_values = True in TelemetryEvent
+            tool_name = event.tool if event.tool else "unknown"
             session_id = f"{tool_name}-{int(event.timestamp.timestamp())}"
 
         async with self._lock:
