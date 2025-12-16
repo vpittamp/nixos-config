@@ -205,6 +205,18 @@ class OTLPReceiver:
         session_id = None
         event_name = None
 
+        # First, try to get event name from the log record body
+        # The body contains the fully qualified event name (e.g., "claude_code.api_request")
+        # while the event.name attribute only has the suffix (e.g., "api_request")
+        try:
+            body = log_record.body
+            if hasattr(body, 'string_value') and body.string_value:
+                event_name = body.string_value
+            elif hasattr(body, 'HasField') and body.HasField("string_value"):
+                event_name = body.string_value
+        except Exception as e:
+            logger.debug(f"Error parsing log record body: {e}")
+
         try:
             for attr in log_record.attributes:
                 key = attr.key
@@ -240,25 +252,17 @@ class OTLPReceiver:
                 if key in ("session.id", "thread_id", "conversation_id", "conversation.id"):
                     session_id = str(value)
 
-                # Look for event name
-                if key == "event.name" or key == "name":
+                # Fallback: if body didn't have event name, try event.name attribute
+                if not event_name and (key == "event.name" or key == "name"):
                     event_name = str(value)
         except Exception as e:
             logger.debug(f"Error parsing log record attributes: {e}")
 
-        # If no event name in attributes, try the log record body
-        try:
-            if not event_name:
-                body = log_record.body
-                if hasattr(body, 'string_value') and body.string_value:
-                    event_name = body.string_value
-                elif hasattr(body, 'HasField') and body.HasField("string_value"):
-                    event_name = body.string_value
-        except Exception as e:
-            logger.debug(f"Error parsing log record body: {e}")
-
         if not event_name:
+            logger.debug(f"No event_name found. Attributes: {list(attributes.keys())}, session_id: {session_id}")
             return None
+
+        logger.debug(f"Parsed event: {event_name}, session_id: {session_id}")
 
         # Parse timestamp (nanoseconds since epoch)
         timestamp = datetime.fromtimestamp(
@@ -298,6 +302,13 @@ class OTLPReceiver:
         session_id = None
         event_name = None
 
+        # First, try to get event name from the log record body
+        # The body contains the fully qualified event name (e.g., "claude_code.api_request")
+        # while the event.name attribute only has the suffix (e.g., "api_request")
+        body = log_record.get("body", {})
+        if "stringValue" in body:
+            event_name = body["stringValue"]
+
         for attr in log_record.get("attributes", []):
             key = attr.get("key")
             value_obj = attr.get("value", {})
@@ -316,19 +327,13 @@ class OTLPReceiver:
 
             attributes[key] = value
 
-            # Look for session identifiers
-            if key in ("thread_id", "conversation_id", "conversation.id"):
+            # Look for session identifiers (Claude Code uses session.id)
+            if key in ("session.id", "thread_id", "conversation_id", "conversation.id"):
                 session_id = str(value)
 
-            # Look for event name
-            if key == "event.name" or key == "name":
+            # Fallback: if body didn't have event name, try event.name attribute
+            if not event_name and (key == "event.name" or key == "name"):
                 event_name = str(value)
-
-        # If no event name in attributes, try the log record body
-        if not event_name:
-            body = log_record.get("body", {})
-            if "stringValue" in body:
-                event_name = body["stringValue"]
 
         if not event_name:
             return None

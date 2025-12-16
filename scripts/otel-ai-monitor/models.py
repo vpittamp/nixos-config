@@ -158,16 +158,23 @@ class EventNames:
     CODEX_TOOL_RESULT = "codex.tool_result"
 
     # Events that trigger WORKING state
+    # Note: claude_code.api_request is included because Claude Code doesn't emit
+    # explicit user_prompt events - API requests indicate user activity
     WORKING_TRIGGERS = {
         CLAUDE_USER_PROMPT,
+        CLAUDE_API_REQUEST,  # Claude Code uses this to indicate activity
         CODEX_USER_PROMPT,
         CODEX_CONVERSATION_STARTS,
     }
+
+    # Claude Code additional events
+    CLAUDE_TOOL_DECISION = "claude_code.tool_decision"
 
     # Events that reset the quiet timer (keep WORKING)
     ACTIVITY_EVENTS = {
         CLAUDE_TOOL_RESULT,
         CLAUDE_API_REQUEST,
+        CLAUDE_TOOL_DECISION,  # Claude Code emits this for tool calls
         CODEX_API_REQUEST,
         CODEX_SSE_EVENT,
         CODEX_TOOL_DECISION,

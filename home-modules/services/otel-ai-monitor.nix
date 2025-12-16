@@ -54,7 +54,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.2.0";  # Working protobuf parsing with session.id identification
+    version = "0.3.0";  # Fix event name parsing from body, add api_request trigger
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
