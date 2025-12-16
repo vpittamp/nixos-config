@@ -180,8 +180,8 @@ let
     # eww 0.6.0 double-forks so 'eww open' escapes to systemd - must clean up
     ${pkgs.procps}/bin/pkill -f 'eww.*eww-monitoring-panel.*open' 2>/dev/null || true
 
-    # Open panel initially (--no-daemonize prevents orphan process spawning)
-    $EWW --config "$CONFIG" --no-daemonize open monitoring-panel || true
+    # Open panel initially
+    $EWW --config "$CONFIG" open monitoring-panel || true
 
     # Re-sync stack index (workaround for eww #1192: index resets on reopen)
     ${pkgs.coreutils}/bin/sleep 0.2
@@ -200,8 +200,8 @@ let
         return 1
       fi
 
-      # Atomic toggle with --no-daemonize to prevent orphan spawning
-      $EWW --config "$CONFIG" --no-daemonize open --toggle monitoring-panel 2>/dev/null || true
+      # Atomic toggle - eww handles open/close internally
+      $EWW --config "$CONFIG" open --toggle monitoring-panel 2>/dev/null || true
 
       # Brief pause for state to settle
       ${pkgs.coreutils}/bin/sleep 0.2
