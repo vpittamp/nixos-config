@@ -147,6 +147,8 @@ let
   # Feature 114: Uses actual open/close instead of CSS visibility
   # CSS-based hiding kept the window intercepting input even when "hidden"
   # Added debounce to prevent crashes from rapid toggling
+  # Fix: Use eww's --toggle flag to avoid orphaned 'open' processes
+  # In eww 0.6.0-unstable, 'eww open' spawns a process that stays alive
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
 
@@ -180,16 +182,21 @@ let
       fi
     fi
 
-    # Check if window is actually open (not just the variable)
-    # Use timeout to prevent hanging on overloaded daemon
+    # In eww 0.6.0-unstable, 'eww open' spawns a process that stays alive
+    # to manage GTK rendering. Kill any existing 'open' processes to prevent
+    # accumulating orphans on repeated toggles.
+    # Pattern: matches "eww-monitoring-panel" (config path) followed by "open"
+    ${pkgs.procps}/bin/pkill -f "eww-monitoring-panel.*open" 2>/dev/null || true
+
+    # Check current state to update variables appropriately
     if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Window is open - close it (run in background to avoid blocking)
-      $TIMEOUT 3s $EWW --config "$CONFIG" close monitoring-panel &
-      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false &
+      # Window is currently open - close it
+      $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false || true
+      $TIMEOUT --kill-after=1s 3s $EWW --config "$CONFIG" close monitoring-panel || true
     else
-      # Window is closed - open it (run in background to avoid blocking)
-      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false &
-      $TIMEOUT 3s $EWW --config "$CONFIG" open monitoring-panel &
+      # Window is currently closed - open it
+      $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false || true
+      $TIMEOUT --kill-after=1s 3s $EWW --config "$CONFIG" open monitoring-panel || true
     fi
   '';
 
@@ -215,10 +222,11 @@ let
       exit 0
     fi
 
-    # Update eww variables (run in background with timeout to avoid blocking)
-    $TIMEOUT 2s $EWW_CMD update panel_focused=true &
-    $TIMEOUT 2s $EWW_CMD update panel_focus_mode=true &
-    $TIMEOUT 2s $EWW_CMD update selected_index=0 &
+    # Update eww variables sequentially with --kill-after to prevent orphans
+    # Don't background these - orphaned processes cause duplicate tabs
+    $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focused=true || true
+    $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focus_mode=true || true
+    $TIMEOUT --kill-after=1s 2s $EWW_CMD update selected_index=0 || true
 
     # Enter Sway monitoring mode (captures all keys)
     # This provides keyboard capture - eww layer-shell handles the rest
@@ -234,10 +242,11 @@ let
 
     # Only update eww if daemon is running (avoid spawning duplicate daemon)
     if $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
-      # Update eww variables (run in background with timeout to avoid blocking)
-      $TIMEOUT 2s $EWW_CMD update panel_focused=false &
-      $TIMEOUT 2s $EWW_CMD update panel_focus_mode=false &
-      $TIMEOUT 2s $EWW_CMD update selected_index=-1 &
+      # Update eww variables sequentially with --kill-after to prevent orphans
+      # Don't background these - orphaned processes cause duplicate tabs
+      $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focused=false || true
+      $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focus_mode=false || true
+      $TIMEOUT --kill-after=1s 2s $EWW_CMD update selected_index=-1 || true
     fi
 
     # Exit Sway mode (return to default) - always do this
@@ -273,8 +282,8 @@ let
       exit 0
     fi
 
-    # Run in background with timeout to avoid blocking
-    $TIMEOUT 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" &
+    # Run sequentially with --kill-after to prevent orphans from rapid tab switching
+    $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" || true
   '';
 
   # Wrapper script: Get current monitoring panel view index
@@ -13012,3 +13021,4 @@ in
     };
   };
 }
+# Rebuild trigger 1765901724

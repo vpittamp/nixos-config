@@ -152,15 +152,16 @@ in
   `bash ~/.config/eww/eww-top-bar/scripts/ai-sessions-status.sh`)
 
 ;; Feature 117: Spinner animation for working AI sessions
+;; Note: 250ms interval reduces daemon load (was 120ms causing excessive process spawns)
 (defpoll topbar_spinner_frame
-  :interval "120ms"
+  :interval "250ms"
   :run-while {ai_sessions_data.has_working ?: false}
   :initial "⬤"
   `bash ~/.config/eww/eww-top-bar/scripts/spinner-frame.sh`)
 
 ;; Feature 117: Spinner opacity for fade effect
 (defpoll topbar_spinner_opacity
-  :interval "120ms"
+  :interval "250ms"
   :run-while {ai_sessions_data.has_working ?: false}
   :initial "1.0"
   `bash ~/.config/eww/eww-top-bar/scripts/spinner-opacity.sh`)
