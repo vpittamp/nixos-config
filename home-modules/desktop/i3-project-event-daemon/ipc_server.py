@@ -350,6 +350,9 @@ class IPCServer:
             # Feature 039: Diagnostic API methods (T087-T092)
             elif method == "health_check":
                 result = await self._health_check()
+            # Feature 121: Socket health endpoint for diagnostic CLI
+            elif method == "get_socket_health":
+                result = await self._get_socket_health()
             elif method == "get_window_identity":
                 result = await self._get_window_identity_diagnostic(params)
             elif method == "get_window_environment":
@@ -4430,8 +4433,49 @@ class IPCServer:
             event_type="health_check",
             duration_ms=duration_ms
         )
-        
+
         return result
+
+    async def _get_socket_health(self) -> Dict[str, Any]:
+        """
+        Get Sway IPC socket health status.
+
+        Feature 121: Implements `i3pm diagnose socket-health` endpoint.
+
+        Returns:
+            SocketHealthStatus dict with:
+            - status: "healthy", "stale", or "disconnected"
+            - socket_path: Current socket path
+            - last_validated: ISO8601 timestamp of last validation
+            - latency_ms: Round-trip time for health check
+            - reconnection_count: Number of reconnections
+            - uptime_seconds: Time since last connection
+            - error: Error message if not healthy
+        """
+        start_time = time.perf_counter()
+
+        try:
+            if not self.i3_connection:
+                return {
+                    "status": "disconnected",
+                    "socket_path": None,
+                    "last_validated": None,
+                    "latency_ms": None,
+                    "reconnection_count": 0,
+                    "uptime_seconds": 0.0,
+                    "error": "No i3 connection manager available",
+                }
+
+            # Get health status from connection manager
+            health_status = await self.i3_connection.get_health_status()
+            return health_status.to_dict()
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::get_socket_health",
+                duration_ms=duration_ms,
+            )
 
     async def _get_window_identity_diagnostic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

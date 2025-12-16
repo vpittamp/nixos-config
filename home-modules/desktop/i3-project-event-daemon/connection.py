@@ -2,19 +2,60 @@
 
 Handles i3 IPC connection, automatic reconnection, and state rebuilding.
 Includes socket discovery for handling Sway restarts with new socket paths.
+Feature 121: Added socket health status for diagnostic CLI.
 """
 
 import asyncio
 import logging
 import os
+import time
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Awaitable
+from typing import Optional, Callable, Awaitable, Dict, Any
 from i3ipc import aio
 from i3ipc.events import IpcBaseEvent
 
 from .state import StateManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SocketHealthStatus:
+    """
+    Represents the health status of the Sway IPC socket connection.
+
+    Feature 121: Added for `i3pm diagnose socket-health` command.
+
+    Attributes:
+        status: Connection status - "healthy", "stale", or "disconnected"
+        socket_path: Path to current socket or None if disconnected
+        last_validated: ISO8601 timestamp of last successful validation
+        latency_ms: Round-trip time for last health check in milliseconds
+        reconnection_count: Number of reconnections since daemon start
+        uptime_seconds: Seconds since last successful connection
+        error: Optional error message if status is not "healthy"
+    """
+    status: str  # "healthy", "stale", "disconnected"
+    socket_path: Optional[str]
+    last_validated: Optional[str]  # ISO8601 timestamp
+    latency_ms: Optional[float]
+    reconnection_count: int
+    uptime_seconds: float
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "status": self.status,
+            "socket_path": self.socket_path,
+            "last_validated": self.last_validated,
+            "latency_ms": self.latency_ms,
+            "reconnection_count": self.reconnection_count,
+            "uptime_seconds": round(self.uptime_seconds, 1),
+            "error": self.error,
+        }
 
 
 def discover_sway_socket() -> Optional[str]:
@@ -88,6 +129,12 @@ class ResilientI3Connection:
         self.reconnect_delay = 0.1  # Initial delay: 100ms
         self.is_performing_startup_scan = False  # Flag to suppress event handlers during startup scan
 
+        # Feature 121: Socket health tracking
+        self.reconnection_count = 0
+        self.last_connection_time: Optional[float] = None  # time.time() when connected
+        self.last_validated_time: Optional[float] = None  # time.time() when last health check passed
+        self.last_latency_ms: Optional[float] = None  # Last health check latency
+
     @property
     def is_connected(self) -> bool:
         """Check if i3 IPC connection is active.
@@ -98,6 +145,88 @@ class ResilientI3Connection:
             True if connected to i3, False otherwise
         """
         return self.conn is not None and not self.is_shutting_down
+
+    async def get_health_status(self) -> SocketHealthStatus:
+        """
+        Get comprehensive socket health status for diagnostic CLI.
+
+        Feature 121: Implements `i3pm diagnose socket-health` endpoint.
+
+        Performs a health check on the Sway IPC socket and returns status:
+        - "healthy": Socket exists, process is sway, connection responds
+        - "stale": Socket exists but connection failed or process not sway
+        - "disconnected": No socket or no connection
+
+        Returns:
+            SocketHealthStatus with connection details
+        """
+        current_socket = os.environ.get("SWAYSOCK") or os.environ.get("I3SOCK")
+        uptime = time.time() - self.last_connection_time if self.last_connection_time else 0.0
+
+        # Case 1: Not connected at all
+        if not self.conn or self.is_shutting_down:
+            return SocketHealthStatus(
+                status="disconnected",
+                socket_path=current_socket,
+                last_validated=None,
+                latency_ms=None,
+                reconnection_count=self.reconnection_count,
+                uptime_seconds=0.0,
+                error="No active i3/Sway IPC connection",
+            )
+
+        # Case 2: Check if socket file exists
+        if not current_socket or not Path(current_socket).exists():
+            return SocketHealthStatus(
+                status="disconnected",
+                socket_path=current_socket,
+                last_validated=datetime.fromtimestamp(self.last_validated_time).isoformat() if self.last_validated_time else None,
+                latency_ms=self.last_latency_ms,
+                reconnection_count=self.reconnection_count,
+                uptime_seconds=uptime,
+                error="Socket file does not exist",
+            )
+
+        # Case 3: Validate socket is responding
+        try:
+            start_time = time.perf_counter()
+            await asyncio.wait_for(self.conn.get_version(), timeout=2.0)
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            # Update tracking state
+            self.last_validated_time = time.time()
+            self.last_latency_ms = latency_ms
+
+            return SocketHealthStatus(
+                status="healthy",
+                socket_path=current_socket,
+                last_validated=datetime.fromtimestamp(self.last_validated_time).isoformat(),
+                latency_ms=round(latency_ms, 2),
+                reconnection_count=self.reconnection_count,
+                uptime_seconds=uptime,
+            )
+
+        except asyncio.TimeoutError:
+            return SocketHealthStatus(
+                status="stale",
+                socket_path=current_socket,
+                last_validated=datetime.fromtimestamp(self.last_validated_time).isoformat() if self.last_validated_time else None,
+                latency_ms=None,
+                reconnection_count=self.reconnection_count,
+                uptime_seconds=uptime,
+                error="Socket exists but connection timed out",
+            )
+
+        except Exception as e:
+            return SocketHealthStatus(
+                status="stale",
+                socket_path=current_socket,
+                last_validated=datetime.fromtimestamp(self.last_validated_time).isoformat() if self.last_validated_time else None,
+                latency_ms=None,
+                reconnection_count=self.reconnection_count,
+                uptime_seconds=uptime,
+                error=f"Socket exists but health check failed: {e}",
+            )
 
     async def validate_and_reconnect_if_needed(self) -> bool:
         """Validate socket is still valid and reconnect if a new one is available.
@@ -183,6 +312,13 @@ class ResilientI3Connection:
 
                 # Reset reconnect delay on successful connection
                 self.reconnect_delay = 0.1
+
+                # Feature 121: Track connection state for health monitoring
+                if self.last_connection_time is not None:
+                    # This is a reconnection, not initial connection
+                    self.reconnection_count += 1
+                self.last_connection_time = time.time()
+                self.last_validated_time = time.time()
 
                 return self.conn
 

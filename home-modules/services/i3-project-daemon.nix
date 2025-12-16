@@ -9,9 +9,9 @@
 # - Dynamically discovers SWAYSOCK at startup (robust to Sway restarts)
 #
 # Benefits over system service (Feature 037):
-# - PartOf=graphical-session.target works correctly
+# - PartOf=sway-session.target ensures proper lifecycle with Sway
 # - Socket at $XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock
-# - Lifecycle aligned with graphical session
+# - Lifecycle aligned with Sway session (not generic graphical session)
 # - SWAYSOCK discovery ensures connectivity even after Sway restarts
 #
 { config, lib, pkgs, ... }:
@@ -105,10 +105,11 @@ in
       Unit = {
         Description = "i3 Project Event Listener Daemon";
         Documentation = "file:///etc/nixos/specs/117-convert-project-daemon/quickstart.md";
-        # Start after graphical session is ready
-        After = [ "graphical-session.target" ];
-        # Stop when graphical session stops (lifecycle binding)
-        PartOf = [ "graphical-session.target" ];
+        # Feature 121: Start after Sway session is ready (not generic graphical session)
+        # This ensures SWAYSOCK is available and prevents startup race conditions
+        After = [ "sway-session.target" ];
+        # Stop when Sway session stops (proper lifecycle binding)
+        PartOf = [ "sway-session.target" ];
         # Limit restart frequency to prevent loops
         StartLimitIntervalSec = 60;
         StartLimitBurst = 5;
@@ -174,8 +175,8 @@ in
       };
 
       Install = {
-        # Auto-start with graphical session
-        WantedBy = [ "graphical-session.target" ];
+        # Feature 121: Auto-start with Sway session (ensures Sway IPC available)
+        WantedBy = [ "sway-session.target" ];
       };
     };
 

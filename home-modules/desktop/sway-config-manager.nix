@@ -324,8 +324,9 @@ in {
     systemd.user.services.sway-config-manager = mkIf cfg.enable {
       Unit = {
         Description = "Sway Configuration Manager Daemon";
-        After = [ "graphical-session.target" ];
-        PartOf = [ "graphical-session.target" ];
+        # Feature 121: Use sway-session.target for proper Sway lifecycle binding
+        After = [ "sway-session.target" ];
+        PartOf = [ "sway-session.target" ];
       };
 
       Service = {
@@ -388,7 +389,8 @@ in {
       };
 
       Install = {
-        WantedBy = [ "graphical-session.target" ];
+        # Feature 121: Auto-start with Sway session (directly uses swaymsg)
+        WantedBy = [ "sway-session.target" ];
       };
     };
 
