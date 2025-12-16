@@ -208,11 +208,8 @@ in
       executable = true;
     };
 
-    # Feature 117: AI sessions status script (reads badge files)
-    xdg.configFile."eww/eww-top-bar/scripts/ai-sessions-status.sh" = {
-      source = ./eww-top-bar/scripts/ai-sessions-status.sh;
-      executable = true;
-    };
+    # Feature 123: AI sessions now use deflisten with otel-ai-monitor service
+    # The legacy ai-sessions-status.sh polling script has been removed
 
     # Feature 117: Spinner scripts for AI working animation
     xdg.configFile."eww/eww-top-bar/scripts/spinner-frame.sh" = {

@@ -183,6 +183,8 @@ journalctl --user -u i3-project-event-listener -f
 - N/A (eww state is in-memory, config in ~/.config/eww-monitoring-panel) (119-fix-window-close-actions)
 - Bash (cleanup script), Python 3.11 (daemon health endpoint), Nix (service configuration) + systemd, i3ipc.aio, bash coreutils (121-improve-socket-discovery)
 - N/A (runtime state only) (121-improve-socket-discovery)
+- Python 3.11+ (OTLP receiver), Nix (configuration), Yuck/SCSS (EWW widgets) + opentelemetry-proto (parsing), aiohttp/uvicorn (HTTP server), EWW deflisten (123-otel-tracing)
+- N/A (in-memory session state only, no persistence) (123-otel-tracing)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools

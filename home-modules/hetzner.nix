@@ -92,7 +92,7 @@ in
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix  # Feature 117: User-level daemon service
-    ./services/tmux-ai-monitor.nix    # Feature 117: tmux AI process monitoring
+    ./services/otel-ai-monitor.nix    # Feature 123: OTEL-based AI session monitoring
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
     ./tools/i3pm-workspace-mode-wrapper.nix  # Feature 042: Workspace mode IPC wrapper (temp until TS CLI integration)
@@ -159,12 +159,9 @@ in
   # Feature 121: Automatic cleanup of stale Sway IPC sockets every 5 minutes
   programs.sway-socket-cleanup.enable = true;
 
-  # Feature 117: tmux AI assistant monitor service
-  # Detects claude/codex processes in tmux panes and creates badges
-  services.tmux-ai-monitor = {
-    enable = true;
-    pollInterval = 300;  # 300ms default per research.md R10
-  };
+  # Feature 123: OTEL AI assistant monitor service
+  # Receives OTLP telemetry from Claude Code and Codex CLI
+  # (services.otel-ai-monitor.enable = true is set below)
 
   # Feature 047: Sway Dynamic Configuration Management
   programs.sway-config-manager = {
@@ -231,4 +228,7 @@ in
   home.sessionVariables = {
     BROWSER = lib.mkForce "chromium";
   };
+
+  # Feature 123: Enable OTEL AI session monitoring service
+  services.otel-ai-monitor.enable = true;
 }

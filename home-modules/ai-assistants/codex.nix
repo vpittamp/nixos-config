@@ -78,6 +78,19 @@ in
         rmcp_client = true;  # Required for MCP servers to work
       };
 
+      # Feature 123: OpenTelemetry configuration for OTLP export
+      # Sends telemetry to otel-ai-monitor service on localhost:4318
+      otel = {
+        exporter = {
+          otlp-http = {
+            endpoint = "http://localhost:4318/v1/logs";
+            protocol = "binary";
+          };
+        };
+        environment = "dev";
+        log_user_prompt = false;  # Privacy: don't log actual prompt content
+      };
+
       # MCP Servers configuration
       # Note: Codex does NOT support a `disabled` flag for MCP servers
       # Servers are either defined (always active) or not defined (unavailable)

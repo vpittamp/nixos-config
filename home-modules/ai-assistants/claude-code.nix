@@ -70,9 +70,13 @@ lib.mkIf enableClaudeCode {
       includeCoAuthoredBy = true;
       messageIdleNotifThresholdMs = 60000;
       env = {
+        # Feature 123: Full OpenTelemetry configuration for OTLP export
+        # Enables native telemetry to otel-ai-monitor service
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
+        OTEL_LOGS_EXPORTER = "otlp";
         OTEL_METRICS_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
         # Fix for M1 Apple Silicon: Built-in ripgrep has jemalloc page size incompatibility
         # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
         # Use system ripgrep instead (available via home-manager)
@@ -88,52 +92,23 @@ lib.mkIf enableClaudeCode {
       # 3. Validate and sanitize inputs in hook scripts
       # 4. Set explicit timeouts for commands
       # 5. Use external scripts for complex logic (maintainability)
-      #
-      # TEMPORARILY DISABLED - uncomment to re-enable
-      # hooks = {
-      #   PostToolUse = [{
-      #     # Match all Bash tool executions (case-sensitive)
-      #     matcher = "Bash";
-      #     hooks = [{
-      #       type = "command";
-      #       # Use path to hook script stored in NixOS config
-      #       # This script receives JSON via stdin with structure:
-      #       # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
-      #       command = "${self}/scripts/claude-hooks/bash-history.sh";
-      #       # Set 5-second timeout (hook is simple, shouldn't take long)
-      #       timeout = 5;
-      #     }];
-      #   }];
-      #
-      #   # UserPromptSubmit hook - Feature 095/117: Activity indicator for Claude Code
-      #   # Creates "working" badge in monitoring panel when user submits a prompt
-      #   # Shows spinner animation indicating Claude Code is processing
-      #   UserPromptSubmit = [{
-      #     hooks = [{
-      #       type = "command";
-      #       # Feature 117: Hook creates badge file at $XDG_RUNTIME_DIR/i3pm-badges/
-      #       # File-based storage is single source of truth (no IPC)
-      #       command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
-      #       # Short timeout - file write is quick
-      #       timeout = 3;
-      #     }];
-      #   }];
-      #
-      #   # Stop hook - Notify when Claude Code finishes and awaits input
-      #   # Feature 095/117: Changes badge state from "working" to "stopped"
-      #   # Sends concise desktop notification with action to return to terminal
-      #   Stop = [{
-      #     hooks = [{
-      #       type = "command";
-      #       # Feature 117: Hook updates badge file to "stopped" state (bell icon)
-      #       # Sends notification with project name only (concise format)
-      #       # notify-send -w blocks until user clicks action or dismisses
-      #       command = "${self}/scripts/claude-hooks/stop-notification.sh";
-      #       # Longer timeout - notify-send -w blocks until user responds
-      #       timeout = 300;
-      #     }];
-      #   }];
-      # };
+      # Feature 123: State hooks removed - OTEL telemetry now handles session tracking
+      # Only bash-history hook remains for command logging
+      hooks = {
+        PostToolUse = [{
+          # Match all Bash tool executions (case-sensitive)
+          matcher = "Bash";
+          hooks = [{
+            type = "command";
+            # Use path to hook script stored in NixOS config
+            # This script receives JSON via stdin with structure:
+            # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
+            command = "${self}/scripts/claude-hooks/bash-history.sh";
+            # Set 5-second timeout (hook is simple, shouldn't take long)
+            timeout = 5;
+          }];
+        }];
+      };
 
       # Permissions configuration for sandboxed environment
       # WARNING: This grants broad permissions. Only use in trusted/sandboxed environments.

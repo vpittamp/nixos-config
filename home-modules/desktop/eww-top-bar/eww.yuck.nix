@@ -145,21 +145,23 @@ in
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)
 
-;; Feature 117: AI sessions data (reads badge files for AI assistant status)
-(defpoll ai_sessions_data
-  :interval "2s"
-  :initial '{"sessions":[],"has_working":false}'
-  `bash ~/.config/eww/eww-top-bar/scripts/ai-sessions-status.sh`)
+;; Feature 123: AI sessions data via OpenTelemetry
+;; Uses deflisten to consume JSON stream from otel-ai-monitor service (event-driven, no polling)
+;; Falls back to empty state if service not running
+(deflisten ai_sessions_data
+  :initial '{"type":"session_list","sessions":[],"timestamp":0}'
+  `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"session_list","sessions":[],"timestamp":0}'`)
 
-;; Feature 117: Spinner animation for working AI sessions
+;; Feature 123: Spinner animation for working AI sessions
 ;; Note: 250ms interval reduces daemon load (was 120ms causing excessive process spawns)
+;; has_working field is computed by otel-ai-monitor service and included in session_list events
 (defpoll topbar_spinner_frame
   :interval "250ms"
   :run-while {ai_sessions_data.has_working ?: false}
   :initial "⬤"
   `bash ~/.config/eww/eww-top-bar/scripts/spinner-frame.sh`)
 
-;; Feature 117: Spinner opacity for fade effect
+;; Feature 123: Spinner opacity for fade effect
 (defpoll topbar_spinner_opacity
   :interval "250ms"
   :run-while {ai_sessions_data.has_working ?: false}
@@ -416,9 +418,10 @@ in
                 :visible {notification_data.has_unread == true && notification_data.dnd == false}
                 :text {notification_data.display_count}))))
 
-;; Feature 117: AI Sessions widget for top bar
+;; Feature 123: AI Sessions widget for top bar (OTEL-based)
 ;; Compact chips showing active AI assistants (Claude Code, Codex)
-;; Three states: working (pulsating), attention (bell), idle (muted)
+;; Three states: working (pulsating), completed/attention (bell), idle (muted)
+;; Data comes from otel-ai-monitor service via deflisten (event-driven)
 (defwidget ai-sessions-widget []
   (box :class "ai-sessions-container"
        :visible {arraylength(ai_sessions_data.sessions ?: []) > 0}
@@ -426,20 +429,20 @@ in
        :space-evenly false
        :spacing 4
        (for session in {ai_sessions_data.sessions ?: []}
-         (eventbox :onclick "focus-window-action ''\'''${session.project}' ''\'''${session.id}' &"
+         (eventbox :onclick "focus-window-action ''\'''${session.project ?: \"Global\"}' ''\'''${session.session_id}' &"
                    :cursor "pointer"
-                   :tooltip {session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source) + " - " + (session.state == "working" ? "Processing..." : (session.needs_attention ? "Needs attention" : "Ready")) + " [" + session.project + "]"}
-           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
+                   :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Processing..." : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]"}
+           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle"))}
                 :orientation "h"
                 :space-evenly false
                 :spacing 3
                 ;; State indicator
                 (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
-                       :text {session.state == "working" ? topbar_spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
-                ;; Source icon (SVG images for claude and codex)
+                       :text {session.state == "working" ? topbar_spinner_frame : (session.state == "completed" ? "󰂞" : "󰤄")})
+                ;; Tool icon (SVG images for claude and codex)
                 (image
                   :class "ai-chip-source-icon"
-                  :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
+                  :path {session.tool == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.tool == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
                   :image-width 14
                   :image-height 14))))))
 
