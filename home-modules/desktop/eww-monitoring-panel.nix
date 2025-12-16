@@ -12978,9 +12978,10 @@ in
         Documentation = "file:///etc/nixos/specs/085-sway-monitoring-widget/quickstart.md";
         # Feature 117: Depend on i3-project-daemon for IPC connectivity
         # Without this, deflisten/defpoll scripts fail on startup
-        After = [ "graphical-session.target" "i3-project-daemon.service" ];
+        # Feature 121: Use sway-session.target for proper Sway lifecycle binding
+        After = [ "sway-session.target" "i3-project-daemon.service" ];
         Wants = [ "i3-project-daemon.service" ];
-        PartOf = [ "graphical-session.target" ];
+        PartOf = [ "sway-session.target" ];
       };
 
       Service = {
@@ -13005,10 +13006,9 @@ in
       };
 
       Install = {
-        WantedBy = [ "graphical-session.target" ];
+        # Feature 121: Auto-start with Sway session (uses swaymsg for workspace data)
+        WantedBy = [ "sway-session.target" ];
       };
     };
   };
 }
-# Test comment to force rebuild
-# Force rebuild comment

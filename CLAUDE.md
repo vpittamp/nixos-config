@@ -57,7 +57,7 @@ journalctl --user -u eww-monitoring-panel -f   # Logs
 i3pm project {switch|create|list|current}  # pswitch/pclear/plist aliases
 i3pm worktree {list|create|remove} <repo>
 i3pm daemon {status|events}
-i3pm diagnose {health|window <id>|validate|events}
+i3pm diagnose {health|window <id>|validate|events|socket-health}
 i3pm monitors {status|reassign|config}
 i3pm layout {save|restore|list|delete} <name>
 i3pm scratchpad {toggle|status|cleanup}
@@ -181,6 +181,8 @@ journalctl --user -u i3-project-event-listener -f
 - File-based badges at `$XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json` (117-improve-notification-progress-indicators)
 - Nix (configuration), Bash (scripts), Yuck (eww widgets), CSS (styling) + eww 0.4+, swaymsg (Sway IPC), jq, bash (119-fix-window-close-actions)
 - N/A (eww state is in-memory, config in ~/.config/eww-monitoring-panel) (119-fix-window-close-actions)
+- Bash (cleanup script), Python 3.11 (daemon health endpoint), Nix (service configuration) + systemd, i3ipc.aio, bash coreutils (121-improve-socket-discovery)
+- N/A (runtime state only) (121-improve-socket-discovery)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools
