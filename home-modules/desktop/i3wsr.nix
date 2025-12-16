@@ -156,8 +156,9 @@ in
   systemd.user.services.i3wsr = {
     Unit = {
       Description = "i3 workspace renamer";
-      After = [ "graphical-session.target" ];
-      PartOf = [ "graphical-session.target" ];
+      # Feature 121: Use sway-session.target for proper Sway lifecycle binding
+      After = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
     };
     Service = {
       Type = "simple";
@@ -168,7 +169,8 @@ in
       Environment = "PATH=/run/wrappers/bin:${pkgs.coreutils}/bin";
     };
     Install = {
-      WantedBy = [ "graphical-session.target" ];
+      # Feature 121: Auto-start with Sway session (Sway workspace renamer)
+      WantedBy = [ "sway-session.target" ];
     };
   };
 }

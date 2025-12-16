@@ -106,6 +106,9 @@ in
     # Feature 056: Declarative PWA Installation
     ./tools/firefox-pwas-declarative.nix  # TDD-driven declarative PWA management with ULIDs
     ./tools/pwa-helpers.nix               # Helper CLI commands for PWA management
+
+    # Feature 121: Stale socket cleanup
+    ./tools/sway-socket-cleanup           # Automatic cleanup of orphaned Sway IPC sockets
   ];
 
   home.username = "vpittamp";
@@ -152,6 +155,9 @@ in
     enable = true;
     logLevel = "DEBUG";  # Temporary for testing
   };
+
+  # Feature 121: Automatic cleanup of stale Sway IPC sockets every 5 minutes
+  programs.sway-socket-cleanup.enable = true;
 
   # Feature 117: tmux AI assistant monitor service
   # Detects claude/codex processes in tmux panes and creates badges

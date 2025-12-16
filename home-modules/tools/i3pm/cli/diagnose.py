@@ -329,5 +329,133 @@ def window_sync(window_id, output_json):
     _run_async(_window_original.callback(window_id, output_json))
 
 
+@diagnose.command(name="socket-health")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def socket_health(output_json):
+    """
+    Query daemon for Sway IPC socket health status.
+
+    Feature 121: Shows socket connectivity and health status.
+
+    Returns JSON with:
+    - status: "healthy", "stale", or "disconnected"
+    - socket_path: Current socket path
+    - last_validated: Timestamp of last successful validation
+    - latency_ms: Round-trip time for health check
+    - reconnection_count: Number of reconnections since daemon start
+    - uptime_seconds: Time since last successful connection
+
+    Examples:
+        i3pm diagnose socket-health
+        i3pm diagnose socket-health --json
+    """
+    import socket as sock
+    from pathlib import Path
+
+    # Find daemon IPC socket
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    daemon_socket = Path(runtime_dir) / "i3-project-daemon" / "ipc.sock"
+
+    if not daemon_socket.exists():
+        console.print(f"[red]Daemon socket not found: {daemon_socket}[/red]")
+        console.print("[yellow]Is i3-project-daemon running?[/yellow]")
+        sys.exit(1)
+
+    try:
+        # Send JSON-RPC request to daemon
+        request = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "get_socket_health",
+            "params": {},
+            "id": 1,
+        })
+
+        # Connect to daemon socket
+        client = sock.socket(sock.AF_UNIX, sock.SOCK_STREAM)
+        client.settimeout(5.0)
+        client.connect(str(daemon_socket))
+        client.sendall((request + "\n").encode())
+
+        # Read response
+        response_data = b""
+        while True:
+            chunk = client.recv(4096)
+            if not chunk:
+                break
+            response_data += chunk
+            if b"\n" in chunk:
+                break
+
+        client.close()
+
+        # Parse response
+        response = json.loads(response_data.decode().strip())
+
+        if "error" in response:
+            console.print(f"[red]Daemon error: {response['error']['message']}[/red]")
+            sys.exit(1)
+
+        result = response.get("result", {})
+
+        if output_json:
+            click.echo(json.dumps(result, indent=2))
+        else:
+            _display_socket_health(result)
+
+        # Exit with status based on health
+        if result.get("status") == "healthy":
+            sys.exit(0)
+        elif result.get("status") == "stale":
+            sys.exit(1)
+        else:
+            sys.exit(2)
+
+    except sock.timeout:
+        console.print("[red]Daemon connection timed out[/red]")
+        sys.exit(2)
+    except ConnectionRefusedError:
+        console.print("[red]Daemon not accepting connections[/red]")
+        sys.exit(2)
+    except Exception as e:
+        console.print(f"[red]Error querying daemon: {e}[/red]")
+        sys.exit(2)
+
+
+def _display_socket_health(result):
+    """Display socket health status as formatted output."""
+    status = result.get("status", "unknown")
+    socket_path = result.get("socket_path", "(none)")
+    last_validated = result.get("last_validated", "(never)")
+    latency_ms = result.get("latency_ms")
+    reconnection_count = result.get("reconnection_count", 0)
+    uptime_seconds = result.get("uptime_seconds", 0)
+    error = result.get("error")
+
+    console.print("\n[bold]Sway IPC Socket Health[/bold]\n")
+
+    # Status with color
+    status_color = {
+        "healthy": "green",
+        "stale": "yellow",
+        "disconnected": "red",
+    }.get(status, "white")
+
+    health_table = Table(show_header=False, box=None)
+    health_table.add_column("Property", style="cyan")
+    health_table.add_column("Value")
+
+    health_table.add_row("Status", f"[{status_color}]{status.upper()}[/{status_color}]")
+    health_table.add_row("Socket Path", socket_path or "(none)")
+    health_table.add_row("Last Validated", last_validated or "(never)")
+    health_table.add_row("Latency", f"{latency_ms:.2f}ms" if latency_ms is not None else "N/A")
+    health_table.add_row("Reconnection Count", str(reconnection_count))
+    health_table.add_row("Uptime", f"{uptime_seconds:.1f}s")
+
+    if error:
+        health_table.add_row("Error", f"[red]{error}[/red]")
+
+    console.print(health_table)
+
+
 if __name__ == "__main__":
     diagnose()
