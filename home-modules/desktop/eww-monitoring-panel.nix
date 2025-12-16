@@ -185,8 +185,8 @@ let
     # In eww 0.6.0-unstable, 'eww open' spawns a process that stays alive
     # to manage GTK rendering. Kill any existing 'open' processes to prevent
     # accumulating orphans on repeated toggles.
-    # Pattern: matches "eww-monitoring-panel" (config path) followed by "open"
-    ${pkgs.procps}/bin/pkill -f "eww-monitoring-panel.*open" 2>/dev/null || true
+    # Pattern uses "--config /home/" which appears in eww commands but NOT in pkill args
+    ${pkgs.procps}/bin/pkill -f -- "--config /home/.*eww-monitoring-panel.*open" 2>/dev/null || true
 
     # Check current state to update variables appropriately
     if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
@@ -12995,9 +12995,10 @@ in
 
       Service = {
         Type = "simple";
-        # NOTE: No ExecStartPre socket cleanup needed - eww handles stale sockets internally
-        # by removing the socket file before binding (see eww commit 5b3344f)
-        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
+        # Kill orphaned 'eww open' processes from previous toggle invocations
+        # These accumulate when toggle script runs outside the service cgroup (keybindings, top bar)
+        # Pattern uses "--config /home/" which appears in eww commands but NOT in pkill args
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.procps}/bin/pkill -f \"--config /home/.*eww-monitoring-panel.*open\" 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
@@ -13007,7 +13008,7 @@ in
         ExecStartPost = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 30); do ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel ping 2>/dev/null && break; ${pkgs.coreutils}/bin/sleep 0.2; done; ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
         # Clean shutdown: use 'eww kill' which properly cleans up THIS service's socket
         # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
-        ExecStopPost = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true";
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true'";
         Restart = "on-failure";
         RestartSec = "3s";
         # Ensure all child processes are killed when service stops
