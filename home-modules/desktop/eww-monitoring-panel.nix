@@ -143,60 +143,96 @@ let
     esac
   '';
 
-  # Toggle script for panel visibility
-  # Feature 114: Uses actual open/close instead of CSS visibility
-  # CSS-based hiding kept the window intercepting input even when "hidden"
-  # Added debounce to prevent crashes from rapid toggling
-  # Fix: Use eww's --toggle flag to avoid orphaned 'open' processes
-  # In eww 0.6.0-unstable, 'eww open' spawns a process that stays alive
-  toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
+  # Service wrapper script - manages daemon and handles toggle signals
+  # This keeps all eww processes (daemon + GTK renderers) in the service cgroup
+  # preventing orphaned processes when toggle is invoked from keybindings
+  wrapperScript = pkgs.writeShellScriptBin "eww-monitoring-panel-wrapper" ''
     #!${pkgs.bash}/bin/bash
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
-    LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
+    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
+
+    # Write wrapper PID for toggle script to send signals directly to this process only
+    echo $$ > "$PID_FILE"
+
+    # Cleanup on exit
+    cleanup() {
+      rm -f "$PID_FILE"
+      kill $DAEMON_PID 2>/dev/null
+    }
+    trap cleanup EXIT
+
+    # Start daemon in background, capture PID
+    $EWW --config "$CONFIG" daemon --no-daemonize &
+    DAEMON_PID=$!
+
+    # Wait for daemon ready (max 6 seconds)
+    for i in $(seq 1 30); do
+      $TIMEOUT 1s $EWW --config "$CONFIG" ping 2>/dev/null && break
+      ${pkgs.coreutils}/bin/sleep 0.2
+    done
+
+    # Open panel initially
+    $EWW --config "$CONFIG" open monitoring-panel || true
+
+    # Re-sync stack index (workaround for eww #1192: index resets on reopen)
+    ${pkgs.coreutils}/bin/sleep 0.2
+    IDX=$($EWW --config "$CONFIG" get current_view_index 2>/dev/null || echo 0)
+    $EWW --config "$CONFIG" update current_view_index=$IDX 2>/dev/null || true
+
+    # Toggle handler - called when SIGUSR1 received
+    # Uses eww's atomic --toggle flag to avoid race conditions
+    toggle_panel() {
+      # Atomic toggle - eww handles open/close internally
+      $EWW --config "$CONFIG" open --toggle monitoring-panel || true
+      # Update variables based on new state (after toggle)
+      ${pkgs.coreutils}/bin/sleep 0.1
+      if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+        $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false || true
+      else
+        $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false || true
+      fi
+    }
+
+    trap toggle_panel SIGUSR1
+
+    # Wait for daemon (re-wait after signal interrupts)
+    while kill -0 $DAEMON_PID 2>/dev/null; do
+      wait $DAEMON_PID || true
+    done
+  '';
+
+  # Toggle script for panel visibility - sends signal directly to wrapper process
+  # Uses PID file to avoid sending signal to all processes in service cgroup
+  toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
+    #!${pkgs.bash}/bin/bash
+
+    LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
+    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
 
     # Debounce: prevent rapid toggling (crashes eww daemon)
     if [[ -f "$LOCK_FILE" ]]; then
-      LOCK_AGE=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+      LOCK_AGE=$(($(${pkgs.coreutils}/bin/date +%s) - $(${pkgs.coreutils}/bin/stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
       if [[ $LOCK_AGE -lt 1 ]]; then
         exit 0
       fi
     fi
-    touch "$LOCK_FILE"
+    ${pkgs.coreutils}/bin/touch "$LOCK_FILE"
 
-    # CRITICAL: Ensure daemon is running before any eww commands
-    # Without this, eww commands will spawn their own daemon, causing duplicates
-    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
-      # Daemon not responding - try to start the service
-      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel 2>/dev/null
-      # Wait for daemon to be ready (max 6 seconds)
-      for i in $(seq 1 30); do
-        $TIMEOUT 1s $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
-        ${pkgs.coreutils}/bin/sleep 0.2
-      done
-      # If still not ready, exit to avoid spawning duplicate daemon
-      if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
-        exit 1
-      fi
+    # Ensure service is running
+    if ! ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
+      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
+      ${pkgs.coreutils}/bin/sleep 1  # Wait for service to start and PID file to be created
     fi
 
-    # In eww 0.6.0-unstable, 'eww open' spawns a process that stays alive
-    # to manage GTK rendering. Kill any existing 'open' processes to prevent
-    # accumulating orphans on repeated toggles.
-    # Pattern: matches "eww-monitoring-panel" (config path) followed by "open"
-    ${pkgs.procps}/bin/pkill -f "eww-monitoring-panel.*open" 2>/dev/null || true
-
-    # Check current state to update variables appropriately
-    if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Window is currently open - close it
-      $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false || true
-      $TIMEOUT --kill-after=1s 3s $EWW --config "$CONFIG" close monitoring-panel || true
-    else
-      # Window is currently closed - open it
-      $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false || true
-      $TIMEOUT --kill-after=1s 3s $EWW --config "$CONFIG" open monitoring-panel || true
+    # Send toggle signal directly to wrapper process (not entire cgroup)
+    if [[ -f "$PID_FILE" ]]; then
+      WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
+      if kill -0 "$WRAPPER_PID" 2>/dev/null; then
+        kill -SIGUSR1 "$WRAPPER_PID"
+      fi
     fi
   '';
 
@@ -12995,22 +13031,16 @@ in
 
       Service = {
         Type = "simple";
-        # NOTE: No ExecStartPre socket cleanup needed - eww handles stale sockets internally
-        # by removing the socket file before binding (see eww commit 5b3344f)
-        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
-        ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
-        # Open the monitoring panel window after daemon starts
-        # This is required for deflisten to start streaming window data
-        # IMPORTANT: Use eww ping to wait for daemon readiness instead of fixed sleep
-        # Fixed sleep caused race conditions where 'eww open' would start its own daemon
-        # Open panel and re-sync stack index (workaround for eww #1192: index resets on reopen)
-        ExecStartPost = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 30); do ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel ping 2>/dev/null && break; ${pkgs.coreutils}/bin/sleep 0.2; done; ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
+        # Use wrapper script that manages daemon + handles toggle signals
+        # All eww processes (daemon + GTK renderers) stay in service cgroup
+        # No orphans possible since toggle sends signal instead of spawning processes
+        ExecStart = "${wrapperScript}/bin/eww-monitoring-panel-wrapper";
         # Clean shutdown: use 'eww kill' which properly cleans up THIS service's socket
-        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
-        ExecStopPost = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true";
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true'";
         Restart = "on-failure";
         RestartSec = "3s";
-        # Ensure all child processes are killed when service stops
+        # Critical: control-group ensures ALL child processes are killed when service stops
+        # This now works correctly since all eww commands run within the wrapper
         KillMode = "control-group";
       };
 
