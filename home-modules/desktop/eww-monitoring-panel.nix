@@ -160,6 +160,8 @@ let
     # Cleanup on exit
     cleanup() {
       rm -f "$PID_FILE"
+      # Kill orphaned 'eww open' processes (they escape to systemd due to double-fork)
+      ${pkgs.procps}/bin/pkill -f 'eww.*eww-monitoring-panel.*open' 2>/dev/null || true
       kill $DAEMON_PID 2>/dev/null
     }
     trap cleanup EXIT
@@ -174,8 +176,12 @@ let
       ${pkgs.coreutils}/bin/sleep 0.2
     done
 
-    # Open panel initially
-    $EWW --config "$CONFIG" open monitoring-panel || true
+    # Kill any orphaned 'eww open' processes before opening
+    # eww 0.6.0 double-forks so 'eww open' escapes to systemd - must clean up
+    ${pkgs.procps}/bin/pkill -f 'eww.*eww-monitoring-panel.*open' 2>/dev/null || true
+
+    # Open panel initially (--no-daemonize prevents orphan process spawning)
+    $EWW --config "$CONFIG" --no-daemonize open monitoring-panel || true
 
     # Re-sync stack index (workaround for eww #1192: index resets on reopen)
     ${pkgs.coreutils}/bin/sleep 0.2
@@ -183,16 +189,28 @@ let
     $EWW --config "$CONFIG" update current_view_index=$IDX 2>/dev/null || true
 
     # Toggle handler - called when SIGUSR1 received
-    # Uses eww's atomic --toggle flag to avoid race conditions
+    # Best practices from eww documentation:
+    # - Verify daemon is ready before sending commands
+    # - Use --no-daemonize to prevent eww from spawning new daemons
+    # Note: Orphan cleanup only happens at service start/stop, not during toggle
+    #       to avoid killing the window renderer mid-operation
     toggle_panel() {
-      # Atomic toggle - eww handles open/close internally
-      $EWW --config "$CONFIG" open --toggle monitoring-panel || true
-      # Update variables based on new state (after toggle)
-      ${pkgs.coreutils}/bin/sleep 0.1
+      # Verify daemon is ready (prevents eww from starting new daemon)
+      if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping 2>/dev/null; then
+        return 1
+      fi
+
+      # Atomic toggle with --no-daemonize to prevent orphan spawning
+      $EWW --config "$CONFIG" --no-daemonize open --toggle monitoring-panel 2>/dev/null || true
+
+      # Brief pause for state to settle
+      ${pkgs.coreutils}/bin/sleep 0.2
+
+      # Update state variables based on window visibility
       if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-        $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false || true
+        $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false 2>/dev/null || true
       else
-        $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false || true
+        $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false 2>/dev/null || true
       fi
     }
 
