@@ -44,6 +44,9 @@ class Session(BaseModel):
     project: Optional[str] = Field(
         default=None, description="Project context if available from telemetry"
     )
+    window_id: Optional[int] = Field(
+        default=None, description="Sway container ID of originating terminal window"
+    )
 
     # Timestamps
     created_at: datetime = Field(description="When session was first detected")
@@ -120,6 +123,7 @@ class SessionListItem(BaseModel):
     tool: str = Field(description="AI tool type")
     state: str = Field(description="Current session state")
     project: Optional[str] = Field(default=None, description="Project context")
+    window_id: Optional[int] = Field(default=None, description="Sway container ID for focus")
 
 
 class SessionList(BaseModel):
@@ -169,12 +173,14 @@ class EventNames:
 
     # Claude Code additional events
     CLAUDE_TOOL_DECISION = "claude_code.tool_decision"
+    CLAUDE_AGENT_RUN = "claude_code.agent_run"  # From trace spans
 
     # Events that reset the quiet timer (keep WORKING)
     ACTIVITY_EVENTS = {
         CLAUDE_TOOL_RESULT,
         CLAUDE_API_REQUEST,
         CLAUDE_TOOL_DECISION,  # Claude Code emits this for tool calls
+        CLAUDE_AGENT_RUN,  # From trace spans
         CODEX_API_REQUEST,
         CODEX_SSE_EVENT,
         CODEX_TOOL_DECISION,

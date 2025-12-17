@@ -106,18 +106,92 @@ class OTLPReceiver:
     async def _handle_traces(self, request: web.Request) -> web.Response:
         """Handle OTLP traces export requests.
 
-        Accept but ignore trace data - we only need log events.
+        Parse trace spans and extract events for session tracking.
+        Spans like claude.agent.run, tool.read, tool.write contain
+        useful telemetry about AI assistant activity.
         """
         content_type = request.headers.get("Content-Type", "")
-        return self._create_empty_response(content_type)
+
+        try:
+            if "application/x-protobuf" in content_type:
+                events = await self._parse_protobuf_traces(request)
+            elif "application/json" in content_type:
+                events = await self._parse_json_traces(request)
+            else:
+                # Default to trying JSON
+                events = await self._parse_json_traces(request)
+
+            # Process events through session tracker
+            for event in events:
+                await self.tracker.process_event(event)
+
+            # Return success response
+            return self._create_traces_response(content_type, rejected=0)
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Error processing traces: {e}\n{traceback.format_exc()}")
+            return web.Response(status=400, text=str(e))
 
     async def _handle_metrics(self, request: web.Request) -> web.Response:
         """Handle OTLP metrics export requests.
 
-        Accept but ignore metric data - we only need log events.
+        Metrics serve as a heartbeat - when we receive metrics from Claude Code,
+        it indicates the process is still running. We use this to extend the
+        quiet period for active sessions.
         """
         content_type = request.headers.get("Content-Type", "")
+
+        # Extract tool info from metrics to use as heartbeat
+        tool = await self._extract_tool_from_metrics(request, content_type)
+        if tool:
+            await self.tracker.process_heartbeat_for_tool(tool)
+
         return self._create_empty_response(content_type)
+
+    async def _extract_tool_from_metrics(
+        self, request: web.Request, content_type: str
+    ) -> Optional[AITool]:
+        """Extract AI tool type from metrics request for heartbeat tracking.
+
+        Claude Code metrics don't include session_id, so we identify the tool
+        from service.name and extend all working sessions for that tool.
+        """
+        try:
+            if "application/x-protobuf" in content_type:
+                from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
+                    ExportMetricsServiceRequest,
+                )
+
+                body = await request.read()
+                otlp_request = ExportMetricsServiceRequest()
+                otlp_request.ParseFromString(body)
+
+                # Look for service.name in resource attributes
+                for resource_metrics in otlp_request.resource_metrics:
+                    attrs = {attr.key: attr.value.string_value for attr in resource_metrics.resource.attributes}
+                    service_name = attrs.get("service.name", "")
+                    if "claude" in service_name.lower():
+                        return AITool.CLAUDE_CODE
+                    elif "codex" in service_name.lower():
+                        return AITool.CODEX_CLI
+            else:
+                # JSON format
+                body = await request.json()
+                for resource_metrics in body.get("resourceMetrics", []):
+                    resource = resource_metrics.get("resource", {})
+                    for attr in resource.get("attributes", []):
+                        if attr.get("key") == "service.name":
+                            value = attr.get("value", {})
+                            service_name = value.get("stringValue") or value.get("string_value") or ""
+                            if "claude" in service_name.lower():
+                                return AITool.CLAUDE_CODE
+                            elif "codex" in service_name.lower():
+                                return AITool.CODEX_CLI
+        except Exception as e:
+            logger.debug(f"Could not extract tool from metrics: {e}")
+
+        return None
 
     async def _parse_protobuf_logs(self, request: web.Request) -> list[TelemetryEvent]:
         """Parse protobuf-encoded OTLP logs request.
@@ -175,6 +249,305 @@ class OTLPReceiver:
 
         logger.debug(f"Parsed {len(events)} events from JSON")
         return events
+
+    async def _parse_protobuf_traces(self, request: web.Request) -> list[TelemetryEvent]:
+        """Parse protobuf-encoded OTLP traces request.
+
+        Extracts span information and converts to TelemetryEvents.
+        Span names like 'claude.agent.run', 'tool.read' become events.
+        """
+        try:
+            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+                ExportTraceServiceRequest,
+            )
+        except ImportError:
+            logger.warning("opentelemetry-proto not available for traces, falling back to JSON")
+            return []
+
+        body = await request.read()
+        otlp_request = ExportTraceServiceRequest()
+        otlp_request.ParseFromString(body)
+
+        events = []
+        for resource_spans in otlp_request.resource_spans:
+            service_name = self._extract_service_name(resource_spans.resource)
+
+            for scope_spans in resource_spans.scope_spans:
+                for span in scope_spans.spans:
+                    event = self._parse_span(span, service_name)
+                    if event:
+                        events.append(event)
+
+        if events:
+            logger.info(f"Parsed {len(events)} events from trace spans")
+        return events
+
+    async def _parse_json_traces(self, request: web.Request) -> list[TelemetryEvent]:
+        """Parse JSON-encoded OTLP traces request.
+
+        Extracts span information from JSON format.
+        """
+        try:
+            body = await request.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON traces: {e}")
+            return []
+
+        events = []
+        for resource_spans in body.get("resourceSpans", []):
+            resource = resource_spans.get("resource", {})
+            service_name = self._extract_service_name_json(resource)
+
+            for scope_spans in resource_spans.get("scopeSpans", []):
+                for span in scope_spans.get("spans", []):
+                    event = self._parse_span_json(span, service_name)
+                    if event:
+                        events.append(event)
+
+        if events:
+            logger.info(f"Parsed {len(events)} events from JSON trace spans")
+        return events
+
+    def _parse_span(self, span: Any, service_name: Optional[str]) -> Optional[TelemetryEvent]:
+        """Parse a protobuf Span into TelemetryEvent.
+
+        Converts span name to event name (e.g., 'claude.agent.run' -> 'claude_code.agent_run').
+        Extracts session ID from span attributes.
+        """
+        span_name = span.name if hasattr(span, 'name') else None
+        if not span_name:
+            return None
+
+        # Convert span name to event name format
+        # e.g., 'claude.agent.run' -> 'claude_code.agent_run'
+        event_name = self._span_name_to_event(span_name)
+        if not event_name:
+            return None
+
+        # Extract attributes
+        attributes = {}
+        session_id = None
+
+        try:
+            for attr in span.attributes:
+                key = attr.key
+                value = None
+
+                av = attr.value
+                if hasattr(av, 'string_value') and av.string_value:
+                    value = av.string_value
+                elif hasattr(av, 'int_value') and av.int_value:
+                    value = av.int_value
+                elif hasattr(av, 'bool_value'):
+                    value = av.bool_value
+                elif hasattr(av, 'double_value') and av.double_value:
+                    value = av.double_value
+                elif hasattr(av, 'HasField'):
+                    if av.HasField("string_value"):
+                        value = av.string_value
+                    elif av.HasField("int_value"):
+                        value = av.int_value
+                    elif av.HasField("bool_value"):
+                        value = av.bool_value
+                    elif av.HasField("double_value"):
+                        value = av.double_value
+
+                if value is None:
+                    continue
+
+                attributes[key] = value
+
+                if key in ("session.id", "thread_id", "conversation_id", "conversation.id"):
+                    session_id = str(value)
+        except Exception as e:
+            logger.debug(f"Error parsing span attributes: {e}")
+
+        # Parse timestamp (nanoseconds since epoch)
+        try:
+            timestamp = datetime.fromtimestamp(
+                span.start_time_unix_nano / 1e9, tz=timezone.utc
+            )
+        except Exception:
+            timestamp = datetime.now(tz=timezone.utc)
+
+        # Add span-specific attributes
+        try:
+            if hasattr(span, 'end_time_unix_nano') and span.end_time_unix_nano:
+                duration_ns = span.end_time_unix_nano - span.start_time_unix_nano
+                attributes['duration_ms'] = duration_ns / 1e6
+        except Exception:
+            pass
+
+        # Determine AI tool
+        tool = EventNames.get_tool_from_event(event_name)
+        if not tool and service_name:
+            if "claude" in service_name.lower():
+                tool = AITool.CLAUDE_CODE
+            elif "codex" in service_name.lower():
+                tool = AITool.CODEX_CLI
+
+        # Extract trace context
+        trace_id = span.trace_id.hex() if hasattr(span, 'trace_id') and span.trace_id else None
+        span_id = span.span_id.hex() if hasattr(span, 'span_id') and span.span_id else None
+
+        logger.debug(f"Parsed span: {span_name} -> {event_name}, session_id: {session_id}")
+
+        return TelemetryEvent(
+            event_name=event_name,
+            timestamp=timestamp,
+            session_id=session_id,
+            tool=tool,
+            attributes=attributes,
+            trace_id=trace_id,
+            span_id=span_id,
+        )
+
+    def _parse_span_json(self, span: dict, service_name: Optional[str]) -> Optional[TelemetryEvent]:
+        """Parse a JSON Span into TelemetryEvent."""
+        span_name = span.get("name")
+        if not span_name:
+            return None
+
+        # Convert span name to event name format
+        event_name = self._span_name_to_event(span_name)
+        if not event_name:
+            return None
+
+        # Extract attributes
+        attributes = {}
+        session_id = None
+
+        for attr in span.get("attributes", []):
+            key = attr.get("key")
+            value_obj = attr.get("value", {})
+
+            if "stringValue" in value_obj:
+                value = value_obj["stringValue"]
+            elif "intValue" in value_obj:
+                value = int(value_obj["intValue"])
+            elif "boolValue" in value_obj:
+                value = value_obj["boolValue"]
+            elif "doubleValue" in value_obj:
+                value = float(value_obj["doubleValue"])
+            else:
+                continue
+
+            attributes[key] = value
+
+            if key in ("session.id", "thread_id", "conversation_id", "conversation.id"):
+                session_id = str(value)
+
+        # Parse timestamp
+        time_str = span.get("startTimeUnixNano", "0")
+        try:
+            timestamp = datetime.fromtimestamp(int(time_str) / 1e9, tz=timezone.utc)
+        except Exception:
+            timestamp = datetime.now(tz=timezone.utc)
+
+        # Add duration
+        end_time_str = span.get("endTimeUnixNano", "0")
+        if end_time_str and time_str:
+            try:
+                duration_ns = int(end_time_str) - int(time_str)
+                attributes['duration_ms'] = duration_ns / 1e6
+            except Exception:
+                pass
+
+        # Determine AI tool
+        tool = EventNames.get_tool_from_event(event_name)
+        if not tool and service_name:
+            if "claude" in service_name.lower():
+                tool = AITool.CLAUDE_CODE
+            elif "codex" in service_name.lower():
+                tool = AITool.CODEX_CLI
+
+        # Extract trace context
+        trace_id = span.get("traceId")
+        span_id = span.get("spanId")
+
+        logger.debug(f"Parsed JSON span: {span_name} -> {event_name}, session_id: {session_id}")
+
+        return TelemetryEvent(
+            event_name=event_name,
+            timestamp=timestamp,
+            session_id=session_id,
+            tool=tool,
+            attributes=attributes,
+            trace_id=trace_id,
+            span_id=span_id,
+        )
+
+    def _span_name_to_event(self, span_name: str) -> Optional[str]:
+        """Convert span name to event name format.
+
+        Maps span names to event names that trigger session state changes.
+        e.g., 'claude.agent.run' -> 'claude_code.agent_run'
+              'tool.read' -> 'claude_code.tool_result'
+        """
+        # Map of span name patterns to event names
+        span_mappings = {
+            # Agent lifecycle spans
+            "claude.agent.run": "claude_code.agent_run",
+            "agent.run": "claude_code.agent_run",
+            # Tool spans - map to tool_result for activity tracking
+            "tool.read": "claude_code.tool_result",
+            "tool.write": "claude_code.tool_result",
+            "tool.bash": "claude_code.tool_result",
+            "tool.edit": "claude_code.tool_result",
+            "tool.grep": "claude_code.tool_result",
+            "tool.glob": "claude_code.tool_result",
+            # API spans
+            "api.request": "claude_code.api_request",
+            "api.response": "claude_code.api_request",
+            # User interaction
+            "user.prompt": "claude_code.user_prompt",
+            "prompt.submit": "claude_code.user_prompt",
+        }
+
+        # Check exact match first
+        if span_name in span_mappings:
+            return span_mappings[span_name]
+
+        # Check for prefix matches (case insensitive)
+        span_lower = span_name.lower()
+        for pattern, event in span_mappings.items():
+            if span_lower.startswith(pattern.lower()):
+                return event
+
+        # For unknown spans that contain 'claude' or 'tool', create a generic event
+        if "claude" in span_lower or "tool" in span_lower:
+            # Convert dots to underscores and prefix with claude_code if needed
+            normalized = span_name.replace(".", "_").replace("-", "_")
+            if not normalized.startswith("claude_code"):
+                normalized = f"claude_code.{normalized}"
+            return normalized
+
+        # Ignore other spans
+        return None
+
+    def _create_traces_response(self, content_type: str, rejected: int = 0) -> web.Response:
+        """Create ExportTraceServiceResponse."""
+        if "application/x-protobuf" in content_type:
+            try:
+                from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+                    ExportTraceServiceResponse,
+                )
+
+                response = ExportTraceServiceResponse()
+                if rejected > 0:
+                    response.partial_success.rejected_spans = rejected
+                return web.Response(
+                    body=response.SerializeToString(),
+                    content_type="application/x-protobuf",
+                )
+            except ImportError:
+                pass
+
+        # Default to JSON response
+        response_data = {}
+        if rejected > 0:
+            response_data["partialSuccess"] = {"rejectedSpans": rejected}
+        return web.json_response(response_data)
 
     def _extract_service_name(self, resource: Any) -> Optional[str]:
         """Extract service.name from protobuf resource attributes."""

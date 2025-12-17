@@ -246,8 +246,9 @@ in
         Documentation = "https://github.com/elkowar/eww";
         PartOf = [ "sway-session.target" ];
         # Feature 117: Depend on i3-project-daemon for health checks
-        After = [ "sway-session.target" "i3-project-daemon.service" ];
-        Wants = [ "i3-project-daemon.service" ];
+        # Feature 123: Depend on otel-ai-monitor for AI session indicators
+        After = [ "sway-session.target" "i3-project-daemon.service" "otel-ai-monitor.service" ];
+        Wants = [ "i3-project-daemon.service" "otel-ai-monitor.service" ];
       };
 
       Service = {

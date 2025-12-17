@@ -54,7 +54,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.3.1";  # Fix event name parsing from body, add api_request trigger
+    version = "0.5.0";  # Add process-based detection fallback for Codex
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -84,8 +84,8 @@ in
 
     completionQuietPeriodSec = mkOption {
       type = types.number;
-      default = 3;
-      description = "Seconds of quiet before marking session as completed";
+      default = 15;
+      description = "Seconds of quiet (no log events) before marking session as completed. Claude Code emits events sporadically during streaming, so this should be at least 10-15 seconds.";
     };
 
     sessionTimeoutSec = mkOption {
@@ -165,7 +165,7 @@ in
         RestartSec = 2;
 
         # Resource limits (lightweight async Python service)
-        MemoryMax = "30M";
+        MemoryMax = "50M";
         CPUQuota = "10%";
 
         # Environment for notifications

@@ -75,8 +75,14 @@ lib.mkIf enableClaudeCode {
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
         OTEL_LOGS_EXPORTER = "otlp";
         OTEL_METRICS_EXPORTER = "otlp";
+        OTEL_TRACES_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
+        # Export intervals - faster for better real-time monitoring
+        OTEL_METRIC_EXPORT_INTERVAL = "10000";  # 10 seconds (default: 60000)
+        OTEL_LOGS_EXPORT_INTERVAL = "5000";     # 5 seconds (default)
+        # Include session ID in metrics for correlation
+        OTEL_METRICS_INCLUDE_SESSION_ID = "true";
         # Fix for M1 Apple Silicon: Built-in ripgrep has jemalloc page size incompatibility
         # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
         # Use system ripgrep instead (available via home-manager)

@@ -571,6 +571,34 @@
     background: rgba(69, 71, 90, 0.5);
   }
 
+  /* Error state - red indicator for pipe/service failures */
+  .ai-chip.error {
+    background: linear-gradient(135deg, rgba(243, 139, 168, 0.3), rgba(235, 160, 172, 0.25));
+    border: 1px solid rgba(243, 139, 168, 0.8);
+    box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
+    animation: ai-error-pulse 1s ease-in-out infinite;
+  }
+
+  .ai-chip.error .ai-chip-indicator {
+    color: #f38ba8;
+    font-size: 12px;
+  }
+
+  @keyframes ai-error-pulse {
+    0% {
+      opacity: 1;
+      box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
+    }
+    50% {
+      opacity: 0.8;
+      box-shadow: 0 0 16px rgba(243, 139, 168, 0.8);
+    }
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
+    }
+  }
+
   /* Indicator icon styling */
   .ai-chip-indicator {
     font-size: 10px;

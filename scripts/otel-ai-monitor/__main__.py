@@ -132,6 +132,7 @@ async def main_async(args: argparse.Namespace) -> int:
     """Async main entry point."""
     # Import here to avoid circular imports and speed up --help
     from .output import OutputWriter
+    from .process_monitor import ProcessMonitor
     from .receiver import OTLPReceiver
     from .session_tracker import SessionTracker
 
@@ -158,6 +159,12 @@ async def main_async(args: argparse.Namespace) -> int:
         tracker=tracker,
     )
 
+    # Create process monitor for fallback detection (Codex batches telemetry)
+    process_monitor = ProcessMonitor(
+        tracker=tracker,
+        poll_interval_sec=2.0,
+    )
+
     # Setup signal handlers for graceful shutdown
     loop = asyncio.get_event_loop()
     shutdown_event = asyncio.Event()
@@ -179,6 +186,9 @@ async def main_async(args: argparse.Namespace) -> int:
         # Start the OTLP receiver
         await receiver.start()
 
+        # Start the process monitor (fallback for batched telemetry)
+        await process_monitor.start()
+
         logger.info("Service started successfully")
 
         # Wait for shutdown signal
@@ -191,6 +201,7 @@ async def main_async(args: argparse.Namespace) -> int:
     finally:
         # Graceful shutdown
         logger.info("Shutting down...")
+        await process_monitor.stop()
         await receiver.stop()
         await tracker.stop()
         await output.stop()

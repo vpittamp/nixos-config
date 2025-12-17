@@ -147,10 +147,10 @@ in
 
 ;; Feature 123: AI sessions data via OpenTelemetry
 ;; Uses deflisten to consume JSON stream from otel-ai-monitor service (event-driven, no polling)
-;; Falls back to empty state if service not running
+;; Falls back to error state (visible in UI) if pipe doesn't exist - avoids silent failures
 (deflisten ai_sessions_data
   :initial '{"type":"session_list","sessions":[],"timestamp":0}'
-  `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"session_list","sessions":[],"timestamp":0}'`)
+  `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0}'`)
 
 ;; Feature 123: Spinner animation for working AI sessions
 ;; Note: 250ms interval reduces daemon load (was 120ms causing excessive process spawns)
@@ -421,15 +421,22 @@ in
 ;; Feature 123: AI Sessions widget for top bar (OTEL-based)
 ;; Compact chips showing active AI assistants (Claude Code, Codex)
 ;; Three states: working (pulsating), completed/attention (bell), idle (muted)
+;; Error state: shows red indicator when pipe is missing (visible failure, not silent)
 ;; Data comes from otel-ai-monitor service via deflisten (event-driven)
 (defwidget ai-sessions-widget []
   (box :class "ai-sessions-container"
-       :visible {arraylength(ai_sessions_data.sessions ?: []) > 0}
+       :visible {(ai_sessions_data.type ?: "") == "error" || arraylength(ai_sessions_data.sessions ?: []) > 0}
        :orientation "h"
        :space-evenly false
        :spacing 4
+       ;; Error indicator when pipe is missing
+       (box :class "ai-chip error"
+            :visible {(ai_sessions_data.type ?: "") == "error"}
+            :tooltip {"AI Monitor Error: " + (ai_sessions_data.error ?: "unknown")}
+            (label :class "ai-chip-indicator" :text "󰅙"))
+       ;; Normal session chips
        (for session in {ai_sessions_data.sessions ?: []}
-         (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + session.session_id + "' &"}
+         (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + (session.window_id ?: "0") + "' &"}
                    :cursor "pointer"
                    :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Processing..." : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]"}
            (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle"))}

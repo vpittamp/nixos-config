@@ -26,6 +26,7 @@ from .models import (
     SessionUpdate,
     TelemetryEvent,
 )
+from .sway_helper import get_focused_window_info
 
 if TYPE_CHECKING:
     from .output import OutputWriter
@@ -132,17 +133,22 @@ class SessionTracker:
 
             if session is None:
                 # Create new session
+                # Capture focused window ID and project from window marks
+                window_id, window_project = get_focused_window_info()
+                # Prefer project from window marks, fall back to telemetry
+                project = window_project or self._extract_project(event)
                 session = Session(
                     session_id=session_id,
                     tool=event.tool or AITool.CLAUDE_CODE,
                     state=SessionState.IDLE,
-                    project=self._extract_project(event),
+                    project=project,
+                    window_id=window_id,
                     created_at=now,
                     last_event_at=now,
                     state_changed_at=now,
                 )
                 self._sessions[session_id] = session
-                logger.info(f"Created session {session_id} for {session.tool}")
+                logger.info(f"Created session {session_id} for {session.tool} (window_id={window_id}, project={project})")
 
             # Update last event time
             session.last_event_at = now
@@ -170,6 +176,48 @@ class SessionTracker:
             # Reset or start quiet timer for WORKING state
             if session.state == SessionState.WORKING:
                 self._reset_quiet_timer(session_id)
+
+    async def process_heartbeat(self, session_id: str) -> None:
+        """Process a heartbeat signal (from metrics) for a session.
+
+        Heartbeats extend the quiet period for WORKING sessions without
+        changing state. This allows metrics to serve as a keep-alive signal
+        while Claude Code is actively running.
+
+        Args:
+            session_id: Session ID from metrics resource attributes
+        """
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                # No session found - don't create one from metrics alone
+                return
+
+            # Only extend quiet period for WORKING sessions
+            if session.state == SessionState.WORKING:
+                now = datetime.now(timezone.utc)
+                session.last_event_at = now
+                self._reset_quiet_timer(session_id)
+                logger.debug(f"Session {session_id}: heartbeat extended quiet period")
+
+    async def process_heartbeat_for_tool(self, tool: AITool) -> None:
+        """Process a heartbeat signal for all sessions of a given tool.
+
+        Since Claude Code metrics don't include session_id, we extend the quiet
+        period for ALL working sessions of that tool. This is safe because:
+        1. Metrics are only sent when the tool is actively running
+        2. Multiple sessions of the same tool are rare
+
+        Args:
+            tool: AI tool type (CLAUDE_CODE, CODEX_CLI, etc.)
+        """
+        async with self._lock:
+            now = datetime.now(timezone.utc)
+            for session_id, session in self._sessions.items():
+                if session.tool == tool and session.state == SessionState.WORKING:
+                    session.last_event_at = now
+                    self._reset_quiet_timer(session_id)
+                    logger.debug(f"Session {session_id}: heartbeat extended by metrics")
 
     def _compute_new_state(
         self, session: Session, event: TelemetryEvent
@@ -336,16 +384,11 @@ class SessionTracker:
             old_state: Previous state
             new_state: New state
         """
-        # Emit session update
-        update = SessionUpdate(
-            session_id=session.session_id,
-            tool=session.tool,
-            state=new_state,
-            project=session.project,
-            timestamp=int(datetime.now(timezone.utc).timestamp()),
-            metrics=self._get_metrics_dict(session) if session.input_tokens > 0 else None,
-        )
-        await self.output.write_update(update)
+        # Emit full session list on every state change
+        # EWW deflisten replaces the entire variable, so SessionUpdate would
+        # overwrite SessionList and break the widget. Always send full state.
+        # Note: Caller already holds the lock, use unlocked version.
+        await self._broadcast_sessions_unlocked()
 
         # Send notification on completion
         if new_state == SessionState.COMPLETED and self.enable_notifications:
@@ -389,22 +432,27 @@ class SessionTracker:
                 logger.error(f"Broadcast error: {e}")
 
     async def _broadcast_sessions(self) -> None:
-        """Broadcast current session list."""
+        """Broadcast current session list (acquires lock)."""
         async with self._lock:
-            active_sessions = [
-                s for s in self._sessions.values()
-                if s.state != SessionState.EXPIRED
-            ]
-            items = [
-                SessionListItem(
-                    session_id=s.session_id,
-                    tool=s.tool,
-                    state=s.state,
-                    project=s.project,
-                )
-                for s in active_sessions
-            ]
-            has_working = any(s.state == SessionState.WORKING for s in active_sessions)
+            await self._broadcast_sessions_unlocked()
+
+    async def _broadcast_sessions_unlocked(self) -> None:
+        """Broadcast current session list (caller must hold lock)."""
+        active_sessions = [
+            s for s in self._sessions.values()
+            if s.state != SessionState.EXPIRED
+        ]
+        items = [
+            SessionListItem(
+                session_id=s.session_id,
+                tool=s.tool,
+                state=s.state,
+                project=s.project,
+                window_id=s.window_id,
+            )
+            for s in active_sessions
+        ]
+        has_working = any(s.state == SessionState.WORKING for s in active_sessions)
 
         session_list = SessionList(
             sessions=items,

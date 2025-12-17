@@ -98,15 +98,14 @@ class OutputWriter:
             return True
 
         try:
-            # Try to open pipe non-blocking
-            fd = os.open(str(self.pipe_path), os.O_WRONLY | os.O_NONBLOCK)
+            # Use O_RDWR to avoid FIFO deadlock where reader blocks in open()
+            # waiting for writer, but writer's O_NONBLOCK fails because reader
+            # hasn't completed its open(). O_RDWR opens without blocking.
+            fd = os.open(str(self.pipe_path), os.O_RDWR | os.O_NONBLOCK)
             self._output = os.fdopen(fd, "w")
             logger.info(f"Opened pipe for writing: {self.pipe_path}")
             return True
         except OSError as e:
-            # ENXIO means no reader - that's okay, we'll try again later
-            if e.errno == 6:  # ENXIO
-                return False
             logger.warning(f"Error opening pipe: {e}")
             return False
 
