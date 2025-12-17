@@ -309,6 +309,88 @@ NixOS Test Driver
 | Sway won't start | Using default VGA | Use `-vga none -device virtio-gpu-pci` |
 | QEMU monitor breaks | Console log spam | Reduce service verbosity or redirect stderr |
 
+### Tmux-Based Interactive Debugging Workflow
+
+For long-running debugging sessions, use tmux to keep the VM test driver running:
+
+```bash
+# Create a dedicated tmux session for the VM
+tmux new-session -d -s gvm
+
+# Start the graphical VM test driver in that session
+tmux send-keys -t gvm "nix-build tests/sway-integration/graphical-vm.nix && result/bin/nixos-test-driver --interactive" Enter
+
+# Attach to monitor (or use tmux send-keys from another terminal)
+tmux attach -t gvm
+```
+
+**Sending commands from Claude Code or scripts:**
+
+```bash
+# Take a screenshot
+tmux send-keys -t gvm "machine.screenshot('my-test.png')" Enter
+
+# Run command in VM
+tmux send-keys -t gvm "machine.succeed('sudo -u vpittamp -i i3pm discover')" Enter
+
+# Check output
+sleep 2 && tmux capture-pane -t gvm -p | tail -20
+```
+
+**Key commands in Python REPL:**
+
+| Command | Purpose |
+|---------|---------|
+| `machine.succeed(cmd)` | Run command, assert exit code 0 |
+| `machine.fail(cmd)` | Run command, assert non-zero exit |
+| `machine.execute(cmd)` | Run command, return (status, output) |
+| `machine.screenshot('name.png')` | Save screenshot to working directory |
+| `machine.shell_interact()` | Interactive shell in VM |
+
+### Using sudo vs su for User Commands
+
+**Important:** In NixOS test VMs, use `sudo -u vpittamp -i` instead of `su -`:
+
+```python
+# WRONG - may fail with exit code 255
+machine.succeed("su - vpittamp -c 'i3pm discover'")
+
+# CORRECT - works reliably
+machine.succeed("sudo -u vpittamp -i i3pm discover")
+```
+
+### Disabling Hardware-Specific Services
+
+When importing production configs (hetzner.nix, thinkpad.nix), some services won't work in VMs:
+
+```nix
+# In your graphical-vm.nix
+home-manager.users.vpittamp = { config, lib, ... }: {
+  imports = [ ../../home-modules/hetzner.nix ];
+
+  # Disable services that require physical hardware
+  systemd.user.services.wayvnc = {
+    Unit.ConditionPathExists = lib.mkForce "/nonexistent";
+  };
+  systemd.user.services.eww-workspace-bar = {
+    Unit.ConditionPathExists = lib.mkForce "/nonexistent";
+  };
+};
+```
+
+### Eww Panel Interaction in VMs
+
+To switch tabs or update eww variables programmatically:
+
+```python
+# Switch to Projects tab (index 1)
+machine.succeed('''
+  sudo -u vpittamp WAYLAND_DISPLAY=wayland-1 \
+  XDG_RUNTIME_DIR=/run/user/1000 \
+  eww -c /home/vpittamp/.config/eww-monitoring-panel update current_view_index=1
+''')
+```
+
 ## Troubleshooting
 
 ### Test Hangs or Times Out
@@ -343,6 +425,60 @@ $(nix-build tests/sway-integration -A interactive)/bin/nixos-test-driver
 
 # View daemon logs
 >>> machine.succeed("journalctl --user -M testuser@ -u i3-project-event-listener -n 50")
+```
+
+### i3pm Daemon Log Spam
+
+The daemon may spam logs with permission errors when reading `/proc/<pid>/environ`:
+
+```
+WARNING [i3_project_daemon.services.window_filter] Permission denied reading /proc/2040/environ
+```
+
+**This is expected in VMs** where process permissions differ. The daemon continues to function; logs just clutter the terminal. To reduce noise, increase log level or redirect stderr.
+
+### repos.json Not Populated / i3pm Discover Finds Nothing
+
+In VMs, `i3pm discover` may find 0 repositories because:
+1. The repos directory structure doesn't match expected layout
+2. Git repos were created as root instead of the user
+
+**Fix:** Ensure correct directory structure and ownership:
+
+```python
+# Create repo structure as the correct user
+machine.succeed('''
+  sudo -u vpittamp -i bash -c "
+    mkdir -p ~/repos/vpittamp
+    cd ~/repos/vpittamp
+    git init test-project
+    cd test-project
+    echo 'Initial' > README.md
+    git add . && git commit -m 'Initial'
+  "
+''')
+
+# Verify ownership (should be vpittamp, not root)
+machine.succeed("ls -la /home/vpittamp/repos/vpittamp/")
+```
+
+**Alternative:** Manually inject repos.json for testing:
+
+```python
+machine.succeed('''
+  sudo -u vpittamp -i bash -c 'cat > ~/.config/i3/repos.json << EOF
+  {
+    "version": 1,
+    "repositories": [{
+      "account": "vpittamp",
+      "name": "test-project",
+      "path": "/home/vpittamp/repos/vpittamp/test-project",
+      "default_branch": "main",
+      "worktrees": []
+    }]
+  }
+  EOF'
+''')
 ```
 
 ### Application Won't Launch
