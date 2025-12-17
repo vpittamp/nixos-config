@@ -42,6 +42,24 @@ let
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
 in
 lib.mkIf enableClaudeCode {
+  # Feature 123: OTEL environment variables for Claude Code telemetry
+  # These MUST be session variables (not just settings.env) because the OTEL SDK
+  # initializes when Claude Code starts, before it reads settings.json.
+  # settings.env only affects subprocesses, not Claude Code itself.
+  home.sessionVariables = {
+    CLAUDE_CODE_ENABLE_TELEMETRY = "1";
+    OTEL_LOGS_EXPORTER = "otlp";
+    OTEL_METRICS_EXPORTER = "otlp";
+    OTEL_TRACES_EXPORTER = "otlp";
+    OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
+    OTEL_METRIC_EXPORT_INTERVAL = "10000";
+    OTEL_LOGS_EXPORT_INTERVAL = "5000";
+    OTEL_METRICS_INCLUDE_SESSION_ID = "true";
+    # Delta temporality for better memory efficiency with session metrics
+    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta";
+  };
+
   # Chromium is installed via programs.chromium in tools/chromium.nix
   # No need to install it here - avoids conflicts
 
@@ -75,9 +93,19 @@ lib.mkIf enableClaudeCode {
       includeCoAuthoredBy = true;
       messageIdleNotifThresholdMs = 60000;
       env = {
+        # Feature 123: Full OpenTelemetry configuration for OTLP export
+        # Enables native telemetry to otel-ai-monitor service
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
+        OTEL_LOGS_EXPORTER = "otlp";
         OTEL_METRICS_EXPORTER = "otlp";
+        OTEL_TRACES_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
+        # Export intervals - faster for better real-time monitoring
+        OTEL_METRIC_EXPORT_INTERVAL = "10000";  # 10 seconds (default: 60000)
+        OTEL_LOGS_EXPORT_INTERVAL = "5000";     # 5 seconds (default)
+        # Include session ID in metrics for correlation
+        OTEL_METRICS_INCLUDE_SESSION_ID = "true";
         # Fix for M1 Apple Silicon: Built-in ripgrep has jemalloc page size incompatibility
         # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
         # Use system ripgrep instead (available via home-manager)
@@ -93,6 +121,8 @@ lib.mkIf enableClaudeCode {
       # 3. Validate and sanitize inputs in hook scripts
       # 4. Set explicit timeouts for commands
       # 5. Use external scripts for complex logic (maintainability)
+      # Feature 123: State hooks removed - OTEL telemetry now handles session tracking
+      # Only bash-history hook remains for command logging
       hooks = {
         PostToolUse = [{
           # Match all Bash tool executions (case-sensitive)
@@ -109,7 +139,7 @@ lib.mkIf enableClaudeCode {
         }];
       # Feature 119: Legacy hooks suppressed - eBPF monitor now handles badge updates
       # The eBPF-based detection is more reliable and tracks actual stdin read states
-      # TODO: Re-enable hooks conditionally when eBPF monitor is disabled
+      # Feature 123: OTEL telemetry provides enrichment data (tokens, session info)
       };
 
       # Permissions configuration for sandboxed environment

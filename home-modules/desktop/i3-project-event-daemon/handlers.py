@@ -114,6 +114,34 @@ async def _record_trace_event_by_id(
 
 
 # ============================================================================
+# Feature 123: Window Tree Cache Invalidation Helper
+# ============================================================================
+
+async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
+    """Invalidate window tree cache and notify state change subscribers.
+
+    Feature 123: Called by event handlers to trigger monitoring panel updates
+    without the double Sway IPC subscription overhead.
+
+    Args:
+        ipc_server: IPC server instance (may be None during daemon startup)
+        event_type: Type of event that triggered the invalidation (for logging)
+    """
+    if ipc_server is None:
+        return
+
+    try:
+        # Invalidate the window tree cache so next query gets fresh data
+        ipc_server.invalidate_window_tree_cache()
+
+        # Notify any subscribed monitoring panel instances
+        await ipc_server.notify_state_change(event_type)
+    except Exception as e:
+        # Never let cache management break normal event handling
+        logger.debug(f"[Feature 123] Error invalidating cache: {e}")
+
+
+# ============================================================================
 # Feature 001: Output Event Debouncing for Monitor Changes
 # ============================================================================
 
@@ -1706,6 +1734,9 @@ async def on_window_new(
             await event_buffer.add_event(entry)
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
+        # Feature 123: Invalidate window tree cache and notify subscribers
+        await _invalidate_cache_and_notify(ipc_server, "window::new")
+
 
 async def on_window_mark(
     conn: aio.Connection,
@@ -2096,6 +2127,9 @@ async def on_window_close(
             event_buffer.add_event(entry)
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
+        # Feature 123: Invalidate window tree cache and notify subscribers
+        await _invalidate_cache_and_notify(ipc_server, "window::close")
+
 
 async def on_window_focus(
     conn: aio.Connection,
@@ -2238,6 +2272,9 @@ async def on_window_focus(
             await event_buffer.add_event(entry)
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
+        # Feature 123: Invalidate window tree cache and notify subscribers
+        await _invalidate_cache_and_notify(ipc_server, "window::focus")
+
 
 async def on_window_move(
     conn: aio.Connection,
@@ -2375,6 +2412,9 @@ async def on_window_move(
             )
             await event_buffer.add_event(entry)
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
+
+        # Feature 123: Invalidate window tree cache and notify subscribers
+        await _invalidate_cache_and_notify(ipc_server, "window::move")
 
 
 # ============================================================================

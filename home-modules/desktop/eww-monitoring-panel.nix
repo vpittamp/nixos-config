@@ -143,53 +143,96 @@ let
     esac
   '';
 
-  # Toggle script for panel visibility
-  # Feature 114: Uses actual open/close instead of CSS visibility
-  # CSS-based hiding kept the window intercepting input even when "hidden"
-  # Added debounce to prevent crashes from rapid toggling
-  toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
+  # Service wrapper script - manages daemon and handles toggle signals
+  # This keeps all eww processes (daemon + GTK renderers) in the service cgroup
+  # preventing orphaned processes when toggle is invoked from keybindings
+  wrapperScript = pkgs.writeShellScriptBin "eww-monitoring-panel-wrapper" ''
     #!${pkgs.bash}/bin/bash
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
-    LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
+    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
+
+    # Write wrapper PID for toggle script to send signals directly to this process only
+    echo $$ > "$PID_FILE"
+
+    # Cleanup on exit
+    cleanup() {
+      rm -f "$PID_FILE"
+      kill $DAEMON_PID 2>/dev/null
+    }
+    trap cleanup EXIT
+
+    # Start daemon in background, capture PID
+    $EWW --config "$CONFIG" daemon --no-daemonize &
+    DAEMON_PID=$!
+
+    # Wait for daemon ready (max 6 seconds)
+    for i in $(seq 1 30); do
+      $TIMEOUT 1s $EWW --config "$CONFIG" ping 2>/dev/null && break
+      ${pkgs.coreutils}/bin/sleep 0.2
+    done
+
+    # Open panel initially
+    $EWW --config "$CONFIG" open monitoring-panel || true
+
+    # Re-sync stack index (workaround for eww #1192: index resets on reopen)
+    ${pkgs.coreutils}/bin/sleep 0.2
+    IDX=$($EWW --config "$CONFIG" get current_view_index 2>/dev/null || echo 0)
+    $EWW --config "$CONFIG" update current_view_index=$IDX 2>/dev/null || true
+
+    # Toggle handler - called when SIGUSR1 received
+    # Uses eww's atomic --toggle flag to avoid race conditions
+    toggle_panel() {
+      # Atomic toggle - eww handles open/close internally
+      $EWW --config "$CONFIG" open --toggle monitoring-panel || true
+      # Update variables based on new state (after toggle)
+      ${pkgs.coreutils}/bin/sleep 0.1
+      if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+        $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false || true
+      else
+        $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false || true
+      fi
+    }
+
+    trap toggle_panel SIGUSR1
+
+    # Wait for daemon (re-wait after signal interrupts)
+    while kill -0 $DAEMON_PID 2>/dev/null; do
+      wait $DAEMON_PID || true
+    done
+  '';
+
+  # Toggle script for panel visibility - sends signal directly to wrapper process
+  # Uses PID file to avoid sending signal to all processes in service cgroup
+  toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
+    #!${pkgs.bash}/bin/bash
+
+    LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
+    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
 
     # Debounce: prevent rapid toggling (crashes eww daemon)
     if [[ -f "$LOCK_FILE" ]]; then
-      LOCK_AGE=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+      LOCK_AGE=$(($(${pkgs.coreutils}/bin/date +%s) - $(${pkgs.coreutils}/bin/stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
       if [[ $LOCK_AGE -lt 1 ]]; then
         exit 0
       fi
     fi
-    touch "$LOCK_FILE"
+    ${pkgs.coreutils}/bin/touch "$LOCK_FILE"
 
-    # CRITICAL: Ensure daemon is running before any eww commands
-    # Without this, eww commands will spawn their own daemon, causing duplicates
-    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
-      # Daemon not responding - try to start the service
-      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel 2>/dev/null
-      # Wait for daemon to be ready (max 6 seconds)
-      for i in $(seq 1 30); do
-        $TIMEOUT 1s $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
-        ${pkgs.coreutils}/bin/sleep 0.2
-      done
-      # If still not ready, exit to avoid spawning duplicate daemon
-      if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
-        exit 1
-      fi
+    # Ensure service is running
+    if ! ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
+      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
+      ${pkgs.coreutils}/bin/sleep 1  # Wait for service to start and PID file to be created
     fi
 
-    # Check if window is actually open (not just the variable)
-    # Use timeout to prevent hanging on overloaded daemon
-    if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Window is open - close it (run in background to avoid blocking)
-      $TIMEOUT 3s $EWW --config "$CONFIG" close monitoring-panel &
-      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false &
-    else
-      # Window is closed - open it (run in background to avoid blocking)
-      $TIMEOUT 2s $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false &
-      $TIMEOUT 3s $EWW --config "$CONFIG" open monitoring-panel &
+    # Send toggle signal directly to wrapper process (not entire cgroup)
+    if [[ -f "$PID_FILE" ]]; then
+      WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
+      if kill -0 "$WRAPPER_PID" 2>/dev/null; then
+        kill -SIGUSR1 "$WRAPPER_PID"
+      fi
     fi
   '';
 
@@ -215,10 +258,11 @@ let
       exit 0
     fi
 
-    # Update eww variables (run in background with timeout to avoid blocking)
-    $TIMEOUT 2s $EWW_CMD update panel_focused=true &
-    $TIMEOUT 2s $EWW_CMD update panel_focus_mode=true &
-    $TIMEOUT 2s $EWW_CMD update selected_index=0 &
+    # Update eww variables sequentially with --kill-after to prevent orphans
+    # Don't background these - orphaned processes cause duplicate tabs
+    $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focused=true || true
+    $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focus_mode=true || true
+    $TIMEOUT --kill-after=1s 2s $EWW_CMD update selected_index=0 || true
 
     # Enter Sway monitoring mode (captures all keys)
     # This provides keyboard capture - eww layer-shell handles the rest
@@ -234,10 +278,11 @@ let
 
     # Only update eww if daemon is running (avoid spawning duplicate daemon)
     if $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
-      # Update eww variables (run in background with timeout to avoid blocking)
-      $TIMEOUT 2s $EWW_CMD update panel_focused=false &
-      $TIMEOUT 2s $EWW_CMD update panel_focus_mode=false &
-      $TIMEOUT 2s $EWW_CMD update selected_index=-1 &
+      # Update eww variables sequentially with --kill-after to prevent orphans
+      # Don't background these - orphaned processes cause duplicate tabs
+      $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focused=false || true
+      $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focus_mode=false || true
+      $TIMEOUT --kill-after=1s 2s $EWW_CMD update selected_index=-1 || true
     fi
 
     # Exit Sway mode (return to default) - always do this
@@ -273,8 +318,8 @@ let
       exit 0
     fi
 
-    # Run in background with timeout to avoid blocking
-    $TIMEOUT 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" &
+    # Run sequentially with --kill-after to prevent orphans from rapid tab switching
+    $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" || true
   '';
 
   # Wrapper script: Get current monitoring panel view index
@@ -3302,90 +3347,91 @@ in
 
       ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
       ;; Otherwise :run-while conditions don't work and all polls run continuously
-      (defvar current_view_index 0)
+      (defvar current_view_index 0)  ;; Default to Windows tab (tabs 2,3,4,5,6 disabled)
 
-      ;; Defpoll: Windows view data (3s refresh)
-      ;; Changed from deflisten to defpoll to prevent process spawning issues
-      ;; Only runs when Windows tab is active (index 0)
-      ;; Note: 3s interval reduces "channel closed" errors while still providing reasonable updates
-      (defpoll monitoring_data
-        :interval "3s"
-        :run-while {current_view_index == 0}
+      ;; Deflisten: Windows view data (event-driven with 5s heartbeat)
+      ;; Uses --listen mode for instant updates on Sway events + inotify for badges
+      ;; Much lower CPU than defpoll (no Python startup overhead every poll)
+      (deflisten monitoring_data
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
-        `${monitoringDataScript}/bin/monitoring-data-backend`)
+        `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
-      ;; Defpoll: Projects view data (5s refresh)
-      ;; Only runs when Projects tab is active (index 1) to reduce CPU/process overhead
+      ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
+      ;; Used to show pulsating indicator on windows running AI assistants
+      ;; Falls back to empty state if pipe doesn't exist
+      (deflisten ai_sessions_data
+        :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
+        `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'`)
+
+      ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
+      ;; Only runs when Projects tab is active (index 1)
       (defpoll projects_data
-        :interval "5s"
+        :interval "10s"
         :run-while {current_view_index == 1}
         :initial "{\"status\":\"loading\",\"projects\":[],\"project_count\":0,\"active_project\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode projects`)
 
-      ;; Defpoll: Apps view data (5s refresh)
-      ;; Only runs when Apps tab is active (index 2)
+      ;; Defpoll: Apps view data - DISABLED for CPU savings
+      ;; Tab 2 is hidden, so this poll never needs to run
       (defpoll apps_data
         :interval "5s"
-        :run-while {current_view_index == 2}
-        :initial "{\"status\":\"loading\",\"apps\":[],\"app_count\":0}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode apps`)
+        :run-while false
+        :initial "{\"status\":\"disabled\",\"apps\":[],\"app_count\":0}"
+        `echo '{}'`)
 
-      ;; Defpoll: Health view data (30s refresh)
-      ;; Only runs when Health tab is active (index 3) - queries systemctl which can be slow
+      ;; Defpoll: Health view data - DISABLED for CPU savings
+      ;; Tab 3 is hidden, so this poll never needs to run
       (defpoll health_data
         :interval "30s"
-        :run-while {current_view_index == 3}
-        :initial "{\"status\":\"loading\",\"health\":{}}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
+        :run-while false
+        :initial "{\"status\":\"disabled\",\"health\":{}}"
+        `echo '{"status":"disabled","health":{}}'`)
 
-      ;; Feature 101: Defpoll: Window traces view data (2s refresh)
-      ;; Only runs when Traces tab is active (index 5)
-      ;; Lists active and stopped traces from daemon's WindowTracer
+      ;; Feature 101: Defpoll: Window traces view data - DISABLED for CPU savings
+      ;; Tab 5 is hidden, so this poll never needs to run
       (defpoll traces_data
         :interval "2s"
-        :run-while {current_view_index == 5}
-        :initial "{\"status\":\"loading\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode traces`)
+        :run-while false
+        :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
+        `echo '{"status":"disabled","traces":[],"trace_count":0,"active_count":0,"stopped_count":0}'`)
 
-      ;; Feature 110: Pulsating red circle animation with opacity fade
-      ;; Large circle with opacity pulse for smooth "breathing" effect
-      ;; 120ms interval with 8 frames = ~1s full cycle
+      ;; Feature 123: Spinner animation - Re-enabled for AI session indicators
+      ;; Only runs when an AI session is in "working" state (event-driven from OTEL)
+      ;; 120ms interval creates smooth pulsating effect while keeping CPU low
       (defpoll spinner_frame
         :interval "120ms"
-        :run-while {monitoring_data.has_working_badge ?: false}
+        :run-while {ai_sessions_data.has_working ?: false}
         :initial "⬤"
         `${spinnerScript}/bin/eww-spinner-frame`)
 
-      ;; Feature 110: Opacity value for fade effect (synced with spinner_frame)
+      ;; Feature 123: Opacity for pulsating fade effect
+      ;; Synced with spinner_frame for coordinated animation
       (defpoll spinner_opacity
         :interval "120ms"
-        :run-while {monitoring_data.has_working_badge ?: false}
+        :run-while {ai_sessions_data.has_working ?: false}
         :initial "1.0"
         `${spinnerOpacityScript}/bin/eww-spinner-opacity`)
 
-      ;; Feature 092: Defpoll: Sway event log (2s refresh)
-      ;; Changed from deflisten to defpoll to prevent process spawning issues
-      ;; Only runs when Events tab is active (index 4)
+      ;; Feature 092: Defpoll: Sway event log - DISABLED for CPU savings
+      ;; Tab 4 is hidden, so this poll never needs to run
       (defpoll events_data
         :interval "2s"
-        :run-while {current_view_index == 4}
-        :initial "{\"status\":\"connecting\",\"events\":[],\"event_count\":0,\"daemon_available\":true,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\"}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode events`)
+        :run-while false
+        :initial "{\"status\":\"disabled\",\"events\":[],\"event_count\":0,\"daemon_available\":false,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Disabled\"}"
+        `echo '{}'`)
 
       ;; Feature 094 T039: Form validation state
       ;; Changed from deflisten to defvar - validation is rarely used and causes process issues
       ;; Validation handled via explicit update commands when forms are opened
       (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}")
 
-      ;; Feature 116: Defpoll: Device state (2s refresh - reduced from 500ms)
-      ;; Only runs when Devices tab is active (index 6)
-      ;; Uses device-backend.py from eww-device-controls module
-      ;; Note: 500ms was too aggressive and caused daemon overload
+      ;; Feature 116: Defpoll: Device state - DISABLED for CPU savings
+      ;; Tab 6 is hidden, so this poll never needs to run
       (defpoll devices_state
         :interval "2s"
-        :run-while {current_view_index == 6}
+        :run-while false
         :initial "{\"volume\":{\"volume\":50,\"muted\":false,\"icon\":\"󰕾\",\"current_device\":\"Unknown\"},\"bluetooth\":{\"enabled\":false,\"scanning\":false,\"devices\":[]},\"brightness\":{\"display\":50,\"keyboard\":0},\"battery\":{\"percentage\":100,\"state\":\"full\",\"icon\":\"󰁹\",\"level\":\"normal\",\"time_remaining\":\"\"},\"thermal\":{\"cpu_temp\":0,\"level\":\"normal\",\"icon\":\"󰔏\"},\"network\":{\"tailscale_connected\":false,\"wifi_connected\":false},\"hardware\":{\"has_battery\":false,\"has_brightness\":false,\"has_keyboard_backlight\":false,\"has_bluetooth\":true,\"has_power_profiles\":false,\"has_thermal_sensors\":true},\"power_profile\":{\"current\":\"balanced\",\"available\":[],\"icon\":\"󰾅\"}}"
-        `$HOME/.config/eww/eww-device-controls/scripts/device-backend.py 2>/dev/null || echo '{}'`)
+        `echo '{}'`)
 
       ;; NOTE: current_view_index is defined at the TOP of this file (before defpolls)
       ;; This is required for :run-while conditions to work correctly
@@ -3463,9 +3509,9 @@ in
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
 
-      ;; Panel transparency control (0-100, default 35%)
+      ;; Panel transparency control (10-100, default 100% = fully opaque)
       ;; Adjustable via slider in header - persists across tabs
-      (defvar panel_opacity 35)
+      (defvar panel_opacity 100)
 
       ;; Feature 092: Event filter state (all enabled by default)
       ;; Individual event type filters (true = show, false = hide)
@@ -3745,44 +3791,46 @@ in
                 :class "tab ''${current_view_index == 1 ? 'active' : ""}"
                 :tooltip "Projects (Alt+2)"
                 "󱂬"))
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=2"
-              (button
-                :class "tab ''${current_view_index == 2 ? 'active' : ""}"
-                :tooltip "Apps (Alt+3)"
-                "󰀻"))
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=3"
-              (button
-                :class "tab ''${current_view_index == 3 ? 'active' : ""}"
-                :tooltip "Health (Alt+4)"
-                "󰓙"))
-            ;; Feature 092: Logs tab (5th tab)
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=4"
-              (button
-                :class "tab ''${current_view_index == 4 ? 'active' : ""}"
-                :tooltip "Logs (Alt+5)"
-                "󰌱"))
-            ;; Feature 101: Traces tab (6th tab)
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=5"
-              (button
-                :class "tab ''${current_view_index == 5 ? 'active' : ""}"
-                :tooltip "Traces (Alt+6)"
-                "󱂛"))
-            ;; Feature 116: Devices tab (7th tab)
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=6"
-              (button
-                :class "tab ''${current_view_index == 6 ? 'active' : ""}"
-                :tooltip "Devices (Alt+7)"
-                "󰒓"))
+            ;; Tab 2 (Apps) - DISABLED for CPU savings
+            ;; (eventbox
+            ;;   :cursor "pointer"
+            ;;   :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=2"
+            ;;   (button
+            ;;     :class "tab ''${current_view_index == 2 ? 'active' : ""}"
+            ;;     :tooltip "Apps (Alt+3)"
+            ;;     "󰀻"))
+            ;; Tab 3 (Health) - DISABLED for CPU savings
+            ;; (eventbox
+            ;;   :cursor "pointer"
+            ;;   :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=3"
+            ;;   (button
+            ;;     :class "tab ''${current_view_index == 3 ? 'active' : ""}"
+            ;;     :tooltip "Health (Alt+4)"
+            ;;     "󰓙"))
+            ;; Feature 092: Logs tab (5th tab) - DISABLED for CPU savings
+            ;; (eventbox
+            ;;   :cursor "pointer"
+            ;;   :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=4"
+            ;;   (button
+            ;;     :class "tab ''${current_view_index == 4 ? 'active' : ""}"
+            ;;     :tooltip "Logs (Alt+5)"
+            ;;     "󰌱"))
+            ;; Feature 101: Traces tab (6th tab) - DISABLED for CPU savings
+            ;; (eventbox
+            ;;   :cursor "pointer"
+            ;;   :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=5"
+            ;;   (button
+            ;;     :class "tab ''${current_view_index == 5 ? 'active' : ""}"
+            ;;     :tooltip "Traces (Alt+6)"
+            ;;     "󱂛"))
+            ;; Feature 116: Devices tab (7th tab) - DISABLED for CPU savings
+            ;; (eventbox
+            ;;   :cursor "pointer"
+            ;;   :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update current_view_index=6"
+            ;;   (button
+            ;;     :class "tab ''${current_view_index == 6 ? 'active' : ""}"
+            ;;     :tooltip "Devices (Alt+7)"
+            ;;     "󰒓"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -3793,40 +3841,14 @@ in
             :class "summary-counts"
             :orientation "h"
             :space-evenly false
-            (box
-              :orientation "h"
-              :space-evenly true
-              :hexpand true
-              ;; Feature 119: Removed PRJ/WS/WIN text labels - show just counts with icons
-              ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
-              (label
-                :class "count-badge"
-                :tooltip "Projects"
-                :text "󰉋 ''${current_view_index == 0 ? monitoring_data.project_count ?: 0 : current_view_index == 1 ? projects_data.project_count ?: 0 : current_view_index == 2 ? apps_data.app_count ?: 0 : 0}")
-              (label
-                :class "count-badge"
-                :tooltip "Workspaces"
-                :text "󰍹 ''${current_view_index == 0 ? monitoring_data.workspace_count ?: 0 : 0}"
-                :visible {current_view_index == 0})
-              (label
-                :class "count-badge"
-                :tooltip "Windows"
-                :text "󱂬 ''${current_view_index == 0 ? monitoring_data.window_count ?: 0 : 0}"
-                :visible {current_view_index == 0}))
-            ;; Feature 119: Debug mode toggle button
-            ;; When toggling OFF: also clear hover_window_id and env_window_id to collapse panels
-            (eventbox
-              :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update debug_mode=''${debug_mode ? 'false' : 'true'} hover_window_id=0 env_window_id=0"
-              :tooltip {debug_mode ? "Debug mode ON - click to hide debug features" : "Debug mode OFF - click to show JSON/env features"}
-              (label
-                :class {"debug-toggle" + (debug_mode ? " active" : "")}
-                :text {debug_mode ? "󰃤" : "󰃠"}))
+            ;; Count badges and workspace pills - REMOVED to reduce widget complexity
             ;; Opacity slider - small unobtrusive control
             (box
               :class "opacity-control"
               :orientation "h"
               :space-evenly false
+              :hexpand true
+              :halign "end"
               :tooltip "Panel opacity: ''${panel_opacity}%"
               (label
                 :class "opacity-icon"
@@ -3838,30 +3860,13 @@ in
                 :value panel_opacity
                 :orientation "h"
                 :round-digits 0
-                :onchange "eww --config $HOME/.config/eww-monitoring-panel update panel_opacity={}")))
-          ;; UX Enhancement: Workspace Pills - full implementation
-          (scroll
-            :hscroll true
-            :vscroll false
-            :visible {current_view_index == 0}
-            :class "workspace-pills-scroll"
-            (box
-              :class "workspace-pills"
-              :orientation "h"
-              :space-evenly false
-              (for ws in {monitoring_data.workspaces ?: []}
-                (eventbox
-                  :cursor "pointer"
-                  :onclick "swaymsg workspace ''${ws.name} &"
-                  :tooltip "Switch to workspace ''${ws.name}"
-                  (label
-                    :class {"workspace-pill" + (ws.focused ? " focused" : "") + (ws.urgent ? " urgent" : "")}
-                    :text "''${ws.name}")))))))
+                :onchange "eww --config $HOME/.config/eww-monitoring-panel update panel_opacity={}")))))
 
       ;; Panel body - uses stack widget for proper tab switching
       ;; Note: Previous "multiple tabs" issue was caused by orphaned eww processes, not stack bugs
       ;; GitHub #1192 (index reset on reopen) is handled by ExecStartPost re-sync
-      ;; Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces, 6=devices
+      ;; Index mapping: 0=windows, 1=projects, 2-6=disabled (empty placeholders)
+      ;; Tabs 2-6 disabled for CPU savings - using empty boxes to preserve stack indexes
       (defwidget panel-body []
         (stack
           :selected current_view_index
@@ -3870,12 +3875,23 @@ in
           :same-size false
           (box :class "view-container" :vexpand true (windows-view))
           (box :class "view-container" :vexpand true (projects-view))
-          (box :class "view-container" :vexpand true (apps-view))
-          (box :class "view-container" :vexpand true (health-view))
-          (box :class "view-container" :vexpand true (events-view))
-          (box :class "view-container" :vexpand true (traces-view))
-          (box :class "view-container" :vexpand true (devices-view))))
+          (box :class "view-container" :vexpand true (label :text "Apps view disabled"))
+          (box :class "view-container" :vexpand true (label :text "Health view disabled"))
+          (box :class "view-container" :vexpand true (label :text "Events view disabled"))
+          (box :class "view-container" :vexpand true (label :text "Traces view disabled"))
+          (box :class "view-container" :vexpand true (label :text "Devices view disabled"))))
 
+      ;; Include view-specific widget definitions from separate files
+      ;; This improves maintainability and allows selective loading
+      (include "./windows-view.yuck")
+      (include "./projects-view.yuck")
+      (include "./disabled-stubs.yuck")
+    '';
+
+    # ============================================================================
+    # WINDOWS VIEW - Split into separate file for maintainability
+    # ============================================================================
+    xdg.configFile."eww-monitoring-panel/windows-view.yuck".text = ''
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
       (defwidget windows-view []
@@ -3903,13 +3919,13 @@ in
               (box
                 :visible {monitoring_data.status == "error"}
                 (error-state))
-              ; Show empty state when no windows and no error
+              ; Show empty state when no projects and no error
               (box
-                :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) == 0}
+                :visible {monitoring_data.status != "error" && arraylength(monitoring_data.projects ?: []) == 0}
                 (empty-state))
-              ; Show projects when no error and has windows
+              ; Show projects when no error and has projects
               (box
-                :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) > 0}
+                :visible {monitoring_data.status != "error" && arraylength(monitoring_data.projects ?: []) > 0}
                 :orientation "v"
                 :space-evenly false
                 ;; Action button row at top
@@ -3943,14 +3959,15 @@ in
                       :spacing 4
                       (label :class "close-all-icon" :text "󰅖")
                       (label :class "close-all-text" :text "Close All"))))
-                ;; Feature 117: Active AI Sessions bar - shows all windows with AI assistant badges
+                ;; Feature 117: Active AI Sessions bar - DISABLED (duplicates top bar indicator)
+                ;; Re-enable by setting :visible to true if needed
                 ;; Three visual states:
                 ;;   - working: AI actively processing (pulsating red indicator)
                 ;;   - needs_attention: AI finished, awaiting user (bell icon, highlight border)
                 ;;   - idle: AI session ready for more work (muted indicator)
                 (box
                   :class "ai-sessions-bar"
-                  :visible {arraylength(monitoring_data.ai_sessions ?: []) > 0}
+                  :visible false  ;; Disabled - duplicates top bar AI indicator
                   :orientation "h"
                   :space-evenly false
                   :spacing 6
@@ -4141,47 +4158,28 @@ in
                     :class "badge badge-pwa"
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
-                  ;; Feature 095: Notification badge with state-based icons
-                  ;; "working" state = animated braille spinner (teal, pulsing glow)
-                  ;; "stopped" state = bell icon with count (peach, attention-grabbing)
-                  ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
-                  ;; Feature 107: spinner_frame now updated via separate defpoll (not monitoring_data)
-                  ;; Feature 107: Focus-aware badge styling (dimmed when window is focused, but NOT for working state)
-                  ;; Feature 110: Added opacity class for pulsating fade effect
+                  ;; Feature 123: AI Session badge with OTEL-based state detection
+                  ;; Uses jq to find session matching this window's ID from ai_sessions_data
+                  ;; States: "working" = pulsating indicator, "completed" = attention bell, other = hidden
+                  ;; Feature 110: Opacity class for pulsating fade effect
                   ;; Note: Working state badges stay bright regardless of focus for visibility
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
-                    :text {((window.badge?.state ?: "stopped") == "working" ? spinner_frame : "󰂚 " + (window.badge?.count ?: ""))}
-                    :tooltip {(window.badge?.state ?: "stopped") == "working"
-                      ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
-                      : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
-                    :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
-            ;; JSON expand trigger icon - click to toggle (Feature 109: Changed from hover to click for stability)
-            ;; Feature 119: Hidden when debug_mode is false
-            (eventbox
-              :cursor "pointer"
-              :visible debug_mode
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${hover_window_id == window.id ? 0 : window.id}"
-              :tooltip "Click to view JSON"
-              (box
-                :class {"json-expand-trigger" + (hover_window_id == window.id ? " expanded" : "")}
-                :valign "center"
-                (label
-                  :class "json-expand-icon"
-                  :text {hover_window_id == window.id ? "󰅀" : "󰅂"})))
-            ;; Feature 099: Environment variables trigger icon - click to expand
-            ;; Feature 119: Hidden when debug_mode is false
-            (eventbox
-              :cursor "pointer"
-              :visible debug_mode
-              :onclick "${fetchWindowEnvScript} ''${window.pid ?: 0} ''${window.id} &"
-              :tooltip "Click to view environment variables"
-              (box
-                :class {"env-expand-trigger" + (env_window_id == window.id ? " expanded" : "")}
-                :valign "center"
-                (label
-                  :class "env-expand-icon"
-                  :text {env_window_id == window.id ? "󰘵" : "󰀫"})))
+                    :class {"badge badge-notification" +
+                      (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                        ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
+                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                            ? " badge-attention"
+                            : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : "")))}
+                    :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                      ? spinner_frame
+                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                          ? "󰂞"
+                          : "")}
+                    :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
+                      ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
+                      : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
+                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")] | length", "r") != "0"}))))
+            ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
               :cursor "pointer"
@@ -4489,122 +4487,19 @@ in
             :class "error-message"
             :text "''${monitoring_data.error ?: 'Unknown error'}")))
 
-      ;; Window Detail View - Shows comprehensive info when window is selected
-      ;; Iterates through all_windows to find the matching ID
+      ;; Window Detail View - DISABLED to reduce payload (all_windows removed)
       (defwidget window-detail-view []
-        (box
-          :class "detail-view"
-          :orientation "v"
-          :space-evenly false
-          :vexpand true
-          ;; Header with back button
-          (box
-            :class "detail-header"
-            :orientation "h"
-            :space-evenly false
-            (button
-              :class "detail-back-btn"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=0"
-              :tooltip "Back to window list"
-              "󰁍 Back")
-            (label
-              :class "detail-title"
-              :hexpand true
-              :halign "center"
-              :text "Window Details"))
-          ;; Detail content - iterate through all_windows and show the matching one
-          (scroll
-            :vscroll true
-            :hscroll false
-            :vexpand true
-            (box
-              :class "detail-content"
-              :orientation "v"
-              :space-evenly false
-              (for win in {monitoring_data.all_windows ?: []}
-                (box
-                  :visible {win.id == selected_window_id}
-                  :orientation "v"
-                  :space-evenly false
-                  ;; Identity section
-                  (box
-                    :class "detail-section"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-section-title" :halign "start" :text "Identity")
-                    (detail-row :label "ID" :value "''${win.id}")
-                    (detail-row :label "PID" :value "''${win.pid ?: '-'}")
-                    (detail-row :label "App ID" :value "''${win.app_id ?: '-'}")
-                    (detail-row :label "Class" :value "''${win.class ?: '-'}")
-                    (detail-row :label "Instance" :value "''${win.instance ?: '-'}"))
-                  ;; Title section
-                  (box
-                    :class "detail-section"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-section-title" :halign "start" :text "Title")
-                    (label
-                      :class "detail-full-title"
-                      :halign "start"
-                      :wrap true
-                      :text "''${win.full_title ?: win.title ?: '-'}"))
-                  ;; Location section
-                  (box
-                    :class "detail-section"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-section-title" :halign "start" :text "Location")
-                    (detail-row :label "Workspace" :value "''${win.workspace ?: '-'}")
-                    (detail-row :label "Output" :value "''${win.output ?: '-'}")
-                    (detail-row :label "Project" :value "''${win.project ?: '-'}")
-                    (detail-row :label "Scope" :value "''${win.scope ?: '-'}"))
-                  ;; State section
-                  (box
-                    :class "detail-section"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-section-title" :halign "start" :text "State")
-                    (detail-row :label "Floating" :value "''${win.floating}")
-                    (detail-row :label "Focused" :value "''${win.focused}")
-                    (detail-row :label "Hidden" :value "''${win.hidden}")
-                    (detail-row :label "Fullscreen" :value "''${win.fullscreen ?: false}")
-                    (detail-row :label "PWA" :value "''${win.is_pwa}"))
-                  ;; Geometry section
-                  (box
-                    :class "detail-section"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-section-title" :halign "start" :text "Geometry")
-                    (detail-row :label "Position" :value "''${win.geometry_x}, ''${win.geometry_y}")
-                    (detail-row :label "Size" :value "''${win.geometry_width} × ''${win.geometry_height}"))
-                  ;; Marks section
-                  (box
-                    :class "detail-section"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-section-title" :halign "start" :text "Marks")
-                    (label
-                      :class "detail-marks"
-                      :halign "start"
-                      :wrap true
-                      :text "''${arraylength(win.marks ?: []) > 0 ? win.marks : 'None'}"))))))))
+        (box :class "detail-view" (label :text "Detail view disabled")))
 
-      ;; Detail row widget - key/value pair
+      ;; Detail row widget - DISABLED (stub)
       (defwidget detail-row [label value]
-        (box
-          :class "detail-row"
-          :orientation "h"
-          :space-evenly false
-          (label
-            :class "detail-label"
-            :halign "start"
-            :text label)
-          (label
-            :class "detail-value"
-            :halign "end"
-            :hexpand true
-            :text value)))
+        (box))
+    '';
 
+    # ============================================================================
+    # PROJECTS VIEW - Split into separate file for maintainability
+    # ============================================================================
+    xdg.configFile."eww-monitoring-panel/projects-view.yuck".text = ''
       ;; Projects View - Project list with metadata
       ;; Projects View - matches windows-view structure with scroll at top level
       (defwidget projects-view []
@@ -6876,1312 +6771,44 @@ in
               :class "warning-dismiss"
               :onclick "eww update warning_notification_visible=false warning_notification=\"\""
               "x"))))
+    '';
 
-      ;; Apps View - Application registry browser
-      ;; Applications View - App registry with type grouping (Feature 094)
+    # ============================================================================
+    # DISABLED STUBS - Stub widgets for disabled tabs (CPU optimization)
+    # ============================================================================
+    xdg.configFile."eww-monitoring-panel/disabled-stubs.yuck".text = ''
+      ;; Disabled View Stubs - These replace heavy widget implementations
+      ;; Tabs 2-6 are hidden and these stubs prevent loading their full widget trees
+
+      ;; Apps View - DISABLED (Tab 2)
       (defwidget apps-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :vexpand true
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ;; Feature 094 US8: Apps tab header with New Application button (T076)
-            (box
-              :class "apps-header"
-              :orientation "h"
-              :space-evenly false
-              :visible {!app_creating}
-              (label
-                :class "apps-header-title"
-                :halign "start"
-                :hexpand true
-                :text "Applications")
-              (button
-                :class "new-app-button"
-                :onclick "${appCreateOpenScript}/bin/app-create-open"
-                :tooltip "Create a new application"
-                "+ New Application"))
-            ;; Feature 094 US8: Application create form (T077-T080)
-            (revealer
-              :transition "slidedown"
-              :reveal app_creating
-              :duration "200ms"
-              (app-create-form))
-            ;; Feature 094 US9: Application delete confirmation dialog (T093)
-            (app-delete-confirmation)
-            ;; Regular Apps Section
-            (box
-              :class "app-section"
-              :orientation "v"
-              :space-evenly false
-              (label
-                :class "section-header"
-                :halign "start"
-                :text "Regular Applications")
-              (for app in {apps_data.apps ?: []}
-                (box
-                  :visible {!app.terminal && app.preferred_workspace <= 50 && !matches(app.name, ".*-pwa$")}
-                  (app-card :app app))))
-            ;; Terminal Apps Section
-            (box
-              :class "app-section"
-              :orientation "v"
-              :space-evenly false
-              (label
-                :class "section-header"
-                :halign "start"
-                :text "Terminal Applications")
-              (for app in {apps_data.apps ?: []}
-                (box
-                  :visible {app.terminal}
-                  (app-card :app app))))
-            ;; PWA Apps Section
-            (box
-              :class "app-section"
-              :orientation "v"
-              :space-evenly false
-              (label
-                :class "section-header"
-                :halign "start"
-                :text "Progressive Web Apps")
-              (for app in {apps_data.apps ?: []}
-                (box
-                  :visible {app.preferred_workspace >= 50 || matches(app.name, ".*-pwa$")}
-                  (app-card :app app)))))))
-
+        (box (label :text "Apps view disabled")))
       (defwidget app-card [app]
-        (eventbox
-          :onhover "eww update hover_app_name=''${app.name}"
-          :onhoverlost "eww update hover_app_name='''"
-          (box
-            :class "app-card"
-            :orientation "v"
-            :space-evenly false
-            (box
-              :class "app-card-header"
-              :orientation "h"
-              :space-evenly false
-              ;; Type icon
-              (box
-                :class "app-icon-container"
-                :orientation "v"
-                :valign "center"
-                (label
-                  :class "app-type-icon"
-                  :text "''${app.terminal ? '🖥️' : app.preferred_workspace >= 50 ? '🌐' : '󰀻'}"))
-              ;; App info
-              (box
-                :class "app-info"
-                :orientation "v"
-                :space-evenly false
-                :hexpand true
-                (box
-                  :class "app-name-row"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "app-card-name"
-                    :halign "start"
-                    :text "''${app.display_name ?: app.name}")
-                  ;; Terminal indicator
-                  (label
-                    :class "terminal-indicator"
-                    :visible {app.terminal}
-                    :text "󰆍"))
-                (label
-                  :class "app-card-command"
-                  :halign "start"
-                  :text "''${app.command}"))
-              ;; Running indicator
-              (box
-                :class "app-status-container"
-                :orientation "v"
-                :valign "center"
-                (label
-                  :class "app-running-indicator"
-                  :visible {(app.running_instances ?: 0) > 0}
-                  :text "●")))
-            ;; Details row
-            (box
-              :class "app-card-details-row"
-              :orientation "h"
-              :space-evenly false
-              (label
-                :class "app-card-details"
-                :halign "start"
-                :hexpand true
-                :text "WS ''${app.preferred_workspace ?: '?'} · ''${app.scope} · ''${app.running_instances ?: 0} running")
-              (button
-                :class "app-edit-button"
-                :onclick "eww update editing_app_name=''${app.name}"
-                "")
-              (button
-                :class "delete-app-button"
-                :visible {editing_app_name != app.name && !app_deleting}
-                :onclick "${appDeleteOpenScript}/bin/app-delete-open ''${app.name} ''${app.display_name} ''${app.ulid}"
-                :tooltip "Delete application"
-                "🗑")))))
+        (box))
 
-      ;; Health View - System diagnostics (Feature 088)
+      ;; Health View - DISABLED (Tab 3)
       (defwidget health-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :vexpand true
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ;; Error state
-            (box
-              :class "error-message"
-              :visible {health_data.status == "error"}
-              (label :text "⚠ ''${health_data.error ?: 'Unknown error'}"))
-            ;; System health summary
-            (box
-              :class "health-summary"
-              :orientation "v"
-              :space-evenly false
-              :visible {health_data.status == "ok"}
-              (label
-                :class "health-summary-title"
-                :text "System Health: ''${health_data.health.system_health ?: 'unknown'}")
-              (label
-                :class "health-summary-counts"
-                :text "''${health_data.health.healthy_count ?: 0}/''${health_data.health.total_services ?: 0} services healthy"))
-            ;; Service categories
-            (box
-              :class "health-categories"
-              :orientation "v"
-              :space-evenly false
-              :visible {health_data.status == "ok"}
-              (for category in {health_data.health.categories ?: []}
-                (service-category
-                  :category category))))))
-
-      ;; Service category widget (Feature 088)
-      (defwidget service-category [category]
-        (box
-          :class "service-category"
-          :orientation "v"
-          :space-evenly false
-          ;; Category header
-          (box
-            :class "category-header"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "category-title"
-              :halign "start"
-              :hexpand true
-              :text "''${category.display_name ?: 'Services'}")
-            (label
-              :class "category-counts"
-              :halign "end"
-              :text "''${category.healthy_count ?: 0}/''${category.total_count ?: 0}"))
-          ;; Service health cards
-          (box
-            :class "service-list"
-            :orientation "v"
-            :space-evenly false
-            (for service in {category.services ?: []}
-              (service-health-card
-                :service service)))))
-
-      ;; Service health card widget (Feature 088 US2)
+        (box (label :text "Health view disabled")))
       (defwidget service-health-card [service]
-        (box
-          :class "service-health-card health-''${service.health_state ?: 'unknown'}"
-          :orientation "h"
-          :space-evenly false
-          ;; Status icon
-          (label
-            :class "service-icon"
-            :text "''${service.status_icon ?: '?'}")
-          ;; Service info
-          (box
-            :class "service-info"
-            :orientation "v"
-            :hexpand true
-            (label
-              :class "service-name"
-              :halign "start"
-              :text "''${service.display_name ?: 'Unknown Service'}")
-            (label
-              :class "service-status"
-              :halign "start"
-              :text "''${service.active_state ?: 'unknown'}")
-            ;; T022: Display uptime for active services
-            (label
-              :class "service-uptime"
-              :halign "start"
-              :visible {service.health_state == "healthy" || service.health_state == "degraded"}
-              :text "Uptime: ''${service.uptime_friendly ?: 'N/A'}")
-            ;; Display memory usage for active services
-            (label
-              :class "service-memory"
-              :halign "start"
-              :visible {service.memory_usage_mb > 0}
-              :text "Memory: ''${service.memory_usage_mb} MB")
-            ;; T023: Display last active time for failed/stopped services
-            (label
-              :class "service-last-active"
-              :halign "start"
-              :visible {service.health_state == "critical" || service.health_state == "disabled"}
-              :text "Last active: ''${service.last_active_time ?: 'Never'}"))
-          ;; Health state indicator with restart count and restart button
-          (box
-            :class "health-indicator-box"
-            :orientation "v"
-            :halign "end"
-            :space-evenly false
-            (label
-              :class "health-indicator"
-              :text "''${service.health_state ?: 'unknown'}")
-            ;; T033: Show restart count if > 0 with tooltip
-            (label
-              :class "restart-count''${service.restart_count >= 3 ? ' restart-warning' : ' '}"
-              :visible {service.restart_count > 0}
-              :tooltip "Service has restarted ''${service.restart_count} time(s)"
-              :text "↻ ''${service.restart_count}")
-            ;; T028-T030: Restart button (only shown when service can be restarted)
-            (button
-              :class "restart-button"
-              :visible {service.can_restart ?: false}
-              :onclick "${restartServiceScript}/bin/restart-service ''${service.service_name} ''${service.is_user_service ? 'true' : 'false'} &"
-              :tooltip "Restart ''${service.display_name}"
-              "⟳"))))
+        (box))
 
-      ;; Feature 092: Events/Logs View - Real-time Sway IPC event log (T024)
+      ;; Events View - DISABLED (Tab 4)
       (defwidget events-view []
-        (box
-          :class "events-view-container"
-          :orientation "v"
-          :vexpand true
-          :space-evenly false
-          ;; Filter panel (collapsible)
-          (box
-            :class "filter-panel"
-            :orientation "v"
-            :space-evenly false
-            :visible "''${events_data.status == 'ok'}"
-            ;; Filter header (always visible)
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update filter_panel_expanded=''${!filter_panel_expanded}"
-              (box
-                :class "filter-header"
-                :orientation "h"
-                :space-evenly false
-                (label
-                  :class "filter-title"
-                  :halign "start"
-                  :hexpand true
-                  :text "󰈙 Filter Events")
-                (label
-                  :class "filter-toggle"
-                  :text "''${filter_panel_expanded ? '▼' : '▶'}")))
-            ;; Filter controls (expandable)
-            (box
-              :class "filter-controls"
-              :orientation "v"
-              :space-evenly false
-              :visible filter_panel_expanded
-              ;; Global controls
-              (box
-                :class "filter-global-controls"
-                :orientation "h"
-                :space-evenly false
-                (button
-                  :class "filter-button"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=true filter_window_close=true filter_window_focus=true filter_window_blur=true filter_window_move=true filter_window_floating=true filter_window_fullscreen_mode=true filter_window_title=true filter_window_mark=true filter_window_urgent=true filter_workspace_focus=true filter_workspace_init=true filter_workspace_empty=true filter_workspace_move=true filter_workspace_rename=true filter_workspace_urgent=true filter_workspace_reload=true filter_output_connected=true filter_output_disconnected=true filter_output_profile_changed=true filter_output_unspecified=true filter_binding_run=true filter_mode_change=true filter_shutdown_exit=true filter_tick_manual=true filter_i3pm_project_switch=true filter_i3pm_project_clear=true filter_i3pm_visibility_hidden=true filter_i3pm_visibility_shown=true filter_i3pm_scratchpad_move=true filter_i3pm_scratchpad_show=true filter_i3pm_launch_intent=true filter_i3pm_launch_queued=true filter_i3pm_launch_complete=true filter_i3pm_launch_failed=true filter_i3pm_state_cached=true filter_i3pm_state_restored=true filter_i3pm_command_queued=true filter_i3pm_command_executed=true filter_i3pm_command_result=true filter_i3pm_command_batch=true filter_i3pm_trace_started=true filter_i3pm_trace_stopped=true filter_i3pm_trace_event=true"
-                  "Select All")
-                (button
-                  :class "filter-button"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=false filter_window_close=false filter_window_focus=false filter_window_blur=false filter_window_move=false filter_window_floating=false filter_window_fullscreen_mode=false filter_window_title=false filter_window_mark=false filter_window_urgent=false filter_workspace_focus=false filter_workspace_init=false filter_workspace_empty=false filter_workspace_move=false filter_workspace_rename=false filter_workspace_urgent=false filter_workspace_reload=false filter_output_connected=false filter_output_disconnected=false filter_output_profile_changed=false filter_output_unspecified=false filter_binding_run=false filter_mode_change=false filter_shutdown_exit=false filter_tick_manual=false filter_i3pm_project_switch=false filter_i3pm_project_clear=false filter_i3pm_visibility_hidden=false filter_i3pm_visibility_shown=false filter_i3pm_scratchpad_move=false filter_i3pm_scratchpad_show=false filter_i3pm_launch_intent=false filter_i3pm_launch_queued=false filter_i3pm_launch_complete=false filter_i3pm_launch_failed=false filter_i3pm_state_cached=false filter_i3pm_state_restored=false filter_i3pm_command_queued=false filter_i3pm_command_executed=false filter_i3pm_command_result=false filter_i3pm_command_batch=false filter_i3pm_trace_started=false filter_i3pm_trace_stopped=false filter_i3pm_trace_event=false"
-                  "Clear All")
-                ;; Feature 102 T053: Sort-by-duration toggle
-                (box
-                  :class "sort-controls"
-                  :orientation "h"
-                  :space-evenly false
-                  :hexpand true
-                  :halign "end"
-                  (label
-                    :class "sort-label"
-                    :text "Sort: ")
-                  (button
-                    :class {"sort-button" + (events_sort_mode == "time" ? " active" : "")}
-                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update events_sort_mode=time"
-                    :tooltip "Sort by time (most recent first)"
-                    "󰃰 Time")
-                  (button
-                    :class {"sort-button" + (events_sort_mode == "duration" ? " active" : "")}
-                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update events_sort_mode=duration"
-                    :tooltip "Sort by duration (slowest first)"
-                    "󱎫 Duration")))
-              ;; Window events category
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "Window Events (10)")
-                (box
-                  :class "filter-checkboxes"
-                  :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "new" :var "filter_window_new" :value filter_window_new)
-                  (filter-checkbox :label "close" :var "filter_window_close" :value filter_window_close)
-                  (filter-checkbox :label "focus" :var "filter_window_focus" :value filter_window_focus)
-                  (filter-checkbox :label "blur" :var "filter_window_blur" :value filter_window_blur)
-                  (filter-checkbox :label "move" :var "filter_window_move" :value filter_window_move)
-                  (filter-checkbox :label "floating" :var "filter_window_floating" :value filter_window_floating)
-                  (filter-checkbox :label "fullscreen" :var "filter_window_fullscreen_mode" :value filter_window_fullscreen_mode)
-                  (filter-checkbox :label "title" :var "filter_window_title" :value filter_window_title)
-                  (filter-checkbox :label "mark" :var "filter_window_mark" :value filter_window_mark)
-                  (filter-checkbox :label "urgent" :var "filter_window_urgent" :value filter_window_urgent)))
-              ;; Workspace events category
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "Workspace Events (7)")
-                (box
-                  :class "filter-checkboxes"
-                :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "focus" :var "filter_workspace_focus" :value filter_workspace_focus)
-                  (filter-checkbox :label "init" :var "filter_workspace_init" :value filter_workspace_init)
-                  (filter-checkbox :label "empty" :var "filter_workspace_empty" :value filter_workspace_empty)
-                  (filter-checkbox :label "move" :var "filter_workspace_move" :value filter_workspace_move)
-                  (filter-checkbox :label "rename" :var "filter_workspace_rename" :value filter_workspace_rename)
-                  (filter-checkbox :label "urgent" :var "filter_workspace_urgent" :value filter_workspace_urgent)
-                  (filter-checkbox :label "reload" :var "filter_workspace_reload" :value filter_workspace_reload)))
-              ;; Feature 102 T047: Output events category (connected/disconnected/profile_changed)
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "Output Events (4)")
-                (box
-                  :class "filter-checkboxes"
-                  :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "connected" :var "filter_output_connected" :value filter_output_connected)
-                  (filter-checkbox :label "disconnected" :var "filter_output_disconnected" :value filter_output_disconnected)
-                  (filter-checkbox :label "profile" :var "filter_output_profile_changed" :value filter_output_profile_changed)
-                  (filter-checkbox :label "other" :var "filter_output_unspecified" :value filter_output_unspecified)))
-              ;; Binding/Mode/System events
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "System Events (4)")
-                (box
-                  :class "filter-checkboxes"
-                  :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "binding" :var "filter_binding_run" :value filter_binding_run)
-                  (filter-checkbox :label "mode" :var "filter_mode_change" :value filter_mode_change)
-                  (filter-checkbox :label "shutdown" :var "filter_shutdown_exit" :value filter_shutdown_exit)
-                  (filter-checkbox :label "tick" :var "filter_tick_manual" :value filter_tick_manual)))
-              ;; Feature 102: i3pm Events category (T014)
-              (box
-                :class "filter-category-group i3pm-events-category"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title i3pm-title"
-                  :halign "start"
-                  :text "󱂬 i3pm Events (19)")
-                ;; Project events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "Project")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "switch" :var "filter_i3pm_project_switch" :value filter_i3pm_project_switch)
-                    (filter-checkbox :label "clear" :var "filter_i3pm_project_clear" :value filter_i3pm_project_clear)))
-                ;; Visibility events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "Visibility")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "hidden" :var "filter_i3pm_visibility_hidden" :value filter_i3pm_visibility_hidden)
-                    (filter-checkbox :label "shown" :var "filter_i3pm_visibility_shown" :value filter_i3pm_visibility_shown)))
-                ;; Scratchpad events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "Scratchpad")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "move" :var "filter_i3pm_scratchpad_move" :value filter_i3pm_scratchpad_move)
-                    (filter-checkbox :label "show" :var "filter_i3pm_scratchpad_show" :value filter_i3pm_scratchpad_show)))
-                ;; Launch events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "Launch")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "intent" :var "filter_i3pm_launch_intent" :value filter_i3pm_launch_intent)
-                    (filter-checkbox :label "queued" :var "filter_i3pm_launch_queued" :value filter_i3pm_launch_queued)
-                    (filter-checkbox :label "complete" :var "filter_i3pm_launch_complete" :value filter_i3pm_launch_complete)
-                    (filter-checkbox :label "failed" :var "filter_i3pm_launch_failed" :value filter_i3pm_launch_failed)))
-                ;; State events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "State")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "cached" :var "filter_i3pm_state_cached" :value filter_i3pm_state_cached)
-                    (filter-checkbox :label "restored" :var "filter_i3pm_state_restored" :value filter_i3pm_state_restored)))
-                ;; Command events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "Command")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "queued" :var "filter_i3pm_command_queued" :value filter_i3pm_command_queued)
-                    (filter-checkbox :label "executed" :var "filter_i3pm_command_executed" :value filter_i3pm_command_executed)
-                    (filter-checkbox :label "result" :var "filter_i3pm_command_result" :value filter_i3pm_command_result)
-                    (filter-checkbox :label "batch" :var "filter_i3pm_command_batch" :value filter_i3pm_command_batch)))
-                ;; Trace events sub-category
-                (box
-                  :class "filter-subcategory"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "filter-subcategory-title"
-                    :halign "start"
-                    :text "Trace")
-                  (box
-                    :class "filter-checkboxes"
-                    :orientation "h"
-                    :space-evenly false
-                    (filter-checkbox :label "started" :var "filter_i3pm_trace_started" :value filter_i3pm_trace_started)
-                    (filter-checkbox :label "stopped" :var "filter_i3pm_trace_stopped" :value filter_i3pm_trace_stopped)
-                    (filter-checkbox :label "event" :var "filter_i3pm_trace_event" :value filter_i3pm_trace_event))))))
-          ;; Error state
-          (box
-            :visible {events_data.status == "error"}
-            :class "error-state"
-            :orientation "v"
-            :valign "center"
-            :halign "center"
-            :vexpand true
-            (label
-              :class "error-message"
-              :text "󰀦 Error: ''${events_data.error ?: 'Unknown error'}")
-            (label
-              :class "error-help"
-              :text "Check i3pm daemon and Sway IPC connection"))
-          ;; Empty state (no events yet)
-          (box
-            :visible {events_data.status == "ok" && events_data.event_count == 0}
-            :class "empty-state"
-            :orientation "v"
-            :valign "center"
-            :halign "center"
-            :vexpand true
-            (label
-              :class "empty-message"
-              :text "󰌱 No events yet")
-            (label
-              :class "empty-help"
-              :text "Waiting for Sway window/workspace events..."))
-          ;; Feature 102 T065: Burst indicator - show when events are being collapsed due to high event rate
-          (box
-            :visible {(events_data.burst_active ?: false) || (events_data.total_collapsed ?: 0) > 0}
-            :class "burst-indicator"
-            :orientation "h"
-            :space-evenly false
-            :halign "center"
-            (label
-              :class {"burst-badge" + ((events_data.burst_active ?: false) ? " burst-active" : " burst-inactive")}
-              :tooltip "High event rate detected (>100/sec). Events are being collapsed to prevent UI overload."
-              :text {"󰈐 " + ((events_data.burst_active ?: false) ? "Burst: " + (events_data.burst_collapsed_current ?: 0) + " events collapsing..." : (events_data.total_collapsed ?: 0) + " events collapsed")}))
-          ;; Events list (scroll container) with filtering
-          (scroll
-            :vscroll true
-            :hscroll false
-            :vexpand true
-            :visible {events_data.status == "ok" && events_data.event_count > 0}
-            (box
-              :class "events-list"
-              :orientation "v"
-              :space-evenly false
-              ;; Feature 102 T053: Iterate through events with sort mode selection
-              ;; time = chronological (events), duration = slowest first (events_by_duration)
-              (for event in {events_sort_mode == "duration" ? (events_data.events_by_duration ?: []) : (events_data.events ?: [])}
-                (box
-                  :visible {
-                    ;; Sway window events
-                    event.event_type == "window::new" ? filter_window_new :
-                    event.event_type == "window::close" ? filter_window_close :
-                    event.event_type == "window::focus" ? filter_window_focus :
-                    event.event_type == "window::move" ? filter_window_move :
-                    event.event_type == "window::floating" ? filter_window_floating :
-                    event.event_type == "window::fullscreen_mode" ? filter_window_fullscreen_mode :
-                    event.event_type == "window::title" ? filter_window_title :
-                    event.event_type == "window::mark" ? filter_window_mark :
-                    event.event_type == "window::urgent" ? filter_window_urgent :
-                    ;; Feature 102 T049: Window blur filter
-                    event.event_type == "window::blur" ? filter_window_blur :
-                    ;; Sway workspace events
-                    event.event_type == "workspace::focus" ? filter_workspace_focus :
-                    event.event_type == "workspace::init" ? filter_workspace_init :
-                    event.event_type == "workspace::empty" ? filter_workspace_empty :
-                    event.event_type == "workspace::move" ? filter_workspace_move :
-                    event.event_type == "workspace::rename" ? filter_workspace_rename :
-                    event.event_type == "workspace::urgent" ? filter_workspace_urgent :
-                    event.event_type == "workspace::reload" ? filter_workspace_reload :
-                    ;; Feature 102 T047: Sway output events (connected/disconnected/profile_changed)
-                    event.event_type == "output::connected" ? filter_output_connected :
-                    event.event_type == "output::disconnected" ? filter_output_disconnected :
-                    event.event_type == "output::profile_changed" ? filter_output_profile_changed :
-                    event.event_type == "output::unspecified" ? filter_output_unspecified :
-                    ;; Sway other events
-                    event.event_type == "binding::run" ? filter_binding_run :
-                    event.event_type == "mode::change" ? filter_mode_change :
-                    event.event_type == "shutdown::exit" ? filter_shutdown_exit :
-                    event.event_type == "tick::manual" ? filter_tick_manual :
-                    ;; Feature 102: i3pm project events (T014)
-                    event.event_type == "project::switch" ? filter_i3pm_project_switch :
-                    event.event_type == "project::clear" ? filter_i3pm_project_clear :
-                    ;; Feature 102: i3pm visibility events
-                    event.event_type == "visibility::hidden" ? filter_i3pm_visibility_hidden :
-                    event.event_type == "visibility::shown" ? filter_i3pm_visibility_shown :
-                    ;; Feature 102: i3pm scratchpad events
-                    event.event_type == "scratchpad::move" ? filter_i3pm_scratchpad_move :
-                    event.event_type == "scratchpad::show" ? filter_i3pm_scratchpad_show :
-                    ;; Feature 102: i3pm launch events
-                    event.event_type == "launch::intent" ? filter_i3pm_launch_intent :
-                    event.event_type == "launch::queued" ? filter_i3pm_launch_queued :
-                    event.event_type == "launch::complete" ? filter_i3pm_launch_complete :
-                    event.event_type == "launch::failed" ? filter_i3pm_launch_failed :
-                    ;; Feature 102: i3pm state events
-                    event.event_type == "state::cached" ? filter_i3pm_state_cached :
-                    event.event_type == "state::restored" ? filter_i3pm_state_restored :
-                    ;; Feature 102: i3pm command events (US2)
-                    event.event_type == "command::queued" ? filter_i3pm_command_queued :
-                    event.event_type == "command::executed" ? filter_i3pm_command_executed :
-                    event.event_type == "command::result" ? filter_i3pm_command_result :
-                    event.event_type == "command::batch" ? filter_i3pm_command_batch :
-                    ;; Feature 102: i3pm trace events
-                    event.event_type == "trace::started" ? filter_i3pm_trace_started :
-                    event.event_type == "trace::stopped" ? filter_i3pm_trace_stopped :
-                    event.event_type == "trace::event" ? filter_i3pm_trace_event :
-                    true
-                  }
-                  (event-card :event event)))))))
-
-      ;; Feature 092: Event card widget - Single event display (T025)
-      ;; Feature 102: Added source indicator (T015-T016), trace indicator (T028), causality visualization (T036-T038)
-      (defwidget event-card [event]
-        (box
-          :class {"event-card event-category-" + event.category + (event.source == "i3pm" ? " event-source-i3pm" : " event-source-sway") + ((event.trace_id ?: "") != "" ? " event-has-trace" : "") + ((event.correlation_id ?: "") != "" ? " event-in-chain" : "") + ((event.causality_depth ?: 0) > 0 ? " event-child-depth-" + (event.causality_depth ?: 0) : "")}
-          :orientation "h"
-          :space-evenly false
-          ;; Feature 102 (T037): Indentation for causality depth
-          :style {"margin-left: " + ((event.causality_depth ?: 0) * 16) + "px;"}
-          ;; Feature 102 (T036): Causality chain indicator
-          (box
-            :class "event-chain-indicator"
-            :visible {(event.correlation_id ?: "") != ""}
-            :width 3
-            :vexpand true)
-          ;; Feature 102: Source indicator badge (T016)
-          (label
-            :class {"event-source-badge " + (event.source == "i3pm" ? "source-i3pm" : "source-sway")}
-            :tooltip {event.source == 'i3pm' ? 'i3pm internal event' : 'Sway IPC event'}
-            :text {event.source == 'i3pm' ? '󱂬' : '󰌪'})
-          ;; Feature 102 (T028-T030): Trace indicator icon - click to navigate to Traces tab
-          ;; Feature 102 T066: Show evicted indicator if trace no longer in buffer
-          (eventbox
-            :visible {(event.trace_id ?: "") != ""}
-            :cursor "pointer"
-            :onclick {"${navigateToTraceScript} " + (event.trace_id ?: "") + " &"}
-            :tooltip {(event.trace_evicted ?: false) ? 'Trace evicted from buffer' : 'Click to view trace: ' + (event.trace_id ?: "")}
-            (label
-              :class {"event-trace-indicator" + ((event.trace_evicted ?: false) ? " trace-evicted" : "")}
-              :text {(event.trace_evicted ?: false) ? '󰈄' : '󰈙'}))
-          ;; Feature 102 T067: Orphaned event indicator (child without visible parent)
-          (label
-            :class "event-orphaned-indicator"
-            :visible {(event.parent_missing ?: false)}
-            :tooltip "Parent event not in current view (may have been evicted)"
-            :text "󰋇")
-          ;; Feature 102 T052: Duration badge for slow events (>100ms)
-          (label
-            :class {"event-duration-badge" + ((event.processing_duration_ms ?: 0) > 500 ? " duration-critical" : (event.processing_duration_ms ?: 0) > 100 ? " duration-slow" : "")}
-            :visible {(event.processing_duration_ms ?: 0) > 100}
-            :tooltip "Processing took ''${event.processing_duration_ms ?: 0}ms - slow event (>100ms)"
-            :text "''${event.processing_duration_ms ?: 0}ms")
-          ;; Event icon with category color
-          (label
-            :class "event-icon"
-            :style "color: ''${event.color};"
-            :text "''${event.icon}")
-          ;; Event details
-          (box
-            :class "event-details"
-            :orientation "v"
-            :space-evenly false
-            :hexpand true
-            ;; Event type and timestamp
-            (box
-              :class "event-header"
-              :orientation "h"
-              :space-evenly false
-              (label
-                :class "event-type"
-                :halign "start"
-                :hexpand true
-                :text "''${event.event_type}")
-              (label
-                :class "event-timestamp"
-                :halign "end"
-                :text "''${event.timestamp_friendly}"))
-            ;; Event payload info (window/workspace details)
-            (label
-              :class "event-payload"
-              :halign "start"
-              :limit-width 60
-              :text "''${event.searchable_text}"))))
-
-      ;; Feature 092: Filter checkbox widget - single checkbox for an event type
+        (box :class "events-view-container" (label :text "Events view disabled")))
       (defwidget filter-checkbox [label var value]
-        (eventbox
-          :cursor "pointer"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update ''${var}=''${!value}"
-          (box
-            :class "filter-checkbox-item"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "filter-checkbox-icon"
-              :text "''${value ? '☑' : '☐'}")
-            (label
-              :class "filter-checkbox-label"
-              :text label))))
+        (box))
 
-      ;; Feature 101: Traces View - Window tracing for debugging
+      ;; Traces View - DISABLED (Tab 5)
       (defwidget traces-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :vexpand true
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ;; Error state
-            (box
-              :class "error-message"
-              :visible {traces_data.status == "error"}
-              (label :text "⚠ ''${traces_data.error ?: 'Unknown error'}"))
-            ;; Summary header with template selector dropdown
-            (box
-              :class "traces-summary"
-              :orientation "h"
-              :space-evenly false
-              :visible {traces_data.status == "ok"}
-              (label
-                :class "traces-count"
-                :halign "start"
-                :hexpand true
-                :text "''${traces_data.trace_count ?: 0} trace(s) (''${traces_data.active_count ?: 0} active)")
-              ;; Feature 102 T059: Template selector dropdown button
-              (box
-                :class "template-selector-container"
-                :orientation "v"
-                :space-evenly false
-                (eventbox
-                  :cursor "pointer"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update template_dropdown_open=''${!template_dropdown_open}"
-                  (box
-                    :class {"template-add-button" + (template_dropdown_open ? " active" : "")}
-                    :tooltip "Start trace from template"
-                    (label :text "󰐕 New")))
-                ;; Dropdown menu
-                (box
-                  :class "template-dropdown"
-                  :visible template_dropdown_open
-                  :orientation "v"
-                  :space-evenly false
-                  (for template in {trace_templates}
-                    (eventbox
-                      :cursor "pointer"
-                      :onclick "${startTraceFromTemplateScript} ''${template.id} &"
-                      (box
-                        :class "template-item"
-                        :orientation "h"
-                        :space-evenly false
-                        (label
-                          :class "template-icon"
-                          :text "''${template.icon}")
-                        (box
-                          :orientation "v"
-                          :space-evenly false
-                          :hexpand true
-                          (label
-                            :class "template-name"
-                            :halign "start"
-                            :text "''${template.name}")
-                          (label
-                            :class "template-description"
-                            :halign "start"
-                            :limit-width 40
-                            :text "''${template.description}")))))))
-              (label
-                :class "traces-help"
-                :halign "end"
-                :tooltip "Start a trace with: i3pm trace start --class <pattern>"
-                :text "ℹ"))
-            ;; Empty state
-            (box
-              :class "traces-empty"
-              :visible {traces_data.status == "ok" && (traces_data.trace_count ?: 0) == 0}
-              :orientation "v"
-              :space-evenly false
-              (label
-                :class "empty-icon"
-                :text "󱂛")
-              (label
-                :class "empty-title"
-                :text "No active traces")
-              (label
-                :class "empty-hint"
-                :text "Start a trace with:")
-              (label
-                :class "empty-command"
-                :text "i3pm trace start --class <pattern>"))
-            ;; Traces list
-            (box
-              :class "traces-list"
-              :orientation "v"
-              :space-evenly false
-              :visible {traces_data.status == "ok" && (traces_data.trace_count ?: 0) > 0}
-              (for trace in {traces_data.traces ?: []}
-                (trace-card :trace trace))))))
-
-      ;; Feature 116: Devices View - Comprehensive device controls dashboard
-      ;; Shows volume, brightness, bluetooth, battery, thermal, and network status
-      ;; Uses device-backend.py from eww-device-controls module
-      (defwidget devices-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :vexpand true
-          (box
-            :class "content-container devices-content"
-            :orientation "v"
-            :space-evenly false
-            :spacing 16
-            ;; Audio section
-            (box
-              :class "devices-section"
-              :orientation "v"
-              :space-evenly false
-              (label :class "section-title" :halign "start" :text "󰕾 Audio")
-              (box
-                :class "section-content"
-                :orientation "v"
-                :space-evenly false
-                :spacing 8
-                (box
-                  :class "device-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  (label :class "device-label" :text "Output")
-                  (label :class "device-value" :hexpand true :halign "end" :text "''${devices_state.volume.current_device ?: 'Unknown'}"))
-                (box
-                  :class "slider-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  (label :class "slider-icon" :text "''${devices_state.volume.icon ?: '󰕾'}")
-                  (scale
-                    :class "device-slider"
-                    :hexpand true
-                    :min 0 :max 100
-                    :value "''${devices_state.volume.volume ?: 50}"
-                    :onchange "$HOME/.config/eww/eww-device-controls/scripts/volume-control.sh set {} &")
-                  (label :class "slider-value" :text "''${devices_state.volume.volume ?: 50}%")
-                  (eventbox
-                    :cursor "pointer"
-                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/volume-control.sh mute &"
-                    (label :class "''${devices_state.volume.muted ?: false ? 'mute-btn muted' : 'mute-btn'}"
-                           :text "''${devices_state.volume.muted ?: false ? '󰝟' : '󰕾'}")))))
-            ;; Display section (laptop only - brightness controls)
-            (box
-              :class "devices-section"
-              :orientation "v"
-              :space-evenly false
-              :visible {devices_state.hardware.has_brightness ?: false}
-              (label :class "section-title" :halign "start" :text "󰛨 Display")
-              (box
-                :class "section-content"
-                :orientation "v"
-                :space-evenly false
-                :spacing 8
-                (box
-                  :class "slider-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  (label :class "slider-icon" :text "󰃞")
-                  (label :class "slider-label" :text "Screen")
-                  (scale
-                    :class "device-slider"
-                    :hexpand true
-                    :min 5 :max 100
-                    :value "''${devices_state.brightness.display ?: 50}"
-                    :onchange "$HOME/.config/eww/eww-device-controls/scripts/brightness-control.sh set {} &")
-                  (label :class "slider-value" :text "''${devices_state.brightness.display ?: 50}%"))
-                (box
-                  :class "slider-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  :visible {devices_state.hardware.has_keyboard_backlight ?: false}
-                  (label :class "slider-icon" :text "󰌌")
-                  (label :class "slider-label" :text "Keyboard")
-                  (scale
-                    :class "device-slider"
-                    :hexpand true
-                    :min 0 :max 100
-                    :value "''${devices_state.brightness.keyboard ?: 0}"
-                    :onchange "$HOME/.config/eww/eww-device-controls/scripts/brightness-control.sh set {} --device keyboard &")
-                  (label :class "slider-value" :text "''${devices_state.brightness.keyboard ?: 0}%"))))
-            ;; Bluetooth section
-            (box
-              :class "devices-section"
-              :orientation "v"
-              :space-evenly false
-              (label :class "section-title" :halign "start" :text "󰂯 Bluetooth")
-              (box
-                :class "section-content"
-                :orientation "v"
-                :space-evenly false
-                :spacing 8
-                (box
-                  :class "toggle-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 12
-                  (label :class "toggle-icon" :text "󰂯")
-                  (label :class "toggle-label" :hexpand true :text "Bluetooth")
-                  (button
-                    :class "''${devices_state.bluetooth.enabled ?: false ? 'toggle-btn on' : 'toggle-btn off'}"
-                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/bluetooth-control.sh power toggle &"
-                    (label :text "''${devices_state.bluetooth.enabled ?: false ? '󰔡' : '󰨙'}")))
-                (box
-                  :class "device-list"
-                  :orientation "v"
-                  :space-evenly false
-                  :spacing 4
-                  :visible "''${devices_state.bluetooth.enabled ?: false}"
-                  (for device in "''${devices_state.bluetooth.devices ?: []}"
-                    (box
-                      :class "''${device.connected ? 'device-item connected' : 'device-item'}"
-                      :orientation "h"
-                      :space-evenly false
-                      :spacing 8
-                      (label :class "device-icon" :text "''${device.icon ?: '󰂯'}")
-                      (label :class "device-name" :hexpand true :text "''${device.name}")
-                      (eventbox
-                        :cursor "pointer"
-                        :onclick "$HOME/.config/eww/eww-device-controls/scripts/bluetooth-control.sh ''${device.connected ? 'disconnect' : 'connect'} ''${device.mac} &"
-                        (label :class "connect-btn" :text "''${device.connected ? 'Disconnect' : 'Connect'}")))))))
-            ;; Power section (laptop only - battery and power profiles)
-            (box
-              :class "devices-section"
-              :orientation "v"
-              :space-evenly false
-              :visible {devices_state.hardware.has_battery ?: false}
-              (label :class "section-title" :halign "start" :text "󰂄 Power")
-              (box
-                :class "section-content"
-                :orientation "v"
-                :space-evenly false
-                :spacing 8
-                ;; Battery status row
-                (box
-                  :class "battery-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  (label :class {"battery-icon " + (devices_state.battery.level ?: "normal") + (devices_state.battery.state == "charging" ? " charging" : "")}
-                         :text "''${devices_state.battery.icon ?: '󰁹'}")
-                  (box
-                    :class "battery-info"
-                    :orientation "v"
-                    :space-evenly false
-                    :hexpand true
-                    (box
-                      :orientation "h"
-                      :space-evenly false
-                      :spacing 8
-                      (label :class "battery-percent" :text "''${devices_state.battery.percentage ?: 100}%")
-                      (label :class "battery-state"
-                             :text "''${devices_state.battery.state == 'charging' ? '󰂄 Charging' : devices_state.battery.state == 'discharging' ? '󰂃 Discharging' : '󰁹 Full'}"))
-                    (label :class "battery-time"
-                           :halign "start"
-                           :visible {devices_state.battery.time_remaining != "null"}
-                           :text {devices_state.battery.time_remaining ?: ""})))
-                ;; Battery details (health, cycles, power draw)
-                (box
-                  :class "battery-details"
-                  :orientation "h"
-                  :space-evenly true
-                  :visible {devices_state.battery.health != "null"}
-                  (box
-                    :class "detail-item"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "detail-label" :text "Health")
-                    (label :class "detail-value" :text "''${devices_state.battery.health ?: 100}%"))
-                  (box
-                    :class "detail-item"
-                    :orientation "v"
-                    :space-evenly false
-                    :visible {devices_state.battery.power_draw != "null"}
-                    (label :class "detail-label" :text "Power")
-                    (label :class "detail-value" :text "''${devices_state.battery.power_draw ?: 0}W")))
-                ;; Power profile selector
-                (box
-                  :class "power-profiles"
-                  :orientation "h"
-                  :space-evenly true
-                  :spacing 6
-                  :visible {devices_state.hardware.has_power_profiles ?: false}
-                  (button
-                    :class {"profile-btn profile-saver " + (devices_state.power_profile.current == "power-saver" ? "active" : "")}
-                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/power-profile-control.sh set power-saver &"
-                    (label :text "󰾆"))
-                  (button
-                    :class {"profile-btn profile-balanced " + (devices_state.power_profile.current == "balanced" ? "active" : "")}
-                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/power-profile-control.sh set balanced &"
-                    (label :text "󰾅"))
-                  (button
-                    :class {"profile-btn profile-performance " + (devices_state.power_profile.current == "performance" ? "active" : "")}
-                    :onclick "$HOME/.config/eww/eww-device-controls/scripts/power-profile-control.sh set performance &"
-                    (label :text "󱐋")))))
-            ;; Thermal section
-            (box
-              :class "devices-section"
-              :orientation "v"
-              :space-evenly false
-              (label :class "section-title" :halign "start" :text "󰔐 Thermal")
-              (box
-                :class "section-content"
-                :orientation "v"
-                :space-evenly false
-                :spacing 8
-                (box
-                  :class "thermal-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  (label :class "thermal-icon" :text "󰔐")
-                  (box
-                    :class "thermal-info"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "thermal-label" :halign "start" :text "CPU")
-                    (label :class "thermal-value" :halign "start" :text "''${devices_state.thermal.cpu_temp ?: 0}°C"))
-                  (progress
-                    :class "thermal-bar"
-                    :hexpand true
-                    :value "''${devices_state.thermal.cpu_temp ?: 0}"))
-                (box
-                  :class "fan-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  :visible "''${devices_state.thermal.fan_speed != 'null'}"
-                  (label :class "fan-icon" :text "󰈐")
-                  (label :class "fan-label" :text "Fan")
-                  (label :class "fan-value" :hexpand true :halign "end" :text "''${devices_state.thermal.fan_speed ?: 0} RPM"))))
-            ;; Network section
-            (box
-              :class "devices-section"
-              :orientation "v"
-              :space-evenly false
-              (label :class "section-title" :halign "start" :text "󰖩 Network")
-              (box
-                :class "section-content"
-                :orientation "v"
-                :space-evenly false
-                :spacing 8
-                ;; WiFi row
-                (box
-                  :class "network-row wifi-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  :visible {devices_state.hardware.has_wifi ?: true}
-                  (label :class "''${devices_state.network.wifi_connected ?: false ? 'network-icon connected' : 'network-icon disconnected'}"
-                         :text "''${devices_state.network.wifi_icon ?: '󰤯'}")
-                  (box
-                    :class "network-info"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "network-type" :halign "start" :text "WiFi")
-                    (label :class "network-value" :halign "start"
-                           :text "''${devices_state.network.wifi_connected ?: false ? devices_state.network.wifi_ssid ?: 'Connected' : (devices_state.network.wifi_enabled ?: false ? 'Not Connected' : 'Disabled')}")))
-                ;; Ethernet row (if connected)
-                (box
-                  :class "network-row ethernet-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  :visible {devices_state.network.ethernet_connected ?: false}
-                  (label :class "network-icon connected" :text "󰈀")
-                  (box
-                    :class "network-info"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "network-type" :halign "start" :text "Ethernet")
-                    (label :class "network-value" :halign "start"
-                           :text "''${devices_state.network.ethernet_ip ?: 'Connected'}")))
-                ;; Tailscale row
-                (box
-                  :class "network-row tailscale-row"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 8
-                  (label :class "''${devices_state.network.tailscale_connected ?: false ? 'network-icon connected' : 'network-icon disconnected'}"
-                         :text "󰖂")
-                  (box
-                    :class "network-info"
-                    :orientation "v"
-                    :space-evenly false
-                    (label :class "network-type" :halign "start" :text "Tailscale")
-                    (label :class "network-value" :halign "start"
-                           :text "''${devices_state.network.tailscale_connected ?: false ? devices_state.network.tailscale_ip ?: 'Connected' : 'Disconnected'}"))))))))
-
-      ;; Feature 101: Trace card widget - displays single trace info with expandable events
-      ;; Feature 102 (T031): Added highlight class for navigation animation
+        (box (label :text "Traces view disabled")))
       (defwidget trace-card [trace]
-        (box
-          :class {"trace-card " + (trace.is_active ? "trace-active" : "trace-stopped") + (expanded_trace_id == trace.trace_id ? " trace-expanded" : "") + (highlight_trace_id == trace.trace_id ? " trace-highlight" : "")}
-          :orientation "v"
-          :space-evenly false
-          ;; Main trace info row (clickable to expand)
-          (eventbox
-            :cursor "pointer"
-            :onclick "${fetchTraceEventsScript} ''${trace.trace_id} &"
-            :tooltip "Click to expand/collapse events"
-            (box
-              :class "trace-card-header"
-              :orientation "h"
-              :space-evenly false
-              ;; Expand/collapse indicator
-              (label
-                :class "trace-expand-icon"
-                :text {expanded_trace_id == trace.trace_id ? "󰅀" : "󰅂"})
-              ;; Status icon
-              (label
-                :class "trace-status-icon"
-                :text "''${trace.status_icon}")
-              ;; Trace details
-              (box
-                :class "trace-details"
-                :orientation "v"
-                :space-evenly false
-                :hexpand true
-                ;; Trace ID and status
-                (box
-                  :class "trace-header"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "trace-id"
-                    :halign "start"
-                    :hexpand true
-                    :limit-width 30
-                    :text "''${trace.trace_id}")
-                  (label
-                    :class "trace-status-label"
-                    :halign "end"
-                    :text "''${trace.status_label}"))
-                ;; Matcher info
-                (label
-                  :class "trace-matcher"
-                  :halign "start"
-                  :limit-width 40
-                  :text "''${trace.matcher_display}")
-                ;; Stats line
-                (box
-                  :class "trace-stats"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "trace-events"
-                    :text "''${trace.event_count} events")
-                  (label
-                    :class "trace-separator"
-                    :text " · ")
-                  (label
-                    :class "trace-duration"
-                    :text "''${trace.duration_display}")
-                  (label
-                    :class "trace-separator"
-                    :visible {trace.window_id != "null" && trace.window_id != ""}
-                    :text " · ")
-                  (label
-                    :class "trace-window-id"
-                    :visible {trace.window_id != "null" && trace.window_id != ""}
-                    :text "win:''${trace.window_id}")))
-              ;; Action buttons
-              (box
-                :class "trace-actions"
-                :orientation "h"
-                :space-evenly false
-                :halign "end"
-                ;; Copy to clipboard button (for LLM analysis)
-                (eventbox
-                  :cursor "pointer"
-                  :onclick "${copyTraceDataScript} ''${trace.trace_id} &"
-                  :tooltip "Copy trace timeline to clipboard"
-                  (label
-                    :class {"trace-copy-btn" + (copied_trace_id == trace.trace_id ? " copied" : "")}
-                    :text {copied_trace_id == trace.trace_id ? "󰄬" : "󰆏"}))
-                ;; Open in terminal button
-                (button
-                  :class "trace-action-btn"
-                  :tooltip "Show full timeline in terminal"
-                  :onclick "ghostty -e i3pm trace show ''${trace.trace_id} &"
-                  "󰋽")
-                ;; Stop/Remove button
-                (button
-                  :class "trace-action-btn trace-stop-btn"
-                  :tooltip "''${trace.is_active ? 'Stop trace' : 'Remove trace'}"
-                  :onclick "i3pm trace stop ''${trace.trace_id} &"
-                  "''${trace.is_active ? '⏹' : '🗑'}"))))
-          ;; Expandable events timeline
-          (revealer
-            :reveal {expanded_trace_id == trace.trace_id}
-            :transition "slidedown"
-            :duration "150ms"
-            (box
-              :class "trace-events-panel"
-              :orientation "v"
-              :space-evenly false
-              ;; Loading state
-              (box
-                :class "trace-events-loading"
-                :visible {trace_events_loading}
-                :halign "center"
-                (label :text "Loading events..."))
-              ;; Events list
-              (scroll
-                :vscroll true
-                :hscroll false
-                :height 200
-                :visible {!trace_events_loading}
-                (box
-                  :class "trace-events-list"
-                  :orientation "v"
-                  :space-evenly false
-                  (for event in {trace_events}
-                    (trace-event-row :event event))))))))
+        (box (label :text "Trace card disabled")))
 
-      ;; Feature 101: Single event row in expanded trace timeline
-      (defwidget trace-event-row [event]
-        (box
-          :class {"trace-event-row " + (event.event_type ?: "unknown")}
-          :orientation "h"
-          :space-evenly false
-          ;; Timestamp
-          (label
-            :class "event-time"
-            :text "''${event.time_display ?: '--:--:--'}")
-          ;; Event type badge
-          (label
-            :class {"event-type-badge " + (event.event_type ?: "unknown")}
-            :text "''${event.event_type ?: 'unknown'}")
-          ;; Description and changes
-          (box
-            :class "event-content"
-            :orientation "v"
-            :space-evenly false
-            :hexpand true
-            (label
-              :class "event-description"
-              :halign "start"
-              :wrap true
-              :limit-width 50
-              :text {event.description ?: ""})
-            (label
-              :class "event-changes"
-              :halign "start"
-              :wrap true
-              :visible {(event.changes ?: "") != ""}
-              :text {event.changes ?: ""}))))
+      ;; Devices View - DISABLED (Tab 6)
+      (defwidget devices-view []
+        (box (label :text "Devices view disabled")))
 
-      ;; Panel footer with friendly timestamp
+      ;; Panel Footer - Timestamp display
       (defwidget panel-footer []
         (box
           :class "panel-footer"
@@ -8736,9 +7363,9 @@ in
         /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 110: Working state - pulsating red circle on subtle background */
+      /* Feature 110: Working state - pulsating teal circle on subtle background */
       .badge-working {
-        color: ${mocha.red};
+        color: ${mocha.teal};
         background: transparent;
         border: none;
         box-shadow: none;
@@ -8746,6 +7373,17 @@ in
         font-weight: bold;
         min-width: 32px;
         min-height: 32px;
+      }
+
+      /* Feature 123: Attention/completed state - bell icon with warm peach glow */
+      .badge-attention {
+        color: ${mocha.peach};
+        background: rgba(250, 179, 135, 0.15);
+        border: 1px solid rgba(250, 179, 135, 0.4);
+        box-shadow: 0 0 8px rgba(250, 179, 135, 0.4);
+        font-size: 14px;
+        padding: 2px 6px;
+        border-radius: 8px;
       }
 
       /* Feature 110: Opacity classes for pulsating fade effect */
@@ -12978,37 +11616,35 @@ in
         Documentation = "file:///etc/nixos/specs/085-sway-monitoring-widget/quickstart.md";
         # Feature 117: Depend on i3-project-daemon for IPC connectivity
         # Without this, deflisten/defpoll scripts fail on startup
-        After = [ "graphical-session.target" "i3-project-daemon.service" ];
+        # Feature 121: Use sway-session.target for proper Sway lifecycle binding
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "sway-session.target" "i3-project-daemon.service" "home-manager-vpittamp.service" ];
         Wants = [ "i3-project-daemon.service" ];
-        PartOf = [ "graphical-session.target" ];
+        PartOf = [ "sway-session.target" ];
       };
 
       Service = {
         Type = "simple";
-        # NOTE: No ExecStartPre socket cleanup needed - eww handles stale sockets internally
-        # by removing the socket file before binding (see eww commit 5b3344f)
-        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
-        ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
-        # Open the monitoring panel window after daemon starts
-        # This is required for deflisten to start streaming window data
-        # IMPORTANT: Use eww ping to wait for daemon readiness instead of fixed sleep
-        # Fixed sleep caused race conditions where 'eww open' would start its own daemon
-        # Open panel and re-sync stack index (workaround for eww #1192: index resets on reopen)
-        ExecStartPost = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 30); do ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel ping 2>/dev/null && break; ${pkgs.coreutils}/bin/sleep 0.2; done; ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel 2>/dev/null; ${pkgs.coreutils}/bin/sleep 0.2; IDX=$(${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel get current_view_index 2>/dev/null || echo 0); ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel update current_view_index=$IDX 2>/dev/null || true'";
+        # Pre-start: kill any orphan daemon for this config to prevent duplicates
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true'";
+        # Use wrapper script that manages daemon + handles toggle signals
+        # All eww processes (daemon + GTK renderers) stay in service cgroup
+        # No orphans possible since toggle sends signal instead of spawning processes
+        ExecStart = "${wrapperScript}/bin/eww-monitoring-panel-wrapper";
         # Clean shutdown: use 'eww kill' which properly cleans up THIS service's socket
-        # Previous blanket 'rm -f /run/user/1000/eww-server_*' was BREAKING other eww services
-        ExecStopPost = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true";
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true'";
         Restart = "on-failure";
         RestartSec = "3s";
-        # Ensure all child processes are killed when service stops
+        # Critical: control-group ensures ALL child processes are killed when service stops
+        # This now works correctly since all eww commands run within the wrapper
         KillMode = "control-group";
       };
 
       Install = {
-        WantedBy = [ "graphical-session.target" ];
+        # Feature 121: Auto-start with Sway session (uses swaymsg for workspace data)
+        WantedBy = [ "sway-session.target" ];
       };
     };
   };
 }
-# Test comment to force rebuild
-# Force rebuild comment
+# Rebuild trigger 1765901724

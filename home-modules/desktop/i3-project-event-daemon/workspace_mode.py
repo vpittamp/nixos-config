@@ -125,13 +125,13 @@ class WorkspaceModeManager:
         """Add letter to accumulated state for project switching (NEW).
 
         Args:
-            char: Single letter a-z (lowercase) or ':' to enter project mode
+            char: Single character for project filtering (a-z, 0-9) or ':' to enter project mode
 
         Returns:
             Current accumulated characters string
 
         Raises:
-            ValueError: If char is not a-z or ':'
+            ValueError: If char is not a-z, 0-9, or ':'
             RuntimeError: If mode is not active
         """
         start_time = time.time()
@@ -152,9 +152,7 @@ class WorkspaceModeManager:
             # This ensures newly created projects (e.g., worktrees) appear immediately
             self._all_projects = []
             # Reset filter state for fresh project selection
-            self._filter_state.accumulated_chars = ""
-            self._filter_state.selected_index = 0
-            self._filter_state.user_navigated = False
+            self._filter_state.reset()
             logger.debug("Cleared project cache for fresh reload on project mode entry")
 
             # Emit project mode event to show empty project search UI
@@ -165,12 +163,17 @@ class WorkspaceModeManager:
 
             return self._state.accumulated_chars
 
-        # Validate regular characters (a-z)
-        if not char_lower or char_lower not in "abcdefghijklmnopqrstuvwxyz":
-            raise ValueError(f"Invalid char: {char}. Must be a-z or ':'")
+        # Validate regular characters (a-z, 0-9)
+        if not char_lower or char_lower not in "abcdefghijklmnopqrstuvwxyz0123456789":
+            raise ValueError(f"Invalid char: {char}. Must be a-z, 0-9, or ':'")
 
-        self._state.accumulated_chars += char_lower
-        self._state.input_type = "project"  # NEW: Mark as project navigation
+        # Enter project mode on first char, and keep workspace digits cleared
+        self._state.accumulated_digits = ""
+        self._state.input_type = "project"
+
+        # Keep FilterState as the source-of-truth for selection reset semantics.
+        self._filter_state.add_char(char_lower)
+        self._state.accumulated_chars = self._filter_state.accumulated_chars
 
         # Emit project mode event with fuzzy-matched project preview
         await self._emit_project_mode_event("char")
@@ -201,17 +204,16 @@ class WorkspaceModeManager:
         if self._state.input_type == "project":
             # Remove last char from project search
             if self._state.accumulated_chars:
-                self._state.accumulated_chars = self._state.accumulated_chars[:-1]
-                # Update filter state to match
-                self._filter_state.accumulated_chars = self._state.accumulated_chars
+                self._filter_state.remove_char()
+                self._state.accumulated_chars = self._filter_state.accumulated_chars
                 await self._emit_project_mode_event("backspace")
                 logger.debug(f"Backspace in project mode, remaining: '{self._state.accumulated_chars}'")
             else:
                 # Feature 079: US2 - No chars left, exit project mode back to workspace mode
                 logger.debug("Backspace on empty project filter - exiting project mode")
                 self._state.input_type = None
-                self._filter_state.accumulated_chars = ""
-                self._filter_state.selected_index = 0
+                self._state.accumulated_chars = ""
+                self._filter_state.reset()
                 # Emit event to hide project list and show workspace preview
                 await self._emit_project_mode_event("backspace")
                 # Also emit workspace mode to restore workspace preview
@@ -342,17 +344,16 @@ class WorkspaceModeManager:
         Feature 101: Uses worktree.switch IPC method as single source of truth.
         All project switching now goes through the unified worktree.switch path.
         """
-        # Feature 079: If no chars typed, use selected project from filter state
-        if not self._state.accumulated_chars and self._filter_state.projects:
-            # User navigated with arrows without typing - use selected project
+        # Always respect the currently highlighted item in the project list.
+        # This keeps Enter behavior consistent with what the UI shows.
+        if self._filter_state.projects:
             selected_idx = self._filter_state.selected_index
             if 0 <= selected_idx < len(self._filter_state.projects):
                 matched_project = self._filter_state.projects[selected_idx].name
-                logger.info(f"Using arrow-selected project at index {selected_idx}: {matched_project}")
+                logger.info(f"Using selected project at index {selected_idx}: {matched_project}")
             else:
                 matched_project = None
         else:
-            # Fuzzy match project from accumulated characters (lazy-loads ProjectService)
             matched_project = await self._fuzzy_match_project(self._state.accumulated_chars)
 
         if not matched_project:

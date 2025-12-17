@@ -24,7 +24,8 @@
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix
-    # NOTE: tmux-ai-monitor.nix removed - replaced by eBPF monitor (Feature 119)
+    ./services/otel-ai-monitor.nix    # Feature 123: OTEL enrichment for eBPF monitor
+    # NOTE: tmux-ai-monitor removed - eBPF monitor (Feature 119) is primary
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
     ./tools/i3pm-workspace-mode-wrapper.nix
@@ -53,6 +54,18 @@
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "DEBUG";  # Temporary for testing
+  };
+
+  # Feature 119/123: OTEL AI assistant monitor service (enrichment for eBPF)
+  # eBPF monitor (system service) is primary for state detection
+  # OTEL monitor provides telemetry enrichment (tokens, session info)
+  services.otel-ai-monitor = {
+    enable = true;
+    enableNotifications = false;  # eBPF daemon handles notifications
+    # Default settings from research.md R10:
+    # port = 4318 (standard OTLP HTTP)
+    # completionQuietPeriodSec = 3
+    # sessionTimeoutSec = 300
   };
 
   # Sway Dynamic Configuration Management

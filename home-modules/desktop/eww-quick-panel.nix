@@ -252,13 +252,17 @@ in {
     systemd.user.services.eww-quick-panel = {
       Unit = {
         Description = "Eww quick settings panel";
-        After = [ "graphical-session.target" "sway-session.target" ];
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "graphical-session.target" "sway-session.target" "home-manager-vpittamp.service" ];
         PartOf = [ "sway-session.target" ];
       };
       Service = {
         Type = "simple";
+        # Pre-start: kill any orphan daemon for this config and clean stale socket
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} daemon --no-daemonize";
-        ExecStopPost = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} close-all";
+        # Use 'eww kill' to properly terminate daemon (not just close windows)
+        ExecStopPost = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true";
         Restart = "on-failure";
         RestartSec = 2;
         # Kill all child processes when service stops

@@ -48,6 +48,9 @@ in
     # Bare metal optimizations (KVM, Podman, gaming, printing, TPM, etc.)
     ../modules/services/bare-metal.nix
 
+    # Feature 119: eBPF-based AI agent process monitor
+    ../modules/services/ebpf-ai-monitor.nix
+
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
 
@@ -132,6 +135,16 @@ in
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
+
+  # eBPF AI Agent Monitor (Feature 119) - Kernel-level AI process monitoring
+  # Detects when Claude Code/Codex CLI transition to waiting-for-input state
+  services.ebpf-ai-monitor = {
+    enable = true;
+    user = "vpittamp";
+    processes = [ "claude" "codex" ];
+    waitThreshold = 1000;  # ms before "waiting" state
+    logLevel = "INFO";
+  };
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {

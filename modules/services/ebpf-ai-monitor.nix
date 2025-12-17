@@ -73,6 +73,9 @@ in
       environment = {
         # User to monitor (for Sway socket lookup)
         EBPF_MONITOR_USER = cfg.user;
+        # Feature 119/123: OTEL pipe path for enrichment integration
+        # The daemon will try to connect to this pipe for token metrics etc
+        EBPF_OTEL_PIPE = "/run/user/${toString config.users.users.${cfg.user}.uid}/otel-ai-monitor.pipe";
 
         PYTHONPATH = lib.concatStringsSep ":" [
           "${ebpfAiMonitorSrc}"

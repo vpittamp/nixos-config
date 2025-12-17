@@ -92,7 +92,9 @@ in
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix  # Feature 117: User-level daemon service
+    ./services/otel-ai-monitor.nix    # Feature 123: OTEL-based AI session monitoring (enrichment for eBPF)
     # NOTE: tmux-ai-monitor removed - replaced by eBPF monitor (Feature 119)
+    # eBPF monitor is primary, OTEL provides enrichment data (tokens, session info)
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
     ./tools/i3pm-workspace-mode-wrapper.nix  # Feature 042: Workspace mode IPC wrapper (temp until TS CLI integration)
@@ -106,6 +108,9 @@ in
     # Feature 056: Declarative PWA Installation
     ./tools/firefox-pwas-declarative.nix  # TDD-driven declarative PWA management with ULIDs
     ./tools/pwa-helpers.nix               # Helper CLI commands for PWA management
+
+    # Feature 121: Stale socket cleanup
+    ./tools/sway-socket-cleanup           # Automatic cleanup of orphaned Sway IPC sockets
   ];
 
   home.username = "vpittamp";
@@ -151,6 +156,21 @@ in
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "DEBUG";  # Temporary for testing
+  };
+
+  # Feature 121: Automatic cleanup of stale Sway IPC sockets every 5 minutes
+  programs.sway-socket-cleanup.enable = true;
+
+  # Feature 119/123: AI assistant monitoring
+  # - eBPF monitor (system service) is primary for state detection
+  # - OTEL monitor (user service) provides telemetry enrichment (tokens, session info)
+  services.otel-ai-monitor = {
+    enable = true;
+    enableNotifications = false;  # eBPF daemon handles notifications
+    # Default settings from research.md R10:
+    # port = 4318 (standard OTLP HTTP)
+    # completionQuietPeriodSec = 3
+    # sessionTimeoutSec = 300
   };
 
   # Feature 047: Sway Dynamic Configuration Management

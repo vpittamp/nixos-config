@@ -60,17 +60,17 @@ let
 
   # Hardware detection script (Python)
   # Detects battery, bluetooth, thermal sensors at runtime
+  # Uses simple file/subprocess checks instead of D-Bus to avoid hangs
   hardwareDetectScript = pkgs.writeText "hardware-detect.py" ''
     #!/usr/bin/env python3
     """Hardware detection for Eww top bar widgets
 
     Returns JSON with hardware capabilities:
     - battery: true if /sys/class/power_supply/BAT* exists
-    - bluetooth: true if bluetoothctl available
+    - bluetooth: true if bluetoothctl available and bluetooth adapter exists
     - thermal: true if /sys/class/thermal/thermal_zone* exists
     """
     import json
-    import os
     from pathlib import Path
 
     def detect_battery():
@@ -78,12 +78,10 @@ let
         return any(Path("/sys/class/power_supply").glob("BAT*"))
 
     def detect_bluetooth():
-        """Check for bluetooth hardware via bluez D-Bus"""
+        """Check for bluetooth hardware via hci devices (fast file check)"""
         try:
-            import pydbus
-            bus = pydbus.SystemBus()
-            bluez = bus.get("org.bluez", "/")
-            return True
+            # Check if any Bluetooth adapter exists via sysfs
+            return any(Path("/sys/class/bluetooth").glob("hci*"))
         except Exception:
             return False
 
@@ -208,11 +206,22 @@ in
       executable = true;
     };
 
-    # Feature 119: AI sessions monitor (real-time via deflisten + inotify)
-    # Replaced polling-based ai-sessions-status.sh with Python GLib file monitor
-    # CSS @keyframes handles working pulse animation (removed spinner-frame.sh, spinner-opacity.sh)
+    # Feature 119/123: AI sessions monitor (real-time via deflisten + inotify)
+    # Watches badge files written by eBPF daemon, enriched with OTEL data
+    # CSS @keyframes handles working pulse animation
     xdg.configFile."eww/eww-top-bar/scripts/ai-sessions-monitor.py" = {
       source = ./eww-top-bar/scripts/ai-sessions-monitor.py;
+      executable = true;
+    };
+
+    # Feature 117: Spinner scripts for AI working animation (from 123)
+    xdg.configFile."eww/eww-top-bar/scripts/spinner-frame.sh" = {
+      source = ./eww-top-bar/scripts/spinner-frame.sh;
+      executable = true;
+    };
+
+    xdg.configFile."eww/eww-top-bar/scripts/spinner-opacity.sh" = {
+      source = ./eww-top-bar/scripts/spinner-opacity.sh;
       executable = true;
     };
 
@@ -240,17 +249,21 @@ in
         Documentation = "https://github.com/elkowar/eww";
         PartOf = [ "sway-session.target" ];
         # Feature 117: Depend on i3-project-daemon for health checks
-        After = [ "sway-session.target" "i3-project-daemon.service" ];
-        Wants = [ "i3-project-daemon.service" ];
+        # Feature 123: Depend on otel-ai-monitor for AI session indicators
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "sway-session.target" "i3-project-daemon.service" "otel-ai-monitor.service" "home-manager-vpittamp.service" ];
+        Wants = [ "i3-project-daemon.service" "otel-ai-monitor.service" ];
       };
 
       Service = {
         Type = "simple";
+        # Pre-start: kill any orphan daemon for this config and clean stale socket
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww daemon --no-daemonize --config ${config.xdg.configHome}/eww/eww-top-bar";
-        # Only open defined windows; headless config now defines just HEADLESS-1 window
+        # Wait for daemon readiness before opening windows
         ExecStartPost = let
           windowIds = lib.concatMapStringsSep " " (output: "top-bar-${sanitizeOutputName output.name}") topBarOutputs;
-        in "${pkgs.eww}/bin/eww open-many ${windowIds} --config ${config.xdg.configHome}/eww/eww-top-bar";
+        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${pkgs.coreutils}/bin/timeout 1s ${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar ping >/dev/null 2>&1 && break; sleep 0.2; done; ${pkgs.eww}/bin/eww open-many ${windowIds} --config ${config.xdg.configHome}/eww/eww-top-bar'";
         ExecStop = "${pkgs.eww}/bin/eww kill --config ${config.xdg.configHome}/eww/eww-top-bar";
         Restart = "on-failure";
         RestartSec = 3;

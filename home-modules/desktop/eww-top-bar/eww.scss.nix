@@ -13,8 +13,8 @@
   .bar {
     background-color: rgba(30, 30, 46, 0.9);
     color: #cdd6f4;
-    padding: 2px 3px;
-    font-size: 10px;
+    padding: 3px 4px;
+    font-size: 11px;
     border: 1px solid #313244;
     border-radius: 6px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(203, 166, 247, 0.06);
@@ -330,7 +330,7 @@
     border: 1px solid rgba(203, 166, 247, 0.8);
     box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
                 inset 0 0 8px rgba(203, 166, 247, 0.2);
-    animation: pulse-glow 3s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .monitoring-toggle-active:hover {
@@ -357,19 +357,11 @@
                  0 0 4px rgba(203, 166, 247, 0.6);
   }
 
+  /* CPU-optimized: opacity animation instead of expensive box-shadow */
   @keyframes pulse-glow {
-    0% {
-      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                  inset 0 0 8px rgba(203, 166, 247, 0.2);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(203, 166, 247, 0.7),
-                  inset 0 0 12px rgba(203, 166, 247, 0.3);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                  inset 0 0 8px rgba(203, 166, 247, 0.2);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
   /* Notification center toggle button styling (SwayNC) */
@@ -391,7 +383,7 @@
     border: 1px solid rgba(137, 180, 250, 0.8);
     box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
                 inset 0 0 8px rgba(137, 180, 250, 0.2);
-    animation: pulse-notification 3s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .notification-toggle-active:hover {
@@ -418,30 +410,22 @@
                  0 0 4px rgba(137, 180, 250, 0.6);
   }
 
+  /* CPU-optimized: opacity animation instead of expensive box-shadow */
   @keyframes pulse-notification {
-    0% {
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                  inset 0 0 8px rgba(137, 180, 250, 0.2);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(137, 180, 250, 0.7),
-                  inset 0 0 12px rgba(137, 180, 250, 0.3);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                  inset 0 0 8px rgba(137, 180, 250, 0.2);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
   /* Feature 110: Notification badge styling */
 
-  /* Has unread notifications - red/peach gradient glow */
+  /* Has unread notifications - red/peach gradient glow (no animation for CPU savings) */
   .notification-has-unread {
     background: linear-gradient(135deg, rgba(243, 139, 168, 0.25), rgba(250, 179, 135, 0.2));
     border: 1px solid rgba(243, 139, 168, 0.7);
     box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
                 inset 0 0 8px rgba(243, 139, 168, 0.15);
-    animation: pulse-unread 2s ease-in-out infinite;
+    /* Animation disabled for CPU savings - static glow is sufficient */
   }
 
   .notification-has-unread:hover {
@@ -494,20 +478,11 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
-  /* Pulsing glow animation for unread notifications */
+  /* CPU-optimized: opacity animation instead of expensive box-shadow */
   @keyframes pulse-unread {
-    0% {
-      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                  inset 0 0 8px rgba(243, 139, 168, 0.15);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(243, 139, 168, 0.6),
-                  inset 0 0 12px rgba(243, 139, 168, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                  inset 0 0 8px rgba(243, 139, 168, 0.15);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
   /* Feature 117: AI Sessions widget styling */
@@ -519,9 +494,9 @@
   .ai-chip {
     background: rgba(49, 50, 68, 0.65);
     border: 1px solid rgba(108, 112, 134, 0.45);
-    border-radius: 10px;
-    padding: 2px 6px;
-    min-height: 16px;
+    border-radius: 12px;
+    padding: 3px 8px;
+    min-height: 20px;
     transition: all 150ms ease;
   }
 
@@ -531,13 +506,13 @@
     box-shadow: 0 2px 8px rgba(148, 226, 213, 0.3);
   }
 
-  /* Working state - teal pulsating glow */
+  /* Working state - teal glow (animation disabled for CPU savings) */
   .ai-chip.working {
     background: linear-gradient(135deg, rgba(148, 226, 213, 0.2), rgba(137, 180, 250, 0.15));
     border: 1px solid rgba(148, 226, 213, 0.6);
     box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
                 inset 0 0 6px rgba(148, 226, 213, 0.15);
-    animation: ai-working-pulse 2s ease-in-out infinite;
+    /* animation: ai-working-pulse 2s ease-in-out infinite; - disabled for CPU */
   }
 
   .ai-chip.working:hover {
@@ -545,13 +520,13 @@
     box-shadow: 0 0 14px rgba(148, 226, 213, 0.6);
   }
 
-  /* Attention state - peach/red highlight */
+  /* Attention state - peach/red highlight (no animation for CPU savings) */
   .ai-chip.attention {
     background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(243, 139, 168, 0.2));
     border: 1px solid rgba(250, 179, 135, 0.7);
     box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
                 inset 0 0 6px rgba(250, 179, 135, 0.15);
-    animation: ai-attention-pulse 2s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .ai-chip.attention:hover {
@@ -571,9 +546,29 @@
     background: rgba(69, 71, 90, 0.5);
   }
 
+  /* Error state - red indicator for pipe/service failures (no animation for CPU savings) */
+  .ai-chip.error {
+    background: linear-gradient(135deg, rgba(243, 139, 168, 0.3), rgba(235, 160, 172, 0.25));
+    border: 1px solid rgba(243, 139, 168, 0.8);
+    box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
+    /* Animation disabled for CPU savings */
+  }
+
+  .ai-chip.error .ai-chip-indicator {
+    color: #f38ba8;
+    font-size: 12px;
+  }
+
+  /* CPU-optimized: opacity-only animation */
+  @keyframes ai-error-pulse {
+    from { opacity: 1; }
+    50% { opacity: 0.7; }
+    to { opacity: 1; }
+  }
+
   /* Indicator icon styling */
   .ai-chip-indicator {
-    font-size: 10px;
+    font-size: 12px;
     color: #94e2d5;
     transition: opacity 120ms ease;
   }
@@ -605,43 +600,79 @@
 
   /* Source icon styling (SVG images) */
   .ai-chip-source-icon {
-    min-width: 14px;
-    min-height: 14px;
+    min-width: 16px;
+    min-height: 16px;
   }
 
   .ai-chip.idle .ai-chip-source-icon {
     opacity: 0.6;
   }
 
-  /* AI working pulse animation */
-  @keyframes ai-working-pulse {
-    0% {
-      box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
-                  inset 0 0 6px rgba(148, 226, 213, 0.15);
-    }
-    50% {
-      box-shadow: 0 0 16px rgba(148, 226, 213, 0.6),
-                  inset 0 0 10px rgba(148, 226, 213, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
-                  inset 0 0 6px rgba(148, 226, 213, 0.15);
-    }
+  /* Project badge - feature number prominently displayed */
+  .ai-chip-project-badge {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    padding: 1px 6px;
+    margin: 0 3px;
+    border-radius: 6px;
+    background: rgba(30, 30, 46, 0.9);
+    border: 1px solid rgba(148, 226, 213, 0.5);
+    color: #94e2d5;
+    min-width: 18px;
+    /* Note: GTK CSS doesn't support text-align; use :halign in widget */
   }
 
-  /* AI attention pulse animation */
+  .ai-chip.working .ai-chip-project-badge {
+    background: rgba(30, 30, 46, 0.95);
+    border-color: rgba(148, 226, 213, 0.7);
+    color: #94e2d5;
+    box-shadow: 0 0 4px rgba(148, 226, 213, 0.3);
+  }
+
+  .ai-chip.attention .ai-chip-project-badge {
+    background: rgba(30, 30, 46, 0.95);
+    border-color: rgba(250, 179, 135, 0.7);
+    color: #fab387;
+    box-shadow: 0 0 4px rgba(250, 179, 135, 0.3);
+  }
+
+  .ai-chip.idle .ai-chip-project-badge {
+    background: rgba(49, 50, 68, 0.7);
+    border-color: rgba(108, 112, 134, 0.4);
+    color: #a6adc8;
+  }
+
+  /* Project name - revealed on hover */
+  /* Note: GTK CSS doesn't support overflow/text-overflow; use :limit-width in widget */
+  .ai-chip-project-name {
+    font-size: 8px;
+    font-weight: 600;
+    color: #a6adc8;
+    margin-left: 4px;
+    padding: 0 4px;
+    background: rgba(49, 50, 68, 0.8);
+    border-radius: 4px;
+  }
+
+  .ai-chip.working .ai-chip-project-name {
+    color: #94e2d5;
+  }
+
+  .ai-chip.attention .ai-chip-project-name {
+    color: #fab387;
+  }
+
+  /* CPU-optimized: opacity-only animations */
+  @keyframes ai-working-pulse {
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
+  }
+
   @keyframes ai-attention-pulse {
-    0% {
-      box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
-                  inset 0 0 6px rgba(250, 179, 135, 0.15);
-    }
-    50% {
-      box-shadow: 0 0 16px rgba(250, 179, 135, 0.6),
-                  inset 0 0 10px rgba(250, 179, 135, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
-                  inset 0 0 6px rgba(250, 179, 135, 0.15);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 ''

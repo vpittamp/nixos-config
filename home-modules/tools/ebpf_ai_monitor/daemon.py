@@ -5,6 +5,7 @@ This module provides the EBPFDaemon class that:
 - Polls perf buffer for events
 - Tracks process state transitions
 - Triggers notifications and badge updates
+- Integrates with OTEL monitor for enrichment
 - Handles graceful shutdown
 """
 
@@ -23,12 +24,14 @@ from .models import (
     DaemonState,
     EBPFEvent,
     MonitoredProcess,
+    OTELSessionData,
     ProcessState,
     SYSCALL_READ,
     SYSCALL_READ_EXIT,
     SYSCALL_EXIT,
 )
 from .notifier import Notifier
+from .otel_subscriber import OTELSubscriber
 from .process_tracker import ProcessTracker
 
 logger = logging.getLogger(__name__)
@@ -103,6 +106,11 @@ class EBPFDaemon:
             gid=self._gid,
         )
 
+        # Feature 119/123: OTEL enrichment integration
+        # Store OTEL session data keyed by window_id for badge enrichment
+        self._otel_sessions: dict[int, OTELSessionData] = {}
+        self._otel_subscriber: Optional[OTELSubscriber] = None
+
         # Shutdown flag
         self._running = False
 
@@ -136,6 +144,9 @@ class EBPFDaemon:
 
             # Scan for existing processes
             self._scan_existing_processes()
+
+            # Feature 119/123: Start OTEL subscriber for enrichment
+            self._start_otel_subscriber()
 
             # Main loop
             self._running = True
@@ -189,8 +200,9 @@ class EBPFDaemon:
                 process.project_name or "(none)",
             )
 
-            # Write badge for existing process
-            self._badge_writer.write_badge(process)
+            # Write badge for existing process (with OTEL enrichment if available)
+            otel_data = self._otel_sessions.get(process.window_id)
+            self._badge_writer.write_badge(process, otel_data=otel_data)
 
         logger.info("Found %d existing AI processes", len(existing))
 
@@ -303,8 +315,9 @@ class EBPFDaemon:
                 process.project_name or "(none)",
             )
 
-            # Write initial badge (WORKING state)
-            self._badge_writer.write_badge(process)
+            # Write initial badge (WORKING state, with OTEL enrichment if available)
+            otel_data = self._otel_sessions.get(process.window_id)
+            self._badge_writer.write_badge(process, otel_data=otel_data)
 
         # If process was WAITING and now got another read event,
         # it means user resumed interaction
@@ -383,8 +396,9 @@ class EBPFDaemon:
             else:
                 logger.warning("Failed to send notification for PID %d", process.pid)
 
-            # Update badge with needs_attention=true and increment count
-            self._badge_writer.write_badge(process, increment_count=True)
+            # Update badge with needs_attention=true and increment count (with OTEL enrichment)
+            otel_data = self._otel_sessions.get(process.window_id)
+            self._badge_writer.write_badge(process, increment_count=True, otel_data=otel_data)
 
     def _transition_to_working(self, process: MonitoredProcess) -> None:
         """Transition a process back to WORKING state.
@@ -403,11 +417,89 @@ class EBPFDaemon:
                 process.window_id,
             )
 
-            # Update badge - clear needs_attention
-            self._badge_writer.write_badge(process)
+            # Update badge - clear needs_attention (with OTEL enrichment)
+            otel_data = self._otel_sessions.get(process.window_id)
+            self._badge_writer.write_badge(process, otel_data=otel_data)
+
+    # =========================================================================
+    # OTEL Enrichment (Feature 119/123)
+    # =========================================================================
+
+    def _start_otel_subscriber(self) -> None:
+        """Start OTEL subscriber for session enrichment.
+
+        Connects to the otel-ai-monitor named pipe if available.
+        OTEL data enriches badge files with token metrics and session IDs.
+        """
+        pipe_path = Path(f"/run/user/{self._uid}/otel-ai-monitor.pipe")
+
+        if not pipe_path.exists():
+            logger.info(
+                "OTEL pipe not found at %s - enrichment disabled",
+                pipe_path,
+            )
+            return
+
+        try:
+            self._otel_subscriber = OTELSubscriber(
+                pipe_path=pipe_path,
+                on_session_update=self._handle_otel_update,
+            )
+            self._otel_subscriber.start()
+            logger.info("OTEL subscriber started for enrichment")
+        except Exception as e:
+            logger.warning("Failed to start OTEL subscriber: %s", e)
+            self._otel_subscriber = None
+
+    def _handle_otel_update(self, data: OTELSessionData) -> None:
+        """Handle OTEL session data update.
+
+        Stores OTEL data keyed by window_id for badge enrichment.
+        If we have a tracked process for this window, updates its badge.
+
+        Args:
+            data: OTELSessionData from the OTEL monitor pipe.
+        """
+        if data.window_id is None:
+            logger.debug("OTEL update without window_id: %s", data.session_id)
+            return
+
+        # Store OTEL data for enrichment
+        self._otel_sessions[data.window_id] = data
+
+        logger.debug(
+            "OTEL update: window=%d, tool=%s, tokens=%d/%d",
+            data.window_id,
+            data.tool,
+            data.input_tokens,
+            data.output_tokens,
+        )
+
+        # If we have a tracked process for this window, update its badge
+        for process in self._state.tracked_processes.values():
+            if process.window_id == data.window_id:
+                self._badge_writer.write_badge(process, otel_data=data)
+                break
+
+    def _get_otel_data(self, window_id: int) -> Optional[OTELSessionData]:
+        """Get OTEL enrichment data for a window.
+
+        Args:
+            window_id: Sway container ID.
+
+        Returns:
+            OTELSessionData if available, None otherwise.
+        """
+        return self._otel_sessions.get(window_id)
 
     def _cleanup(self) -> None:
         """Clean up resources on shutdown."""
+        # Stop OTEL subscriber
+        if self._otel_subscriber is not None:
+            self._otel_subscriber.stop()
+            self._otel_subscriber = None
+
+        # Cleanup BPF
         if self._bpf_manager is not None:
             self._bpf_manager.cleanup()
             self._bpf_manager = None

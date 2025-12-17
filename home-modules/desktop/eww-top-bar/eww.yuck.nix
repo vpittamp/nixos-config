@@ -124,36 +124,50 @@ in
   `python3 ~/.config/eww/eww-top-bar/scripts/active-project.py`)
 
 ;; Hardware capabilities (run once at startup)
+;; Uses timeout to prevent hanging if D-Bus or other checks are slow
 (defpoll hardware
   :interval "0"
   :run-while false
   :initial '{"battery":false,"bluetooth":false,"thermal":false}'
-  `python3 ~/.config/eww/eww-top-bar/scripts/hardware-detect.py`)
+  `timeout 5s python3 ~/.config/eww/eww-top-bar/scripts/hardware-detect.py || echo '{"battery":false,"bluetooth":false,"thermal":false}'`)
 
 ;; Build health poll - uses nixos-build-status for OS & HM generations / errors
+;; Feature 123: Increased from 10s to 30s (build status rarely changes, saves ~1.5s/cycle)
 (defpoll build_health
-  :interval "10s"
+  :interval "30s"
   :initial '{"status":"unknown","os_generation":"--","hm_generation":"--","error_count":0,"details":"..."}'
   `bash ~/.config/eww/eww-top-bar/scripts/build-health.sh`)
 
 ;; Monitoring panel visibility status (Feature 085)
+;; Increased to 3s to reduce process spawning overhead
 (defpoll monitoring_panel_visible
-  :interval "1s"
+  :interval "3s"
   :initial "false"
   `${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | grep -q 'monitoring-panel' && echo true || echo false`)
 
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)
 
-;; Feature 119: AI sessions data (real-time via deflisten + inotify)
-;; Replaced defpoll (2s latency) with deflisten for instant state updates
-;; Python monitor watches badge files and emits JSON on any change
+;; Feature 119/123: AI sessions data (real-time via deflisten + inotify)
+;; eBPF daemon writes badge files, Python monitor watches and emits JSON on any change
+;; Badge files are enriched with OTEL data (tokens, session info) when available
 (deflisten ai_sessions_data
   :initial '{"sessions":[],"has_working":false}'
   `python3 ~/.config/eww/eww-top-bar/scripts/ai-sessions-monitor.py`)
 
-;; Feature 119: Spinner animation handled by CSS @keyframes ai-working-pulse
-;; Removed polling-based spinner (120ms polls) - CSS animation is more efficient
+;; Feature 119/123: Spinner animation for working AI sessions
+;; Uses scripts for dynamic animation, run-while optimization prevents polling when idle
+(defpoll topbar_spinner_frame
+  :interval "120ms"
+  :run-while {ai_sessions_data.has_working ?: false}
+  :initial "⬤"
+  `bash ~/.config/eww/eww-top-bar/scripts/spinner-frame.sh`)
+
+(defpoll topbar_spinner_opacity
+  :interval "120ms"
+  :run-while {ai_sessions_data.has_working ?: false}
+  :initial "1.0"
+  `bash ~/.config/eww/eww-top-bar/scripts/spinner-opacity.sh`)
 
 ;; Interactions / popups
 (defvar volume_popup_visible false)
@@ -405,32 +419,49 @@ in
                 :visible {notification_data.has_unread == true && notification_data.dnd == false}
                 :text {notification_data.display_count}))))
 
-;; Feature 117: AI Sessions widget for top bar
+;; Feature 123: AI Sessions widget for top bar (OTEL-based)
 ;; Compact chips showing active AI assistants (Claude Code, Codex)
-;; Three states: working (pulsating), attention (bell), idle (muted)
+;; Three states: working (pulsating), completed/attention (bell), idle (muted)
+;; Error state: shows red indicator when pipe is missing (visible failure, not silent)
+;; Data comes from otel-ai-monitor service via deflisten (event-driven)
+;; Feature 123 Enhancement: Project badge shows branch number (worktrees) or abbreviation
 (defwidget ai-sessions-widget []
   (box :class "ai-sessions-container"
-       :visible {arraylength(ai_sessions_data.sessions ?: []) > 0}
+       :visible {(ai_sessions_data.type ?: "") == "error" || arraylength(ai_sessions_data.sessions ?: []) > 0}
        :orientation "h"
        :space-evenly false
        :spacing 4
+       ;; Error indicator when pipe is missing
+       (box :class "ai-chip error"
+            :visible {(ai_sessions_data.type ?: "") == "error"}
+            :tooltip {"AI Monitor Error: " + (ai_sessions_data.error ?: "unknown")}
+            (label :class "ai-chip-indicator" :text "󰅙"))
+       ;; Normal session chips
        (for session in {ai_sessions_data.sessions ?: []}
-         (eventbox :onclick "focus-window-action ''\'''${session.project}' ''\'''${session.id}' &"
+         (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + (session.window_id ?: "0") + "' &"}
                    :cursor "pointer"
-                   :tooltip {session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source) + " - " + (session.state == "working" ? "Processing..." : (session.needs_attention ? "Needs attention" : "Ready")) + " [" + session.project + "]"}
-           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
+                   :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Working" : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]"}
+           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle"))}
                 :orientation "h"
                 :space-evenly false
-                :spacing 3
-                ;; State indicator - CSS @keyframes handles working pulse animation
-                (label :class {"ai-chip-indicator" + (session.state == "working" ? " working-pulse" : "")}
-                       :text {session.state == "working" ? "󰔟" : (session.needs_attention ? "󰂞" : "󰤄")})
-                ;; Source icon (SVG images for claude and codex)
+                :spacing 4
+                ;; State indicator (spinner for working, bell for attention, sleep for idle)
+                (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
+                       :text {session.state == "working" ? topbar_spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
+                ;; Project badge - extracts feature number from branch name
+                ;; Format: "owner/repo:branch" (e.g., "vpittamp/nixos-config:123-otel-tracing" → "123")
+                (label :class "ai-chip-project-badge"
+                       :halign "center"
+                       :visible {(session.project ?: "") != "" && (session.project ?: "") != "Global"}
+                       :text {arraylength(captures(session.project ?: "", ":([0-9]+)")) > 1
+                              ? captures(session.project ?: "", ":([0-9]+)")[1]
+                              : substring(replace(session.project ?: "???", ".*:", ""), 0, 3)})
+                ;; Tool icon (SVG images for claude and codex)
                 (image
                   :class "ai-chip-source-icon"
-                  :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
-                  :image-width 14
-                  :image-height 14))))))
+                  :path {session.tool == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.tool == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
+                  :image-width 16
+                  :image-height 16))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 

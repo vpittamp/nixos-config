@@ -5,6 +5,7 @@ This module defines the core data structures used throughout the daemon:
 - EBPFEvent: ctypes structure for kernel→userspace event transfer
 - MonitoredProcess: Tracked AI process with state management
 - BadgeState: Badge file format for eww panel integration
+- OTELSessionData: Enrichment data from OTEL monitor
 - DaemonState: Top-level daemon state container
 """
 
@@ -241,6 +242,26 @@ class BadgeState(BaseModel):
         ge=0,
         description="Unix timestamp when AI session began",
     )
+    # Feature 119/123: OTEL enrichment fields
+    otel_session_id: Optional[str] = Field(
+        default=None,
+        description="Session ID from OTEL telemetry for correlation",
+    )
+    input_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Input token count from OTEL metrics",
+    )
+    output_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Output token count from OTEL metrics",
+    )
+    cache_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Cache token count from OTEL metrics",
+    )
 
     @classmethod
     def from_monitored_process(cls, process: MonitoredProcess) -> "BadgeState":
@@ -271,6 +292,71 @@ class BadgeState(BaseModel):
             needs_attention=process.state == ProcessState.WAITING,
             session_started=process.session_started,
         )
+
+
+# =============================================================================
+# OTEL Session Data Model (Feature 123 enrichment)
+# =============================================================================
+
+
+class OTELSessionData(BaseModel):
+    """Enrichment data from OTEL monitor pipe.
+
+    This model represents session data received from the otel-ai-monitor service
+    via its named pipe. Used to enrich badge files with token metrics and
+    session correlation data.
+
+    The eBPF daemon is authoritative for state detection (working/waiting).
+    OTEL provides supplementary information like token counts.
+
+    Attributes:
+        session_id: Unique session identifier for correlation.
+        tool: AI tool identifier ("claude-code" or "codex").
+        state: OTEL's view of state (used for logging, not authoritative).
+        project: Project name if available.
+        window_id: Sway container ID if resolved.
+        input_tokens: Total input tokens for session.
+        output_tokens: Total output tokens for session.
+        cache_tokens: Total cache tokens for session.
+    """
+
+    model_config = ConfigDict(
+        validate_assignment=True,
+        extra="ignore",  # Allow extra fields from OTEL JSON
+    )
+
+    session_id: str = Field(..., description="Unique session identifier")
+    tool: str = Field(
+        ...,
+        description="AI tool identifier (claude-code, codex)",
+    )
+    state: str = Field(
+        default="unknown",
+        description="OTEL's view of state (idle, working, completed)",
+    )
+    project: Optional[str] = Field(
+        default=None,
+        description="Project name if available",
+    )
+    window_id: Optional[int] = Field(
+        default=None,
+        description="Sway container ID if resolved",
+    )
+    input_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Total input tokens for session",
+    )
+    output_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Total output tokens for session",
+    )
+    cache_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Total cache tokens for session",
+    )
 
 
 # =============================================================================

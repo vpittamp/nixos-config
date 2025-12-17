@@ -32,6 +32,12 @@ except ImportError:
         FilterState,
     )
 
+try:
+    from .constants import ConfigPaths
+except ImportError:
+    # Support direct import for tests
+    from constants import ConfigPaths
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,7 +88,7 @@ def load_repos_json() -> Dict[str, Any]:
     Returns:
         Dict with "repositories" list and metadata, or empty dict if not found
     """
-    repos_file = Path.home() / ".config" / "i3" / "repos.json"
+    repos_file = ConfigPaths.REPOS_FILE
 
     if not repos_file.exists():
         logger.debug("Feature 101: repos.json not found at %s", repos_file)
@@ -94,6 +100,50 @@ def load_repos_json() -> Dict[str, Any]:
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 101: Failed to load repos.json: {e}")
         return {"repositories": [], "last_discovery": None}
+
+
+def load_project_usage() -> Dict[str, Dict[str, Any]]:
+    """Load per-project usage data for recency/frequency ranking.
+
+    Returns:
+        Mapping of qualified project name -> {"last_used_at": int, "use_count": int}
+    """
+    usage_file = ConfigPaths.PROJECT_USAGE_FILE
+    if not usage_file.exists():
+        return {}
+
+    try:
+        data = json.loads(usage_file.read_text())
+    except Exception as e:
+        logger.warning(f"Failed to load project usage file: {e}")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    projects = data.get("projects", {})
+    if not isinstance(projects, dict):
+        return {}
+
+    return {k: v for k, v in projects.items() if isinstance(k, str) and isinstance(v, dict)}
+
+
+def _usage_stats(usage: Dict[str, Dict[str, Any]], qualified_name: str) -> tuple[int, int]:
+    entry = usage.get(qualified_name, {})
+    if not isinstance(entry, dict):
+        return (0, 0)
+
+    try:
+        last_used_at = int(entry.get("last_used_at", 0))
+    except Exception:
+        last_used_at = 0
+
+    try:
+        use_count = int(entry.get("use_count", 0))
+    except Exception:
+        use_count = 0
+
+    return (max(last_used_at, 0), max(use_count, 0))
 
 
 def worktree_to_list_item(
@@ -175,8 +225,7 @@ def load_all_projects(config_dir: Path) -> List[ProjectListItem]:
         logger.debug("Feature 101: No repositories found in repos.json")
         return []
 
-    # Convert each repository's worktrees to ProjectListItems
-    # Group by repository: repo header followed by its worktrees
+    usage = load_project_usage()
     grouped_items: List[ProjectListItem] = []
 
     for repo in repositories:
@@ -202,7 +251,24 @@ def load_all_projects(config_dir: Path) -> List[ProjectListItem]:
         # Convert each worktree to ProjectListItem
         for wt in sorted_worktrees:
             item = worktree_to_list_item(wt, repo_qualified_name, repo_account, repo_name)
+            last_used_at, _use_count = _usage_stats(usage, item.name)
+            if last_used_at > 0:
+                item.relative_time = format_relative_time(
+                    datetime.fromtimestamp(last_used_at, tz=timezone.utc)
+                )
+            else:
+                item.relative_time = "never"
             grouped_items.append(item)
+
+    # Default ordering for ':' project mode: show recent/frequent projects first.
+    grouped_items.sort(
+        key=lambda p: (
+            0 if _usage_stats(usage, p.name)[0] > 0 else 1,  # has usage first
+            -_usage_stats(usage, p.name)[0],  # most recent first
+            -_usage_stats(usage, p.name)[1],  # most used first
+            p.name.lower(),
+        )
+    )
 
     logger.debug(f"Feature 101: Loaded {len(grouped_items)} worktrees from repos.json")
     return grouped_items
@@ -318,7 +384,39 @@ def filter_projects(
         # No query - return all projects in original order (by recency)
         return projects
 
-    scored_matches = []
+    usage = load_project_usage()
+
+    # Feature 079: Numeric prefix filtering via branch_number.
+    # Example: ":79" should rank "079-*" branches first.
+    if query.isdigit():
+        scored_matches: List[ProjectListItem] = []
+        for project in projects:
+            if not project.branch_number:
+                continue
+
+            if project.branch_number.endswith(query):
+                score = 1000
+            elif query in project.branch_number:
+                score = 500
+            else:
+                continue
+
+            scored_project = project.model_copy()
+            scored_project.match_score = score
+            scored_project.match_positions = []
+            scored_matches.append(scored_project)
+
+        scored_matches.sort(
+            key=lambda p: (
+                -p.match_score,
+                -_usage_stats(usage, p.name)[0],
+                -_usage_stats(usage, p.name)[1],
+                p.name.lower(),
+            )
+        )
+        return scored_matches
+
+    scored_matches: List[ProjectListItem] = []
     for project in projects:
         # Match against name (primary) and display_name (secondary)
         name_score, name_positions = fuzzy_match_score(query, project.name)
@@ -341,7 +439,14 @@ def filter_projects(
         scored_project.match_positions = positions
         scored_matches.append(scored_project)
 
-    # Sort by score (highest first)
-    scored_matches.sort(key=lambda p: p.match_score, reverse=True)
+    # Sort by score (highest first), then by recency/frequency.
+    scored_matches.sort(
+        key=lambda p: (
+            -p.match_score,
+            -_usage_stats(usage, p.name)[0],
+            -_usage_stats(usage, p.name)[1],
+            p.name.lower(),
+        )
+    )
 
     return scored_matches

@@ -1478,19 +1478,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         for project in projects:
             all_windows.extend(project.get("windows", []))
 
-        # UX Enhancement: Extract flat workspaces list for workspace pills
-        workspaces = []
-        for monitor in monitors:
-            for ws in monitor.get("workspaces", []):
-                workspaces.append({
-                    "name": ws.get("name", ""),
-                    "number": ws.get("number", 0),
-                    "output": monitor.get("name", ""),
-                    "focused": ws.get("focused", False),
-                    "urgent": ws.get("urgent", False),
-                    "window_count": ws.get("window_count", 0),
-                })
-        workspaces.sort(key=lambda w: w["number"])
+        # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 
         # Get current timestamp for friendly formatting
         current_timestamp = time.time()
@@ -1527,16 +1515,14 @@ async def query_monitoring_data() -> Dict[str, Any]:
                 })
 
         # Return success state with project-based view
+        # NOTE: Removed for payload optimization:
+        # - all_windows (~11KB) - detail view disabled
+        # - workspaces (~700B) - workspace pills removed
+        # - counts - count badges removed from UI
         return {
             "status": "ok",
             "projects": projects,
-            "all_windows": all_windows,  # Flat list for detail view lookup
-            "workspaces": workspaces,  # UX Enhancement: Flat list for workspace pills
-            "active_project": active_project,  # UX Enhancement: For active project highlight
-            "project_count": len(projects),
-            "monitor_count": counts["monitor_count"],
-            "workspace_count": counts["workspace_count"],
-            "window_count": counts["window_count"],
+            "active_project": active_project,
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
             "error": None,
@@ -1554,11 +1540,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         return {
             "status": "error",
             "projects": [],
-            "workspaces": [],  # UX Enhancement: Empty workspaces for error state
-            "project_count": 0,
-            "monitor_count": 0,
-            "workspace_count": 0,
-            "window_count": 0,
+            "active_project": None,
             "timestamp": error_timestamp,
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": str(e),
@@ -1574,11 +1556,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         return {
             "status": "error",
             "projects": [],
-            "workspaces": [],  # UX Enhancement: Empty workspaces for error state
-            "project_count": 0,
-            "monitor_count": 0,
-            "workspace_count": 0,
-            "window_count": 0,
+            "active_project": None,
             "timestamp": error_timestamp,
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": f"Unexpected error: {type(e).__name__}: {e}",
@@ -2684,10 +2662,12 @@ async def query_traces_data() -> Dict[str, Any]:
 
 async def stream_monitoring_data():
     """
-    Stream monitoring data to stdout on Sway events (deflisten mode).
+    Stream monitoring data to stdout on daemon events (deflisten mode).
 
     Features:
-    - Subscribes to window/workspace/output events via i3ipc
+    - Feature 123: Subscribes to daemon state changes (not Sway directly)
+      This eliminates the double Sway IPC subscription overhead.
+      Daemon caches window tree and notifies when state changes.
     - Feature 107: Uses inotify for immediate badge detection (<15ms latency)
     - Outputs JSON on every event (<100ms latency)
     - Heartbeat every 5s to detect stale connections
@@ -2698,17 +2678,17 @@ async def stream_monitoring_data():
         0: Graceful shutdown (signal received)
         1: Fatal error (cannot recover)
     """
-    if I3Connection is None:
-        logger.error("i3ipc.aio module not available - cannot use --listen mode")
-        sys.exit(1)
+    from i3_project_manager.core.daemon_client import DaemonClient, DaemonError
 
     setup_signal_handlers()
-    logger.info("Starting event stream mode (deflisten)")
+    logger.info("Starting event stream mode (deflisten) - Feature 123: Using daemon subscription")
 
     reconnect_delay = 1.0  # Start with 1s delay
     max_reconnect_delay = 10.0
     last_update = 0.0
-    heartbeat_interval = 5.0
+    # Feature 123: Increased heartbeat from 5s to 30s since daemon subscription
+    # handles real-time events. Heartbeat is only a fallback for missed events.
+    heartbeat_interval = 30.0
 
     # Feature 107: Start inotify watcher for badge directory
     badge_watcher_process: Optional[asyncio.subprocess.Process] = None
@@ -2732,61 +2712,78 @@ async def stream_monitoring_data():
 
     while not shutdown_requested:
         try:
-            logger.info("Connecting to Sway IPC...")
-            ipc = await I3Connection().connect()
-            logger.info("Connected to Sway IPC")
+            # Feature 123: Connect to daemon for state change subscription
+            logger.info("Feature 123: Connecting to daemon for state change subscription...")
+            daemon_client = DaemonClient(timeout=10.0)
+            await daemon_client.connect()
+            logger.info("Feature 123: Connected to daemon")
 
             # Reset reconnect delay on successful connection
             reconnect_delay = 1.0
 
             # Query and output initial state
             data = await query_monitoring_data()
-            print(json.dumps(data, separators=(",", ":")), flush=True)
+            initial_json = json.dumps(data, separators=(",", ":"))
+            print(initial_json, flush=True)
             last_update = time.time()
             logger.info("Sent initial state")
 
-            # Subscribe to relevant events
-            def on_window_event(ipc, event):
-                """Handle window events (new, close, focus, etc.)"""
-                # Feature 095: Clear badge when window with badge gets focused
-                if event.change == "focus" and event.container:
-                    window_id = str(event.container.id)
-                    badge_file = BADGE_STATE_DIR / f"{window_id}.json"
-                    if badge_file.exists():
-                        try:
-                            badge_file.unlink()
-                            logger.debug(f"Feature 095: Cleared badge for focused window {window_id}")
-                        except OSError as e:
-                            logger.warning(f"Feature 095: Failed to clear badge file: {e}")
-                asyncio.create_task(refresh_and_output())
+            # OPTIMIZATION: Change detection - track last payload hash to skip duplicates
+            import hashlib
+            last_payload_hash = hashlib.md5(initial_json.encode()).hexdigest()
+            # Feature 123: Store last payload for heartbeat (avoid re-query)
+            last_payload_json = initial_json
 
-            def on_workspace_event(ipc, event):
-                """Handle workspace events (focus, init, empty, etc.)"""
-                asyncio.create_task(refresh_and_output())
-
-            def on_output_event(ipc, event):
-                """Handle output events (monitor connect/disconnect)"""
-                asyncio.create_task(refresh_and_output())
+            # Feature 123: Daemon state change event for triggering refresh
+            daemon_state_change_event = asyncio.Event()
 
             # Feature 095 Enhancement: Track if we have working badges for spinner animation
             has_working_badge = False
 
             async def refresh_and_output():
-                """Query daemon and output updated JSON."""
-                nonlocal last_update, has_working_badge
+                """Query daemon and output updated JSON with change detection."""
+                nonlocal last_update, has_working_badge, last_payload_hash, last_payload_json
                 try:
                     data = await query_monitoring_data()
                     # Track if we have working badges to enable spinner updates
                     has_working_badge = data.get("has_working_badge", False)
-                    print(json.dumps(data, separators=(",", ":")), flush=True)
-                    last_update = time.time()
+
+                    # OPTIMIZATION: Change detection - skip if payload unchanged
+                    payload_json = json.dumps(data, separators=(",", ":"))
+                    payload_hash = hashlib.md5(payload_json.encode()).hexdigest()
+
+                    if payload_hash != last_payload_hash:
+                        print(payload_json, flush=True)
+                        last_payload_hash = payload_hash
+                        last_payload_json = payload_json  # Feature 123: Store for heartbeat
+                        last_update = time.time()
+                        logger.debug(f"Output updated (hash changed)")
+                    else:
+                        logger.debug(f"Skipped output (no change)")
                 except Exception as e:
                     logger.warning(f"Error refreshing data: {e}")
 
-            # Register event handlers
-            ipc.on('window', on_window_event)
-            ipc.on('workspace', on_workspace_event)
-            ipc.on('output', on_output_event)
+            # Feature 123: Subscribe to daemon state changes
+            # This creates a background task that sets daemon_state_change_event when notified
+            async def daemon_subscription_task():
+                """Background task to receive daemon state change notifications."""
+                try:
+                    async for event in daemon_client.subscribe_state_changes():
+                        if shutdown_requested:
+                            break
+                        event_type = event.get("type", "unknown")
+                        logger.debug(f"Feature 123: Daemon state change: {event_type}")
+                        daemon_state_change_event.set()
+                except DaemonError as e:
+                    logger.warning(f"Feature 123: Daemon subscription error: {e}")
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Feature 123: Unexpected daemon subscription error: {e}")
+
+            # Start daemon subscription task
+            subscription_task = asyncio.create_task(daemon_subscription_task())
+            logger.info("Feature 123: Subscribed to daemon state changes")
 
             # Feature 095 Enhancement: Spinner animation interval (120ms)
             # Only used when has_working_badge is True
@@ -2798,12 +2795,20 @@ async def stream_monitoring_data():
             polling_fallback_interval = 0.5  # 500ms
             last_polling_check = time.time()
 
-            # Event loop with heartbeat
+            # Feature 123: Simple event-driven loop using asyncio.sleep
+            # The daemon_subscription_task sets daemon_state_change_event when updates arrive.
+            # We use short sleeps and check the event flag - much lower overhead than asyncio.wait()
             while not shutdown_requested:
                 current_time = time.time()
 
-                # Feature 107: Check for inotify-triggered badge changes (immediate)
-                if use_inotify and badge_change_event.is_set():
+                # Feature 123: Check for daemon state change notification
+                if daemon_state_change_event.is_set():
+                    daemon_state_change_event.clear()
+                    logger.debug("Feature 123: Daemon state change triggered refresh")
+                    await refresh_and_output()
+
+                # Feature 107: Check for inotify-triggered badge changes
+                elif use_inotify and badge_change_event.is_set():
                     badge_change_event.clear()
                     logger.debug("Feature 107: inotify triggered badge refresh")
                     await refresh_and_output()
@@ -2823,21 +2828,37 @@ async def stream_monitoring_data():
                     await refresh_and_output()
                     last_spinner_update = current_time
                 # Send heartbeat if no updates in last N seconds (normal mode)
+                # Feature 123: Heartbeat doesn't re-query daemon since subscription handles events.
+                # Just output last known state to keep EWW deflisten alive.
                 elif current_time - last_update > heartbeat_interval:
-                    logger.debug("Sending heartbeat")
-                    await refresh_and_output()
+                    logger.debug("Sending heartbeat (no query)")
+                    # Output last known state without re-querying daemon
+                    print(last_payload_json, flush=True)
+                    last_update = current_time
 
-                # Feature 107: Sleep duration depends on mode
-                # - With inotify: longer sleep (badge changes trigger immediately)
-                # - Without inotify: shorter sleep for polling
-                # - With spinner: shortest sleep for animation
+                # Feature 123: Sleep duration based on mode
+                # - Spinner mode: 50ms for animation
+                # - Normal mode: 5s sleep, daemon subscription handles real-time events
+                #   Events set the flag which we check on next wake
                 if has_working_badge:
-                    sleep_time = 0.05  # 50ms for spinner animation
-                elif use_inotify:
-                    sleep_time = 0.5   # 500ms when using inotify (events wake us up)
+                    await asyncio.sleep(0.05)  # 50ms for spinner
                 else:
-                    sleep_time = 0.25  # 250ms for polling fallback
-                await asyncio.sleep(sleep_time)
+                    await asyncio.sleep(5.0)  # 5s - daemon events set flag for next check
+
+            # Cleanup subscription task
+            subscription_task.cancel()
+            try:
+                await subscription_task
+            except asyncio.CancelledError:
+                pass
+            await daemon_client.close()
+
+        except DaemonError as e:
+            # Feature 123: Handle daemon connection/subscription errors
+            logger.warning(f"Feature 123: Daemon error: {e}, reconnecting in {reconnect_delay}s")
+            await asyncio.sleep(reconnect_delay)
+            # Exponential backoff
+            reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
 
         except ConnectionError as e:
             logger.warning(f"Connection lost: {e}, reconnecting in {reconnect_delay}s")

@@ -8,13 +8,28 @@ let
   chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
+
+  # Wrapper for codex that sets OTEL batch processor env vars for real-time export
+  codexPackage = pkgs-unstable.codex or pkgs.codex;
+  codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
+    # Force frequent batch exports for real-time monitoring
+    # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)
+    export OTEL_BLRP_SCHEDULE_DELAY=''${OTEL_BLRP_SCHEDULE_DELAY:-500}
+    export OTEL_BLRP_MAX_EXPORT_BATCH_SIZE=''${OTEL_BLRP_MAX_EXPORT_BATCH_SIZE:-1}
+    export OTEL_BLRP_MAX_QUEUE_SIZE=''${OTEL_BLRP_MAX_QUEUE_SIZE:-100}
+    exec ${codexPackage}/bin/codex "$@"
+  '';
+  # Preserve version attribute so home-manager uses TOML format (version >= 0.2.0)
+  codexWrapped = codexWrapperScript // {
+    version = codexPackage.version or "0.73.0";
+  };
 in
 
 {
   # Codex - Lightweight coding agent (using native home-manager module with unstable package)
   programs.codex = {
     enable = true;
-    package = pkgs-unstable.codex or pkgs.codex; # Use unstable if available, fallback to stable
+    package = codexWrapped; # Wrapper with OTEL batch env vars for real-time monitoring
     # We don't need backups; overwrite the config directly
     settings.force = lib.mkForce true;
 
@@ -78,6 +93,18 @@ in
         rmcp_client = true;  # Required for MCP servers to work
       };
 
+      # Feature 123: OpenTelemetry configuration for OTLP export
+      otel = {
+        environment = "dev";
+        log_user_prompt = false;
+        exporter = {
+          otlp-http = {
+            endpoint = "http://localhost:4318/v1/logs";
+            protocol = "binary";
+          };
+        };
+      };
+
       # MCP Servers configuration
       # Note: Codex does NOT support a `disabled` flag for MCP servers
       # Servers are either defined (always active) or not defined (unavailable)
@@ -123,4 +150,35 @@ in
       };
     };
   };
+
+  # Feature 123: Create OTEL config section via activation script
+  # The home-manager codex module filters unknown settings, so we append OTEL config manually
+  home.activation.appendCodexOtelConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    CONFIG="$HOME/.codex/config.toml"
+    if [ -L "$CONFIG" ]; then
+      # Config is a symlink to nix store - copy and modify
+      TEMP=$(${pkgs.coreutils}/bin/mktemp)
+      ${pkgs.coreutils}/bin/cat "$CONFIG" > "$TEMP"
+
+      # Only add OTEL if not already present
+      if ! ${pkgs.gnugrep}/bin/grep -q '^\[otel\]' "$TEMP"; then
+        ${pkgs.coreutils}/bin/cat >> "$TEMP" << 'EOF'
+
+# Feature 123: OpenTelemetry configuration for OTLP export
+[otel]
+environment = "dev"
+log_user_prompt = false
+
+[otel.exporter.otlp-http]
+endpoint = "http://localhost:4318/v1/logs"
+protocol = "binary"
+EOF
+      fi
+
+      # Replace symlink with patched file
+      ${pkgs.coreutils}/bin/rm -f "$CONFIG"
+      ${pkgs.coreutils}/bin/mv "$TEMP" "$CONFIG"
+      ${pkgs.coreutils}/bin/chmod 600 "$CONFIG"
+    fi
+  '';
 }

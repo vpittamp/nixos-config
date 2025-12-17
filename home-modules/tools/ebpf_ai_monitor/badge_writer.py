@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .models import BadgeState, MonitoredProcess, ProcessState
+from .models import BadgeState, MonitoredProcess, OTELSessionData, ProcessState
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,7 @@ class BadgeWriter:
         self,
         process: MonitoredProcess,
         increment_count: bool = False,
+        otel_data: Optional[OTELSessionData] = None,
     ) -> bool:
         """Write badge file for a process.
 
@@ -102,6 +103,7 @@ class BadgeWriter:
         Args:
             process: MonitoredProcess to write badge for.
             increment_count: If True, increment the notification count.
+            otel_data: Optional OTEL enrichment data (tokens, session info).
 
         Returns:
             True if badge was written successfully.
@@ -117,6 +119,13 @@ class BadgeWriter:
         # Create badge state
         badge = BadgeState.from_monitored_process(process)
         badge.count = self._counts[window_id]
+
+        # Feature 119/123: Merge OTEL enrichment data if available
+        if otel_data is not None:
+            badge.otel_session_id = otel_data.session_id
+            badge.input_tokens = otel_data.input_tokens
+            badge.output_tokens = otel_data.output_tokens
+            badge.cache_tokens = otel_data.cache_tokens
 
         # Convert to JSON
         badge_json = badge.model_dump_json(indent=2)
