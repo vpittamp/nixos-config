@@ -92,7 +92,7 @@ in
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix  # Feature 117: User-level daemon service
-    ./services/tmux-ai-monitor.nix    # Feature 117: tmux AI process monitoring
+    # NOTE: tmux-ai-monitor removed - replaced by eBPF monitor (Feature 119)
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
     ./tools/i3pm-workspace-mode-wrapper.nix  # Feature 042: Workspace mode IPC wrapper (temp until TS CLI integration)
@@ -151,13 +151,6 @@ in
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "DEBUG";  # Temporary for testing
-  };
-
-  # Feature 117: tmux AI assistant monitor service
-  # Detects claude/codex processes in tmux panes and creates badges
-  services.tmux-ai-monitor = {
-    enable = true;
-    pollInterval = 300;  # 300ms default per research.md R10
   };
 
   # Feature 047: Sway Dynamic Configuration Management

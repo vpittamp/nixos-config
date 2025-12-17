@@ -181,6 +181,8 @@ journalctl --user -u i3-project-event-listener -f
 - File-based badges at `$XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json` (117-improve-notification-progress-indicators)
 - Nix (configuration), Bash (scripts), Yuck (eww widgets), CSS (styling) + eww 0.4+, swaymsg (Sway IPC), jq, bash (119-fix-window-close-actions)
 - N/A (eww state is in-memory, config in ~/.config/eww-monitoring-panel) (119-fix-window-close-actions)
+- Python 3.11+ (userspace daemon with BCC), bpftrace scripts for eBPF probes + BCC (BPF Compiler Collection), libbpf, bpftrace, Pydantic (data models), i3ipc.aio (Sway IPC) (119-explore-ebpf-monitor)
+- File-based badges at `$XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json` (existing format) (119-explore-ebpf-monitor)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools

@@ -1,0 +1,58 @@
+#!/usr/bin/env bpftrace
+/*
+ * stdin-monitor.bt - Monitor stdin reads for AI agent processes
+ *
+ * This bpftrace script monitors when processes read from stdin (fd 0).
+ * Useful for debugging and validating the eBPF monitoring approach.
+ *
+ * Usage:
+ *   sudo bpftrace stdin-monitor.bt
+ *
+ * To filter for specific processes:
+ *   sudo bpftrace -e 'tracepoint:syscalls:sys_enter_read /args->fd == 0 && comm == "claude"/ { printf("claude read\n"); }'
+ */
+
+BEGIN
+{
+    printf("Monitoring stdin reads for AI agent processes...\n");
+    printf("Target processes: claude, codex\n");
+    printf("Press Ctrl+C to exit\n\n");
+    printf("%-16s %-6s %-8s %s\n", "COMM", "PID", "FD", "EVENT");
+}
+
+// Track when target processes enter read syscall on stdin
+tracepoint:syscalls:sys_enter_read
+/args->fd == 0 && (comm == "claude" || comm == "codex")/
+{
+    @read_start[pid] = nsecs;
+    printf("%-16s %-6d %-8d ENTER_READ\n", comm, pid, args->fd);
+}
+
+// Track when read syscall completes
+tracepoint:syscalls:sys_exit_read
+/@read_start[pid]/
+{
+    $duration_ms = (nsecs - @read_start[pid]) / 1000000;
+    printf("%-16s %-6d %-8s EXIT_READ (duration: %dms)\n", comm, pid, "-", $duration_ms);
+
+    // Check if this was a long read (likely waiting for input)
+    if ($duration_ms > 1000) {
+        printf("  ^ WAITING for input detected! (>1s in read)\n");
+    }
+
+    delete(@read_start[pid]);
+}
+
+// Track process exits
+tracepoint:sched:sched_process_exit
+/comm == "claude" || comm == "codex"/
+{
+    printf("%-16s %-6d %-8s EXIT\n", comm, pid, "-");
+    delete(@read_start[pid]);
+}
+
+END
+{
+    clear(@read_start);
+    printf("\nMonitoring stopped.\n");
+}

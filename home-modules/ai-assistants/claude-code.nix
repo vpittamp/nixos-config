@@ -1,9 +1,10 @@
 { config, pkgs, lib, inputs, self, pkgs-unstable ? pkgs, ... }:
 
 let
-  # Feature 117: Suppress legacy hooks when tmux-ai-monitor is enabled
-  # This allows easy rollback by just disabling the monitor service
-  tmuxMonitorEnabled = config.services.tmux-ai-monitor.enable or false;
+  # Feature 119: Suppress legacy hooks when eBPF monitor service is enabled
+  # Legacy tmux-ai-monitor removed - eBPF monitor provides better state detection
+  ebpfMonitorEnabled = config.services.ebpf-ai-monitor.enable or false;
+  aiMonitorEnabled = ebpfMonitorEnabled;
 
   # Use claude-code from the dedicated flake for latest version (2.0.1)
   # Fall back to nixpkgs-unstable if flake not available
@@ -106,39 +107,9 @@ lib.mkIf enableClaudeCode {
             timeout = 5;
           }];
         }];
-      } // lib.optionalAttrs (!tmuxMonitorEnabled) {
-        # Feature 117: Legacy hooks suppressed when tmux-ai-monitor is enabled
-        # The tmux-based detection is more reliable and works for both Claude Code and Codex
-        # These hooks remain available for easy rollback by disabling tmux-ai-monitor
-
-        # UserPromptSubmit hook - Feature 095/117: Activity indicator for Claude Code
-        # Creates "working" badge in monitoring panel when user submits a prompt
-        # Shows spinner animation indicating Claude Code is processing
-        UserPromptSubmit = [{
-          hooks = [{
-            type = "command";
-            # Feature 117: Hook creates badge file at $XDG_RUNTIME_DIR/i3pm-badges/
-            # File-based storage is single source of truth (no IPC)
-            command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
-            # Short timeout - file write is quick
-            timeout = 3;
-          }];
-        }];
-
-        # Stop hook - Notify when Claude Code finishes and awaits input
-        # Feature 095/117: Changes badge state from "working" to "stopped"
-        # Sends concise desktop notification with action to return to terminal
-        Stop = [{
-          hooks = [{
-            type = "command";
-            # Feature 117: Hook updates badge file to "stopped" state (bell icon)
-            # Sends notification with project name only (concise format)
-            # notify-send -w blocks until user clicks action or dismisses
-            command = "${self}/scripts/claude-hooks/stop-notification.sh";
-            # Longer timeout - notify-send -w blocks until user responds
-            timeout = 300;
-          }];
-        }];
+      # Feature 119: Legacy hooks suppressed - eBPF monitor now handles badge updates
+      # The eBPF-based detection is more reliable and tracks actual stdin read states
+      # TODO: Re-enable hooks conditionally when eBPF monitor is disabled
       };
 
       # Permissions configuration for sandboxed environment

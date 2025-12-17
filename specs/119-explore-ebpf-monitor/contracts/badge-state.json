@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "badge-state.json",
+  "title": "BadgeState",
+  "description": "Badge state file format for AI agent process monitoring. Written by ebpf-ai-monitor daemon, consumed by eww monitoring panel.",
+  "type": "object",
+  "required": ["window_id", "state", "source", "timestamp"],
+  "properties": {
+    "window_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Sway container ID for the window containing the AI process"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["working", "stopped"],
+      "description": "Current state: 'working' = AI processing, 'stopped' = AI waiting for input"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["claude-code", "codex", "generic"],
+      "description": "AI agent type identifier"
+    },
+    "project": {
+      "type": "string",
+      "description": "Project name from I3PM_PROJECT_NAME environment variable",
+      "default": ""
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999,
+      "default": 1,
+      "description": "Notification count (increments on repeated completions)"
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Unix timestamp when badge was last updated"
+    },
+    "needs_attention": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when AI completed and user hasn't focused window yet"
+    },
+    "session_started": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Unix timestamp when AI session began"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "window_id": 12345,
+      "state": "working",
+      "source": "claude-code",
+      "project": "nixos-config",
+      "count": 1,
+      "timestamp": 1734355200.5,
+      "needs_attention": false,
+      "session_started": 1734355100.0
+    },
+    {
+      "window_id": 67890,
+      "state": "stopped",
+      "source": "codex",
+      "project": "my-project",
+      "count": 3,
+      "timestamp": 1734355500.2,
+      "needs_attention": true,
+      "session_started": 1734354000.0
+    }
+  ]
+}

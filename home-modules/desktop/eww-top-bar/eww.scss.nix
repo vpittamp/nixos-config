@@ -590,11 +590,18 @@
     color: #6c7086;
   }
 
-  /* Opacity classes for pulsating fade effect */
-  .ai-opacity-04 { opacity: 0.4; }
-  .ai-opacity-06 { opacity: 0.6; }
-  .ai-opacity-08 { opacity: 0.8; }
-  .ai-opacity-10 { opacity: 1.0; }
+  /* Feature 119: CSS-only pulse animation for working indicator */
+  /* Replaces polling-based opacity changes (120ms polls) with CSS keyframes */
+  /* Note: GTK CSS doesn't support transform, using opacity-only animation */
+  .ai-chip-indicator.working-pulse {
+    animation: indicator-working-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes indicator-working-pulse {
+    0% { opacity: 0.4; }
+    50% { opacity: 1.0; }
+    100% { opacity: 0.4; }
+  }
 
   /* Source icon styling (SVG images) */
   .ai-chip-source-icon {

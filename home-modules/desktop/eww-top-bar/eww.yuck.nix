@@ -145,25 +145,15 @@ in
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)
 
-;; Feature 117: AI sessions data (reads badge files for AI assistant status)
-(defpoll ai_sessions_data
-  :interval "2s"
+;; Feature 119: AI sessions data (real-time via deflisten + inotify)
+;; Replaced defpoll (2s latency) with deflisten for instant state updates
+;; Python monitor watches badge files and emits JSON on any change
+(deflisten ai_sessions_data
   :initial '{"sessions":[],"has_working":false}'
-  `bash ~/.config/eww/eww-top-bar/scripts/ai-sessions-status.sh`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/ai-sessions-monitor.py`)
 
-;; Feature 117: Spinner animation for working AI sessions
-(defpoll topbar_spinner_frame
-  :interval "120ms"
-  :run-while {ai_sessions_data.has_working ?: false}
-  :initial "⬤"
-  `bash ~/.config/eww/eww-top-bar/scripts/spinner-frame.sh`)
-
-;; Feature 117: Spinner opacity for fade effect
-(defpoll topbar_spinner_opacity
-  :interval "120ms"
-  :run-while {ai_sessions_data.has_working ?: false}
-  :initial "1.0"
-  `bash ~/.config/eww/eww-top-bar/scripts/spinner-opacity.sh`)
+;; Feature 119: Spinner animation handled by CSS @keyframes ai-working-pulse
+;; Removed polling-based spinner (120ms polls) - CSS animation is more efficient
 
 ;; Interactions / popups
 (defvar volume_popup_visible false)
@@ -432,9 +422,9 @@ in
                 :orientation "h"
                 :space-evenly false
                 :spacing 3
-                ;; State indicator
-                (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
-                       :text {session.state == "working" ? topbar_spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
+                ;; State indicator - CSS @keyframes handles working pulse animation
+                (label :class {"ai-chip-indicator" + (session.state == "working" ? " working-pulse" : "")}
+                       :text {session.state == "working" ? "󰔟" : (session.needs_attention ? "󰂞" : "󰤄")})
                 ;; Source icon (SVG images for claude and codex)
                 (image
                   :class "ai-chip-source-icon"

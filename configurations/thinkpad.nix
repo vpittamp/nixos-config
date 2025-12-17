@@ -45,6 +45,7 @@ in
     ../modules/services/onepassword.nix
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
+    ../modules/services/ebpf-ai-monitor.nix  # Feature 119: eBPF-based AI agent process monitor
 
     # Bare metal optimizations (KVM, Podman, printing, TPM, etc.)
     ../modules/services/bare-metal.nix
@@ -132,6 +133,16 @@ in
     language = "en";
     enableGlobalShortcut = true;
     voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix { };
+  };
+
+  # eBPF AI Agent Monitor (Feature 119) - Kernel-level AI process monitoring
+  # Detects when Claude Code/Codex CLI transition to waiting-for-input state
+  services.ebpf-ai-monitor = {
+    enable = true;
+    user = "vpittamp";
+    processes = [ "claude" "codex" ];
+    waitThreshold = 1000;  # ms before "waiting" state
+    logLevel = "INFO";
   };
 
   # wshowkeys setuid wrapper for workspace mode visual feedback

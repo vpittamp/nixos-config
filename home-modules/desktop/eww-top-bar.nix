@@ -208,20 +208,11 @@ in
       executable = true;
     };
 
-    # Feature 117: AI sessions status script (reads badge files)
-    xdg.configFile."eww/eww-top-bar/scripts/ai-sessions-status.sh" = {
-      source = ./eww-top-bar/scripts/ai-sessions-status.sh;
-      executable = true;
-    };
-
-    # Feature 117: Spinner scripts for AI working animation
-    xdg.configFile."eww/eww-top-bar/scripts/spinner-frame.sh" = {
-      source = ./eww-top-bar/scripts/spinner-frame.sh;
-      executable = true;
-    };
-
-    xdg.configFile."eww/eww-top-bar/scripts/spinner-opacity.sh" = {
-      source = ./eww-top-bar/scripts/spinner-opacity.sh;
+    # Feature 119: AI sessions monitor (real-time via deflisten + inotify)
+    # Replaced polling-based ai-sessions-status.sh with Python GLib file monitor
+    # CSS @keyframes handles working pulse animation (removed spinner-frame.sh, spinner-opacity.sh)
+    xdg.configFile."eww/eww-top-bar/scripts/ai-sessions-monitor.py" = {
+      source = ./eww-top-bar/scripts/ai-sessions-monitor.py;
       executable = true;
     };
 

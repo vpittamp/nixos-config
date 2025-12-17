@@ -24,6 +24,7 @@
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
     ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
+    ../modules/services/ebpf-ai-monitor.nix  # Feature 119: eBPF-based AI agent process monitor
 
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
@@ -183,6 +184,16 @@
   services.sway-tree-monitor = {
     enable = true;
     bufferSize = 500;  # Circular buffer size (default)
+    logLevel = "INFO";
+  };
+
+  # eBPF AI Agent Monitor (Feature 119) - Kernel-level AI process monitoring
+  # Detects when Claude Code/Codex CLI transition to waiting-for-input state
+  services.ebpf-ai-monitor = {
+    enable = true;
+    user = "vpittamp";
+    processes = [ "claude" "codex" ];
+    waitThreshold = 1000;  # ms before "waiting" state
     logLevel = "INFO";
   };
 
