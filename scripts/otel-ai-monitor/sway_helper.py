@@ -200,3 +200,70 @@ def _find_focused_window_with_app(node: dict) -> Optional[dict]:
             return result
 
     return None
+
+
+def window_exists(window_id: int) -> bool:
+    """Check if a Sway window with the given ID exists.
+
+    Args:
+        window_id: Sway container ID to check
+
+    Returns:
+        True if window exists, False otherwise
+    """
+    tree = sway_ipc(4)  # GET_TREE = 4
+    if not tree:
+        # Can't connect to Sway - assume window exists to avoid false cleanups
+        return True
+
+    return _find_window_by_id(tree, window_id) is not None
+
+
+def get_all_window_ids() -> set[int]:
+    """Get all current Sway window IDs.
+
+    Returns:
+        Set of all window container IDs
+    """
+    tree = sway_ipc(4)  # GET_TREE = 4
+    if not tree:
+        return set()
+
+    ids: set[int] = set()
+    _collect_window_ids(tree, ids)
+    return ids
+
+
+def _find_window_by_id(node: dict, window_id: int) -> Optional[dict]:
+    """Recursively find a window by ID in the Sway tree.
+
+    Args:
+        node: Sway tree node
+        window_id: Target window ID
+
+    Returns:
+        Window node dict or None
+    """
+    if node.get("id") == window_id and node.get("pid"):
+        return node
+
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        result = _find_window_by_id(child, window_id)
+        if result:
+            return result
+
+    return None
+
+
+def _collect_window_ids(node: dict, ids: set[int]) -> None:
+    """Recursively collect all window IDs from Sway tree.
+
+    Args:
+        node: Sway tree node
+        ids: Set to add IDs to
+    """
+    if node.get("pid"):  # Has pid means it's a window
+        ids.add(node.get("id"))
+
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        _collect_window_ids(child, ids)
