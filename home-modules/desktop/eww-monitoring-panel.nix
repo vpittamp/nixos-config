@@ -143,33 +143,6 @@ let
     esac
   '';
 
-  # Feature 123: Streaming script to read AI sessions JSON file for deflisten
-  # Continuously outputs JSON every second (deflisten instead of defpoll works better)
-  # Uses hardcoded /run/user/UID path since shell variables may not be available in EWW's shell context
-  aiSessionsStreamScript = pkgs.writeShellScriptBin "eww-ai-sessions-stream" ''
-    #!/usr/bin/env bash
-    RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u)"
-    FILE="$RUNTIME_DIR/otel-ai-sessions.json"
-    FALLBACK='{"type":"session_list","sessions":[],"timestamp":0,"has_working":false}'
-
-    # Output initial value immediately
-    if [[ -f "$FILE" ]]; then
-      ${pkgs.coreutils}/bin/cat "$FILE"
-    else
-      echo "$FALLBACK"
-    fi
-
-    # Then stream updates every second
-    while true; do
-      ${pkgs.coreutils}/bin/sleep 1
-      if [[ -f "$FILE" ]]; then
-        ${pkgs.coreutils}/bin/cat "$FILE"
-      else
-        echo "$FALLBACK"
-      fi
-    done
-  '';
-
   # Service wrapper script - manages daemon and handles toggle signals
   # This keeps all eww processes (daemon + GTK renderers) in the service cgroup
   # preventing orphaned processes when toggle is invoked from keybindings
@@ -3396,13 +3369,12 @@ in
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
-      ;; Feature 123: AI sessions data via OpenTelemetry
-      ;; Uses deflisten with streaming script (reads JSON file every 1s)
-      ;; File-based approach avoids FIFO conflict with eww-top-bar
-      ;; (top-bar uses pipe, monitoring-panel uses JSON file)
+      ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
+      ;; Used to show pulsating indicator on windows running AI assistants
+      ;; Falls back to empty state if pipe doesn't exist
       (deflisten ai_sessions_data
         :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
-        `${aiSessionsStreamScript}/bin/eww-ai-sessions-stream`)
+        `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'`)
 
       ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
       ;; Only runs when Projects tab is active (index 1)
@@ -3436,17 +3408,17 @@ in
         :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `echo '{"status":"disabled","traces":[],"trace_count":0,"active_count":0,"stopped_count":0}'`)
 
-      ;; Feature 110: Pulsating circle for working state
-      ;; Static circle character - animation via opacity only (saves 1 defpoll)
+      ;; Feature 123: Spinner animation - Re-enabled for AI session indicators
+      ;; Only runs when an AI session is in "working" state (event-driven from OTEL)
+      ;; 120ms interval creates smooth pulsating effect while keeping CPU low
       (defpoll spinner_frame
-        :interval "10s"
-        :run-while false
+        :interval "120ms"
+        :run-while {ai_sessions_data.has_working ?: false}
         :initial "⬤"
-        `echo "⬤"`)
+        `${spinnerScript}/bin/eww-spinner-frame`)
 
-      ;; Feature 110: Opacity value for pulsating fade effect
-      ;; Cycles: 0.4 → 0.6 → 0.8 → 1.0 → 1.0 → 0.8 → 0.6 → 0.4
-      ;; Uses ai_sessions_data.has_working from OTEL monitor
+      ;; Feature 123: Opacity for pulsating fade effect
+      ;; Synced with spinner_frame for coordinated animation
       (defpoll spinner_opacity
         :interval "120ms"
         :run-while {ai_sessions_data.has_working ?: false}
@@ -3558,8 +3530,9 @@ in
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
 
-      ;; Feature 125: Panel transparency is automatic based on dock mode
-      ;; Docked = solid (1.0), Overlay = moderate transparency (0.85)
+      ;; Panel transparency control (10-100, default 100% = fully opaque)
+      ;; Adjustable via slider in header - persists across tabs
+      (defvar panel_opacity 100)
 
       ;; Feature 092: Event filter state (all enabled by default)
       ;; Individual event type filters (true = show, false = hide)
@@ -4210,25 +4183,26 @@ in
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
                   ;; Feature 123: AI Session badge with OTEL-based state detection
-                  ;; Uses jq to find session matching this window's ID from monitoring_data.otel_sessions
-                  ;; States: "working" = pulsating circle, "completed" = attention bell, "idle" = hidden
+                  ;; Uses jq to find session matching this window's ID from ai_sessions_data
+                  ;; States: "working" = pulsating indicator, "completed" = attention bell, other = hidden
                   ;; Feature 110: Opacity class for pulsating fade effect
+                  ;; Note: Working state badges stay bright regardless of focus for visibility
                   (label
                     :class {"badge badge-notification" +
-                      (jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                      (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
                         ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
-                        : (jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
                             ? " badge-attention"
-                            : " badge-stopped"))}
-                    :text {jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
-                      ? "⬤"
-                      : (jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                            : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : "")))}
+                    :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                      ? spinner_frame
+                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
                           ? "󰂞"
                           : "")}
-                    :tooltip {jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
-                      ? "Claude Code - " + jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
-                      : jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
-                    :visible {jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ") | select(.state == \"working\" or .state == \"completed\")] | length", "r") != "0"}))))
+                    :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
+                      ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
+                      : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
+                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")] | length", "r") != "0"}))))
             ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
@@ -7399,14 +7373,25 @@ in
         /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 110: Working state - compact pulsating teal indicator */
+      /* Feature 110: Working state - pulsating teal circle on subtle background */
       .badge-working {
         color: ${mocha.teal};
-        background: rgba(148, 226, 213, 0.15);
-        border: 1px solid rgba(148, 226, 213, 0.4);
-        box-shadow: 0 0 6px rgba(148, 226, 213, 0.4);
-        font-size: 12px;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        font-size: 28px;
         font-weight: bold;
+        padding: 2px 6px;
+        border-radius: 8px;
+      }
+
+      /* Feature 123: Attention/completed state - bell icon with warm peach glow */
+      .badge-attention {
+        color: ${mocha.peach};
+        background: rgba(250, 179, 135, 0.15);
+        border: 1px solid rgba(250, 179, 135, 0.4);
+        box-shadow: 0 0 8px rgba(250, 179, 135, 0.4);
+        font-size: 14px;
         padding: 2px 6px;
         border-radius: 8px;
       }
@@ -11642,7 +11627,8 @@ in
         # Feature 117: Depend on i3-project-daemon for IPC connectivity
         # Without this, deflisten/defpoll scripts fail on startup
         # Feature 121: Use sway-session.target for proper Sway lifecycle binding
-        After = [ "sway-session.target" "i3-project-daemon.service" ];
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "sway-session.target" "i3-project-daemon.service" "home-manager-vpittamp.service" ];
         Wants = [ "i3-project-daemon.service" ];
         PartOf = [ "sway-session.target" ];
       };

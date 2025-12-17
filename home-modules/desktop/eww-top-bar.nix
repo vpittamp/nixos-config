@@ -335,7 +335,8 @@ in
         PartOf = [ "sway-session.target" ];
         # Feature 117: Depend on i3-project-daemon for health checks
         # Feature 123: Depend on otel-ai-monitor for AI session indicators
-        After = [ "sway-session.target" "i3-project-daemon.service" "otel-ai-monitor.service" ];
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "sway-session.target" "i3-project-daemon.service" "otel-ai-monitor.service" "home-manager-vpittamp.service" ];
         Wants = [ "i3-project-daemon.service" "otel-ai-monitor.service" ];
       };
 

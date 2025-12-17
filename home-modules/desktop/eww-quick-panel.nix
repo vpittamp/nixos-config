@@ -252,7 +252,8 @@ in {
     systemd.user.services.eww-quick-panel = {
       Unit = {
         Description = "Eww quick settings panel";
-        After = [ "graphical-session.target" "sway-session.target" ];
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "graphical-session.target" "sway-session.target" "home-manager-vpittamp.service" ];
         PartOf = [ "sway-session.target" ];
       };
       Service = {

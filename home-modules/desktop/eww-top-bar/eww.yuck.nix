@@ -598,6 +598,7 @@ in
 ;; Three states: working (pulsating), completed/attention (bell), idle (muted)
 ;; Error state: shows red indicator when pipe is missing (visible failure, not silent)
 ;; Data comes from otel-ai-monitor service via deflisten (event-driven)
+;; Feature 123 Enhancement: Project badge shows branch number (worktrees) or abbreviation
 (defwidget ai-sessions-widget []
   (box :class "ai-sessions-container"
        :visible {(ai_sessions_data.type ?: "") == "error" || arraylength(ai_sessions_data.sessions ?: []) > 0}
