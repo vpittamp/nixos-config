@@ -212,8 +212,11 @@ class OTLPReceiver:
         body = await request.read()
 
         # Handle gzip compression (Rust OTLP exporter uses gzip by default)
+        # Check both Content-Encoding header AND gzip magic bytes (0x1f 0x8b)
         content_encoding = request.headers.get("Content-Encoding", "").lower()
-        if content_encoding == "gzip":
+        is_gzip = content_encoding == "gzip" or (len(body) >= 2 and body[0:2] == b'\x1f\x8b')
+
+        if is_gzip:
             try:
                 body = gzip.decompress(body)
             except Exception as e:
