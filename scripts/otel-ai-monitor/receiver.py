@@ -224,7 +224,12 @@ class OTLPReceiver:
                 return []
 
         otlp_request = ExportLogsServiceRequest()
-        otlp_request.ParseFromString(body)
+        try:
+            otlp_request.ParseFromString(body)
+        except Exception as e:
+            # Log first few bytes for debugging
+            logger.debug(f"Parse failed. Content-Encoding: {content_encoding}, is_gzip: {is_gzip}, body len: {len(body)}, first bytes: {body[:20].hex() if body else 'empty'}")
+            raise
 
         events = []
         for resource_logs in otlp_request.resource_logs:

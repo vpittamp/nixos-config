@@ -54,7 +54,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.6.1";  # Add process-based detection fallback for Codex
+    version = "0.6.2";  # Add process-based detection fallback for Codex
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
