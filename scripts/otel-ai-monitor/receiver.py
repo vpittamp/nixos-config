@@ -229,7 +229,9 @@ class OTLPReceiver:
         except Exception as e:
             # Log first few bytes for debugging
             logger.debug(f"Parse failed. Content-Encoding: {content_encoding}, is_gzip: {is_gzip}, body len: {len(body)}, first bytes: {body[:20].hex() if body else 'empty'}")
-            raise
+            # Some OTLP exporters may have schema differences - skip silently for now
+            # The process monitor provides fallback detection for Codex
+            return []
 
         events = []
         for resource_logs in otlp_request.resource_logs:
