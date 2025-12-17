@@ -197,7 +197,10 @@ class OTLPReceiver:
         """Parse protobuf-encoded OTLP logs request.
 
         Uses opentelemetry-proto library to parse ExportLogsServiceRequest.
+        Handles gzip compression if Content-Encoding header is present.
         """
+        import gzip
+
         try:
             from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
                 ExportLogsServiceRequest,
@@ -207,6 +210,16 @@ class OTLPReceiver:
             return []
 
         body = await request.read()
+
+        # Handle gzip compression (Rust OTLP exporter uses gzip by default)
+        content_encoding = request.headers.get("Content-Encoding", "").lower()
+        if content_encoding == "gzip":
+            try:
+                body = gzip.decompress(body)
+            except Exception as e:
+                logger.error(f"Failed to decompress gzip body: {e}")
+                return []
+
         otlp_request = ExportLogsServiceRequest()
         otlp_request.ParseFromString(body)
 
