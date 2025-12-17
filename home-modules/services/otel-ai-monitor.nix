@@ -26,16 +26,17 @@ let
   ]);
 
   # opentelemetry-proto package from PyPI (not in nixpkgs)
-  # Version 1.34.1 - protobuf constraint is <6.0 but 6.x works in practice
+  # Version 1.39.1 - includes OTLP proto v1.7 with event_name field
+  # Needed to parse newer Rust OTLP exporter messages
   opentelemetryProto = pkgs.python311Packages.buildPythonPackage rec {
     pname = "opentelemetry-proto";
-    version = "1.34.1";
+    version = "1.39.1";
     pyproject = true;
 
     src = pkgs.fetchPypi {
       inherit version;
       pname = "opentelemetry_proto";
-      hash = "sha256-FihiFOQFwhH8d0GH8+S7sTUSkLjfuI6JSK8gnOhbcZ4=";
+      hash = "sha256-bI4FFE/A0+1NIsIonGsSbgO80Oan2g8Wzt0uHCdy4sg=";
     };
 
     nativeBuildInputs = [ pkgs.python311Packages.pythonRelaxDepsHook ];
