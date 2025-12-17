@@ -146,8 +146,15 @@ class OutputWriter:
 
             try:
                 line = json.dumps(data, separators=(",", ":")) + "\n"
-                self._output.write(line)
-                self._output.flush()
+                # CRITICAL: Use asyncio.to_thread for blocking I/O operations
+                # Without this, write() and flush() can block the entire event loop
+                # when the pipe buffer is full, causing Claude Code to hang
+                await asyncio.wait_for(
+                    asyncio.to_thread(self._sync_write, line),
+                    timeout=1.0  # 1 second timeout to prevent indefinite blocking
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Pipe write timed out, dropping message")
             except BrokenPipeError:
                 # Reader disconnected
                 logger.warning("Pipe reader disconnected")
@@ -155,6 +162,16 @@ class OutputWriter:
                     self._output = None
             except Exception as e:
                 logger.error(f"Error writing output: {e}")
+
+    def _sync_write(self, line: str) -> None:
+        """Synchronous write helper for thread execution.
+
+        Args:
+            line: The line to write to output
+        """
+        if self._output is not None:
+            self._output.write(line)
+            self._output.flush()
 
 
 def get_default_pipe_path() -> Path:

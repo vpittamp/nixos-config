@@ -62,7 +62,7 @@ async def send_completion_notification(session: "Session") -> None:
     ]
 
     try:
-        # Run notify-send asynchronously
+        # Run notify-send asynchronously with timeout
         # Note: We don't use -w (wait) here as that blocks until dismissed
         # The action callback is handled by SwayNC separately
         process = await asyncio.create_subprocess_exec(
@@ -70,7 +70,12 @@ async def send_completion_notification(session: "Session") -> None:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await process.communicate()
+        try:
+            _, stderr = await asyncio.wait_for(process.communicate(), timeout=5.0)
+        except asyncio.TimeoutError:
+            process.kill()
+            logger.warning("notify-send timed out after 5 seconds")
+            return
 
         if process.returncode != 0:
             # notify-send may not support --action, try without
