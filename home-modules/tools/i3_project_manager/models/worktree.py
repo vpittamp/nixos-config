@@ -94,6 +94,11 @@ class Worktree(BaseModel):
     last_commit_timestamp: int = Field(default=0, description="Unix timestamp of last commit")
     last_commit_message: str = Field(default="", description="Last commit message (truncated)")
 
+    # Feature 120: Diff statistics for line counts
+    additions: int = Field(default=0, description="Total lines added across uncommitted changes")
+    deletions: int = Field(default=0, description="Total lines deleted across uncommitted changes")
+    diff_error: bool = Field(default=False, description="True if diff stats could not be computed")
+
     @computed_field
     @property
     def display_name(self) -> str:

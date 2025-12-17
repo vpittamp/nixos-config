@@ -375,6 +375,76 @@ def generate_unique_name(base_name: str, existing_names: Set[str]) -> str:
     return f"{base_name}-{counter}"
 
 
+def get_diff_stats(worktree_path: str, timeout: float = 2.0) -> Tuple[int, int]:
+    """
+    Feature 120 T004: Get line addition/deletion counts for uncommitted changes.
+
+    Uses `git diff --numstat HEAD` to get machine-readable output.
+    Parses tab-separated format: additions<TAB>deletions<TAB>filename.
+    Binary files (showing "-" for counts) are excluded.
+
+    Args:
+        worktree_path: Path to the worktree directory
+        timeout: Maximum time in seconds for git command (default 2s)
+
+    Returns:
+        Tuple of (additions, deletions) as integers.
+        Returns (0, 0) on error or timeout.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", worktree_path, "diff", "--numstat", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        if result.returncode != 0:
+            return (0, 0)
+
+        additions = 0
+        deletions = 0
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                # Skip binary files (marked with "-" for counts)
+                if parts[0] == '-' or parts[1] == '-':
+                    continue
+                try:
+                    additions += int(parts[0])
+                    deletions += int(parts[1])
+                except ValueError:
+                    # Skip malformed lines
+                    pass
+        return (additions, deletions)
+    except subprocess.TimeoutExpired:
+        return (0, 0)
+    except (OSError, Exception):
+        return (0, 0)
+
+
+def format_count(count: int, max_display: int = 9999) -> str:
+    """
+    Feature 120 T006: Format count with cap for display.
+
+    Caps large numbers at max_display to prevent UI overflow.
+    Returns formatted string like "+123" or "+9999" (capped).
+
+    Args:
+        count: The count to format
+        max_display: Maximum value to show before capping (default 9999)
+
+    Returns:
+        Formatted string. Empty string if count is 0.
+    """
+    if count <= 0:
+        return ""
+    if count > max_display:
+        return f"+{max_display}"
+    return f"+{count}"
+
+
 def is_git_repository(directory: str) -> bool:
     """
     Check if a directory is a git repository (has .git file or directory).

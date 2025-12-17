@@ -4013,6 +4013,47 @@ in
                 :visible {project.is_active}
                 :tooltip "Active project"
                 :text "●")
+              ;; Feature 120 T015: Git status indicators in project header (Windows view)
+              (box
+                :class "header-git-status"
+                :orientation "h"
+                :space-evenly false
+                :visible {project.header_has_git ?: false}
+                ;; Conflict indicator (highest priority)
+                (label
+                  :class "git-conflict-small"
+                  :visible {project.header_git_has_conflicts ?: false}
+                  :text " ⚠"
+                  :tooltip "Has merge conflicts - resolve before continuing")
+                ;; Dirty indicator
+                (label
+                  :class "git-dirty-small"
+                  :visible {project.header_git_dirty ?: false}
+                  :text " ●"
+                  :tooltip "Uncommitted changes")
+                ;; Sync indicators (ahead/behind)
+                (label
+                  :class "git-sync-small-ahead"
+                  :visible {(project.header_git_ahead ?: 0) > 0}
+                  :text {" ↑" + (project.header_git_ahead ?: 0)}
+                  :tooltip {(project.header_git_ahead ?: 0) + " commits ahead - push when ready"})
+                (label
+                  :class "git-sync-small-behind"
+                  :visible {(project.header_git_behind ?: 0) > 0}
+                  :text {" ↓" + (project.header_git_behind ?: 0)}
+                  :tooltip {(project.header_git_behind ?: 0) + " commits behind - pull needed"})
+                ;; Stale indicator
+                (label
+                  :class "badge-stale-small"
+                  :visible {project.header_git_is_stale ?: false}
+                  :text " 💤"
+                  :tooltip "No activity in 30+ days")
+                ;; Merged indicator
+                (label
+                  :class "badge-merged-small"
+                  :visible {project.header_git_merged ?: false}
+                  :text " ✓"
+                  :tooltip "Branch merged - can be cleaned up"))
               (box
                 :hexpand true
                 :halign "end"
@@ -4927,7 +4968,38 @@ in
                       :class "badge-stale"
                       :visible {worktree.git_is_stale ?: false}
                       :text " 💤"
-                      :tooltip "No activity in 30+ days"))
+                      :tooltip "No activity in 30+ days")
+                    ;; Feature 120 T007: Error indicator for git command failures
+                    (label
+                      :class "git-error"
+                      :visible {worktree.git_status_error ?: false}
+                      :text " ?"
+                      :tooltip "Git status unavailable"))
+                  ;; Feature 120 T026-T028: Diff bar showing line additions/deletions
+                  (box
+                    :class "diff-bar-row"
+                    :orientation "h"
+                    :space-evenly false
+                    :visible {((worktree.git_additions ?: 0) + (worktree.git_deletions ?: 0)) > 0}
+                    (box
+                      :class "diff-bar-container"
+                      :width 60
+                      :tooltip {worktree.git_diff_tooltip ?: ""}
+                      (box
+                        :class "diff-bar-additions"
+                        :width {(worktree.git_additions ?: 0) > 0 ?
+                          (60 * (worktree.git_additions ?: 0) / ((worktree.git_additions ?: 0) + (worktree.git_deletions ?: 0) + 0.001)) : 0}
+                        :height 4)
+                      (box
+                        :class "diff-bar-deletions"
+                        :width {(worktree.git_deletions ?: 0) > 0 ?
+                          (60 * (worktree.git_deletions ?: 0) / ((worktree.git_additions ?: 0) + (worktree.git_deletions ?: 0) + 0.001)) : 0}
+                        :height 4))
+                    (label
+                      :class "diff-stats-text"
+                      :text {" " + (worktree.git_additions_display ?: "") +
+                        ((worktree.git_additions_display ?: "") != "" && (worktree.git_deletions_display ?: "") != "" ? " " : "") +
+                        (worktree.git_deletions_display ?: "")}))
                   ;; Feature 109: Path row with copy button on hover
                   (box
                     :class "worktree-path-row"
@@ -9328,6 +9400,88 @@ in
         font-size: 10px;
         margin-left: 4px;
         opacity: 0.8;
+      }
+
+      /* Feature 120 T012/T027: Git error indicator (yellow/warning) */
+      .git-error {
+        color: ${mocha.yellow};
+        font-size: 11px;
+        margin-left: 4px;
+        font-weight: bold;
+      }
+
+      /* Feature 120 T026-T028: Diff bar visualization */
+      .diff-bar-row {
+        margin-top: 2px;
+        margin-bottom: 2px;
+      }
+
+      .diff-bar-container {
+        height: 4px;
+        border-radius: 2px;
+        background: transparent;
+        margin-right: 4px;
+      }
+
+      .diff-bar-additions {
+        background: ${mocha.green};
+        border-radius: 2px 0 0 2px;
+      }
+
+      .diff-bar-deletions {
+        background: ${mocha.red};
+        border-radius: 0 2px 2px 0;
+      }
+
+      .diff-stats-text {
+        font-size: 9px;
+        color: ${mocha.subtext0};
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      /* Feature 120 T016: Compact header git indicators for Windows view project headers */
+      .header-git-status {
+        margin-left: 4px;
+      }
+
+      .git-dirty-small {
+        color: ${mocha.red};
+        font-size: 9px;
+        margin-left: 2px;
+      }
+
+      .git-sync-small-ahead {
+        color: ${mocha.green};
+        font-size: 9px;
+        margin-left: 2px;
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      .git-sync-small-behind {
+        color: ${mocha.yellow};
+        font-size: 9px;
+        margin-left: 2px;
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      .badge-merged-small {
+        color: ${mocha.teal};
+        font-size: 9px;
+        margin-left: 2px;
+      }
+
+      .badge-stale-small {
+        color: ${mocha.overlay0};
+        font-size: 8px;
+        margin-left: 2px;
+        opacity: 0.8;
+      }
+
+      .git-conflict-small {
+        color: ${mocha.red};
+        font-size: 9px;
+        margin-left: 2px;
+        font-weight: bold;
       }
 
       /* Feature 108 T022: Verify dirty indicator uses red */

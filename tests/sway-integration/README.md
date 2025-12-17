@@ -257,6 +257,58 @@ See `test-cases/` directory for complete examples:
 - `workspace-assignment.json` - App workspace assignment (Feature 001)
 - `window-focus.json` - Focus navigation between windows
 
+## Graphical VM Testing (with Screenshots)
+
+For tests that need to capture actual Sway UI screenshots (not just headless testing), use these **required** configurations:
+
+### QEMU Display Configuration (CRITICAL)
+
+```nix
+virtualisation.qemu.options = [
+  "-vga none"              # REQUIRED: Disable default VGA
+  "-device virtio-gpu-pci" # Use virtio-gpu for Wayland
+  "-vnc :0"                # Optional: VNC for interactive debugging
+];
+```
+
+**Why `-vga none` is essential:** Without it, QEMU creates two display devices and `screendump` captures the wrong (empty) one.
+
+### Sway Renderer Configuration (CRITICAL)
+
+```nix
+environment.sessionVariables = {
+  WLR_RENDERER = "pixman";        # REQUIRED: Software renderer for VM
+  WLR_NO_HARDWARE_CURSORS = "1";  # VM doesn't support hardware cursors
+};
+```
+
+**Why `WLR_RENDERER = "pixman"` is essential:** QEMU VMs lack full GPU driver support. The GLES2 hardware renderer doesn't work, causing blank screenshots.
+
+### Test Files for Graphical Testing
+
+| File | Purpose |
+|------|---------|
+| `simple-graphical-vm.nix` | Basic Sway + foot terminal - verifies graphics work |
+| `graphical-vm.nix` | Full system with eww monitoring panel + i3pm daemon |
+
+### How QEMU Screenshots Work
+
+```
+NixOS Test Driver
+  └─ machine.screenshot("name")
+      └─ QEMU Monitor: screendump /tmp/file.ppm
+          └─ Captures virtio-gpu framebuffer
+              └─ Sway renders here via pixman → PNG
+```
+
+### Common Graphical Testing Issues
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| Blank screenshots | Missing `-vga none` | Add `-vga none` to qemu.options |
+| Sway won't start | Using default VGA | Use `-vga none -device virtio-gpu-pci` |
+| QEMU monitor breaks | Console log spam | Reduce service verbosity or redirect stderr |
+
 ## Troubleshooting
 
 ### Test Hangs or Times Out

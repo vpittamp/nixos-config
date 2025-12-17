@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WorktreeDisplayData",
+  "description": "Data structure for eww worktree display with enhanced git status indicators (Feature 120)",
+  "type": "object",
+  "required": ["branch", "commit", "path"],
+  "properties": {
+    "branch": {
+      "type": "string",
+      "description": "Git branch name"
+    },
+    "commit": {
+      "type": "string",
+      "minLength": 7,
+      "description": "Short commit hash (7+ characters)"
+    },
+    "path": {
+      "type": "string",
+      "description": "Absolute path to worktree directory"
+    },
+    "qualified_name": {
+      "type": "string",
+      "description": "Unique identifier: account/repo:branch"
+    },
+    "branch_number": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]+$",
+      "description": "Numeric prefix from branch name (e.g., '120' from '120-feature')"
+    },
+    "branch_description": {
+      "type": "string",
+      "description": "Branch name without numeric prefix"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if this is the currently active worktree"
+    },
+
+    "git_is_dirty": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if worktree has uncommitted changes"
+    },
+    "git_is_merged": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if branch is merged into main/master"
+    },
+    "git_is_stale": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if no commits in 30+ days"
+    },
+    "git_has_conflicts": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if unresolved merge conflicts exist"
+    },
+    "git_status_error": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if git status could not be determined"
+    },
+
+    "git_ahead": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Commits ahead of remote tracking branch"
+    },
+    "git_behind": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Commits behind remote tracking branch"
+    },
+    "git_staged_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of staged files"
+    },
+    "git_modified_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of unstaged modified files"
+    },
+    "git_untracked_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of untracked files"
+    },
+
+    "git_additions": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Total lines added across all uncommitted changes (Feature 120)"
+    },
+    "git_deletions": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Total lines deleted across all uncommitted changes (Feature 120)"
+    },
+    "git_diff_total": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Total lines changed (additions + deletions) (Feature 120)"
+    },
+    "git_additions_display": {
+      "type": "string",
+      "default": "",
+      "description": "Formatted additions for display: '+123' or '+9999' if capped (Feature 120)"
+    },
+    "git_deletions_display": {
+      "type": "string",
+      "default": "",
+      "description": "Formatted deletions for display: '-45' or '-9999' if capped (Feature 120)"
+    },
+
+    "git_dirty_indicator": {
+      "type": "string",
+      "enum": ["●", ""],
+      "description": "Visual indicator for dirty state"
+    },
+    "git_sync_indicator": {
+      "type": "string",
+      "description": "Combined sync indicator: '↑3 ↓2' or empty"
+    },
+    "git_merged_indicator": {
+      "type": "string",
+      "enum": ["✓", ""],
+      "description": "Visual indicator for merged state"
+    },
+    "git_stale_indicator": {
+      "type": "string",
+      "enum": ["💤", ""],
+      "description": "Visual indicator for stale state"
+    },
+    "git_conflict_indicator": {
+      "type": "string",
+      "enum": ["⚠", ""],
+      "description": "Visual indicator for conflict state"
+    },
+    "git_error_indicator": {
+      "type": "string",
+      "enum": ["?", ""],
+      "description": "Visual indicator for error/unknown state"
+    },
+
+    "git_status_tooltip": {
+      "type": "string",
+      "description": "Multi-line tooltip with full status details"
+    },
+    "git_diff_tooltip": {
+      "type": "string",
+      "description": "Tooltip for diff bar: '+123 additions, -45 deletions' (Feature 120)"
+    },
+    "git_last_commit_relative": {
+      "type": "string",
+      "description": "Relative time since last commit: '2h ago', '3 days ago'"
+    },
+    "git_last_commit_message": {
+      "type": "string",
+      "description": "Last commit message (truncated to 50 chars)"
+    }
+  }
+}

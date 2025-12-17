@@ -181,6 +181,8 @@ journalctl --user -u i3-project-event-listener -f
 - File-based badges at `$XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json` (117-improve-notification-progress-indicators)
 - Nix (configuration), Bash (scripts), Yuck (eww widgets), CSS (styling) + eww 0.4+, swaymsg (Sway IPC), jq, bash (119-fix-window-close-actions)
 - N/A (eww state is in-memory, config in ~/.config/eww-monitoring-panel) (119-fix-window-close-actions)
+- Python 3.11+ (monitoring_data.py, git_utils.py), Yuck/GTK (eww widgets), SCSS (styling) + eww 0.4+, i3ipc.aio, Pydantic, existing i3_project_manager infrastructure (120-improve-git-changes)
+- N/A (data computed on demand from git commands) (120-improve-git-changes)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools

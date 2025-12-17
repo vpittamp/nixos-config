@@ -57,6 +57,8 @@ from i3_project_manager.services.git_utils import (
     detect_orphaned_worktrees,
     get_bare_repository_path,
     format_relative_time,
+    get_diff_stats,
+    format_count,
 )
 
 # Import i3ipc for event subscriptions in listen mode
@@ -1354,13 +1356,67 @@ def transform_to_project_view(monitors: List[Dict[str, Any]]) -> List[Dict[str, 
     # Convert dict to sorted list (alphabetical by project name)
     projects = sorted(projects_dict.values(), key=lambda p: p["name"].lower())
 
+    # Feature 120 T013-T014: Add git status to project headers
+    # Look up project directories and get git status for Windows view headers
+    from i3_project_manager.services.git_utils import get_git_metadata
+    projects_dir = Path.home() / ".config/i3/projects"
+    for project in projects:
+        project_name = project["name"]
+        project_file = projects_dir / f"{project_name}.json"
+        # Default git status (no status available)
+        project["header_git_dirty"] = False
+        project["header_git_ahead"] = 0
+        project["header_git_behind"] = 0
+        project["header_git_merged"] = False
+        project["header_git_has_conflicts"] = False
+        project["header_git_additions"] = 0
+        project["header_git_deletions"] = 0
+        project["header_git_is_stale"] = False
+        project["header_has_git"] = False
+
+        if project_file.exists():
+            try:
+                with open(project_file, 'r') as f:
+                    project_data = json.load(f)
+                directory = project_data.get("directory", "")
+                if directory:
+                    git_meta = get_git_metadata(directory)
+                    if git_meta:
+                        project["header_has_git"] = True
+                        project["header_git_dirty"] = not git_meta.get("is_clean", True)
+                        project["header_git_ahead"] = git_meta.get("ahead_count", 0)
+                        project["header_git_behind"] = git_meta.get("behind_count", 0)
+                        project["header_git_merged"] = git_meta.get("is_merged", False)
+                        project["header_git_has_conflicts"] = git_meta.get("has_conflicts", False)
+                        project["header_git_is_stale"] = git_meta.get("is_stale", False)
+                        # Feature 120: Get diff stats for header
+                        if project["header_git_dirty"]:
+                            try:
+                                additions, deletions = get_diff_stats(directory, timeout=2.0)
+                                project["header_git_additions"] = additions
+                                project["header_git_deletions"] = deletions
+                            except Exception:
+                                pass
+            except (json.JSONDecodeError, IOError):
+                pass
+
     # Add global windows as a separate "project" at the end
     if global_windows:
         projects.append({
             "name": "Global Windows",
             "scope": "global",
             "window_count": len(global_windows),
-            "windows": global_windows
+            "windows": global_windows,
+            # Global windows don't have git status
+            "header_has_git": False,
+            "header_git_dirty": False,
+            "header_git_ahead": 0,
+            "header_git_behind": 0,
+            "header_git_merged": False,
+            "header_git_has_conflicts": False,
+            "header_git_additions": 0,
+            "header_git_deletions": 0,
+            "header_git_is_stale": False,
         })
 
     return projects
@@ -1854,6 +1910,46 @@ async def query_projects_data() -> Dict[str, Any]:
                 wt["git_is_stale"] = wt.get("is_stale", False)
                 wt["git_stale_indicator"] = "💤" if wt["git_is_stale"] else ""
 
+                # Feature 120 T007/T024: Diff statistics (line additions/deletions)
+                # Compute diff stats with 2s timeout per worktree
+                worktree_path = wt.get("path", "")
+                diff_additions, diff_deletions = (0, 0)
+                diff_error = False
+                if worktree_path and wt["git_is_dirty"]:
+                    try:
+                        diff_additions, diff_deletions = get_diff_stats(worktree_path, timeout=2.0)
+                    except Exception:
+                        diff_error = True
+
+                wt["git_additions"] = diff_additions
+                wt["git_deletions"] = diff_deletions
+                wt["git_diff_total"] = diff_additions + diff_deletions
+
+                # Feature 120 T022: Formatted display strings with 9999 cap
+                if diff_additions > 9999:
+                    wt["git_additions_display"] = "+9999"
+                elif diff_additions > 0:
+                    wt["git_additions_display"] = f"+{diff_additions}"
+                else:
+                    wt["git_additions_display"] = ""
+
+                if diff_deletions > 9999:
+                    wt["git_deletions_display"] = "-9999"
+                elif diff_deletions > 0:
+                    wt["git_deletions_display"] = f"-{diff_deletions}"
+                else:
+                    wt["git_deletions_display"] = ""
+
+                # Feature 120 T023: Diff tooltip
+                if diff_additions > 0 or diff_deletions > 0:
+                    wt["git_diff_tooltip"] = f"+{diff_additions} additions, -{diff_deletions} deletions"
+                else:
+                    wt["git_diff_tooltip"] = ""
+
+                # Feature 120 T007/T031: Error/status indicator for git failures
+                wt["git_status_error"] = diff_error
+                wt["git_error_indicator"] = "?" if diff_error else ""
+
                 # Feature 108 T026: Build comprehensive tooltip
                 tooltip_parts = []
                 tooltip_parts.append(f"Branch: {wt['branch']}")
@@ -1885,13 +1981,24 @@ async def query_projects_data() -> Dict[str, Any]:
                         sync_desc.append(f"{wt['git_behind']} to pull")
                     tooltip_parts.append(f"Sync: {', '.join(sync_desc)}")
 
-                # Merge/stale/conflict status
-                if wt["git_is_merged"]:
-                    tooltip_parts.append("Merged: ✓ merged into main")
-                if wt["git_is_stale"]:
-                    tooltip_parts.append("Stale: no activity in 30+ days")
+                # Feature 120 T018: Actionable status with suggestions
+                # Merge/stale/conflict status with action hints
                 if wt["git_has_conflicts"]:
-                    tooltip_parts.append("⚠ Has unresolved merge conflicts")
+                    tooltip_parts.append("⚠ Merge conflicts - resolve before continuing")
+                if wt["git_is_dirty"]:
+                    tooltip_parts.append("💡 Uncommitted changes - commit or stash")
+                if wt["git_behind"] > 0:
+                    tooltip_parts.append(f"💡 {wt['git_behind']} commits behind - pull needed")
+                if wt["git_ahead"] > 0 and wt["git_behind"] == 0:
+                    tooltip_parts.append(f"💡 {wt['git_ahead']} commits ahead - push when ready")
+                if wt["git_is_merged"]:
+                    tooltip_parts.append("✓ Branch merged - can be cleaned up")
+                if wt["git_is_stale"]:
+                    tooltip_parts.append("💤 Stale - no activity in 30+ days")
+
+                # Feature 120 T023: Diff statistics in tooltip
+                if diff_additions > 0 or diff_deletions > 0:
+                    tooltip_parts.append(f"Changes: +{diff_additions}/-{diff_deletions} lines")
 
                 wt["git_status_tooltip"] = "\\n".join(tooltip_parts)
 

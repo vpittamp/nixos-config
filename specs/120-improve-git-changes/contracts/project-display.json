@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProjectDisplayData",
+  "description": "Data structure for eww project display with aggregated git status (Feature 120)",
+  "type": "object",
+  "required": ["name", "scope", "window_count"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Project name"
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["scoped", "global"],
+      "description": "Project scope type"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if this is the currently active project"
+    },
+    "window_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of windows associated with this project"
+    },
+    "worktrees": {
+      "type": "array",
+      "items": {
+        "$ref": "worktree-display.json"
+      },
+      "description": "List of worktrees associated with this project"
+    },
+
+    "header_git_dirty": {
+      "type": "boolean",
+      "default": false,
+      "description": "Git dirty status for project header display (from first worktree) (Feature 120)"
+    },
+    "header_git_ahead": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Commits ahead for project header display (from first worktree) (Feature 120)"
+    },
+    "header_git_behind": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Commits behind for project header display (from first worktree) (Feature 120)"
+    },
+    "header_git_merged": {
+      "type": "boolean",
+      "default": false,
+      "description": "Merged status for project header display (from first worktree) (Feature 120)"
+    },
+    "header_git_has_conflicts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Conflict status for project header display (from first worktree) (Feature 120)"
+    },
+    "header_git_additions": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Line additions for project header display (from first worktree) (Feature 120)"
+    },
+    "header_git_deletions": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Line deletions for project header display (from first worktree) (Feature 120)"
+    }
+  }
+}
