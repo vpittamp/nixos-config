@@ -11,7 +11,7 @@ let
 
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
   codexPackage = pkgs-unstable.codex or pkgs.codex;
-  codexWrapped = pkgs.writeShellScriptBin "codex" ''
+  codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
     # Force frequent batch exports for real-time monitoring
     # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)
     export OTEL_BLRP_SCHEDULE_DELAY=''${OTEL_BLRP_SCHEDULE_DELAY:-500}
@@ -19,6 +19,10 @@ let
     export OTEL_BLRP_MAX_QUEUE_SIZE=''${OTEL_BLRP_MAX_QUEUE_SIZE:-100}
     exec ${codexPackage}/bin/codex "$@"
   '';
+  # Preserve version attribute so home-manager uses TOML format (version >= 0.2.0)
+  codexWrapped = codexWrapperScript // {
+    version = codexPackage.version or "0.73.0";
+  };
 in
 
 {
