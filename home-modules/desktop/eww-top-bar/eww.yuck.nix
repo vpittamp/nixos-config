@@ -124,21 +124,24 @@ in
   `python3 ~/.config/eww/eww-top-bar/scripts/active-project.py`)
 
 ;; Hardware capabilities (run once at startup)
+;; Uses timeout to prevent hanging if D-Bus or other checks are slow
 (defpoll hardware
   :interval "0"
   :run-while false
   :initial '{"battery":false,"bluetooth":false,"thermal":false}'
-  `python3 ~/.config/eww/eww-top-bar/scripts/hardware-detect.py`)
+  `timeout 5s python3 ~/.config/eww/eww-top-bar/scripts/hardware-detect.py || echo '{"battery":false,"bluetooth":false,"thermal":false}'`)
 
 ;; Build health poll - uses nixos-build-status for OS & HM generations / errors
+;; Feature 123: Increased from 10s to 30s (build status rarely changes, saves ~1.5s/cycle)
 (defpoll build_health
-  :interval "10s"
+  :interval "30s"
   :initial '{"status":"unknown","os_generation":"--","hm_generation":"--","error_count":0,"details":"..."}'
   `bash ~/.config/eww/eww-top-bar/scripts/build-health.sh`)
 
 ;; Monitoring panel visibility status (Feature 085)
+;; Increased to 3s to reduce process spawning overhead
 (defpoll monitoring_panel_visible
-  :interval "1s"
+  :interval "3s"
   :initial "false"
   `${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | grep -q 'monitoring-panel' && echo true || echo false`)
 
@@ -153,20 +156,20 @@ in
   `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0}'`)
 
 ;; Feature 123: Spinner animation for working AI sessions
-;; Note: 250ms interval reduces daemon load (was 120ms causing excessive process spawns)
-;; has_working field is computed by otel-ai-monitor service and included in session_list events
+;; Note: Animation disabled for CPU savings - using static indicator instead
+;; 2s interval just keeps the indicator visible, no animation
 (defpoll topbar_spinner_frame
-  :interval "250ms"
+  :interval "2s"
   :run-while {ai_sessions_data.has_working ?: false}
   :initial "⬤"
-  `bash ~/.config/eww/eww-top-bar/scripts/spinner-frame.sh`)
+  `echo "⬤"`)
 
-;; Feature 123: Spinner opacity for fade effect
+;; Feature 123: Spinner opacity - fixed at 1.0 since animation disabled
 (defpoll topbar_spinner_opacity
-  :interval "250ms"
+  :interval "2s"
   :run-while {ai_sessions_data.has_working ?: false}
   :initial "1.0"
-  `bash ~/.config/eww/eww-top-bar/scripts/spinner-opacity.sh`)
+  `echo "1.0"`)
 
 ;; Interactions / popups
 (defvar volume_popup_visible false)

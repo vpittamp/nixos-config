@@ -83,6 +83,15 @@ class IPCServer:
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
 
+        # Feature 123: Window tree caching for efficient monitoring panel updates
+        # Cache invalidated on any Sway event that modifies window/workspace state
+        self._window_tree_cache: Optional[Dict[str, Any]] = None
+        self._window_tree_cache_time: float = 0.0
+        self._window_tree_cache_ttl: float = 5.0  # Max cache age in seconds (fallback if invalidation missed)
+
+        # Feature 123: Clients subscribed to state change events (for monitoring panel)
+        self.state_change_subscribers: set[asyncio.StreamWriter] = set()
+
     @classmethod
     async def from_systemd_socket(
         cls,
@@ -241,6 +250,7 @@ class IPCServer:
         finally:
             self.clients.remove(writer)
             self.subscribed_clients.discard(writer)  # Remove from subscriptions if subscribed
+            self.state_change_subscribers.discard(writer)  # Feature 123: Remove from state change subscriptions
             writer.close()
             await writer.wait_closed()
             logger.debug(f"Client disconnected: {addr}")
@@ -580,6 +590,10 @@ class IPCServer:
             # Feature 099: Window environment variables view
             elif method == "window.get_env":
                 result = await self._window_get_env(params)
+
+            # Feature 123: State change subscription for efficient monitoring panel updates
+            elif method == "subscribe_state_changes":
+                result = await self._subscribe_state_changes(params, writer)
 
             else:
                 return {
@@ -2253,25 +2267,117 @@ class IPCServer:
 
         return classification.to_json()
 
+    # ==========================================================================
+    # Feature 123: Window tree caching and state change notifications
+    # ==========================================================================
+
+    def invalidate_window_tree_cache(self) -> None:
+        """Invalidate the window tree cache.
+
+        Called by event handlers when window/workspace state changes.
+        This forces the next get_window_tree() call to query Sway IPC fresh.
+        """
+        if self._window_tree_cache is not None:
+            logger.debug("[Feature 123] Window tree cache invalidated")
+        self._window_tree_cache = None
+        self._window_tree_cache_time = 0.0
+
+    async def notify_state_change(self, event_type: str = "state_changed") -> None:
+        """Notify subscribed clients that state has changed.
+
+        Called by event handlers after processing Sway events.
+        Allows monitoring_data.py to subscribe and react to daemon events
+        instead of subscribing to Sway directly.
+
+        Args:
+            event_type: Type of state change event (for debugging)
+        """
+        if not self.state_change_subscribers:
+            return
+
+        notification = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "state_changed",
+            "params": {"type": event_type, "timestamp": time.time()}
+        })
+
+        dead_clients = set()
+        for writer in self.state_change_subscribers:
+            try:
+                writer.write((notification + "\n").encode())
+                await writer.drain()
+            except (ConnectionResetError, BrokenPipeError, ConnectionError):
+                dead_clients.add(writer)
+            except Exception as e:
+                logger.warning(f"[Feature 123] Error notifying subscriber: {e}")
+                dead_clients.add(writer)
+
+        # Remove dead clients
+        self.state_change_subscribers -= dead_clients
+        if dead_clients:
+            logger.debug(f"[Feature 123] Removed {len(dead_clients)} dead state change subscribers")
+
+        if self.state_change_subscribers:
+            logger.debug(f"[Feature 123] Notified {len(self.state_change_subscribers)} subscribers: {event_type}")
+
+    async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
+        """Subscribe to state change notifications (Feature 123).
+
+        Adds the client to the state change subscriber set. The client will
+        receive JSON-RPC notifications when window/workspace state changes.
+
+        This allows monitoring_data.py to subscribe to daemon events instead
+        of subscribing to Sway directly, eliminating duplicate event processing.
+
+        Args:
+            params: Subscription parameters (currently unused)
+            writer: Client's stream writer
+
+        Returns:
+            dict with subscription status
+        """
+        self.state_change_subscribers.add(writer)
+        subscriber_count = len(self.state_change_subscribers)
+        logger.info(f"[Feature 123] Client subscribed to state changes (total: {subscriber_count})")
+        return {
+            "subscribed": True,
+            "subscriber_count": subscriber_count,
+        }
+
     async def _get_window_tree(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get hierarchical window state tree (Feature 025: T016).
 
         Queries i3 IPC for complete window state and organizes it hierarchically:
         outputs → workspaces → windows
 
+        Feature 123: Uses caching to avoid redundant Sway IPC queries.
+        Cache is invalidated by event handlers when state changes.
+
         Args:
-            params: Query parameters (currently unused, reserved for future filters)
+            params: Query parameters. Supports:
+                - force_refresh: bool - Bypass cache and query Sway IPC fresh
 
         Returns:
             Window tree dict with keys:
                 - outputs: List[dict] - Monitor/output nodes
                 - total_windows: int - Total window count
+                - cached: bool - Whether result was from cache (Feature 123)
 
         Raises:
             Exception: If i3 connection unavailable or query fails
         """
         if not self.i3_connection or not self.i3_connection.conn:
             raise Exception("i3 connection not available")
+
+        # Feature 123: Check cache first (unless force_refresh requested)
+        force_refresh = params.get("force_refresh", False) if params else False
+        current_time = time.time()
+
+        if not force_refresh and self._window_tree_cache is not None:
+            cache_age = current_time - self._window_tree_cache_time
+            if cache_age < self._window_tree_cache_ttl:
+                logger.debug(f"[Feature 123] Returning cached window tree (age: {cache_age:.2f}s)")
+                return {**self._window_tree_cache, "cached": True}
 
         try:
             # Query i3 IPC for current state
@@ -2429,10 +2535,16 @@ class IPCServer:
                     }
                     outputs[0]["workspaces"].append(scratchpad_workspace)
 
-            return {
+            # Feature 123: Cache the result for subsequent requests
+            result = {
                 "outputs": outputs,
                 "total_windows": total_windows,
             }
+            self._window_tree_cache = result
+            self._window_tree_cache_time = time.time()
+            logger.debug(f"[Feature 123] Cached window tree ({total_windows} windows)")
+
+            return {**result, "cached": False}
 
         except Exception as e:
             logger.error(f"Failed to get window tree: {e}")

@@ -24,7 +24,8 @@ async def send_completion_notification(session: "Session") -> None:
     Uses notify-send with SwayNC-compatible options:
     - App name for grouping
     - Normal urgency
-    - Focus action (if supported)
+
+    Note: We don't use --action flag as it blocks waiting for user interaction.
 
     Args:
         session: Completed session to notify about
@@ -49,41 +50,23 @@ async def send_completion_notification(session: "Session") -> None:
     else:
         body = "Task completed"
 
-    # Build notify-send command
+    # Build notify-send command (no --action flag - it blocks waiting for interaction)
     cmd = [
         notify_send,
         "--app-name=AI Monitor",
         "--urgency=normal",
-        # Note: --action requires notify-send 0.8+ and SwayNC support
-        # Using print action name format: "action_name=Action Label"
-        "--action=focus=Focus Terminal",
         title,
         body,
     ]
 
     try:
-        # Run notify-send asynchronously with timeout
-        # Note: We don't use -w (wait) here as that blocks until dismissed
-        # The action callback is handled by SwayNC separately
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        try:
-            _, stderr = await asyncio.wait_for(process.communicate(), timeout=5.0)
-        except asyncio.TimeoutError:
-            process.kill()
-            logger.warning("notify-send timed out after 5 seconds")
-            return
-
-        if process.returncode != 0:
-            # notify-send may not support --action, try without
-            logger.debug(f"notify-send with action failed, trying simple: {stderr}")
-            await _send_simple_notification(notify_send, title, body)
-        else:
-            logger.debug(f"Sent notification: {title}")
-
+        await process.wait()
+        logger.debug(f"Sent notification: {title}")
     except Exception as e:
         logger.error(f"Error sending notification: {e}")
 

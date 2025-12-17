@@ -55,7 +55,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.8.0";  # Fix blocking pipe writes causing terminal hang
+    version = "0.8.1";  # Fix notify-send blocking, increase memory limit
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -165,8 +165,8 @@ in
         Restart = "on-failure";
         RestartSec = 2;
 
-        # Resource limits (lightweight async Python service)
-        MemoryMax = "50M";
+        # Resource limits (async Python service with protobuf parsing)
+        MemoryMax = "100M";
         CPUQuota = "10%";
 
         # Environment for notifications

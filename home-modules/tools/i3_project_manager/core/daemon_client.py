@@ -369,6 +369,99 @@ class DaemonClient:
                 raise
             raise DaemonError(f"Subscription error: {e}")
 
+    async def subscribe_state_changes(self):
+        """Subscribe to state change notifications from daemon.
+
+        Feature 123: Efficient monitoring panel updates.
+
+        Returns an async iterator that yields state change notifications.
+        This allows monitoring_data.py to subscribe to daemon events instead
+        of Sway IPC directly, eliminating duplicate event processing.
+
+        Yields:
+            Event dict with keys:
+                - type: str - Type of state change ("window::new", "window::close", etc.)
+                - timestamp: float - Event timestamp
+
+        Raises:
+            DaemonError: If subscription fails
+
+        Example:
+            ```python
+            async with DaemonClient() as client:
+                async for event in client.subscribe_state_changes():
+                    print(f"State changed: {event['type']}")
+                    # Query daemon for updated state
+            ```
+
+        Note:
+            This is a long-lived connection. Make sure to handle cancellation properly.
+            The iterator will run until the connection is closed or an error occurs.
+        """
+        if not self._reader or not self._writer:
+            await self.connect()
+
+        # Send subscription request
+        self._request_id += 1
+        request = {
+            "jsonrpc": "2.0",
+            "method": "subscribe_state_changes",
+            "params": {},
+            "id": self._request_id,
+        }
+
+        try:
+            # Send subscription request
+            request_json = json.dumps(request) + "\n"
+            self._writer.write(request_json.encode())
+            await asyncio.wait_for(self._writer.drain(), timeout=self.timeout)
+
+            # Read subscription confirmation
+            response_line = await asyncio.wait_for(
+                self._reader.readline(), timeout=self.timeout
+            )
+            response = json.loads(response_line.decode())
+
+            if "error" in response:
+                error = response["error"]
+                raise DaemonError(
+                    f"State change subscription failed: {error.get('message', 'Unknown error')}"
+                )
+
+            # Now read notifications continuously
+            while True:
+                try:
+                    event_line = await self._reader.readline()
+                    if not event_line:
+                        # Connection closed
+                        break
+
+                    event = json.loads(event_line.decode())
+
+                    # Skip non-notification messages (RPC responses)
+                    if "jsonrpc" in event and "method" not in event:
+                        continue
+
+                    # Yield state change notification
+                    if "method" in event and event["method"] == "state_changed":
+                        yield event.get("params", {})
+
+                except json.JSONDecodeError:
+                    # Skip invalid JSON lines
+                    continue
+                except asyncio.CancelledError:
+                    # Clean cancellation
+                    break
+                except Exception as e:
+                    raise DaemonError(f"State change stream error: {e}")
+
+        except asyncio.TimeoutError:
+            raise DaemonError("State change subscription timeout")
+        except Exception as e:
+            if isinstance(e, DaemonError):
+                raise
+            raise DaemonError(f"State change subscription error: {e}")
+
     async def hide_windows(self, project_name: str) -> Dict[str, Any]:
         """Hide windows for a project (move to scratchpad).
 

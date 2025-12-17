@@ -1069,8 +1069,11 @@ button {
   # Note: Use $HOME instead of %h since this is a shell script, not a systemd unit
   # Also: Open windows one-by-one to avoid eww open-many failing on first missing monitor
   openCommandScript = pkgs.writeShellScript "eww-workspace-bar-open" ''
-    # Wait for Eww daemon to be ready
-    sleep 0.5
+    # Wait for Eww daemon to be ready (max 10 seconds)
+    for i in $(seq 1 50); do
+      ${pkgs.coreutils}/bin/timeout 1s ${pkgs.eww}/bin/eww --config "$HOME/.config/${ewwConfigDir}" ping >/dev/null 2>&1 && break
+      sleep 0.2
+    done
 
     # Get list of available Sway outputs
     available_outputs=$(${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[].name' 2>/dev/null || echo "")
@@ -1118,9 +1121,12 @@ in
       };
       Service = {
         Type = "simple";
+        # Pre-start: kill any orphan daemon for this config and clean stale socket
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'";
         ExecStart = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} daemon --no-daemonize'';
         ExecStartPost = openCommand;
-        ExecStopPost = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} close-all'';
+        # Use 'eww kill' to properly terminate daemon (not just close windows)
+        ExecStopPost = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'';
         Restart = "on-failure";
         RestartSec = 2;
         # Kill all child processes (including eww open commands) when service stops

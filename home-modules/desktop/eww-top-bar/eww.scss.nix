@@ -330,7 +330,7 @@
     border: 1px solid rgba(203, 166, 247, 0.8);
     box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
                 inset 0 0 8px rgba(203, 166, 247, 0.2);
-    animation: pulse-glow 3s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .monitoring-toggle-active:hover {
@@ -357,19 +357,11 @@
                  0 0 4px rgba(203, 166, 247, 0.6);
   }
 
+  /* CPU-optimized: opacity animation instead of expensive box-shadow */
   @keyframes pulse-glow {
-    0% {
-      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                  inset 0 0 8px rgba(203, 166, 247, 0.2);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(203, 166, 247, 0.7),
-                  inset 0 0 12px rgba(203, 166, 247, 0.3);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
-                  inset 0 0 8px rgba(203, 166, 247, 0.2);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
   /* Notification center toggle button styling (SwayNC) */
@@ -391,7 +383,7 @@
     border: 1px solid rgba(137, 180, 250, 0.8);
     box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
                 inset 0 0 8px rgba(137, 180, 250, 0.2);
-    animation: pulse-notification 3s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .notification-toggle-active:hover {
@@ -418,30 +410,22 @@
                  0 0 4px rgba(137, 180, 250, 0.6);
   }
 
+  /* CPU-optimized: opacity animation instead of expensive box-shadow */
   @keyframes pulse-notification {
-    0% {
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                  inset 0 0 8px rgba(137, 180, 250, 0.2);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(137, 180, 250, 0.7),
-                  inset 0 0 12px rgba(137, 180, 250, 0.3);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
-                  inset 0 0 8px rgba(137, 180, 250, 0.2);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
   /* Feature 110: Notification badge styling */
 
-  /* Has unread notifications - red/peach gradient glow */
+  /* Has unread notifications - red/peach gradient glow (no animation for CPU savings) */
   .notification-has-unread {
     background: linear-gradient(135deg, rgba(243, 139, 168, 0.25), rgba(250, 179, 135, 0.2));
     border: 1px solid rgba(243, 139, 168, 0.7);
     box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
                 inset 0 0 8px rgba(243, 139, 168, 0.15);
-    animation: pulse-unread 2s ease-in-out infinite;
+    /* Animation disabled for CPU savings - static glow is sufficient */
   }
 
   .notification-has-unread:hover {
@@ -494,20 +478,11 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
-  /* Pulsing glow animation for unread notifications */
+  /* CPU-optimized: opacity animation instead of expensive box-shadow */
   @keyframes pulse-unread {
-    0% {
-      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                  inset 0 0 8px rgba(243, 139, 168, 0.15);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(243, 139, 168, 0.6),
-                  inset 0 0 12px rgba(243, 139, 168, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 12px rgba(243, 139, 168, 0.4),
-                  inset 0 0 8px rgba(243, 139, 168, 0.15);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
   /* Feature 117: AI Sessions widget styling */
@@ -531,13 +506,13 @@
     box-shadow: 0 2px 8px rgba(148, 226, 213, 0.3);
   }
 
-  /* Working state - teal pulsating glow */
+  /* Working state - teal glow (animation disabled for CPU savings) */
   .ai-chip.working {
     background: linear-gradient(135deg, rgba(148, 226, 213, 0.2), rgba(137, 180, 250, 0.15));
     border: 1px solid rgba(148, 226, 213, 0.6);
     box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
                 inset 0 0 6px rgba(148, 226, 213, 0.15);
-    animation: ai-working-pulse 2s ease-in-out infinite;
+    /* animation: ai-working-pulse 2s ease-in-out infinite; - disabled for CPU */
   }
 
   .ai-chip.working:hover {
@@ -545,13 +520,13 @@
     box-shadow: 0 0 14px rgba(148, 226, 213, 0.6);
   }
 
-  /* Attention state - peach/red highlight */
+  /* Attention state - peach/red highlight (no animation for CPU savings) */
   .ai-chip.attention {
     background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(243, 139, 168, 0.2));
     border: 1px solid rgba(250, 179, 135, 0.7);
     box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
                 inset 0 0 6px rgba(250, 179, 135, 0.15);
-    animation: ai-attention-pulse 2s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .ai-chip.attention:hover {
@@ -571,12 +546,12 @@
     background: rgba(69, 71, 90, 0.5);
   }
 
-  /* Error state - red indicator for pipe/service failures */
+  /* Error state - red indicator for pipe/service failures (no animation for CPU savings) */
   .ai-chip.error {
     background: linear-gradient(135deg, rgba(243, 139, 168, 0.3), rgba(235, 160, 172, 0.25));
     border: 1px solid rgba(243, 139, 168, 0.8);
     box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
-    animation: ai-error-pulse 1s ease-in-out infinite;
+    /* Animation disabled for CPU savings */
   }
 
   .ai-chip.error .ai-chip-indicator {
@@ -584,19 +559,11 @@
     font-size: 12px;
   }
 
+  /* CPU-optimized: opacity-only animation */
   @keyframes ai-error-pulse {
-    0% {
-      opacity: 1;
-      box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
-    }
-    50% {
-      opacity: 0.8;
-      box-shadow: 0 0 16px rgba(243, 139, 168, 0.8);
-    }
-    100% {
-      opacity: 1;
-      box-shadow: 0 0 10px rgba(243, 139, 168, 0.5);
-    }
+    from { opacity: 1; }
+    50% { opacity: 0.7; }
+    to { opacity: 1; }
   }
 
   /* Indicator icon styling */
@@ -634,35 +601,16 @@
     opacity: 0.6;
   }
 
-  /* AI working pulse animation */
+  /* CPU-optimized: opacity-only animations */
   @keyframes ai-working-pulse {
-    0% {
-      box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
-                  inset 0 0 6px rgba(148, 226, 213, 0.15);
-    }
-    50% {
-      box-shadow: 0 0 16px rgba(148, 226, 213, 0.6),
-                  inset 0 0 10px rgba(148, 226, 213, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 10px rgba(148, 226, 213, 0.4),
-                  inset 0 0 6px rgba(148, 226, 213, 0.15);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 
-  /* AI attention pulse animation */
   @keyframes ai-attention-pulse {
-    0% {
-      box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
-                  inset 0 0 6px rgba(250, 179, 135, 0.15);
-    }
-    50% {
-      box-shadow: 0 0 16px rgba(250, 179, 135, 0.6),
-                  inset 0 0 10px rgba(250, 179, 135, 0.25);
-    }
-    100% {
-      box-shadow: 0 0 10px rgba(250, 179, 135, 0.4),
-                  inset 0 0 6px rgba(250, 179, 135, 0.15);
-    }
+    from { opacity: 0.85; }
+    50% { opacity: 1.0; }
+    to { opacity: 0.85; }
   }
 ''

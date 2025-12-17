@@ -60,17 +60,17 @@ let
 
   # Hardware detection script (Python)
   # Detects battery, bluetooth, thermal sensors at runtime
+  # Uses simple file/subprocess checks instead of D-Bus to avoid hangs
   hardwareDetectScript = pkgs.writeText "hardware-detect.py" ''
     #!/usr/bin/env python3
     """Hardware detection for Eww top bar widgets
 
     Returns JSON with hardware capabilities:
     - battery: true if /sys/class/power_supply/BAT* exists
-    - bluetooth: true if bluetoothctl available
+    - bluetooth: true if bluetoothctl available and bluetooth adapter exists
     - thermal: true if /sys/class/thermal/thermal_zone* exists
     """
     import json
-    import os
     from pathlib import Path
 
     def detect_battery():
@@ -78,12 +78,10 @@ let
         return any(Path("/sys/class/power_supply").glob("BAT*"))
 
     def detect_bluetooth():
-        """Check for bluetooth hardware via bluez D-Bus"""
+        """Check for bluetooth hardware via hci devices (fast file check)"""
         try:
-            import pydbus
-            bus = pydbus.SystemBus()
-            bluez = bus.get("org.bluez", "/")
-            return True
+            # Check if any Bluetooth adapter exists via sysfs
+            return any(Path("/sys/class/bluetooth").glob("hci*"))
         except Exception:
             return False
 
@@ -253,11 +251,13 @@ in
 
       Service = {
         Type = "simple";
+        # Pre-start: kill any orphan daemon for this config and clean stale socket
+        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww daemon --no-daemonize --config ${config.xdg.configHome}/eww/eww-top-bar";
-        # Only open defined windows; headless config now defines just HEADLESS-1 window
+        # Wait for daemon readiness before opening windows
         ExecStartPost = let
           windowIds = lib.concatMapStringsSep " " (output: "top-bar-${sanitizeOutputName output.name}") topBarOutputs;
-        in "${pkgs.eww}/bin/eww open-many ${windowIds} --config ${config.xdg.configHome}/eww/eww-top-bar";
+        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${pkgs.coreutils}/bin/timeout 1s ${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar ping >/dev/null 2>&1 && break; sleep 0.2; done; ${pkgs.eww}/bin/eww open-many ${windowIds} --config ${config.xdg.configHome}/eww/eww-top-bar'";
         ExecStop = "${pkgs.eww}/bin/eww kill --config ${config.xdg.configHome}/eww/eww-top-bar";
         Restart = "on-failure";
         RestartSec = 3;
