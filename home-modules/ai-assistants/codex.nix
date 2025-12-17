@@ -9,15 +9,6 @@ let
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
 
-  # Feature 123: OTEL config must use inline table format for Codex
-  # The home-manager TOML generator uses section headers, but Codex expects inline tables
-  otelConfigPatch = pkgs.writeText "codex-otel-patch.toml" ''
-    [otel]
-    environment = "dev"
-    log_user_prompt = false
-    exporter = { otlp-http = { endpoint = "http://localhost:4318/v1/logs", protocol = "binary" } }
-  '';
-
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
   codexPackage = pkgs-unstable.codex or pkgs.codex;
   codexWrapped = pkgs.writeShellScriptBin "codex" ''
@@ -99,7 +90,16 @@ in
       };
 
       # Feature 123: OpenTelemetry configuration for OTLP export
-      # Note: OTEL config moved to extraConfig for correct inline table format
+      otel = {
+        environment = "dev";
+        log_user_prompt = false;
+        exporter = {
+          otlp-http = {
+            endpoint = "http://localhost:4318/v1/logs";
+            protocol = "binary";
+          };
+        };
+      };
 
       # MCP Servers configuration
       # Note: Codex does NOT support a `disabled` flag for MCP servers
@@ -147,36 +147,6 @@ in
     };
   };
 
-  # Feature 123: Patch codex config to use inline table format for OTEL
-  # The home-manager module generates [otel.exporter.otlp-http] section headers,
-  # but Codex expects exporter = { otlp-http = { ... } } inline table format.
-  # Since the config file is a symlink to nix store (read-only), we need to:
-  # 1. Copy the generated config to a temp file
-  # 2. Append the OTEL config with correct format
-  # 3. Replace the symlink with the patched file
-  home.activation.patchCodexOtelConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    CONFIG="$HOME/.codex/config.toml"
-    if [ -L "$CONFIG" ] || [ -f "$CONFIG" ]; then
-      # Create temp copy of the config (following symlinks)
-      TEMP=$(${pkgs.coreutils}/bin/mktemp)
-      ${pkgs.coreutils}/bin/cat "$CONFIG" > "$TEMP"
-
-      # Remove incorrectly formatted otel sections using grep/sed
-      ${pkgs.gnugrep}/bin/grep -v '^\[otel' "$TEMP" | ${pkgs.gnugrep}/bin/grep -v '^environment = "dev"' | ${pkgs.gnugrep}/bin/grep -v '^log_user_prompt' | ${pkgs.gnugrep}/bin/grep -v '^endpoint' | ${pkgs.gnugrep}/bin/grep -v '^protocol = "binary"' > "$TEMP.clean" || true
-
-      # Append correct OTEL config
-      ${pkgs.coreutils}/bin/cat >> "$TEMP.clean" << 'EOF'
-
-[otel]
-environment = "dev"
-log_user_prompt = false
-exporter = { otlp-http = { endpoint = "http://localhost:4318/v1/logs", protocol = "binary" } }
-EOF
-
-      # Remove symlink and replace with patched file
-      ${pkgs.coreutils}/bin/rm -f "$CONFIG"
-      ${pkgs.coreutils}/bin/mv "$TEMP.clean" "$CONFIG"
-      ${pkgs.coreutils}/bin/rm -f "$TEMP"
-    fi
-  '';
+  # Feature 123: OTEL config is now in settings.otel above (YAML format)
+  # No activation script needed since home-manager generates config.yaml directly
 }
