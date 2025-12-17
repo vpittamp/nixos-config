@@ -3356,12 +3356,11 @@ in
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
-      ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
-      ;; Used to show pulsating indicator on windows running AI assistants
-      ;; Falls back to empty state if pipe doesn't exist
-      (deflisten ai_sessions_data
-        :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
-        `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'`)
+      ;; Feature 123: AI sessions data via OpenTelemetry - DISABLED
+      ;; The deflisten with cat on a named pipe causes issues when pipe reconnects
+      ;; and eww evaluates both ternary branches causing jq errors on null data
+      ;; TODO: Re-enable when OTEL integration is more stable
+      (defvar ai_sessions_data "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}")
 
       ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
       ;; Only runs when Projects tab is active (index 1)
@@ -3395,20 +3394,18 @@ in
         :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `echo '{"status":"disabled","traces":[],"trace_count":0,"active_count":0,"stopped_count":0}'`)
 
-      ;; Feature 123: Spinner animation - Re-enabled for AI session indicators
-      ;; Only runs when an AI session is in "working" state (event-driven from OTEL)
-      ;; 120ms interval creates smooth pulsating effect while keeping CPU low
+      ;; Feature 123: Spinner animation - DISABLED (AI sessions disabled)
+      ;; Will never run since ai_sessions_data.has_working is always false
       (defpoll spinner_frame
         :interval "120ms"
-        :run-while {ai_sessions_data.has_working ?: false}
+        :run-while false
         :initial "⬤"
         `${spinnerScript}/bin/eww-spinner-frame`)
 
-      ;; Feature 123: Opacity for pulsating fade effect
-      ;; Synced with spinner_frame for coordinated animation
+      ;; Feature 123: Opacity for pulsating fade effect - DISABLED (AI sessions disabled)
       (defpoll spinner_opacity
         :interval "120ms"
-        :run-while {ai_sessions_data.has_working ?: false}
+        :run-while false
         :initial "1.0"
         `${spinnerOpacityScript}/bin/eww-spinner-opacity`)
 
@@ -4158,27 +4155,10 @@ in
                     :class "badge badge-pwa"
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
-                  ;; Feature 123: AI Session badge with OTEL-based state detection
-                  ;; Uses jq to find session matching this window's ID from ai_sessions_data
-                  ;; States: "working" = pulsating indicator, "completed" = attention bell, other = hidden
-                  ;; Feature 110: Opacity class for pulsating fade effect
-                  ;; Note: Working state badges stay bright regardless of focus for visibility
-                  (label
-                    :class {"badge badge-notification" +
-                      (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
-                        ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
-                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
-                            ? " badge-attention"
-                            : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : "")))}
-                    :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
-                      ? spinner_frame
-                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
-                          ? "󰂞"
-                          : "")}
-                    :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
-                      ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
-                      : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
-                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")] | length", "r") != "0"}))))
+                  ;; Feature 123: AI Session badge - DISABLED
+                  ;; Eww ternary operators evaluate both branches, causing jq errors when ai_sessions_data is null
+                  ;; TODO: Re-enable when eww supports lazy evaluation or OTEL integration is more stable
+                  )))
             ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
