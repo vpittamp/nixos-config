@@ -73,9 +73,15 @@ class OutputWriter:
         # Create pipe directory if needed
         self.pipe_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Remove existing pipe if present
+        # Reuse existing pipe if it's already a FIFO - don't delete and recreate
+        # Deleting would orphan any existing readers (like EWW's deflisten)
         if self.pipe_path.exists():
-            self.pipe_path.unlink()
+            if stat.S_ISFIFO(self.pipe_path.stat().st_mode):
+                logger.info(f"Reusing existing named pipe at {self.pipe_path}")
+                return
+            else:
+                # Not a FIFO, remove it
+                self.pipe_path.unlink()
 
         # Create FIFO
         os.mkfifo(self.pipe_path)
