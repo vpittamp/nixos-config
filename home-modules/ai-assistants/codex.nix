@@ -151,6 +151,34 @@ in
     };
   };
 
-  # Feature 123: OTEL config is now in settings.otel above (YAML format)
-  # No activation script needed since home-manager generates config.yaml directly
+  # Feature 123: Create OTEL config section via activation script
+  # The home-manager codex module filters unknown settings, so we append OTEL config manually
+  home.activation.appendCodexOtelConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    CONFIG="$HOME/.codex/config.toml"
+    if [ -L "$CONFIG" ]; then
+      # Config is a symlink to nix store - copy and modify
+      TEMP=$(${pkgs.coreutils}/bin/mktemp)
+      ${pkgs.coreutils}/bin/cat "$CONFIG" > "$TEMP"
+
+      # Only add OTEL if not already present
+      if ! ${pkgs.gnugrep}/bin/grep -q '^\[otel\]' "$TEMP"; then
+        ${pkgs.coreutils}/bin/cat >> "$TEMP" << 'EOF'
+
+# Feature 123: OpenTelemetry configuration for OTLP export
+[otel]
+environment = "dev"
+log_user_prompt = false
+
+[otel.exporter.otlp-http]
+endpoint = "http://localhost:4318/v1/logs"
+protocol = "binary"
+EOF
+      fi
+
+      # Replace symlink with patched file
+      ${pkgs.coreutils}/bin/rm -f "$CONFIG"
+      ${pkgs.coreutils}/bin/mv "$TEMP" "$CONFIG"
+      ${pkgs.coreutils}/bin/chmod 600 "$CONFIG"
+    fi
+  '';
 }
