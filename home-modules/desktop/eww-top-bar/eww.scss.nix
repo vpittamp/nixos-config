@@ -13,8 +13,8 @@
   .bar {
     background-color: rgba(30, 30, 46, 0.9);
     color: #cdd6f4;
-    padding: 2px 3px;
-    font-size: 10px;
+    padding: 3px 4px;
+    font-size: 11px;
     border: 1px solid #313244;
     border-radius: 6px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(203, 166, 247, 0.06);
@@ -494,9 +494,9 @@
   .ai-chip {
     background: rgba(49, 50, 68, 0.65);
     border: 1px solid rgba(108, 112, 134, 0.45);
-    border-radius: 10px;
-    padding: 2px 6px;
-    min-height: 16px;
+    border-radius: 12px;
+    padding: 3px 8px;
+    min-height: 20px;
     transition: all 150ms ease;
   }
 
@@ -568,7 +568,7 @@
 
   /* Indicator icon styling */
   .ai-chip-indicator {
-    font-size: 10px;
+    font-size: 12px;
     color: #94e2d5;
     transition: opacity 120ms ease;
   }
@@ -593,12 +593,67 @@
 
   /* Source icon styling (SVG images) */
   .ai-chip-source-icon {
-    min-width: 14px;
-    min-height: 14px;
+    min-width: 16px;
+    min-height: 16px;
   }
 
   .ai-chip.idle .ai-chip-source-icon {
     opacity: 0.6;
+  }
+
+  /* Project badge - feature number prominently displayed */
+  .ai-chip-project-badge {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    padding: 1px 6px;
+    margin: 0 3px;
+    border-radius: 6px;
+    background: rgba(30, 30, 46, 0.9);
+    border: 1px solid rgba(148, 226, 213, 0.5);
+    color: #94e2d5;
+    min-width: 18px;
+    /* Note: GTK CSS doesn't support text-align; use :halign in widget */
+  }
+
+  .ai-chip.working .ai-chip-project-badge {
+    background: rgba(30, 30, 46, 0.95);
+    border-color: rgba(148, 226, 213, 0.7);
+    color: #94e2d5;
+    box-shadow: 0 0 4px rgba(148, 226, 213, 0.3);
+  }
+
+  .ai-chip.attention .ai-chip-project-badge {
+    background: rgba(30, 30, 46, 0.95);
+    border-color: rgba(250, 179, 135, 0.7);
+    color: #fab387;
+    box-shadow: 0 0 4px rgba(250, 179, 135, 0.3);
+  }
+
+  .ai-chip.idle .ai-chip-project-badge {
+    background: rgba(49, 50, 68, 0.7);
+    border-color: rgba(108, 112, 134, 0.4);
+    color: #a6adc8;
+  }
+
+  /* Project name - revealed on hover */
+  /* Note: GTK CSS doesn't support overflow/text-overflow; use :limit-width in widget */
+  .ai-chip-project-name {
+    font-size: 8px;
+    font-weight: 600;
+    color: #a6adc8;
+    margin-left: 4px;
+    padding: 0 4px;
+    background: rgba(49, 50, 68, 0.8);
+    border-radius: 4px;
+  }
+
+  .ai-chip.working .ai-chip-project-name {
+    color: #94e2d5;
+  }
+
+  .ai-chip.attention .ai-chip-project-name {
+    color: #fab387;
   }
 
   /* CPU-optimized: opacity-only animations */

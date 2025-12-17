@@ -3356,6 +3356,13 @@ in
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
+      ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
+      ;; Used to show pulsating indicator on windows running AI assistants
+      ;; Falls back to empty state if pipe doesn't exist
+      (deflisten ai_sessions_data
+        :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
+        `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'`)
+
       ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
       ;; Only runs when Projects tab is active (index 1)
       (defpoll projects_data
@@ -3388,20 +3395,22 @@ in
         :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `echo '{"status":"disabled","traces":[],"trace_count":0,"active_count":0,"stopped_count":0}'`)
 
-      ;; Feature 110: Spinner animation - DISABLED (deflisten provides spinner_frame in monitoring_data)
-      ;; The --listen mode sends updates every 50ms when has_working_badge is true
+      ;; Feature 123: Spinner animation - Re-enabled for AI session indicators
+      ;; Only runs when an AI session is in "working" state (event-driven from OTEL)
+      ;; 120ms interval creates smooth pulsating effect while keeping CPU low
       (defpoll spinner_frame
-        :interval "10s"
-        :run-while false
+        :interval "120ms"
+        :run-while {ai_sessions_data.has_working ?: false}
         :initial "⬤"
-        `echo "⬤"`)
+        `${spinnerScript}/bin/eww-spinner-frame`)
 
-      ;; Feature 110: Opacity - DISABLED (use monitoring_data.spinner_frame directly)
+      ;; Feature 123: Opacity for pulsating fade effect
+      ;; Synced with spinner_frame for coordinated animation
       (defpoll spinner_opacity
-        :interval "10s"
-        :run-while false
+        :interval "120ms"
+        :run-while {ai_sessions_data.has_working ?: false}
         :initial "1.0"
-        `echo "1.0"`)
+        `${spinnerOpacityScript}/bin/eww-spinner-opacity`)
 
       ;; Feature 092: Defpoll: Sway event log - DISABLED for CPU savings
       ;; Tab 4 is hidden, so this poll never needs to run
@@ -3500,9 +3509,9 @@ in
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
 
-      ;; Panel transparency control (0-100, default 35%)
+      ;; Panel transparency control (10-100, default 100% = fully opaque)
       ;; Adjustable via slider in header - persists across tabs
-      (defvar panel_opacity 35)
+      (defvar panel_opacity 100)
 
       ;; Feature 092: Event filter state (all enabled by default)
       ;; Individual event type filters (true = show, false = hide)
@@ -4149,21 +4158,27 @@ in
                     :class "badge badge-pwa"
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
-                  ;; Feature 095: Notification badge with state-based icons
-                  ;; "working" state = animated braille spinner (teal, pulsing glow)
-                  ;; "stopped" state = bell icon with count (peach, attention-grabbing)
-                  ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
-                  ;; Feature 107: spinner_frame now updated via separate defpoll (not monitoring_data)
-                  ;; Feature 107: Focus-aware badge styling (dimmed when window is focused, but NOT for working state)
-                  ;; Feature 110: Added opacity class for pulsating fade effect
+                  ;; Feature 123: AI Session badge with OTEL-based state detection
+                  ;; Uses jq to find session matching this window's ID from ai_sessions_data
+                  ;; States: "working" = pulsating indicator, "completed" = attention bell, other = hidden
+                  ;; Feature 110: Opacity class for pulsating fade effect
                   ;; Note: Working state badges stay bright regardless of focus for visibility
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
-                    :text {((window.badge?.state ?: "stopped") == "working" ? spinner_frame : "󰂚 " + (window.badge?.count ?: ""))}
-                    :tooltip {(window.badge?.state ?: "stopped") == "working"
-                      ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
-                      : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
-                    :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
+                    :class {"badge badge-notification" +
+                      (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                        ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
+                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                            ? " badge-attention"
+                            : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : "")))}
+                    :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                      ? spinner_frame
+                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                          ? "󰂞"
+                          : "")}
+                    :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
+                      ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
+                      : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
+                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")] | length", "r") != "0"}))))
             ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
@@ -7348,9 +7363,9 @@ in
         /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 110: Working state - pulsating red circle on subtle background */
+      /* Feature 110: Working state - pulsating teal circle on subtle background */
       .badge-working {
-        color: ${mocha.red};
+        color: ${mocha.teal};
         background: transparent;
         border: none;
         box-shadow: none;
@@ -7358,6 +7373,17 @@ in
         font-weight: bold;
         min-width: 32px;
         min-height: 32px;
+      }
+
+      /* Feature 123: Attention/completed state - bell icon with warm peach glow */
+      .badge-attention {
+        color: ${mocha.peach};
+        background: rgba(250, 179, 135, 0.15);
+        border: 1px solid rgba(250, 179, 135, 0.4);
+        box-shadow: 0 0 8px rgba(250, 179, 135, 0.4);
+        font-size: 14px;
+        padding: 2px 6px;
+        border-radius: 8px;
       }
 
       /* Feature 110: Opacity classes for pulsating fade effect */
@@ -11591,7 +11617,8 @@ in
         # Feature 117: Depend on i3-project-daemon for IPC connectivity
         # Without this, deflisten/defpoll scripts fail on startup
         # Feature 121: Use sway-session.target for proper Sway lifecycle binding
-        After = [ "sway-session.target" "i3-project-daemon.service" ];
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "sway-session.target" "i3-project-daemon.service" "home-manager-vpittamp.service" ];
         Wants = [ "i3-project-daemon.service" ];
         PartOf = [ "sway-session.target" ];
       };

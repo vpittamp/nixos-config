@@ -1115,7 +1115,8 @@ in
       Unit = {
         Description = "Eww workspace bar";
         # Feature 117: Depend on i3-project-daemon for workspace-preview-daemon IPC
-        After = [ "graphical-session.target" "sway-session.target" "i3-project-daemon.service" ];
+        # Wait for home-manager to update symlinks before loading config
+        After = [ "graphical-session.target" "sway-session.target" "i3-project-daemon.service" "home-manager-vpittamp.service" ];
         Wants = [ "i3-project-daemon.service" ];
         PartOf = [ "sway-session.target" ];
       };
