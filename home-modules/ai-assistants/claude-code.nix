@@ -37,6 +37,24 @@ let
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
 in
 lib.mkIf enableClaudeCode {
+  # Feature 123: OTEL environment variables for Claude Code telemetry
+  # These MUST be session variables (not just settings.env) because the OTEL SDK
+  # initializes when Claude Code starts, before it reads settings.json.
+  # settings.env only affects subprocesses, not Claude Code itself.
+  home.sessionVariables = {
+    CLAUDE_CODE_ENABLE_TELEMETRY = "1";
+    OTEL_LOGS_EXPORTER = "otlp";
+    OTEL_METRICS_EXPORTER = "otlp";
+    OTEL_TRACES_EXPORTER = "otlp";
+    OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
+    OTEL_METRIC_EXPORT_INTERVAL = "10000";
+    OTEL_LOGS_EXPORT_INTERVAL = "5000";
+    OTEL_METRICS_INCLUDE_SESSION_ID = "true";
+    # Delta temporality for better memory efficiency with session metrics
+    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta";
+  };
+
   # Chromium is installed via programs.chromium in tools/chromium.nix
   # No need to install it here - avoids conflicts
 
