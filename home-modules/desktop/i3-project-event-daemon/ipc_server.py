@@ -5411,19 +5411,31 @@ class IPCServer:
             raise ValueError(f"Invalid digit: {digit}. Must be 0-9")
 
         manager = self.state_manager.workspace_mode_manager
-        accumulated = await manager.add_digit(digit)
+        # Feature 079: When already in ':' project mode, digits should filter projects,
+        # not switch workspaces. We can safely disambiguate because project mode is
+        # explicitly entered via ':'.
+        if manager.state.input_type == "project":
+            accumulated = await manager.add_char(digit)
+            mode = "project"
+            result = {"accumulated_chars": accumulated}
+            event_type = "workspace_mode::project_digit"
+        else:
+            accumulated = await manager.add_digit(digit)
+            mode = "workspace"
+            result = {"accumulated_digits": accumulated}
+            event_type = "workspace_mode::digit"
 
         # Event broadcast handled by manager.add_digit() via _emit_workspace_mode_event()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
         await self._log_ipc_event(
-            event_type="workspace_mode::digit",
+            event_type=event_type,
             duration_ms=duration_ms,
-            params={"digit": digit, "accumulated": accumulated}
+            params={"digit": digit, "accumulated": accumulated, "mode": mode}
         )
 
-        return {"accumulated_digits": accumulated}
+        return result
 
     async def _workspace_mode_char(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle workspace_mode.char IPC method for project switching.
@@ -8433,6 +8445,56 @@ class IPCServer:
             logger.error(f"[Feature 100] worktree.remove error: {e}")
             raise
 
+    def _record_project_usage(self, qualified_name: str) -> None:
+        """Record project usage for ranking in ':' project list.
+
+        Stores per-project recency/frequency in a small JSON file under
+        `~/.config/i3/project-usage.json`.
+        """
+        try:
+            usage_file = ConfigPaths.PROJECT_USAGE_FILE
+            usage_file.parent.mkdir(parents=True, exist_ok=True)
+
+            now_s = int(time.time())
+            data: Dict[str, Any] = {"version": 1, "updated_at": now_s, "projects": {}}
+
+            try:
+                if usage_file.exists():
+                    existing = json.loads(usage_file.read_text())
+                    if isinstance(existing, dict):
+                        projects = existing.get("projects")
+                        if isinstance(projects, dict):
+                            data["projects"] = projects
+            except Exception as e:
+                logger.warning(f"[Feature 101] Failed to read project usage (will overwrite): {e}")
+
+            projects = data["projects"]
+            entry = projects.get(qualified_name)
+            if not isinstance(entry, dict):
+                entry = {}
+
+            try:
+                prev_count = int(entry.get("use_count", 0))
+            except Exception:
+                prev_count = 0
+
+            projects[qualified_name] = {"last_used_at": now_s, "use_count": prev_count + 1}
+            data["updated_at"] = now_s
+
+            tmp_path = usage_file.with_suffix(f".tmp.{os.getpid()}.{time.time_ns()}")
+            try:
+                tmp_path.write_text(json.dumps(data, indent=2))
+                os.replace(tmp_path, usage_file)
+            finally:
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                except Exception:
+                    pass
+        except Exception as e:
+            # Best-effort only; never block an otherwise-successful project switch.
+            logger.warning(f"[Feature 101] Failed to record project usage for {qualified_name}: {e}")
+
     async def _worktree_switch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Switch to a worktree by qualified name.
 
@@ -8579,6 +8641,9 @@ class IPCServer:
                 "action": "switch",
                 "project": full_qualified_name
             })
+
+            # Record usage for recency/frequency ranking in ':' project list.
+            self._record_project_usage(full_qualified_name)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             logger.info(f"[Feature 101] Switched to worktree '{full_qualified_name}' in {duration_ms:.2f}ms")
