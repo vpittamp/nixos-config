@@ -4184,25 +4184,20 @@ in
                     :visible {window.is_pwa ?: false})
                   ;; Feature 123: AI Session badge with OTEL-based state detection
                   ;; Uses jq to find session matching this window's ID from ai_sessions_data
-                  ;; States: "working" = pulsating indicator, "completed" = attention bell, other = hidden
-                  ;; Feature 110: Opacity class for pulsating fade effect
-                  ;; Note: Working state badges stay bright regardless of focus for visibility
+                  ;; Only visible for "working" (pulsating) or "completed" (attention bell) states
+                  ;; Hidden for "idle" state - no visual clutter for inactive sessions
                   (label
                     :class {"badge badge-notification" +
                       (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
                         ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
-                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
-                            ? " badge-attention"
-                            : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : "")))}
+                        : " badge-attention")}
                     :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
                       ? spinner_frame
-                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
-                          ? "󰂞"
-                          : "")}
+                      : "󰂞"}
                     :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
                       ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
                       : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
-                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")] | length", "r") != "0"}))))
+                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ") | select(.state == \"working\" or .state == \"completed\")] | length", "r") != "0"}))))
             ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
@@ -7373,13 +7368,13 @@ in
         /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 110: Working state - pulsating teal circle on subtle background */
+      /* Feature 110: Working state - compact pulsating teal indicator */
       .badge-working {
         color: ${mocha.teal};
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        font-size: 28px;
+        background: rgba(148, 226, 213, 0.15);
+        border: 1px solid rgba(148, 226, 213, 0.4);
+        box-shadow: 0 0 6px rgba(148, 226, 213, 0.4);
+        font-size: 12px;
         font-weight: bold;
         padding: 2px 6px;
         border-radius: 8px;

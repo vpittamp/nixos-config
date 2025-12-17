@@ -215,6 +215,9 @@ in
 ;; Feature 123: Active AI session highlighting uses active_project data
 ;; Comparing session.project with active_project.project is more reliable than window IDs
 
+;; Feature 123: Active AI session highlighting uses active_project data
+;; Comparing session.project with active_project.project is more reliable than window IDs
+
 ;; Interactions / popups
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
