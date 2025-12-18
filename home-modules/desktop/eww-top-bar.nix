@@ -254,10 +254,11 @@ in
         # Pre-start: kill any orphan daemon for this config and clean stale socket
         ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww daemon --no-daemonize --config ${config.xdg.configHome}/eww/eww-top-bar";
-        # Wait for daemon readiness before opening windows
+        # Wait for daemon, close any stale windows, then open fresh ones
         ExecStartPost = let
           windowIds = lib.concatMapStringsSep " " (output: "top-bar-${sanitizeOutputName output.name}") topBarOutputs;
-        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${pkgs.coreutils}/bin/timeout 1s ${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar ping >/dev/null 2>&1 && break; sleep 0.2; done; ${pkgs.eww}/bin/eww open-many ${windowIds} --config ${config.xdg.configHome}/eww/eww-top-bar'";
+          ewwCmd = "${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar";
+        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${pkgs.coreutils}/bin/timeout 1s ${ewwCmd} ping >/dev/null 2>&1 && break; sleep 0.2; done; ${ewwCmd} close-all 2>/dev/null || true; ${ewwCmd} open-many ${windowIds}'";
         ExecStop = "${pkgs.eww}/bin/eww kill --config ${config.xdg.configHome}/eww/eww-top-bar";
         Restart = "on-failure";
         RestartSec = 3;
