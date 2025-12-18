@@ -156,6 +156,15 @@ in
                 "otlphttp"
               ];
             };
+            metrics = {
+              receivers = [ "otlp" ];
+              exporters = filter (e: e != null) [
+                (if cfg.enableDebugExporter then "debug" else null)
+                (if cfg.enableFileExporter then "file" else null)
+                (if cfg.enableK8sExporter then "otlphttp/k8s" else null)
+                "otlphttp"
+              ];
+            };
           };
         };
       };

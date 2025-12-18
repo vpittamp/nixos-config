@@ -162,12 +162,15 @@ class EventNames:
     CODEX_TOOL_DECISION = "codex.tool_decision"
     CODEX_TOOL_RESULT = "codex.tool_result"
 
-    # Gemini CLI events (OpenTelemetry GenAI semantic conventions)
+    # Gemini CLI events
     GEMINI_USER_PROMPT = "gemini_cli.user_prompt"
-    GEMINI_API_REQUEST = "gemini_cli.api.request"
-    GEMINI_TOOL_CALL = "gemini_cli.tool.call"
-    GEMINI_TOKEN_USAGE = "gen_ai.client.token.usage"
+    GEMINI_API_REQUEST = "gemini_cli.api_request"
+    GEMINI_TOOL_CALL = "gemini_cli.tool_call"
+    GEMINI_TOKEN_USAGE = "gemini_cli.token.usage"
     GEMINI_CONVERSATION_STARTS = "gemini_cli.conversation_starts"
+    GEMINI_API_RESPONSE = "gemini_cli.api_response"
+    GEMINI_AGENT_START = "gemini_cli.agent.start"
+    GEMINI_AGENT_FINISH = "gemini_cli.agent.finish"
 
     # Events that trigger WORKING state
     # Note: claude_code.api_request is included because Claude Code doesn't emit
@@ -180,6 +183,7 @@ class EventNames:
         GEMINI_USER_PROMPT,
         GEMINI_API_REQUEST,
         GEMINI_CONVERSATION_STARTS,
+        GEMINI_AGENT_START,
     }
 
     # Claude Code additional events
@@ -197,6 +201,9 @@ class EventNames:
         CODEX_TOOL_DECISION,
         CODEX_TOOL_RESULT,
         GEMINI_API_REQUEST,
+        GEMINI_API_RESPONSE,
+        GEMINI_AGENT_START,
+        GEMINI_AGENT_FINISH,
         GEMINI_TOOL_CALL,
         GEMINI_TOKEN_USAGE,
     }
