@@ -48,6 +48,18 @@ in
       default = "/var/lib/opentelemetry-collector/traces.json";
       description = "Path for file exporter output";
     };
+
+    enableZPages = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Enable zpages extension for live debugging at http://localhost:55679";
+    };
+
+    zpagesPort = mkOption {
+      type = types.port;
+      default = 55679;
+      description = "Port for zpages HTTP server";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -56,6 +68,13 @@ in
       package = pkgs.opentelemetry-collector-contrib;  # Has file exporter
 
       settings = {
+        # Extensions for debugging and health checks
+        extensions = lib.optionalAttrs cfg.enableZPages {
+          zpages = {
+            endpoint = "0.0.0.0:${toString cfg.zpagesPort}";
+          };
+        };
+
         receivers = {
           otlp = {
             protocols = {
@@ -92,6 +111,9 @@ in
           });
 
         service = {
+          # Enable extensions
+          extensions = lib.optional cfg.enableZPages "zpages";
+
           pipelines = {
             traces = {
               receivers = [ "otlp" ];
