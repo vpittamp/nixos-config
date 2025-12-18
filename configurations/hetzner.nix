@@ -21,6 +21,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
+    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
     ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
@@ -169,6 +170,14 @@
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # No systemd dependency needed - user service binds to graphical-session.target
+
+  # Feature 123: OpenTelemetry Collector for AI assistant telemetry
+  # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
+  services.otel-ai-collector = {
+    enable = true;
+    enableDebugExporter = false;  # Less verbose for server
+    enableFileExporter = true;    # Raw telemetry for analysis
+  };
 
   systemd.services.home-manager-vpittamp = {
     serviceConfig = {

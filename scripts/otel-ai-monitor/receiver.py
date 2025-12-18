@@ -81,6 +81,8 @@ class OTLPReceiver:
         Parses log records and extracts events for session tracking.
         """
         content_type = request.headers.get("Content-Type", "")
+        user_agent = request.headers.get("User-Agent", "unknown")
+        logger.debug(f"Received logs request: Content-Type={content_type}, User-Agent={user_agent}")
 
         try:
             if "application/x-protobuf" in content_type:
@@ -212,23 +214,22 @@ class OTLPReceiver:
         body = await request.read()
 
         # Handle gzip compression (Rust OTLP exporter uses gzip by default)
-        # Check both Content-Encoding header AND gzip magic bytes (0x1f 0x8b)
-        content_encoding = request.headers.get("Content-Encoding", "").lower()
-        is_gzip = content_encoding == "gzip" or (len(body) >= 2 and body[0:2] == b'\x1f\x8b')
-
-        if is_gzip:
+        # ONLY decompress if gzip magic bytes are present (0x1f 0x8b)
+        # Don't rely on Content-Encoding header alone as it may be incorrect
+        if len(body) >= 2 and body[0:2] == b'\x1f\x8b':
             try:
                 body = gzip.decompress(body)
+                logger.debug("Decompressed gzip body")
             except Exception as e:
-                logger.error(f"Failed to decompress gzip body: {e}")
-                return []
+                logger.warning(f"Failed to decompress gzip body, trying raw: {e}")
+                # Continue with raw body - it might not actually be gzipped
 
         otlp_request = ExportLogsServiceRequest()
         try:
             otlp_request.ParseFromString(body)
         except Exception as e:
             # Log first few bytes for debugging
-            logger.debug(f"Parse failed. Content-Encoding: {content_encoding}, is_gzip: {is_gzip}, body len: {len(body)}, first bytes: {body[:20].hex() if body else 'empty'}")
+            logger.debug(f"Protobuf parse failed: {e}. Body len: {len(body)}, first bytes: {body[:20].hex() if body else 'empty'}")
             # Some OTLP exporters may have schema differences - skip silently for now
             # The process monitor provides fallback detection for Codex
             return []

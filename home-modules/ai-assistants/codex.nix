@@ -94,13 +94,14 @@ in
       };
 
       # Feature 123: OpenTelemetry configuration for OTLP export
+      # Sends logs to OTEL Collector for session tracking
       otel = {
         environment = "dev";
-        log_user_prompt = false;
+        log_user_prompt = true;  # Enable for debugging (disable in production)
         exporter = {
           otlp-http = {
             endpoint = "http://localhost:4318/v1/logs";
-            protocol = "binary";
+            protocol = "json";  # Use JSON for compatibility with our receiver
           };
         };
       };
@@ -167,11 +168,11 @@ in
 # Feature 123: OpenTelemetry configuration for OTLP export
 [otel]
 environment = "dev"
-log_user_prompt = false
+log_user_prompt = true
 
 [otel.exporter.otlp-http]
 endpoint = "http://localhost:4318/v1/logs"
-protocol = "binary"
+protocol = "json"
 EOF
       fi
 

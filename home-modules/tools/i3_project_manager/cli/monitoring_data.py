@@ -87,6 +87,10 @@ def get_spinner_frame() -> str:
 # Format: $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
 BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm-badges"
 
+# Feature 123: OTEL AI sessions file path
+# Written by otel-ai-monitor service, read here to include in monitoring_data output
+OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
+
 # Feature 107: inotify watcher for immediate badge detection (<15ms latency)
 # Uses subprocess inotifywait to avoid adding Python dependencies
 INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
@@ -118,6 +122,37 @@ def load_badge_state_from_files() -> Dict[str, Any]:
             continue
 
     return badge_state
+
+
+def load_otel_sessions() -> Dict[str, Any]:
+    """Load OTEL AI sessions from JSON file.
+
+    Feature 123: Reads session data written by otel-ai-monitor service.
+    This is used by EWW monitoring panel for window badge rendering.
+
+    Returns:
+        Dict with 'sessions' list and 'has_working' boolean
+    """
+    default_result = {"sessions": [], "has_working": False, "timestamp": 0}
+
+    if not OTEL_SESSIONS_FILE.exists():
+        return default_result
+
+    try:
+        with open(OTEL_SESSIONS_FILE, "r") as f:
+            data = json.load(f)
+            # Validate expected structure
+            sessions = data.get("sessions", [])
+            has_working = data.get("has_working", False)
+            timestamp = data.get("timestamp", 0)
+            return {
+                "sessions": sessions,
+                "has_working": has_working,
+                "timestamp": timestamp,
+            }
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Feature 123: Failed to read OTEL sessions file: {e}")
+        return default_result
 
 
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
@@ -1514,6 +1549,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
                     "session_started": badge.get("session_started", 0),
                 })
 
+        # Feature 123: Load OTEL AI sessions for window badge rendering
+        otel_sessions = load_otel_sessions()
+
         # Return success state with project-based view
         # NOTE: Removed for payload optimization:
         # - all_windows (~11KB) - detail view disabled
@@ -1528,15 +1566,19 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": None,
             # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": has_working_badge,
+            "has_working_badge": has_working_badge or otel_sessions.get("has_working", False),
             # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
             "ai_sessions": ai_sessions,
+            # Feature 123: OTEL AI sessions for window badge rendering
+            "otel_sessions": otel_sessions,
         }
 
     except DaemonError as e:
         # Expected errors: socket not found, timeout, connection lost
         logger.warning(f"Daemon error: {e}")
         error_timestamp = time.time()
+        # Still try to load OTEL sessions even on daemon error
+        otel_sessions = load_otel_sessions()
         return {
             "status": "error",
             "projects": [],
@@ -1545,14 +1587,17 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": str(e),
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": False,
+            "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
+            "otel_sessions": otel_sessions,
         }
 
     except Exception as e:
         # Unexpected errors: log for debugging
         logger.error(f"Unexpected error querying daemon: {e}", exc_info=True)
         error_timestamp = time.time()
+        # Still try to load OTEL sessions even on unexpected error
+        otel_sessions = load_otel_sessions()
         return {
             "status": "error",
             "projects": [],
@@ -1561,8 +1606,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": f"Unexpected error: {type(e).__name__}: {e}",
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": False,
+            "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
+            "otel_sessions": otel_sessions,
         }
 
 

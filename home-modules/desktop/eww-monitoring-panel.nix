@@ -143,6 +143,33 @@ let
     esac
   '';
 
+  # Feature 123: Streaming script to read AI sessions JSON file for deflisten
+  # Continuously outputs JSON every second (deflisten instead of defpoll works better)
+  # Uses hardcoded /run/user/UID path since shell variables may not be available in EWW's shell context
+  aiSessionsStreamScript = pkgs.writeShellScriptBin "eww-ai-sessions-stream" ''
+    #!/usr/bin/env bash
+    RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u)"
+    FILE="$RUNTIME_DIR/otel-ai-sessions.json"
+    FALLBACK='{"type":"session_list","sessions":[],"timestamp":0,"has_working":false}'
+
+    # Output initial value immediately
+    if [[ -f "$FILE" ]]; then
+      ${pkgs.coreutils}/bin/cat "$FILE"
+    else
+      echo "$FALLBACK"
+    fi
+
+    # Then stream updates every second
+    while true; do
+      ${pkgs.coreutils}/bin/sleep 1
+      if [[ -f "$FILE" ]]; then
+        ${pkgs.coreutils}/bin/cat "$FILE"
+      else
+        echo "$FALLBACK"
+      fi
+    done
+  '';
+
   # Service wrapper script - manages daemon and handles toggle signals
   # This keeps all eww processes (daemon + GTK renderers) in the service cgroup
   # preventing orphaned processes when toggle is invoked from keybindings
@@ -3369,12 +3396,13 @@ in
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
-      ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
-      ;; Used to show pulsating indicator on windows running AI assistants
-      ;; Falls back to empty state if pipe doesn't exist
+      ;; Feature 123: AI sessions data via OpenTelemetry
+      ;; Uses deflisten with streaming script (reads JSON file every 1s)
+      ;; File-based approach avoids FIFO conflict with eww-top-bar
+      ;; (top-bar uses pipe, monitoring-panel uses JSON file)
       (deflisten ai_sessions_data
         :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
-        `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'`)
+        `${aiSessionsStreamScript}/bin/eww-ai-sessions-stream`)
 
       ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
       ;; Only runs when Projects tab is active (index 1)
@@ -4182,25 +4210,25 @@ in
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
                   ;; Feature 123: AI Session badge with OTEL-based state detection
-                  ;; Uses jq to find session matching this window's ID from ai_sessions_data
+                  ;; Uses jq to find session matching this window's ID from monitoring_data.otel_sessions
                   ;; States: "working" = pulsating circle, "completed" = attention bell, "idle" = hidden
                   ;; Feature 110: Opacity class for pulsating fade effect
                   (label
                     :class {"badge badge-notification" +
-                      (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                      (jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
                         ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
-                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                        : (jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
                             ? " badge-attention"
                             : " badge-stopped"))}
-                    :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                    :text {jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
                       ? "⬤"
-                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                      : (jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
                           ? "󰂞"
                           : "")}
-                    :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
-                      ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
-                      : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
-                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ") | select(.state == \"working\" or .state == \"completed\")] | length", "r") != "0"}))))
+                    :tooltip {jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
+                      ? "Claude Code - " + jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
+                      : jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
+                    :visible {jq(monitoring_data.otel_sessions.sessions ?: [], "[.[] | select(.window_id == " + window.id + ") | select(.state == \"working\" or .state == \"completed\")] | length", "r") != "0"}))))
             ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
