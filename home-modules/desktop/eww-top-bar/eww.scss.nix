@@ -635,6 +635,18 @@
     color: #a6adc8;
   }
 
+  /* Active project highlight - glowing border when session matches active project */
+  .ai-chip.in-active-project {
+    border-color: rgba(203, 166, 247, 0.7);
+    box-shadow: 0 0 8px rgba(203, 166, 247, 0.4), 0 0 2px rgba(203, 166, 247, 0.6);
+  }
+
+  .ai-chip.in-active-project .ai-chip-project-badge {
+    border-color: rgba(203, 166, 247, 0.8);
+    color: #cba6f7;
+    box-shadow: 0 0 4px rgba(203, 166, 247, 0.3);
+  }
+
   /* CPU-optimized: opacity-only animations */
   @keyframes ai-working-pulse {
     from { opacity: 0.85; }
