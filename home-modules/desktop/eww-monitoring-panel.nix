@@ -4153,13 +4153,12 @@ in
                   ;; "working" state = animated braille spinner (teal, pulsing glow)
                   ;; "stopped" state = bell icon with count (peach, attention-grabbing)
                   ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
-                  ;; Feature 107: spinner_frame now updated via separate defpoll (not monitoring_data)
                   ;; Feature 107: Focus-aware badge styling (dimmed when window is focused, but NOT for working state)
-                  ;; Feature 110: Added opacity class for pulsating fade effect
+                  ;; Feature 110/123: Uses monitoring_data.spinner_frame for animated spinner
                   ;; Note: Working state badges stay bright regardless of focus for visibility
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
-                    :text {((window.badge?.state ?: "stopped") == "working" ? spinner_frame : "󰂚 " + (window.badge?.count ?: ""))}
+                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working" : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
+                    :text {((window.badge?.state ?: "stopped") == "working" ? (monitoring_data.spinner_frame ?: "⬤") : "󰂚 " + (window.badge?.count ?: ""))}
                     :tooltip {(window.badge?.state ?: "stopped") == "working"
                       ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
                       : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
