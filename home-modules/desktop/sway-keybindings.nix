@@ -2,6 +2,8 @@
 
 let
   modifier = config.wayland.windowManager.sway.config.modifier;
+  topBarCfg = config.programs.eww-top-bar or null;
+  hasTopBar = topBarCfg != null && (topBarCfg.enable or false);
   # Conditionally access monitoring panel config (may not be imported)
   monitoringPanelCfg = config.programs.eww-monitoring-panel or null;
   hasMonitoringPanel = monitoringPanelCfg != null && (monitoringPanelCfg.enable or false);
@@ -99,7 +101,8 @@ in
 
     # ========== SYSTEM ==========
     "${modifier}+Shift+c" = "reload";
-    "${modifier}+Shift+e" = "exec swaymsg exit";
+    "${modifier}+Shift+e" = if hasTopBar then "exec toggle-topbar-powermenu" else "exec swaymsg exit";
+    "${modifier}+Ctrl+Shift+e" = "exec swaymsg exit";
     "${modifier}+Shift+r" = "mode resize";
 
     # ========== SCRATCHPAD ==========

@@ -24,8 +24,31 @@ let
       :focusable false
       :namespace "eww-top-bar"
       :reserve (struts :distance "30px" :side "top")
-      :windowtype "dock"
-      (main-bar :is_primary ${if isPrimary then "true" else "false"}))
+	      :windowtype "dock"
+	      (main-bar
+	        :is_primary ${if isPrimary then "true" else "false"}
+	        :monitor_id "${windowId}"))
+	  '';
+
+  # Generate Powermenu overlay window definition for a monitor
+  mkPowermenuWindowDef = output: let
+    windowId = sanitizeOutputName output.name;
+  in ''
+    ;; Powermenu overlay (${output.name})
+    (defwindow powermenu-${windowId}
+      :monitor "${output.name}"
+      :geometry (geometry
+        :anchor "top left"
+        :x "0px"
+        :y "0px"
+        :width "100%"
+        :height "100%")
+      :stacking "overlay"
+      :exclusive false
+      :focusable "ondemand"
+      :namespace "eww-top-bar"
+      :windowtype "dialog"
+      (powermenu-overlay))
   '';
 
   # Only add fallback window when no generated output covers eDP-1
@@ -46,7 +69,25 @@ let
   :namespace "eww-top-bar"
   :reserve (struts :distance "30px" :side "top")
   :windowtype "dock"
-  (main-bar :is_primary true))
+  (main-bar :is_primary true :monitor_id "edp1"))
+'';
+
+  fallbackPowermenuWindow = lib.optionalString (!hasEDP1) ''
+;; Fallback powermenu overlay window (eDP-1)
+(defwindow powermenu-edp1
+  :monitor "eDP-1"
+  :geometry (geometry
+    :anchor "top left"
+    :x "0px"
+    :y "0px"
+    :width "100%"
+    :height "100%")
+  :stacking "overlay"
+  :exclusive false
+  :focusable "ondemand"
+  :namespace "eww-top-bar"
+  :windowtype "dialog"
+  (powermenu-overlay))
 '';
 
   # Generate volume popup window for first monitor
@@ -179,6 +220,7 @@ in
 (defvar show_wifi_details false)
 (defvar show_volume_peek false)
 (defvar show_metrics false)
+(defvar powermenu_confirm_action "")
 
 ;; ============================================================================
 ;; Widgets
@@ -358,6 +400,133 @@ in
   (label :class "separator"
          :text "│"))
 
+;; Powermenu toggle button (opens fullscreen overlay)
+;; Only visible on the primary bar to avoid multi-monitor clutter; keybinding still works everywhere.
+(defwidget powermenu-toggle [is_primary monitor_id]
+  (eventbox
+    :visible is_primary
+    :cursor "pointer"
+    :onclick {"toggle-topbar-powermenu " + monitor_id + " &"}
+    (box :class "pill metric-pill powermenu-toggle"
+         :tooltip "Power menu (Mod+Shift+E)"
+         (label :class "icon powermenu-icon" :text ""))))
+
+;; Powermenu action button (icon + label)
+(defwidget powermenu-action [label icon class onclick]
+  (button
+    :class {"pm-action " + class}
+    :onclick onclick
+    (box :class "pm-action-inner"
+         :orientation "v"
+         :spacing 6
+         :halign "center"
+         :valign "center"
+      (label :class "pm-action-icon" :text icon)
+      (label :class "pm-action-label" :text label))))
+
+;; Powermenu confirmation strip (shown for reboot/shutdown)
+(defwidget powermenu-confirm-bar []
+  (revealer
+    :transition "slideup"
+    :duration "160ms"
+    :reveal {powermenu_confirm_action != ""}
+    (box :class "pm-confirm"
+         :orientation "h"
+         :space-evenly false
+         :spacing 10
+      (label :class "pm-confirm-text"
+             :hexpand true
+             :halign "start"
+             :text {powermenu_confirm_action == "shutdown" ? "Power off the system?" : "Reboot the system?"})
+      (button :class "pm-confirm-btn pm-confirm-cancel"
+              :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update powermenu_confirm_action=\"\""
+              "Cancel")
+      (button :class {powermenu_confirm_action == "shutdown"
+                       ? "pm-confirm-btn pm-confirm-danger"
+                       : "pm-confirm-btn pm-confirm-warn"}
+              :onclick {powermenu_confirm_action == "shutdown"
+                         ? "toggle-topbar-powermenu; systemctl poweroff"
+                         : "toggle-topbar-powermenu; systemctl reboot"}
+              {powermenu_confirm_action == "shutdown" ? "Power Off" : "Reboot"}))))
+
+;; Powermenu overlay widget (fullscreen modal)
+(defwidget powermenu-overlay []
+  (eventbox
+    :class "powermenu-overlay"
+    :onclick "toggle-topbar-powermenu"
+    (box :class "powermenu-overlay-inner"
+         :hexpand true
+         :vexpand true
+         :halign "center"
+         :valign "center"
+      ;; Inner eventbox prevents clicks on card from closing the overlay
+      (eventbox :onclick ""
+        (box :class "powermenu-card"
+             :orientation "v"
+             :space-evenly false
+             :spacing 12
+          (box :class "powermenu-header"
+               :orientation "h"
+               :space-evenly false
+               :spacing 10
+            (label :class "powermenu-title" :text "Power")
+            (label :class "powermenu-subtitle"
+                   :hexpand true
+                   :halign "start"
+                   :text "Lock • Suspend • Logout • Reboot • Shutdown")
+            (button :class "powermenu-close"
+                    :onclick "toggle-topbar-powermenu"
+                    ""))
+
+          (box :class "powermenu-grid"
+               :orientation "v"
+               :space-evenly false
+               :spacing 10
+            (box :class "powermenu-row"
+                 :orientation "h"
+                 :space-evenly false
+                 :spacing 10
+              (powermenu-action
+                :label "Lock"
+                :icon ""
+                :class "lock"
+                :onclick "toggle-topbar-powermenu; swaylock -f &")
+              (powermenu-action
+                :label "Suspend"
+                :icon ""
+                :class "suspend"
+                :onclick "toggle-topbar-powermenu; systemctl suspend")
+              (powermenu-action
+                :label "Logout"
+                :icon ""
+                :class "logout"
+                :onclick "toggle-topbar-powermenu; swaymsg exit"))
+            (box :class "powermenu-row"
+                 :orientation "h"
+                 :space-evenly false
+                 :spacing 10
+              (powermenu-action
+                :label "Reboot"
+                :icon ""
+                :class {powermenu_confirm_action == "reboot" ? "reboot selected" : "reboot"}
+                :onclick {powermenu_confirm_action == "reboot"
+                           ? "toggle-topbar-powermenu; systemctl reboot"
+                           : "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update powermenu_confirm_action='reboot'"})
+              (powermenu-action
+                :label "Shutdown"
+                :icon ""
+                :class {powermenu_confirm_action == "shutdown" ? "shutdown selected" : "shutdown"}
+                :onclick {powermenu_confirm_action == "shutdown"
+                           ? "toggle-topbar-powermenu; systemctl poweroff"
+                           : "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update powermenu_confirm_action='shutdown'"})
+              (powermenu-action
+                :label "Cancel"
+                :icon ""
+                :class "cancel"
+                :onclick "toggle-topbar-powermenu")))
+
+          (powermenu-confirm-bar))))))
+
 ;; Feature 061: System Tray widget (US1) - conditional on is_primary
 (defwidget systray-widget [is_primary]
   (box :class "metric-block"
@@ -471,7 +640,7 @@ in
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
-(defwidget main-bar [is_primary]
+(defwidget main-bar [is_primary monitor_id]
   (centerbox :orientation "h"
              :class "bar"
     ;; Left: Collapsible system metrics (click or hover to open); build health always visible
@@ -531,7 +700,8 @@ in
           (monitoring-panel-toggle)
           (notification-badge)
           (datetime-widget)
-          (systray-widget :is_primary is_primary))))
+          (systray-widget :is_primary is_primary)
+          (powermenu-toggle :is_primary is_primary :monitor_id monitor_id))))
 
 ;; ============================================================================
 ;; Windows (per-monitor instances)
@@ -540,4 +710,11 @@ in
 
 ${lib.concatMapStrings mkWindowDef topBarOutputs}
 ${fallbackWindow}
+
+;; ============================================================================
+;; Powermenu Windows (per-monitor instances)
+;; ============================================================================
+
+${lib.concatMapStrings mkPowermenuWindowDef topBarOutputs}
+${fallbackPowermenuWindow}
 ''

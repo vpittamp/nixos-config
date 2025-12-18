@@ -707,4 +707,165 @@
     50% { opacity: 1.0; }
     to { opacity: 0.85; }
   }
+
+  /* ==========================================================================
+   * Powermenu (Feature 127)
+   * Fullscreen overlay opened from the top bar (right side)
+   * ========================================================================== */
+
+  .powermenu-toggle {
+    background: rgba(243, 139, 168, 0.10);
+    border: 1px solid rgba(243, 139, 168, 0.35);
+    padding: 2px 6px;
+  }
+
+  .powermenu-toggle:hover {
+    background: rgba(243, 139, 168, 0.16);
+    border-color: rgba(243, 139, 168, 0.70);
+    box-shadow: 0 0 10px rgba(243, 139, 168, 0.25);
+  }
+
+  .powermenu-icon { color: #f38ba8; }
+
+  .powermenu-overlay {
+    background: rgba(24, 24, 37, 0.58);
+  }
+
+  .powermenu-overlay-inner {
+    padding: 24px;
+  }
+
+  .powermenu-card {
+    background: rgba(30, 30, 46, 0.96);
+    border: 1px solid rgba(203, 166, 247, 0.35);
+    border-radius: 18px;
+    padding: 16px 18px 14px;
+    min-width: 420px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55),
+                0 0 0 1px rgba(203, 166, 247, 0.08);
+  }
+
+  .powermenu-title {
+    font-size: 14px;
+    font-weight: 900;
+    color: #cdd6f4;
+  }
+
+  .powermenu-subtitle {
+    font-size: 9px;
+    color: #a6adc8;
+    opacity: 0.95;
+  }
+
+  .powermenu-close {
+    background: rgba(69, 71, 90, 0.35);
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .powermenu-close:hover {
+    background: rgba(243, 139, 168, 0.14);
+    border-color: rgba(243, 139, 168, 0.75);
+  }
+
+  .pm-action {
+    background: rgba(49, 50, 68, 0.65);
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    border-radius: 14px;
+    padding: 10px 12px;
+    min-width: 110px;
+    min-height: 72px;
+    transition: background 120ms ease, border 120ms ease, box-shadow 120ms ease;
+  }
+
+  .pm-action:hover {
+    background: rgba(69, 71, 90, 0.55);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  }
+
+  .pm-action.selected {
+    border-color: rgba(203, 166, 247, 0.90);
+    box-shadow: 0 0 0 1px rgba(203, 166, 247, 0.18),
+                0 12px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  .pm-action-icon {
+    font-size: 20px;
+    margin-bottom: 1px;
+  }
+
+  .pm-action-label {
+    font-size: 9px;
+    font-weight: 900;
+    color: #a6adc8;
+  }
+
+  /* Action accents */
+  .pm-action.lock:hover { border-color: rgba(137, 180, 250, 0.75); }
+  .pm-action.suspend:hover { border-color: rgba(249, 226, 175, 0.75); }
+  .pm-action.logout:hover { border-color: rgba(203, 166, 247, 0.75); }
+  .pm-action.reboot:hover { border-color: rgba(148, 226, 213, 0.75); }
+  .pm-action.shutdown:hover { border-color: rgba(243, 139, 168, 0.80); }
+  .pm-action.cancel:hover { border-color: rgba(166, 173, 200, 0.70); }
+
+  .pm-action.lock .pm-action-icon { color: #89b4fa; }
+  .pm-action.suspend .pm-action-icon { color: #f9e2af; }
+  .pm-action.logout .pm-action-icon { color: #cba6f7; }
+  .pm-action.reboot .pm-action-icon { color: #94e2d5; }
+  .pm-action.shutdown .pm-action-icon { color: #f38ba8; }
+  .pm-action.cancel .pm-action-icon { color: #a6adc8; }
+
+  .pm-confirm {
+    background: rgba(49, 50, 68, 0.75);
+    border: 1px solid rgba(108, 112, 134, 0.50);
+    border-radius: 14px;
+    padding: 10px 12px;
+  }
+
+  .pm-confirm-text {
+    color: #cdd6f4;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .pm-confirm-btn {
+    background: rgba(69, 71, 90, 0.35);
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    border-radius: 12px;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 900;
+    transition: background 120ms ease, border 120ms ease, box-shadow 120ms ease;
+  }
+
+  .pm-confirm-btn:hover {
+    background: rgba(69, 71, 90, 0.55);
+    border-color: rgba(203, 166, 247, 0.65);
+  }
+
+  .pm-confirm-danger {
+    background: rgba(243, 139, 168, 0.16);
+    border-color: rgba(243, 139, 168, 0.60);
+    color: #f38ba8;
+  }
+
+  .pm-confirm-danger:hover {
+    background: rgba(243, 139, 168, 0.22);
+    border-color: rgba(243, 139, 168, 0.80);
+    box-shadow: 0 0 14px rgba(243, 139, 168, 0.35);
+  }
+
+  .pm-confirm-warn {
+    background: rgba(148, 226, 213, 0.14);
+    border-color: rgba(148, 226, 213, 0.55);
+    color: #94e2d5;
+  }
+
+  .pm-confirm-warn:hover {
+    background: rgba(148, 226, 213, 0.20);
+    border-color: rgba(148, 226, 213, 0.75);
+    box-shadow: 0 0 14px rgba(148, 226, 213, 0.28);
+  }
 ''

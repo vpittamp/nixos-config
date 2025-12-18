@@ -125,6 +125,66 @@ let
     esac
   '';
 
+  togglePowermenuScript = pkgs.writeShellScriptBin "toggle-topbar-powermenu" ''
+    set -euo pipefail
+
+    CFG="$HOME/.config/eww/eww-top-bar"
+    EWW="${pkgs.eww}/bin/eww"
+
+    sanitize() {
+      # Match sanitizeOutputName in Nix: lowercase and drop separators.
+      echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' :/_-'
+    }
+
+    target_raw="''${1:-}"
+
+    # Close all powermenus if one is already open.
+    active="$("$EWW" --config "$CFG" active-windows 2>/dev/null || true)"
+    if echo "$active" | ${pkgs.gnugrep}/bin/grep -q '^powermenu-'; then
+      echo "$active" | ${pkgs.gnugrep}/bin/grep '^powermenu-' | while read -r w; do
+        [ -n "$w" ] && "$EWW" --config "$CFG" close "$w" || true
+      done
+      "$EWW" --config "$CFG" update powermenu_confirm_action=\"\" 2>/dev/null || true
+      exit 0
+    fi
+
+    # Resolve which powermenu window to open.
+    windows="$("$EWW" --config "$CFG" list-windows 2>/dev/null || true)"
+    if [ -z "$windows" ]; then
+      echo "toggle-topbar-powermenu: no Eww windows found (is eww-top-bar running?)" >&2
+      exit 1
+    fi
+
+    target_id=""
+
+    if [ -n "$target_raw" ]; then
+      target_id="$(sanitize "$target_raw")"
+    else
+      # Use focused output (Wayland/Sway), fall back to first powermenu window.
+      if command -v swaymsg >/dev/null 2>&1 && command -v ${pkgs.jq}/bin/jq >/dev/null 2>&1; then
+        focused_output="$(swaymsg -t get_outputs | ${pkgs.jq}/bin/jq -r '.[] | select(.focused==true) | .name' | head -n1 || true)"
+        if [ -n "$focused_output" ] && [ "$focused_output" != "null" ]; then
+          target_id="$(sanitize "$focused_output")"
+        fi
+      fi
+    fi
+
+    target_window=""
+    if [ -n "$target_id" ] && echo "$windows" | ${pkgs.gnugrep}/bin/grep -qx "powermenu-$target_id"; then
+      target_window="powermenu-$target_id"
+    else
+      target_window="$(echo "$windows" | ${pkgs.gnugrep}/bin/grep '^powermenu-' | head -n1 || true)"
+    fi
+
+    if [ -z "$target_window" ]; then
+      echo "toggle-topbar-powermenu: powermenu windows not defined in config" >&2
+      exit 1
+    fi
+
+    "$EWW" --config "$CFG" update powermenu_confirm_action=\"\" 2>/dev/null || true
+    "$EWW" --config "$CFG" open "$target_window"
+  '';
+
 in
 {
   options.programs.eww-top-bar = {
@@ -163,6 +223,7 @@ in
     # are VERY large (~3.8 GB total) and temporarily disabled to test core functionality
     home.packages = [
       pkgs.eww
+      togglePowermenuScript
       # pkgs.pavucontrol            # Volume control (click handler for volume widget) - 1.0 GiB
       # pkgs.gnome-calendar          # Calendar app (click handler for datetime widget) - 1.8 GiB
       # pkgs.gnome-control-center  # Network settings (click handler for network widget) - 266 MiB
