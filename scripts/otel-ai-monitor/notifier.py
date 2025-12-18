@@ -41,6 +41,8 @@ async def send_completion_notification(session: "Session") -> None:
         title = "Claude Code Ready"
     elif session.tool == "codex":
         title = "Codex Ready"
+    elif session.tool == "gemini":
+        title = "Gemini CLI Ready"
     else:
         title = "AI Assistant Ready"
 

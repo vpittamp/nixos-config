@@ -1026,7 +1026,39 @@ def colorize_json_pango(data: Dict[str, Any]) -> str:
     return colorize_json_value(data, indent_level=1)
 
 
-def transform_window(window: Dict[str, Any], badge_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _merge_badge_with_otel(
+    badge: Dict[str, Any],
+    otel_session: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Merge OTEL session info into badge dict for efficient widget rendering.
+
+    Feature 123: This eliminates the need for jq lookups in EWW widgets,
+    reducing CPU usage from repeated expression evaluation.
+
+    Args:
+        badge: Existing badge dict (may be empty)
+        otel_session: OTEL session info for this window (may be None)
+
+    Returns:
+        Badge dict with otel_state, otel_tool fields added if session exists
+    """
+    if not otel_session:
+        return badge
+
+    # Merge otel session info into badge
+    merged = dict(badge) if badge else {}
+    merged["otel_state"] = otel_session.get("state", "none")
+    merged["otel_tool"] = otel_session.get("tool", "unknown")
+    merged["otel_session_id"] = otel_session.get("session_id", "")
+    return merged
+
+
+def transform_window(
+    window: Dict[str, Any],
+    badge_state: Optional[Dict[str, Any]] = None,
+    otel_sessions_by_window: Optional[Dict[int, Dict[str, Any]]] = None
+) -> Dict[str, Any]:
     """
     Transform daemon window data to Eww-friendly schema.
 
@@ -1034,6 +1066,8 @@ def transform_window(window: Dict[str, Any], badge_state: Optional[Dict[str, Any
         window: Window data from daemon (Sway IPC format)
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
+        otel_sessions_by_window: Optional dict mapping window IDs (as int) to OTEL session info
+                     (Feature 123: AI session state for window badges)
 
     Returns:
         WindowInfo dict matching data-model.md specification
@@ -1103,7 +1137,11 @@ def transform_window(window: Dict[str, Any], badge_state: Optional[Dict[str, Any
         "geometry_height": geometry.get("height", 0),
         # Feature 095: Notification badge data (if present)
         # badge_state is dict mapping window ID (string) to {"count": "1", "timestamp": ..., "source": "..."}
-        "badge": badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
+        # Feature 123: Merge OTEL session info into badge for efficient widget rendering
+        "badge": _merge_badge_with_otel(
+            badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
+            otel_sessions_by_window.get(window.get("id", 0)) if otel_sessions_by_window else None
+        ),
     }
 
     # Generate Pango-markup colorized JSON for hover tooltip
@@ -1140,7 +1178,12 @@ def transform_window(window: Dict[str, Any], badge_state: Optional[Dict[str, Any
     return window_data
 
 
-def transform_workspace(workspace: Dict[str, Any], monitor_name: str, badge_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def transform_workspace(
+    workspace: Dict[str, Any],
+    monitor_name: str,
+    badge_state: Optional[Dict[str, Any]] = None,
+    otel_sessions_by_window: Optional[Dict[int, Dict[str, Any]]] = None
+) -> Dict[str, Any]:
     """
     Transform daemon workspace data to Eww-friendly schema.
 
@@ -1149,12 +1192,14 @@ def transform_workspace(workspace: Dict[str, Any], monitor_name: str, badge_stat
         monitor_name: Parent monitor name
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
+        otel_sessions_by_window: Optional dict mapping window IDs (as int) to OTEL session info
+                     (Feature 123: AI session state for window badges)
 
     Returns:
         WorkspaceInfo dict matching data-model.md specification
     """
     windows = workspace.get("windows", [])
-    transformed_windows = [transform_window(w, badge_state) for w in windows]
+    transformed_windows = [transform_window(w, badge_state, otel_sessions_by_window) for w in windows]
 
     return {
         "number": workspace.get("num", workspace.get("number", 1)),
@@ -1167,7 +1212,11 @@ def transform_workspace(workspace: Dict[str, Any], monitor_name: str, badge_stat
     }
 
 
-def transform_monitor(output: Dict[str, Any], badge_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def transform_monitor(
+    output: Dict[str, Any],
+    badge_state: Optional[Dict[str, Any]] = None,
+    otel_sessions_by_window: Optional[Dict[int, Dict[str, Any]]] = None
+) -> Dict[str, Any]:
     """
     Transform daemon output/monitor data to Eww-friendly schema.
 
@@ -1175,13 +1224,15 @@ def transform_monitor(output: Dict[str, Any], badge_state: Optional[Dict[str, An
         output: Output data from daemon (contains name, active status, workspaces)
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
+        otel_sessions_by_window: Optional dict mapping window IDs (as int) to OTEL session info
+                     (Feature 123: AI session state for window badges)
 
     Returns:
         MonitorInfo dict matching data-model.md specification
     """
     monitor_name = output.get("name", "unknown")
     workspaces = output.get("workspaces", [])
-    transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state) for ws in workspaces]
+    transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state, otel_sessions_by_window) for ws in workspaces]
 
     # Determine if monitor has focused workspace
     has_focused = any(ws["focused"] for ws in transformed_workspaces)
@@ -1494,9 +1545,18 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
 
+        # Feature 123: Load OTEL sessions BEFORE transforms to build lookup dict
+        # This eliminates jq lookups in EWW widgets, reducing CPU usage
+        otel_sessions = load_otel_sessions()
+        otel_sessions_by_window: Dict[int, Dict[str, Any]] = {}
+        for session in otel_sessions.get("sessions", []):
+            window_id = session.get("window_id")
+            if window_id is not None:
+                otel_sessions_by_window[window_id] = session
+
         # Transform daemon response to Eww schema
         outputs = tree_data.get("outputs", [])
-        monitors = [transform_monitor(output, badge_state) for output in outputs]
+        monitors = [transform_monitor(output, badge_state, otel_sessions_by_window) for output in outputs]
 
         # Validate and compute summary counts
         counts = validate_and_count(monitors)
@@ -1549,8 +1609,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
                     "session_started": badge.get("session_started", 0),
                 })
 
-        # Feature 123: Load OTEL AI sessions for window badge rendering
-        otel_sessions = load_otel_sessions()
+        # NOTE: otel_sessions already loaded before transforms (line ~1550)
 
         # Return success state with project-based view
         # NOTE: Removed for payload optimization:
@@ -2868,11 +2927,10 @@ async def stream_monitoring_data():
                             await refresh_and_output()
                         last_polling_check = current_time
 
-                # Feature 095 Enhancement: Fast updates for spinner animation when working badge exists
-                if has_working_badge and (current_time - last_spinner_update) >= spinner_interval:
-                    logger.debug("Sending spinner frame update")
-                    await refresh_and_output()
-                    last_spinner_update = current_time
+                # Feature 095 Enhancement: Spinner animation is now handled by EWW defpoll
+                # (spinner_frame and spinner_opacity), so we don't need to refresh here.
+                # This prevents 20 updates/second which caused hover flickering.
+
                 # Send heartbeat if no updates in last N seconds (normal mode)
                 # Feature 123: Heartbeat doesn't re-query daemon since subscription handles events.
                 # Just output last known state to keep EWW deflisten alive.
@@ -2882,14 +2940,10 @@ async def stream_monitoring_data():
                     print(last_payload_json, flush=True)
                     last_update = current_time
 
-                # Feature 123: Sleep duration based on mode
-                # - Spinner mode: 50ms for animation
-                # - Normal mode: 5s sleep, daemon subscription handles real-time events
-                #   Events set the flag which we check on next wake
-                if has_working_badge:
-                    await asyncio.sleep(0.05)  # 50ms for spinner
-                else:
-                    await asyncio.sleep(5.0)  # 5s - daemon events set flag for next check
+                # Feature 123: Sleep duration - daemon subscription handles real-time events
+                # Spinner animation is handled by EWW defpoll (spinner_frame/spinner_opacity)
+                # so we don't need fast updates here. Use longer sleep to reduce CPU.
+                await asyncio.sleep(1.0)  # 1s - daemon events set flag for next check
 
             # Cleanup subscription task
             subscription_task.cancel()

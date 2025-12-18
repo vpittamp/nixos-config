@@ -79,6 +79,16 @@ let
     previewFeatures = true;
     theme = "Default";
     vimMode = true;
+    # Feature 123: OpenTelemetry configuration for OTLP export
+    # Sends telemetry to otel-ai-monitor service for session tracking
+    telemetry = {
+      enabled = true;
+      target = "local";  # Use local OTLP collector
+      otlpEndpoint = "http://localhost:4318";
+      otlpProtocol = "http";  # Use HTTP for compatibility with our receiver
+      logPrompts = true;  # Enable for debugging (helps with session detection)
+      useCollector = true;  # Enable external OTLP collector
+    };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
         command = "npx";
@@ -129,6 +139,15 @@ in
 ${settingsJson}
 EOF
       $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
+    else
+      # Feature 123: Ensure telemetry config is present (merge into existing settings)
+      # This preserves user customizations while ensuring OTEL is configured
+      if ! ${pkgs.jq}/bin/jq -e '.telemetry.enabled' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
+        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '. + {telemetry: {enabled: true, target: "local", otlpEndpoint: "http://localhost:4318", otlpProtocol: "http", logPrompts: true, useCollector: true}}' \
+          "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
+        $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
+        $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
+      fi
     fi
   '';
 

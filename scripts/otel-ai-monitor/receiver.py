@@ -177,6 +177,8 @@ class OTLPReceiver:
                         return AITool.CLAUDE_CODE
                     elif "codex" in service_name.lower():
                         return AITool.CODEX_CLI
+                    elif "gemini" in service_name.lower():
+                        return AITool.GEMINI_CLI
             else:
                 # JSON format
                 body = await request.json()
@@ -190,6 +192,8 @@ class OTLPReceiver:
                                 return AITool.CLAUDE_CODE
                             elif "codex" in service_name.lower():
                                 return AITool.CODEX_CLI
+                            elif "gemini" in service_name.lower():
+                                return AITool.GEMINI_CLI
         except Exception as e:
             logger.debug(f"Could not extract tool from metrics: {e}")
 
@@ -409,6 +413,8 @@ class OTLPReceiver:
                 tool = AITool.CLAUDE_CODE
             elif "codex" in service_name.lower():
                 tool = AITool.CODEX_CLI
+            elif "gemini" in service_name.lower():
+                tool = AITool.GEMINI_CLI
 
         # Extract trace context
         trace_id = span.trace_id.hex() if hasattr(span, 'trace_id') and span.trace_id else None
@@ -484,6 +490,8 @@ class OTLPReceiver:
                 tool = AITool.CLAUDE_CODE
             elif "codex" in service_name.lower():
                 tool = AITool.CODEX_CLI
+            elif "gemini" in service_name.lower():
+                tool = AITool.GEMINI_CLI
 
         # Extract trace context
         trace_id = span.get("traceId")
@@ -673,6 +681,8 @@ class OTLPReceiver:
                 tool = AITool.CLAUDE_CODE
             elif "codex" in service_name.lower():
                 tool = AITool.CODEX_CLI
+            elif "gemini" in service_name.lower():
+                tool = AITool.GEMINI_CLI
 
         # Extract trace context
         trace_id = None
@@ -746,6 +756,8 @@ class OTLPReceiver:
                 tool = AITool.CLAUDE_CODE
             elif "codex" in service_name.lower():
                 tool = AITool.CODEX_CLI
+            elif "gemini" in service_name.lower():
+                tool = AITool.GEMINI_CLI
 
         # Extract trace context
         trace_id = log_record.get("traceId")

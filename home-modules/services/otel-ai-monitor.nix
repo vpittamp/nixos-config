@@ -2,7 +2,7 @@
 # Feature 123: OpenTelemetry AI Assistant Monitoring
 #
 # This module provides a home-manager user service that:
-# - Receives OTLP telemetry from Claude Code and Codex CLI
+# - Receives OTLP telemetry from Claude Code, Codex CLI, and Gemini CLI
 # - Tracks AI assistant session states (idle, working, completed)
 # - Outputs JSON streams for EWW deflisten consumption
 # - Sends desktop notifications on task completion
