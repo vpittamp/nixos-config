@@ -13,6 +13,7 @@ State Machine:
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
@@ -32,6 +33,34 @@ if TYPE_CHECKING:
     from .output import OutputWriter
 
 logger = logging.getLogger(__name__)
+
+# Feature number extraction pattern: matches ":<number>" or "<number>-" at start of branch name
+_FEATURE_NUMBER_PATTERN = re.compile(r":(\d+)")
+
+
+def extract_feature_number(project: Optional[str]) -> Optional[str]:
+    """Extract feature number from project name for deduplication.
+
+    Examples:
+        "vpittamp/nixos-config:123-otel-tracing" → "123"
+        "owner/repo:456-feature" → "456"
+        "Global" → None
+        None → None
+    """
+    if not project or project == "Global":
+        return None
+    match = _FEATURE_NUMBER_PATTERN.search(project)
+    return match.group(1) if match else None
+
+
+def state_priority(state: SessionState) -> int:
+    """Return priority for state comparison (higher = more important)."""
+    return {
+        SessionState.WORKING: 3,
+        SessionState.COMPLETED: 2,
+        SessionState.IDLE: 1,
+        SessionState.EXPIRED: 0,
+    }.get(state, 0)
 
 
 class SessionTracker:
@@ -452,11 +481,40 @@ class SessionTracker:
             await self._broadcast_sessions_unlocked()
 
     async def _broadcast_sessions_unlocked(self) -> None:
-        """Broadcast current session list (caller must hold lock)."""
+        """Broadcast current session list (caller must hold lock).
+
+        Deduplicates sessions by feature number - when multiple sessions have
+        the same feature number, only the highest priority one is shown:
+        - WORKING > COMPLETED > IDLE
+        - Within same priority, prefer the most recent session
+        """
         active_sessions = [
             s for s in self._sessions.values()
             if s.state != SessionState.EXPIRED
         ]
+
+        # Deduplicate by feature number
+        # Key: feature_number (or project if no feature number, or session_id for Global)
+        # Value: best session for that key
+        best_by_feature: dict[str, Session] = {}
+        for session in active_sessions:
+            feature = extract_feature_number(session.project)
+            # Use feature number as key, fallback to full project, fallback to session_id
+            key = feature or session.project or session.session_id
+
+            if key not in best_by_feature:
+                best_by_feature[key] = session
+            else:
+                existing = best_by_feature[key]
+                # Compare by state priority, then by most recent state change
+                if state_priority(session.state) > state_priority(existing.state):
+                    best_by_feature[key] = session
+                elif (state_priority(session.state) == state_priority(existing.state)
+                      and session.state_changed_at > existing.state_changed_at):
+                    best_by_feature[key] = session
+
+        # Build deduplicated items list
+        deduplicated_sessions = list(best_by_feature.values())
         items = [
             SessionListItem(
                 session_id=s.session_id,
@@ -465,9 +523,9 @@ class SessionTracker:
                 project=s.project,
                 window_id=s.window_id,
             )
-            for s in active_sessions
+            for s in deduplicated_sessions
         ]
-        has_working = any(s.state == SessionState.WORKING for s in active_sessions)
+        has_working = any(s.state == SessionState.WORKING for s in deduplicated_sessions)
 
         session_list = SessionList(
             sessions=items,

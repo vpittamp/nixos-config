@@ -3401,20 +3401,22 @@ in
         :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `echo '{"status":"disabled","traces":[],"trace_count":0,"active_count":0,"stopped_count":0}'`)
 
-      ;; Feature 110: Spinner animation - DISABLED (deflisten provides spinner_frame in monitoring_data)
-      ;; The --listen mode sends updates every 50ms when has_working_badge is true
+      ;; Feature 110: Spinner animation for pulsating effect
+      ;; Runs at 120ms interval when has_working_badge is true for smooth animation
+      ;; Uses indexed frame cycling via /tmp/eww-spinner-idx file
       (defpoll spinner_frame
-        :interval "10s"
-        :run-while false
+        :interval "120ms"
+        :run-while {monitoring_data.has_working_badge ?: false}
         :initial "⬤"
-        `echo "⬤"`)
+        `${spinnerScript}/bin/eww-spinner-frame`)
 
-      ;; Feature 110: Opacity - DISABLED (use monitoring_data.spinner_frame directly)
+      ;; Feature 110: Opacity value for pulsating fade effect (synced with spinner_frame)
+      ;; Cycles: 0.4 → 0.6 → 0.8 → 1.0 → 1.0 → 0.8 → 0.6 → 0.4
       (defpoll spinner_opacity
-        :interval "10s"
-        :run-while false
+        :interval "120ms"
+        :run-while {monitoring_data.has_working_badge ?: false}
         :initial "1.0"
-        `echo "1.0"`)
+        `${spinnerOpacityScript}/bin/eww-spinner-opacity`)
 
       ;; Feature 092: Defpoll: Sway event log - DISABLED for CPU savings
       ;; Tab 4 is hidden, so this poll never needs to run
@@ -4177,11 +4179,11 @@ in
                   ;; "stopped" state = bell icon with count (peach, attention-grabbing)
                   ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
                   ;; Feature 107: Focus-aware badge styling (dimmed when window is focused, but NOT for working state)
-                  ;; Feature 110/123: Uses monitoring_data.spinner_frame for animated spinner
+                  ;; Feature 110/123: Uses monitoring_data.spinner_frame + spinner_opacity for pulsating effect
                   ;; Note: Working state badges stay bright regardless of focus for visibility
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working" : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
-                    :text {((window.badge?.state ?: "stopped") == "working" ? (monitoring_data.spinner_frame ?: "⬤") : "󰂚 " + (window.badge?.count ?: ""))}
+                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
+                    :text {((window.badge?.state ?: "stopped") == "working" ? spinner_frame : "󰂚 " + (window.badge?.count ?: ""))}
                     :tooltip {(window.badge?.state ?: "stopped") == "working"
                       ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
                       : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}

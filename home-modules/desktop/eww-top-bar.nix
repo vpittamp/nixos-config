@@ -98,6 +98,33 @@ let
         print(json.dumps(capabilities))
   '';
 
+  # Feature 110: Spinner animation script for pulsating effect
+  # Uses indexed frame cycling via /tmp/eww-topbar-spinner-idx file
+  topbarSpinnerScript = pkgs.writeShellScriptBin "eww-topbar-spinner-frame" ''
+    #!/usr/bin/env bash
+    IDX_FILE="/tmp/eww-topbar-spinner-idx"
+    IDX=$(cat "$IDX_FILE" 2>/dev/null || echo 0)
+    # Braille spinner: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
+    FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+    echo "''${FRAMES[$IDX]}"
+    NEXT=$(( (IDX + 1) % 10 ))
+    echo "$NEXT" > "$IDX_FILE"
+  '';
+
+  # Feature 110: Opacity script for fade effect (synced with spinner)
+  topbarSpinnerOpacityScript = pkgs.writeShellScriptBin "eww-topbar-spinner-opacity" ''
+    #!/usr/bin/env bash
+    IDX=$(cat /tmp/eww-topbar-spinner-idx 2>/dev/null || echo 0)
+    # Opacity values: fade in, hold, fade out
+    case $IDX in
+      0|9)  echo "0.4" ;;
+      1|8)  echo "0.6" ;;
+      2|7)  echo "0.8" ;;
+      3|4|5|6)  echo "1.0" ;;
+      *)  echo "1.0" ;;
+    esac
+  '';
+
 in
 {
   options.programs.eww-top-bar = {
@@ -228,6 +255,8 @@ in
       osConfig = osConfig;
       # Pass monitor configuration for dynamic window generation
       inherit topBarOutputs sanitizeOutputName;
+      # Feature 110: Spinner scripts for pulsating animation
+      inherit topbarSpinnerScript topbarSpinnerOpacityScript;
     };
 
     # Eww styles (CSS/SCSS)

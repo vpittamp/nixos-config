@@ -1,4 +1,4 @@
-{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), ... }:
+{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), topbarSpinnerScript ? null, topbarSpinnerOpacityScript ? null, ... }:
 
 # Feature 061: Eww Top Bar - Enhanced widget definitions
 # Adds: System tray, WiFi widget, enhanced volume control with popup
@@ -156,20 +156,21 @@ in
   `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0}'`)
 
 ;; Feature 123: Spinner animation for working AI sessions
-;; Note: Animation disabled for CPU savings - using static indicator instead
-;; 2s interval just keeps the indicator visible, no animation
+;; Runs at 120ms interval for smooth pulsating effect
+;; Uses indexed frame cycling via /tmp/eww-topbar-spinner-idx file
 (defpoll topbar_spinner_frame
-  :interval "2s"
+  :interval "120ms"
   :run-while {ai_sessions_data.has_working ?: false}
-  :initial "⬤"
-  `echo "⬤"`)
+  :initial "⠋"
+  `${topbarSpinnerScript}/bin/eww-topbar-spinner-frame`)
 
-;; Feature 123: Spinner opacity - fixed at 1.0 since animation disabled
+;; Feature 123: Spinner opacity for pulsating fade effect
+;; Synced with spinner_frame for coordinated animation
 (defpoll topbar_spinner_opacity
-  :interval "2s"
+  :interval "120ms"
   :run-while {ai_sessions_data.has_working ?: false}
   :initial "1.0"
-  `echo "1.0"`)
+  `${topbarSpinnerOpacityScript}/bin/eww-topbar-spinner-opacity`)
 
 ;; Feature 123: Active AI session highlighting uses active_project data
 ;; Comparing session.project with active_project.project is more reliable than window IDs
