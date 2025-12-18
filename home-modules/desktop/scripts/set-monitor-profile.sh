@@ -66,8 +66,18 @@ if [[ ${#PROFILE_OUTPUTS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# Apply via active-monitors (handles WayVNC + layout)
-"${HOME}/.local/bin/active-monitors" --profile "$PROFILE_NAME"
+# Check if profile has commands (for physical displays)
+mapfile -t PROFILE_COMMANDS < <(jq -r '.commands[]?' "$PROFILE_PATH" 2>/dev/null)
+
+if [[ ${#PROFILE_COMMANDS[@]} -gt 0 ]]; then
+  # Physical display profile with explicit commands
+  for cmd in "${PROFILE_COMMANDS[@]}"; do
+    eval "$cmd"
+  done
+else
+  # Apply via active-monitors (handles WayVNC + layout for headless)
+  "${HOME}/.local/bin/active-monitors" --profile "$PROFILE_NAME"
+fi
 
 # Feature 083: The daemon now handles output-states.json updates.
 # The daemon watches monitor-profile.current for changes and automatically

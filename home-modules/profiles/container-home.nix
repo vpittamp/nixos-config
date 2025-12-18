@@ -36,6 +36,7 @@
     ../ai-assistants/claude-code.nix
     ../ai-assistants/codex.nix
     ../ai-assistants/gemini-cli.nix
+    ../ai-assistants/nix-ai-help.nix
 
     # External modules (excluding 1Password)
     # inputs.onepassword-shell-plugins.hmModules.default  # Excluded for container

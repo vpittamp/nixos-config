@@ -229,6 +229,11 @@ in
     BROWSER = lib.mkForce "chromium";
   };
 
-  # Feature 123: Enable OTEL AI session monitoring service
-  services.otel-ai-monitor.enable = true;
+  # Feature 123: OTEL AI assistant monitor service
+  # Receives forwarded telemetry from OTEL Collector on port 4320
+  # Collector receives from Claude Code on 4318, forwards here for session aggregation
+  services.otel-ai-monitor = {
+    enable = true;
+    port = 4320;  # Non-standard port (collector uses 4318)
+  };
 }

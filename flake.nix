@@ -65,6 +65,12 @@
     # Hardware-specific NixOS modules
     # Provides optimized configurations for various hardware platforms
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
+
+    # AI-powered NixOS assistant CLI
+    nix-ai-help = {
+      url = "github:olafkfreund/nix-ai-help";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs @ { self, flake-parts, ... }:

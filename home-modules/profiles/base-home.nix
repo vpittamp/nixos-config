@@ -84,6 +84,7 @@ in
     ../ai-assistants/claude-code.nix
     ../ai-assistants/codex.nix
     ../ai-assistants/gemini-cli.nix
+    ../ai-assistants/nix-ai-help.nix
 
     # External modules
     inputs.onepassword-shell-plugins.hmModules.default

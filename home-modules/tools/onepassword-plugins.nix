@@ -182,6 +182,7 @@
       echo "  ✅ openai - OpenAI CLI (op://CLI/OPENAI_API_KEY/api key)"
       echo "  ✅ argocd - Argo CD CLI (op://CLI/shdhimokibw653iy5gkyzay4qy/auth token)"
       echo "  ✅ mysql - MySQL CLI (op://Employee/.../password)"
+      echo "  ✅ nixai - NixOS AI Assistant (op://CLI/GEMINI_API_KEY/credential)"
       echo "  ⚪ az - Azure CLI (passthrough, uses interactive login)"
       echo "  ⚪ psql - PostgreSQL CLI (passthrough, no 1Password integration yet)"
       echo "  ⚪ pg_dump - PostgreSQL dump (passthrough, no 1Password integration yet)"

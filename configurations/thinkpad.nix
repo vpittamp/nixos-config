@@ -43,6 +43,7 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
 
@@ -113,6 +114,14 @@ in
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
+
+  # Feature 123: OpenTelemetry Collector for AI assistant telemetry
+  # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
+  services.otel-ai-collector = {
+    enable = true;
+    enableDebugExporter = true;  # Verbose logging for development
+    enableFileExporter = true;   # Raw telemetry for analysis
+  };
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
