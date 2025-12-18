@@ -442,7 +442,7 @@ in
          (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + (session.window_id ?: "0") + "' &"}
                    :cursor "pointer"
                    :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Processing..." : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]"}
-           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle"))}
+           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle")) + ((session.project ?: "") == (active_project.project ?: "") ? " in-active-project" : "")}
                 :orientation "h"
                 :space-evenly false
                 :spacing 4
