@@ -646,6 +646,7 @@ asyncio.run(stream.run())
     $EWW_CMD update panel_focus_mode=true
     $EWW_CMD update worktree_creating=true
     $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
+    $EWW_CMD update worktree_form_agent="claude"
     $EWW_CMD update edit_form_icon="🌿"
     $EWW_CMD update edit_form_error=""
 
@@ -987,6 +988,7 @@ asyncio.run(stream.run())
     DISPLAY_NAME=$($EWW get edit_form_display_name)
     ICON=$($EWW get edit_form_icon)
     SETUP_SPECKIT=$($EWW get worktree_form_speckit)  # Feature 112: Speckit scaffolding
+    AGENT_TYPE=$($EWW get worktree_form_agent)       # Feature 126: AI Agent
 
     # Validate required fields
     if [[ -z "$BRANCH_NAME" ]]; then
@@ -1071,37 +1073,20 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Create Git worktree
-    cd "$PARENT_DIR" || {
-      $EWW update edit_form_error="Cannot change to parent directory: $PARENT_DIR"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Cannot change to parent directory: $PARENT_DIR"
+    # Create Git worktree using i3pm CLI (Feature 126: Unified logic)
+    SPECKIT_FLAG=""
+    if [[ "$SETUP_SPECKIT" == "true" ]]; then
+      SPECKIT_FLAG="--speckit"
+    fi
+
+    # Execute i3pm worktree create
+    # Use qualified repo name and specify agent
+    if ! i3pm worktree create "$BRANCH_NAME" --repo "$PARENT_PROJECT" --agent "$AGENT_TYPE" $SPECKIT_FLAG 2>&1; then
+      $EWW update edit_form_error="Worktree creation failed. Check console for details."
+      $EWW update error_notification="Worktree creation failed"
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
       exit 1
-    }
-
-    # Try to create worktree (branch must exist or use -b to create)
-    if git rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
-      # Branch exists
-      if ! git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" 2>&1; then
-        $EWW update edit_form_error="Git worktree add failed"
-        # Feature 096 T024: Show error notification
-        $EWW update error_notification="Git worktree add failed for branch: $BRANCH_NAME"
-        $EWW update error_notification_visible=true
-        $EWW update save_in_progress=false
-        exit 1
-      fi
-    else
-      # Branch doesn't exist - create it
-      if ! git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" 2>&1; then
-        $EWW update edit_form_error="Git worktree add failed (new branch)"
-        # Feature 096 T024: Show error notification
-        $EWW update error_notification="Failed to create new branch: $BRANCH_NAME"
-        $EWW update error_notification_visible=true
-        $EWW update save_in_progress=false
-        exit 1
-      fi
     fi
 
     # Feature 101: Generate qualified worktree name
@@ -1109,29 +1094,6 @@ asyncio.run(stream.run())
     WORKTREE_NAME="''${PARENT_PROJECT}:''${BRANCH_NAME}"
     if [[ -z "$DISPLAY_NAME" ]]; then
       DISPLAY_NAME="$BRANCH_NAME"
-    fi
-
-    # Feature 101: Trigger rediscovery to pick up the new worktree
-    # The git worktree add above created the worktree, now repos.json needs to be updated
-    if ! i3pm discover >/dev/null 2>&1; then
-      $EWW update edit_form_error="Failed to update repos.json"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Worktree created but repos.json refresh failed"
-      $EWW update error_notification_visible=true
-      $EWW update save_in_progress=false
-      # Note: Don't remove the git worktree - it was successfully created
-      exit 1
-    fi
-
-    # Feature 112: Create speckit directory structure if enabled
-    if [[ "$SETUP_SPECKIT" == "true" ]]; then
-      SPECS_DIR="$WORKTREE_PATH/specs/$BRANCH_NAME"
-      if mkdir -p "$SPECS_DIR/checklists" 2>/dev/null; then
-        echo "Created speckit directory: $SPECS_DIR"
-      else
-        # Non-fatal warning - worktree was successfully created
-        echo "Warning: Failed to create speckit directory: $SPECS_DIR"
-      fi
     fi
 
     # Success: clear form state and refresh
@@ -1144,22 +1106,10 @@ asyncio.run(stream.run())
     $EWW update worktree_form_parent_project=""
     $EWW update worktree_form_repo_path=""
     $EWW update worktree_form_speckit=true  # Feature 112: Reset to default (checked)
+    $EWW update worktree_form_agent="claude" # Feature 126: Reset to default
     $EWW update edit_form_display_name=""
     $EWW update edit_form_icon=""
     $EWW update edit_form_error=""
-
-    # Note: Project list will be refreshed by the deflisten stream automatically
-
-    # Feature 096 T023: Show success notification
-    $EWW update success_notification="Worktree '$WORKTREE_NAME' created successfully"
-    $EWW update success_notification_visible=true
-    # Auto-dismiss after 3 seconds (T020)
-    (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
-
-    # Feature 096 T022: Clear loading state
-    $EWW update save_in_progress=false
-
-    echo "Worktree created successfully: $WORKTREE_NAME"
   '';
 
   # Feature 094 US5: Worktree delete script (T060)
@@ -3657,17 +3607,12 @@ in
       (defvar worktree_creating false)            ;; True when create worktree form is visible
       (defvar worktree_form_description "")       ;; Feature 102: Primary input - feature description
       (defvar worktree_form_branch_name "")       ;; Branch name (auto-generated from description, editable)
-      (defvar worktree_form_path "")              ;; Worktree path (auto-generated, editable)
-      (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
-      (defvar worktree_form_repo_path "")         ;; Feature 102: Repo path for auto-populating worktree path
+      (defvar worktree_form_path "")              ;; Worktree path (auto-populated from branch name, editable)
+      (defvar worktree_form_parent_project "")    ;; Parent project qualified name (account/repo)
+      (defvar worktree_form_repo_path "")         ;; Parent project directory path
       (defvar worktree_form_speckit true)         ;; Feature 112: Speckit scaffolding checkbox (default: checked)
-      (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
-      ;; Feature 102: Worktree hover state (using Eww events instead of CSS :hover for nested for loop compatibility)
-      (defvar hover_worktree_name "")           ;; Qualified name of currently hovered worktree
-      ;; Feature 102: Worktree delete dialog state
-      (defvar worktree_delete_dialog_visible false)
-      (defvar worktree_delete_name "")            ;; Worktree qualified name to delete
-      (defvar worktree_delete_branch "")          ;; Branch name for display
+      (defvar worktree_form_agent "claude")       ;; Feature 126: AI agent to use (claude or gemini)
+      (defvar worktree_delete_branch "")          ;; Branch name for deletion confirmation
       (defvar worktree_delete_is_dirty false)     ;; Whether worktree has uncommitted changes
 
       ;; Feature 099 T008: Expanded projects state (list of expanded project names as JSON array)
@@ -5848,6 +5793,27 @@ in
               :class "field-input"
               :value edit_form_icon
               :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon='{}'"))
+          ;; Feature 126: Agent selector (Claude vs Gemini)
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "AI Agent")
+            (box
+              :class "agent-buttons"
+              :orientation "h"
+              :space-evenly false
+              (button
+                :class "agent-btn ''${worktree_form_agent == 'claude' ? 'active' : '''}"
+                :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='claude'"
+                "Claude")
+              (button
+                :class "agent-btn ''${worktree_form_agent == 'gemini' ? 'active' : '''}"
+                :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='gemini'"
+                "Gemini")))
           ;; Feature 112: Speckit scaffolding checkbox (checked by default)
           (box
             :class "form-field form-field-checkbox"
@@ -8940,32 +8906,55 @@ in
         min-width: 80px;
       }
 
-      /* Scope selector buttons */
       .scope-buttons {
-        padding: 4px 0;
+        margin-top: 4px;
+        background-color: #313244;
+        border-radius: 6px;
+        padding: 2px;
       }
 
       .scope-btn {
-        background-color: rgba(49, 50, 68, 0.5);
-        color: ${mocha.subtext0};
-        padding: 6px 16px;
-        border: 1px solid ${mocha.surface0};
+        padding: 4px 12px;
         border-radius: 4px;
-        font-size: 12px;
-        margin-right: 8px;
-      }
-
-      .scope-btn:hover {
-        background-color: rgba(49, 50, 68, 0.8);
-        color: ${mocha.text};
+        color: #cdd6f4;
+        background-color: transparent;
       }
 
       .scope-btn.active {
-        background-color: ${mocha.blue};
-        color: ${mocha.base};
-        border-color: ${mocha.blue};
+        background-color: #89b4fa;
+        color: #11111b;
         font-weight: bold;
       }
+
+      .agent-buttons {
+        margin-top: 4px;
+        background-color: #313244;
+        border-radius: 6px;
+        padding: 2px;
+      }
+
+      .agent-btn {
+        padding: 4px 12px;
+        border-radius: 4px;
+        color: #cdd6f4;
+        background-color: transparent;
+      }
+
+      .agent-btn.active {
+        font-weight: bold;
+        color: #11111b;
+      }
+
+      /* Claude color (Blue) */
+      .agent-btn.active[onclick*="claude"] {
+        background-color: #89b4fa;
+      }
+
+      /* Gemini color (Purple) */
+      .agent-btn.active[onclick*="gemini"] {
+        background-color: #cba6f7;
+      }
+
 
       /* Remote toggle styling */
       .remote-toggle {

@@ -124,6 +124,7 @@ export const WorktreeCreateRequestSchema = z.object({
   branch: z.string().min(1),
   from: z.string().default("main"),
   repo: z.string().optional(),
+  agent: z.enum(["claude", "gemini"]).default("claude"),
 });
 
 export type WorktreeCreateRequest = z.infer<typeof WorktreeCreateRequestSchema>;

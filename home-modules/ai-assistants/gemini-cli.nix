@@ -1,4 +1,4 @@
-{ config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
+{ config, pkgs, lib, self, pkgs-unstable ? pkgs, ... }:
 
 let
   # Chromium is only available on Linux
@@ -25,6 +25,51 @@ let
         --set NODE_OPTIONS "--dns-result-order=ipv4first"
     '';
   };
+
+  # Auto-import all .md files from .gemini/commands/ as custom commands
+  # This follows the same pattern as Claude Code's slash commands
+  commandFiles = builtins.readDir (self + "/.gemini/commands");
+  
+  # Helper to parse simple YAML frontmatter in Nix
+  # Expects format:
+  # ---
+  # description: some text
+  # ---
+  # prompt content
+  parseCommand = name: content:
+    let
+      lines = lib.splitString "\n" content;
+      hasFrontmatter = lib.length lines > 2 && lib.head lines == "---";
+      
+      # Find the end of frontmatter (the second ---)
+      frontmatterEndIndex = 
+        if hasFrontmatter 
+        then (let 
+                # Find index of second ---
+                indices = lib.findFirst (i: i > 0 && lib.elemAt lines i == "---") null (lib.range 1 (lib.length lines - 1));
+              in if indices == null then 0 else indices)
+        else 0;
+
+      # Extract description from frontmatter
+      frontmatterLines = if hasFrontmatter then lib.take frontmatterEndIndex lines else [];
+      descriptionLine = lib.findFirst (l: lib.hasPrefix "description:" l) null frontmatterLines;
+      description = if descriptionLine != null 
+        then lib.replaceStrings ["description: " "description:"] ["" ""] descriptionLine
+        else "Custom command: ${name}";
+
+      # Prompt is everything after frontmatter
+      promptLines = if hasFrontmatter then lib.drop (frontmatterEndIndex + 1) lines else lines;
+      prompt = lib.concatStringsSep "\n" promptLines;
+    in
+    { inherit description prompt; };
+
+  commands = lib.mapAttrs'
+    (name: type:
+      lib.nameValuePair
+        (lib.removeSuffix ".md" name)
+        (parseCommand name (builtins.readFile (self + "/.gemini/commands/${name}")))
+    )
+    (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
 
   # Settings JSON for activation script - generated with dynamic chromium paths
   # This is written as a real file (not symlink) to allow gemini-cli to write credentials
@@ -103,170 +148,7 @@ EOF
     # Settings are written via home.activation.setupGeminiConfig as a real file
     # (not symlink) so gemini-cli can write oauth_creds.json to ~/.gemini/
 
-    # Custom commands for common workflows
-    commands = {
-      # Git commit helper
-      "commit" = {
-        description = "Generate a conventional commit message from staged changes";
-        prompt = ''
-          Analyze the git diff of staged changes and generate a conventional commit message.
-          Use the format: <type>(<scope>): <description>
-          
-          Types: feat, fix, docs, style, refactor, test, chore
-          
-          Git diff:
-          $(git diff --cached)
-          
-          Additional context: {{args}}
-        '';
-      };
-      
-      # NixOS helper
-      "nix-help" = {
-        description = "Get help with NixOS configurations and commands";
-        prompt = ''
-          You are a NixOS expert. Help with the following NixOS-related question or task:
-          {{args}}
-          
-          Context:
-          - System: NixOS with home-manager
-          - Flake-based configuration in /etc/nixos
-          - Using unstable nixpkgs channel
-          - Container-based development environment
-        '';
-      };
-      
-      # Kubernetes/CDK8s helper
-      "k8s" = {
-        description = "Help with Kubernetes and CDK8s tasks";
-        prompt = ''
-          You are a Kubernetes and CDK8s expert. Help with the following:
-          {{args}}
-          
-          Context:
-          - Using CDK8s with TypeScript
-          - ArgoCD for GitOps
-          - Kind cluster for local development
-          - VClusters for multi-tenancy
-          - Backstage for developer portal
-        '';
-      };
-      
-      # Code review
-      "review" = {
-        description = "Review code changes and provide feedback";
-        prompt = ''
-          Review the following code changes and provide constructive feedback:
-          
-          Focus on:
-          1. Code quality and best practices
-          2. Potential bugs or issues
-          3. Security concerns
-          4. Performance implications
-          5. Maintainability
-          
-          Changes to review: {{args}}
-        '';
-      };
-      
-      # Documentation generator
-      "docs" = {
-        description = "Generate or improve documentation";
-        prompt = ''
-          Generate clear, comprehensive documentation for: {{args}}
-          
-          Include:
-          - Purpose and overview
-          - Usage examples
-          - Configuration options
-          - Common issues and solutions
-          - Best practices
-          
-          Use Markdown format with proper headings.
-        '';
-      };
-      
-      # TypeScript helper
-      "ts" = {
-        description = "Help with TypeScript code and CDK8s constructs";
-        prompt = ''
-          You are a TypeScript and CDK8s expert. Help with the following:
-          {{args}}
-          
-          Context:
-          - TypeScript for CDK8s applications
-          - Modern TypeScript features and patterns
-          - Type safety and best practices
-          - CDK8s construct development
-        '';
-      };
-      
-      # Troubleshooting assistant
-      "debug" = {
-        description = "Help debug issues in the development environment";
-        prompt = ''
-          Help debug the following issue:
-          {{args}}
-          
-          Approach:
-          1. Identify the problem clearly
-          2. List possible causes
-          3. Suggest diagnostic steps
-          4. Provide potential solutions
-          5. Include relevant commands or code fixes
-        '';
-      };
-      
-      # Explain command or concept
-      "explain" = {
-        description = "Explain a command, concept, or technology";
-        prompt = ''
-          Provide a clear, concise explanation of: {{args}}
-          
-          Include:
-          - What it is and its purpose
-          - How it works
-          - Common use cases
-          - Examples if applicable
-          - Related concepts or tools
-        '';
-      };
-      
-      # Security audit
-      "security" = {
-        description = "Perform security review of code or configuration";
-        prompt = ''
-          Perform a security audit of the following:
-          {{args}}
-          
-          Check for:
-          1. Exposed secrets or credentials
-          2. Insecure configurations
-          3. Potential vulnerabilities
-          4. Best practice violations
-          5. Compliance issues
-          
-          Provide specific recommendations for improvements.
-        '';
-      };
-      
-      # Performance optimization
-      "optimize" = {
-        description = "Suggest performance optimizations";
-        prompt = ''
-          Analyze and suggest performance optimizations for:
-          {{args}}
-          
-          Consider:
-          1. Algorithm efficiency
-          2. Resource utilization
-          3. Caching opportunities
-          4. Code optimization
-          5. Configuration tuning
-          
-          Provide specific, actionable recommendations.
-        '';
-      };
-    };
+    # Custom commands for common workflows - auto-imported from .gemini/commands/
+    commands = commands;
   };
 }
