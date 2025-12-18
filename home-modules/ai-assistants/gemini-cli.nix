@@ -8,6 +8,23 @@ let
   chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
+
+  # Base gemini-cli package
+  baseGeminiCli = pkgs-unstable.gemini-cli or pkgs.gemini-cli;
+
+  # Wrapped gemini-cli with IPv4-first fix for OAuth authentication
+  # Issue: https://github.com/google-gemini/gemini-cli/issues/4984
+  # On NixOS, Node.js tries IPv6 first which times out before falling back to IPv4.
+  # This wrapper forces IPv4 connections for reliable OAuth flows.
+  geminiCliWrapped = pkgs.symlinkJoin {
+    name = "gemini-cli-wrapped";
+    paths = [ baseGeminiCli ];
+    buildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/gemini \
+        --set NODE_OPTIONS "--dns-result-order=ipv4first"
+    '';
+  };
 in
 {
   # Force overwrite settings.json to prevent conflicts with manually-created files
@@ -17,7 +34,7 @@ in
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
   programs.gemini-cli = {
     enable = true;
-    package = pkgs-unstable.gemini-cli or pkgs.gemini-cli;  # Use unstable if available, fallback to stable
+    package = geminiCliWrapped;  # Use wrapped version with IPv4-first fix
 
     # Default model to use (Gemini 3.0 Pro Preview)
     defaultModel = "gemini-3.0-pro-preview";
