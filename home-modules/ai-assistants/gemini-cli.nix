@@ -48,7 +48,8 @@ in
       theme = "Default";
       vimMode = true;
       preferredEditor = "nvim";
-      autoAccept = false;
+      # Auto-accept all tool actions (equivalent to --yolo / --approval-mode yolo)
+      autoAccept = true;
       # Enable preview features to access Gemini 3.0 models
       # https://geminicli.com/docs/get-started/gemini-3/
       previewFeatures = true;
