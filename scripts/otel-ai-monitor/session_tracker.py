@@ -26,7 +26,7 @@ from .models import (
     SessionUpdate,
     TelemetryEvent,
 )
-from .sway_helper import get_focused_window_info
+from .sway_helper import get_all_window_ids, get_focused_window_info
 
 if TYPE_CHECKING:
     from .output import OutputWriter
@@ -135,20 +135,35 @@ class SessionTracker:
                 # Create new session
                 # Capture focused window ID and project from window marks
                 window_id, window_project = get_focused_window_info()
-                # Prefer project from window marks, fall back to telemetry
-                project = window_project or self._extract_project(event)
-                session = Session(
-                    session_id=session_id,
-                    tool=event.tool or AITool.CLAUDE_CODE,
-                    state=SessionState.IDLE,
-                    project=project,
-                    window_id=window_id,
-                    created_at=now,
-                    last_event_at=now,
-                    state_changed_at=now,
-                )
-                self._sessions[session_id] = session
-                logger.info(f"Created session {session_id} for {session.tool} (window_id={window_id}, project={project})")
+
+                # Check for existing session with same window_id (deduplicate)
+                existing_for_window = None
+                if window_id:
+                    for existing_id, existing_session in self._sessions.items():
+                        if existing_session.window_id == window_id:
+                            existing_for_window = existing_session
+                            break
+
+                if existing_for_window:
+                    # Reuse existing session for this window
+                    session = existing_for_window
+                    session.last_event_at = now
+                    logger.debug(f"Reusing session {session.session_id} for window {window_id}")
+                else:
+                    # Prefer project from window marks, fall back to telemetry
+                    project = window_project or self._extract_project(event)
+                    session = Session(
+                        session_id=session_id,
+                        tool=event.tool or AITool.CLAUDE_CODE,
+                        state=SessionState.IDLE,
+                        project=project,
+                        window_id=window_id,
+                        created_at=now,
+                        last_event_at=now,
+                        state_changed_at=now,
+                    )
+                    self._sessions[session_id] = session
+                    logger.info(f"Created session {session_id} for {session.tool} (window_id={window_id}, project={project})")
 
             # Update last event time
             session.last_event_at = now
@@ -462,11 +477,19 @@ class SessionTracker:
         await self.output.write_session_list(session_list)
 
     async def _expiry_loop(self) -> None:
-        """Periodically check for and remove expired sessions."""
+        """Periodically check for and remove expired/orphaned sessions."""
+        check_count = 0
         while self._running:
             try:
-                await asyncio.sleep(30)  # Check every 30 seconds
-                await self._expire_sessions()
+                await asyncio.sleep(10)  # Check every 10 seconds
+                check_count += 1
+
+                # Window validation every 10 seconds (for faster cleanup of closed terminals)
+                await self._cleanup_orphaned_windows()
+
+                # Full timeout expiry every 30 seconds (every 3rd check)
+                if check_count % 3 == 0:
+                    await self._expire_sessions()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -502,3 +525,42 @@ class SessionTracker:
                     timestamp=int(now.timestamp()),
                 )
                 await self.output.write_update(update)
+
+    async def _cleanup_orphaned_windows(self) -> None:
+        """Remove sessions whose windows no longer exist.
+
+        This handles the case where a terminal is closed but the session
+        hasn't timed out yet. We validate that window_id still exists in Sway.
+        """
+        # Get current window IDs from Sway
+        current_windows = get_all_window_ids()
+        if not current_windows:
+            # Can't get window list - skip cleanup to avoid false positives
+            return
+
+        orphaned = []
+
+        async with self._lock:
+            for session_id, session in self._sessions.items():
+                # Skip sessions without window_id
+                if not session.window_id:
+                    continue
+
+                # Check if window still exists
+                if session.window_id not in current_windows:
+                    orphaned.append(session_id)
+
+            # Remove orphaned sessions
+            for session_id in orphaned:
+                session = self._sessions.pop(session_id)
+                logger.info(f"Session {session_id} orphaned (window {session.window_id} closed)")
+
+                # Cancel any timers
+                if session_id in self._quiet_timers:
+                    self._quiet_timers.pop(session_id).cancel()
+                if session_id in self._completed_timers:
+                    self._completed_timers.pop(session_id).cancel()
+
+            # Broadcast updated list if any were removed
+            if orphaned:
+                await self._broadcast_sessions_unlocked()

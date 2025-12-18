@@ -171,6 +171,9 @@ in
   :initial "1.0"
   `echo "1.0"`)
 
+;; Feature 123: Active AI session highlighting uses active_project data
+;; Comparing session.project with active_project.project is more reliable than window IDs
+
 ;; Interactions / popups
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
@@ -438,11 +441,12 @@ in
             :tooltip {"AI Monitor Error: " + (ai_sessions_data.error ?: "unknown")}
             (label :class "ai-chip-indicator" :text "󰅙"))
        ;; Normal session chips
+       ;; Adds "focused" class when this session matches the active project
        (for session in {ai_sessions_data.sessions ?: []}
          (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + (session.window_id ?: "0") + "' &"}
                    :cursor "pointer"
-                   :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Processing..." : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]"}
-           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle")) + ((session.project ?: "") == (active_project.project ?: "") ? " in-active-project" : "")}
+                   :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Working" : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]" + ((session.project ?: "") == (active_project.project ?: "") ? " (Active)" : "")}
+           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle")) + ((session.project ?: "") == (active_project.project ?: "") ? " focused" : "")}
                 :orientation "h"
                 :space-evenly false
                 :spacing 4
