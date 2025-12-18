@@ -459,45 +459,37 @@ class ScratchpadManager:
                 mode = state_file.read_text().strip()
                 is_docked = (mode == "docked")
 
-            # Get monitor dimensions from sway
-            tree = await self.sway.get_tree()
-            outputs = await self.sway.get_outputs()
-
-            # Find focused output
-            focused_output = None
-            for output in outputs:
-                if output.focused:
-                    focused_output = output
+            # Get workspace rect (accounts for all reserved space: top bar, docked panels, etc.)
+            workspaces = await self.sway.get_workspaces()
+            focused_ws = None
+            for ws in workspaces:
+                if ws.focused:
+                    focused_ws = ws
                     break
 
-            if not focused_output:
-                # Fallback to first output
-                focused_output = outputs[0] if outputs else None
-
-            if not focused_output:
-                self.logger.warning("No output found for scratchpad positioning")
+            if not focused_ws:
+                self.logger.warning("No focused workspace found for scratchpad positioning")
                 return
 
-            monitor_width = focused_output.rect.width
-            monitor_height = focused_output.rect.height
-
-            # Panel width is 320px (from eww-monitoring-panel.nix panelWidth default)
-            panel_width = 320
+            # Workspace rect gives us the actual usable area
+            ws_x = focused_ws.rect.x
+            ws_y = focused_ws.rect.y
+            ws_width = focused_ws.rect.width
+            ws_height = focused_ws.rect.height
 
             if is_docked:
-                # Docked mode: center in remaining space (left of panel)
-                available_width = monitor_width - panel_width
-                # Terminal takes 80% of available width, max 1000px
-                term_width = min(int(available_width * 0.8), 1000)
-                # Height is 60% of monitor, max 700px
-                term_height = min(int(monitor_height * 0.6), 700)
-                # Center in available space (panel is on right side)
-                center_x = (available_width - term_width) // 2
-                center_y = (monitor_height - term_height) // 2
+                # Docked mode: use workspace rect (already accounts for docked panel)
+                # Terminal takes 80% of workspace width, max 1000px
+                term_width = min(int(ws_width * 0.8), 1000)
+                # Height is 70% of workspace height, max 700px
+                term_height = min(int(ws_height * 0.7), 700)
+                # Center in workspace area
+                center_x = ws_x + (ws_width - term_width) // 2
+                center_y = ws_y + (ws_height - term_height) // 2
 
                 self.logger.debug(
                     f"[Feature 125] Docked mode: sizing scratchpad to {term_width}x{term_height} "
-                    f"at ({center_x}, {center_y}), available_width={available_width}"
+                    f"at ({center_x}, {center_y}), workspace={ws_width}x{ws_height}"
                 )
 
                 await self.sway.command(
@@ -505,15 +497,16 @@ class ScratchpadManager:
                     f'move position {center_x} px {center_y} px'
                 )
             else:
-                # Overlay mode: use standard sizing (1100x550 centered on full screen)
+                # Overlay mode: use workspace rect for centering (still accounts for top bar)
                 term_width = 1100
                 term_height = 550
-                center_x = (monitor_width - term_width) // 2
-                center_y = (monitor_height - term_height) // 2
+                # Center in workspace area
+                center_x = ws_x + (ws_width - term_width) // 2
+                center_y = ws_y + (ws_height - term_height) // 2
 
                 self.logger.debug(
                     f"[Feature 125] Overlay mode: sizing scratchpad to {term_width}x{term_height} "
-                    f"at ({center_x}, {center_y})"
+                    f"at ({center_x}, {center_y}), workspace={ws_width}x{ws_height}"
                 )
 
                 await self.sway.command(
