@@ -7347,16 +7347,16 @@ in
         /* GTK CSS doesn't support text-shadow */
       }
 
-      /* Feature 110: Working state - pulsating red circle on subtle background */
+      /* Feature 110: Working state - compact pulsating teal indicator */
       .badge-working {
-        color: ${mocha.red};
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        font-size: 28px;
+        color: ${mocha.teal};
+        background: rgba(148, 226, 213, 0.15);
+        border: 1px solid rgba(148, 226, 213, 0.4);
+        box-shadow: 0 0 6px rgba(148, 226, 213, 0.4);
+        font-size: 12px;
         font-weight: bold;
-        min-width: 32px;
-        min-height: 32px;
+        padding: 2px 6px;
+        border-radius: 8px;
       }
 
       /* Feature 110: Opacity classes for pulsating fade effect */

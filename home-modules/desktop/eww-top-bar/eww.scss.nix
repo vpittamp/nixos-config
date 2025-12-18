@@ -546,6 +546,33 @@
     background: rgba(69, 71, 90, 0.5);
   }
 
+  /* Focused state - highlight when this AI session's window is currently focused */
+  /* Adds bright lavender border and subtle glow to indicate "you are here" */
+  .ai-chip.focused {
+    border-width: 2px;
+    border-style: solid;
+    border-color: rgba(203, 166, 247, 0.9);
+    box-shadow: 0 0 12px rgba(203, 166, 247, 0.6),
+                0 0 4px rgba(203, 166, 247, 0.8),
+                inset 0 0 8px rgba(203, 166, 247, 0.15);
+  }
+
+  /* Focused + working: combine teal working glow with lavender focus ring */
+  .ai-chip.focused.working {
+    border-width: 2px;
+    border-style: solid;
+    border-color: rgba(203, 166, 247, 0.9);
+    box-shadow: 0 0 12px rgba(203, 166, 247, 0.6),
+                0 0 10px rgba(148, 226, 213, 0.4),
+                inset 0 0 6px rgba(148, 226, 213, 0.15);
+  }
+
+  /* Focused + idle: make idle chip more visible when focused */
+  .ai-chip.focused.idle {
+    opacity: 1;
+    background: rgba(69, 71, 90, 0.6);
+  }
+
   /* Error state - red indicator for pipe/service failures (no animation for CPU savings) */
   .ai-chip.error {
     background: linear-gradient(135deg, rgba(243, 139, 168, 0.3), rgba(235, 160, 172, 0.25));
@@ -635,13 +662,34 @@
     color: #a6adc8;
   }
 
-  /* Active project highlight - glowing border when session matches active project */
-  .ai-chip.in-active-project {
-    border-color: rgba(203, 166, 247, 0.7);
-    box-shadow: 0 0 8px rgba(203, 166, 247, 0.4), 0 0 2px rgba(203, 166, 247, 0.6);
+  /* Focused state - highlight when this AI session's window is currently focused */
+  /* Adds bright lavender border and subtle glow to indicate "you are here" */
+  .ai-chip.focused {
+    border-width: 2px;
+    border-style: solid;
+    border-color: rgba(203, 166, 247, 0.9);
+    box-shadow: 0 0 12px rgba(203, 166, 247, 0.6),
+                0 0 4px rgba(203, 166, 247, 0.8),
+                inset 0 0 8px rgba(203, 166, 247, 0.15);
   }
 
-  .ai-chip.in-active-project .ai-chip-project-badge {
+  /* Focused + working: combine teal working glow with lavender focus ring */
+  .ai-chip.focused.working {
+    border-width: 2px;
+    border-style: solid;
+    border-color: rgba(203, 166, 247, 0.9);
+    box-shadow: 0 0 12px rgba(203, 166, 247, 0.6),
+                0 0 10px rgba(148, 226, 213, 0.4),
+                inset 0 0 6px rgba(148, 226, 213, 0.15);
+  }
+
+  /* Focused + idle: make idle chip more visible when focused */
+  .ai-chip.focused.idle {
+    opacity: 1;
+    background: rgba(69, 71, 90, 0.6);
+  }
+
+  .ai-chip.focused .ai-chip-project-badge {
     border-color: rgba(203, 166, 247, 0.8);
     color: #cba6f7;
     box-shadow: 0 0 4px rgba(203, 166, 247, 0.3);
