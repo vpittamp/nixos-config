@@ -36,8 +36,12 @@ in
     enable = true;
     package = geminiCliWrapped;  # Use wrapped version with IPv4-first fix
 
-    # Default model to use (Gemini 3.0 Pro Preview)
-    defaultModel = "gemini-3.0-pro-preview";
+    # Default model: Available options with preview features enabled:
+    # - Auto (let system choose based on task complexity)
+    # - gemini-3-flash-preview (Gemini 3 Flash - fast, 78% SWE-bench)
+    # - gemini-3-pro-preview-11-2025 (Gemini 3 Pro - complex tasks)
+    # - gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
+    defaultModel = "gemini-3-flash-preview";
 
     # Settings for gemini-cli
     settings = {
@@ -45,6 +49,9 @@ in
       vimMode = true;
       preferredEditor = "nvim";
       autoAccept = false;
+      # Enable preview features to access Gemini 3.0 models
+      # https://geminicli.com/docs/get-started/gemini-3/
+      previewFeatures = true;
 
       # Authentication - DO NOT pre-configure auth type
       # Pre-setting selectedType causes the CLI to hang indefinitely
