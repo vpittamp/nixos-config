@@ -79,6 +79,16 @@ let
     previewFeatures = true;
     theme = "Default";
     vimMode = true;
+    # Feature 123: OpenTelemetry telemetry configuration
+    # Sends traces to local OTEL Collector for session tracking
+    telemetry = {
+      enabled = true;
+      target = "local";  # Use local OTLP endpoint
+      otlpEndpoint = "http://localhost:4318";  # Standard OTLP HTTP port
+      otlpProtocol = "http";  # Use HTTP (not gRPC)
+      logPrompts = true;  # Enable for debugging (disable in production)
+      useCollector = true;  # Route through collector
+    };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
         command = "npx";
@@ -121,9 +131,19 @@ in
     $DRY_RUN_CMD mkdir -p "$GEMINI_DIR"
     $DRY_RUN_CMD chmod 700 "$GEMINI_DIR"
 
-    # If settings.json is missing OR is a symlink, create real writable file
-    # This preserves user customizations if they exist as a real file
+    # Update settings.json if:
+    # - File is missing
+    # - File is a symlink (from old config)
+    # - File lacks telemetry config (Feature 123: OTEL support)
+    NEEDS_UPDATE=false
     if [ ! -f "$GEMINI_DIR/settings.json" ] || [ -L "$GEMINI_DIR/settings.json" ]; then
+      NEEDS_UPDATE=true
+    elif ! ${pkgs.gnugrep}/bin/grep -q '"telemetry"' "$GEMINI_DIR/settings.json" 2>/dev/null; then
+      # Feature 123: Migrate existing settings to include OTEL telemetry
+      NEEDS_UPDATE=true
+    fi
+
+    if [ "$NEEDS_UPDATE" = "true" ]; then
       $DRY_RUN_CMD rm -f "$GEMINI_DIR/settings.json"
       $DRY_RUN_CMD cat > "$GEMINI_DIR/settings.json" <<'EOF'
 ${settingsJson}
