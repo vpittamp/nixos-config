@@ -77,17 +77,22 @@ let
       tertiary = "DP-1";  # USB-C/Thunderbolt display
       quaternary = "DP-1"; # Fallback to tertiary
     };
-    # Ryzen Desktop: 3-monitor bare-metal setup with NVIDIA RTX 5070
-    # Actual outputs (swaymsg -t get_outputs):
-    #   DP-3 = Verbatim MT17 (main)
-    #   DP-2 = HP Z24i G2
-    #   HDMI-A-1 = HP Z24i G2
+    # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
+    # Physical layout (matching sway.nix):
+    #   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+    #   │  HDMI-A-1   │  │    DP-1     │  │    DP-2     │
+    #   │   (Left)    │  │  (Primary)  │  │   (Right)   │
+    #   └─────────────┘  └─────────────┘  └─────────────┘
+    #                    ┌─────────────┐
+    #                    │    DP-3     │
+    #                    │  (Bottom)   │
+    #                    └─────────────┘
     "ryzen" = {
-      outputs = [ "DP-3" "DP-2" "HDMI-A-1" ];
-      primary = "DP-3";       # Verbatim MT17 (main monitor)
-      secondary = "DP-2";     # HP Z24i G2 (left)
-      tertiary = "HDMI-A-1";  # HP Z24i G2 (right)
-      quaternary = "HDMI-A-1"; # Fallback to tertiary
+      outputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ];
+      primary = "DP-1";       # Center monitor (main workspace)
+      secondary = "HDMI-A-1"; # Left monitor
+      tertiary = "DP-2";      # Right monitor
+      quaternary = "DP-3";    # Bottom monitor
     };
   };
 in

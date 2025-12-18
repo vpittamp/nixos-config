@@ -12,22 +12,24 @@ import { WorktreeCreateRequestSchema, type WorktreeCreateRequest } from "../../.
  */
 export async function worktreeCreate(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    string: ["from", "repo"],
+    string: ["from", "repo", "agent"],
     boolean: ["speckit"],  // Feature 112: Speckit scaffolding flag
     default: {
       from: "main",
       speckit: false,  // CLI default is opt-in (false)
+      agent: "claude",
     },
   });
 
   const positionalArgs = parsed._ as string[];
 
   if (positionalArgs.length < 1) {
-    console.error("Usage: i3pm worktree create <branch> [--from <base>] [--repo <account/repo>] [--speckit]");
+    console.error("Usage: i3pm worktree create <branch> [--from <base>] [--repo <account/repo>] [--speckit] [--agent claude|gemini]");
     console.error("");
     console.error("Examples:");
     console.error("  i3pm worktree create 100-feature");
     console.error("  i3pm worktree create 100-feature --speckit   # Create with speckit scaffolding");
+    console.error("  i3pm worktree create 100-feature --speckit --agent gemini");
     console.error("  i3pm worktree create 101-bugfix --from develop");
     console.error("  i3pm worktree create review --repo vpittamp/nixos");
     return 1;
@@ -42,6 +44,7 @@ export async function worktreeCreate(args: string[]): Promise<number> {
       branch,
       from: parsed.from,
       repo: parsed.repo,
+      agent: parsed.agent,
     });
   } catch (error: unknown) {
     if (error instanceof Error && error.name === "ZodError") {
@@ -125,6 +128,37 @@ export async function worktreeCreate(args: string[]): Promise<number> {
     try {
       await Deno.mkdir(checklistsDir, { recursive: true });
       console.log(`Created speckit directory: ${specsDir}`);
+
+      // Feature 126: Initialize agent context file (CLAUDE.md or GEMINI.md)
+      const agentFile = request.agent === "gemini" ? "GEMINI.md" : "CLAUDE.md";
+      const agentPath = `${worktreePath}/${agentFile}`;
+      const templatePath = `${repoPath}/.specify/templates/agent-file-template.md`;
+
+      try {
+        // Only create if it doesn't exist
+        await Deno.stat(agentPath);
+      } catch {
+        // Doesn't exist, copy from template if available
+        try {
+          const templateContent = await Deno.readTextFile(templatePath);
+          const projectName = repoPath.split("/").pop() || "Project";
+          const date = new Date().toISOString().split("T")[0];
+          
+          let content = templateContent
+            .replace("[PROJECT NAME]", projectName)
+            .replace("[DATE]", date)
+            .replace("[EXTRACTED FROM ALL PLAN.MD FILES]", "- (Initial worktree setup)")
+            .replace("[ACTUAL STRUCTURE FROM PLANS]", "src/\ntests/")
+            .replace("[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]", "# Add commands here")
+            .replace("[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]", "Follow project conventions")
+            .replace("[LAST 3 FEATURES AND WHAT THEY ADDED]", `- ${branch}: Initial worktree setup`);
+            
+          await Deno.writeTextFile(agentPath, content);
+          console.log(`Initialized agent context: ${agentFile}`);
+        } catch (err) {
+          console.error(`Warning: Failed to initialize ${agentFile}: ${err.message}`);
+        }
+      }
     } catch (error) {
       // Non-fatal warning - worktree was created successfully
       const message = error instanceof Error ? error.message : String(error);
