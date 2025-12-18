@@ -105,14 +105,22 @@
       quaternary = "HEADLESS-3";  # Fallback to tertiary
       outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
     };
-    # Ryzen Desktop: 3-monitor bare-metal setup with NVIDIA RTX 5070
-    # Current outputs: DP-3 (Verbatim MT17), DP-2 (HP Z24i G2), HDMI-A-1 (HP Z24i G2)
+    # Ryzen Desktop: 4-monitor bare-metal setup with NVIDIA RTX 5070
+    # Physical layout (matching sway.nix):
+    #   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+    #   │  HDMI-A-1   │  │    DP-1     │  │    DP-2     │
+    #   │   (Left)    │  │  (Primary)  │  │   (Right)   │
+    #   └─────────────┘  └─────────────┘  └─────────────┘
+    #                    ┌─────────────┐
+    #                    │    DP-3     │
+    #                    │  (Bottom)   │
+    #                    └─────────────┘
     "ryzen" = {
-      primary = "DP-3";       # Verbatim MT17 (main monitor)
-      secondary = "DP-2";     # HP Z24i G2 (left)
-      tertiary = "HDMI-A-1";  # HP Z24i G2 (right)
-      quaternary = "HDMI-A-1"; # Fallback to tertiary
-      outputs = [ "DP-3" "DP-2" "HDMI-A-1" ];
+      primary = "DP-1";       # Center monitor (main workspace)
+      secondary = "HDMI-A-1"; # Left monitor
+      tertiary = "DP-2";      # Right monitor
+      quaternary = "DP-3";    # Bottom monitor
+      outputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ];
     };
   };
 }

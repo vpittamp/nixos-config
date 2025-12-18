@@ -108,8 +108,9 @@ in
     # No gaming needed
     enableGaming = false;
 
-    # No fingerprint reader on desktop
-    enableFingerprint = false;
+    # Fingerprint reader support (if USB fingerprint reader is connected)
+    # Enroll fingerprint with: fprintd-enroll
+    enableFingerprint = true;
   };
 
   # ========== SUNSHINE REMOTE DESKTOP (Software Encoding) ==========
@@ -348,6 +349,48 @@ in
 
   # Add user to required groups
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" ];
+
+  # ========== FINGERPRINT AUTHENTICATION ==========
+  # Fingerprint reader support (USB fingerprint reader)
+  # Enroll fingerprint with: fprintd-enroll
+  # Verify with: fprintd-verify
+  services.fprintd.enable = true;
+
+  # PAM integration for fingerprint authentication
+  # Keep separate from fprintd to avoid login conflicts
+  # Reference: https://github.com/NixOS/nixpkgs/issues/171136
+  security.pam.services = {
+    # Sudo with fingerprint (fingerprint OR password)
+    sudo.fprintAuth = true;
+
+    # Screen lock (swaylock)
+    swaylock.fprintAuth = true;
+
+    # Polkit for GUI privilege escalation
+    polkit-1.fprintAuth = true;
+
+    # Login fingerprint - enable cautiously (can cause issues with some display managers)
+    # greetd.fprintAuth = true;
+  };
+
+  # Polkit rules for fingerprint and 1Password integration
+  security.polkit.extraConfig = lib.mkAfter ''
+    // Allow wheel users to enroll fingerprints without password
+    polkit.addRule(function(action, subject) {
+      if (action.id == "net.reactivated.fprint.device.enroll" &&
+          subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+      }
+    });
+
+    // Allow 1Password CLI to use biometric unlock via polkit
+    polkit.addRule(function(action, subject) {
+      if (action.id == "com.1password.1Password.unlock" &&
+          subject.isInGroup("wheel")) {
+        return polkit.Result.AUTH_SELF;
+      }
+    });
+  '';
 
   # No battery-related services for desktop (no TLP, no UPower battery monitoring)
 
