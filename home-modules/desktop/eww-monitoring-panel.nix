@@ -3581,6 +3581,8 @@ in
       ;; Feature 094: Hover state for Applications tab detail tooltips
       (defvar hover_app_name "")
       (defvar copied_project_name "")
+      ;; Feature 108: Worktree hover state for copy/action buttons
+      (defvar hover_worktree_name "")
       ;; Feature 096: JSON hover state for Projects tab (separate from general hover)
       (defvar json_hover_project "")
 
@@ -3641,6 +3643,9 @@ in
       (defvar worktree_form_agent "claude")       ;; Feature 126: AI agent to use (claude or gemini)
       (defvar worktree_delete_branch "")          ;; Branch name for deletion confirmation
       (defvar worktree_delete_is_dirty false)     ;; Whether worktree has uncommitted changes
+      (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
+      (defvar worktree_delete_dialog_visible false)  ;; Whether delete dialog is visible
+      (defvar worktree_delete_name "")            ;; Worktree qualified name to delete
 
       ;; Feature 099 T008: Expanded projects state (list of expanded project names as JSON array)
       (defvar expanded_projects "all")            ;; "all" = all expanded, or JSON array of expanded names
@@ -5838,11 +5843,11 @@ in
               :orientation "h"
               :space-evenly false
               (button
-                :class "agent-btn ''${worktree_form_agent == 'claude' ? 'active' : '''}"
+                :class "agent-btn claude ''${worktree_form_agent == 'claude' ? 'active' : '''}"
                 :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='claude'"
                 "Claude")
               (button
-                :class "agent-btn ''${worktree_form_agent == 'gemini' ? 'active' : '''}"
+                :class "agent-btn gemini ''${worktree_form_agent == 'gemini' ? 'active' : '''}"
                 :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='gemini'"
                 "Gemini")))
           ;; Feature 112: Speckit scaffolding checkbox (checked by default)
@@ -8966,12 +8971,12 @@ in
       }
 
       /* Claude color (Blue) */
-      .agent-btn.active[onclick*="claude"] {
+      .agent-btn.claude.active {
         background-color: #89b4fa;
       }
 
       /* Gemini color (Purple) */
-      .agent-btn.active[onclick*="gemini"] {
+      .agent-btn.gemini.active {
         background-color: #cba6f7;
       }
 
