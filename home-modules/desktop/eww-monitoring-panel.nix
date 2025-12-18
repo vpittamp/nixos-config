@@ -3369,6 +3369,13 @@ in
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
+      ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
+      ;; Used to show pulsating indicator on windows running AI assistants
+      ;; Falls back to empty state if pipe doesn't exist
+      (deflisten ai_sessions_data
+        :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
+        `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'`)
+
       ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
       ;; Only runs when Projects tab is active (index 1)
       (defpoll projects_data
@@ -3411,9 +3418,10 @@ in
 
       ;; Feature 110: Opacity value for pulsating fade effect
       ;; Cycles: 0.4 → 0.6 → 0.8 → 1.0 → 1.0 → 0.8 → 0.6 → 0.4
+      ;; Uses ai_sessions_data.has_working from OTEL monitor
       (defpoll spinner_opacity
         :interval "120ms"
-        :run-while {monitoring_data.has_working_badge ?: false}
+        :run-while {ai_sessions_data.has_working ?: false}
         :initial "1.0"
         `${spinnerOpacityScript}/bin/eww-spinner-opacity`)
 
@@ -4173,20 +4181,26 @@ in
                     :class "badge badge-pwa"
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
-                  ;; Feature 095: Notification badge with state-based icons
-                  ;; "working" state = animated braille spinner (teal, pulsing glow)
-                  ;; "stopped" state = bell icon with count (peach, attention-grabbing)
-                  ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
-                  ;; Feature 107: Focus-aware badge styling (dimmed when window is focused, but NOT for working state)
-                  ;; Feature 110/123: Uses monitoring_data.spinner_frame + spinner_opacity for pulsating effect
-                  ;; Note: Working state badges stay bright regardless of focus for visibility
+                  ;; Feature 123: AI Session badge with OTEL-based state detection
+                  ;; Uses jq to find session matching this window's ID from ai_sessions_data
+                  ;; States: "working" = pulsating circle, "completed" = attention bell, "idle" = hidden
+                  ;; Feature 110: Opacity class for pulsating fade effect
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : " badge-stopped" + ((window.focused ?: false) ? " badge-focused-window" : ""))}
-                    :text {((window.badge?.state ?: "stopped") == "working" ? spinner_frame : "󰂚 " + (window.badge?.count ?: ""))}
-                    :tooltip {(window.badge?.state ?: "stopped") == "working"
-                      ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
-                      : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
-                    :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
+                    :class {"badge badge-notification" +
+                      (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                        ? " badge-working badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10")))
+                        : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                            ? " badge-attention"
+                            : " badge-stopped"))}
+                    :text {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "working"
+                      ? "⬤"
+                      : (jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"none\"", "r") == "completed"
+                          ? "󰂞"
+                          : "")}
+                    :tooltip {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") == "claude-code"
+                      ? "Claude Code - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")
+                      : jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].tool // \"unknown\"", "r") + " - " + jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ")][0].state // \"unknown\"", "r")}
+                    :visible {jq(ai_sessions_data.sessions ?: [], "[.[] | select(.window_id == " + window.id + ") | select(.state == \"working\" or .state == \"completed\")] | length", "r") != "0"}))))
             ;; JSON/Env debug triggers - REMOVED to reduce widget tree complexity
             ;; Feature 119: Hover-visible close button for quick window close
             (eventbox
