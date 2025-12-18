@@ -451,16 +451,27 @@ in
 
 ;; Powermenu overlay widget (fullscreen modal)
 (defwidget powermenu-overlay []
-  (eventbox
-    :class "powermenu-overlay"
-    :onclick "toggle-topbar-powermenu"
-    (box :class "powermenu-overlay-inner"
-         :hexpand true
-         :vexpand true
-         :halign "center"
-         :valign "center"
-      ;; Inner eventbox prevents clicks on card from closing the overlay
-      (eventbox :onclick ""
+  ;; Important: don't wrap the card in a clickable eventbox, or it can steal
+  ;; pointer events from the buttons (GTK event handling).
+  (box :class "powermenu-overlay"
+       :orientation "v"
+       :space-evenly false
+       :hexpand true
+       :vexpand true
+    ;; Top dismiss area
+    (eventbox :onclick "toggle-topbar-powermenu"
+      (box :class "powermenu-overlay-dismiss" :hexpand true :vexpand true))
+
+    ;; Middle row: left dismiss, card, right dismiss
+    (box :orientation "h" :space-evenly false :hexpand true
+      (eventbox :onclick "toggle-topbar-powermenu"
+        (box :class "powermenu-overlay-dismiss" :hexpand true :vexpand true))
+
+      (box :class "powermenu-overlay-inner"
+           :orientation "v"
+           :space-evenly false
+           :halign "center"
+           :valign "center"
         (box :class "powermenu-card"
              :orientation "v"
              :space-evenly false
@@ -525,7 +536,14 @@ in
                 :class "cancel"
                 :onclick "toggle-topbar-powermenu")))
 
-          (powermenu-confirm-bar))))))
+          (powermenu-confirm-bar)))
+
+      (eventbox :onclick "toggle-topbar-powermenu"
+        (box :class "powermenu-overlay-dismiss" :hexpand true :vexpand true)))
+
+    ;; Bottom dismiss area
+    (eventbox :onclick "toggle-topbar-powermenu"
+      (box :class "powermenu-overlay-dismiss" :hexpand true :vexpand true))))
 
 ;; Feature 061: System Tray widget (US1) - conditional on is_primary
 (defwidget systray-widget [is_primary]
