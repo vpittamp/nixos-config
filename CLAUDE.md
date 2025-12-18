@@ -30,7 +30,7 @@ home-modules/       # User environment
 |-----|--------|
 | `Meta+D` / `Alt+Space` | Elephant launcher |
 | `Mod+M` | Monitoring panel |
-| `Mod+Shift+M` | Panel focus mode |
+| `Mod+Shift+M` | Toggle dock mode (overlay ↔ docked) |
 | `Win+P` | Project switcher |
 | `Win+Shift+P` | Clear project (global) |
 | `Win+Return` | Scratchpad terminal |
@@ -38,11 +38,13 @@ home-modules/       # User environment
 | `CapsLock` (M1) / `Ctrl+0` | Workspace mode |
 | `Mod+Tab` | Workspace overview |
 
-## Monitoring Panel (Features 085, 086, 099, 109)
+## Monitoring Panel (Features 085, 086, 099, 109, 125)
 
-`Mod+M` toggle | `Mod+Shift+M` focus mode | `Alt+1-7` tabs
+`Mod+M` toggle visibility | `Mod+Shift+M` toggle dock mode | `Alt+1-7` tabs
 
-**Focus mode keys**: `j/k` nav | `g/G` first/last | `Enter` select | `Space` expand | `c` create | `d` delete | `y` copy path | `t` terminal | `E` Code | `F` yazi | `L` lazygit
+**Modes**: 🔳 Overlay (floating) | 📌 Docked (reserved space)
+- **Overlay**: Panel floats over windows, clicks pass through when hidden
+- **Docked**: Panel reserves screen space, windows resize to fit
 
 **Status**: ● teal=active | ● red=dirty | ↑↓ sync | 💤 stale | ✓ merged | ⚠ conflicts
 
@@ -185,6 +187,8 @@ journalctl --user -u i3-project-event-listener -f
 - N/A (runtime state only) (121-improve-socket-discovery)
 - Python 3.11+ (OTLP receiver), Nix (configuration), Yuck/SCSS (EWW widgets) + opentelemetry-proto (parsing), aiohttp/uvicorn (HTTP server), EWW deflisten (123-otel-tracing)
 - N/A (in-memory session state only, no persistence) (123-otel-tracing)
+- Nix (flakes), Yuck (eww widget DSL), SCSS, Bash (scripts), Python 3.11+ (backend) + eww 0.4+, Sway IPC (layer-shell protocol), GTK3, i3ipc.aio (125-convert-sidebar-split-pane)
+- File-based state persistence (`$XDG_STATE_HOME/eww-monitoring-panel/dock-mode`) (125-convert-sidebar-split-pane)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools
