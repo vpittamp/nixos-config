@@ -46,12 +46,11 @@ in
       preferredEditor = "nvim";
       autoAccept = false;
 
-      # Authentication - use OAuth personal for free tier access
-      security = {
-        auth = {
-          selectedType = "oauth-personal";
-        };
-      };
+      # Authentication - DO NOT pre-configure auth type
+      # Pre-setting selectedType causes the CLI to hang indefinitely
+      # Instead, let the CLI prompt for auth method on first run
+      # User should select "Login with Google" for free tier access (60 req/min, 1000 req/day)
+      # After initial auth, credentials are stored and reused automatically
 
       # MCP Servers configuration
       # Note: Gemini CLI does NOT support a `disabled` flag for MCP servers (issue #6352)
