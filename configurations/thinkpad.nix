@@ -44,6 +44,7 @@ in
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
+    ../modules/services/litellm-proxy.nix      # Feature 123: LiteLLM proxy for full OTEL traces
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
 
@@ -122,6 +123,12 @@ in
     enableDebugExporter = true;  # Verbose logging for development
     enableFileExporter = true;   # Raw telemetry for analysis
   };
+
+  # Feature 123: LiteLLM Proxy for full OTEL tracing of Claude API calls
+  # DISABLED: Incompatible with Claude Code Max subscription (OAuth authentication)
+  # LiteLLM requires API keys, but Max uses OAuth tokens
+  # Native Claude Code OTEL telemetry is captured by otel-ai-collector instead
+  services.litellm-proxy.enable = false;
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
