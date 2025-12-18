@@ -445,16 +445,25 @@ in
            (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle"))}
                 :orientation "h"
                 :space-evenly false
-                :spacing 3
-                ;; State indicator
+                :spacing 4
+                ;; State indicator (nerd font icons)
                 (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
                        :text {session.state == "working" ? topbar_spinner_frame : (session.state == "completed" ? "󰂞" : "󰤄")})
+                ;; Project badge - extracts feature number from branch name
+                ;; Format: "owner/repo:branch" (e.g., "vpittamp/nixos-config:123-otel-tracing" → "123")
+                ;; Uses captures() to extract digits after colon; fallback: first 3 chars of branch
+                (label :class "ai-chip-project-badge"
+                       :halign "center"
+                       :visible {(session.project ?: "") != "" && (session.project ?: "") != "Global"}
+                       :text {arraylength(captures(session.project ?: "", ":([0-9]+)")) > 1
+                              ? captures(session.project ?: "", ":([0-9]+)")[1]
+                              : substring(replace(session.project ?: "???", ".*:", ""), 0, 3)})
                 ;; Tool icon (SVG images for claude and codex)
                 (image
                   :class "ai-chip-source-icon"
                   :path {session.tool == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.tool == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
-                  :image-width 14
-                  :image-height 14))))))
+                  :image-width 16
+                  :image-height 16))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 

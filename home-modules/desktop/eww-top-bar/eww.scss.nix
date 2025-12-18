@@ -601,6 +601,40 @@
     opacity: 0.6;
   }
 
+  /* Project badge - feature number prominently displayed */
+  .ai-chip-project-badge {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    padding: 1px 6px;
+    margin: 0 3px;
+    border-radius: 6px;
+    background: rgba(30, 30, 46, 0.9);
+    border: 1px solid rgba(148, 226, 213, 0.5);
+    color: #94e2d5;
+    min-width: 18px;
+  }
+
+  .ai-chip.working .ai-chip-project-badge {
+    background: rgba(30, 30, 46, 0.95);
+    border-color: rgba(148, 226, 213, 0.7);
+    color: #94e2d5;
+    box-shadow: 0 0 4px rgba(148, 226, 213, 0.3);
+  }
+
+  .ai-chip.attention .ai-chip-project-badge {
+    background: rgba(30, 30, 46, 0.95);
+    border-color: rgba(250, 179, 135, 0.7);
+    color: #fab387;
+    box-shadow: 0 0 4px rgba(250, 179, 135, 0.3);
+  }
+
+  .ai-chip.idle .ai-chip-project-badge {
+    background: rgba(49, 50, 68, 0.7);
+    border-color: rgba(108, 112, 134, 0.4);
+    color: #a6adc8;
+  }
+
   /* CPU-optimized: opacity-only animations */
   @keyframes ai-working-pulse {
     from { opacity: 0.85; }
