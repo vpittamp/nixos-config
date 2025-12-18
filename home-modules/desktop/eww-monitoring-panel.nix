@@ -3401,16 +3401,15 @@ in
         :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
         `echo '{"status":"disabled","traces":[],"trace_count":0,"active_count":0,"stopped_count":0}'`)
 
-      ;; Feature 110: Spinner animation for pulsating effect
-      ;; Runs at 120ms interval when has_working_badge is true for smooth animation
-      ;; Uses indexed frame cycling via /tmp/eww-spinner-idx file
+      ;; Feature 110: Pulsating circle for working state
+      ;; Static circle character - animation via opacity only (saves 1 defpoll)
       (defpoll spinner_frame
-        :interval "120ms"
-        :run-while {monitoring_data.has_working_badge ?: false}
+        :interval "10s"
+        :run-while false
         :initial "⬤"
-        `${spinnerScript}/bin/eww-spinner-frame`)
+        `echo "⬤"`)
 
-      ;; Feature 110: Opacity value for pulsating fade effect (synced with spinner_frame)
+      ;; Feature 110: Opacity value for pulsating fade effect
       ;; Cycles: 0.4 → 0.6 → 0.8 → 1.0 → 1.0 → 0.8 → 0.6 → 0.4
       (defpoll spinner_opacity
         :interval "120ms"

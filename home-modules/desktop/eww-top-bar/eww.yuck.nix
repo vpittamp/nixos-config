@@ -155,17 +155,16 @@ in
   :initial '{"type":"session_list","sessions":[],"timestamp":0}'
   `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0}'`)
 
-;; Feature 123: Spinner animation for working AI sessions
-;; Runs at 120ms interval for smooth pulsating effect
-;; Uses indexed frame cycling via /tmp/eww-topbar-spinner-idx file
+;; Feature 123: Pulsating circle for working AI sessions
+;; Static circle character - animation via opacity only (saves 1 defpoll)
 (defpoll topbar_spinner_frame
-  :interval "120ms"
-  :run-while {ai_sessions_data.has_working ?: false}
-  :initial "⠋"
-  `${topbarSpinnerScript}/bin/eww-topbar-spinner-frame`)
+  :interval "10s"
+  :run-while false
+  :initial "⬤"
+  `echo "⬤"`)
 
-;; Feature 123: Spinner opacity for pulsating fade effect
-;; Synced with spinner_frame for coordinated animation
+;; Feature 123: Opacity for pulsating fade effect
+;; Cycles: 0.4 → 0.6 → 0.8 → 1.0 → 1.0 → 0.8 → 0.6 → 0.4
 (defpoll topbar_spinner_opacity
   :interval "120ms"
   :run-while {ai_sessions_data.has_working ?: false}
