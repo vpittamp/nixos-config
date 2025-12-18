@@ -25,11 +25,67 @@ let
         --set NODE_OPTIONS "--dns-result-order=ipv4first"
     '';
   };
+
+  # Settings JSON for activation script - generated with dynamic chromium paths
+  # This is written as a real file (not symlink) to allow gemini-cli to write credentials
+  settingsJson = builtins.toJSON {
+    autoAccept = true;
+    preferredEditor = "nvim";
+    previewFeatures = true;
+    theme = "Default";
+    vimMode = true;
+    mcpServers = lib.optionalAttrs enableChromiumMcpServers {
+      chrome-devtools = {
+        command = "npx";
+        args = [
+          "-y"
+          "chrome-devtools-mcp@latest"
+          "--isolated"
+          "--headless"
+          "--executablePath"
+          chromiumConfig.chromiumBin
+        ];
+      };
+      playwright = {
+        command = "npx";
+        args = [
+          "-y"
+          "@playwright/mcp@latest"
+          "--isolated"
+          "--browser"
+          "chromium"
+          "--executable-path"
+          chromiumConfig.chromiumBin
+        ];
+        env = {
+          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+        };
+      };
+    };
+  };
 in
 {
-  # Force overwrite settings.json to prevent conflicts with manually-created files
-  # This is necessary because gemini-cli can modify settings.json at runtime
-  home.file.".gemini/settings.json".force = true;
+  # Create writable .gemini directory with settings
+  # Using activation script instead of home.file to allow gemini-cli to write credentials
+  # Pattern from docker.nix, codex.nix, copilot-auth.nix
+  home.activation.setupGeminiConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    GEMINI_DIR="$HOME/.gemini"
+
+    # Create writable directory
+    $DRY_RUN_CMD mkdir -p "$GEMINI_DIR"
+    $DRY_RUN_CMD chmod 700 "$GEMINI_DIR"
+
+    # If settings.json is missing OR is a symlink, create real writable file
+    # This preserves user customizations if they exist as a real file
+    if [ ! -f "$GEMINI_DIR/settings.json" ] || [ -L "$GEMINI_DIR/settings.json" ]; then
+      $DRY_RUN_CMD rm -f "$GEMINI_DIR/settings.json"
+      $DRY_RUN_CMD cat > "$GEMINI_DIR/settings.json" <<'EOF'
+${settingsJson}
+EOF
+      $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
+    fi
+  '';
 
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
   programs.gemini-cli = {
@@ -43,61 +99,9 @@ in
     # - gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
     defaultModel = "gemini-3-flash-preview";
 
-    # Settings for gemini-cli
-    settings = {
-      theme = "Default";
-      vimMode = true;
-      preferredEditor = "nvim";
-      # Auto-accept all tool actions (equivalent to --yolo / --approval-mode yolo)
-      autoAccept = true;
-      # Enable preview features to access Gemini 3.0 models
-      # https://geminicli.com/docs/get-started/gemini-3/
-      previewFeatures = true;
-
-      # Authentication - DO NOT pre-configure auth type
-      # Pre-setting selectedType causes the CLI to hang indefinitely
-      # Instead, let the CLI prompt for auth method on first run
-      # User should select "Login with Google" for free tier access (60 req/min, 1000 req/day)
-      # After initial auth, credentials are stored and reused automatically
-
-      # MCP Servers configuration
-      # Note: Gemini CLI does NOT support a `disabled` flag for MCP servers (issue #6352)
-      # Workaround: Use --allowed-mcp-server-names flag at runtime to selectively enable
-      # Example: gemini --allowed-mcp-server-names playwright
-      # Only Linux is supported due to Chromium dependency
-      mcpServers = lib.optionalAttrs enableChromiumMcpServers {
-        # Chrome DevTools MCP server for browser debugging and performance analysis
-        chrome-devtools = {
-          command = "npx";
-          args = [
-            "-y"
-            "chrome-devtools-mcp@latest"
-            "--isolated"
-            "--headless"  # Run without GUI (learned from Codex fix)
-            "--executablePath"
-            chromiumConfig.chromiumBin
-          ];
-        };
-
-        # Playwright MCP server for reliable browser automation
-        playwright = {
-          command = "npx";
-          args = [
-            "-y"
-            "@playwright/mcp@latest"
-            "--isolated"
-            "--browser"
-            "chromium"
-            "--executable-path"
-            chromiumConfig.chromiumBin
-          ];
-          env = {
-            PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
-            PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-          };
-        };
-      };
-    };
+    # NOTE: settings are NOT managed here to allow credential persistence
+    # Settings are written via home.activation.setupGeminiConfig as a real file
+    # (not symlink) so gemini-cli can write oauth_creds.json to ~/.gemini/
 
     # Custom commands for common workflows
     commands = {
