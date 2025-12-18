@@ -136,13 +136,13 @@ in
     # Monitor profile switcher (use Control modifier for Sway syntax)
     "${modifier}+Control+m" = "exec sh -c '$HOME/.local/bin/monitor-profile-menu'";
 
-    # Feature 086: Toggle keyboard focus to/from monitoring panel
-    # Press once to focus panel (enables keyboard navigation)
-    # Press again to return focus to previous window
-    "${modifier}+Shift+m" = "exec toggle-panel-focus";
+    # Feature 125: Toggle between overlay and docked modes
+    # Cycles: overlay → docked → overlay
+    # Replaces Feature 086 focus mode (Forward-Only Development)
+    "${modifier}+Shift+m" = "exec toggle-panel-dock-mode";
 
-    # Feature 086: Alternative binding (F10) for VNC users
-    "F10" = "exec toggle-panel-focus";
+    # Feature 125: Alternative binding (F10) for VNC users
+    "F10" = "exec toggle-panel-dock-mode";
 
     # Feature 085: Toggle monitoring panel (T017)
     # Additional bindings injected via monitoringPanelBindings below

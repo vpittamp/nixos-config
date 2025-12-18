@@ -962,75 +962,9 @@ in
           bindsym Escape exec "i3pm-workspace-mode cancel"
       }
 
-      # Feature 086: Monitoring panel focus mode
-      # Captures all keys when panel has explicit focus
-      # Simple keys for convenient navigation
-      mode "📊 Panel" {
-          # Tab switching - simple number keys
-          # Uses wrapper script: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
-          bindsym 1 exec monitor-panel-tab 0
-          bindsym 2 exec monitor-panel-tab 1
-          bindsym 3 exec monitor-panel-tab 2
-          bindsym 4 exec monitor-panel-tab 3
-
-          # Also support 'w', 'p', 'a', 'h' for tabs (mnemonic)
-          bindsym w exec monitor-panel-tab 0
-          bindsym p exec monitor-panel-tab 1
-          bindsym a exec monitor-panel-tab 2
-
-          # Navigation - arrow keys and vim keys
-          # Feature 099 UX2: Route to projects-nav when on Projects tab
-          # Uses monitor-panel-is-projects wrapper script for cleaner conditionals
-          bindsym j exec sh -c 'monitor-panel-is-projects && projects-nav down || monitor-panel-nav down'
-          bindsym k exec sh -c 'monitor-panel-is-projects && projects-nav up || monitor-panel-nav up'
-          bindsym Down exec sh -c 'monitor-panel-is-projects && projects-nav down || monitor-panel-nav down'
-          bindsym Up exec sh -c 'monitor-panel-is-projects && projects-nav up || monitor-panel-nav up'
-          bindsym g exec sh -c 'monitor-panel-is-projects && projects-nav first || monitor-panel-nav first'
-          bindsym Shift+g exec sh -c 'monitor-panel-is-projects && projects-nav last || monitor-panel-nav last'
-          bindsym Home exec sh -c 'monitor-panel-is-projects && projects-nav first || monitor-panel-nav first'
-          bindsym End exec sh -c 'monitor-panel-is-projects && projects-nav last || monitor-panel-nav last'
-
-          # Selection - Enter or Space (Space toggles expand for projects)
-          bindsym Return exec sh -c 'monitor-panel-is-projects && projects-nav enter || monitor-panel-nav select'
-          bindsym space exec sh -c 'monitor-panel-is-projects && projects-nav space || monitor-panel-nav select'
-          bindsym l exec sh -c 'monitor-panel-is-projects && projects-nav enter || monitor-panel-nav select'
-          bindsym Right exec sh -c 'monitor-panel-is-projects && projects-nav enter || monitor-panel-nav select'
-
-          # Back - go back from detail view
-          bindsym h exec sh -c 'monitor-panel-nav back'
-          bindsym Left exec sh -c 'monitor-panel-nav back'
-          bindsym BackSpace exec sh -c 'monitor-panel-nav back'
-          bindsym b exec sh -c 'monitor-panel-nav back'
-
-          # Focus selected window (jump to it)
-          bindsym f exec sh -c 'monitor-panel-nav focus'
-          bindsym o exec sh -c 'monitor-panel-nav focus'
-
-          # Feature 099 UX2: Projects tab specific actions
-          # Uses monitor-panel-is-projects wrapper for cleaner conditionals
-          bindsym e exec sh -c 'monitor-panel-is-projects && projects-nav edit'
-          bindsym d exec sh -c 'monitor-panel-is-projects && projects-nav delete'
-          bindsym y exec sh -c 'monitor-panel-is-projects && projects-nav copy'
-          bindsym n exec sh -c 'monitor-panel-is-projects && projects-nav new'
-
-          # Feature 109 T028: Launch lazygit for selected worktree (Shift+L for Lazygit)
-          bindsym Shift+l exec sh -c 'monitor-panel-is-projects && projects-nav git'
-
-          # Feature 109 T035: Open worktree create form (c for Create worktree)
-          bindsym c exec sh -c 'monitor-panel-is-projects && projects-nav create-worktree'
-
-          # Feature 109 T059-T061: Additional action shortcuts for worktrees
-          bindsym t exec sh -c 'monitor-panel-is-projects && projects-nav terminal'
-          bindsym Shift+e exec sh -c 'monitor-panel-is-projects && projects-nav editor'
-          bindsym Shift+f exec sh -c 'monitor-panel-is-projects && projects-nav files'
-          bindsym r exec sh -c 'monitor-panel-is-projects && projects-nav refresh'
-
-          # Exit panel mode - multiple options
-          bindsym Escape exec sh -c 'exit-monitor-mode'
-          bindsym q exec sh -c 'exit-monitor-mode'
-          bindsym F10 exec sh -c 'exit-monitor-mode'
-          bindsym Mod4+Shift+m exec sh -c 'exit-monitor-mode'
-      }
+      # Feature 125: "📊 Panel" mode REMOVED
+      # Focus mode functionality replaced by dock mode toggle (Mod+Shift+M)
+      # See toggle-panel-dock-mode script for new implementation
 
       # Platform-conditional workspace mode keybindings
       # NOTE: Control+0/Shift+0 moved to sway-keybindings.nix (works on all platforms)

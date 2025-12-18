@@ -403,6 +403,10 @@ class ScratchpadManager:
             # Show from scratchpad
             await self.sway.command(f'[con_mark="{terminal.mark}"] scratchpad show')
             terminal.mark_shown()
+
+            # Feature 125: Resize and position based on dock mode
+            await self._position_scratchpad_for_dock_mode(terminal.mark)
+
             self.logger.debug(f"Showed terminal for project '{project_name}'")
             return "shown"
 
@@ -434,6 +438,91 @@ class ScratchpadManager:
                     self.logger.debug(f"[Trace] Recorded {event_type} for scratchpad in {len(affected)} trace(s)")
         except Exception as e:
             self.logger.debug(f"[Trace] Error recording scratchpad event: {e}")
+
+    async def _position_scratchpad_for_dock_mode(self, mark: str) -> None:
+        """
+        Position and resize scratchpad terminal based on monitoring panel dock mode.
+
+        Feature 125: When panel is docked, scratchpad terminal should be centered
+        in the remaining available space (excluding the panel width).
+        When panel is in overlay mode, use default sizing (1100x550 centered).
+
+        Args:
+            mark: Window mark to identify the scratchpad terminal
+        """
+        try:
+            # Read dock mode state file
+            state_file = Path.home() / ".local/state/eww-monitoring-panel/dock-mode"
+            is_docked = False
+
+            if state_file.exists():
+                mode = state_file.read_text().strip()
+                is_docked = (mode == "docked")
+
+            # Get monitor dimensions from sway
+            tree = await self.sway.get_tree()
+            outputs = await self.sway.get_outputs()
+
+            # Find focused output
+            focused_output = None
+            for output in outputs:
+                if output.focused:
+                    focused_output = output
+                    break
+
+            if not focused_output:
+                # Fallback to first output
+                focused_output = outputs[0] if outputs else None
+
+            if not focused_output:
+                self.logger.warning("No output found for scratchpad positioning")
+                return
+
+            monitor_width = focused_output.rect.width
+            monitor_height = focused_output.rect.height
+
+            # Panel width is 320px (from eww-monitoring-panel.nix panelWidth default)
+            panel_width = 320
+
+            if is_docked:
+                # Docked mode: center in remaining space (left of panel)
+                available_width = monitor_width - panel_width
+                # Terminal takes 80% of available width, max 1000px
+                term_width = min(int(available_width * 0.8), 1000)
+                # Height is 60% of monitor, max 700px
+                term_height = min(int(monitor_height * 0.6), 700)
+                # Center in available space (panel is on right side)
+                center_x = (available_width - term_width) // 2
+                center_y = (monitor_height - term_height) // 2
+
+                self.logger.debug(
+                    f"[Feature 125] Docked mode: sizing scratchpad to {term_width}x{term_height} "
+                    f"at ({center_x}, {center_y}), available_width={available_width}"
+                )
+
+                await self.sway.command(
+                    f'[con_mark="{mark}"] resize set width {term_width} px height {term_height} px, '
+                    f'move position {center_x} px {center_y} px'
+                )
+            else:
+                # Overlay mode: use standard sizing (1100x550 centered on full screen)
+                term_width = 1100
+                term_height = 550
+                center_x = (monitor_width - term_width) // 2
+                center_y = (monitor_height - term_height) // 2
+
+                self.logger.debug(
+                    f"[Feature 125] Overlay mode: sizing scratchpad to {term_width}x{term_height} "
+                    f"at ({center_x}, {center_y})"
+                )
+
+                await self.sway.command(
+                    f'[con_mark="{mark}"] resize set width {term_width} px height {term_height} px, '
+                    f'move position {center_x} px {center_y} px'
+                )
+
+        except Exception as e:
+            self.logger.warning(f"[Feature 125] Error positioning scratchpad: {e}")
 
     def get_terminal(self, project_name: str) -> Optional[ScratchpadTerminal]:
         """

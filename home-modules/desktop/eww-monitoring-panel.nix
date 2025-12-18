@@ -146,6 +146,7 @@ let
   # Service wrapper script - manages daemon and handles toggle signals
   # This keeps all eww processes (daemon + GTK renderers) in the service cgroup
   # preventing orphaned processes when toggle is invoked from keybindings
+  # Feature 125: Updated to support dock mode persistence and two window definitions
   wrapperScript = pkgs.writeShellScriptBin "eww-monitoring-panel-wrapper" ''
     #!${pkgs.bash}/bin/bash
 
@@ -153,6 +154,8 @@ let
     CONFIG="$HOME/.config/eww-monitoring-panel"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
     PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
+    STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
+    DOCK_MODE_FILE="$STATE_DIR/dock-mode"
 
     # Write wrapper PID for toggle script to send signals directly to this process only
     echo $$ > "$PID_FILE"
@@ -174,29 +177,77 @@ let
       ${pkgs.coreutils}/bin/sleep 0.2
     done
 
-    # Open panel initially
-    $EWW --config "$CONFIG" open monitoring-panel || true
+    # Feature 125: Read dock mode state and open correct window
+    # Default to docked mode if state file doesn't exist or is invalid
+    DOCK_MODE="docked"
+    if [[ -f "$DOCK_MODE_FILE" ]]; then
+      SAVED_MODE=$(${pkgs.coreutils}/bin/cat "$DOCK_MODE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')
+      if [[ "$SAVED_MODE" == "overlay" ]]; then
+        DOCK_MODE="overlay"
+      fi
+    fi
+
+    # Open the appropriate window based on saved dock mode
+    # Note: panel_dock_mode is read from state file via defpoll, no update needed
+    if [[ "$DOCK_MODE" == "docked" ]]; then
+      $EWW --config "$CONFIG" open monitoring-panel-docked || true
+    else
+      $EWW --config "$CONFIG" open monitoring-panel-overlay || true
+    fi
 
     # Re-sync stack index (workaround for eww #1192: index resets on reopen)
     ${pkgs.coreutils}/bin/sleep 0.2
     IDX=$($EWW --config "$CONFIG" get current_view_index 2>/dev/null || echo 0)
     $EWW --config "$CONFIG" update current_view_index=$IDX 2>/dev/null || true
 
-    # Toggle handler - called when SIGUSR1 received
-    # Uses eww's atomic --toggle flag to avoid race conditions
+    # Feature 125: Toggle handler - called when SIGUSR1 received
+    # Handles visibility toggle - closes window for click-through in both modes
     toggle_panel() {
-      # Atomic toggle - eww handles open/close internally
-      $EWW --config "$CONFIG" open --toggle monitoring-panel || true
+      # Read current dock mode to know which window to toggle
+      local current_dock_mode="overlay"
+      if [[ -f "$DOCK_MODE_FILE" ]]; then
+        local saved=$(${pkgs.coreutils}/bin/cat "$DOCK_MODE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')
+        [[ "$saved" == "docked" ]] && current_dock_mode="docked"
+      fi
+
+      local window_name="monitoring-panel-overlay"
+      [[ "$current_dock_mode" == "docked" ]] && window_name="monitoring-panel-docked"
+
+      # Close/open window for true click-through (in both modes)
+      $EWW --config "$CONFIG" open --toggle "$window_name" || true
       # Update variables based on new state (after toggle)
       ${pkgs.coreutils}/bin/sleep 0.1
-      if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-        $EWW --config "$CONFIG" update panel_visible=true panel_focus_mode=false || true
+      if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "$window_name"; then
+        $EWW --config "$CONFIG" update panel_visible=true || true
       else
-        $EWW --config "$CONFIG" update panel_visible=false panel_focus_mode=false || true
+        $EWW --config "$CONFIG" update panel_visible=false || true
       fi
     }
 
     trap toggle_panel SIGUSR1
+
+    # Feature 125: Mode toggle handler - called when SIGUSR2 received
+    # SOLUTION: Restart entire service to switch modes reliably
+    # eww's auto-daemon spawning makes close+open unreliable, so we restart cleanly
+    toggle_dock_mode() {
+      # Read current mode from state file
+      local current_mode="docked"
+      if [[ -f "$DOCK_MODE_FILE" ]]; then
+        local saved=$(${pkgs.coreutils}/bin/cat "$DOCK_MODE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')
+        [[ "$saved" == "overlay" ]] && current_mode="overlay"
+      fi
+
+      # Toggle the mode in state file
+      if [[ "$current_mode" == "overlay" ]]; then
+        ${pkgs.coreutils}/bin/printf '%s' "docked" > "$DOCK_MODE_FILE"
+      else
+        ${pkgs.coreutils}/bin/printf '%s' "overlay" > "$DOCK_MODE_FILE"
+      fi
+
+      # Restart service - this exits the current wrapper, systemd restarts it with new mode
+      exec ${pkgs.systemd}/bin/systemctl --user restart eww-monitoring-panel.service
+    }
+    trap toggle_dock_mode SIGUSR2
 
     # Wait for daemon (re-wait after signal interrupts)
     while kill -0 $DAEMON_PID 2>/dev/null; do
@@ -236,60 +287,41 @@ let
     fi
   '';
 
-  # Feature 086: Toggle script for explicit panel focus (US2)
-  # Allows user to lock/unlock keyboard focus to panel with Mod+Shift+M
-  # Now uses Sway mode for comprehensive keyboard capture
-  # Note: Eww windows are layer-shell surfaces and can't be focused via swaymsg
-  toggleFocusScript = pkgs.writeShellScriptBin "toggle-panel-focus" ''
+  # Feature 125: toggle-panel-focus and exit-monitor-mode scripts REMOVED
+  # Focus mode functionality replaced by dock mode toggle (Mod+Shift+M)
+
+  # Feature 125: Toggle between overlay and docked modes (Mod+Shift+M)
+  # Sends SIGUSR2 to wrapper process - wrapper handles all eww commands to avoid daemon races
+  toggleDockModeScript = pkgs.writeShellScriptBin "toggle-panel-dock-mode" ''
     #!${pkgs.bash}/bin/bash
-    # Feature 086: Enter monitoring focus mode
-    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
-    TIMEOUT="${pkgs.coreutils}/bin/timeout"
+    # Sends SIGUSR2 to wrapper - mode switch happens in wrapper context
+    # This avoids eww auto-starting new daemons when commands fail to connect
 
-    # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
-      echo "Monitoring panel daemon not running"
-      exit 0
+    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
+    LOCK_FILE="/tmp/panel-dock-toggle.lock"
+
+    # Debounce: prevent rapid toggling
+    if [[ -f "$LOCK_FILE" ]]; then
+      LOCK_AGE=$(($(${pkgs.coreutils}/bin/date +%s) - $(${pkgs.coreutils}/bin/stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+      if [[ $LOCK_AGE -lt 1 ]]; then
+        exit 0
+      fi
+    fi
+    ${pkgs.coreutils}/bin/touch "$LOCK_FILE"
+
+    # Ensure service is running
+    if ! ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
+      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
+      ${pkgs.coreutils}/bin/sleep 1
     fi
 
-    # Check if panel is visible first
-    if ! $TIMEOUT 2s $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      echo "Panel not visible - use Mod+M to show it first"
-      exit 0
+    # Send SIGUSR2 to wrapper process to toggle dock mode
+    if [[ -f "$PID_FILE" ]]; then
+      WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
+      if kill -0 "$WRAPPER_PID" 2>/dev/null; then
+        kill -SIGUSR2 "$WRAPPER_PID"
+      fi
     fi
-
-    # Update eww variables sequentially with --kill-after to prevent orphans
-    # Don't background these - orphaned processes cause duplicate tabs
-    $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focused=true || true
-    $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focus_mode=true || true
-    $TIMEOUT --kill-after=1s 2s $EWW_CMD update selected_index=0 || true
-
-    # Enter Sway monitoring mode (captures all keys)
-    # This provides keyboard capture - eww layer-shell handles the rest
-    ${pkgs.sway}/bin/swaymsg 'mode "📊 Panel"'
-  '';
-
-  # Feature 086: Exit monitoring mode script
-  exitMonitorModeScript = pkgs.writeShellScriptBin "exit-monitor-mode" ''
-    #!${pkgs.bash}/bin/bash
-    # Feature 086: Exit monitoring focus mode
-    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
-    TIMEOUT="${pkgs.coreutils}/bin/timeout"
-
-    # Only update eww if daemon is running (avoid spawning duplicate daemon)
-    if $TIMEOUT 2s $EWW_CMD ping >/dev/null 2>&1; then
-      # Update eww variables sequentially with --kill-after to prevent orphans
-      # Don't background these - orphaned processes cause duplicate tabs
-      $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focused=false || true
-      $TIMEOUT --kill-after=1s 2s $EWW_CMD update panel_focus_mode=false || true
-      $TIMEOUT --kill-after=1s 2s $EWW_CMD update selected_index=-1 || true
-    fi
-
-    # Exit Sway mode (return to default) - always do this
-    ${pkgs.sway}/bin/swaymsg 'mode "default"'
-
-    # Return focus to previous window
-    ${pkgs.sway}/bin/swaymsg 'focus prev'
   '';
 
   # Wrapper script: Switch monitoring panel tab by index
@@ -2637,8 +2669,7 @@ print(json.dumps(result))
         # Focus the selected window in Sway
         if [ "$selected_window" != "0" ] && [ "$selected_window" != "null" ]; then
           ${pkgs.sway}/bin/swaymsg "[con_id=$selected_window] focus"
-          # Exit panel mode after focusing
-          exit-monitor-mode
+          # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
         fi
         ;;
     esac
@@ -2726,8 +2757,7 @@ print(json.dumps(result))
           project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
           if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
             i3pm worktree switch "$project_name"
-            # Exit panel mode after switching
-            exit-monitor-mode
+            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
           fi
         fi
         ;;
@@ -2818,9 +2848,7 @@ print(json.dumps(result))
 
             # Launch lazygit using the worktree-lazygit script
             worktree-lazygit "$directory" "$view" &
-
-            # Exit panel mode after launching
-            exit-monitor-mode
+            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
           fi
         fi
         ;;
@@ -2857,7 +2885,7 @@ print(json.dumps(result))
           project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
           if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
             i3pm scratchpad toggle "$project_name" &
-            exit-monitor-mode
+            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
           fi
         fi
         ;;
@@ -2867,7 +2895,7 @@ print(json.dumps(result))
           directory=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].directory')
           if [ -n "$directory" ] && [ "$directory" != "null" ] && [ -d "$directory" ]; then
             code --folder-uri "file://$directory" &
-            exit-monitor-mode
+            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
           fi
         fi
         ;;
@@ -2877,7 +2905,7 @@ print(json.dumps(result))
           directory=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].directory')
           if [ -n "$directory" ] && [ "$directory" != "null" ] && [ -d "$directory" ]; then
             ${pkgs.ghostty}/bin/ghostty -e ${pkgs.yazi}/bin/yazi "$directory" &
-            exit-monitor-mode
+            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
           fi
         fi
         ;;
@@ -3292,8 +3320,7 @@ in
       pkgs.inotify-tools    # Feature 107: inotifywait for badge file watching
       monitoringDataScript  # Python backend script wrapper
       toggleScript          # Toggle visibility script
-      toggleFocusScript     # Feature 086: Toggle focus script
-      exitMonitorModeScript # Feature 086: Exit monitoring mode
+      toggleDockModeScript  # Feature 125: Toggle between overlay and docked modes
       monitorPanelTabScript       # Tab switching wrapper (centralizes variable name)
       monitorPanelGetViewScript   # Get current view index
       monitorPanelIsProjectsScript # Check if on projects tab (for conditional routing)
@@ -3443,6 +3470,14 @@ in
       ;; When true, panel receives clicks (interactive mode via Mod+M)
       (defvar panel_focus_mode false)
 
+      ;; Feature 125: Panel dock mode state (toggled by Mod+Shift+M)
+      ;; When false, panel floats over windows (overlay mode)
+      ;; When true (default), panel reserves screen space (docked mode with exclusive zone)
+      ;; Read from state file - no external 'eww update' needed (avoids daemon race)
+      (defpoll panel_dock_mode :interval "2s"
+        :initial "true"
+        "MODE=$(${pkgs.coreutils}/bin/cat $HOME/.local/state/eww-monitoring-panel/dock-mode 2>/dev/null); [[ \"$MODE\" == \"docked\" ]] && echo true || echo false")
+
       ;; Feature 086: Selected index for keyboard navigation (-1 = none)
       ;; Updated by j/k or up/down in monitoring mode
       (defvar selected_index -1)
@@ -3500,9 +3535,8 @@ in
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
 
-      ;; Panel transparency control (0-100, default 35%)
-      ;; Adjustable via slider in header - persists across tabs
-      (defvar panel_opacity 35)
+      ;; Feature 125: Panel transparency is automatic based on dock mode
+      ;; Docked = solid (1.0), Overlay = moderate transparency (0.85)
 
       ;; Feature 092: Event filter state (all enabled by default)
       ;; Individual event type filters (true = show, false = hide)
@@ -3704,12 +3738,15 @@ in
       (defvar template_dropdown_open false)   ;; True when template dropdown is visible
       (defvar trace_templates "[{\"id\":\"debug-app-launch\",\"name\":\"Debug App Launch\",\"icon\":\"󰘳\",\"description\":\"Pre-launch trace for debugging app startup\"},{\"id\":\"debug-project-switch\",\"name\":\"Debug Project Switch\",\"icon\":\"󰓩\",\"description\":\"Trace all scoped windows during project switch\"},{\"id\":\"debug-focus-chain\",\"name\":\"Debug Focus Chain\",\"icon\":\"󰋴\",\"description\":\"Track focus and blur events for the currently focused window\"}]")
 
-      ;; Main monitoring panel window - Sidebar layout
-      ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
+      ;; Feature 125: Two window definitions for overlay vs docked modes
+      ;; Only one is open at a time, controlled by toggle-panel-dock-mode script
+      ;; Both share the same monitoring-panel-content widget
+
+      ;; Overlay mode window (default) - Floats over windows, no space reservation
       ;; Tab switching via global Sway keybindings (Alt+1-4) since widget doesn't capture input
       ;; Use output name directly since monitor indices vary by platform
       ;; Dynamic sizing: 90% height adapts to different screen sizes (M1: 720px, Hetzner: ~972px)
-      (defwindow monitoring-panel
+      (defwindow monitoring-panel-overlay
         :monitor "${primaryOutput}"
         :geometry (geometry
           :anchor "right center"
@@ -3723,6 +3760,25 @@ in
         ;; The panel is now properly closed (not just hidden) so it won't intercept clicks when not visible
         :focusable "ondemand"
         :exclusive false
+        :windowtype "dock"
+        (monitoring-panel-content))
+
+      ;; Docked mode window - Reserves screen space via exclusive zone
+      ;; Uses 90% height to fit between top bar (26px) and bottom bar (36px)
+      ;; Tiled windows will automatically resize to fit remaining space
+      (defwindow monitoring-panel-docked
+        :monitor "${primaryOutput}"
+        :geometry (geometry
+          :anchor "right center"
+          :x "0px"
+          :y "0px"
+          :width "${toString cfg.panelWidth}px"
+          :height "90%")
+        :namespace "eww-monitoring-panel"
+        :stacking "fg"
+        :focusable "ondemand"
+        :exclusive true
+        :reserve (struts :side "right" :distance "${toString (cfg.panelWidth + 4)}px")
         :windowtype "dock"
         (monitoring-panel-content))
 
@@ -3742,7 +3798,8 @@ in
             :cursor "default"
             (box
               :class {panel_focused ? "panel-container focused" : "panel-container"}
-              :style "background-color: rgba(30, 30, 46, ''${panel_opacity / 100});"
+              ;; Feature 125: Docked = solid (1.0), Overlay = moderate transparency (0.85)
+              :style "background-color: rgba(30, 30, 46, ''${panel_dock_mode ? '1.0' : '0.85'});"
               :orientation "v"
               :space-evenly false
               (panel-header)
@@ -3782,6 +3839,14 @@ in
                 :class "tab ''${current_view_index == 1 ? 'active' : ""}"
                 :tooltip "Projects (Alt+2)"
                 "󱂬"))
+            ;; Feature 125: Mode toggle - use & at end to background (eww eventbox ignores :timeout)
+            (eventbox
+              :cursor "pointer"
+              :onclick "${toggleDockModeScript}/bin/toggle-panel-dock-mode &"
+              (button
+                :class "tab mode-toggle"
+                :tooltip "Toggle dock mode (Mod+Shift+M)"
+                "󰔡"))
             ;; Tab 2 (Apps) - DISABLED for CPU savings
             ;; (eventbox
             ;;   :cursor "pointer"
@@ -3822,36 +3887,8 @@ in
             ;;     :class "tab ''${current_view_index == 6 ? 'active' : ""}"
             ;;     :tooltip "Devices (Alt+7)"
             ;;     "󰒓"))
-            ;; Feature 086: Focus mode indicator badge
-            (label
-              :class "focus-indicator"
-              :visible {panel_focused}
-              :text "⌨ FOCUS"))
-          ;; Summary counts (dynamic based on view)
-          (box
-            :class "summary-counts"
-            :orientation "h"
-            :space-evenly false
-            ;; Count badges and workspace pills - REMOVED to reduce widget complexity
-            ;; Opacity slider - small unobtrusive control
-            (box
-              :class "opacity-control"
-              :orientation "h"
-              :space-evenly false
-              :hexpand true
-              :halign "end"
-              :tooltip "Panel opacity: ''${panel_opacity}%"
-              (label
-                :class "opacity-icon"
-                :text "󰃞")
-              (scale
-                :class "opacity-slider"
-                :min 10
-                :max 100
-                :value panel_opacity
-                :orientation "h"
-                :round-digits 0
-                :onchange "eww --config $HOME/.config/eww-monitoring-panel update panel_opacity={}")))))
+)
+))
 
       ;; Panel body - uses stack widget for proper tab switching
       ;; Note: Previous "multiple tabs" issue was caused by orphaned eww processes, not stack bugs
@@ -6858,16 +6895,44 @@ in
                     inset 0 0 15px rgba(203, 166, 247, 0.05);
       }
 
-      /* Focus mode indicator badge */
-      .focus-indicator {
-        font-size: 10px;
-        font-weight: bold;
-        color: ${mocha.base};
-        background-image: linear-gradient(135deg, ${mocha.mauve}, ${mocha.blue});
-        padding: 2px 8px;
+      /* Feature 125: Mode toggle button - subtle, stylish monochrome */
+      .mode-toggle {
+        font-size: 14px;
+        padding: 4px 6px;
         border-radius: 4px;
-        margin-left: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        color: ${mocha.subtext0};
+        min-width: 22px;
       }
+
+      .mode-toggle:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: ${mocha.text};
+      }
+
+      .mode-toggle.docked {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: ${mocha.subtext0};
+      }
+
+      .mode-toggle.docked:hover {
+        background: rgba(255, 255, 255, 0.14);
+        color: ${mocha.text};
+      }
+
+      .mode-toggle.overlay {
+        background: rgba(255, 255, 255, 0.04);
+        color: ${mocha.subtext0};
+      }
+
+      .mode-toggle.overlay:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: ${mocha.text};
+      }
+
       .panel-header {
         background-color: rgba(24, 24, 37, 0.4);
         border-bottom: 1px solid ${mocha.overlay0};
@@ -6915,48 +6980,6 @@ in
       .debug-toggle.active {
         color: ${mocha.yellow};
         background-color: rgba(249, 226, 175, 0.2);
-      }
-
-      /* Opacity Control Slider */
-      .opacity-control {
-        margin-left: 8px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        background-color: rgba(49, 50, 68, 0.3);
-      }
-
-      .opacity-icon {
-        font-size: 12px;
-        color: ${mocha.subtext0};
-        margin-right: 4px;
-      }
-
-      .opacity-slider {
-        min-width: 60px;
-        min-height: 8px;
-      }
-
-      .opacity-slider trough {
-        min-height: 4px;
-        background-color: rgba(49, 50, 68, 0.6);
-        border-radius: 2px;
-      }
-
-      .opacity-slider highlight {
-        background-color: ${mocha.blue};
-        border-radius: 2px;
-      }
-
-      .opacity-slider slider {
-        min-width: 10px;
-        min-height: 10px;
-        background-color: ${mocha.lavender};
-        border-radius: 50%;
-        margin: -3px;
-      }
-
-      .opacity-slider slider:hover {
-        background-color: ${mocha.blue};
       }
 
       /* UX Enhancement: Workspace Pills (CSS only test) */
@@ -11597,8 +11620,9 @@ in
 
       Service = {
         Type = "simple";
-        # Pre-start: kill any orphan daemon for this config to prevent duplicates
-        ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true'";
+        # Pre-start: create state directory and kill any orphan daemon for this config
+        # Feature 125: State directory for dock-mode persistence
+        ExecStartPre = "${pkgs.bash}/bin/bash -c 'mkdir -p %h/.local/state/eww-monitoring-panel && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel kill 2>/dev/null || true'";
         # Use wrapper script that manages daemon + handles toggle signals
         # All eww processes (daemon + GTK renderers) stay in service cgroup
         # No orphans possible since toggle sends signal instead of spawning processes
