@@ -201,27 +201,11 @@ let
     $EWW --config "$CONFIG" update current_view_index=$IDX 2>/dev/null || true
 
     # Feature 125: Toggle handler - called when SIGUSR1 received
-    # Handles visibility toggle - closes window for click-through in both modes
+    # SOLUTION: Stop service to hide (releases struts), start to show
+    # This avoids eww daemon auto-spawn issues with eww open --toggle
     toggle_panel() {
-      # Read current dock mode to know which window to toggle
-      local current_dock_mode="overlay"
-      if [[ -f "$DOCK_MODE_FILE" ]]; then
-        local saved=$(${pkgs.coreutils}/bin/cat "$DOCK_MODE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')
-        [[ "$saved" == "docked" ]] && current_dock_mode="docked"
-      fi
-
-      local window_name="monitoring-panel-overlay"
-      [[ "$current_dock_mode" == "docked" ]] && window_name="monitoring-panel-docked"
-
-      # Close/open window for true click-through (in both modes)
-      $EWW --config "$CONFIG" open --toggle "$window_name" || true
-      # Update variables based on new state (after toggle)
-      ${pkgs.coreutils}/bin/sleep 0.1
-      if $TIMEOUT 2s $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "$window_name"; then
-        $EWW --config "$CONFIG" update panel_visible=true || true
-      else
-        $EWW --config "$CONFIG" update panel_visible=false || true
-      fi
+      # Stop the service - this exits the wrapper and releases all resources
+      exec ${pkgs.systemd}/bin/systemctl --user stop eww-monitoring-panel.service
     }
 
     trap toggle_panel SIGUSR1
@@ -259,11 +243,13 @@ let
   # Uses PID file to avoid sending signal to all processes in service cgroup
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
+    # Feature 125: Toggle panel visibility via service start/stop
+    # This avoids eww daemon auto-spawn issues with eww open --toggle
 
     LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
     PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
 
-    # Debounce: prevent rapid toggling (crashes eww daemon)
+    # Debounce: prevent rapid toggling
     if [[ -f "$LOCK_FILE" ]]; then
       LOCK_AGE=$(($(${pkgs.coreutils}/bin/date +%s) - $(${pkgs.coreutils}/bin/stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
       if [[ $LOCK_AGE -lt 1 ]]; then
@@ -272,18 +258,18 @@ let
     fi
     ${pkgs.coreutils}/bin/touch "$LOCK_FILE"
 
-    # Ensure service is running
-    if ! ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
-      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
-      ${pkgs.coreutils}/bin/sleep 1  # Wait for service to start and PID file to be created
-    fi
-
-    # Send toggle signal directly to wrapper process (not entire cgroup)
-    if [[ -f "$PID_FILE" ]]; then
-      WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
-      if kill -0 "$WRAPPER_PID" 2>/dev/null; then
-        kill -SIGUSR1 "$WRAPPER_PID"
+    # Toggle: if running -> stop (hide), if stopped -> start (show)
+    if ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
+      # Service running - send SIGUSR1 to stop it (hide panel)
+      if [[ -f "$PID_FILE" ]]; then
+        WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
+        if kill -0 "$WRAPPER_PID" 2>/dev/null; then
+          kill -SIGUSR1 "$WRAPPER_PID"
+        fi
       fi
+    else
+      # Service stopped - start it (show panel)
+      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
     fi
   '';
 
