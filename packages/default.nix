@@ -133,6 +133,9 @@ in
           Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=minimal" ];
         };
       };
+
+      # Beyla eBPF auto-instrumentation
+      beyla = pkgs.callPackage ../pkgs/beyla.nix { };
     };
   };
 }

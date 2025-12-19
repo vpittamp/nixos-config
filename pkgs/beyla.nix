@@ -8,10 +8,12 @@ buildGoModule rec {
     owner = "grafana";
     repo = "beyla";
     rev = "v${version}";
-    hash = "sha256-RndvT7Xz6X5zL9X8n5v5m5p5q5r5s5t5u5v5w5x5y5z="; # Placeholder, will need update
+    hash = "sha256-Hb57DeIhuVLCcQMyXbRusBkyEFJiLs+6FVfRzKtx+G8=";
   };
 
-  vendorHash = null; # Usually needed for Go modules
+  vendorHash = null;
+
+  subPackages = [ "cmd/beyla" ];
 
   ldflags = [
     "-s" "-w"
