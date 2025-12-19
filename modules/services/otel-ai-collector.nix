@@ -58,7 +58,7 @@ in
 
     k8sExporterEndpoint = mkOption {
       type = types.str;
-      default = "https://otel-collector.tail286401.ts.net/v1/traces";
+      default = "https://svc-otel-collector.tail286401.ts.net/v1/traces";
       description = "Endpoint for the Kubernetes OTel Collector (via Tailscale HTTPS on port 443)";
     };
 
