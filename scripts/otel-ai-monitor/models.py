@@ -25,6 +25,7 @@ class AITool(str, Enum):
 
     CLAUDE_CODE = "claude-code"
     CODEX_CLI = "codex"
+    GEMINI_CLI = "gemini"
 
 
 class Session(BaseModel):
@@ -145,7 +146,7 @@ class SessionList(BaseModel):
 
 # Event name constants for state machine triggers
 class EventNames:
-    """Known event names from Claude Code and Codex CLI telemetry."""
+    """Known event names from Claude Code, Codex CLI, and Gemini CLI telemetry."""
 
     # Claude Code events
     CLAUDE_USER_PROMPT = "claude_code.user_prompt"
@@ -161,6 +162,15 @@ class EventNames:
     CODEX_TOOL_DECISION = "codex.tool_decision"
     CODEX_TOOL_RESULT = "codex.tool_result"
 
+    # Gemini CLI events (OpenTelemetry GenAI conventions)
+    GEMINI_API_REQUEST = "gemini_cli.api.request"
+    GEMINI_TOKEN_USAGE = "gemini_cli.token.usage"
+    GEMINI_USER_PROMPT = "gemini_cli.user_prompt"
+    GEMINI_TOOL_CALL = "gemini_cli.tool_call"
+    # GenAI semantic convention events (used by Gemini CLI)
+    GENAI_TOKEN_USAGE = "gen_ai.client.token.usage"
+    GENAI_OPERATION = "gen_ai.client.operation"
+
     # Events that trigger WORKING state
     # Note: claude_code.api_request is included because Claude Code doesn't emit
     # explicit user_prompt events - API requests indicate user activity
@@ -169,6 +179,8 @@ class EventNames:
         CLAUDE_API_REQUEST,  # Claude Code uses this to indicate activity
         CODEX_USER_PROMPT,
         CODEX_CONVERSATION_STARTS,
+        GEMINI_USER_PROMPT,
+        GEMINI_API_REQUEST,
     }
 
     # Claude Code additional events
@@ -185,6 +197,11 @@ class EventNames:
         CODEX_SSE_EVENT,
         CODEX_TOOL_DECISION,
         CODEX_TOOL_RESULT,
+        GEMINI_API_REQUEST,
+        GEMINI_TOKEN_USAGE,
+        GEMINI_TOOL_CALL,
+        GENAI_TOKEN_USAGE,
+        GENAI_OPERATION,
     }
 
     @staticmethod
@@ -194,4 +211,6 @@ class EventNames:
             return AITool.CLAUDE_CODE
         elif event_name.startswith("codex."):
             return AITool.CODEX_CLI
+        elif event_name.startswith("gemini_cli.") or event_name.startswith("gen_ai."):
+            return AITool.GEMINI_CLI
         return None

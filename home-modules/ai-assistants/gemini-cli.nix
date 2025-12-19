@@ -81,13 +81,14 @@ let
     vimMode = true;
     # Feature 123: OpenTelemetry telemetry configuration
     # Sends traces to local OTEL Collector for session tracking
+    # Note: Gemini CLI uses gen_ai.* or gemini_cli.* event names
     telemetry = {
       enabled = true;
-      target = "local";  # Use local OTLP endpoint
-      otlpEndpoint = "http://localhost:4318";  # Standard OTLP HTTP port
-      otlpProtocol = "http";  # Use HTTP (not gRPC)
+      target = "local";  # Use local OTLP endpoint (not GCP)
+      otlpEndpoint = "http://localhost:4318";  # Standard OTLP HTTP port (no path suffix needed)
+      otlpProtocol = "http";  # Use HTTP protocol (not gRPC)
       logPrompts = true;  # Enable for debugging (disable in production)
-      useCollector = true;  # Route through collector
+      useCollector = true;  # Route through collector instead of direct
     };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {

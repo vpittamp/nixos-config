@@ -3989,10 +3989,10 @@ in
                         (label
                           :class {"ai-session-indicator" + (session.state == "working" ? " badge-opacity-" + (spinner_opacity == "0.4" ? "04" : (spinner_opacity == "0.6" ? "06" : (spinner_opacity == "0.8" ? "08" : "10"))) : "")}
                           :text {session.state == "working" ? spinner_frame : (session.needs_attention ? "󰂞" : "󰤄")})
-                        ;; Source icon (SVG images for claude and codex)
+                        ;; Source icon (SVG images for claude, codex, and gemini)
                         (image
                           :class "ai-session-source-icon"
-                          :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
+                          :path {session.source == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.source == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : (session.source == "gemini" ? "/etc/nixos/assets/icons/gemini.svg" : "/etc/nixos/assets/icons/anthropic.svg"))}
                           :image-width 14
                           :image-height 14)))))
                 ;; Projects list
