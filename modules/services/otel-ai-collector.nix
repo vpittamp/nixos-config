@@ -76,11 +76,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    # Ensure storage directory exists with correct permissions for the collector
-    systemd.tmpfiles.rules = [
-      "d /var/lib/opentelemetry-collector/storage 0700 root root -"
-    ];
-
     services.opentelemetry-collector = {
       enable = true;
       package = pkgs.opentelemetry-collector-contrib;  # Has file exporter
@@ -89,7 +84,7 @@ in
         # Extensions for debugging and health checks
         extensions = {
           file_storage = {
-            directory = "/var/lib/opentelemetry-collector/storage";
+            directory = "/var/lib/opentelemetry-collector";
             timeout = "1s";
           };
         } // (lib.optionalAttrs cfg.enableZPages {

@@ -75,9 +75,7 @@ in
             discovery = {
               services = discoveryServices;
             };
-            export = {
-              otlp = otlpExport;
-            };
+            otel_traces_export = otlpExport;
           } cfg.config;
         in "${cfg.package}/bin/beyla --config=${pkgs.writeText "beyla.yaml" (builtins.toJSON finalConfig)}";
         Restart = "always";
