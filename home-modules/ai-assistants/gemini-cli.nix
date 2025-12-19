@@ -79,15 +79,16 @@ let
     previewFeatures = true;
     theme = "Default";
     vimMode = true;
-    # Feature 123: OpenTelemetry configuration for OTLP export
-    # Sends telemetry to otel-ai-monitor service for session tracking
+    # Feature 123: OpenTelemetry telemetry configuration
+    # Sends traces to local OTEL Collector for session tracking
+    # Note: Gemini CLI uses gen_ai.* or gemini_cli.* event names
     telemetry = {
       enabled = true;
-      target = "local";  # Use local OTLP collector
-      otlpEndpoint = "http://localhost:4318";
-      otlpProtocol = "http";  # Use HTTP for compatibility with our receiver
-      logPrompts = true;  # Enable for debugging (helps with session detection)
-      useCollector = true;  # Enable external OTLP collector
+      target = "local";  # Use local OTLP endpoint (not GCP)
+      otlpEndpoint = "http://localhost:4318";  # Standard OTLP HTTP port (no path suffix needed)
+      otlpProtocol = "http";  # Use HTTP protocol (not gRPC)
+      logPrompts = true;  # Enable for debugging (disable in production)
+      useCollector = true;  # Route through collector instead of direct
     };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
@@ -131,23 +132,24 @@ in
     $DRY_RUN_CMD mkdir -p "$GEMINI_DIR"
     $DRY_RUN_CMD chmod 700 "$GEMINI_DIR"
 
-    # If settings.json is missing OR is a symlink, create real writable file
-    # This preserves user customizations if they exist as a real file
+    # Update settings.json if:
+    # - File is missing
+    # - File is a symlink (from old config)
+    # - File lacks telemetry config (Feature 123: OTEL support)
+    NEEDS_UPDATE=false
     if [ ! -f "$GEMINI_DIR/settings.json" ] || [ -L "$GEMINI_DIR/settings.json" ]; then
+      NEEDS_UPDATE=true
+    elif ! ${pkgs.gnugrep}/bin/grep -q '"telemetry"' "$GEMINI_DIR/settings.json" 2>/dev/null; then
+      # Feature 123: Migrate existing settings to include OTEL telemetry
+      NEEDS_UPDATE=true
+    fi
+
+    if [ "$NEEDS_UPDATE" = "true" ]; then
       $DRY_RUN_CMD rm -f "$GEMINI_DIR/settings.json"
       $DRY_RUN_CMD cat > "$GEMINI_DIR/settings.json" <<'EOF'
 ${settingsJson}
 EOF
       $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
-    else
-      # Feature 123: Ensure telemetry config is present (merge into existing settings)
-      # This preserves user customizations while ensuring OTEL is configured
-      if ! ${pkgs.jq}/bin/jq -e '.telemetry.enabled' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
-        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '. + {telemetry: {enabled: true, target: "local", otlpEndpoint: "http://localhost:4318", otlpProtocol: "http", logPrompts: true, useCollector: true}}' \
-          "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
-        $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
-        $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
-      fi
     fi
   '';
 
