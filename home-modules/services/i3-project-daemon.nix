@@ -61,8 +61,10 @@ let
     USER_RUNTIME_DIR="/run/user/$USER_ID"
 
     # Dynamically discover Sway IPC socket (matches pattern: sway-ipc.*.sock)
-    # Use newest socket to handle Sway restarts
-    SWAY_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null | ${pkgs.coreutils}/bin/sort -r | ${pkgs.coreutils}/bin/head -n1)
+    # Use newest socket by modification time to handle Sway restarts
+    # Note: sort -r sorts alphabetically which is wrong (992301 > 1762696)
+    # Use ls -t to sort by modification time (newest first)
+    SWAY_SOCK=$(${pkgs.coreutils}/bin/ls -t "$USER_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
 
     if [ -n "$SWAY_SOCK" ]; then
       export SWAYSOCK="$SWAY_SOCK"
