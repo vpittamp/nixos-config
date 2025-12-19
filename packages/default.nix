@@ -35,6 +35,27 @@ in
 {
   perSystem = { system, pkgs, ... }: {
     packages = {
+      # KubeVirt Minimal QCOW2 image (Feature 110)
+      # Minimal base image for KubeVirt CI/CD testing
+      # Uses kubevirt.nix module: cloud-init, QEMU guest agent, SSH, serial console
+      # ~500MB compressed, desktop applied via nixos-rebuild
+      kubevirt-minimal-qcow2 =
+        let
+          nixosConfig = (nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [ ../configurations/kubevirt-minimal.nix ];
+          }).config;
+        in
+        import "${nixpkgs}/nixos/lib/make-disk-image.nix" {
+          inherit pkgs;
+          lib = pkgs.lib;
+          config = nixosConfig;
+          diskSize = 10 * 1024; # 10GB in MB (minimal base + rebuild space)
+          format = "qcow2";
+          partitionTableType = "hybrid";
+          memSize = 4096; # 4GB QEMU VM memory for build process
+        };
+
       # Hetzner Sway QCOW2 image (Feature 007-number-7-short)
       # Wayland/Sway headless VM with WayVNC server
       hetzner-sway-qcow2 =

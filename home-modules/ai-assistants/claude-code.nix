@@ -80,6 +80,9 @@ lib.mkIf enableClaudeCode {
       # Model selection removed - will use default or user's choice
       theme = "dark";
       editorMode = "vim";
+
+      # Claude in Chrome settings
+      chromeEnabled = true;  # Enable Chrome integration by default (no --chrome flag needed)
       autoCompactEnabled = true;
       todoFeatureEnabled = true;
       verbose = true;
@@ -173,6 +176,7 @@ lib.mkIf enableClaudeCode {
           "mcp__context7"
           "mcp__playwright"  # Linux only
           "mcp__chrome-devtools"  # Linux only
+          "mcp__claude-in-chrome"  # Claude in Chrome browser automation
         ];
       };
 

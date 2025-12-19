@@ -530,24 +530,15 @@
     margin-right: 2px;
     min-width: 16px;
     min-height: 16px;
+    opacity: 1.0;
   }
 
-  /* Pure CSS animation - no polling required, GPU-accelerated */
   .ai-badge-icon.working {
-    animation: icon-pulse 1.5s ease-in-out infinite;
+    opacity: 1.0;
   }
 
-  /* GTK3-compatible keyframes using separate percentage blocks */
-  @keyframes icon-pulse {
-    0% {
-      opacity: 1.0;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1.0;
-    }
+  .ai-badge-icon.working.rotate-phase {
+    opacity: 1.0;
   }
 
   .ai-badge-icon.attention {
@@ -555,7 +546,7 @@
   }
 
   .ai-badge-icon.idle {
-    opacity: 0.6;
+    opacity: 1.0;
   }
 
   .badge-focused-window {
