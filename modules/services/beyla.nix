@@ -49,6 +49,22 @@ in
 
       serviceConfig = {
         ExecStart = let
+          discoveryServices = if cfg.monitorAiAssistants then [
+            {
+              name = "ai-assistants";
+              exe_path = ".*(claude|gemini|codex).*";
+            }
+          ] else [];
+          
+          otlpExport = if cfg.otlpEndpoint != null then {
+            endpoint = cfg.otlpEndpoint;
+            tls = {
+              ca_file = "/etc/otel/certs/ca.crt";
+              cert_file = "/etc/otel/certs/client.crt";
+              key_file = "/etc/otel/certs/client.key";
+            };
+          } else {};
+
           finalConfig = recursiveUpdate {
             # Default Beyla config
             attributes = {
@@ -57,23 +73,10 @@ in
               };
             };
             discovery = {
-              services = mkIf cfg.monitorAiAssistants [
-                {
-                  name = "ai-assistants";
-                  exe_path = ".*(claude|gemini|codex).*";
-                }
-              ];
+              services = discoveryServices;
             };
             export = {
-              otlp = mkIf (cfg.otlpEndpoint != null) {
-                endpoint = cfg.otlpEndpoint;
-                # mTLS certs are expected to be at /etc/otel/certs/
-                tls = {
-                  ca_file = "/etc/otel/certs/ca.crt";
-                  cert_file = "/etc/otel/certs/client.crt";
-                  key_file = "/etc/otel/certs/client.key";
-                };
-              };
+              otlp = otlpExport;
             };
           } cfg.config;
         in "${cfg.package}/bin/beyla --config=${pkgs.writeText "beyla.yaml" (builtins.toJSON finalConfig)}";
