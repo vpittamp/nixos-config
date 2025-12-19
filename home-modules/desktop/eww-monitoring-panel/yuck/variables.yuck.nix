@@ -71,7 +71,7 @@
   ;; Feature 094 T039: Form validation state
   ;; Changed from deflisten to defvar - validation is rarely used and causes process issues
   ;; Validation handled via explicit update commands when forms are opened
-  (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\""}")
+  (defvar validation_state "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}")
 
   ;; Feature 116: Defpoll: Device state - DISABLED for CPU savings
   ;; Tab 6 is hidden, so this poll never needs to run

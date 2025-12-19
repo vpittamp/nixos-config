@@ -85,7 +85,7 @@
           (button
             :class "''${edit_form_scope == 'global' ? 'radio-button selected' : 'radio-button'}"
             :onclick "eww update edit_form_scope='global'"
-            "Global"))))
+            "Global")))
       (box
         :class "form-section"
         :orientation "v"
@@ -192,7 +192,7 @@
                   :class "field-error"
                   :halign "start"
                   :wrap true
-                  :text {validation_state.errors["remote.port"] ?: ""})))))))
+                  :text {validation_state.errors["remote.port"] ?: ""}))))))
       (revealer
         :reveal {edit_form_error != ""}
         :transition "slidedown"
@@ -214,7 +214,7 @@
         (button
           :class "''${save_in_progress ? 'save-button-loading' : (validation_state.valid ? 'save-button' : 'save-button-disabled')}"
           :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && project-edit-save &"
-          "''${save_in_progress ? 'Saving...' : 'Save'}")))
+          "''${save_in_progress ? 'Saving...' : 'Save'}"))))
 
   ;; Worktree Edit Form
   (defwidget worktree-edit-form [project]

@@ -58,12 +58,12 @@
           (label
             :class "filter-count"
             :visible {project_filter != ""}
-            :text {jq(projects_data.discovered_repositories ?: [], "[.[].worktrees[]? | select((.branch // \"\") | test(\"(?i).*\" + project_filter + \" .*") or ((.branch_number // \"\") | test(\"^\" + project_filter + \"\")))] | length")})))
-    (revealer
-      :transition "slidedown"
-      :reveal project_creating
-      :duration "200ms"
-      (project-create-form))
+            :text {jq(projects_data.discovered_repositories ?: [], "[.[].worktrees[]? | select(((.branch // \"\") | test(\"(?i).*\" + project_filter + \".*\")) or ((.branch_number // \"\") | test(\"^\" + project_filter + \"\")))] | length")}))
+        (revealer
+          :transition "slidedown"
+          :reveal project_creating
+          :duration "200ms"
+          (project-create-form))
     (revealer
       :transition "slidedown"
       :reveal worktree_creating
@@ -88,7 +88,7 @@
                     matches(repo.qualified_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
                     matches(repo.account ?: "", "(?i).*" + project_filter + ".*") ||
                     matches(repo.display_name ?: "", "(?i).*" + replace(project_filter, " ", ".*") + ".*") ||
-                    jq(repo.worktrees ?: [], "any(.[]; (.branch // \"\") | test(\"(?i).*\" + project_filter + \" .*"))") ||
+                    jq(repo.worktrees ?: [], "any(.[]; (.branch // \"\") | test(\"(?i).*\" + project_filter + \".*\"))") ||
                     jq(repo.worktrees ?: [], "any(.[]; (.branch_number // \"\") | test(\"^\" + project_filter + \"\"))")}
           (discovered-repo-card :repo repo)
           (revealer
@@ -248,7 +248,7 @@
                 :class "worktree-commit"
                 :halign "start"
                 :limit-width 10
-                :text " @ " + (worktree.commit ?: "unknown"))
+                :text {" @ " + (worktree.commit ?: "unknown")})
               (label
                 :class "git-conflict"
                 :visible {worktree.git_has_conflicts ?: false}

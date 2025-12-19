@@ -98,7 +98,7 @@
                             ? "/etc/nixos/assets/icons/gemini.svg"
                             : "/etc/nixos/assets/icons/anthropic.svg"))}
                       :image-width 18
-                      :image-height 18))))))
+                      :image-height 18)))))
             ;; Projects list
             (for project in {monitoring_data.projects ?: []}
               (project-widget :project project))))))) 
@@ -256,15 +256,15 @@
               (label
                 :class "badge badge-urgent"
                 :text "!"
-                :visible {window.urgent})
+                :visible {window.urgent ?: false})
               (label
                 :class "badge badge-floating"
                 :text "⚓"
-                :visible {window.floating})
+                :visible {window.floating ?: false})
               (label
                 :class "badge badge-sticky"
                 :text "📌"
-                :visible {window.sticky})
+                :visible {window.sticky ?: false})
               (label
                 :class "badge badge-fullscreen"
                 :text "󰊓"
@@ -273,7 +273,7 @@
                 :class "json-expand-trigger"
                 :onhover "eww update hover_window_id=''${window.id}"
                 :onhoverlost "eww update hover_window_id=0"
-                (label :class "expand-icon" :text "󰅂"))))))
+                (label :class "expand-icon" :text "󰅂")))))
         (eventbox
           :cursor "pointer"
           :class "hover-close-btn window-hover-close"
@@ -301,5 +301,5 @@
           (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] focus && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Focus" (label :class "action-btn" :text "󰌑"))
           (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] floating toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Float" (label :class "action-btn" :text "󰊓"))
           (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] fullscreen toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Full" (label :class "action-btn" :text "󰊓"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙")))))
+          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙"))))))
 ''
