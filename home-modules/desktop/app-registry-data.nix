@@ -419,6 +419,21 @@ let
       description = "Remote desktop client for VNC, RDP, SSH connections";
     })
 
+    (mkApp {
+      name = "moonlight";
+      display_name = "Moonlight";
+      command = "moonlight";
+      parameters = "";
+      scope = "global";
+      expected_class = "com.moonlight_stream.Moonlight";
+      preferred_workspace = 12;
+      icon = "com.moonlight_stream.Moonlight";
+      nix_package = "pkgs.moonlight-qt";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Moonlight game streaming client";
+    })
+
     # Scratchpad Terminal (Feature 062, Feature 101)
     # Special floating terminal for quick project access
     # NOTE: Launched by daemon via Sway IPC, not through wrapper

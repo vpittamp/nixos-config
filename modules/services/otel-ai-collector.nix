@@ -58,8 +58,8 @@ in
 
     k8sExporterEndpoint = mkOption {
       type = types.str;
-      default = "http://otel-collector.tail286401.ts.net:4318";
-      description = "Endpoint for the Kubernetes OTel Collector (via Tailscale)";
+      default = "https://otel-collector.tail286401.ts.net";
+      description = "Endpoint for the Kubernetes OTel Collector (via Tailscale HTTPS on port 443)";
     };
 
     enableZPages = mkOption {
@@ -111,13 +111,14 @@ in
             };
           }
           # Kubernetes OTel Stack Exporter (optional)
+          # Exports to K8s cluster via Tailscale HTTPS (port 443)
+          # Tailscale serve terminates TLS and forwards to the in-cluster collector
           // (lib.optionalAttrs cfg.enableK8sExporter {
             "otlphttp/k8s" = {
               endpoint = cfg.k8sExporterEndpoint;
               encoding = "json";
-              tls = {
-                insecure = true; # Tailscale provides security
-              };
+              # Tailscale uses valid HTTPS certs (trusted by system CA)
+              # No need to disable TLS verification
             };
           })
           # Debug exporter (optional)

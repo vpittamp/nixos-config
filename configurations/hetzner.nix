@@ -173,10 +173,14 @@
 
   # Feature 123: OpenTelemetry Collector for AI assistant telemetry
   # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
+  # Also exports to K8s OTel stack via Tailscale for persistence (ClickHouse/Grafana)
+  # Dashboard: https://grafana.tail286401.ts.net/d/otel-traces
   services.otel-ai-collector = {
     enable = true;
     enableDebugExporter = false;  # Less verbose for server
     enableFileExporter = true;    # Raw telemetry for analysis
+    enableK8sExporter = true;     # Export to K8s OTel Collector via Tailscale
+    # k8sExporterEndpoint defaults to http://otel-collector.tail286401.ts.net:4318
   };
 
   systemd.services.home-manager-vpittamp = {
