@@ -153,7 +153,7 @@
                 (label
                   :class "project-card-name"
                   :halign "start"
-                  :limit-width 20
+                  :limit-width 30
                   :truncate true
                   :text "''${repo.qualified_name}"
                   :tooltip "''${repo.qualified_name}")
@@ -164,7 +164,7 @@
               (label
                 :class "project-card-path"
                 :halign "start"
-                :limit-width 25
+                :limit-width 40
                 :truncate true
                 :text "''${repo.directory_display ?: repo.directory}"
                 :tooltip "''${repo.directory}")))
@@ -240,14 +240,14 @@
               (label
                 :class "worktree-branch"
                 :halign "start"
-                :limit-width 25
+                :limit-width 40
                 :truncate true
                 :text {(worktree.has_branch_number ?: false) ? (worktree.branch_description ?: worktree.branch) : worktree.branch}
                 :tooltip "''${worktree.branch}")
               (label
                 :class "worktree-commit"
                 :halign "start"
-                :limit-width 10
+                :limit-width 15
                 :text {" @ " + (worktree.commit ?: "unknown")})
               (label
                 :class "git-conflict"
@@ -289,7 +289,7 @@
               (label
                 :class "worktree-path"
                 :halign "start"
-                :limit-width 28
+                :limit-width 45
                 :truncate true
                 :text "''${worktree.directory_display}"
                 :tooltip "''${worktree.path}")
@@ -319,21 +319,6 @@
               :onclick "i3pm scratchpad toggle ''${worktree.qualified_name}"
               :tooltip "Open terminal (t)"
               (label :class "action-btn action-terminal" :text ""))
-            (eventbox
-              :cursor "pointer"
-              :onclick "code --folder-uri file://''${worktree.path}"
-              :tooltip "Open in VS Code (e)"
-              (label :class "action-btn action-editor" :text "󰨞"))
-            (eventbox
-              :cursor "pointer"
-              :onclick "ghostty -e yazi ''${worktree.path}"
-              :tooltip "Open file manager (f)"
-              (label :class "action-btn action-files" :text "󰉋"))
-            (eventbox
-              :cursor "pointer"
-              :onclick "${pkgs.ghostty}/bin/ghostty -e lazygit -p ''${worktree.path}"
-              :tooltip "Open lazygit (Shift+L)"
-              (label :class "action-btn action-git" :text "󰊢"))
             (eventbox
               :cursor "pointer"
               :onclick "echo -n ''\'''${worktree.path}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${worktree.path}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
