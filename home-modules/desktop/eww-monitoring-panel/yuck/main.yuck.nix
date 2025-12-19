@@ -44,13 +44,16 @@
       :transition "crossfade"
       :reveal {panel_visible}
       :duration "150ms"
+      :vexpand true
       (eventbox
         :cursor "default"
+        :vexpand true
         (box
           :class {panel_focused ? "panel-container focused" : "panel-container"}
           :style "background-color: rgba(30, 30, 46, ''${panel_dock_mode ? '1.0' : '0.85'});"
           :orientation "v"
           :space-evenly false
+          :vexpand true
           (panel-header)
           (panel-body)
           (panel-footer)
