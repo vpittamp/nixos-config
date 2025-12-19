@@ -167,44 +167,15 @@
     swaynotificationcenter
   ];
 
-  # ========== FONTS ==========
-  # Nerd Fonts for terminal icons and eww
-  fonts.packages = with pkgs; let nerdFonts = pkgs."nerd-fonts"; in [
-    nerdFonts.jetbrains-mono
-    nerdFonts.fira-code
-    nerdFonts.hack
-    font-awesome
-  ];
-
   # ========== NIX CONFIGURATION ==========
-  nix = {
-    package = pkgs.nixVersions.latest;
-    settings = {
-      experimental-features = [ "nix-command" "flakes" ];
-      trusted-users = [ "root" "vpittamp" "@wheel" ];
-      auto-optimise-store = true;
-
-      # Attic cache as primary substituter (for in-cluster rebuilds)
-      substituters = lib.mkBefore [
-        "http://attic.nix-cache.svc.cluster.local:8080/nixos"
-      ];
-
-      # Standard caches as fallback
-      extra-substituters = [
-        "https://cache.nixos.org"
-        "https://nix-community.cachix.org"
-      ];
-
-      trusted-public-keys = [
-        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-      ];
-
-      fallback = true;  # Allow builds even if Attic is unreachable
-    };
+  # Fonts and base nix config inherited from base.nix
+  # Add Attic cache as additional substituter for in-cluster rebuilds
+  nix.settings = {
+    extra-substituters = lib.mkAfter [
+      "http://attic.nix-cache.svc.cluster.local:8080/nixos"
+    ];
+    fallback = true;  # Allow builds even if Attic is unreachable
   };
-
-  nixpkgs.config.allowUnfree = true;
 
   # ========== DISK SIZE ==========
   # 80GB for full desktop + development tools
