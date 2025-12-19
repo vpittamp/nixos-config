@@ -76,17 +76,27 @@ in
   };
 
   config = mkIf cfg.enable {
+    # Ensure storage directory exists with correct permissions for the collector
+    systemd.tmpfiles.rules = [
+      "d /var/lib/opentelemetry-collector/storage 0700 root root -"
+    ];
+
     services.opentelemetry-collector = {
       enable = true;
       package = pkgs.opentelemetry-collector-contrib;  # Has file exporter
 
       settings = {
         # Extensions for debugging and health checks
-        extensions = lib.optionalAttrs cfg.enableZPages {
+        extensions = {
+          file_storage = {
+            directory = "/var/lib/opentelemetry-collector/storage";
+            timeout = "1s";
+          };
+        } // (lib.optionalAttrs cfg.enableZPages {
           zpages = {
             endpoint = "0.0.0.0:${toString cfg.zpagesPort}";
           };
-        };
+        });
 
         receivers = {
           otlp = {
@@ -117,8 +127,19 @@ in
             "otlphttp/k8s" = {
               endpoint = cfg.k8sExporterEndpoint;
               encoding = "json";
-              # Tailscale uses valid HTTPS certs (trusted by system CA)
-              # No need to disable TLS verification
+              # Use client certificates for mTLS authentication
+              tls = {
+                ca_file = "/etc/otel/certs/ca.crt";
+                cert_file = "/etc/otel/certs/client.crt";
+                key_file = "/etc/otel/certs/client.key";
+              };
+              # Use persistent disk storage for buffering
+              sending_queue = {
+                storage = "file_storage";
+              };
+              retry_on_failure = {
+                enabled = true;
+              };
             };
           })
           # Debug exporter (optional)
@@ -136,7 +157,7 @@ in
 
         service = {
           # Enable extensions
-          extensions = lib.optional cfg.enableZPages "zpages";
+          extensions = [ "file_storage" ] ++ (lib.optional cfg.enableZPages "zpages");
 
           pipelines = {
             traces = {

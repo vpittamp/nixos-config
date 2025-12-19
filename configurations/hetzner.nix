@@ -22,6 +22,7 @@
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
     ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
+    ../modules/services/beyla.nix              # Feature 110: eBPF auto-instrumentation
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
     ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
@@ -181,6 +182,14 @@
     enableFileExporter = true;    # Raw telemetry for analysis
     enableK8sExporter = true;     # Export to K8s OTel Collector via Tailscale
     # k8sExporterEndpoint defaults to http://otel-collector.tail286401.ts.net:4318
+  };
+
+  # Beyla eBPF auto-instrumentation (Feature 110)
+  # Monitors Claude Code, Gemini CLI, and Codex for low-level system events
+  services.beyla = {
+    enable = true;
+    monitorAiAssistants = true;
+    otlpEndpoint = "https://otel-collector.tail286401.ts.net";
   };
 
   systemd.services.home-manager-vpittamp = {

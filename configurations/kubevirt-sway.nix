@@ -90,7 +90,7 @@
       imports = [
         ../home-vpittamp.nix  # Full Sway desktop config
       ];
-      home.stateVersion = "24.11";
+      # stateVersion inherited from base-home.nix
     };
   };
 
