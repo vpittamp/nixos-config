@@ -57,7 +57,7 @@
           (conflict-resolution-dialog)
           (success-notification-toast)
           (error-notification-toast)
-          (warning-notification-toast))))
+          (warning-notification-toast)))))
 
   ;; Panel header with tab navigation
   (defwidget panel-header []

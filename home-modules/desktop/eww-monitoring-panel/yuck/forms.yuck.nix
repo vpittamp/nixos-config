@@ -430,7 +430,7 @@
           (button
             :class "agent-btn gemini ''${worktree_form_agent == 'gemini' ? 'active' : '''}"
             :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='gemini'"
-            "Gemini"))))
+            "Gemini")))
       (box
         :class "form-field form-field-checkbox"
         :orientation "h"

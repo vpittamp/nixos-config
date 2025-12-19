@@ -103,7 +103,7 @@
                 (box
                   :visible {project_filter == "" ||
                             matches(wt.branch ?: "", "(?i).*" + project_filter + ".*") ||
-                            matches(wt.branch_number ?: "", "^" + project_filter)
+                            matches(wt.branch_number ?: "", "^" + project_filter) ||
                             matches(wt.display_name ?: "", "(?i).*" + project_filter + ".*")}
                   (discovered-worktree-card :worktree wt)))))))))))
 
@@ -248,7 +248,7 @@
                 :class "worktree-commit"
                 :halign "start"
                 :limit-width 10
-                :text " @ " + (worktree.commit ?: "unknown")})
+                :text " @ " + (worktree.commit ?: "unknown"))
               (label
                 :class "git-conflict"
                 :visible {worktree.git_has_conflicts ?: false}
