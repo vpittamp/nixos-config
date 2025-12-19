@@ -63,6 +63,24 @@ in
     ];
   };
 
+  # KubeVirt Sway Desktop
+  # Full Sway desktop for KubeVirt VMs (no hardware-specific bloat)
+  # Build: sudo nixos-rebuild switch --flake .#kubevirt-sway
+  kubevirt-sway = helpers.mkSystem {
+    hostname = "kubevirt-sway";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/kubevirt-sway.nix
+
+      # Home Manager integration
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-vpittamp.nix ];
+      })
+    ];
+  };
+
   # ARCHIVED/REMOVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)
