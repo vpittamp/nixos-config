@@ -156,9 +156,10 @@ def load_otel_sessions() -> Dict[str, Any]:
 
 
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
-    """Create inotify watcher subprocess for badge directory.
+    """Create inotify watcher subprocess for badge directory and OTEL sessions file.
 
     Feature 107: Uses inotifywait for immediate badge file detection (<15ms latency).
+    Feature 123: Also watches OTEL sessions file for AI state changes.
     Falls back to polling if inotifywait is not available.
 
     Returns:
@@ -174,6 +175,12 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     # Ensure badge directory exists before watching
     BADGE_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Build list of paths to watch
+    watch_paths = [str(BADGE_STATE_DIR)]
+    # Feature 123: Also watch OTEL sessions file for AI state changes
+    if OTEL_SESSIONS_FILE.parent.exists():
+        watch_paths.append(str(OTEL_SESSIONS_FILE))
+
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
         # -e create,modify,delete watches for file changes
@@ -185,11 +192,11 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
             "-q",           # Quiet (no initial watching message)
             "-e", "create,modify,delete,moved_to",
             "--format", "%e %f",  # Event type and filename
-            str(BADGE_STATE_DIR),
+            *watch_paths,   # Watch badge dir and OTEL sessions file
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        logger.info(f"Feature 107: Started inotify watcher on {BADGE_STATE_DIR} (pid={process.pid})")
+        logger.info(f"Feature 107/123: Started inotify watcher on {watch_paths} (pid={process.pid})")
         return process
     except Exception as e:
         logger.warning(f"Feature 107: Failed to start inotify watcher: {e}")

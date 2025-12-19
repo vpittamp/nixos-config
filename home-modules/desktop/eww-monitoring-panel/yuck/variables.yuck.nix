@@ -51,14 +51,14 @@
     :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
     `echo '{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}'`)
 
-  ;; Feature 110: Efficient pulsating animation using CSS transition
-  ;; defpoll toggles state every 1s, CSS transition smoothly animates opacity
-  ;; Much more efficient than 120ms defpoll (8+ calls/sec) - only 1 call/sec
+  ;; Feature 110: Pulsating animation now uses pure CSS @keyframes
+  ;; No polling needed - animation runs on GPU, much more efficient
+  ;; Kept for backwards compatibility but disabled
   (defpoll pulse_phase
-    :interval "1s"
-    :run-while {monitoring_data.otel_sessions.has_working ?: false}
+    :interval "10s"
+    :run-while false
     :initial "0"
-    `cat /tmp/eww-pulse-phase 2>/dev/null || echo 0; echo $(( ($(cat /tmp/eww-pulse-phase 2>/dev/null || echo 0) + 1) % 2 )) > /tmp/eww-pulse-phase`)
+    `echo 0`)
 
   ;; Feature 092: Defpoll: Sway event log - DISABLED for CPU savings
   ;; Tab 4 is hidden, so this poll never needs to run

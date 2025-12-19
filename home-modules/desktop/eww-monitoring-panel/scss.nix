@@ -528,17 +528,26 @@
   .ai-badge-icon {
     margin-left: 4px;
     margin-right: 2px;
-    transition: opacity 500ms ease-in-out;
     min-width: 16px;
     min-height: 16px;
   }
 
+  /* Pure CSS animation - no polling required, GPU-accelerated */
   .ai-badge-icon.working {
-    opacity: 0.7;
+    animation: icon-pulse 1.5s ease-in-out infinite;
   }
 
-  .ai-badge-icon.working.rotate-phase {
-    opacity: 1.0;
+  /* GTK3-compatible keyframes using separate percentage blocks */
+  @keyframes icon-pulse {
+    0% {
+      opacity: 1.0;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1.0;
+    }
   }
 
   .ai-badge-icon.attention {

@@ -79,7 +79,7 @@
                 (eventbox
                   :cursor "pointer"
                   :onclick "${focusWindowScript}/bin/focus-window-action ''${session.project} ''${session.id} &"
-                  :tooltip {"󱜙 Click to focus\n󰙅 " + (session.project != "" ? session.project : "Unknown") + "\n󰚩 " + (session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source)) + "\n" + (session.state == "working" ? "⏳ Processing..." : (session.needs_attention ? "🔔 Needs attention" : "💤 Ready for input"))}
+                  :tooltip {"󱜙 Click to focus\n󰙅 " + (session.project != "" ? session.project : "Unknown") + "\n󰚩 " + (session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool)) + "\n" + (session.state == "working" ? "⏳ Processing..." : (session.needs_attention ? "🔔 Needs attention" : "💤 Ready for input"))}
                   (box
                     :class {"ai-session-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
                     :orientation "h"
@@ -88,15 +88,13 @@
                     (image
                       :class {"ai-badge-icon" +
                         (session.state == "working"
-                          ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                          ? " working"
                           : (session.needs_attention ? " attention" : " idle"))}
-                      :path {session.source == "claude-code"
+                      :path {session.tool == "claude-code"
                         ? "/etc/nixos/assets/icons/claude.svg"
-                        : (session.source == "codex"
+                        : (session.tool == "codex"
                           ? "/etc/nixos/assets/icons/chatgpt.svg"
-                          : (session.source == "gemini"
-                            ? "/etc/nixos/assets/icons/gemini.svg"
-                            : "/etc/nixos/assets/icons/anthropic.svg"))}
+                          : "/etc/nixos/assets/icons/gemini.svg")}
                       :image-width 18
                       :image-height 18)))))
             ;; Projects list
@@ -241,18 +239,16 @@
               (image
                 :class {"ai-badge-icon" +
                   ((window.badge.otel_state ?: "none") == "working"
-                    ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                    ? " working"
                     : " attention")}
-                :path {window.badge.otel_source == "claude-code"
+                :path {(window.badge.otel_tool ?: "none") == "claude-code"
                   ? "/etc/nixos/assets/icons/claude.svg"
-                  : (window.badge.otel_source == "codex"
+                  : ((window.badge.otel_tool ?: "none") == "codex"
                     ? "/etc/nixos/assets/icons/chatgpt.svg"
-                    : (window.badge.otel_source == "gemini"
-                      ? "/etc/nixos/assets/icons/gemini.svg"
-                      : "/etc/nixos/assets/icons/anthropic.svg"))}
+                    : "/etc/nixos/assets/icons/gemini.svg")}
                 :image-width 16
                 :image-height 16
-                :visible {window.badge.otel_source != "none"})
+                :visible {(window.badge.otel_tool ?: "none") != "none"})
               (label
                 :class "badge badge-urgent"
                 :text "!"
