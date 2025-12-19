@@ -680,6 +680,14 @@ class OTLPReceiver:
             elif "gemini" in service_name.lower():
                 tool = AITool.GEMINI_CLI
 
+        # Parse timestamp (nanoseconds since epoch)
+        try:
+            timestamp = datetime.fromtimestamp(
+                log_record.time_unix_nano / 1e9, tz=timezone.utc
+            )
+        except Exception:
+            timestamp = datetime.now(tz=timezone.utc)
+
         # Extract trace context
         trace_id = None
         span_id = None
