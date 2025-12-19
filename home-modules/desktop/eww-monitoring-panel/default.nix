@@ -94,7 +94,7 @@ in
 
     panelWidth = mkOption {
       type = types.int;
-      default = if hostname == "thinkpad" then 280 else 307;
+      default = if hostname == "thinkpad" then 340 else 307;
       description = "Width of the monitoring panel in pixels.";
     };
   };
