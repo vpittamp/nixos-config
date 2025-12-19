@@ -58,8 +58,8 @@ in
 
     k8sExporterEndpoint = mkOption {
       type = types.str;
-      default = "https://10.96.82.79:4318/v1/traces";
-      description = "Endpoint for the Kubernetes OTel Collector (via Tailscale Subnet Router)";
+      default = "https://otel-collector.cnoe.localtest.me:8443/v1/traces";
+      description = "Endpoint for the Kubernetes OTel Collector (via Local Ingress)";
     };
 
     enableZPages = mkOption {
