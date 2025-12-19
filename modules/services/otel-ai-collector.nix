@@ -120,13 +120,14 @@ in
           # Tailscale serve terminates TLS and forwards to the in-cluster collector
           // (lib.optionalAttrs cfg.enableK8sExporter {
             "otlphttp/k8s" = {
-              endpoint = cfg.k8sExporterEndpoint;
+              endpoint = "${cfg.k8sExporterEndpoint}";
               encoding = "json";
               # Use client certificates for mTLS authentication
               tls = {
                 ca_file = "/etc/otel/certs/ca.crt";
                 cert_file = "/etc/otel/certs/client.crt";
                 key_file = "/etc/otel/certs/client.key";
+                insecure = false;
               };
               # Use persistent disk storage for buffering
               sending_queue = {
