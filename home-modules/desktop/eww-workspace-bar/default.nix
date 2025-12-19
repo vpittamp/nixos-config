@@ -90,6 +90,40 @@ let
     ${pkgs.systemd}/bin/systemctl --user restart eww-workspace-bar
   '';
 
+  # Generate window names for all outputs
+  windowNames = map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs;
+
+  # Wrapper script that starts daemon and opens all bar windows
+  wrapperScript = pkgs.writeShellScriptBin "eww-workspace-bar-wrapper" ''
+    #!${pkgs.bash}/bin/bash
+
+    EWW="${pkgs.eww}/bin/eww"
+    CONFIG="$HOME/.config/${ewwConfigDir}"
+    TIMEOUT="${pkgs.coreutils}/bin/timeout"
+
+    # Cleanup on exit
+    cleanup() {
+      kill $DAEMON_PID 2>/dev/null
+    }
+    trap cleanup EXIT
+
+    # Start daemon in background, capture PID
+    $EWW --config "$CONFIG" daemon --no-daemonize &
+    DAEMON_PID=$!
+
+    # Wait for daemon ready (max 6 seconds)
+    for i in $(seq 1 30); do
+      $TIMEOUT 1s $EWW --config "$CONFIG" ping 2>/dev/null && break
+      ${pkgs.coreutils}/bin/sleep 0.2
+    done
+
+    # Open all workspace bar windows
+    ${lib.concatMapStringsSep "\n    " (name: ''$EWW --config "$CONFIG" open ${name} || true'') windowNames}
+
+    # Wait for daemon process
+    wait $DAEMON_PID
+  '';
+
   markupVar = output: "workspace_rows_" + sanitizeVar output.name;
 
   workspaceMarkupDefs = lib.concatStringsSep "\n\n" (map (output: 
@@ -145,7 +179,7 @@ in
   options.programs.eww-workspace-bar.enable = mkEnableOption "Eww-driven workspace bar with SVG icons";
 
   config = mkIf cfg.enable {
-    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin restoreBarScript ];
+    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin restoreBarScript wrapperScript ];
 
     xdg.configFile."${ewwConfigDir}/eww.yuck".text = mainYuck;
     xdg.configFile."${ewwConfigDir}/workspace-preview.yuck".text = workspacePreviewYuck;
@@ -155,16 +189,22 @@ in
     systemd.user.services.eww-workspace-bar = {
       Unit = {
         Description = "Eww workspace bar";
-        After = [ "sway-session.target" ];
+        After = [
+          "sway-session.target"
+          "i3-project-daemon.service"
+          "home-manager-vpittamp.service"
+        ];
         PartOf = [ "sway-session.target" ];
+        Wants = [ "i3-project-daemon.service" ];
       };
 
       Service = {
         Type = "simple";
         ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'";
-        ExecStart = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} daemon --no-daemonize";
-        ExecStopPost = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true";
+        ExecStart = "${wrapperScript}/bin/eww-workspace-bar-wrapper";
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'";
         Restart = "on-failure";
+        RestartSec = "3s";
         KillMode = "control-group";
       };
 
