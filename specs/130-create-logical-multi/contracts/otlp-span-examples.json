@@ -1,0 +1,172 @@
+{
+  "_comment": "OTLP Span Examples for Multi-Span Trace Hierarchy",
+  "_version": "1.0.0",
+  "_feature": "130-create-logical-multi",
+
+  "session_span": {
+    "_description": "Root span representing entire Claude Code session",
+    "resourceSpans": [{
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } },
+          { "key": "host.name", "value": { "stringValue": "hostname" } }
+        ]
+      },
+      "scopeSpans": [{
+        "scope": { "name": "claude-interceptor", "version": "3.0.0" },
+        "spans": [{
+          "traceId": "abc123def456789012345678901234ab",
+          "spanId": "1234567890abcdef",
+          "name": "Claude Code Session",
+          "kind": "SPAN_KIND_INTERNAL",
+          "startTimeUnixNano": "1734700000000000000",
+          "endTimeUnixNano": "1734700300000000000",
+          "attributes": [
+            { "key": "openinference.span.kind", "value": { "stringValue": "CHAIN" } },
+            { "key": "gen_ai.system", "value": { "stringValue": "anthropic" } },
+            { "key": "gen_ai.conversation.id", "value": { "stringValue": "claude-12345-1734700000000" } },
+            { "key": "session.turn_count", "value": { "intValue": "3" } },
+            { "key": "session.api_call_count", "value": { "intValue": "12" } },
+            { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "15000" } },
+            { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "5000" } }
+          ],
+          "status": { "code": "STATUS_CODE_OK" }
+        }]
+      }]
+    }]
+  },
+
+  "turn_span": {
+    "_description": "Agent span representing a single user turn",
+    "resourceSpans": [{
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } }
+        ]
+      },
+      "scopeSpans": [{
+        "scope": { "name": "claude-interceptor", "version": "3.0.0" },
+        "spans": [{
+          "traceId": "abc123def456789012345678901234ab",
+          "spanId": "fedcba9876543210",
+          "parentSpanId": "1234567890abcdef",
+          "name": "User Turn #1",
+          "kind": "SPAN_KIND_INTERNAL",
+          "startTimeUnixNano": "1734700010000000000",
+          "endTimeUnixNano": "1734700050000000000",
+          "attributes": [
+            { "key": "openinference.span.kind", "value": { "stringValue": "AGENT" } },
+            { "key": "gen_ai.operation.name", "value": { "stringValue": "chat" } },
+            { "key": "gen_ai.conversation.id", "value": { "stringValue": "claude-12345-1734700000000" } },
+            { "key": "turn.number", "value": { "intValue": "1" } },
+            { "key": "turn.llm_call_count", "value": { "intValue": "4" } },
+            { "key": "turn.tool_call_count", "value": { "intValue": "2" } },
+            { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "5000" } },
+            { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "1500" } }
+          ],
+          "status": { "code": "STATUS_CODE_OK" }
+        }]
+      }]
+    }]
+  },
+
+  "llm_span": {
+    "_description": "Client span for a single Claude API call",
+    "resourceSpans": [{
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } }
+        ]
+      },
+      "scopeSpans": [{
+        "scope": { "name": "claude-interceptor", "version": "3.0.0" },
+        "spans": [{
+          "traceId": "abc123def456789012345678901234ab",
+          "spanId": "aabbccdd11223344",
+          "parentSpanId": "fedcba9876543210",
+          "name": "Claude API Call",
+          "kind": "SPAN_KIND_CLIENT",
+          "startTimeUnixNano": "1734700015000000000",
+          "endTimeUnixNano": "1734700020000000000",
+          "attributes": [
+            { "key": "openinference.span.kind", "value": { "stringValue": "LLM" } },
+            { "key": "gen_ai.system", "value": { "stringValue": "anthropic" } },
+            { "key": "gen_ai.request.model", "value": { "stringValue": "claude-sonnet-4-20250514" } },
+            { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "1200" } },
+            { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "350" } },
+            { "key": "gen_ai.response.finish_reasons", "value": { "stringValue": "tool_use" } },
+            { "key": "llm.latency.total_ms", "value": { "intValue": "5000" } },
+            { "key": "llm.request.sequence", "value": { "intValue": "1" } }
+          ],
+          "status": { "code": "STATUS_CODE_OK" }
+        }]
+      }]
+    }]
+  },
+
+  "tool_span": {
+    "_description": "Internal span for tool execution",
+    "resourceSpans": [{
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } }
+        ]
+      },
+      "scopeSpans": [{
+        "scope": { "name": "claude-interceptor", "version": "3.0.0" },
+        "spans": [{
+          "traceId": "abc123def456789012345678901234ab",
+          "spanId": "5566778899aabbcc",
+          "parentSpanId": "fedcba9876543210",
+          "name": "Tool: Read",
+          "kind": "SPAN_KIND_INTERNAL",
+          "startTimeUnixNano": "1734700020000000000",
+          "endTimeUnixNano": "1734700021000000000",
+          "attributes": [
+            { "key": "openinference.span.kind", "value": { "stringValue": "TOOL" } },
+            { "key": "gen_ai.tool.name", "value": { "stringValue": "Read" } },
+            { "key": "gen_ai.tool.call.id", "value": { "stringValue": "toolu_01ABCDEF123456" } },
+            { "key": "tool.status", "value": { "stringValue": "success" } },
+            { "key": "tool.file_path", "value": { "stringValue": "/home/user/project/src/main.ts" } }
+          ],
+          "status": { "code": "STATUS_CODE_OK" }
+        }]
+      }]
+    }]
+  },
+
+  "subagent_span_with_link": {
+    "_description": "Session span for a subagent with link to parent",
+    "resourceSpans": [{
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } }
+        ]
+      },
+      "scopeSpans": [{
+        "scope": { "name": "claude-interceptor", "version": "3.0.0" },
+        "spans": [{
+          "traceId": "xyz789abc012345678901234567890cd",
+          "spanId": "eeff001122334455",
+          "name": "Claude Code Session",
+          "kind": "SPAN_KIND_INTERNAL",
+          "startTimeUnixNano": "1734700025000000000",
+          "endTimeUnixNano": "1734700040000000000",
+          "attributes": [
+            { "key": "openinference.span.kind", "value": { "stringValue": "CHAIN" } },
+            { "key": "gen_ai.conversation.id", "value": { "stringValue": "claude-67890-1734700025000" } },
+            { "key": "subagent.type", "value": { "stringValue": "Task" } }
+          ],
+          "links": [{
+            "traceId": "abc123def456789012345678901234ab",
+            "spanId": "fedcba9876543210",
+            "attributes": [
+              { "key": "link.type", "value": { "stringValue": "parent_task" } }
+            ]
+          }],
+          "status": { "code": "STATUS_CODE_OK" }
+        }]
+      }]
+    }]
+  }
+}

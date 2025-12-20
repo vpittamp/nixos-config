@@ -131,19 +131,51 @@ lib.mkIf enableClaudeCode {
       # 3. Validate and sanitize inputs in hook scripts
       # 4. Set explicit timeouts for commands
       # 5. Use external scripts for complex logic (maintainability)
-      # Feature 123: State hooks removed - OTEL telemetry now handles session tracking
-      # Only bash-history hook remains for command logging
+      # Feature 123/130: OTEL telemetry hooks for trace context propagation
+      # SessionStart: Initialize trace context for the session
+      # PreToolUse (Task): Propagate trace context to subagents
+      # SessionEnd: Clean up trace context files
+      # PostToolUse (Bash): Log bash commands to history
       hooks = {
+        # SessionStart: Initialize OTEL trace context for the session
+        # Sets OTEL_TRACE_PARENT env var and writes trace context files
+        SessionStart = [{
+          hooks = [{
+            type = "command";
+            command = "${self}/scripts/claude-hooks/otel-session-start.sh";
+            timeout = 5;
+          }];
+        }];
+
+        # PreToolUse: Propagate trace context to subagents before Task tool runs
+        PreToolUse = [{
+          matcher = "Task";
+          hooks = [{
+            type = "command";
+            command = "${self}/scripts/claude-hooks/otel-pretool-task.sh";
+            timeout = 5;
+          }];
+        }];
+
+        # PostToolUse: Log bash commands to history
         PostToolUse = [{
           # Match all Bash tool executions (case-sensitive)
           matcher = "Bash";
           hooks = [{
             type = "command";
-            # Use path to hook script stored in NixOS config
             # This script receives JSON via stdin with structure:
             # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
             command = "${self}/scripts/claude-hooks/bash-history.sh";
             # Set 5-second timeout (hook is simple, shouldn't take long)
+            timeout = 5;
+          }];
+        }];
+
+        # SessionEnd: Clean up OTEL trace context files
+        SessionEnd = [{
+          hooks = [{
+            type = "command";
+            command = "${self}/scripts/claude-hooks/otel-session-end.sh";
             timeout = 5;
           }];
         }];
