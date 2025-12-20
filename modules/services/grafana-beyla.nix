@@ -32,7 +32,7 @@ let
 
     src = pkgs.fetchurl {
       url = "https://github.com/grafana/beyla/releases/download/v${version}/beyla-linux-amd64-v${version}.tar.gz";
-      sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";  # FIXME: Update with real hash
+      sha256 = "sha256-YQixhytaruOKp7px7+zc+YQhT+aJE4j6aF9AhZLqdtg=";
     };
 
     sourceRoot = ".";
@@ -67,6 +67,12 @@ in
       description = "Comma-separated ports to instrument (port-based discovery)";
     };
 
+    executableNames = mkOption {
+      type = types.str;
+      default = "(claude|gemini|codex|node|python3)";
+      description = "Regex for executable names to instrument (process-based discovery)";
+    };
+
     serviceName = mkOption {
       type = types.str;
       default = "workstation-services";
@@ -75,7 +81,7 @@ in
 
     alloyEndpoint = mkOption {
       type = types.str;
-      default = "http://localhost:4318";
+      default = "http://127.0.0.1:4318";
       description = "OTLP endpoint for traces (usually local Alloy)";
     };
   };
@@ -95,6 +101,7 @@ in
 
       environment = {
         BEYLA_OPEN_PORT = cfg.openPorts;
+        BEYLA_EXECUTABLE_NAME = cfg.executableNames;
         BEYLA_SERVICE_NAME = cfg.serviceName;
         OTEL_EXPORTER_OTLP_ENDPOINT = cfg.alloyEndpoint;
       };
@@ -113,6 +120,7 @@ in
           "CAP_CHECKPOINT_RESTORE"
           "CAP_DAC_READ_SEARCH"
           "CAP_PERFMON"
+          "CAP_SYS_ADMIN"
         ];
         CapabilityBoundingSet = [
           "CAP_BPF"
@@ -121,6 +129,7 @@ in
           "CAP_CHECKPOINT_RESTORE"
           "CAP_DAC_READ_SEARCH"
           "CAP_PERFMON"
+          "CAP_SYS_ADMIN"
         ];
 
         # Security hardening (what we can apply with eBPF requirements)

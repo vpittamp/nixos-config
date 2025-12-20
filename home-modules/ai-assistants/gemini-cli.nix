@@ -88,6 +88,12 @@ let
       otlpProtocol = "http";  # Use HTTP for compatibility with our receiver
       logPrompts = true;  # Enable for debugging (helps with session detection)
       useCollector = true;  # Enable external OTLP collector
+      # Enable all signals
+      signals = {
+        logs = true;
+        metrics = true;
+        traces = true;
+      };
     };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
@@ -142,8 +148,8 @@ EOF
     else
       # Feature 123: Ensure telemetry config is present (merge into existing settings)
       # This preserves user customizations while ensuring OTEL is configured
-      if ! ${pkgs.jq}/bin/jq -e '.telemetry.enabled' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
-        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '. + {telemetry: {enabled: true, target: "local", otlpEndpoint: "http://localhost:4318", otlpProtocol: "http", logPrompts: true, useCollector: true}}' \
+      if ! ${pkgs.jq}/bin/jq -e '.telemetry.signals' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
+        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '. + {telemetry: {enabled: true, target: "local", otlpEndpoint: "http://localhost:4318", otlpProtocol: "http", logPrompts: true, useCollector: true, signals: {logs: true, metrics: true, traces: true}}}' \
           "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
         $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
         $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
@@ -169,5 +175,18 @@ EOF
 
     # Custom commands for common workflows - auto-imported from .gemini/commands/
     commands = commands;
+  };
+
+  # Feature 123: OTEL environment variables for Gemini CLI telemetry
+  home.sessionVariables = {
+    OTEL_LOGS_EXPORTER = "otlp";
+    OTEL_METRICS_EXPORTER = "otlp";
+    OTEL_TRACES_EXPORTER = "otlp";
+    OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
+    OTEL_METRIC_EXPORT_INTERVAL = "60000";
+    OTEL_METRIC_EXPORT_TIMEOUT = "30000";
+    OTEL_LOGS_EXPORT_INTERVAL = "5000";
+    OTEL_LOG_USER_PROMPTS = "1";
   };
 }
