@@ -189,6 +189,8 @@ journalctl --user -u i3-project-event-listener -f
 - N/A (in-memory session state only, no persistence) (123-otel-tracing)
 - Nix (flakes), Yuck (eww widget DSL), SCSS, Bash (scripts), Python 3.11+ (backend) + eww 0.4+, Sway IPC (layer-shell protocol), GTK3, i3ipc.aio (125-convert-sidebar-split-pane)
 - File-based state persistence (`$XDG_STATE_HOME/eww-monitoring-panel/dock-mode`) (125-convert-sidebar-split-pane)
+- Nix (flakes), Alloy configuration language, Python 3.11+ (existing otel-ai-monitor) + Grafana Alloy 1.x, Grafana Beyla 1.x, Pyroscope agent, opentelemetry-collector-contrib (129-create-observability-nixos)
+- Remote only (Kubernetes LGTM stack); local memory buffer (100MB) for offline queuing (129-create-observability-nixos)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools

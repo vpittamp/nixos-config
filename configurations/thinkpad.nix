@@ -43,7 +43,10 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
+    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector (legacy, replaced by Alloy)
+    ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector
+    ../modules/services/grafana-beyla.nix      # Feature 129: eBPF auto-instrumentation
+    ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
     ../modules/services/litellm-proxy.nix      # Feature 123: LiteLLM proxy for full OTEL traces
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
@@ -116,13 +119,40 @@ in
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
-  # Feature 123: OpenTelemetry Collector for AI assistant telemetry
-  # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
-  services.otel-ai-collector = {
+  # Feature 129: Grafana Alloy - Unified Telemetry Collector
+  # Replaces otel-ai-collector with comprehensive observability:
+  # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
+  # - System metrics via node exporter → Mimir
+  # - Journald logs → Loki
+  # - All telemetry exported to K8s LGTM stack
+  services.grafana-alloy = {
     enable = true;
-    enableDebugExporter = true;  # Verbose logging for development
-    enableFileExporter = true;   # Raw telemetry for analysis
+    k8sEndpoint = "http://otel-collector.tail286401.ts.net:4318";
+    lokiEndpoint = "http://loki.tail286401.ts.net:3100";
+    mimirEndpoint = "http://mimir.tail286401.ts.net";
+    enableNodeExporter = true;
+    enableJournald = true;
+    journaldUnits = [
+      "grafana-alloy.service"
+      "grafana-beyla.service"
+      "otel-ai-monitor.service"
+      "i3pm-daemon.service"
+    ];
   };
+
+  # Feature 123 (legacy): Disable otel-ai-collector - replaced by grafana-alloy
+  services.otel-ai-collector = {
+    enable = false;
+  };
+
+  # Feature 129: Grafana Beyla - eBPF Auto-Instrumentation (OPTIONAL)
+  # Disabled by default - requires custom package derivation with valid hash
+  # Enable when Beyla package is properly configured
+  # services.grafana-beyla = {
+  #   enable = true;
+  #   openPorts = "4320,8080";  # otel-ai-monitor and i3pm ports
+  #   serviceName = "thinkpad-services";
+  # };
 
   # Feature 123: LiteLLM Proxy for full OTEL tracing of Claude API calls
   # DISABLED: Incompatible with Claude Code Max subscription (OAuth authentication)

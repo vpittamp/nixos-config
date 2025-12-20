@@ -21,7 +21,10 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
-    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
+    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector (to be replaced by Alloy)
+    ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector (replaces otel-ai-collector)
+    ../modules/services/grafana-beyla.nix      # Feature 129: eBPF auto-instrumentation
+    ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
     ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
@@ -171,12 +174,32 @@
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # No systemd dependency needed - user service binds to graphical-session.target
 
-  # Feature 123: OpenTelemetry Collector for AI assistant telemetry
-  # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
-  services.otel-ai-collector = {
+  # Feature 129: Grafana Alloy - Unified Telemetry Collector
+  # Replaces otel-ai-collector with comprehensive observability:
+  # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
+  # - System metrics via node exporter → Mimir
+  # - Journald logs → Loki
+  # - All telemetry exported to K8s LGTM stack
+  services.grafana-alloy = {
     enable = true;
-    enableDebugExporter = false;  # Less verbose for server
-    enableFileExporter = true;    # Raw telemetry for analysis
+    k8sEndpoint = "http://otel-collector.tail286401.ts.net:4318";
+    lokiEndpoint = "http://loki.tail286401.ts.net:3100";
+    mimirEndpoint = "http://mimir.tail286401.ts.net";
+    enableNodeExporter = true;
+    enableJournald = true;
+    journaldUnits = [
+      "grafana-alloy.service"
+      "grafana-beyla.service"
+      "otel-ai-monitor.service"
+      "i3pm-daemon.service"
+    ];
+  };
+
+  # Feature 123 (legacy): Disable otel-ai-collector since Alloy replaces it
+  services.otel-ai-collector = {
+    enable = false;  # Disabled - replaced by grafana-alloy
+    enableDebugExporter = false;
+    enableFileExporter = false;
   };
 
   systemd.services.home-manager-vpittamp = {
