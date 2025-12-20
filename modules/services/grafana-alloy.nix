@@ -127,7 +127,7 @@ let
         traces = [
           otelcol.exporter.otlphttp.local.input,
           otelcol.exporter.otlphttp.k8s.input,
-          ${optionalString config.services.arize-phoenix.enable "otelcol.exporter.otlphttp.phoenix.input,"}
+          ${optionalString (config.services.arize-phoenix.enable or false) "otelcol.exporter.otlphttp.phoenix.input,"}
         ]
       }
     }
