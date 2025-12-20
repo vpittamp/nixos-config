@@ -240,6 +240,22 @@ let
       description = "Chromium web browser";
     })
 
+    # Google Chrome - Required for Claude in Chrome extension
+    (mkApp {
+      name = "google-chrome";
+      display_name = "Google Chrome";
+      command = "google-chrome-stable";
+      parameters = "";
+      scope = "global";
+      expected_class = "Google-chrome";
+      preferred_workspace = 3;
+      icon = "google-chrome";
+      nix_package = "pkgs.google-chrome";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Google Chrome browser with Claude in Chrome support";
+    })
+
     # WS5: Git Tools (Primary: lazygit)
     (mkApp {
       name = "lazygit";
@@ -417,6 +433,21 @@ let
       multi_instance = false;
       fallback_behavior = "skip";
       description = "Remote desktop client for VNC, RDP, SSH connections";
+    })
+
+    (mkApp {
+      name = "moonlight";
+      display_name = "Moonlight";
+      command = "moonlight";
+      parameters = "";
+      scope = "global";
+      expected_class = "com.moonlight_stream.Moonlight";
+      preferred_workspace = 12;
+      icon = "com.moonlight_stream.Moonlight";
+      nix_package = "pkgs.moonlight-qt";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Moonlight game streaming client";
     })
 
     # Scratchpad Terminal (Feature 062, Feature 101)

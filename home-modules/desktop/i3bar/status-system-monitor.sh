@@ -216,7 +216,6 @@ get_mode_indicator() {
     if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ] || [ "$mode" = "→ WS" ] || [ "$mode" = "⇒ WS" ]; then
         # Don't show workspace mode in swaybar - preview card handles this now
         return 0
-        fi
     fi
 
     # Return JSON block with bright red background for visibility

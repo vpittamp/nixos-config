@@ -14,6 +14,7 @@
     ./home-modules/desktop/eww-monitoring-panel.nix  # Feature 085: Live monitoring panel
     ./home-modules/desktop/eww-device-controls.nix  # Feature 116: Unified device controls
     ./home-modules/desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
+    ./home-modules/desktop/python-environment.nix   # Shared Python environment for Sway tools
     ./home-modules/profiles/declarative-cleanup.nix  # Automatic XDG cleanup
 
     # i3 (X11) - disabled on M1, using Sway instead

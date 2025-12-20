@@ -3,72 +3,18 @@
 let
   # Use Nix package reference for 1Password browser support
   onePasswordBrowserSupport = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
-  chromiumBin = "${pkgs.chromium}/bin/chromium";
+
 in
 {
-  # Chromium browser configuration with 1Password and other extensions
-  # This is installed as a secondary browser for specific use cases:
-  # - Playwright MCP server for browser automation
-  # - Testing and development
-  # Firefox remains the default system browser for general use
-  programs.chromium = {
-    enable = true;
-    package = pkgs.chromium;
-    
-    # Extension IDs - These are installed declaratively by Nix
-    extensions = [
-      { id = "aeblfdkhhhdcdjpifhhbdiojplfjncoa"; }  # 1Password - Password Manager
-      { id = "cjpalhdlnbpafiamejdnhcphjbkeiagm"; }  # uBlock Origin
-      { id = "eimadpbcbfnmbkopoojfekhnkhdbieeh"; }  # Dark Reader
-      { id = "dbepggeogbaibhgnhhndojpepiihcmeb"; }  # Vimium
-      { id = "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"; }  # Privacy Badger
-      { id = "fcoeoabgfenejglbffodgkkbkcdhcgfn"; }  # Claude - Anthropic AI assistant
-    ];
-    
-    # Command line arguments for better performance and privacy
-    commandLineArgs = [
-      # Disable KDE Wallet to prevent errors - use basic password store
-      "--password-store=basic"
-      
-      # Enable hardware acceleration
-      "--enable-features=VaapiVideoDecoder"
-      "--use-gl=desktop"
-      "--enable-gpu-rasterization"
-      "--enable-zero-copy"
-      
-      # Wayland support (auto-detect)
-      "--ozone-platform-hint=auto"
-      
-      # Enable native messaging for 1Password
-      "--enable-native-messaging"
-      
-      # Enable password import features
-      "--enable-features=PasswordImport"
-      
-      # Note: Removed --load-extension flag that was causing "Manifest file missing" error
-      # External Extensions are handled automatically by Chromium from the JSON files
-      
-      # Privacy enhancements
-      "--disable-reading-from-canvas"
-      "--disable-background-networking"
-      
-      # Note: Certificate bypass flags moved to chromium-dev profile
-      # Use 'chromium-dev' or 'clb' for cluster development
-    ];
-    
-    # Enable spell checking
-    dictionaries = [
-      pkgs.hunspellDictsChromium.en_US
-    ];
-  };
+  # Google Chrome browser configuration
+  # Switched from Chromium to Chrome for Claude in Chrome compatibility
+  # Claude in Chrome requires Google Chrome for full functionality
+  home.packages = [
+    pkgs.google-chrome
+  ];
 
-  # Chromium is installed as a secondary browser alongside Firefox
-  # Extensions are managed declaratively by home-manager
-  # No complex scripts or manual installation needed
-
-  # Native messaging host manifest for 1Password
-  # This allows the browser extension to communicate with the desktop app
-  home.file.".config/chromium/NativeMessagingHosts/com.1password.1password.json" = {
+  # Native messaging host manifest for 1Password (Google Chrome)
+  home.file.".config/google-chrome/NativeMessagingHosts/com.1password.1password.json" = {
     text = builtins.toJSON {
       name = "com.1password.1password";
       description = "1Password Native Messaging Host";
@@ -76,13 +22,12 @@ in
       allowed_origins = [
         "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
       ];
-      # Path to the 1Password browser support binary
       path = onePasswordBrowserSupport;
     };
   };
 
-  # Additional native messaging host for browser support
-  home.file.".config/chromium/NativeMessagingHosts/com.1password.browser_support.json" = {
+  # Additional native messaging host for 1Password browser support
+  home.file.".config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json" = {
     text = builtins.toJSON {
       name = "com.1password.browser_support";
       description = "1Password Browser Support";
@@ -94,6 +39,35 @@ in
     };
   };
 
+  # Claude Code manages its own native messaging host file at:
+  # ~/.config/google-chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json
+  # We don't manage it with Nix because Claude Code needs to write to it.
+  #
+  # However, Claude Code generates ~/.claude/chrome/chrome-native-host with #!/bin/bash shebang
+  # which doesn't work on NixOS. We fix this with an activation script below.
+
+  # Fix Claude Code's native host script shebang on activation
+  # This runs after Claude Code creates the file, replacing the broken #!/bin/bash shebang
+  home.activation.fixClaudeNativeHost = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if [ -f "$HOME/.claude/chrome/chrome-native-host" ]; then
+      # Check if the shebang is the problematic #!/bin/bash
+      if head -1 "$HOME/.claude/chrome/chrome-native-host" | grep -q '^#!/bin/bash'; then
+        echo "Fixing Claude native host shebang for NixOS..."
+        # Get the node and cli paths from the existing script
+        NODE_PATH=$(grep -o '/nix/store/[^/]*/bin/node' "$HOME/.claude/chrome/chrome-native-host" | head -1)
+        CLI_PATH=$(grep -o '/nix/store/[^"]*cli\.js' "$HOME/.claude/chrome/chrome-native-host" | head -1)
+        if [ -n "$NODE_PATH" ] && [ -n "$CLI_PATH" ]; then
+          cat > "$HOME/.claude/chrome/chrome-native-host" << EOF
+#!/usr/bin/env bash
+# Chrome native host wrapper script - Fixed for NixOS
+exec "$NODE_PATH" "$CLI_PATH" --chrome-native-host
+EOF
+          chmod +x "$HOME/.claude/chrome/chrome-native-host"
+        fi
+      fi
+    fi
+  '';
+
   # Configure 1Password browser integration settings
   home.file.".config/1Password/settings/browser-support.json" = {
     text = builtins.toJSON {
@@ -104,25 +78,15 @@ in
       "browser.showSavePrompts" = true;
       "browser.theme" = "system";
       "security.authenticatedUnlock.enabled" = true;
-      "security.authenticatedUnlock.method" = "system";  # Use system authentication
+      "security.authenticatedUnlock.method" = "system";
       "security.autolock.minutes" = 10;
       "security.clipboardClearAfterSeconds" = 90;
     };
   };
 
-  # Environment variables for default browser
-  # Commented out to avoid conflict with Firefox settings
-  # home.sessionVariables = {
-  #   DEFAULT_BROWSER = "chromium";
-  #   BROWSER = "chromium";
-  # };
-
   # Shell aliases for convenience
   home.shellAliases = {
-    chrome = "chromium";
-    browser = "chromium";
+    chrome = "google-chrome-stable";
+    browser = "google-chrome-stable";
   };
-
-  # Home-manager handles extension installation automatically
-  # No activation scripts needed - this is the proper NixOS way
 }

@@ -58,8 +58,8 @@ in
 
     k8sExporterEndpoint = mkOption {
       type = types.str;
-      default = "http://otel-collector.tail286401.ts.net:4318";
-      description = "Endpoint for the Kubernetes OTel Collector (via Tailscale)";
+      default = "https://otel-collector.cnoe.localtest.me:8443/v1/traces";
+      description = "Endpoint for the Kubernetes OTel Collector (via Local Ingress)";
     };
 
     enableZPages = mkOption {
@@ -82,11 +82,16 @@ in
 
       settings = {
         # Extensions for debugging and health checks
-        extensions = lib.optionalAttrs cfg.enableZPages {
+        extensions = {
+          file_storage = {
+            directory = "/var/lib/opentelemetry-collector";
+            timeout = "1s";
+          };
+        } // (lib.optionalAttrs cfg.enableZPages {
           zpages = {
             endpoint = "0.0.0.0:${toString cfg.zpagesPort}";
           };
-        };
+        });
 
         receivers = {
           otlp = {
@@ -111,12 +116,25 @@ in
             };
           }
           # Kubernetes OTel Stack Exporter (optional)
+          # Exports to K8s cluster via Tailscale HTTPS (port 443)
+          # Tailscale serve terminates TLS and forwards to the in-cluster collector
           // (lib.optionalAttrs cfg.enableK8sExporter {
             "otlphttp/k8s" = {
-              endpoint = cfg.k8sExporterEndpoint;
+              endpoint = "${cfg.k8sExporterEndpoint}";
               encoding = "json";
+              # Use client certificates for mTLS authentication
               tls = {
-                insecure = true; # Tailscale provides security
+                ca_file = "/etc/otel/certs/ca.crt";
+                cert_file = "/etc/otel/certs/client.crt";
+                key_file = "/etc/otel/certs/client.key";
+                insecure = false;
+              };
+              # Use persistent disk storage for buffering
+              sending_queue = {
+                storage = "file_storage";
+              };
+              retry_on_failure = {
+                enabled = true;
               };
             };
           })
@@ -135,7 +153,7 @@ in
 
         service = {
           # Enable extensions
-          extensions = lib.optional cfg.enableZPages "zpages";
+          extensions = [ "file_storage" ] ++ (lib.optional cfg.enableZPages "zpages");
 
           pipelines = {
             traces = {
@@ -148,6 +166,15 @@ in
               ];
             };
             logs = {
+              receivers = [ "otlp" ];
+              exporters = filter (e: e != null) [
+                (if cfg.enableDebugExporter then "debug" else null)
+                (if cfg.enableFileExporter then "file" else null)
+                (if cfg.enableK8sExporter then "otlphttp/k8s" else null)
+                "otlphttp"
+              ];
+            };
+            metrics = {
               receivers = [ "otlp" ];
               exporters = filter (e: e != null) [
                 (if cfg.enableDebugExporter then "debug" else null)

@@ -669,13 +669,9 @@ class OTLPReceiver:
 
         logger.debug(f"Parsed event: {event_name}, session_id: {session_id}")
 
-        # Parse timestamp (nanoseconds since epoch)
-        timestamp = datetime.fromtimestamp(
-            log_record.time_unix_nano / 1e9, tz=timezone.utc
-        )
-
         # Determine AI tool from event name or service name
         tool = EventNames.get_tool_from_event(event_name)
+        logger.debug(f"Identifying tool for event '{event_name}' (service: '{service_name}'): tool={tool}")
         if not tool and service_name:
             if "claude" in service_name.lower():
                 tool = AITool.CLAUDE_CODE
@@ -683,6 +679,14 @@ class OTLPReceiver:
                 tool = AITool.CODEX_CLI
             elif "gemini" in service_name.lower():
                 tool = AITool.GEMINI_CLI
+
+        # Parse timestamp (nanoseconds since epoch)
+        try:
+            timestamp = datetime.fromtimestamp(
+                log_record.time_unix_nano / 1e9, tz=timezone.utc
+            )
+        except Exception:
+            timestamp = datetime.now(tz=timezone.utc)
 
         # Extract trace context
         trace_id = None

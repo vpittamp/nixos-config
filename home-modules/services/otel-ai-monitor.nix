@@ -55,7 +55,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.8.2";  # Fix gzip detection for collector forwarding
+    version = "0.9.0";  # Add Gemini CLI OTEL support
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];

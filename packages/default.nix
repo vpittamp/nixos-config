@@ -35,6 +35,51 @@ in
 {
   perSystem = { system, pkgs, ... }: {
     packages = {
+      # KubeVirt Minimal QCOW2 image (Feature 110)
+      # Minimal base image for KubeVirt CI/CD testing
+      # Uses kubevirt.nix module: cloud-init, QEMU guest agent, SSH, serial console
+      # ~500MB compressed, desktop applied via nixos-rebuild
+      kubevirt-minimal-qcow2 =
+        let
+          nixosConfig = (nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [ ../configurations/kubevirt-minimal.nix ];
+          }).config;
+        in
+        import "${nixpkgs}/nixos/lib/make-disk-image.nix" {
+          inherit pkgs;
+          lib = pkgs.lib;
+          config = nixosConfig;
+          diskSize = 10 * 1024; # 10GB in MB (minimal base + rebuild space)
+          format = "qcow2";
+          partitionTableType = "hybrid";
+          memSize = 4096; # 4GB QEMU VM memory for build process
+        };
+
+      # KubeVirt Sway Desktop QCOW2 image
+      # Full Sway desktop with project management, 1Password, dev tools
+      # ~2-3GB, no hardware-specific bloat (optimized for KubeVirt)
+      kubevirt-sway-qcow2 =
+        let
+          nixosConfig = (nixpkgs.lib.nixosSystem {
+            inherit system;
+            specialArgs = { inherit inputs; };
+            modules = [
+              ../configurations/kubevirt-sway.nix
+              home-manager.nixosModules.home-manager
+            ];
+          }).config;
+        in
+        import "${nixpkgs}/nixos/lib/make-disk-image.nix" {
+          inherit pkgs;
+          lib = pkgs.lib;
+          config = nixosConfig;
+          diskSize = 80 * 1024; # 80GB in MB (full desktop + dev tools)
+          format = "qcow2";
+          partitionTableType = "hybrid";
+          memSize = 8192; # 8GB QEMU VM memory for build process
+        };
+
       # Hetzner Sway QCOW2 image (Feature 007-number-7-short)
       # Wayland/Sway headless VM with WayVNC server
       hetzner-sway-qcow2 =
@@ -88,6 +133,9 @@ in
           Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=minimal" ];
         };
       };
+
+      # Beyla eBPF auto-instrumentation
+      beyla = pkgs.callPackage ../pkgs/beyla.nix { };
     };
   };
 }

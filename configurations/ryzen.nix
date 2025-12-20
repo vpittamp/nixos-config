@@ -43,6 +43,7 @@ in
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
+    ../modules/services/beyla.nix              # Feature 110: eBPF auto-instrumentation
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
 
@@ -113,22 +114,22 @@ in
     enableFingerprint = true;
   };
 
-  # ========== SUNSHINE REMOTE DESKTOP (Software Encoding) ==========
-  # Software-encoded streaming (NVENC requires proprietary drivers)
-  # Still better than VNC due to H.264 video compression
+  # ========== SUNSHINE REMOTE DESKTOP (NVIDIA NVENC) ==========
+  # Hardware-accelerated streaming using NVIDIA NVENC (RTX 5070)
+  # Supported by NVIDIA open kernel modules
   # Client: Moonlight (available on all platforms)
   # Access: moonlight://<tailscale-ip>
   services.sunshine-streaming = {
     enable = true;
-    hardwareType = "software";  # Using open NVIDIA drivers, can't use NVENC
+    hardwareType = "nvidia";    # Using NVIDIA NVENC hardware encoding
     captureMethod = "kms";      # Direct KMS capture for lowest latency
     tailscaleOnly = true;       # Only allow via Tailscale for security
     extraSettings = {
-      # Software encoding - optimize for quality on powerful CPU
-      sw_preset = "faster";     # Ryzen 7600X can handle better quality
-      sw_tune = "zerolatency";
-      # Higher bitrate for local network streaming
-      bitrate = 30000;
+      # NVENC quality settings for RTX 5070
+      nvenc_preset = "p4";      # Balanced
+      nvenc_tune = "ll";        # Low latency
+      # Higher bitrate for local/Tailscale network streaming
+      bitrate = 40000;
     };
   };
 
@@ -137,10 +138,22 @@ in
 
   # Feature 123: OpenTelemetry Collector for AI assistant telemetry
   # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
+  # Also exports to K8s OTel stack via Tailscale for persistence (ClickHouse/Grafana)
+  # Dashboard: https://grafana.tail286401.ts.net/d/otel-traces
   services.otel-ai-collector = {
     enable = true;
     enableDebugExporter = false;  # Less verbose for desktop
     enableFileExporter = true;    # Raw telemetry for analysis
+    enableK8sExporter = true;     # Export to K8s OTel Collector via Tailscale
+    # k8sExporterEndpoint defaults to http://otel-collector.tail286401.ts.net:4318
+  };
+
+  # Beyla eBPF auto-instrumentation (Feature 110)
+  # Monitors Claude Code, Gemini CLI, and Codex for low-level system events
+  services.beyla = {
+    enable = true;
+    monitorAiAssistants = true;
+    otlpEndpoint = "https://otel-collector.tail286401.ts.net";
   };
 
   # Display manager - greetd for Wayland/Sway login
