@@ -9,7 +9,7 @@
 #   import pyroscope
 #   pyroscope.configure(
 #       application_name = "my-app",
-#       server_address = "http://pyroscope.tail286401.ts.net:4040",
+#       server_address = "https://pyroscope.tail286401.ts.net",
 #       tags = {"service": "my-app", "host": hostname}
 #   )
 #
@@ -30,8 +30,8 @@ in
 
     serverAddress = mkOption {
       type = types.str;
-      default = "http://pyroscope.tail286401.ts.net:4040";
-      description = "Remote Pyroscope server address";
+      default = "https://pyroscope.tail286401.ts.net";
+      description = "Remote Pyroscope server address (via Tailscale Operator Ingress, HTTPS:443)";
     };
 
     applications = mkOption {

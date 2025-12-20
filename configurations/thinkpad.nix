@@ -125,11 +125,13 @@ in
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack
+  # Feature 129: Grafana Alloy - Unified Telemetry Collector
+  # Tailscale Operator Ingress endpoints use HTTPS:443 (terminated at edge)
   services.grafana-alloy = {
     enable = true;
-    k8sEndpoint = "http://otel-collector.tail286401.ts.net:4318";
-    lokiEndpoint = "http://loki.tail286401.ts.net:3100";
-    mimirEndpoint = "http://mimir.tail286401.ts.net";
+    k8sEndpoint = "https://otel-collector-1.tail286401.ts.net";
+    lokiEndpoint = "https://loki.tail286401.ts.net";
+    mimirEndpoint = "https://mimir.tail286401.ts.net";
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [

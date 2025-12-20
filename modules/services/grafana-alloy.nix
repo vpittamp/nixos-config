@@ -48,6 +48,14 @@ let
     // DO NOT EDIT - managed by nixos-rebuild
 
     // =============================================================================
+    // Live Debugging - Enable debug UI at http://localhost:12345
+    // =============================================================================
+
+    livedebugging {
+      enabled = true
+    }
+
+    // =============================================================================
     // OTLP Receiver - Receives telemetry from AI CLIs and other apps
     // =============================================================================
 
@@ -205,20 +213,20 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      default = "http://otel-collector.tail286401.ts.net:4318";
-      description = "Kubernetes OTEL collector endpoint (via Tailscale)";
+      default = "https://otel-collector-1.tail286401.ts.net";
+      description = "Kubernetes OTEL collector endpoint (via Tailscale Operator Ingress, HTTPS:443)";
     };
 
     lokiEndpoint = mkOption {
       type = types.str;
-      default = "http://loki.tail286401.ts.net:3100";
-      description = "Loki push endpoint";
+      default = "https://loki.tail286401.ts.net";
+      description = "Loki push endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     mimirEndpoint = mkOption {
       type = types.str;
-      default = "http://mimir.tail286401.ts.net";
-      description = "Mimir remote write endpoint";
+      default = "https://mimir.tail286401.ts.net";
+      description = "Mimir remote write endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     enableNodeExporter = mkOption {
