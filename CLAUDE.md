@@ -146,6 +146,51 @@ systemctl --user status swaync
 ls ~/.config/claude-code/hooks/
 ```
 
+## Observability Stack (Feature 129)
+
+Unified telemetry collection via Grafana Alloy, exporting to Kubernetes LGTM stack.
+
+**Architecture**:
+```
+AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local EWW)
+                               → K8s OTEL Collector (remote)
+System  → node exporter → Alloy → Mimir (K8s)
+Journald → Alloy → Loki (K8s)
+```
+
+**Services**:
+| Service | Port | Purpose |
+|---------|------|---------|
+| grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
+| otel-ai-monitor | 4320 | Local AI session tracking for EWW |
+| grafana-beyla | - | eBPF auto-instrumentation (optional) |
+| pyroscope-agent | - | Continuous profiling (optional) |
+
+**Commands**:
+```bash
+systemctl status grafana-alloy              # Service status
+journalctl -u grafana-alloy -f              # Logs
+curl -s localhost:4318/v1/traces            # Test OTLP endpoint
+curl -s localhost:12345/metrics             # Alloy metrics
+```
+
+**Alloy UI**: http://localhost:12345 (live debugging enabled)
+
+**Configuration** (`configurations/{thinkpad,hetzner}.nix`):
+```nix
+services.grafana-alloy = {
+  enable = true;
+  k8sEndpoint = "https://otel-collector-1.tail286401.ts.net";  # Via Tailscale Operator Ingress
+  lokiEndpoint = "https://loki.tail286401.ts.net";
+  mimirEndpoint = "https://mimir.tail286401.ts.net";
+  enableNodeExporter = true;  # System metrics
+  enableJournald = true;      # Log collection
+  journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
+};
+```
+
+**Graceful Degradation**: Local AI monitoring (EWW widgets) works when K8s offline. Remote telemetry queued (100MB buffer) and retried.
+
 ## Testing
 
 ```bash

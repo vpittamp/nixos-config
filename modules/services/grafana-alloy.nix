@@ -48,6 +48,14 @@ let
     // DO NOT EDIT - managed by nixos-rebuild
 
     // =============================================================================
+    // Live Debugging - Enable debug UI at http://localhost:12345
+    // =============================================================================
+
+    livedebugging {
+      enabled = true
+    }
+
+    // =============================================================================
     // OTLP Receiver - Receives telemetry from AI CLIs and other apps
     // =============================================================================
 
@@ -59,7 +67,42 @@ let
       output {
         metrics = [otelcol.processor.batch.default.input]
         logs    = [otelcol.processor.batch.default.input]
-        traces  = [otelcol.processor.batch.default.input]
+        traces  = [otelcol.processor.transform.enrich_spans.input]
+      }
+    }
+
+    // =============================================================================
+    // Transform Processor - Enrich spans with better names/attributes
+    // =============================================================================
+
+    otelcol.processor.transform "enrich_spans" {
+      error_mode = "ignore"
+
+      trace_statements {
+        context = "span"
+        statements = [
+          // If span name is generic "api.request" but has tool name, rename it
+          "set(name, Concat([name, \" (\", attributes[\"tool.name\"], \")\"], \"\")) where attributes[\"tool.name\"] != nil",
+
+          // Claude Code tool spans: tool.read -> Read, tool.write -> Write
+          "set(name, \"Read\") where name == \"tool.read\"",
+          "set(name, \"Write\") where name == \"tool.write\"",
+          "set(name, \"Edit\") where name == \"tool.edit\"",
+          "set(name, \"Bash\") where name == \"tool.bash\"",
+          "set(name, \"Grep\") where name == \"tool.grep\"",
+          "set(name, \"Glob\") where name == \"tool.glob\"",
+
+          // Payload interceptor LLM spans: LLM -> Claude API Call (for better visibility)
+          "set(name, \"Claude API Call\") where name == \"LLM\" and attributes[\"llm.provider\"] == \"anthropic\"",
+          "set(name, \"Claude API Call\") where name == \"Claude Interaction (Payload)\"",
+
+          // Enrich Claude Session root spans (multi-span trace support)
+          "set(name, \"Claude Code Session\") where name == \"Claude Session\" and attributes[\"openinference.span.kind\"] == \"CHAIN\"",
+        ]
+      }
+
+      output {
+        traces = [otelcol.processor.batch.default.input]
       }
     }
 
@@ -75,7 +118,7 @@ let
       output {
         metrics = [
           otelcol.exporter.otlphttp.local.input,
-          otelcol.exporter.otlphttp.k8s.input,
+          otelcol.exporter.prometheus.mimir.input,
         ]
         logs = [
           otelcol.exporter.otlphttp.local.input,
@@ -84,6 +127,7 @@ let
         traces = [
           otelcol.exporter.otlphttp.local.input,
           otelcol.exporter.otlphttp.k8s.input,
+          ${optionalString config.services.arize-phoenix.enable "otelcol.exporter.otlphttp.phoenix.input,"}
         ]
       }
     }
@@ -91,6 +135,11 @@ let
     // =============================================================================
     // Exporters - Send to local otel-ai-monitor and remote K8s
     // =============================================================================
+
+    // Bridge: OTLP Metrics -> Prometheus Remote Write
+    otelcol.exporter.prometheus "mimir" {
+      forward_to = [prometheus.remote_write.k8s.receiver]
+    }
 
     // Local: otel-ai-monitor for EWW widgets
     otelcol.exporter.otlphttp "local" {
@@ -102,10 +151,25 @@ let
       }
     }
 
+    // Local: Arize Phoenix for GenAI tracing
+    ${optionalString config.services.arize-phoenix.enable ''
+    otelcol.exporter.otlphttp "phoenix" {
+      client {
+        endpoint = "${cfg.phoenixEndpoint}"
+        tls {
+          insecure = true
+        }
+      }
+    }
+    ''}
+
     // Remote: Kubernetes OTEL Collector via Tailscale
     otelcol.exporter.otlphttp "k8s" {
       client {
         endpoint = "${cfg.k8sEndpoint}"
+        headers = {
+          "X-Scope-OrgID" = "anonymous",
+        }
       }
 
       retry_on_failure {
@@ -141,6 +205,9 @@ let
     prometheus.remote_write "k8s" {
       endpoint {
         url = "${cfg.mimirEndpoint}/api/v1/push"
+        headers = {
+          "X-Scope-OrgID" = "anonymous",
+        }
       }
     }
     ''}
@@ -170,6 +237,9 @@ let
     loki.write "k8s" {
       endpoint {
         url = "${cfg.lokiEndpoint}/loki/api/v1/push"
+        headers = {
+          "X-Scope-OrgID" = "anonymous",
+        }
       }
     }
     ''}
@@ -205,20 +275,26 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      default = "http://otel-collector.tail286401.ts.net:4318";
-      description = "Kubernetes OTEL collector endpoint (via Tailscale)";
+      default = "https://otel-collector-1.tail286401.ts.net";
+      description = "Kubernetes OTEL collector endpoint (via Tailscale Operator Ingress, HTTPS:443)";
+    };
+
+    phoenixEndpoint = mkOption {
+      type = types.str;
+      default = "http://localhost:6006";
+      description = "Arize Phoenix OTLP HTTP endpoint";
     };
 
     lokiEndpoint = mkOption {
       type = types.str;
-      default = "http://loki.tail286401.ts.net:3100";
-      description = "Loki push endpoint";
+      default = "https://loki.tail286401.ts.net";
+      description = "Loki push endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     mimirEndpoint = mkOption {
       type = types.str;
-      default = "http://mimir.tail286401.ts.net";
-      description = "Mimir remote write endpoint";
+      default = "https://mimir.tail286401.ts.net";
+      description = "Mimir remote write endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     enableNodeExporter = mkOption {

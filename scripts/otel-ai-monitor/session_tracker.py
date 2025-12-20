@@ -320,17 +320,33 @@ class SessionTracker:
             session: Session to update
             event: Event with potential token metrics
         """
-        # Only codex.sse_event typically has token counts
-        if event.event_name != EventNames.CODEX_SSE_EVENT:
-            return
-
         attrs = event.attributes
-        if "input_tokens" in attrs:
-            session.input_tokens = int(attrs["input_tokens"])
-        if "output_tokens" in attrs:
-            session.output_tokens = int(attrs["output_tokens"])
-        if "cache_tokens" in attrs:
-            session.cache_tokens = int(attrs["cache_tokens"])
+
+        # Handle Codex token events
+        if event.event_name == EventNames.CODEX_SSE_EVENT:
+            if "input_tokens" in attrs:
+                session.input_tokens = int(attrs["input_tokens"])
+            if "output_tokens" in attrs:
+                session.output_tokens = int(attrs["output_tokens"])
+            if "cache_tokens" in attrs:
+                session.cache_tokens = int(attrs["cache_tokens"])
+
+        # Handle Gemini/GenAI standard token events
+        elif event.event_name == EventNames.GEMINI_TOKEN_USAGE:
+            # GenAI semantic conventions use gen_ai.usage.*
+            # but CLI might use flattened attributes
+            input_keys = ("gen_ai.usage.input_tokens", "input_tokens", "prompt_tokens")
+            output_keys = ("gen_ai.usage.output_tokens", "output_tokens", "completion_tokens")
+
+            for key in input_keys:
+                if key in attrs:
+                    session.input_tokens = int(attrs[key])
+                    break
+
+            for key in output_keys:
+                if key in attrs:
+                    session.output_tokens = int(attrs[key])
+                    break
 
     def _reset_quiet_timer(self, session_id: str) -> None:
         """Reset the quiet period timer for a session.

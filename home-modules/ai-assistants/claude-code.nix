@@ -3,7 +3,18 @@
 let
   # Use claude-code from the dedicated flake for latest version (2.0.1)
   # Fall back to nixpkgs-unstable if flake not available
-  claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
+  baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
+
+  # Wrapped Claude Code with payload interceptor
+  claudeCodePackage = pkgs.symlinkJoin {
+    name = "claude-code-wrapped";
+    paths = [ baseClaudeCode ];
+    buildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/claude \
+        --set NODE_OPTIONS "--require ${self}/scripts/minimal-otel-interceptor.js"
+    '';
+  };
 
   # Claude Desktop for Linux (unofficial community package)
   # Use claude-desktop-with-fhs for MCP server support (npx, uvx, docker)
@@ -48,10 +59,11 @@ lib.mkIf enableClaudeCode {
     OTEL_TRACES_EXPORTER = "otlp";
     OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
     OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
-    OTEL_METRIC_EXPORT_INTERVAL = "10000";
-    OTEL_METRIC_EXPORT_TIMEOUT = "5000";
+    OTEL_METRIC_EXPORT_INTERVAL = "60000";
+    OTEL_METRIC_EXPORT_TIMEOUT = "30000";
     OTEL_LOGS_EXPORT_INTERVAL = "5000";
     OTEL_METRICS_INCLUDE_SESSION_ID = "true";
+    OTEL_LOG_USER_PROMPTS = "1";
     # Delta temporality for better memory efficiency with session metrics
     OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta";
   };
@@ -80,9 +92,6 @@ lib.mkIf enableClaudeCode {
       # Model selection removed - will use default or user's choice
       theme = "dark";
       editorMode = "vim";
-
-      # Claude in Chrome settings
-      chromeEnabled = true;  # Enable Chrome integration by default (no --chrome flag needed)
       autoCompactEnabled = true;
       todoFeatureEnabled = true;
       verbose = true;
@@ -100,12 +109,13 @@ lib.mkIf enableClaudeCode {
         OTEL_TRACES_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
-        # Export intervals - faster for better real-time monitoring
-        OTEL_METRIC_EXPORT_INTERVAL = "10000";  # 10 seconds (default: 60000)
-        OTEL_METRIC_EXPORT_TIMEOUT = "5000";    # 5 seconds
+        # Export intervals - safer for Node.js SDK
+        OTEL_METRIC_EXPORT_INTERVAL = "60000";  # 60 seconds
+        OTEL_METRIC_EXPORT_TIMEOUT = "30000";   # 30 seconds
         OTEL_LOGS_EXPORT_INTERVAL = "5000";     # 5 seconds (default)
         # Include session ID in metrics for correlation
         OTEL_METRICS_INCLUDE_SESSION_ID = "true";
+        OTEL_LOG_USER_PROMPTS = "1";
         # Fix for M1 Apple Silicon: Built-in ripgrep has jemalloc page size incompatibility
         # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
         # Use system ripgrep instead (available via home-manager)
@@ -176,7 +186,6 @@ lib.mkIf enableClaudeCode {
           "mcp__context7"
           "mcp__playwright"  # Linux only
           "mcp__chrome-devtools"  # Linux only
-          "mcp__claude-in-chrome"  # Claude in Chrome browser automation
         ];
       };
 

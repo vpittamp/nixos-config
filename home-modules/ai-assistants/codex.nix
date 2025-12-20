@@ -14,7 +14,7 @@ let
   codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
     # Force frequent batch exports for real-time monitoring
     # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)
-    export OTEL_BLRP_SCHEDULE_DELAY=''${OTEL_BLRP_SCHEDULE_DELAY:-500}
+    export OTEL_BLRP_SCHEDULE_DELAY=''${OTEL_BLRP_SCHEDULE_DELAY:-100}
     export OTEL_BLRP_MAX_EXPORT_BATCH_SIZE=''${OTEL_BLRP_MAX_EXPORT_BATCH_SIZE:-1}
     export OTEL_BLRP_MAX_QUEUE_SIZE=''${OTEL_BLRP_MAX_QUEUE_SIZE:-100}
     exec ${codexPackage}/bin/codex "$@"
@@ -101,6 +101,7 @@ in
         exporter = {
           otlp-http = {
             endpoint = "http://localhost:4318/v1/logs";
+            traces_endpoint = "http://localhost:4318/v1/traces";
             protocol = "json";  # Use JSON for compatibility with our receiver
           };
         };
@@ -172,6 +173,7 @@ log_user_prompt = true
 
 [otel.exporter.otlp-http]
 endpoint = "http://localhost:4318/v1/logs"
+traces_endpoint = "http://localhost:4318/v1/traces"
 protocol = "json"
 EOF
       fi

@@ -531,6 +531,14 @@ class OTLPReceiver:
             # API spans
             "api.request": "claude_code.api_request",
             "api.response": "claude_code.api_request",
+            # Payload interceptor spans (OpenInference)
+            "LLM": "claude_code.api_request",
+            "Claude Interaction (Payload)": "claude_code.api_request",  # Legacy name
+            "Claude API Payload": "claude_code.api_request",  # Another legacy variant
+            "Claude API Call": "claude_code.api_request",  # Alloy-enriched name
+            # Session spans (multi-span trace root)
+            "Claude Session": "claude_code.session",
+            "Claude Code Session": "claude_code.session",  # Alloy-enriched name
             # User interaction
             "user.prompt": "claude_code.user_prompt",
             "prompt.submit": "claude_code.user_prompt",
