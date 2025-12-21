@@ -48,7 +48,7 @@ let
     startTraceFromTemplateScript focusWindowScript switchProjectScript closeWorktreeScript
     closeAllWindowsScript closeWindowScript toggleProjectContextScript
     toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
-    fetchWindowEnvScript handleKeyScript;
+    fetchWindowEnvScript handleKeyScript pulsePhaseScript;
 
   mainYuck = import ./yuck/main.yuck.nix {
     inherit primaryOutput toggleDockModeScript;
@@ -56,7 +56,7 @@ let
   };
 
   variablesYuck = import ./yuck/variables.yuck.nix {
-    inherit monitoringDataScript;
+    inherit monitoringDataScript pulsePhaseScript;
   };
 
   windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs; });
@@ -148,6 +148,7 @@ in
       appDeleteConfirmScript
       appDeleteCancelScript
       showSuccessNotificationScript
+      pulsePhaseScript
     ];
 
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = mainYuck;

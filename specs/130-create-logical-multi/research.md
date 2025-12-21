@@ -42,7 +42,7 @@ gen_ai.tool.call.id = "toolu_01XYZ"
 
 ### 2. Turn Boundary Detection in Claude Code
 
-**Decision**: Detect turn boundaries by analyzing the `messages` array in Anthropic API requests - a new turn starts when the last message has `role: user`.
+**Decision**: Detect turn boundaries by analyzing the `messages` array in Anthropic API requests - a new turn starts when the last message is a *user prompt* (not a `tool_result` payload).
 
 **Rationale**:
 - Claude Code sends the full conversation history in each API request
@@ -56,7 +56,15 @@ function isNewTurn(requestBody) {
   if (messages.length === 0) return true;
 
   const lastMessage = messages[messages.length - 1];
-  return lastMessage.role === 'user';
+  if (lastMessage.role !== 'user') return false;
+
+  // Anthropic tool_result messages are also role=user; they do NOT start a new turn.
+  const content = lastMessage.content;
+  if (Array.isArray(content) && content.some(b => b.type === 'tool_result')) {
+    return false;
+  }
+
+  return true;
 }
 ```
 

@@ -535,10 +535,11 @@
 
   .ai-badge-icon.working {
     opacity: 1.0;
+    transition: opacity 500ms ease-in-out;
   }
 
   .ai-badge-icon.working.rotate-phase {
-    opacity: 1.0;
+    opacity: 0.4;
   }
 
   .ai-badge-icon.attention {

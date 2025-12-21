@@ -1,4 +1,4 @@
-{ monitoringDataScript, ai_sessions_data_path ? "$XDG_RUNTIME_DIR/otel-ai-monitor.pipe", ... }:
+{ monitoringDataScript, pulsePhaseScript, ai_sessions_data_path ? "$XDG_RUNTIME_DIR/otel-ai-monitor.pipe", ... }:
 
 ''
   ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
@@ -51,14 +51,13 @@
     :initial "{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
     `echo '{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}'`)
 
-  ;; Feature 110: Pulsating animation now uses pure CSS @keyframes
-  ;; No polling needed - animation runs on GPU, much more efficient
-  ;; Kept for backwards compatibility but disabled
+  ;; Feature 110: Pulsating animation phase
+  ;; Animation runs via opacity transitions toggled by this variable
   (defpoll pulse_phase
-    :interval "10s"
-    :run-while false
+    :interval "500ms"
+    :run-while {monitoring_data.has_working_badge ?: false}
     :initial "0"
-    `echo 0`)
+    `${pulsePhaseScript}/bin/eww-monitoring-panel-pulse-phase`)
 
   ;; Feature 092: Defpoll: Sway event log - DISABLED for CPU savings
   ;; Tab 4 is hidden, so this poll never needs to run

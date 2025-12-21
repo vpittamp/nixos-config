@@ -58,6 +58,9 @@ class Session(BaseModel):
     input_tokens: int = Field(default=0, description="Cumulative input tokens")
     output_tokens: int = Field(default=0, description="Cumulative output tokens")
     cache_tokens: int = Field(default=0, description="Cumulative cache tokens")
+    cost_usd: float = Field(default=0.0, description="Cumulative cost in USD")
+    error_count: int = Field(default=0, description="Cumulative error count")
+    last_error_type: Optional[str] = Field(default=None, description="Last error type if any")
 
     class Config:
         """Pydantic configuration."""
@@ -153,6 +156,8 @@ class EventNames:
     CLAUDE_TOOL_RESULT = "claude_code.tool_result"
     CLAUDE_API_REQUEST = "claude_code.api_request"
     CLAUDE_API_ERROR = "claude_code.api_error"
+    # Interceptor / derived spans (kept distinct from native log events)
+    CLAUDE_LLM_CALL = "claude_code.llm_call"
 
     # Codex CLI events
     CODEX_CONVERSATION_STARTS = "codex.conversation_starts"
@@ -177,6 +182,7 @@ class EventNames:
     WORKING_TRIGGERS = {
         CLAUDE_USER_PROMPT,
         CLAUDE_API_REQUEST,  # Claude Code uses this to indicate activity
+        CLAUDE_LLM_CALL,
         CODEX_USER_PROMPT,
         CODEX_CONVERSATION_STARTS,
         GEMINI_USER_PROMPT,
@@ -191,6 +197,7 @@ class EventNames:
     ACTIVITY_EVENTS = {
         CLAUDE_TOOL_RESULT,
         CLAUDE_API_REQUEST,
+        CLAUDE_LLM_CALL,
         CLAUDE_TOOL_DECISION,  # Claude Code emits this for tool calls
         CLAUDE_AGENT_RUN,  # From trace spans
         CODEX_API_REQUEST,

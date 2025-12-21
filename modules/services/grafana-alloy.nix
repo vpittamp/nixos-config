@@ -102,7 +102,67 @@ let
       }
 
       output {
-        traces = [otelcol.processor.batch.default.input]
+        traces = [
+          otelcol.processor.batch.default.input,
+          otelcol.connector.spanmetrics.ai.input,
+        ]
+      }
+    }
+
+    // =============================================================================
+    // Span Metrics - Derive metrics (+ exemplars) from spans
+    //
+    // Uses the spanmetrics connector to generate RED metrics from traces and attach
+    // exemplars that link back to Tempo traces in Grafana.
+    //
+    // IMPORTANT: We exclude `span.name` to avoid high-cardinality series from
+    // Turn/tool span names (which may include prompt/file previews).
+    // =============================================================================
+
+    // Dedicated batch processor to avoid cycles (spanmetrics consumes traces, emits metrics).
+    otelcol.processor.batch "spanmetrics" {
+      send_batch_size     = 1000
+      timeout             = "10s"
+      send_batch_max_size = 2000
+
+      output {
+        metrics = [otelcol.exporter.prometheus.mimir.input]
+      }
+    }
+
+    otelcol.connector.spanmetrics "ai" {
+      // Keep the resource key stable across runs (avoid process.pid / cwd churn).
+      resource_metrics_key_attributes = ["service.name", "host.name"]
+
+      // Avoid high-cardinality series by excluding span.name.
+      exclude_dimensions = ["span.name"]
+
+      // Useful low-cardinality dimensions for AI traces.
+      dimension {
+        name = "openinference.span.kind"
+      }
+
+      dimension {
+        name = "gen_ai.request.model"
+      }
+
+      dimension {
+        name = "gen_ai.tool.name"
+      }
+
+      histogram {
+        explicit {
+          buckets = ["10ms", "50ms", "100ms", "250ms", "500ms", "1s", "2s", "5s", "10s", "30s", "60s"]
+        }
+      }
+
+      exemplars {
+        enabled            = true
+        max_per_data_point = 1
+      }
+
+      output {
+        metrics = [otelcol.processor.batch.spanmetrics.input]
       }
     }
 
@@ -127,7 +187,7 @@ let
         traces = [
           otelcol.exporter.otlphttp.local.input,
           otelcol.exporter.otlphttp.k8s.input,
-          ${optionalString (config.services.arize-phoenix.enable or false) "otelcol.exporter.otlphttp.phoenix.input,"}
+          ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) "otelcol.exporter.otlphttp.phoenix.input,"}
         ]
       }
     }
@@ -152,7 +212,7 @@ let
     }
 
     // Local: Arize Phoenix for GenAI tracing
-    ${optionalString config.services.arize-phoenix.enable ''
+    ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) ''
     otelcol.exporter.otlphttp "phoenix" {
       client {
         endpoint = "${cfg.phoenixEndpoint}"
@@ -205,6 +265,8 @@ let
     prometheus.remote_write "k8s" {
       endpoint {
         url = "${cfg.mimirEndpoint}/api/v1/push"
+        // Ensure exemplars (trace IDs) are forwarded when present (e.g. from spanmetrics).
+        send_exemplars = true
         headers = {
           "X-Scope-OrgID" = "anonymous",
         }

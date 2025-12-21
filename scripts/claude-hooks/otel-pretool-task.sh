@@ -7,6 +7,10 @@
 # 3. Writes trace context files that the subagent's SessionStart will read
 #
 # This ensures proper parent-child span relationships in traces.
+#
+# NOTE (v131):
+# This hook is no longer wired by default. Subagent correlation is handled by
+# the Node interceptor via per-Task context files in $XDG_RUNTIME_DIR.
 
 set -euo pipefail
 
