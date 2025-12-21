@@ -3,15 +3,6 @@
 # Parallel to hetzner.nix (i3/X11) - does NOT modify existing hetzner config
 { config, lib, pkgs, modulesPath, ... }:
 
-let
-  tailscaleTailnet = "tail286401.ts.net";
-  # Prefer per-cluster Tailscale Services (no collisions across clusters).
-  # Hetzner is not a cluster host; default exports to the primary cluster (ryzen).
-  telemetryCluster =
-    let host = config.networking.hostName;
-    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
-  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
-in
 {
   imports = [
     # Base configuration (shared with hetzner i3 config)
@@ -189,12 +180,12 @@ in
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack
-  # Tailscale Serve endpoints use HTTPS:443 (terminated at edge)
+  # Tailscale Operator Ingress endpoints use HTTPS:443 (terminated at edge)
+  # Feature 125: Use targetCluster for parameterized endpoint routing
+  # hetzner host → hub K8s cluster (production)
   services.grafana-alloy = {
     enable = true;
-    k8sEndpoint = tsServiceUrl "otel-collector";
-    lokiEndpoint = tsServiceUrl "loki";
-    mimirEndpoint = tsServiceUrl "mimir";
+    targetCluster = "hub";  # Auto-computes endpoints: *-hub.tail286401.ts.net
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [

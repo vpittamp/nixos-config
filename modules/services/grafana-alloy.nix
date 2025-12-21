@@ -21,14 +21,6 @@ with lib;
 let
   cfg = config.services.grafana-alloy;
 
-  tailscaleTailnet = "tail286401.ts.net";
-  # Prefer per-cluster Tailscale Services (no collisions across clusters).
-  # If this machine isn't a cluster host, fall back to the primary cluster (ryzen).
-  telemetryCluster =
-    let host = config.networking.hostName;
-    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
-  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
-
   # Generate journal source blocks for each configured unit
   journalSourceBlocks = concatMapStringsSep "\n\n" (unit:
     let
@@ -325,6 +317,23 @@ in
       description = "Grafana Alloy package to use";
     };
 
+    # Feature 125: Parameterized cluster targeting for multi-cluster observability
+    targetCluster = mkOption {
+      type = types.str;
+      default = "";
+      example = "ryzen";
+      description = ''
+        Target K8s cluster name for observability endpoints.
+        When set, automatically computes endpoint URLs as:
+          otel-collector-{cluster}.tail286401.ts.net
+          loki-{cluster}.tail286401.ts.net
+          mimir-{cluster}.tail286401.ts.net
+
+        Valid values: "thinkpad", "ryzen", "hub"
+        Leave empty to use explicit endpoint overrides.
+      '';
+    };
+
     configFile = mkOption {
       type = types.nullOr types.path;
       default = null;
@@ -345,8 +354,8 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      default = tsServiceUrl "otel-collector";
-      description = "Kubernetes OTEL collector endpoint (via Tailscale Serve, HTTPS:443)";
+      default = "";  # Computed from targetCluster in config section
+      description = "Kubernetes OTEL collector endpoint (via Tailscale Operator Ingress, HTTPS:443)";
     };
 
     phoenixEndpoint = mkOption {
@@ -357,13 +366,13 @@ in
 
     lokiEndpoint = mkOption {
       type = types.str;
-      default = tsServiceUrl "loki";
+      default = "";  # Computed from targetCluster in config section
       description = "Loki push endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     mimirEndpoint = mkOption {
       type = types.str;
-      default = tsServiceUrl "mimir";
+      default = "";  # Computed from targetCluster in config section
       description = "Mimir remote write endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
@@ -391,6 +400,24 @@ in
   };
 
   config = mkIf cfg.enable {
+    # Feature 125: Compute endpoint defaults from targetCluster
+    # These use mkDefault so they can be overridden by explicit config
+    services.grafana-alloy.k8sEndpoint = lib.mkDefault (
+      if cfg.targetCluster != ""
+      then "https://otel-collector-${cfg.targetCluster}.tail286401.ts.net"
+      else "https://otel-collector-1.tail286401.ts.net"
+    );
+    services.grafana-alloy.lokiEndpoint = lib.mkDefault (
+      if cfg.targetCluster != ""
+      then "https://loki-${cfg.targetCluster}.tail286401.ts.net"
+      else "https://loki.tail286401.ts.net"
+    );
+    services.grafana-alloy.mimirEndpoint = lib.mkDefault (
+      if cfg.targetCluster != ""
+      then "https://mimir-${cfg.targetCluster}.tail286401.ts.net"
+      else "https://mimir.tail286401.ts.net"
+    );
+
     # Ensure package is available
     environment.systemPackages = [ cfg.package ];
 

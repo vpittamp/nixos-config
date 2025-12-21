@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from aiohttp import web
 
-from .models import AITool, EventNames, TelemetryEvent
+from .models import AITool, EventNames, Provider, PROVIDER_DETECTION, SESSION_ID_ATTRIBUTES, TOOL_PROVIDER, TelemetryEvent
 
 if TYPE_CHECKING:
     from .session_tracker import SessionTracker
@@ -546,6 +546,19 @@ class OTLPReceiver:
             # User interaction
             "user.prompt": "claude_code.user_prompt",
             "prompt.submit": "claude_code.user_prompt",
+            # Gemini CLI spans (OpenTelemetry GenAI semantic conventions)
+            "gen_ai.client.operation": "gemini_cli.api.request",
+            "gen_ai.content.prompt": "gemini_cli.user_prompt",
+            "gen_ai.content.completion": "gemini_cli.api.request",
+            "generate_content": "gemini_cli.api.request",
+            "GenerateContent": "gemini_cli.api.request",
+            "chat": "gemini_cli.api.request",
+            "send_message": "gemini_cli.api.request",
+            "gemini": "gemini_cli.api.request",  # Generic gemini spans
+            # Codex CLI spans
+            "codex.conversation": "codex.conversation_starts",
+            "codex.prompt": "codex.user_prompt",
+            "codex.api": "codex.api_request",
         }
 
         # Check exact match first
@@ -558,12 +571,26 @@ class OTLPReceiver:
             if span_lower.startswith(pattern.lower()):
                 return event
 
-        # For unknown spans that contain 'claude' or 'tool', create a generic event
+        # For unknown spans, create a generic event based on provider keywords
         if "claude" in span_lower or "tool" in span_lower:
             # Convert dots to underscores and prefix with claude_code if needed
             normalized = span_name.replace(".", "_").replace("-", "_")
             if not normalized.startswith("claude_code"):
                 normalized = f"claude_code.{normalized}"
+            return normalized
+
+        if "gemini" in span_lower or "gen_ai" in span_lower:
+            # Convert to gemini_cli event format
+            normalized = span_name.replace(".", "_").replace("-", "_")
+            if not normalized.startswith("gemini_cli"):
+                normalized = f"gemini_cli.{normalized}"
+            return normalized
+
+        if "codex" in span_lower or "openai" in span_lower:
+            # Convert to codex event format
+            normalized = span_name.replace(".", "_").replace("-", "_")
+            if not normalized.startswith("codex"):
+                normalized = f"codex.{normalized}"
             return normalized
 
         # Ignore other spans
@@ -827,3 +854,52 @@ class OTLPReceiver:
         if "application/x-protobuf" in content_type:
             return web.Response(body=b"", content_type="application/x-protobuf")
         return web.json_response({})
+
+
+def detect_provider(service_name: Optional[str], gen_ai_system: Optional[str] = None) -> Optional[Provider]:
+    """Detect provider from service.name or gen_ai.system attribute.
+
+    Args:
+        service_name: Value of service.name resource attribute
+        gen_ai_system: Value of gen_ai.system span attribute
+
+    Returns:
+        Detected Provider enum value, or None if unknown
+    """
+    # Check gen_ai.system first (more specific)
+    if gen_ai_system:
+        system_lower = gen_ai_system.lower()
+        for key, provider in PROVIDER_DETECTION.items():
+            if key in system_lower:
+                return provider
+
+    # Fall back to service.name
+    if service_name:
+        name_lower = service_name.lower()
+        for key, provider in PROVIDER_DETECTION.items():
+            if key in name_lower:
+                return provider
+
+    return None
+
+
+def extract_session_id_for_provider(
+    provider: Provider,
+    attributes: dict,
+) -> Optional[str]:
+    """Extract session ID using provider-specific attribute priority.
+
+    Args:
+        provider: Detected provider
+        attributes: Span/log record attributes
+
+    Returns:
+        Session ID string, or None if not found
+    """
+    attr_priority = SESSION_ID_ATTRIBUTES.get(provider, ["session.id"])
+
+    for attr_name in attr_priority:
+        if attr_name in attributes:
+            return str(attributes[attr_name])
+
+    return None

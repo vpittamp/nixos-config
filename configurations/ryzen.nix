@@ -19,14 +19,6 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
-
-  tailscaleTailnet = "tail286401.ts.net";
-  # Prefer per-cluster Tailscale Services (no collisions across clusters).
-  # If this machine isn't a cluster host, fall back to the primary cluster (ryzen).
-  telemetryCluster =
-    let host = config.networking.hostName;
-    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
-  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
 in
 {
   imports = [
@@ -50,8 +42,8 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector
-    ../modules/services/beyla.nix              # Feature 110: eBPF auto-instrumentation
+    ../modules/services/grafana-alloy.nix      # Feature 129: Unified telemetry collector
+    ../modules/services/grafana-beyla.nix     # Feature 129: eBPF auto-instrumentation
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/speech-to-text-safe.nix
 
@@ -144,25 +136,33 @@ in
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
-  # Feature 123: OpenTelemetry Collector for AI assistant telemetry
-  # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
-  # Also exports to K8s OTel stack via Tailscale for persistence (ClickHouse/Grafana)
-  # Dashboard: https://grafana-ryzen.tail286401.ts.net/d/otel-traces
-  services.otel-ai-collector = {
+  # Feature 129: Grafana Alloy - Unified Telemetry Collector
+  # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
+  # - System metrics via node exporter → Mimir
+  # - Journald logs → Loki
+  # - All telemetry exported to K8s LGTM stack
+  # Feature 125: Use targetCluster for parameterized endpoint routing
+  # ryzen host → ryzen K8s cluster
+  services.grafana-alloy = {
     enable = true;
-    enableDebugExporter = false;  # Less verbose for desktop
-    enableFileExporter = true;    # Raw telemetry for analysis
-    enableK8sExporter = true;     # Export to K8s OTel Collector via Tailscale
-    # Tailscale Serve endpoints use HTTPS:443 (terminated at edge)
-    k8sExporterEndpoint = tsServiceUrl "otel-collector";
+    targetCluster = "ryzen";  # Auto-computes endpoints: *-ryzen.tail286401.ts.net
+    enableNodeExporter = true;
+    enableJournald = true;
+    journaldUnits = [
+      "grafana-alloy.service"
+      "grafana-beyla.service"
+      "otel-ai-monitor.service"
+      "i3pm-daemon.service"
+    ];
   };
 
-  # Beyla eBPF auto-instrumentation (Feature 110)
+  # Feature 129: Grafana Beyla - eBPF Auto-Instrumentation
   # Monitors Claude Code, Gemini CLI, and Codex for low-level system events
-  services.beyla = {
+  # Beyla sends traces to local Alloy (127.0.0.1:4318), which then exports to K8s
+  services.grafana-beyla = {
     enable = true;
-    monitorAiAssistants = true;
-    otlpEndpoint = tsServiceUrl "otel-collector";
+    openPorts = "4320,8080";  # otel-ai-monitor and i3pm ports
+    # alloyEndpoint defaults to http://127.0.0.1:4318 (local Alloy)
   };
 
   # Display manager - greetd for Wayland/Sway login

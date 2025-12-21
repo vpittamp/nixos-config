@@ -21,8 +21,13 @@ let
     paths = [ baseGeminiCli ];
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
+      # Feature 125: Add OTEL service name for telemetry identification
+      # IMPORTANT: --unset NODE_OPTIONS first to prevent Claude Code's interceptor
+      # from being loaded when Gemini is run from within Claude Code's Bash tool
       wrapProgram $out/bin/gemini \
-        --set NODE_OPTIONS "--dns-result-order=ipv4first"
+        --unset NODE_OPTIONS \
+        --set NODE_OPTIONS "--dns-result-order=ipv4first" \
+        --set OTEL_SERVICE_NAME "gemini-cli"
     '';
   };
 
@@ -177,16 +182,17 @@ EOF
     commands = commands;
   };
 
-  # Feature 123: OTEL environment variables for Gemini CLI telemetry
+  # Feature 125: Gemini CLI telemetry environment variables
+  # Note: Gemini CLI uses GEMINI_TELEMETRY_* vars, NOT standard OTEL_* vars
   home.sessionVariables = {
-    OTEL_LOGS_EXPORTER = "otlp";
-    OTEL_METRICS_EXPORTER = "otlp";
-    OTEL_TRACES_EXPORTER = "otlp";
-    OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
-    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
-    OTEL_METRIC_EXPORT_INTERVAL = "60000";
-    OTEL_METRIC_EXPORT_TIMEOUT = "30000";
-    OTEL_LOGS_EXPORT_INTERVAL = "5000";
-    OTEL_LOG_USER_PROMPTS = "1";
+    # Gemini CLI native telemetry configuration
+    GEMINI_TELEMETRY_ENABLED = "true";
+    GEMINI_TELEMETRY_TARGET = "local";
+    GEMINI_TELEMETRY_OTLP_ENDPOINT = "http://localhost:4318";
+    GEMINI_TELEMETRY_OTLP_PROTOCOL = "http";  # Use HTTP, not gRPC
+    GEMINI_TELEMETRY_USE_COLLECTOR = "true";
+    GEMINI_TELEMETRY_LOG_PROMPTS = "true";
+    # Also set OTEL_SERVICE_NAME for any OTEL-aware components
+    OTEL_SERVICE_NAME = "gemini-cli";
   };
 }

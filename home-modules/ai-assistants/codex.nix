@@ -12,6 +12,10 @@ let
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
   codexPackage = pkgs-unstable.codex or pkgs.codex;
   codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
+    # Feature 125: Clear NODE_OPTIONS to prevent Claude Code's interceptor from loading
+    # when Codex is run from within Claude Code's Bash tool
+    unset NODE_OPTIONS
+
     # Force frequent batch exports for real-time monitoring
     # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)
     export OTEL_BLRP_SCHEDULE_DELAY=''${OTEL_BLRP_SCHEDULE_DELAY:-100}

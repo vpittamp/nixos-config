@@ -19,14 +19,6 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
-
-  tailscaleTailnet = "tail286401.ts.net";
-  # Prefer per-cluster Tailscale Services (no collisions across clusters).
-  # If this machine isn't a cluster host, fall back to the primary cluster (ryzen).
-  telemetryCluster =
-    let host = config.networking.hostName;
-    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
-  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
 in
 {
   imports = [
@@ -135,12 +127,12 @@ in
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack
   # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # Tailscale Serve endpoints use HTTPS:443 (terminated at edge)
+  # Tailscale Operator Ingress endpoints use HTTPS:443 (terminated at edge)
+  # Feature 125: Use targetCluster for parameterized endpoint routing
+  # thinkpad host → thinkpad K8s cluster
   services.grafana-alloy = {
     enable = true;
-    k8sEndpoint = tsServiceUrl "otel-collector";
-    lokiEndpoint = tsServiceUrl "loki";
-    mimirEndpoint = tsServiceUrl "mimir";
+    targetCluster = "thinkpad";  # Auto-computes endpoints: *-thinkpad.tail286401.ts.net
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [
