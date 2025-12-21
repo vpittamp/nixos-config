@@ -2620,6 +2620,10 @@ globalThis.fetch = async (input, init) => {
 
   // Process tool results from this request (complete pending tools)
   const toolResults = extractToolResults(requestBody);
+  // Poll for PostToolUse hook files before completing tools (ensures exit_code/output metadata is cached)
+  if (toolResults.length > 0) {
+    pollPostToolFiles();
+  }
   const consumedToolSpans = [];
   for (const result of toolResults) {
     const completed = completeToolSpan(result.tool_use_id, result);
