@@ -1,7 +1,8 @@
 """Pydantic models for OpenTelemetry AI Assistant Monitor.
 
 This module defines the data models for session tracking and JSON output.
-Based on the data model specification in specs/123-otel-tracing/data-model.md.
+Based on the data model specification in specs/123-otel-tracing/data-model.md
+and specs/125-tracing-parity-codex/data-model.md.
 """
 
 from datetime import datetime
@@ -28,6 +29,89 @@ class AITool(str, Enum):
     GEMINI_CLI = "gemini"
 
 
+class Provider(str, Enum):
+    """AI service providers for cost calculation and attribute mapping."""
+
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+    GOOGLE = "google"
+
+
+# Provider pricing tables (USD per 1M tokens)
+# Source: research.md from feature 125-tracing-parity-codex
+PROVIDER_PRICING: dict[str, dict[str, tuple[float, float]]] = {
+    # Anthropic models (input, output)
+    Provider.ANTHROPIC: {
+        "claude-opus-4-5": (15.00, 75.00),
+        "claude-opus-4-5-20251101": (15.00, 75.00),
+        "claude-sonnet-4": (3.00, 15.00),
+        "claude-sonnet-4-20250514": (3.00, 15.00),
+        "claude-3-5-haiku": (0.80, 4.00),
+        "claude-3-5-haiku-20241022": (0.80, 4.00),
+        "claude-3-5-sonnet": (3.00, 15.00),
+        "claude-3-5-sonnet-20241022": (3.00, 15.00),
+        # Older models
+        "claude-3-opus": (15.00, 75.00),
+        "claude-3-sonnet": (3.00, 15.00),
+        "claude-3-haiku": (0.25, 1.25),
+    },
+    # OpenAI models (input, output)
+    Provider.OPENAI: {
+        "gpt-4o": (2.50, 10.00),
+        "gpt-4o-2024-11-20": (2.50, 10.00),
+        "gpt-4o-mini": (0.15, 0.60),
+        "gpt-4o-mini-2024-07-18": (0.15, 0.60),
+        "gpt-5-codex": (2.50, 10.00),  # Assume same as gpt-4o for now
+        "o1": (15.00, 60.00),
+        "o1-preview": (15.00, 60.00),
+        "o1-mini": (3.00, 12.00),
+        "o3-mini": (1.10, 4.40),
+    },
+    # Google models (input, output)
+    Provider.GOOGLE: {
+        "gemini-2.0-flash": (0.075, 0.30),
+        "gemini-2.0-flash-exp": (0.075, 0.30),
+        "gemini-2.5-flash": (0.075, 0.30),
+        "gemini-2.5-flash-lite": (0.05, 0.20),
+        "gemini-2.5-pro": (1.25, 5.00),
+        "gemini-1.5-pro": (1.25, 5.00),
+        "gemini-1.5-flash": (0.075, 0.30),
+        "gemini-3-flash-preview": (0.10, 0.40),  # Estimated
+        "gemini-3-pro-preview": (2.50, 10.00),  # Estimated
+        "gemini-3-pro-preview-11-2025": (2.50, 10.00),  # Estimated
+    },
+}
+
+# Default rate for unrecognized models (USD per 1M tokens)
+DEFAULT_PRICING = (5.00, 15.00)  # Conservative estimate
+
+# Provider detection mappings from service.name or gen_ai.system
+PROVIDER_DETECTION: dict[str, Provider] = {
+    "anthropic": Provider.ANTHROPIC,
+    "claude-code": Provider.ANTHROPIC,
+    "claude": Provider.ANTHROPIC,
+    "openai": Provider.OPENAI,
+    "codex": Provider.OPENAI,
+    "google": Provider.GOOGLE,
+    "gemini": Provider.GOOGLE,
+    "gemini-cli": Provider.GOOGLE,
+}
+
+# Session ID attribute priority per provider
+SESSION_ID_ATTRIBUTES: dict[Provider, list[str]] = {
+    Provider.ANTHROPIC: ["session.id", "thread_id", "conversation_id"],
+    Provider.OPENAI: ["conversation_id", "session.id"],
+    Provider.GOOGLE: ["session.id", "conversation.id"],
+}
+
+# Tool to Provider mapping
+TOOL_PROVIDER: dict[AITool, Provider] = {
+    AITool.CLAUDE_CODE: Provider.ANTHROPIC,
+    AITool.CODEX_CLI: Provider.OPENAI,
+    AITool.GEMINI_CLI: Provider.GOOGLE,
+}
+
+
 class Session(BaseModel):
     """An active AI assistant session.
 
@@ -39,6 +123,10 @@ class Session(BaseModel):
         description="Unique identifier from telemetry (thread_id or conversation.id)"
     )
     tool: AITool = Field(description="Which AI tool this session belongs to")
+    provider: Provider = Field(
+        default=Provider.ANTHROPIC,
+        description="AI service provider for cost calculation"
+    )
     state: SessionState = Field(
         default=SessionState.IDLE, description="Current session state"
     )
@@ -47,6 +135,12 @@ class Session(BaseModel):
     )
     window_id: Optional[int] = Field(
         default=None, description="Sway container ID of originating terminal window"
+    )
+    model: Optional[str] = Field(
+        default=None, description="LLM model name for cost calculation"
+    )
+    cost_estimated: bool = Field(
+        default=False, description="True if cost uses default rate (model not in pricing table)"
     )
 
     # Timestamps

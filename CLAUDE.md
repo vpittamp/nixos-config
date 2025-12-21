@@ -137,14 +137,26 @@ set-monitor-profile local-only/local+1vnc/local+2vnc  # M1
 
 **VNC**: `vnc://<tailscale-ip>:{5900|5901|5902}`
 
-## Claude Code (Feature 090)
+## AI CLI Tracing (Features 090, 123, 125)
 
-Notifications on task completion. `Enter` returns to terminal, `Escape` dismisses.
+All AI CLIs (Claude Code, Codex CLI, Gemini CLI) emit OTEL telemetry tracked locally and in Grafana.
+
+**Notifications**: `Enter` returns to terminal, `Escape` dismisses.
+
+**Session Tracking**: EWW panel shows working/completed status with cost metrics for all CLIs.
+
+**Providers**: Claude Code (Anthropic), Codex CLI (OpenAI), Gemini CLI (Google)
 
 ```bash
-systemctl --user status swaync
-ls ~/.config/claude-code/hooks/
+systemctl --user status otel-ai-monitor        # Session tracker
+systemctl --user restart eww-monitoring-panel  # EWW panel
+journalctl --user -u otel-ai-monitor -f        # Watch telemetry
 ```
+
+**Grafana Queries** (unified across all CLIs):
+- By session: `{session.id="abc123"}`
+- By provider: `{service.name=~"claude-code|codex|gemini"}`
+- By model: `{gen_ai.request.model="gpt-4o"}`
 
 ## Observability Stack (Feature 129)
 
@@ -162,7 +174,7 @@ Journald → Alloy → Loki (K8s)
 | Service | Port | Purpose |
 |---------|------|---------|
 | grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
-| otel-ai-monitor | 4320 | Local AI session tracking for EWW |
+| otel-ai-monitor | 4320 | Local AI session tracking for EWW (all CLIs) |
 | grafana-beyla | - | eBPF auto-instrumentation (optional) |
 | pyroscope-agent | - | Continuous profiling (optional) |
 
@@ -253,6 +265,10 @@ journalctl --user -u i3-project-event-listener -f
 - Remote only (Kubernetes LGTM stack); local memory buffer (100MB) for offline queuing (129-create-observability-nixos)
 - JavaScript (Node.js, Claude Code runtime) + Node.js `http` module (built-in), `node:buffer` (130-create-logical-multi)
 - N/A (stateless interceptor, memory-only during session) (130-create-logical-multi)
+- Nix (flakes), Python 3.11+ (otel-ai-monitor), Yuck/SCSS (EWW widgets) (125-tracing-parity-codex)
+- N/A (in-memory session state, file-based telemetry export) (125-tracing-parity-codex)
+- Python 3.11+ (otel-ai-monitor), Nix (configuration), Alloy config language + Grafana Alloy 1.x, opentelemetry-proto, aiohttp, Pydantic (125-tracing-parity-codex)
+- N/A (in-memory session state in otel-ai-monitor) (125-tracing-parity-codex)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools

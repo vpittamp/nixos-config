@@ -20,13 +20,16 @@ from typing import TYPE_CHECKING, Optional
 from .models import (
     AITool,
     EventNames,
+    Provider,
     Session,
     SessionList,
     SessionListItem,
     SessionState,
     SessionUpdate,
     TelemetryEvent,
+    TOOL_PROVIDER,
 )
+from .pricing import calculate_cost
 from .sway_helper import get_all_window_ids, get_focused_window_info
 
 if TYPE_CHECKING:
@@ -181,9 +184,13 @@ class SessionTracker:
                 else:
                     # Prefer project from window marks, fall back to telemetry
                     project = window_project or self._extract_project(event)
+                    tool = event.tool or AITool.CLAUDE_CODE
+                    # Derive provider from tool
+                    provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
                     session = Session(
                         session_id=session_id,
-                        tool=event.tool or AITool.CLAUDE_CODE,
+                        tool=tool,
+                        provider=provider,
                         state=SessionState.IDLE,
                         project=project,
                         window_id=window_id,
@@ -192,7 +199,7 @@ class SessionTracker:
                         state_changed_at=now,
                     )
                     self._sessions[session_id] = session
-                    logger.info(f"Created session {session_id} for {session.tool} (window_id={window_id}, project={project})")
+                    logger.info(f"Created session {session_id} for {session.tool}/{provider.value} (window_id={window_id}, project={project})")
 
             # Update last event time
             session.last_event_at = now
@@ -322,40 +329,134 @@ class SessionTracker:
         """
         attrs = event.attributes
 
+        # Extract model name if available (for cost calculation)
+        model = self._extract_model(attrs)
+        if model and not session.model:
+            session.model = model
+
         # Handle Codex token events
         if event.event_name == EventNames.CODEX_SSE_EVENT:
-            if "input_tokens" in attrs:
-                session.input_tokens = int(attrs["input_tokens"])
-            if "output_tokens" in attrs:
-                session.output_tokens = int(attrs["output_tokens"])
-            if "cache_tokens" in attrs:
-                session.cache_tokens = int(attrs["cache_tokens"])
+            input_tokens = int(attrs.get("input_tokens", 0))
+            output_tokens = int(attrs.get("output_tokens", 0))
+            if input_tokens > 0 or output_tokens > 0:
+                session.input_tokens = input_tokens
+                session.output_tokens = output_tokens
+                if "cache_tokens" in attrs:
+                    session.cache_tokens = int(attrs["cache_tokens"])
+                # Calculate cost for Codex (not included in telemetry)
+                cost, is_estimated = calculate_cost(
+                    session.provider,
+                    session.model,
+                    input_tokens,
+                    output_tokens,
+                )
+                session.cost_usd += cost
+                session.cost_estimated = is_estimated
+
+        # Handle Codex API request events with token data
+        elif event.event_name == EventNames.CODEX_API_REQUEST:
+            try:
+                # Codex may send token counts in API request events
+                input_tokens = int(attrs.get("gen_ai.usage.prompt_tokens") or attrs.get("input_tokens") or 0)
+                output_tokens = int(attrs.get("gen_ai.usage.completion_tokens") or attrs.get("output_tokens") or 0)
+                if input_tokens > 0 or output_tokens > 0:
+                    session.input_tokens += input_tokens
+                    session.output_tokens += output_tokens
+                    # Calculate cost
+                    cost, is_estimated = calculate_cost(
+                        session.provider,
+                        session.model,
+                        input_tokens,
+                        output_tokens,
+                    )
+                    session.cost_usd += cost
+                    session.cost_estimated = is_estimated
+                # Check for errors
+                error_type = self._extract_error(attrs)
+                if error_type:
+                    session.error_count += 1
+                    session.last_error_type = error_type
+            except Exception:
+                pass
 
         # Handle Gemini/GenAI standard token events
-        elif event.event_name == EventNames.GEMINI_TOKEN_USAGE:
+        elif event.event_name in (EventNames.GEMINI_TOKEN_USAGE, EventNames.GENAI_TOKEN_USAGE):
             # GenAI semantic conventions use gen_ai.usage.*
             # but CLI might use flattened attributes
-            input_keys = ("gen_ai.usage.input_tokens", "input_tokens", "prompt_tokens")
-            output_keys = ("gen_ai.usage.output_tokens", "output_tokens", "completion_tokens")
+            input_keys = ("gen_ai.usage.input_tokens", "gen_ai.client.token.usage.input", "input_tokens", "prompt_tokens")
+            output_keys = ("gen_ai.usage.output_tokens", "gen_ai.client.token.usage.output", "output_tokens", "completion_tokens")
+
+            input_tokens = 0
+            output_tokens = 0
 
             for key in input_keys:
                 if key in attrs:
-                    session.input_tokens = int(attrs[key])
+                    input_tokens = int(attrs[key])
+                    session.input_tokens += input_tokens
                     break
 
             for key in output_keys:
                 if key in attrs:
-                    session.output_tokens = int(attrs[key])
+                    output_tokens = int(attrs[key])
+                    session.output_tokens += output_tokens
                     break
+
+            # Calculate cost for Gemini (not included in telemetry)
+            if input_tokens > 0 or output_tokens > 0:
+                cost, is_estimated = calculate_cost(
+                    session.provider,
+                    session.model,
+                    input_tokens,
+                    output_tokens,
+                )
+                session.cost_usd += cost
+                session.cost_estimated = is_estimated
+
+        # Handle Gemini API request events
+        elif event.event_name in (EventNames.GEMINI_API_REQUEST, EventNames.GENAI_OPERATION):
+            try:
+                input_tokens = int(attrs.get("gen_ai.usage.input_tokens") or attrs.get("input_tokens") or 0)
+                output_tokens = int(attrs.get("gen_ai.usage.output_tokens") or attrs.get("output_tokens") or 0)
+                if input_tokens > 0 or output_tokens > 0:
+                    session.input_tokens += input_tokens
+                    session.output_tokens += output_tokens
+                    # Calculate cost
+                    cost, is_estimated = calculate_cost(
+                        session.provider,
+                        session.model,
+                        input_tokens,
+                        output_tokens,
+                    )
+                    session.cost_usd += cost
+                    session.cost_estimated = is_estimated
+                # Check for errors
+                error_type = self._extract_error(attrs)
+                if error_type:
+                    session.error_count += 1
+                    session.last_error_type = error_type
+            except Exception:
+                pass
 
         # Handle Claude Code per-request token usage (sum across the session)
         elif event.event_name == EventNames.CLAUDE_API_REQUEST:
             try:
-                session.input_tokens += int(attrs.get("input_tokens") or 0)
-                session.output_tokens += int(attrs.get("output_tokens") or 0)
+                input_tokens = int(attrs.get("input_tokens") or 0)
+                output_tokens = int(attrs.get("output_tokens") or 0)
+                session.input_tokens += input_tokens
+                session.output_tokens += output_tokens
                 cache_read = int(attrs.get("cache_read_tokens") or 0)
                 cache_create = int(attrs.get("cache_creation_tokens") or 0)
                 session.cache_tokens += cache_read + cache_create
+                # Claude Code interceptor already calculates cost, but if not present, calculate
+                if "cost_usd" not in attrs and (input_tokens > 0 or output_tokens > 0):
+                    cost, is_estimated = calculate_cost(
+                        session.provider,
+                        session.model,
+                        input_tokens,
+                        output_tokens,
+                    )
+                    session.cost_usd += cost
+                    session.cost_estimated = is_estimated
             except Exception:
                 # Best-effort only; don't let parsing break session tracking
                 pass
@@ -375,12 +476,107 @@ class SessionTracker:
                     session.output_tokens += int(output_tokens)
                 if cost_usd:
                     session.cost_usd += float(cost_usd)
+                elif input_tokens or output_tokens:
+                    # Calculate cost if not provided by interceptor
+                    cost, is_estimated = calculate_cost(
+                        session.provider,
+                        session.model,
+                        int(input_tokens or 0),
+                        int(output_tokens or 0),
+                    )
+                    session.cost_usd += cost
+                    session.cost_estimated = is_estimated
                 if error_type:
                     session.error_count += 1
                     session.last_error_type = str(error_type)
             except Exception:
                 # Best-effort only
                 pass
+
+    def _extract_model(self, attrs: dict) -> Optional[str]:
+        """Extract model name from event attributes.
+
+        Args:
+            attrs: Event attributes dict
+
+        Returns:
+            Model name if found, None otherwise
+        """
+        # Try various model attribute names
+        model_keys = (
+            "gen_ai.request.model",
+            "gen_ai.model",
+            "model",
+            "llm.model_name",
+        )
+        for key in model_keys:
+            if key in attrs:
+                return str(attrs[key])
+        return None
+
+    def _extract_error(self, attrs: dict) -> Optional[str]:
+        """Extract and classify error type from event attributes.
+
+        Normalizes error indicators from different providers to a standard set:
+        - auth: Authentication/authorization errors (401, 403)
+        - rate_limit: Rate limiting errors (429)
+        - timeout: Request timeout errors
+        - server: Server-side errors (5xx)
+        - client: Client-side errors (4xx, other than above)
+
+        Args:
+            attrs: Event attributes dict
+
+        Returns:
+            Normalized error type, or None if no error
+        """
+        # Check for explicit error.type attribute
+        error_type = attrs.get("error.type")
+        if error_type:
+            return self._classify_error(str(error_type))
+
+        # Check for OTEL status code
+        status_code = attrs.get("otel.status_code")
+        if status_code == "ERROR":
+            # Try to get more info from error.message
+            error_msg = attrs.get("error.message", "")
+            return self._classify_error(str(error_msg))
+
+        # Check HTTP status code
+        http_status = attrs.get("http.status_code") or attrs.get("http.response.status_code")
+        if http_status:
+            return self._classify_http_status(int(http_status))
+
+        return None
+
+    def _classify_error(self, error_str: str) -> str:
+        """Classify error string to normalized type."""
+        error_lower = error_str.lower()
+
+        if any(x in error_lower for x in ["auth", "401", "403", "unauthorized", "forbidden"]):
+            return "auth"
+        if any(x in error_lower for x in ["rate", "limit", "429", "too many", "throttl"]):
+            return "rate_limit"
+        if any(x in error_lower for x in ["timeout", "timed out", "deadline"]):
+            return "timeout"
+        if any(x in error_lower for x in ["server", "500", "502", "503", "504", "internal"]):
+            return "server"
+
+        return "client"
+
+    def _classify_http_status(self, status: int) -> Optional[str]:
+        """Classify HTTP status code to error type."""
+        if status < 400:
+            return None
+        if status == 401 or status == 403:
+            return "auth"
+        if status == 429:
+            return "rate_limit"
+        if status == 408 or status == 504:
+            return "timeout"
+        if status >= 500:
+            return "server"
+        return "client"
 
     def _reset_quiet_timer(self, session_id: str) -> None:
         """Reset the quiet period timer for a session.
