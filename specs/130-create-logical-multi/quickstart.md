@@ -113,7 +113,7 @@ claude "Use the Task tool to research the codebase"
 
 **Expected Traces**:
 - Parent trace: Session → Turn → LLM/Tool spans, including Task tool span
-- Child trace: Subagent Session → Turn → LLM/Tool spans, with span link to parent
+- Child trace: Subagent Session → Turn → LLM/Tool spans, with span link to parent and `claude.parent_session_id`
 
 ## Debugging
 
@@ -140,9 +140,9 @@ curl -X POST http://localhost:4318/v1/traces \
 
 ### Subagent Traces Not Linked
 
-- Check `OTEL_TRACE_PARENT` environment variable is set
-- Subagent should have span link in root session span
-- Both traces should have matching `gen_ai.conversation.id`
+- Check parent created Task context files in `$XDG_RUNTIME_DIR` (prefix: `claude-task-context-`)
+- Subagent root session span should include a span link to the parent Task span
+- Subagent root session span should include `claude.parent_session_id` for easy correlation back to the parent conversation
 
 ## Files Modified
 
@@ -150,7 +150,7 @@ curl -X POST http://localhost:4318/v1/traces \
 |------|--------|
 | `scripts/minimal-otel-interceptor.js` | Complete replacement with new implementation |
 | `modules/services/grafana-alloy.nix` | May need updates for new span types |
-| `home-modules/ai-assistants/claude-code.nix` | No changes expected |
+| `home-modules/ai-assistants/claude-code.nix` | Wraps `claude` with the interceptor + configures hooks |
 
 ## Rollback Procedure
 

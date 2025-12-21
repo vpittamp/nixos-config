@@ -420,7 +420,9 @@ class OTLPReceiver:
         trace_id = span.trace_id.hex() if hasattr(span, 'trace_id') and span.trace_id else None
         span_id = span.span_id.hex() if hasattr(span, 'span_id') and span.span_id else None
 
-        logger.debug(f"Parsed span: {span_name} -> {event_name}, session_id: {session_id}")
+        logger.debug(
+            f"Parsed span: {span_name} -> {event_name}, session_id: {session_id}, trace_id: {trace_id}, span_id: {span_id}"
+        )
 
         return TelemetryEvent(
             event_name=event_name,
@@ -532,10 +534,12 @@ class OTLPReceiver:
             "api.request": "claude_code.api_request",
             "api.response": "claude_code.api_request",
             # Payload interceptor spans (OpenInference)
-            "LLM": "claude_code.api_request",
-            "Claude Interaction (Payload)": "claude_code.api_request",  # Legacy name
-            "Claude API Payload": "claude_code.api_request",  # Another legacy variant
-            "Claude API Call": "claude_code.api_request",  # Alloy-enriched name
+            # Note: Claude Code also emits native claude_code.api_request *log events*.
+            # Keep these spans distinct to avoid double-counting in the local monitor.
+            "LLM": "claude_code.llm_call",
+            "Claude Interaction (Payload)": "claude_code.llm_call",  # Legacy name
+            "Claude API Payload": "claude_code.llm_call",  # Another legacy variant
+            "Claude API Call": "claude_code.llm_call",  # Alloy-enriched name
             # Session spans (multi-span trace root)
             "Claude Session": "claude_code.session",
             "Claude Code Session": "claude_code.session",  # Alloy-enriched name
@@ -675,8 +679,6 @@ class OTLPReceiver:
             logger.debug(f"No event_name found. Attributes: {list(attributes.keys())}, session_id: {session_id}")
             return None
 
-        logger.debug(f"Parsed event: {event_name}, session_id: {session_id}")
-
         # Determine AI tool from event name or service name
         tool = EventNames.get_tool_from_event(event_name)
         logger.debug(f"Identifying tool for event '{event_name}' (service: '{service_name}'): tool={tool}")
@@ -703,6 +705,17 @@ class OTLPReceiver:
             trace_id = log_record.trace_id.hex()
         if log_record.span_id:
             span_id = log_record.span_id.hex()
+
+        token_preview = ""
+        if event_name in ("claude_code.api_request", "codex.api_request", "gemini_cli.api.request"):
+            token_preview = (
+                f", model={attributes.get('model')}, input_tokens={attributes.get('input_tokens')}, "
+                f"output_tokens={attributes.get('output_tokens')}, cost_usd={attributes.get('cost_usd')}"
+            )
+
+        logger.debug(
+            f"Parsed event: {event_name}, session_id: {session_id}, trace_id: {trace_id}, span_id: {span_id}{token_preview}"
+        )
 
         return TelemetryEvent(
             event_name=event_name,

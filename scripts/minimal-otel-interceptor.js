@@ -1,5 +1,5 @@
 /**
- * minimal-otel-interceptor.js (v3.4.0)
+ * minimal-otel-interceptor.js (v3.6.0)
  *
  * Multi-span trace hierarchy for Claude Code sessions.
  * Creates proper hierarchical trace structure: Session -> Turns -> LLM/Tool spans
@@ -14,6 +14,19 @@
  * - Correlation with Claude Code's native telemetry via session.id
  *
  * Following OpenTelemetry GenAI semantic conventions (2025 edition).
+ *
+ * v3.6.0 Changes:
+ * - Hook-driven Turn boundaries (UserPromptSubmit + Stop) when available; fallback to heuristics when not
+ * - Session-id buffering to avoid mixed `session.id` spans when hooks hydrate mid-run
+ * - Heuristic improvements: idle-based turn end + prompt preview scoring to reduce spurious turns
+ * - Export LLM spans even outside a Turn (turn.number=0) to retain visibility of background calls
+ *
+ * v3.5.0 Changes:
+ * - Fix turn boundary detection: do not treat `tool_result` messages as new user turns
+ * - Hydrate `session.id` from Claude Code SessionStart hook (UUID) for correlation with native metrics/logs
+ * - Add causal links: Tool spans link to producing LLM span; LLM spans link to consumed tool results
+ * - Robust Task/subagent linking: per-Task context files with best-effort matching (avoids “last Task wins”)
+ * - Export session root span once (on shutdown) to avoid duplicate span updates
  *
  * v3.4.0 Changes:
  * - Hybrid trace context propagation for robust subagent linking:
@@ -54,11 +67,28 @@ const TRACE_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/traces'
     : 'http://127.0.0.1:4318/v1/traces');
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'claude-code';
-const INTERCEPTOR_VERSION = '3.4.0';
+const INTERCEPTOR_VERSION = '3.6.0';
 const WORKING_DIRECTORY = process.cwd();
 const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR || os.tmpdir();
-const CWD_TRACE_FILE = path.join(WORKING_DIRECTORY, '.claude-trace-context.json');
+const SESSION_META_FILE = path.join(RUNTIME_DIR, `claude-session-${process.pid}.json`);
+const PROMPT_META_FILE = path.join(RUNTIME_DIR, `claude-user-prompt-${process.pid}.json`);
+const STOP_META_FILE = path.join(RUNTIME_DIR, `claude-stop-${process.pid}.json`);
+const TASK_CONTEXT_PREFIX = 'claude-task-context-';
+const TURN_BOUNDARY_MODE = process.env.OTEL_INTERCEPTOR_TURN_BOUNDARY_MODE || 'auto'; // auto|hooks|heuristic
+const SESSION_ID_POLICY = process.env.OTEL_INTERCEPTOR_SESSION_ID_POLICY || 'buffer'; // buffer|eager
+const SESSION_ID_BUFFER_MAX_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_SESSION_ID_BUFFER_MAX_MS || '5000', 10);
+const SESSION_ID_BUFFER_MAX_SPANS = Number.parseInt(process.env.OTEL_INTERCEPTOR_SESSION_ID_BUFFER_MAX_SPANS || '200', 10);
+const HOOK_POLL_INTERVAL_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_HOOK_POLL_INTERVAL_MS || '200', 10);
+const TURN_IDLE_END_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_TURN_IDLE_END_MS || '1500', 10);
 const PROC_AVAILABLE = fs.existsSync('/proc');
+const CLAUDE_CODE_VERSION = (() => {
+  const fromEnv = process.env.CLAUDE_CODE_VERSION;
+  if (fromEnv && typeof fromEnv === 'string') return fromEnv;
+
+  const joined = (process.argv || []).join(' ');
+  const m = joined.match(/claude-code-([0-9]+\.[0-9]+\.[0-9]+)/);
+  return m ? m[1] : 'unknown';
+})();
 
 // Tool name mappings for better semantic descriptions
 const TOOL_DESCRIPTIONS = {
@@ -174,6 +204,54 @@ function getToolSpanName(toolName, input) {
   return `Tool: ${toolName}`;
 }
 
+/**
+ * Best-effort injection of W3C trace context into outgoing HTTP headers.
+ *
+ * This is OFF by default because it sends trace IDs to third-party endpoints.
+ * Enable only when you explicitly want correlation with eBPF agents (e.g. Beyla)
+ * that extract `traceparent` from HTTP traffic.
+ */
+function maybeInjectTraceparentHeader(init, parentSpanId) {
+  if (process.env.OTEL_INTERCEPTOR_INJECT_TRACEPARENT !== '1') return;
+  if (!init || !parentSpanId) return;
+
+  const traceparentValue = `00-${state.session.traceId}-${parentSpanId}-01`;
+
+  const hasTraceparent = (headers) => {
+    if (!headers) return false;
+    if (typeof headers.get === 'function') {
+      return headers.get('traceparent') != null;
+    }
+    if (Array.isArray(headers)) {
+      return headers.some(([k]) => typeof k === 'string' && k.toLowerCase() === 'traceparent');
+    }
+    if (typeof headers === 'object') {
+      return Object.keys(headers).some(k => k.toLowerCase() === 'traceparent');
+    }
+    return false;
+  };
+
+  if (hasTraceparent(init.headers)) return;
+
+  // Mutate in place (lowest-overhead), but handle all header shapes.
+  if (init.headers && typeof init.headers.set === 'function') {
+    init.headers.set('traceparent', traceparentValue);
+    return;
+  }
+
+  if (Array.isArray(init.headers)) {
+    init.headers.push(['traceparent', traceparentValue]);
+    return;
+  }
+
+  if (init.headers && typeof init.headers === 'object') {
+    init.headers.traceparent = traceparentValue;
+    return;
+  }
+
+  init.headers = { traceparent: traceparentValue };
+}
+
 // =============================================================================
 // Token Counts Structure
 // =============================================================================
@@ -199,6 +277,317 @@ function extractTokenUsage(response) {
     cacheRead: usage.cache_read_input_tokens || 0,
     cacheWrite: usage.cache_creation_input_tokens || 0
   };
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function mergeUsageMax(base, next) {
+  const merged = { ...(base || {}) };
+  if (!next || typeof next !== 'object') return merged;
+  for (const [k, v] of Object.entries(next)) {
+    if (typeof v !== 'number') continue;
+    if (typeof merged[k] !== 'number') merged[k] = v;
+    else merged[k] = Math.max(merged[k], v);
+  }
+  return merged;
+}
+
+/**
+ * Parse Anthropic streaming responses (text/event-stream) into a message-like object.
+ *
+ * Claude Code frequently uses streaming mode for /v1/messages which returns SSE events.
+ * We reconstruct a best-effort message shape so downstream logic can:
+ * - extract token usage
+ * - detect tool_use blocks and create tool spans
+ * - detect stop_reason for turn completion heuristics
+ *
+ * @param {string} text - full response body text
+ * @returns {object|null}
+ */
+function parseAnthropicEventStream(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  const events = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const data = line.slice(5).trimStart();
+    if (!data || data === '[DONE]') continue;
+    const parsed = tryParseJson(data);
+    if (parsed && typeof parsed === 'object') events.push(parsed);
+  }
+
+  if (events.length === 0) return null;
+
+  let message = null;
+  let usage = {};
+  let stopReason = null;
+  const blocksByIndex = new Map();
+
+  for (const evt of events) {
+    if (!evt || typeof evt !== 'object') continue;
+
+    if (evt.type === 'message_start' && evt.message && typeof evt.message === 'object') {
+      message = { ...evt.message };
+      usage = mergeUsageMax(usage, evt.message.usage);
+      continue;
+    }
+
+    if (evt.type === 'content_block_start' && Number.isInteger(evt.index) && evt.content_block && typeof evt.content_block === 'object') {
+      const block = { ...evt.content_block };
+      if (block.type === 'text') {
+        if (typeof block.text !== 'string') block.text = '';
+      }
+      if (block.type === 'tool_use') {
+        // Tool inputs may arrive as incremental JSON deltas; accumulate and parse at the end.
+        if (!block.input || typeof block.input !== 'object') block.input = {};
+        block._input_json = '';
+      }
+      blocksByIndex.set(evt.index, block);
+      continue;
+    }
+
+    if (evt.type === 'content_block_delta' && Number.isInteger(evt.index) && evt.delta && typeof evt.delta === 'object') {
+      const block = blocksByIndex.get(evt.index);
+      if (!block) continue;
+      if (evt.delta.type === 'text_delta' && typeof evt.delta.text === 'string') {
+        block.text = (block.text || '') + evt.delta.text;
+      } else if (evt.delta.type === 'input_json_delta' && typeof evt.delta.partial_json === 'string') {
+        block._input_json = (block._input_json || '') + evt.delta.partial_json;
+      }
+      continue;
+    }
+
+    if (evt.type === 'content_block_stop' && Number.isInteger(evt.index)) {
+      const block = blocksByIndex.get(evt.index);
+      if (!block) continue;
+      if (block.type === 'tool_use') {
+        const raw = block._input_json;
+        delete block._input_json;
+        if (raw && typeof raw === 'string') {
+          const parsed = tryParseJson(raw);
+          if (parsed && typeof parsed === 'object') block.input = parsed;
+          else block.input = { _raw: raw.substring(0, 5000) };
+        }
+        if (!block.input || typeof block.input !== 'object') block.input = {};
+      }
+      continue;
+    }
+
+    if (evt.type === 'message_delta') {
+      if (evt.delta && typeof evt.delta === 'object' && typeof evt.delta.stop_reason === 'string') {
+        stopReason = evt.delta.stop_reason;
+      }
+      usage = mergeUsageMax(usage, evt.usage);
+      continue;
+    }
+  }
+
+  const content = Array.from(blocksByIndex.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([, block]) => {
+      const copy = { ...block };
+      delete copy._input_json;
+      if (copy.type === 'tool_use') {
+        if (!copy.input || typeof copy.input !== 'object') copy.input = {};
+      }
+      if (copy.type === 'text') {
+        if (typeof copy.text !== 'string') copy.text = '';
+      }
+      return copy;
+    });
+
+  const response = message ? { ...message } : {};
+  if (content.length > 0) response.content = content;
+  if (!response.usage || typeof response.usage !== 'object') response.usage = usage;
+  else response.usage = mergeUsageMax(response.usage, usage);
+  if (!response.stop_reason && stopReason) response.stop_reason = stopReason;
+
+  return response;
+}
+
+function parseAnthropicResponseBody(text, contentType) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return {};
+
+  // Try parsing as JSON first (non-streaming responses)
+  const json = tryParseJson(trimmed);
+  if (json && typeof json === 'object') return json;
+
+  // Try parsing as SSE event-stream (streaming responses)
+  const isEventStream = (contentType && contentType.includes('text/event-stream'))
+    || trimmed.startsWith('event:')
+    || trimmed.startsWith('data:');
+  if (isEventStream) {
+    const parsed = parseAnthropicEventStream(trimmed);
+    if (parsed) return parsed;
+  }
+
+  // Fallback: return raw text (truncated)
+  return { raw: trimmed.substring(0, 5000) };
+}
+
+// =============================================================================
+// Claude Code Session Metadata (from hooks)
+// =============================================================================
+
+/**
+ * Best-effort read of Claude Code's native session UUID (from SessionStart hook).
+ * Hook writes: $XDG_RUNTIME_DIR/claude-session-${process.pid}.json
+ *
+ * This enables correlation between:
+ * - Claude Code native OTEL metrics/logs (session.id UUID)
+ * - Interceptor-generated traces (session.id + gen_ai.conversation.id)
+ */
+function maybeHydrateClaudeSessionId() {
+  // Only upgrade from fallback → hook-derived. Never downgrade.
+  if (state.session.sessionIdSource !== 'fallback') return;
+
+  try {
+    if (!fs.existsSync(SESSION_META_FILE)) return;
+    const raw = fs.readFileSync(SESSION_META_FILE, 'utf8');
+    const meta = JSON.parse(raw);
+    const sessionId = meta.sessionId;
+    if (!sessionId || typeof sessionId !== 'string') return;
+
+    state.session.sessionId = sessionId;
+    state.session.sessionIdSource = 'hook';
+    flushSpanBuffer();
+  } catch (e) {
+    // Silent failure to avoid disrupting Claude Code
+  }
+}
+
+// =============================================================================
+// Hook-driven Turn Boundaries (UserPromptSubmit + Stop)
+// =============================================================================
+
+function shouldUseHookTurnBoundaries() {
+  if (TURN_BOUNDARY_MODE === 'hooks') return true;
+  if (TURN_BOUNDARY_MODE === 'heuristic') return false;
+  // auto: enable hook boundaries once we observe hook metadata files.
+  return state.hooks.turnBoundariesEnabled
+    || fs.existsSync(PROMPT_META_FILE)
+    || fs.existsSync(STOP_META_FILE);
+}
+
+function readJsonFileSafe(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function maybeUpgradeSessionIdFromHook(meta) {
+  if (!meta || typeof meta !== 'object') return;
+  const sessionId = meta.sessionId;
+  if (!sessionId || typeof sessionId !== 'string') return;
+  if (state.session.sessionIdSource !== 'fallback') return;
+
+  state.session.sessionId = sessionId;
+  state.session.sessionIdSource = 'hook';
+  flushSpanBuffer();
+}
+
+function startNewTurnFromHookPrompt(promptMeta) {
+  if (!promptMeta || typeof promptMeta !== 'object') return;
+
+  state.hooks.turnBoundariesEnabled = true;
+  maybeUpgradeSessionIdFromHook(promptMeta);
+
+  const prompt = typeof promptMeta.prompt === 'string' ? promptMeta.prompt : '';
+  const ts = typeof promptMeta.timestampMs === 'number' ? promptMeta.timestampMs : Date.now();
+
+  if (ts <= state.hooks.lastPromptTimestampMs) return;
+  state.hooks.lastPromptTimestampMs = ts;
+
+  // If a prior turn is still active, close it at the new prompt timestamp.
+  if (state.currentTurn) {
+    endCurrentTurn(ts, 'new_prompt');
+  }
+
+  state.session.turnCount++;
+
+  const promptPreview = getPreview(prompt, 60);
+  state.currentTurn = {
+    spanId: generateId(8),
+    turnNumber: state.session.turnCount,
+    startTime: ts,
+    endTime: null,
+    endReason: null,
+    startSource: 'hook',
+    tokens: createTokenCounts(),
+    llmCallCount: 0,
+    toolCallCount: 0,
+    activeTools: new Set(),
+    promptPreview: promptPreview
+  };
+}
+
+function endTurnFromHookStop(stopMeta) {
+  if (!stopMeta || typeof stopMeta !== 'object') return;
+
+  state.hooks.turnBoundariesEnabled = true;
+  maybeUpgradeSessionIdFromHook(stopMeta);
+
+  const ts = typeof stopMeta.timestampMs === 'number' ? stopMeta.timestampMs : Date.now();
+  if (ts <= state.hooks.lastStopTimestampMs) return;
+  state.hooks.lastStopTimestampMs = ts;
+
+  if (!state.currentTurn) return;
+  if (ts < state.currentTurn.startTime) return;
+  endCurrentTurn(ts, 'stop_hook');
+}
+
+function pollTurnHookFiles() {
+  if (!shouldUseHookTurnBoundaries()) return;
+
+  // Always try to hydrate from SessionStart runtime file too.
+  maybeHydrateClaudeSessionId();
+
+  try {
+    // Prompt
+    if (fs.existsSync(PROMPT_META_FILE)) {
+      const stat = fs.statSync(PROMPT_META_FILE);
+      const mtimeMs = stat.mtimeMs;
+      if (mtimeMs > state.hooks.promptMtimeMs) {
+        state.hooks.promptMtimeMs = mtimeMs;
+        const meta = readJsonFileSafe(PROMPT_META_FILE);
+        startNewTurnFromHookPrompt(meta);
+      }
+    }
+
+    // Stop
+    if (fs.existsSync(STOP_META_FILE)) {
+      const stat = fs.statSync(STOP_META_FILE);
+      const mtimeMs = stat.mtimeMs;
+      if (mtimeMs > state.hooks.stopMtimeMs) {
+        state.hooks.stopMtimeMs = mtimeMs;
+        const meta = readJsonFileSafe(STOP_META_FILE);
+        endTurnFromHookStop(meta);
+      }
+    }
+  } catch {
+    // Silent failure
+  }
+}
+
+function startTurnHookPoller() {
+  if (state.hooks.pollerStarted) return;
+  if (TURN_BOUNDARY_MODE === 'heuristic') return;
+
+  state.hooks.pollerStarted = true;
+  const interval = setInterval(() => {
+    pollTurnHookFiles();
+  }, Number.isFinite(HOOK_POLL_INTERVAL_MS) ? HOOK_POLL_INTERVAL_MS : 200);
+  interval.unref();
 }
 
 // =============================================================================
@@ -234,6 +623,34 @@ function getParentPid(pid) {
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Check whether a PID is in our ancestor chain (best-effort).
+ * This prevents subagents from accidentally linking to unrelated sessions.
+ *
+ * @param {number} targetPid
+ * @returns {boolean}
+ */
+function isAncestorPid(targetPid) {
+  if (!PROC_AVAILABLE) return false;
+
+  let currentPid = process.ppid;
+  const checked = new Set();
+  const maxDepth = 25;
+  let depth = 0;
+
+  while (currentPid > 1 && !checked.has(currentPid) && depth < maxDepth) {
+    if (currentPid === targetPid) return true;
+    checked.add(currentPid);
+    depth++;
+
+    const nextPid = getParentPid(currentPid);
+    if (!nextPid || nextPid === currentPid) break;
+    currentPid = nextPid;
+  }
+
+  return false;
 }
 
 /**
@@ -326,13 +743,178 @@ function findMostRecentContext() {
 }
 
 /**
- * Hybrid trace context lookup - tries multiple methods for maximum reliability
+ * Normalize arbitrary prompt/description text for heuristic matching.
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeForMatch(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .toLowerCase()
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 400);
+}
+
+/**
+ * Very small tokenization for matching (kept intentionally simple/fast).
+ * @param {string} text
+ * @returns {Set<string>}
+ */
+function tokenSet(text) {
+  const out = new Set();
+  const norm = normalizeForMatch(text);
+  for (const tok of norm.split(/[^a-z0-9_]+/g)) {
+    if (tok.length < 3) continue;
+    out.add(tok);
+    if (out.size >= 64) break;
+  }
+  return out;
+}
+
+/**
+ * Jaccard similarity between two sets.
+ * @param {Set<string>} a
+ * @param {Set<string>} b
+ * @returns {number}
+ */
+function jaccard(a, b) {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const x of a) {
+    if (b.has(x)) intersection++;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Score how well a Task tool description matches a subagent prompt.
+ * @param {string} taskPreview
+ * @param {string} promptPreview
+ * @returns {number} 0..1
+ */
+function scoreTaskMatch(taskPreview, promptPreview) {
+  const a = normalizeForMatch(taskPreview);
+  const b = normalizeForMatch(promptPreview);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length >= 12 && b.includes(a)) return 0.95;
+  if (b.length >= 12 && a.includes(b)) return 0.9;
+  return jaccard(tokenSet(a), tokenSet(b));
+}
+
+/**
+ * Write a Task context file so the spawned subagent can link to the correct parent.
+ * This avoids the "last Task wins" race when multiple Tasks are spawned from one LLM response.
+ *
+ * @param {string} traceId
+ * @param {string} spanId
+ * @param {{id: string, name: string, input: object}} toolUse
+ * @param {string|null} parentSessionId
+ */
+function writeTaskContextFile(traceId, spanId, toolUse, parentSessionId = null) {
+  try {
+    const taskDesc = toolUse?.input?.description || toolUse?.input?.prompt || '';
+    const payload = {
+      version: 1,
+      traceId,
+      spanId,
+      parentPid: process.pid,
+      parentSessionId: parentSessionId || null,
+      toolUseId: toolUse?.id || null,
+      createdAtMs: Date.now(),
+      taskDescriptionPreview: getPreview(taskDesc, 120)
+    };
+
+    const fileName = `${TASK_CONTEXT_PREFIX}${process.pid}-${toolUse.id}.json`;
+    const filePath = path.join(RUNTIME_DIR, fileName);
+    fs.writeFileSync(filePath, JSON.stringify(payload));
+  } catch (e) {
+    // Silent failure
+  }
+}
+
+/**
+ * Attempt to claim a Task context file for this process (subagent) and return the parent span context.
+ * Claiming is done via atomic rename to avoid double-claims.
+ *
+ * @param {string} subagentPromptPreview
+ * @returns {{traceId: string, spanId: string, toolUseId?: string, parentSessionId?: string} | null}
+ */
+function claimTaskContextFile(subagentPromptPreview) {
+  try {
+    const files = fs.readdirSync(RUNTIME_DIR)
+      .filter(f => f.startsWith(TASK_CONTEXT_PREFIX) && f.endsWith('.json'));
+
+    if (files.length === 0) return null;
+
+    const candidates = [];
+    for (const file of files) {
+      const filePath = path.join(RUNTIME_DIR, file);
+      try {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const ctx = JSON.parse(raw);
+        if (!ctx || !ctx.traceId || !ctx.spanId || !ctx.parentPid) continue;
+
+        const parentPid = Number(ctx.parentPid);
+        if (!Number.isFinite(parentPid)) continue;
+        if (!isProcessRunning(parentPid)) continue;
+        if (!isAncestorPid(parentPid)) continue;
+
+        // Basic age bound to avoid claiming stale contexts.
+        const createdAt = Number(ctx.createdAtMs || 0);
+        if (Number.isFinite(createdAt) && createdAt > 0) {
+          const ageMs = Date.now() - createdAt;
+          if (ageMs < 0 || ageMs > 10 * 60 * 1000) continue; // 10 minutes
+        }
+
+        const score = scoreTaskMatch(ctx.taskDescriptionPreview || '', subagentPromptPreview);
+        candidates.push({ file, filePath, ctx, score });
+      } catch (e) {
+        // Skip
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => {
+      // Prefer higher match score; tie-breaker: newest first.
+      if (b.score !== a.score) return b.score - a.score;
+      return (Number(b.ctx.createdAtMs || 0) - Number(a.ctx.createdAtMs || 0));
+    });
+
+    for (const cand of candidates) {
+      const claimedPath = `${cand.filePath}.claimed-${process.pid}`;
+      try {
+        fs.renameSync(cand.filePath, claimedPath);
+        // Best-effort cleanup after claim
+        try { fs.unlinkSync(claimedPath); } catch {}
+        return {
+          traceId: cand.ctx.traceId,
+          spanId: cand.ctx.spanId,
+          toolUseId: cand.ctx.toolUseId || undefined,
+          parentSessionId: cand.ctx.parentSessionId || undefined
+        };
+      } catch (e) {
+        // Likely claimed by someone else; try next
+      }
+    }
+
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Fallback parent context lookup (used when Task context files are unavailable).
  *
  * Methods (in order of preference):
- * 1. Environment variable (fastest, if inherited)
- * 2. Working directory file (same-project subagents)
- * 3. Process tree walking (handles intermediate shells)
- * 4. Most recent context file (fallback for complex hierarchies)
+ * 1. Environment variable (W3C trace context)
+ * 2. Process tree walking (handles intermediate shells like bash, systemd)
+ * 3. Most recent context file (best-effort fallback)
  *
  * @returns {{traceId: string, spanId: string} | null}
  */
@@ -346,25 +928,11 @@ function parseTraceParentEnv() {
     }
   }
 
-  // 2. Try working directory file (same-project subagents)
-  try {
-    if (fs.existsSync(CWD_TRACE_FILE)) {
-      const content = fs.readFileSync(CWD_TRACE_FILE, 'utf8');
-      const ctx = JSON.parse(content);
-      // Verify it's from a different, running process
-      if (ctx.pid !== process.pid && isProcessRunning(ctx.pid)) {
-        return { traceId: ctx.traceId, spanId: ctx.spanId };
-      }
-    }
-  } catch (e) {
-    // Continue to next method
-  }
-
-  // 3. Walk up process tree (handles intermediate shells like bash, systemd)
+  // 2. Walk up process tree (handles intermediate shells like bash, systemd)
   const treeResult = walkProcessTree();
   if (treeResult) return treeResult;
 
-  // 4. Find most recent context file from running process
+  // 3. Find most recent context file from running process
   const recentResult = findMostRecentContext();
   if (recentResult) return recentResult;
 
@@ -372,11 +940,43 @@ function parseTraceParentEnv() {
 }
 
 /**
+ * Resolve (once) the parent Task span context for subagent processes.
+ * Prefers per-Task context files to avoid ambiguity when multiple Tasks are spawned.
+ *
+ * @param {object} requestBody
+ */
+function maybeResolveParentContext(requestBody) {
+  if (state.session.parentContext) return;
+
+  // Prefer Task context files first (most reliable when multiple Tasks are spawned).
+  try {
+    const promptText = extractUserPrompt(requestBody || {});
+    const promptPreview = getPreview(promptText, 120);
+    const claimed = claimTaskContextFile(promptPreview);
+    if (claimed) {
+      state.session.parentContext = { traceId: claimed.traceId, spanId: claimed.spanId };
+      state.session.parentContextSource = 'task_context_file';
+      if (claimed.parentSessionId) {
+        state.session.parentSessionId = claimed.parentSessionId;
+      }
+      return;
+    }
+  } catch (e) {
+    // Continue to fallback
+  }
+
+  const fallback = parseTraceParentEnv();
+  if (fallback) {
+    state.session.parentContext = fallback;
+    state.session.parentContextSource = 'env_or_proc';
+  }
+}
+
+/**
  * Set trace context for subagent processes
  * Writes to multiple locations for maximum reliability:
  * - Environment variable (for inherited environments)
  * - Runtime directory file (for process tree lookup)
- * - Working directory file (for same-project subagents)
  *
  * @param {string} traceId - Current trace ID
  * @param {string} spanId - Current span ID (Task tool span)
@@ -390,16 +990,17 @@ function setTraceParentEnv(traceId, spanId) {
   // 2. Write to runtime directory (for process tree lookup)
   try {
     const stateFile = path.join(RUNTIME_DIR, `claude-otel-${process.pid}.json`);
-    fs.writeFileSync(stateFile, JSON.stringify(context));
+    // Merge to preserve any metadata written by hooks (e.g., sessionId).
+    let merged = context;
+    try {
+      if (fs.existsSync(stateFile)) {
+        const existing = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+        merged = { ...existing, ...context };
+      }
+    } catch {}
+    fs.writeFileSync(stateFile, JSON.stringify(merged));
   } catch (e) {
     // Silent failure
-  }
-
-  // 3. Write to working directory (for same-project subagents)
-  try {
-    fs.writeFileSync(CWD_TRACE_FILE, JSON.stringify(context));
-  } catch (e) {
-    // Silent failure - may not have write access
   }
 }
 
@@ -407,7 +1008,7 @@ function setTraceParentEnv(traceId, spanId) {
  * Clean up trace context state files on process exit
  */
 function cleanupTraceContext() {
-  // Clean runtime directory file
+  // Clean runtime directory context file (best-effort)
   try {
     const stateFile = path.join(RUNTIME_DIR, `claude-otel-${process.pid}.json`);
     if (fs.existsSync(stateFile)) {
@@ -417,19 +1018,37 @@ function cleanupTraceContext() {
     // Silent failure
   }
 
-  // Clean working directory file (only if we created it)
+  // Clean any unclaimed Task context files created by this process
   try {
-    if (fs.existsSync(CWD_TRACE_FILE)) {
-      const content = fs.readFileSync(CWD_TRACE_FILE, 'utf8');
-      const ctx = JSON.parse(content);
-      // Only delete if it's ours
-      if (ctx.pid === process.pid) {
-        fs.unlinkSync(CWD_TRACE_FILE);
-      }
+    const files = fs.readdirSync(RUNTIME_DIR)
+      .filter(f => f.startsWith(`${TASK_CONTEXT_PREFIX}${process.pid}-`) && f.endsWith('.json'));
+    for (const f of files) {
+      try { fs.unlinkSync(path.join(RUNTIME_DIR, f)); } catch {}
     }
   } catch (e) {
     // Silent failure
   }
+
+  // Clean session metadata file (hook also attempts cleanup)
+  try {
+    if (fs.existsSync(SESSION_META_FILE)) {
+      fs.unlinkSync(SESSION_META_FILE);
+    }
+  } catch (e) {
+    // Silent failure
+  }
+
+  // Clean turn boundary metadata files (written by hooks)
+  try {
+    if (fs.existsSync(PROMPT_META_FILE)) {
+      fs.unlinkSync(PROMPT_META_FILE);
+    }
+  } catch {}
+  try {
+    if (fs.existsSync(STOP_META_FILE)) {
+      fs.unlinkSync(STOP_META_FILE);
+    }
+  } catch {}
 }
 
 // =============================================================================
@@ -437,25 +1056,41 @@ function cleanupTraceContext() {
 // =============================================================================
 
 const SESSION_START_TIME = Date.now();
-const SESSION_ID = `claude-${process.pid}-${SESSION_START_TIME}`;
+const FALLBACK_SESSION_ID = `claude-${process.pid}-${SESSION_START_TIME}`;
 const SESSION_TRACE_ID = generateId(16);
 const SESSION_ROOT_SPAN_ID = generateId(8);
-const PARENT_CONTEXT = parseTraceParentEnv();
 
 const state = {
   session: {
     traceId: SESSION_TRACE_ID,
     spanId: SESSION_ROOT_SPAN_ID,
-    sessionId: SESSION_ID,
+    sessionId: FALLBACK_SESSION_ID,
+    sessionIdSource: 'fallback',
     startTime: SESSION_START_TIME,
     tokens: createTokenCounts(),
     turnCount: 0,
     apiCallCount: 0,
-    exported: false,
-    parentContext: PARENT_CONTEXT  // For subagent span links
+    hasAnySpans: false,
+    finalized: false,
+    parentContext: null,           // For subagent span links (resolved lazily)
+    parentContextSource: null,     // Where we got parentContext (debugging)
+    parentSessionId: null          // Parent Claude Code session.id (UUID), if known
   },
   currentTurn: null,
-  pendingTools: new Map()  // toolCallId -> PendingToolSpan
+  turnEndTimer: null,
+  pendingTools: new Map(),  // toolCallId -> PendingToolSpan
+  hooks: {
+    pollerStarted: false,
+    turnBoundariesEnabled: false,
+    promptMtimeMs: 0,
+    stopMtimeMs: 0,
+    lastPromptTimestampMs: 0,
+    lastStopTimestampMs: 0
+  },
+  exportBuffer: {
+    firstBufferedAt: null,
+    spans: []
+  }
 };
 
 // =============================================================================
@@ -463,10 +1098,10 @@ const state = {
 // =============================================================================
 
 /**
- * Send OTLP span record to Alloy
+ * Low-level OTLP exporter (no buffering)
  * @param {object} spanRecord - Full OTLP resourceSpans structure
  */
-function sendToAlloy(spanRecord) {
+function postToAlloy(spanRecord) {
   try {
     const data = JSON.stringify(spanRecord);
     const alloyUrl = new URL(TRACE_ENDPOINT);
@@ -476,17 +1111,113 @@ function sendToAlloy(spanRecord) {
       port: alloyUrl.port,
       path: alloyUrl.pathname,
       method: 'POST',
+      // Avoid keeping sockets open (important for short-lived `claude "<prompt>"` runs).
+      agent: false,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.from(data).length
       }
     }, (res) => {
-      res.on('data', () => {});
+      res.resume();
     });
 
     postReq.on('error', () => {});
+    postReq.setTimeout(2000, () => postReq.destroy());
     postReq.write(data);
     postReq.end();
+  } catch (e) {
+    // Silent failure to avoid disrupting Claude Code
+  }
+}
+
+function setSpanAttribute(attributes, key, value) {
+  if (!Array.isArray(attributes)) return;
+  const existing = attributes.find(a => a && a.key === key);
+  if (existing) {
+    existing.value = value;
+    return;
+  }
+  attributes.push({ key, value });
+}
+
+function applySessionIdToSpanRecord(spanRecord) {
+  try {
+    const span = spanRecord?.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+    if (!span) return;
+    if (!Array.isArray(span.attributes)) span.attributes = [];
+
+    setSpanAttribute(span.attributes, 'gen_ai.conversation.id', { stringValue: state.session.sessionId });
+    setSpanAttribute(span.attributes, 'session.id', { stringValue: state.session.sessionId });
+    setSpanAttribute(span.attributes, 'claude.session_id_source', { stringValue: state.session.sessionIdSource });
+  } catch (e) {
+    // Silent failure
+  }
+}
+
+function flushSpanBuffer({ force = false } = {}) {
+  const buf = state.exportBuffer;
+  if (!buf || buf.spans.length === 0) return;
+
+  if (!force && state.session.sessionIdSource === 'fallback') return;
+
+  for (const rec of buf.spans) {
+    applySessionIdToSpanRecord(rec);
+    postToAlloy(rec);
+  }
+
+  buf.spans = [];
+  buf.firstBufferedAt = null;
+}
+
+function maybeExpireSpanBuffer() {
+  const buf = state.exportBuffer;
+  if (!buf || buf.spans.length === 0) return;
+  if (!buf.firstBufferedAt) return;
+  if (!Number.isFinite(SESSION_ID_BUFFER_MAX_MS) || SESSION_ID_BUFFER_MAX_MS <= 0) return;
+
+  const ageMs = Date.now() - buf.firstBufferedAt;
+  if (ageMs >= SESSION_ID_BUFFER_MAX_MS) {
+    flushSpanBuffer({ force: true });
+  }
+}
+
+function bufferSpanRecord(spanRecord) {
+  const buf = state.exportBuffer;
+  if (!buf) return;
+
+  if (buf.spans.length === 0) {
+    buf.firstBufferedAt = Date.now();
+  }
+  buf.spans.push(spanRecord);
+
+  if (Number.isFinite(SESSION_ID_BUFFER_MAX_SPANS) && SESSION_ID_BUFFER_MAX_SPANS > 0) {
+    if (buf.spans.length >= SESSION_ID_BUFFER_MAX_SPANS) {
+      flushSpanBuffer({ force: true });
+    }
+  }
+}
+
+/**
+ * Send OTLP span record to Alloy (session.id buffering + canonicalization)
+ * @param {object} spanRecord - Full OTLP resourceSpans structure
+ */
+function sendToAlloy(spanRecord) {
+  try {
+    // Best-effort upgrade from fallback session.id → Claude UUID (flush buffered spans on success).
+    maybeHydrateClaudeSessionId();
+    if (state.session.sessionIdSource === 'hook') {
+      flushSpanBuffer();
+    } else {
+      maybeExpireSpanBuffer();
+    }
+
+    if (SESSION_ID_POLICY === 'buffer' && state.session.sessionIdSource === 'fallback') {
+      bufferSpanRecord(spanRecord);
+      return;
+    }
+
+    applySessionIdToSpanRecord(spanRecord);
+    postToAlloy(spanRecord);
   } catch (e) {
     // Silent failure to avoid disrupting Claude Code
   }
@@ -520,23 +1251,30 @@ function createOTLPSpan(spanData) {
   // Build resource attributes
   const resourceAttrs = [
     { key: 'service.name', value: { stringValue: SERVICE_NAME } },
-    { key: 'service.version', value: { stringValue: INTERCEPTOR_VERSION } },
+    { key: 'service.version', value: { stringValue: CLAUDE_CODE_VERSION } },
+    { key: 'claude.interceptor.version', value: { stringValue: INTERCEPTOR_VERSION } },
     { key: 'host.name', value: { stringValue: os.hostname() } },
     { key: 'os.type', value: { stringValue: os.platform() } },
     { key: 'process.pid', value: { intValue: process.pid.toString() } },
     { key: 'working_directory', value: { stringValue: WORKING_DIRECTORY } }
   ];
 
-  // Add parent trace context as resource attribute for subagent discovery
-  if (PARENT_CONTEXT) {
+  // Add parent trace context as resource attribute for debugging (subagents)
+  if (state.session.parentContext) {
     resourceAttrs.push({
       key: 'parent.trace_id',
-      value: { stringValue: PARENT_CONTEXT.traceId }
+      value: { stringValue: state.session.parentContext.traceId }
     });
     resourceAttrs.push({
       key: 'parent.span_id',
-      value: { stringValue: PARENT_CONTEXT.spanId }
+      value: { stringValue: state.session.parentContext.spanId }
     });
+    if (state.session.parentContextSource) {
+      resourceAttrs.push({
+        key: 'parent.context_source',
+        value: { stringValue: state.session.parentContextSource }
+      });
+    }
   }
 
   return {
@@ -557,70 +1295,43 @@ function createOTLPSpan(spanData) {
 // =============================================================================
 
 /**
- * Export session root span (called on first API call)
+ * Mark the session as active (at least one Anthropic API call observed).
  */
-function exportSessionSpan() {
-  if (state.session.exported) return;
-  state.session.exported = true;
-
-  const attributes = [
-    { key: 'openinference.span.kind', value: { stringValue: 'CHAIN' } },
-    { key: 'gen_ai.system', value: { stringValue: 'anthropic' } },
-    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
-    { key: 'session.id', value: { stringValue: state.session.sessionId } }
-  ];
-
-  // Add subagent.type if this is a spawned subagent
-  if (state.session.parentContext) {
-    attributes.push({ key: 'subagent.type', value: { stringValue: 'Task' } });
-  }
-
-  const links = [];
-  if (state.session.parentContext) {
-    links.push({
-      traceId: state.session.parentContext.traceId,
-      spanId: state.session.parentContext.spanId,
-      attributes: [
-        { key: 'link.type', value: { stringValue: 'parent_task' } }
-      ]
-    });
-  }
-
-  const spanRecord = createOTLPSpan({
-    traceId: state.session.traceId,
-    spanId: state.session.spanId,
-    name: 'Claude Code Session',
-    kind: 'SPAN_KIND_INTERNAL',
-    startTime: state.session.startTime,
-    endTime: Date.now(),
-    attributes: attributes,
-    links: links.length > 0 ? links : undefined
-  });
-
-  sendToAlloy(spanRecord);
+function markSessionActive() {
+  state.session.hasAnySpans = true;
 }
 
 /**
- * Finalize and re-export session span with aggregated metrics
+ * Export session root span with aggregated metrics (called on shutdown).
  */
 function finalizeSessionSpan() {
-  if (!state.session.exported) return;
+  if (!state.session.hasAnySpans) return;
+  if (state.session.finalized) return;
+  state.session.finalized = true;
 
   // End any active turn first
   if (state.currentTurn) {
-    endCurrentTurn();
+    // If Stop hook already fired, prefer that timestamp.
+    pollTurnHookFiles();
+    if (state.currentTurn) endCurrentTurn(Date.now(), 'session_finalize');
   }
 
   const attributes = [
     { key: 'openinference.span.kind', value: { stringValue: 'CHAIN' } },
     { key: 'gen_ai.system', value: { stringValue: 'anthropic' } },
+    { key: 'gen_ai.provider.name', value: { stringValue: 'anthropic' } },
     { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
     { key: 'session.id', value: { stringValue: state.session.sessionId } },
+    { key: 'claude.session_id_source', value: { stringValue: state.session.sessionIdSource } },
     { key: 'session.turn_count', value: { intValue: state.session.turnCount.toString() } },
     { key: 'session.api_call_count', value: { intValue: state.session.apiCallCount.toString() } },
     { key: 'gen_ai.usage.input_tokens', value: { intValue: state.session.tokens.input.toString() } },
     { key: 'gen_ai.usage.output_tokens', value: { intValue: state.session.tokens.output.toString() } }
   ];
+
+  if (state.session.parentSessionId) {
+    attributes.push({ key: 'claude.parent_session_id', value: { stringValue: state.session.parentSessionId } });
+  }
 
   if (state.session.parentContext) {
     attributes.push({ key: 'subagent.type', value: { stringValue: 'Task' } });
@@ -657,7 +1368,7 @@ function finalizeSessionSpan() {
 
 /**
  * Check if this request starts a new user turn
- * New turn: last message in messages array has role: user
+ * New turn: last message is a user prompt (NOT a tool_result payload)
  * @param {object} requestBody - API request body
  * @returns {boolean}
  */
@@ -666,7 +1377,15 @@ function isNewTurn(requestBody) {
   if (messages.length === 0) return true;
 
   const lastMessage = messages[messages.length - 1];
-  return lastMessage.role === 'user';
+  if (!lastMessage || lastMessage.role !== 'user') return false;
+
+  // Anthropic "tool_result" messages are also role=user; they should NOT start a new turn.
+  const content = lastMessage.content;
+  if (Array.isArray(content) && content.some(b => b && b.type === 'tool_result')) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -695,14 +1414,63 @@ function extractUserPrompt(requestBody) {
   return '';
 }
 
+function promptPreviewScore(preview) {
+  const text = (preview || '').trim();
+  if (!text) return 0;
+  if (text === 'foo') return 1;
+  if (text === 'quota') return 1;
+  if (text.startsWith('<system-reminder>')) return 1;
+  if (text.includes('system-reminder')) return 1;
+  return Math.min(100, text.length);
+}
+
+function maybeUpdateActiveTurnPromptPreview(requestBody) {
+  if (!state.currentTurn) return;
+  const promptText = extractUserPrompt(requestBody || {});
+  const nextPreview = getPreview(promptText, 60);
+  if (!nextPreview) return;
+
+  const currentScore = promptPreviewScore(state.currentTurn.promptPreview || '');
+  const nextScore = promptPreviewScore(nextPreview);
+  if (nextScore > currentScore) {
+    state.currentTurn.promptPreview = nextPreview;
+  }
+}
+
+function cancelScheduledTurnEnd() {
+  if (!state.turnEndTimer) return;
+  try { clearTimeout(state.turnEndTimer); } catch {}
+  state.turnEndTimer = null;
+}
+
+function scheduleTurnEnd(endReason = 'idle_timeout') {
+  cancelScheduledTurnEnd();
+  if (!state.currentTurn) return;
+
+  if (!Number.isFinite(TURN_IDLE_END_MS) || TURN_IDLE_END_MS <= 0) {
+    endCurrentTurn(Date.now(), endReason);
+    return;
+  }
+
+  const t = setTimeout(() => {
+    state.turnEndTimer = null;
+    if (!state.currentTurn) return;
+    endCurrentTurn(Date.now(), endReason);
+  }, TURN_IDLE_END_MS);
+  t.unref();
+  state.turnEndTimer = t;
+}
+
 /**
  * Start a new user turn with prompt context
  * @param {object} requestBody - API request body for prompt extraction
  */
 function startNewTurn(requestBody) {
+  cancelScheduledTurnEnd();
+
   // End previous turn if exists
   if (state.currentTurn) {
-    endCurrentTurn();
+    endCurrentTurn(Date.now(), 'new_turn');
   }
 
   state.session.turnCount++;
@@ -715,6 +1483,8 @@ function startNewTurn(requestBody) {
     turnNumber: state.session.turnCount,
     startTime: Date.now(),
     endTime: null,
+    endReason: null,
+    startSource: 'heuristic',
     tokens: createTokenCounts(),
     llmCallCount: 0,
     toolCallCount: 0,
@@ -726,11 +1496,14 @@ function startNewTurn(requestBody) {
 /**
  * End current turn and export span
  */
-function endCurrentTurn() {
+function endCurrentTurn(endTime = Date.now(), endReason = 'unknown') {
   if (!state.currentTurn) return;
 
+  cancelScheduledTurnEnd();
+
   const turn = state.currentTurn;
-  turn.endTime = Date.now();
+  turn.endTime = endTime;
+  turn.endReason = endReason;
 
   // Clean up orphaned tools (mark as error)
   for (const [toolCallId, pendingTool] of state.pendingTools) {
@@ -758,9 +1531,12 @@ function endCurrentTurn() {
   const attributes = [
     { key: 'openinference.span.kind', value: { stringValue: 'AGENT' } },
     { key: 'gen_ai.operation.name', value: { stringValue: 'chat' } },
+    { key: 'gen_ai.provider.name', value: { stringValue: 'anthropic' } },
     { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
     { key: 'session.id', value: { stringValue: state.session.sessionId } },
     { key: 'turn.number', value: { intValue: turn.turnNumber.toString() } },
+    { key: 'turn.start.source', value: { stringValue: turn.startSource || 'unknown' } },
+    { key: 'turn.end.reason', value: { stringValue: turn.endReason || 'unknown' } },
     { key: 'turn.llm_call_count', value: { intValue: turn.llmCallCount.toString() } },
     { key: 'turn.tool_call_count', value: { intValue: turn.toolCallCount.toString() } },
     { key: 'gen_ai.usage.input_tokens', value: { intValue: turn.tokens.input.toString() } },
@@ -800,30 +1576,54 @@ function endCurrentTurn() {
  * @param {number} startTime - Request start time (ms)
  * @param {number} endTime - Response end time (ms)
  */
-function exportLLMSpan(requestBody, responseBody, startTime, endTime) {
-  if (!state.currentTurn) return;
-
-  state.currentTurn.llmCallCount++;
-  state.session.apiCallCount++;
+function exportLLMSpan(requestBody, responseBody, startTime, endTime, consumedToolSpans = [], llmSpanId = null, responseInfo = null) {
+  if (state.currentTurn) {
+    state.currentTurn.llmCallCount++;
+  }
 
   const model = requestBody.model || 'unknown';
   const tokens = extractTokenUsage(responseBody);
   const stopReason = responseBody.stop_reason || 'unknown';
   const durationMs = endTime - startTime;
 
-  // Aggregate tokens to turn
-  state.currentTurn.tokens.input += tokens.input;
-  state.currentTurn.tokens.output += tokens.output;
-  state.currentTurn.tokens.cacheRead += tokens.cacheRead;
-  state.currentTurn.tokens.cacheWrite += tokens.cacheWrite;
+  // Aggregate tokens to turn (preferred) or session (background calls)
+  if (state.currentTurn) {
+    state.currentTurn.tokens.input += tokens.input;
+    state.currentTurn.tokens.output += tokens.output;
+    state.currentTurn.tokens.cacheRead += tokens.cacheRead;
+    state.currentTurn.tokens.cacheWrite += tokens.cacheWrite;
+  } else {
+    state.session.tokens.input += tokens.input;
+    state.session.tokens.output += tokens.output;
+    state.session.tokens.cacheRead += tokens.cacheRead;
+    state.session.tokens.cacheWrite += tokens.cacheWrite;
+  }
 
   // Extract input value for attribute
   let inputValue = '';
   if (requestBody.messages && Array.isArray(requestBody.messages)) {
-    const userMsgs = requestBody.messages.filter(m => m.role === 'user');
-    if (userMsgs.length > 0) {
-      const last = userMsgs[userMsgs.length - 1];
-      inputValue = typeof last.content === 'string' ? last.content : JSON.stringify(last.content);
+    // Prefer the most recent *prompt* (skip tool_result "user" messages, which can be huge).
+    for (let i = requestBody.messages.length - 1; i >= 0; i--) {
+      const msg = requestBody.messages[i];
+      if (!msg || msg.role !== 'user') continue;
+
+      const content = msg.content;
+      if (Array.isArray(content) && content.some(b => b && b.type === 'tool_result')) {
+        continue;
+      }
+
+      if (typeof content === 'string') {
+        inputValue = content;
+        break;
+      }
+
+      if (Array.isArray(content)) {
+        const textBlocks = content
+          .filter(b => b && b.type === 'text' && typeof b.text === 'string')
+          .map(b => b.text);
+        inputValue = textBlocks.join(' ');
+        break;
+      }
     }
   }
 
@@ -838,20 +1638,39 @@ function exportLLMSpan(requestBody, responseBody, startTime, endTime) {
                      model.includes('opus') ? 'Opus' :
                      model.includes('haiku') ? 'Haiku' : model;
 
-  const attributes = [
-    { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
-    { key: 'gen_ai.system', value: { stringValue: 'anthropic' } },
-    { key: 'gen_ai.request.model', value: { stringValue: model } },
-    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
-    { key: 'session.id', value: { stringValue: state.session.sessionId } },
-    { key: 'gen_ai.usage.input_tokens', value: { intValue: tokens.input.toString() } },
-    { key: 'gen_ai.usage.output_tokens', value: { intValue: tokens.output.toString() } },
-    { key: 'gen_ai.response.finish_reasons', value: { stringValue: stopReason } },
-    { key: 'llm.latency.total_ms', value: { intValue: durationMs.toString() } },
-    { key: 'llm.request.sequence', value: { intValue: state.session.apiCallCount.toString() } },
-    { key: 'input.value', value: { stringValue: inputValue.substring(0, 5000) } },
-    { key: 'output.value', value: { stringValue: outputValue.substring(0, 5000) } }
-  ];
+		  const attributes = [
+		    { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
+		    { key: 'gen_ai.system', value: { stringValue: 'anthropic' } },
+		    { key: 'gen_ai.provider.name', value: { stringValue: 'anthropic' } },
+		    { key: 'gen_ai.operation.name', value: { stringValue: 'chat' } },
+		    { key: 'gen_ai.request.model', value: { stringValue: model } },
+		    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
+		    { key: 'session.id', value: { stringValue: state.session.sessionId } },
+		    { key: 'gen_ai.usage.input_tokens', value: { intValue: tokens.input.toString() } },
+		    { key: 'gen_ai.usage.output_tokens', value: { intValue: tokens.output.toString() } },
+		    { key: 'gen_ai.response.finish_reasons', value: { stringValue: stopReason } },
+		    { key: 'llm.latency.total_ms', value: { intValue: durationMs.toString() } },
+		    { key: 'llm.request.sequence', value: { intValue: (responseInfo && typeof responseInfo.sequence === 'number' ? responseInfo.sequence : state.session.apiCallCount).toString() } },
+		    { key: 'input.value', value: { stringValue: inputValue.substring(0, 5000) } },
+		    { key: 'output.value', value: { stringValue: outputValue.substring(0, 5000) } }
+		  ];
+
+      // High-cardinality correlation helpers (traces-only; safe with spanmetrics exclude_dimensions)
+      if (responseInfo && responseInfo.requestId) {
+        attributes.push({ key: 'anthropic.request_id', value: { stringValue: responseInfo.requestId } });
+      }
+      if (responseInfo && typeof responseInfo.statusCode === 'number') {
+        attributes.push({ key: 'http.response.status_code', value: { intValue: responseInfo.statusCode.toString() } });
+      }
+      if (responseBody && typeof responseBody.id === 'string' && responseBody.id) {
+        attributes.push({ key: 'anthropic.message_id', value: { stringValue: responseBody.id } });
+      }
+
+	  // Attach turn number for easier grouping (0 = background/non-turn)
+	  attributes.push({
+	    key: 'turn.number',
+	    value: { intValue: (state.currentTurn ? state.currentTurn.turnNumber : 0).toString() }
+	  });
 
   // Cache tokens
   if (tokens.cacheRead > 0) {
@@ -869,23 +1688,45 @@ function exportLLMSpan(requestBody, responseBody, startTime, endTime) {
     attributes.push({ key: 'llm.request.max_tokens', value: { intValue: requestBody.max_tokens.toString() } });
   }
 
-  // Create semantic span name with model and stop reason
-  const spanName = stopReason === 'tool_use'
-    ? `LLM Call: ${modelShort} → tools`
-    : `LLM Call: ${modelShort} (${tokens.input}→${tokens.output} tokens)`;
+	  const hasUsage = responseBody && typeof responseBody === 'object'
+      && responseBody.usage && typeof responseBody.usage === 'object'
+      && (typeof responseBody.usage.input_tokens === 'number' || typeof responseBody.usage.output_tokens === 'number');
 
-  const spanRecord = createOTLPSpan({
-    traceId: state.session.traceId,
-    spanId: generateId(8),
-    parentSpanId: state.currentTurn.spanId,
-    name: spanName,
-    kind: 'SPAN_KIND_CLIENT',
-    startTime: startTime,
-    endTime: endTime,
-    attributes: attributes
+	  // Create semantic span name with model and stop reason
+	  const spanName = stopReason === 'tool_use'
+	    ? `LLM Call: ${modelShort} → tools`
+	    : hasUsage
+        ? `LLM Call: ${modelShort} (${tokens.input}→${tokens.output} tokens)`
+        : `LLM Call: ${modelShort} (?→? tokens)`;
+
+  const links = [];
+  for (const toolSpan of consumedToolSpans) {
+    if (!toolSpan || !toolSpan.spanId) continue;
+    links.push({
+      traceId: state.session.traceId,
+      spanId: toolSpan.spanId,
+      attributes: [
+        { key: 'link.type', value: { stringValue: 'consumes_tool_result' } },
+        ...(toolSpan.toolCallId ? [{ key: 'gen_ai.tool.call.id', value: { stringValue: toolSpan.toolCallId } }] : [])
+      ]
+    });
+  }
+
+  const spanId = llmSpanId || generateId(8);
+	  const spanRecord = createOTLPSpan({
+	    traceId: state.session.traceId,
+	    spanId: spanId,
+	    parentSpanId: state.currentTurn ? state.currentTurn.spanId : state.session.spanId,
+	    name: spanName,
+	    kind: 'SPAN_KIND_CLIENT',
+	    startTime: startTime,
+	    endTime: endTime,
+    attributes: attributes,
+    links: links.length > 0 ? links : undefined
   });
 
   sendToAlloy(spanRecord);
+  return spanId;
 }
 
 // =============================================================================
@@ -948,8 +1789,9 @@ function extractToolResults(requestBody) {
 /**
  * Create tool span for a tool_use block (tool execution started)
  * @param {object} toolUse - Tool use block from response
+ * @param {string|null} producedByLlmSpanId - LLM span that produced this tool_use
  */
-function createToolSpan(toolUse) {
+function createToolSpan(toolUse, producedByLlmSpanId = null) {
   if (!state.currentTurn) return;
 
   const spanId = generateId(8);
@@ -964,11 +1806,15 @@ function createToolSpan(toolUse) {
     toolName: toolUse.name,
     spanId: spanId,
     startTime: startTime,
-    input: toolUse.input
+    input: toolUse.input,
+    producedByLlmSpanId: producedByLlmSpanId || null
   });
 
   // If this is a Task tool, set env var for subagent correlation
   if (isTaskTool(toolUse.name)) {
+    // Write a per-Task context file so the subagent can link to the correct Task span.
+    writeTaskContextFile(state.session.traceId, spanId, toolUse, state.session.sessionId);
+    // Best-effort fallback mechanisms (env var + per-process runtime context)
     setTraceParentEnv(state.session.traceId, spanId);
   }
 }
@@ -980,7 +1826,7 @@ function createToolSpan(toolUse) {
  */
 function completeToolSpan(toolCallId, result) {
   const pendingTool = state.pendingTools.get(toolCallId);
-  if (!pendingTool) return;
+  if (!pendingTool) return null;
 
   state.pendingTools.delete(toolCallId);
   if (state.currentTurn) {
@@ -992,6 +1838,7 @@ function completeToolSpan(toolCallId, result) {
 
   const attributes = [
     { key: 'openinference.span.kind', value: { stringValue: 'TOOL' } },
+    { key: 'gen_ai.provider.name', value: { stringValue: 'anthropic' } },
     { key: 'gen_ai.tool.name', value: { stringValue: pendingTool.toolName } },
     { key: 'gen_ai.tool.call.id', value: { stringValue: pendingTool.toolCallId } },
     { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
@@ -1044,6 +1891,17 @@ function completeToolSpan(toolCallId, result) {
   // Create semantic span name
   const spanName = getToolSpanName(pendingTool.toolName, pendingTool.input);
 
+  const links = [];
+  if (pendingTool.producedByLlmSpanId) {
+    links.push({
+      traceId: state.session.traceId,
+      spanId: pendingTool.producedByLlmSpanId,
+      attributes: [
+        { key: 'link.type', value: { stringValue: 'produced_by_llm' } }
+      ]
+    });
+  }
+
   const spanRecord = createOTLPSpan({
     traceId: state.session.traceId,
     spanId: pendingTool.spanId,
@@ -1053,10 +1911,12 @@ function completeToolSpan(toolCallId, result) {
     startTime: pendingTool.startTime,
     endTime: endTime,
     attributes: attributes,
+    links: links.length > 0 ? links : undefined,
     status: isError ? { code: 'STATUS_CODE_ERROR', message: result.error_message } : { code: 'STATUS_CODE_OK' }
   });
 
   sendToAlloy(spanRecord);
+  return { spanId: pendingTool.spanId, toolCallId: pendingTool.toolCallId, toolName: pendingTool.toolName };
 }
 
 /**
@@ -1065,6 +1925,12 @@ function completeToolSpan(toolCallId, result) {
  * @returns {boolean}
  */
 function isTurnComplete(responseBody) {
+  const stopReason = responseBody && typeof responseBody === 'object' ? responseBody.stop_reason : null;
+  if (typeof stopReason === 'string' && stopReason.length > 0) {
+    return stopReason !== 'tool_use';
+  }
+
+  // Fallback: if we can't see stop_reason, infer from presence of tool_use blocks.
   const toolUseBlocks = extractToolUseBlocks(responseBody);
   return toolUseBlocks.length === 0;
 }
@@ -1078,12 +1944,27 @@ const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
 
-  // Only intercept Anthropic API calls
-  if (!url.includes('api.anthropic.com') || !init || !init.body) {
+  // Only intercept Anthropic messages API calls (not count_tokens, eval, etc.)
+  // The URL pattern we want: api.anthropic.com/v1/messages (with optional ?beta=true)
+  // We DON'T want: /v1/messages/count_tokens, /api/eval/*, etc.
+  const isMessagesEndpoint = url.includes('api.anthropic.com/v1/messages') &&
+                             !url.includes('/count_tokens') &&
+                             !url.includes('/v1/messages/');  // Exclude sub-paths like /batches
+
+  // Debug: log all fetch calls to understand what's being intercepted
+  if (process.env.OTEL_INTERCEPTOR_DEBUG === '1') {
+    const hasBody = !!(init && init.body);
+    console.error(`[OTEL-Diag] fetch called: url=${url.substring(0, 80)}, hasBody=${hasBody}, isMessagesEndpoint=${isMessagesEndpoint}`);
+  }
+
+  // Only intercept Anthropic messages API calls
+  if (!isMessagesEndpoint || !init || !init.body) {
     return originalFetch(input, init);
   }
 
   const startTime = Date.now();
+  // Pre-generate the LLM span ID so we can optionally propagate trace context via HTTP headers.
+  const llmSpanId = generateId(8);
   let requestBody = {};
   try {
     requestBody = JSON.parse(init.body);
@@ -1091,92 +1972,128 @@ globalThis.fetch = async (input, init) => {
     requestBody = { raw: init.body };
   }
 
-  // Export session span on first API call
-  exportSessionSpan();
+  // Hook-driven turn boundary updates (does not rely on request/response heuristics).
+  pollTurnHookFiles();
+  // Any API activity cancels a pending heuristic "idle end" for the current turn.
+  cancelScheduledTurnEnd();
+
+  // Hydrate Claude Code's native session.id (UUID) for correlation with metrics/logs.
+  maybeHydrateClaudeSessionId();
+  // Resolve parent Task span context for subagent linking (best-effort).
+  maybeResolveParentContext(requestBody);
+  // Mark session active (so we export the session root span on shutdown).
+  markSessionActive();
+
+  // Count every Anthropic API call (including background calls/errors).
+  state.session.apiCallCount++;
+  const apiCallIndex = state.session.apiCallCount;
 
   // Process tool results from this request (complete pending tools)
   const toolResults = extractToolResults(requestBody);
+  const consumedToolSpans = [];
   for (const result of toolResults) {
-    completeToolSpan(result.tool_use_id, result);
+    const completed = completeToolSpan(result.tool_use_id, result);
+    if (completed) consumedToolSpans.push(completed);
   }
 
   // Check if this starts a new turn
-  if (isNewTurn(requestBody)) {
+  if (!shouldUseHookTurnBoundaries() && !state.currentTurn && isNewTurn(requestBody)) {
     startNewTurn(requestBody);
+  }
+  // In heuristic mode, later calls may reveal the real user prompt; prefer the best prompt preview.
+  if (!shouldUseHookTurnBoundaries() && state.currentTurn && isNewTurn(requestBody)) {
+    maybeUpdateActiveTurnPromptPreview(requestBody);
   }
 
   try {
+    // Optional: propagate W3C trace context to enable eBPF agents (e.g. Beyla) to
+    // correlate low-level HTTP spans with our logical LLM spans.
+    maybeInjectTraceparentHeader(init, llmSpanId);
+
     const response = await originalFetch(input, init);
     const endTime = Date.now();
 
     // Create a clone to parse the body for span metadata.
     // We MUST await this to ensure OTEL_TRACE_PARENT is set BEFORE returning
     // the response to Claude Code, preventing race conditions with subagent spawning.
-    const clonedResponse = response.clone();
-    let responseBody = {};
-    try {
-      const text = await clonedResponse.text();
-      try {
-        responseBody = JSON.parse(text);
-      } catch (e) {
-        responseBody = { raw: text.substring(0, 5000) };
-      }
-    } catch (e) {
-      responseBody = { error: 'Failed to read response body' };
-    }
+	    const clonedResponse = response.clone();
+	    let responseBody = {};
+	    try {
+	      const contentType = (clonedResponse.headers && typeof clonedResponse.headers.get === 'function')
+	        ? (clonedResponse.headers.get('content-type') || '')
+	        : '';
+	      const text = await clonedResponse.text();
 
-    // Export LLM span
-    exportLLMSpan(requestBody, responseBody, startTime, endTime);
+	      responseBody = parseAnthropicResponseBody(text, contentType);
+
+	      // Compact diagnostic logging (enabled via OTEL_INTERCEPTOR_DEBUG=1)
+	      if (process.env.OTEL_INTERCEPTOR_DEBUG === '1') {
+	        const hasUsage = !!(responseBody.usage && (responseBody.usage.input_tokens || responseBody.usage.output_tokens));
+	        const hasContent = !!(responseBody.content && responseBody.content.length > 0);
+	        const isStream = contentType.includes('event-stream');
+	        console.error(`[OTEL-Diag] Response: len=${text.length}, stream=${isStream}, usage=${hasUsage}, content=${hasContent}, model=${responseBody.model || 'none'}`);
+	      }
+	    } catch (e) {
+	      if (process.env.OTEL_INTERCEPTOR_DEBUG === '1') {
+	        console.error(`[OTEL-Diag] Failed to read response: ${e.message}`);
+	      }
+	      responseBody = { error: 'Failed to read response body' };
+	    }
+
+    // Prompt hooks can race with the first API call; re-poll before exporting spans.
+    pollTurnHookFiles();
+
+	    // Export LLM span (link to tool results consumed by this request)
+	    const requestId = (response.headers && typeof response.headers.get === 'function')
+	      ? (response.headers.get('request-id') || response.headers.get('x-request-id') || null)
+	      : null;
+		    exportLLMSpan(requestBody, responseBody, startTime, endTime, consumedToolSpans, llmSpanId, {
+		      requestId: requestId,
+		      statusCode: typeof response.status === 'number' ? response.status : null,
+		      sequence: apiCallIndex
+		    });
 
     // Create tool spans for any tool_use blocks in response
     const toolUseBlocks = extractToolUseBlocks(responseBody);
-    // DEBUG: Log tool detection
-    if (toolUseBlocks.length > 0) {
-      console.error(`[OTEL-Debug] Found ${toolUseBlocks.length} tool_use blocks: ${toolUseBlocks.map(t => t.name).join(', ')}`);
-      console.error(`[OTEL-Debug] currentTurn: ${state.currentTurn ? 'SET' : 'NULL'}`);
-    }
     for (const toolUse of toolUseBlocks) {
-      createToolSpan(toolUse);
-      // DEBUG: Log Task tool handling
-      if (toolUse.name === 'Task') {
-        console.error(`[OTEL-Debug] Task tool detected, trace files should be created`);
-        console.error(`[OTEL-Debug] Runtime: ${path.join(RUNTIME_DIR, 'claude-otel-' + process.pid + '.json')}`);
-        console.error(`[OTEL-Debug] CWD: ${CWD_TRACE_FILE}`);
-      }
+      createToolSpan(toolUse, llmSpanId);
     }
 
     // Check if turn is complete
-    if (isTurnComplete(responseBody) && state.currentTurn) {
-      endCurrentTurn();
+    if (!shouldUseHookTurnBoundaries() && isTurnComplete(responseBody) && state.currentTurn) {
+      if (!state.currentTurn.activeTools || state.currentTurn.activeTools.size === 0) {
+        scheduleTurnEnd('idle_after_stop_reason');
+      }
     }
 
     return response;
   } catch (err) {
-    // Export error span if we have an active turn
-    if (state.currentTurn) {
-      state.currentTurn.llmCallCount++;
-      state.session.apiCallCount++;
+    if (state.currentTurn) state.currentTurn.llmCallCount++;
 
-      const errorSpan = createOTLPSpan({
-        traceId: state.session.traceId,
-        spanId: generateId(8),
-        parentSpanId: state.currentTurn.spanId,
-        name: `LLM Call: ERROR - ${(err.message || 'Unknown error').substring(0, 50)}`,
-        kind: 'SPAN_KIND_CLIENT',
-        startTime: startTime,
-        endTime: Date.now(),
-        attributes: [
-          { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
-          { key: 'gen_ai.system', value: { stringValue: 'anthropic' } },
-          { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
-          { key: 'session.id', value: { stringValue: state.session.sessionId } },
-          { key: 'error.message', value: { stringValue: err.message || 'Unknown error' } },
-          { key: 'error.type', value: { stringValue: err.name || 'Error' } }
-        ],
-        status: { code: 'STATUS_CODE_ERROR', message: err.message }
-      });
-      sendToAlloy(errorSpan);
-    }
+    const errorSpan = createOTLPSpan({
+      traceId: state.session.traceId,
+      spanId: llmSpanId,
+      parentSpanId: state.currentTurn ? state.currentTurn.spanId : state.session.spanId,
+      name: `LLM Call: ERROR - ${(err.message || 'Unknown error').substring(0, 50)}`,
+      kind: 'SPAN_KIND_CLIENT',
+      startTime: startTime,
+      endTime: Date.now(),
+      attributes: [
+        { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
+        { key: 'gen_ai.system', value: { stringValue: 'anthropic' } },
+        { key: 'gen_ai.provider.name', value: { stringValue: 'anthropic' } },
+        { key: 'gen_ai.operation.name', value: { stringValue: 'chat' } },
+        { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
+        { key: 'session.id', value: { stringValue: state.session.sessionId } },
+        { key: 'llm.request.sequence', value: { intValue: apiCallIndex.toString() } },
+        { key: 'turn.number', value: { intValue: (state.currentTurn ? state.currentTurn.turnNumber : 0).toString() } },
+        { key: 'error.message', value: { stringValue: err.message || 'Unknown error' } },
+        { key: 'error.type', value: { stringValue: err.name || 'Error' } }
+      ],
+      status: { code: 'STATUS_CODE_ERROR', message: err.message }
+    });
+    sendToAlloy(errorSpan);
+
     throw err;
   }
 };
@@ -1186,25 +2103,28 @@ globalThis.fetch = async (input, init) => {
 // =============================================================================
 
 process.on('beforeExit', () => {
-  if (state.session.exported && state.session.apiCallCount > 0) {
+  if (state.session.hasAnySpans && state.session.apiCallCount > 0) {
     finalizeSessionSpan();
   }
+  flushSpanBuffer({ force: true });
   cleanupTraceContext();
 });
 
 // Handle SIGINT/SIGTERM for graceful shutdown
 process.on('SIGINT', () => {
-  if (state.session.exported) {
+  if (state.session.hasAnySpans) {
     finalizeSessionSpan();
   }
+  flushSpanBuffer({ force: true });
   cleanupTraceContext();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  if (state.session.exported) {
+  if (state.session.hasAnySpans) {
     finalizeSessionSpan();
   }
+  flushSpanBuffer({ force: true });
   cleanupTraceContext();
   process.exit(0);
 });
@@ -1213,14 +2133,13 @@ process.on('SIGTERM', () => {
 // Startup Logging
 // =============================================================================
 
+// Enable hook-driven Turn boundaries (unref'd poller; won't keep process alive).
+startTurnHookPoller();
+pollTurnHookFiles();
+
 console.error(`[OTEL-Interceptor v${INTERCEPTOR_VERSION}] Active`);
 console.error(`[OTEL-Interceptor]   Endpoint: ${TRACE_ENDPOINT}`);
-console.error(`[OTEL-Interceptor]   Session: ${SESSION_ID}`);
+console.error(`[OTEL-Interceptor]   Session: ${state.session.sessionId} (${state.session.sessionIdSource})`);
 console.error(`[OTEL-Interceptor]   TraceID: ${SESSION_TRACE_ID}`);
 console.error(`[OTEL-Interceptor]   WorkDir: ${WORKING_DIRECTORY}`);
 console.error(`[OTEL-Interceptor]   ProcFS: ${PROC_AVAILABLE ? 'available' : 'unavailable'}`);
-if (PARENT_CONTEXT) {
-  console.error(`[OTEL-Interceptor]   Subagent: yes (linked)`);
-  console.error(`[OTEL-Interceptor]   Parent TraceID: ${PARENT_CONTEXT.traceId}`);
-  console.error(`[OTEL-Interceptor]   Parent SpanID: ${PARENT_CONTEXT.spanId}`);
-}

@@ -348,6 +348,18 @@ class SessionTracker:
                     session.output_tokens = int(attrs[key])
                     break
 
+        # Handle Claude Code per-request token usage (sum across the session)
+        elif event.event_name == EventNames.CLAUDE_API_REQUEST:
+            try:
+                session.input_tokens += int(attrs.get("input_tokens") or 0)
+                session.output_tokens += int(attrs.get("output_tokens") or 0)
+                cache_read = int(attrs.get("cache_read_tokens") or 0)
+                cache_create = int(attrs.get("cache_creation_tokens") or 0)
+                session.cache_tokens += cache_read + cache_create
+            except Exception:
+                # Best-effort only; don't let parsing break session tracking
+                pass
+
     def _reset_quiet_timer(self, session_id: str) -> None:
         """Reset the quiet period timer for a session.
 

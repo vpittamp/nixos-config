@@ -205,7 +205,7 @@ The solution replaces `minimal-otel-interceptor.js` with a more sophisticated st
 ### Turn Boundary Detection
 
 Turns are detected by analyzing the message array in Anthropic API requests:
-- A new turn starts when the last message is from `role: user`
+- A new turn starts when the last message is from `role: user` **and is not** a `tool_result` payload
 - Subsequent API calls (with assistant messages) remain in the same turn
 - This handles multi-step tool use within a single user prompt
 
@@ -213,9 +213,9 @@ Turns are detected by analyzing the message array in Anthropic API requests:
 
 When Claude Code spawns a subagent via Task tool:
 1. Parent creates a Tool span for the Task invocation
-2. Parent sets `OTEL_TRACE_PARENT` environment variable with current trace context
-3. Subagent's interceptor reads trace context and creates a span link
-4. Both traces share `conversation.id` for correlation
+2. Parent writes a per-Task context file in `$XDG_RUNTIME_DIR` (avoids “last Task wins” when multiple Tasks spawn)
+3. Subagent claims the matching context file and creates a span link to the parent Task span
+4. Subagent root span records `claude.parent_session_id` so you can correlate back to the parent conversation in Tempo/Grafana
 
 ### Span Attribute Conventions
 

@@ -214,6 +214,7 @@ journalctl --user -u i3-project-event-listener -f
 - `docs/PWA_SYSTEM.md` - PWA details
 - `docs/M1_SETUP.md` - Apple Silicon
 - `docs/ONEPASSWORD.md` - 1Password integration
+- `docs/AI_TRACING_GRAFANA.md` - Correlating Claude Code telemetry in Grafana
 - `/etc/nixos/specs/<feature>/quickstart.md` - Feature specs
 
 ## Tech Stack

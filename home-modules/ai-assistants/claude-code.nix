@@ -1,6 +1,8 @@
-{ config, pkgs, lib, inputs, self, pkgs-unstable ? pkgs, ... }:
+{ config, pkgs, lib, inputs, pkgs-unstable ? pkgs, ... }:
 
 let
+  repoRoot = ../../.;
+
   # Use claude-code from the dedicated flake for latest version (2.0.1)
   # Fall back to nixpkgs-unstable if flake not available
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
@@ -12,7 +14,7 @@ let
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/claude \
-        --set NODE_OPTIONS "--require ${self}/scripts/minimal-otel-interceptor.js"
+        --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js"
     '';
   };
 
@@ -38,12 +40,12 @@ let
   # Auto-import all .md files from .claude/commands/ as slash commands
   # This creates an attribute set where keys are command names (without .md)
   # and values are the file contents
-  commandFiles = builtins.readDir (self + "/.claude/commands");
+  commandFiles = builtins.readDir (repoRoot + "/.claude/commands");
   commands = lib.mapAttrs'
     (name: type:
       lib.nameValuePair
         (lib.removeSuffix ".md" name)
-        (builtins.readFile (self + "/.claude/commands/${name}"))
+        (builtins.readFile (repoRoot + "/.claude/commands/${name}"))
     )
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
 in
@@ -131,28 +133,25 @@ lib.mkIf enableClaudeCode {
       # 3. Validate and sanitize inputs in hook scripts
       # 4. Set explicit timeouts for commands
       # 5. Use external scripts for complex logic (maintainability)
-      # Feature 123/130: OTEL telemetry hooks for trace context propagation
-      # SessionStart: Initialize trace context for the session
-      # PreToolUse (Task): Propagate trace context to subagents
-      # SessionEnd: Clean up trace context files
+      # Feature 131: Session metadata hook (bridges Claude Code session.id → interceptor traces)
+      # SessionStart: Persist Claude Code session_id (UUID) for the Node interceptor
+      # SessionEnd: Clean up the persisted session metadata file
       # PostToolUse (Bash): Log bash commands to history
       hooks = {
-        # SessionStart: Initialize OTEL trace context for the session
-        # Sets OTEL_TRACE_PARENT env var and writes trace context files
-        SessionStart = [{
+        # UserPromptSubmit: Persist latest prompt + session_id (for turn boundaries)
+        UserPromptSubmit = [{
           hooks = [{
             type = "command";
-            command = "${self}/scripts/claude-hooks/otel-session-start.sh";
+            command = "${repoRoot}/scripts/claude-hooks/otel-user-prompt-submit.sh";
             timeout = 5;
           }];
         }];
 
-        # PreToolUse: Propagate trace context to subagents before Task tool runs
-        PreToolUse = [{
-          matcher = "Task";
+        # SessionStart: Persist Claude Code session_id (UUID) for trace correlation
+        SessionStart = [{
           hooks = [{
             type = "command";
-            command = "${self}/scripts/claude-hooks/otel-pretool-task.sh";
+            command = "${repoRoot}/scripts/claude-hooks/otel-session-start.sh";
             timeout = 5;
           }];
         }];
@@ -165,17 +164,26 @@ lib.mkIf enableClaudeCode {
             type = "command";
             # This script receives JSON via stdin with structure:
             # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
-            command = "${self}/scripts/claude-hooks/bash-history.sh";
+            command = "${repoRoot}/scripts/claude-hooks/bash-history.sh";
             # Set 5-second timeout (hook is simple, shouldn't take long)
             timeout = 5;
           }];
         }];
 
-        # SessionEnd: Clean up OTEL trace context files
+        # SessionEnd: Clean up the persisted session metadata file
         SessionEnd = [{
           hooks = [{
             type = "command";
-            command = "${self}/scripts/claude-hooks/otel-session-end.sh";
+            command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
+            timeout = 5;
+          }];
+        }];
+
+        # Stop: Mark end of a user turn (for turn boundaries)
+        Stop = [{
+          hooks = [{
+            type = "command";
+            command = "${repoRoot}/scripts/claude-hooks/otel-stop.sh";
             timeout = 5;
           }];
         }];
