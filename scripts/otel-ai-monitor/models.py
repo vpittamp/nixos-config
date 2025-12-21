@@ -58,6 +58,9 @@ class Session(BaseModel):
     input_tokens: int = Field(default=0, description="Cumulative input tokens")
     output_tokens: int = Field(default=0, description="Cumulative output tokens")
     cache_tokens: int = Field(default=0, description="Cumulative cache tokens")
+    cost_usd: float = Field(default=0.0, description="Cumulative cost in USD")
+    error_count: int = Field(default=0, description="Cumulative error count")
+    last_error_type: Optional[str] = Field(default=None, description="Last error type if any")
 
     class Config:
         """Pydantic configuration."""

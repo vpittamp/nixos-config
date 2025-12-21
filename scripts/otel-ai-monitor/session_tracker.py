@@ -360,6 +360,28 @@ class SessionTracker:
                 # Best-effort only; don't let parsing break session tracking
                 pass
 
+        # Handle Claude Code LLM spans (from interceptor) with cost and error metrics
+        elif event.event_name == EventNames.CLAUDE_LLM_CALL:
+            try:
+                # These attributes come from the interceptor spans (gen_ai.usage.*)
+                input_tokens = attrs.get("gen_ai.usage.input_tokens") or attrs.get("input_tokens")
+                output_tokens = attrs.get("gen_ai.usage.output_tokens") or attrs.get("output_tokens")
+                cost_usd = attrs.get("gen_ai.usage.cost_usd") or attrs.get("cost_usd")
+                error_type = attrs.get("error.type")
+
+                if input_tokens:
+                    session.input_tokens += int(input_tokens)
+                if output_tokens:
+                    session.output_tokens += int(output_tokens)
+                if cost_usd:
+                    session.cost_usd += float(cost_usd)
+                if error_type:
+                    session.error_count += 1
+                    session.last_error_type = str(error_type)
+            except Exception:
+                # Best-effort only
+                pass
+
     def _reset_quiet_timer(self, session_id: str) -> None:
         """Reset the quiet period timer for a session.
 
@@ -484,13 +506,20 @@ class SessionTracker:
             session: Session with metrics
 
         Returns:
-            Dictionary of token metrics
+            Dictionary of token, cost, and error metrics
         """
-        return {
+        metrics = {
             "input_tokens": session.input_tokens,
             "output_tokens": session.output_tokens,
             "cache_tokens": session.cache_tokens,
+            "cost_usd": round(session.cost_usd, 6),  # Round to micro-dollars
         }
+        # Only include error metrics if there are errors
+        if session.error_count > 0:
+            metrics["error_count"] = session.error_count
+            if session.last_error_type:
+                metrics["last_error_type"] = session.last_error_type
+        return metrics
 
     async def _broadcast_loop(self) -> None:
         """Periodically broadcast full session list."""

@@ -19,9 +19,22 @@ let
     (sleep "$TIMEOUT" && $EWW update success_notification_visible=false success_notification="") &
   '';
 
-  # Feature 094 US9: Application delete cancel handler (T095)
+  # Feature 110: Pulsating animation phase toggle (0/1)
+  pulsePhaseScript = pkgs.writeShellScriptBin "eww-monitoring-panel-pulse-phase" ''
+    #!${pkgs.bash}/bin/bash
+    STATE_FILE="/tmp/eww-monitoring-panel-pulse-state"
+    CURRENT=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
+    
+    if [ "$CURRENT" -eq 0 ]; then
+      echo 1
+      echo 1 > "$STATE_FILE"
+    else
+      echo 0
+      echo 0 > "$STATE_FILE"
+    fi
+  '';
 
 in
 {
-  inherit showSuccessNotificationScript;
+  inherit showSuccessNotificationScript pulsePhaseScript;
 }

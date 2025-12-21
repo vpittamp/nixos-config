@@ -187,6 +187,17 @@ lib.mkIf enableClaudeCode {
             timeout = 5;
           }];
         }];
+
+        # PermissionRequest: Capture permission wait start time for tracing
+        PermissionRequest = [{
+          # Match all tools (use "*" as universal matcher)
+          matcher = "*";
+          hooks = [{
+            type = "command";
+            command = "${repoRoot}/scripts/claude-hooks/otel-permission-request.sh";
+            timeout = 5;
+          }];
+        }];
       };
 
       # Permissions configuration for sandboxed environment

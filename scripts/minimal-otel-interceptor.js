@@ -1,5 +1,5 @@
 /**
- * minimal-otel-interceptor.js (v3.6.0)
+ * minimal-otel-interceptor.js (v3.8.0)
  *
  * Multi-span trace hierarchy for Claude Code sessions.
  * Creates proper hierarchical trace structure: Session -> Turns -> LLM/Tool spans
@@ -9,11 +9,26 @@
  * - Turn spans (AGENT) - one per user prompt with semantic descriptions
  * - LLM spans (CLIENT) - individual Claude API calls with model/token details
  * - Tool spans (TOOL) - file operations, bash commands, with timing and status
+ * - Permission spans (PERMISSION) - time spent waiting for user approval
  * - Subagent correlation via span links and OTEL_TRACE_PARENT propagation
  * - Token aggregation at turn and session level for cost attribution
+ * - Cost metrics (gen_ai.usage.cost_usd) at LLM, turn, and session levels
  * - Correlation with Claude Code's native telemetry via session.id
  *
  * Following OpenTelemetry GenAI semantic conventions (2025 edition).
+ *
+ * v3.8.0 Changes:
+ * - Add permission wait visibility: PERMISSION spans track time awaiting user approval
+ * - Poll for permission request files from PermissionRequest hook
+ * - Complete permission spans as "approved" when tool_result arrives, "denied" on turn end
+ * - Add permission.tool, permission.result, permission.wait_ms attributes
+ *
+ * v3.7.0 Changes:
+ * - Add cost metrics: MODEL_PRICING table with configurable overrides via env var
+ * - Calculate USD cost per LLM call using model-specific pricing
+ * - Aggregate cost to turn and session spans (gen_ai.usage.cost_usd attribute)
+ * - Add error classification: error.type attribute (rate_limit, auth, timeout, validation, server)
+ * - Track error count per turn (turn.error_count attribute)
  *
  * v3.6.0 Changes:
  * - Hook-driven Turn boundaries (UserPromptSubmit + Stop) when available; fallback to heuristics when not
@@ -67,13 +82,14 @@ const TRACE_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/traces'
     : 'http://127.0.0.1:4318/v1/traces');
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'claude-code';
-const INTERCEPTOR_VERSION = '3.6.0';
+const INTERCEPTOR_VERSION = '3.8.0';
 const WORKING_DIRECTORY = process.cwd();
 const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR || os.tmpdir();
 const SESSION_META_FILE = path.join(RUNTIME_DIR, `claude-session-${process.pid}.json`);
 const PROMPT_META_FILE = path.join(RUNTIME_DIR, `claude-user-prompt-${process.pid}.json`);
 const STOP_META_FILE = path.join(RUNTIME_DIR, `claude-stop-${process.pid}.json`);
 const TASK_CONTEXT_PREFIX = 'claude-task-context-';
+const PERMISSION_FILE_PREFIX = 'claude-permission-';
 const TURN_BOUNDARY_MODE = process.env.OTEL_INTERCEPTOR_TURN_BOUNDARY_MODE || 'auto'; // auto|hooks|heuristic
 const SESSION_ID_POLICY = process.env.OTEL_INTERCEPTOR_SESSION_ID_POLICY || 'buffer'; // buffer|eager
 const SESSION_ID_BUFFER_MAX_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_SESSION_ID_BUFFER_MAX_MS || '5000', 10);
@@ -105,6 +121,101 @@ const TOOL_DESCRIPTIONS = {
   TodoWrite: 'Update todos',
   NotebookEdit: 'Edit notebook'
 };
+
+// =============================================================================
+// Model Pricing (USD per 1M tokens, as of 2025)
+// =============================================================================
+
+/**
+ * Anthropic model pricing table.
+ * Configurable via OTEL_INTERCEPTOR_MODEL_PRICING_JSON env var for overrides.
+ * Keys are normalized model name patterns (matched via includes()).
+ */
+const DEFAULT_MODEL_PRICING = {
+  'claude-opus-4-5': { input: 15.00, output: 75.00, cacheRead: 1.50, cacheWrite: 18.75 },
+  'claude-sonnet-4': { input: 3.00, output: 15.00, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-3-5-sonnet': { input: 3.00, output: 15.00, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-3-5-haiku': { input: 0.80, output: 4.00, cacheRead: 0.08, cacheWrite: 1.00 },
+  'claude-3-opus': { input: 15.00, output: 75.00, cacheRead: 1.50, cacheWrite: 18.75 },
+  'claude-3-sonnet': { input: 3.00, output: 15.00, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-3-haiku': { input: 0.25, output: 1.25, cacheRead: 0.03, cacheWrite: 0.30 }
+};
+
+const MODEL_PRICING = (() => {
+  const override = process.env.OTEL_INTERCEPTOR_MODEL_PRICING_JSON;
+  if (override) {
+    try {
+      return { ...DEFAULT_MODEL_PRICING, ...JSON.parse(override) };
+    } catch (e) {
+      console.error('[OTEL-Interceptor] Failed to parse MODEL_PRICING_JSON:', e.message);
+    }
+  }
+  return DEFAULT_MODEL_PRICING;
+})();
+
+/**
+ * Calculate USD cost for an LLM API call based on token usage.
+ * @param {string} model - Model name from API response
+ * @param {{input: number, output: number, cacheRead: number, cacheWrite: number}} tokens - Token counts
+ * @returns {number} Cost in USD (0 if model not found)
+ */
+function calculateCostUsd(model, tokens) {
+  if (!model || !tokens) return 0;
+
+  // Normalize model name and find matching pricing
+  const modelLower = model.toLowerCase();
+  let pricing = null;
+
+  for (const [pattern, p] of Object.entries(MODEL_PRICING)) {
+    if (modelLower.includes(pattern)) {
+      pricing = p;
+      break;
+    }
+  }
+
+  if (!pricing) return 0;
+
+  // Calculate cost: (tokens / 1M) * price_per_1M
+  const inputCost = (tokens.input || 0) / 1_000_000 * pricing.input;
+  const outputCost = (tokens.output || 0) / 1_000_000 * pricing.output;
+  const cacheReadCost = (tokens.cacheRead || 0) / 1_000_000 * pricing.cacheRead;
+  const cacheWriteCost = (tokens.cacheWrite || 0) / 1_000_000 * pricing.cacheWrite;
+
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
+
+// =============================================================================
+// Error Classification
+// =============================================================================
+
+/**
+ * Classify error type based on HTTP status code and response body.
+ * @param {number|undefined} statusCode - HTTP response status code
+ * @param {object|undefined} responseBody - API response body
+ * @returns {string|null} Error type or null if no error
+ */
+function classifyErrorType(statusCode, responseBody) {
+  // Check for HTTP-level errors
+  if (statusCode && statusCode >= 400) {
+    if (statusCode === 401 || statusCode === 403) return 'auth';
+    if (statusCode === 429) return 'rate_limit';
+    if (statusCode === 408 || statusCode === 504) return 'timeout';
+    if (statusCode >= 400 && statusCode < 500) return 'validation';
+    if (statusCode >= 500) return 'server';
+    return 'unknown';
+  }
+
+  // Check for API-level errors in response body
+  if (responseBody && responseBody.type === 'error') {
+    const errType = responseBody.error?.type || '';
+    if (errType.includes('authentication') || errType.includes('permission')) return 'auth';
+    if (errType.includes('rate_limit') || errType.includes('overloaded')) return 'rate_limit';
+    if (errType.includes('invalid') || errType.includes('validation')) return 'validation';
+    return 'api_error';
+  }
+
+  return null;
+}
 
 // =============================================================================
 // Utility Functions
@@ -257,11 +368,11 @@ function maybeInjectTraceparentHeader(init, parentSpanId) {
 // =============================================================================
 
 /**
- * Create empty token counts object
- * @returns {{input: number, output: number, cacheRead: number, cacheWrite: number}}
+ * Create empty token counts object (includes cost tracking)
+ * @returns {{input: number, output: number, cacheRead: number, cacheWrite: number, costUsd: number}}
  */
 function createTokenCounts() {
-  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
 }
 
 /**
@@ -526,6 +637,7 @@ function startNewTurnFromHookPrompt(promptMeta) {
     tokens: createTokenCounts(),
     llmCallCount: 0,
     toolCallCount: 0,
+    errorCount: 0,
     activeTools: new Set(),
     promptPreview: promptPreview
   };
@@ -586,8 +698,115 @@ function startTurnHookPoller() {
   state.hooks.pollerStarted = true;
   const interval = setInterval(() => {
     pollTurnHookFiles();
+    pollPermissionFiles();
   }, Number.isFinite(HOOK_POLL_INTERVAL_MS) ? HOOK_POLL_INTERVAL_MS : 200);
   interval.unref();
+}
+
+// =============================================================================
+// Permission Wait Visibility (Phase C)
+// =============================================================================
+
+/**
+ * Poll for permission request files written by PermissionRequest hook.
+ * Permission files are created at: $RUNTIME_DIR/claude-permission-${pid}-${toolUseId}.json
+ */
+function pollPermissionFiles() {
+  try {
+    const files = fs.readdirSync(RUNTIME_DIR);
+    const prefix = `${PERMISSION_FILE_PREFIX}${process.pid}-`;
+
+    for (const file of files) {
+      if (!file.startsWith(prefix)) continue;
+      if (!file.endsWith('.json')) continue;
+
+      // Extract toolUseId from filename
+      const toolUseId = file.slice(prefix.length, -5);  // Remove prefix and .json
+
+      // Skip if already tracking this permission
+      if (state.pendingPermissions.has(toolUseId)) continue;
+
+      const filePath = path.join(RUNTIME_DIR, file);
+      const meta = readJsonFileSafe(filePath);
+      if (!meta || typeof meta !== 'object') continue;
+
+      // Validate schema version
+      if (meta.version !== 1) continue;
+
+      // Create pending permission entry
+      const spanId = generateId(8);
+      state.pendingPermissions.set(toolUseId, {
+        spanId,
+        toolName: meta.toolName || 'unknown',
+        toolUseId: meta.toolUseId || toolUseId,
+        toolDescription: meta.toolDescription || null,
+        startTime: meta.startTimestampMs || Date.now(),
+        filePath
+      });
+    }
+  } catch {
+    // Silent failure - permission polling is best-effort
+  }
+}
+
+/**
+ * Complete a permission span when tool_result arrives (approval) or turn ends (denied/timeout).
+ * @param {string} toolUseId - Tool use ID to complete
+ * @param {'approved'|'denied'|'timeout'} result - Permission result
+ */
+function completePermissionSpan(toolUseId, result) {
+  const pending = state.pendingPermissions.get(toolUseId);
+  if (!pending) return;
+
+  state.pendingPermissions.delete(toolUseId);
+
+  const endTime = Date.now();
+  const durationMs = endTime - pending.startTime;
+
+  const attributes = [
+    { key: 'openinference.span.kind', value: { stringValue: 'PERMISSION' } },
+    { key: 'permission.tool', value: { stringValue: pending.toolName } },
+    { key: 'permission.result', value: { stringValue: result } },
+    { key: 'permission.wait_ms', value: { intValue: durationMs.toString() } },
+    { key: 'gen_ai.tool.call.id', value: { stringValue: pending.toolUseId } },
+    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
+    { key: 'session.id', value: { stringValue: state.session.sessionId } }
+  ];
+
+  // Add tool description if available
+  if (pending.toolDescription) {
+    attributes.push({ key: 'permission.prompt', value: { stringValue: pending.toolDescription } });
+  }
+
+  // Get parent span ID - use turn span if available, otherwise session
+  const parentSpanId = state.currentTurn ? state.currentTurn.spanId : state.session.spanId;
+
+  const spanName = `Permission: ${pending.toolName} (${result})`;
+
+  const spanRecord = createOTLPSpan({
+    traceId: state.session.traceId,
+    spanId: pending.spanId,
+    parentSpanId: parentSpanId,
+    name: spanName,
+    kind: 'SPAN_KIND_INTERNAL',
+    startTime: pending.startTime,
+    endTime: endTime,
+    attributes: attributes,
+    status: result === 'approved'
+      ? { code: 'STATUS_CODE_OK' }
+      : { code: 'STATUS_CODE_ERROR', message: `Permission ${result}` }
+  });
+
+  sendToAlloy(spanRecord);
+
+  // Clean up the permission file
+  try {
+    if (pending.filePath && fs.existsSync(pending.filePath)) {
+      fs.unlinkSync(pending.filePath);
+    }
+  } catch {
+    // Silent failure
+  }
 }
 
 // =============================================================================
@@ -1079,6 +1298,7 @@ const state = {
   currentTurn: null,
   turnEndTimer: null,
   pendingTools: new Map(),  // toolCallId -> PendingToolSpan
+  pendingPermissions: new Map(),  // toolUseId -> { spanId, toolName, startTime, toolDescription }
   hooks: {
     pollerStarted: false,
     turnBoundariesEnabled: false,
@@ -1326,7 +1546,8 @@ function finalizeSessionSpan() {
     { key: 'session.turn_count', value: { intValue: state.session.turnCount.toString() } },
     { key: 'session.api_call_count', value: { intValue: state.session.apiCallCount.toString() } },
     { key: 'gen_ai.usage.input_tokens', value: { intValue: state.session.tokens.input.toString() } },
-    { key: 'gen_ai.usage.output_tokens', value: { intValue: state.session.tokens.output.toString() } }
+    { key: 'gen_ai.usage.output_tokens', value: { intValue: state.session.tokens.output.toString() } },
+    { key: 'gen_ai.usage.cost_usd', value: { doubleValue: state.session.tokens.costUsd } }
   ];
 
   if (state.session.parentSessionId) {
@@ -1488,6 +1709,7 @@ function startNewTurn(requestBody) {
     tokens: createTokenCounts(),
     llmCallCount: 0,
     toolCallCount: 0,
+    errorCount: 0,
     activeTools: new Set(),
     promptPreview: promptPreview  // Store for span name
   };
@@ -1515,11 +1737,17 @@ function endCurrentTurn(endTime = Date.now(), endReason = 'unknown') {
     }
   }
 
-  // Aggregate tokens to session
+  // Clean up orphaned permissions (mark as denied - user didn't approve before turn ended)
+  for (const [toolUseId] of state.pendingPermissions) {
+    completePermissionSpan(toolUseId, 'denied');
+  }
+
+  // Aggregate tokens and cost to session
   state.session.tokens.input += turn.tokens.input;
   state.session.tokens.output += turn.tokens.output;
   state.session.tokens.cacheRead += turn.tokens.cacheRead;
   state.session.tokens.cacheWrite += turn.tokens.cacheWrite;
+  state.session.tokens.costUsd += turn.tokens.costUsd;
 
   // Build semantic span name with prompt preview
   let spanName = `Turn #${turn.turnNumber}`;
@@ -1539,8 +1767,10 @@ function endCurrentTurn(endTime = Date.now(), endReason = 'unknown') {
     { key: 'turn.end.reason', value: { stringValue: turn.endReason || 'unknown' } },
     { key: 'turn.llm_call_count', value: { intValue: turn.llmCallCount.toString() } },
     { key: 'turn.tool_call_count', value: { intValue: turn.toolCallCount.toString() } },
+    { key: 'turn.error_count', value: { intValue: turn.errorCount.toString() } },
     { key: 'gen_ai.usage.input_tokens', value: { intValue: turn.tokens.input.toString() } },
     { key: 'gen_ai.usage.output_tokens', value: { intValue: turn.tokens.output.toString() } },
+    { key: 'gen_ai.usage.cost_usd', value: { doubleValue: turn.tokens.costUsd } },
     { key: 'turn.duration_ms', value: { intValue: (turn.endTime - turn.startTime).toString() } }
   ];
 
@@ -1586,17 +1816,22 @@ function exportLLMSpan(requestBody, responseBody, startTime, endTime, consumedTo
   const stopReason = responseBody.stop_reason || 'unknown';
   const durationMs = endTime - startTime;
 
-  // Aggregate tokens to turn (preferred) or session (background calls)
+  // Calculate cost for this LLM call
+  const costUsd = calculateCostUsd(model, tokens);
+
+  // Aggregate tokens and cost to turn (preferred) or session (background calls)
   if (state.currentTurn) {
     state.currentTurn.tokens.input += tokens.input;
     state.currentTurn.tokens.output += tokens.output;
     state.currentTurn.tokens.cacheRead += tokens.cacheRead;
     state.currentTurn.tokens.cacheWrite += tokens.cacheWrite;
+    state.currentTurn.tokens.costUsd += costUsd;
   } else {
     state.session.tokens.input += tokens.input;
     state.session.tokens.output += tokens.output;
     state.session.tokens.cacheRead += tokens.cacheRead;
     state.session.tokens.cacheWrite += tokens.cacheWrite;
+    state.session.tokens.costUsd += costUsd;
   }
 
   // Extract input value for attribute
@@ -1648,6 +1883,7 @@ function exportLLMSpan(requestBody, responseBody, startTime, endTime, consumedTo
 		    { key: 'session.id', value: { stringValue: state.session.sessionId } },
 		    { key: 'gen_ai.usage.input_tokens', value: { intValue: tokens.input.toString() } },
 		    { key: 'gen_ai.usage.output_tokens', value: { intValue: tokens.output.toString() } },
+		    { key: 'gen_ai.usage.cost_usd', value: { doubleValue: costUsd } },
 		    { key: 'gen_ai.response.finish_reasons', value: { stringValue: stopReason } },
 		    { key: 'llm.latency.total_ms', value: { intValue: durationMs.toString() } },
 		    { key: 'llm.request.sequence', value: { intValue: (responseInfo && typeof responseInfo.sequence === 'number' ? responseInfo.sequence : state.session.apiCallCount).toString() } },
@@ -1664,6 +1900,17 @@ function exportLLMSpan(requestBody, responseBody, startTime, endTime, consumedTo
       }
       if (responseBody && typeof responseBody.id === 'string' && responseBody.id) {
         attributes.push({ key: 'anthropic.message_id', value: { stringValue: responseBody.id } });
+      }
+
+      // Error classification based on HTTP status and response body
+      const statusCode = responseInfo && typeof responseInfo.statusCode === 'number' ? responseInfo.statusCode : undefined;
+      const errorType = classifyErrorType(statusCode, responseBody);
+      if (errorType) {
+        attributes.push({ key: 'error.type', value: { stringValue: errorType } });
+        // Increment turn error count
+        if (state.currentTurn) {
+          state.currentTurn.errorCount++;
+        }
       }
 
 	  // Attach turn number for easier grouping (0 = background/non-turn)
@@ -1827,6 +2074,11 @@ function createToolSpan(toolUse, producedByLlmSpanId = null) {
 function completeToolSpan(toolCallId, result) {
   const pendingTool = state.pendingTools.get(toolCallId);
   if (!pendingTool) return null;
+
+  // Check for pending permission and complete it as approved (tool_result arrived)
+  if (state.pendingPermissions.has(toolCallId)) {
+    completePermissionSpan(toolCallId, 'approved');
+  }
 
   state.pendingTools.delete(toolCallId);
   if (state.currentTurn) {
