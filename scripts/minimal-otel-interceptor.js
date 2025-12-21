@@ -1,5 +1,5 @@
 /**
- * minimal-otel-interceptor.js (v3.8.0)
+ * minimal-otel-interceptor.js (v3.9.0)
  *
  * Multi-span trace hierarchy for Claude Code sessions.
  * Creates proper hierarchical trace structure: Session -> Turns -> LLM/Tool spans
@@ -10,12 +10,20 @@
  * - LLM spans (CLIENT) - individual Claude API calls with model/token details
  * - Tool spans (TOOL) - file operations, bash commands, with timing and status
  * - Permission spans (PERMISSION) - time spent waiting for user approval
- * - Subagent correlation via span links and OTEL_TRACE_PARENT propagation
+ * - Notification spans (NOTIFICATION) - Claude Code notification events
+ * - Compaction spans (COMPACTION) - context window compaction events
+ * - Subagent correlation via span links, SubagentStop hook, and OTEL_TRACE_PARENT propagation
  * - Token aggregation at turn and session level for cost attribution
  * - Cost metrics (gen_ai.usage.cost_usd) at LLM, turn, and session levels
  * - Correlation with Claude Code's native telemetry via session.id
  *
  * Following OpenTelemetry GenAI semantic conventions (2025 edition).
+ *
+ * v3.9.0 Changes (Phase 3):
+ * - Add PostToolUse hook integration: exit_code, output_summary, output_lines, error_type
+ * - Add SubagentStop hook integration: explicit subagent completion with subagent.session_id
+ * - Add NOTIFICATION spans for permission_prompt, auth_success events
+ * - Add COMPACTION spans for manual/auto context compaction events
  *
  * v3.8.0 Changes:
  * - Add permission wait visibility: PERMISSION spans track time awaiting user approval
@@ -82,7 +90,7 @@ const TRACE_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/traces'
     : 'http://127.0.0.1:4318/v1/traces');
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'claude-code';
-const INTERCEPTOR_VERSION = '3.8.0';
+const INTERCEPTOR_VERSION = '3.9.0';
 const WORKING_DIRECTORY = process.cwd();
 const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR || os.tmpdir();
 const SESSION_META_FILE = path.join(RUNTIME_DIR, `claude-session-${process.pid}.json`);
@@ -90,6 +98,10 @@ const PROMPT_META_FILE = path.join(RUNTIME_DIR, `claude-user-prompt-${process.pi
 const STOP_META_FILE = path.join(RUNTIME_DIR, `claude-stop-${process.pid}.json`);
 const TASK_CONTEXT_PREFIX = 'claude-task-context-';
 const PERMISSION_FILE_PREFIX = 'claude-permission-';
+const POSTTOOL_FILE_PREFIX = 'claude-posttool-';
+const SUBAGENT_STOP_FILE_PREFIX = 'claude-subagent-stop-';
+const NOTIFICATION_FILE_PREFIX = 'claude-notification-';
+const PRECOMPACT_FILE_PREFIX = 'claude-precompact-';
 const TURN_BOUNDARY_MODE = process.env.OTEL_INTERCEPTOR_TURN_BOUNDARY_MODE || 'auto'; // auto|hooks|heuristic
 const SESSION_ID_POLICY = process.env.OTEL_INTERCEPTOR_SESSION_ID_POLICY || 'buffer'; // buffer|eager
 const SESSION_ID_BUFFER_MAX_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_SESSION_ID_BUFFER_MAX_MS || '5000', 10);
@@ -699,6 +711,10 @@ function startTurnHookPoller() {
   const interval = setInterval(() => {
     pollTurnHookFiles();
     pollPermissionFiles();
+    pollPostToolFiles();
+    pollSubagentStopFiles();
+    pollNotificationFiles();
+    pollCompactionFiles();
   }, Number.isFinite(HOOK_POLL_INTERVAL_MS) ? HOOK_POLL_INTERVAL_MS : 200);
   interval.unref();
 }
@@ -807,6 +823,343 @@ function completePermissionSpan(toolUseId, result) {
   } catch {
     // Silent failure
   }
+}
+
+// =============================================================================
+// PostToolUse Hook Integration (Phase 3)
+// =============================================================================
+
+/**
+ * Poll for posttool files written by PostToolUse hook.
+ * Caches tool completion metadata for enriching Tool spans in completeToolSpan().
+ * PostToolUse files are created at: $RUNTIME_DIR/claude-posttool-${pid}-${toolUseId}.json
+ */
+function pollPostToolFiles() {
+  try {
+    const files = fs.readdirSync(RUNTIME_DIR);
+    const prefix = `${POSTTOOL_FILE_PREFIX}${process.pid}-`;
+
+    for (const file of files) {
+      if (!file.startsWith(prefix)) continue;
+      if (!file.endsWith('.json')) continue;
+
+      // Extract toolUseId from filename
+      const toolUseId = file.slice(prefix.length, -5);  // Remove prefix and .json
+
+      // Skip if already cached
+      if (state.postToolCache.has(toolUseId)) continue;
+
+      const filePath = path.join(RUNTIME_DIR, file);
+      const meta = readJsonFileSafe(filePath);
+      if (!meta || typeof meta !== 'object') continue;
+
+      // Validate schema version
+      if (meta.version !== 1) continue;
+
+      // Cache posttool metadata for use in completeToolSpan()
+      state.postToolCache.set(toolUseId, {
+        exitCode: meta.exitCode,
+        outputSummary: meta.outputSummary,
+        outputLines: meta.outputLines,
+        isError: meta.isError || false,
+        errorType: meta.errorType,
+        completedAtMs: meta.completedAtMs,
+        filePath
+      });
+    }
+  } catch {
+    // Silent failure - posttool polling is best-effort
+  }
+}
+
+/**
+ * Get and consume cached posttool metadata for a tool.
+ * @param {string} toolUseId - Tool use ID
+ * @returns {object|null} Posttool metadata or null if not found
+ */
+function consumePostToolMeta(toolUseId) {
+  const meta = state.postToolCache.get(toolUseId);
+  if (!meta) return null;
+
+  state.postToolCache.delete(toolUseId);
+
+  // Clean up the file
+  try {
+    if (meta.filePath && fs.existsSync(meta.filePath)) {
+      fs.unlinkSync(meta.filePath);
+    }
+  } catch {
+    // Silent failure
+  }
+
+  return meta;
+}
+
+// =============================================================================
+// SubagentStop Hook Integration (Phase 3)
+// =============================================================================
+
+/**
+ * Poll for subagent-stop files written by SubagentStop hook.
+ * Creates a completion annotation span when Task subagents finish.
+ * SubagentStop files are created at: $RUNTIME_DIR/claude-subagent-stop-${pid}-${toolUseId}.json
+ */
+function pollSubagentStopFiles() {
+  try {
+    const files = fs.readdirSync(RUNTIME_DIR);
+    const prefix = `${SUBAGENT_STOP_FILE_PREFIX}${process.pid}-`;
+
+    for (const file of files) {
+      if (!file.startsWith(prefix)) continue;
+      if (!file.endsWith('.json')) continue;
+
+      // Extract toolUseId from filename
+      const toolUseId = file.slice(prefix.length, -5);  // Remove prefix and .json
+
+      // Skip if already processed
+      if (state.processedSubagentStops.has(toolUseId)) continue;
+
+      const filePath = path.join(RUNTIME_DIR, file);
+      const meta = readJsonFileSafe(filePath);
+      if (!meta || typeof meta !== 'object') continue;
+
+      // Validate schema version
+      if (meta.version !== 1) continue;
+
+      // Mark as processed
+      state.processedSubagentStops.add(toolUseId);
+
+      // Create subagent completion span (links to Task tool span)
+      createSubagentCompletionSpan(toolUseId, meta);
+
+      // Clean up the file
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // Silent failure
+      }
+    }
+  } catch {
+    // Silent failure - subagent stop polling is best-effort
+  }
+}
+
+/**
+ * Create a subagent completion span when SubagentStop hook fires.
+ * This is a separate span that links to the original Task tool span.
+ * @param {string} toolUseId - The Task tool_use_id
+ * @param {object} meta - SubagentStop metadata from hook file
+ */
+function createSubagentCompletionSpan(toolUseId, meta) {
+  const spanId = generateId(8);
+  const timestamp = meta.completedAtMs || Date.now();
+
+  const attributes = [
+    { key: 'openinference.span.kind', value: { stringValue: 'SUBAGENT_COMPLETION' } },
+    { key: 'gen_ai.tool.call.id', value: { stringValue: toolUseId } },
+    { key: 'subagent.completed', value: { boolValue: true } },
+    { key: 'subagent.completion_source', value: { stringValue: 'hook' } },
+    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
+    { key: 'session.id', value: { stringValue: state.session.sessionId } }
+  ];
+
+  // Add subagent session ID if available
+  if (meta.subagentSessionId) {
+    attributes.push({ key: 'subagent.session_id', value: { stringValue: meta.subagentSessionId } });
+  }
+
+  const parentSpanId = state.currentTurn ? state.currentTurn.spanId : state.session.spanId;
+  const spanName = `Subagent Complete: ${toolUseId.substring(0, 8)}`;
+
+  const spanRecord = createOTLPSpan({
+    traceId: state.session.traceId,
+    spanId: spanId,
+    parentSpanId: parentSpanId,
+    name: spanName,
+    kind: 'SPAN_KIND_INTERNAL',
+    startTime: timestamp,
+    endTime: timestamp + 1,  // Zero-duration event span
+    attributes: attributes,
+    status: { code: 'STATUS_CODE_OK' }
+  });
+
+  sendToAlloy(spanRecord);
+}
+
+// =============================================================================
+// Notification Spans (Phase 3)
+// =============================================================================
+
+/**
+ * Poll for notification files written by Notification hook.
+ * Creates NOTIFICATION spans for permission_prompt, auth_success, etc.
+ * Notification files are created at: $RUNTIME_DIR/claude-notification-${pid}-${timestamp}.json
+ */
+function pollNotificationFiles() {
+  try {
+    const files = fs.readdirSync(RUNTIME_DIR);
+    const prefix = `${NOTIFICATION_FILE_PREFIX}${process.pid}-`;
+
+    for (const file of files) {
+      if (!file.startsWith(prefix)) continue;
+      if (!file.endsWith('.json')) continue;
+
+      // Extract timestamp from filename
+      const timestampStr = file.slice(prefix.length, -5);  // Remove prefix and .json
+
+      // Skip if already processed
+      if (state.processedNotifications.has(timestampStr)) continue;
+
+      const filePath = path.join(RUNTIME_DIR, file);
+      const meta = readJsonFileSafe(filePath);
+      if (!meta || typeof meta !== 'object') continue;
+
+      // Validate schema version
+      if (meta.version !== 1) continue;
+
+      // Mark as processed
+      state.processedNotifications.add(timestampStr);
+
+      // Create notification span
+      createNotificationSpan(meta);
+
+      // Clean up the file
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // Silent failure
+      }
+    }
+  } catch {
+    // Silent failure - notification polling is best-effort
+  }
+}
+
+/**
+ * Create a NOTIFICATION span for Claude Code notification events.
+ * @param {object} meta - Notification metadata from hook file
+ */
+function createNotificationSpan(meta) {
+  const spanId = generateId(8);
+  const timestamp = meta.timestampMs || Date.now();
+
+  const attributes = [
+    { key: 'openinference.span.kind', value: { stringValue: 'NOTIFICATION' } },
+    { key: 'notification.type', value: { stringValue: meta.notificationType || 'unknown' } },
+    { key: 'notification.timestamp_ms', value: { intValue: timestamp.toString() } },
+    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
+    { key: 'session.id', value: { stringValue: state.session.sessionId } }
+  ];
+
+  // Add message if available
+  if (meta.message) {
+    attributes.push({ key: 'notification.message', value: { stringValue: meta.message } });
+  }
+
+  const parentSpanId = state.currentTurn ? state.currentTurn.spanId : state.session.spanId;
+  const spanName = `Notification: ${meta.notificationType || 'unknown'}`;
+
+  const spanRecord = createOTLPSpan({
+    traceId: state.session.traceId,
+    spanId: spanId,
+    parentSpanId: parentSpanId,
+    name: spanName,
+    kind: 'SPAN_KIND_INTERNAL',
+    startTime: timestamp,
+    endTime: timestamp + 1,  // Zero-duration event span
+    attributes: attributes,
+    status: { code: 'STATUS_CODE_OK' }
+  });
+
+  sendToAlloy(spanRecord);
+}
+
+// =============================================================================
+// Compaction Spans (Phase 3)
+// =============================================================================
+
+/**
+ * Poll for precompact files written by PreCompact hook.
+ * Creates COMPACTION spans when context window is compacted.
+ * PreCompact files are created at: $RUNTIME_DIR/claude-precompact-${pid}-${timestamp}.json
+ */
+function pollCompactionFiles() {
+  try {
+    const files = fs.readdirSync(RUNTIME_DIR);
+    const prefix = `${PRECOMPACT_FILE_PREFIX}${process.pid}-`;
+
+    for (const file of files) {
+      if (!file.startsWith(prefix)) continue;
+      if (!file.endsWith('.json')) continue;
+
+      // Extract timestamp from filename
+      const timestampStr = file.slice(prefix.length, -5);  // Remove prefix and .json
+
+      // Skip if already processed
+      if (state.processedCompactions.has(timestampStr)) continue;
+
+      const filePath = path.join(RUNTIME_DIR, file);
+      const meta = readJsonFileSafe(filePath);
+      if (!meta || typeof meta !== 'object') continue;
+
+      // Validate schema version
+      if (meta.version !== 1) continue;
+
+      // Mark as processed
+      state.processedCompactions.add(timestampStr);
+
+      // Create compaction span
+      createCompactionSpan(meta);
+
+      // Clean up the file
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // Silent failure
+      }
+    }
+  } catch {
+    // Silent failure - compaction polling is best-effort
+  }
+}
+
+/**
+ * Create a COMPACTION span when context window is compacted.
+ * @param {object} meta - Compaction metadata from hook file
+ */
+function createCompactionSpan(meta) {
+  const spanId = generateId(8);
+  const timestamp = meta.timestampMs || Date.now();
+
+  const attributes = [
+    { key: 'openinference.span.kind', value: { stringValue: 'COMPACTION' } },
+    { key: 'compaction.reason', value: { stringValue: meta.compactType || 'unknown' } },
+    { key: 'compaction.trigger', value: { stringValue: meta.trigger || 'unknown' } },
+    { key: 'gen_ai.conversation.id', value: { stringValue: state.session.sessionId } },
+    { key: 'session.id', value: { stringValue: state.session.sessionId } }
+  ];
+
+  // Add messages_before if available
+  if (meta.messagesBefore !== undefined && meta.messagesBefore !== null) {
+    attributes.push({ key: 'compaction.messages_before', value: { intValue: meta.messagesBefore.toString() } });
+  }
+
+  const parentSpanId = state.currentTurn ? state.currentTurn.spanId : state.session.spanId;
+  const spanName = `Compaction: ${meta.compactType || 'unknown'}`;
+
+  const spanRecord = createOTLPSpan({
+    traceId: state.session.traceId,
+    spanId: spanId,
+    parentSpanId: parentSpanId,
+    name: spanName,
+    kind: 'SPAN_KIND_INTERNAL',
+    startTime: timestamp,
+    endTime: timestamp + 1,  // Zero-duration event span
+    attributes: attributes,
+    status: { code: 'STATUS_CODE_OK' }
+  });
+
+  sendToAlloy(spanRecord);
 }
 
 // =============================================================================
@@ -1299,6 +1652,10 @@ const state = {
   turnEndTimer: null,
   pendingTools: new Map(),  // toolCallId -> PendingToolSpan
   pendingPermissions: new Map(),  // toolUseId -> { spanId, toolName, startTime, toolDescription }
+  postToolCache: new Map(),       // toolUseId -> { exitCode, outputSummary, outputLines, errorType }
+  processedSubagentStops: new Set(),  // toolUseId set (to avoid duplicate processing)
+  processedNotifications: new Set(),  // timestamp set (to avoid duplicate notification spans)
+  processedCompactions: new Set(),    // timestamp set (to avoid duplicate compaction spans)
   hooks: {
     pollerStarted: false,
     turnBoundariesEnabled: false,
@@ -2135,6 +2492,27 @@ function completeToolSpan(toolCallId, result) {
 
   if (isError && result.error_message) {
     attributes.push({ key: 'tool.error_message', value: { stringValue: result.error_message } });
+  }
+
+  // Phase 3: Integrate PostToolUse hook metadata for enhanced tool visibility
+  const postToolMeta = consumePostToolMeta(toolCallId);
+  if (postToolMeta) {
+    // Add exit code (primarily for Bash tools)
+    if (postToolMeta.exitCode !== undefined && postToolMeta.exitCode !== null) {
+      attributes.push({ key: 'tool.execution.exit_code', value: { intValue: postToolMeta.exitCode.toString() } });
+    }
+    // Add output summary
+    if (postToolMeta.outputSummary) {
+      attributes.push({ key: 'tool.output.summary', value: { stringValue: postToolMeta.outputSummary } });
+    }
+    // Add output line count
+    if (postToolMeta.outputLines !== undefined && postToolMeta.outputLines !== null) {
+      attributes.push({ key: 'tool.output.lines', value: { intValue: postToolMeta.outputLines.toString() } });
+    }
+    // Add error type from PostToolUse hook (may differ from LLM-inferred error)
+    if (postToolMeta.errorType) {
+      attributes.push({ key: 'tool.error.type', value: { stringValue: postToolMeta.errorType } });
+    }
   }
 
   // Get parent span ID - use turn span if available, otherwise session
