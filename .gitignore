@@ -46,3 +46,4 @@ Thumbs.db
 
 # Claude Code tracing runtime artifacts
 /.claude-trace-context.json
+Trace-*.json
