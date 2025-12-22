@@ -122,9 +122,12 @@ in
             "otlphttp/k8s" = {
               endpoint = "${cfg.k8sExporterEndpoint}";
               encoding = "json";
-              # Use client certificates for mTLS authentication
+              # Tailscale Serve endpoints use publicly trusted certificates (e.g. Let's Encrypt).
+              # Do NOT override the server CA bundle here, otherwise Go TLS will ignore the system
+              # trust store and verification will fail.
+              #
+              # Keep client cert/key for optional mTLS (only sent if the server requests it).
               tls = {
-                ca_file = "/etc/otel/certs/ca.crt";
                 cert_file = "/etc/otel/certs/client.crt";
                 key_file = "/etc/otel/certs/client.key";
                 insecure = false;

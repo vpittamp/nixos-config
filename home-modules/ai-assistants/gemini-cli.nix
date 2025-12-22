@@ -1,6 +1,8 @@
 { config, pkgs, lib, self, pkgs-unstable ? pkgs, ... }:
 
 let
+  repoRoot = ../../.;
+
   # Chromium is only available on Linux
   # On Darwin, MCP servers requiring Chromium will be disabled
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
@@ -21,13 +23,19 @@ let
     paths = [ baseGeminiCli ];
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      # Feature 125: Add OTEL service name for telemetry identification
-      # IMPORTANT: --unset NODE_OPTIONS first to prevent Claude Code's interceptor
-      # from being loaded when Gemini is run from within Claude Code's Bash tool
+      # Feature 128: Unset NODE_OPTIONS first to prevent Claude Code's interceptor
+      # from being loaded when Gemini is run from within Claude Code's Bash tool,
+      # then set IPv4-first for reliable OAuth, plus OTEL service name for identification.
+      # Also unset any OTEL exporter vars to prevent conflicts with our local interceptor.
       wrapProgram $out/bin/gemini \
         --unset NODE_OPTIONS \
         --set NODE_OPTIONS "--dns-result-order=ipv4first" \
-        --set OTEL_SERVICE_NAME "gemini-cli"
+        --set OTEL_SERVICE_NAME "gemini-cli" \
+        --unset OTEL_EXPORTER_OTLP_ENDPOINT \
+        --unset OTEL_EXPORTER_OTLP_PROTOCOL \
+        --unset OTEL_LOGS_EXPORTER \
+        --unset OTEL_METRICS_EXPORTER \
+        --unset OTEL_TRACES_EXPORTER
     '';
   };
 
@@ -85,20 +93,13 @@ let
     theme = "Default";
     vimMode = true;
     # Feature 123: OpenTelemetry configuration for OTLP export
-    # Sends telemetry to otel-ai-monitor service for session tracking
+    # Sends telemetry to otel-ai-monitor (via our local interceptor).
     telemetry = {
       enabled = true;
-      target = "local";  # Use local OTLP collector
-      otlpEndpoint = "http://localhost:4318";
-      otlpProtocol = "http";  # Use HTTP for compatibility with our receiver
-      logPrompts = true;  # Enable for debugging (helps with session detection)
-      useCollector = true;  # Enable external OTLP collector
-      # Enable all signals
-      signals = {
-        logs = true;
-        metrics = true;
-        traces = true;
-      };
+      target = "local";
+      # Route via local interceptor which forwards to the collector and synthesizes traces.
+      otlpEndpoint = "http://127.0.0.1:4322";
+      logPrompts = true;
     };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
@@ -151,11 +152,17 @@ ${settingsJson}
 EOF
       $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
     else
-      # Feature 123: Ensure telemetry config is present (merge into existing settings)
-      # This preserves user customizations while ensuring OTEL is configured
-      if ! ${pkgs.jq}/bin/jq -e '.telemetry.signals' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
-        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '. + {telemetry: {enabled: true, target: "local", otlpEndpoint: "http://localhost:4318", otlpProtocol: "http", logPrompts: true, useCollector: true, signals: {logs: true, metrics: true, traces: true}}}' \
-          "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
+      # Ensure telemetry config is present and points at our interceptor.
+      # Preserve user settings outside `.telemetry`, but enforce the OTLP endpoint so telemetry works.
+      WANT_ENDPOINT="http://127.0.0.1:4322"
+      if ! ${pkgs.jq}/bin/jq -e --arg ep "$WANT_ENDPOINT" '.telemetry.otlpEndpoint == $ep' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
+        $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" '
+          .telemetry = (.telemetry // {}) |
+          .telemetry.enabled = true |
+          .telemetry.target = "local" |
+          .telemetry.otlpEndpoint = $ep |
+          .telemetry.logPrompts = (.telemetry.logPrompts // true)
+        ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
         $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
         $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
       fi
@@ -194,5 +201,36 @@ EOF
     GEMINI_TELEMETRY_LOG_PROMPTS = "true";
     # Also set OTEL_SERVICE_NAME for any OTEL-aware components
     OTEL_SERVICE_NAME = "gemini-cli";
+  };
+
+  # Feature 128: Gemini OTEL interceptor (local user service)
+  # Receives OTLP from Gemini CLI and synthesizes proper trace spans
+  systemd.user.services.gemini-otel-interceptor = lib.mkIf pkgs.stdenv.isLinux {
+    Unit = {
+      Description = "Gemini OTEL interceptor (forward OTLP envelopes + synthesize traces)";
+      After = [ "default.target" ];
+      PartOf = [ "default.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.nodejs}/bin/node ${repoRoot}/scripts/gemini-otel-interceptor.js";
+      Restart = "on-failure";
+      RestartSec = 2;
+
+      Environment = [
+        "GEMINI_OTEL_INTERCEPTOR_HOST=127.0.0.1"
+        "GEMINI_OTEL_INTERCEPTOR_PORT=4322"
+        "GEMINI_OTEL_INTERCEPTOR_FORWARD_BASE=http://127.0.0.1:4318"
+      ];
+
+      StandardOutput = "journal";
+      StandardError = "journal";
+      SyslogIdentifier = "gemini-otel-interceptor";
+    };
+
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
   };
 }

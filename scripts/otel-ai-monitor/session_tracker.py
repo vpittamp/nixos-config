@@ -336,33 +336,37 @@ class SessionTracker:
 
         # Handle Codex token events
         if event.event_name == EventNames.CODEX_SSE_EVENT:
-            input_tokens = int(attrs.get("input_tokens", 0))
-            output_tokens = int(attrs.get("output_tokens", 0))
-            if input_tokens > 0 or output_tokens > 0:
-                session.input_tokens = input_tokens
-                session.output_tokens = output_tokens
-                if "cache_tokens" in attrs:
-                    session.cache_tokens = int(attrs["cache_tokens"])
-                # Calculate cost for Codex (not included in telemetry)
-                cost, is_estimated = calculate_cost(
-                    session.provider,
-                    session.model,
-                    input_tokens,
-                    output_tokens,
-                )
-                session.cost_usd += cost
-                session.cost_estimated = is_estimated
-
-        # Handle Codex API request events with token data
-        elif event.event_name == EventNames.CODEX_API_REQUEST:
+            # Codex emits per-request token counts on `response.completed`.
+            # Prefer the `*_token_count` fields (Codex), but accept generic fallbacks.
             try:
-                # Codex may send token counts in API request events
-                input_tokens = int(attrs.get("gen_ai.usage.prompt_tokens") or attrs.get("input_tokens") or 0)
-                output_tokens = int(attrs.get("gen_ai.usage.completion_tokens") or attrs.get("output_tokens") or 0)
+                kind = attrs.get("event.kind")
+                if kind and str(kind) != "response.completed":
+                    return
+
+                input_tokens = int(
+                    attrs.get("input_token_count")
+                    or attrs.get("gen_ai.usage.input_tokens")
+                    or attrs.get("input_tokens")
+                    or 0
+                )
+                output_tokens = int(
+                    attrs.get("output_token_count")
+                    or attrs.get("gen_ai.usage.output_tokens")
+                    or attrs.get("output_tokens")
+                    or 0
+                )
+                cached_tokens = int(
+                    attrs.get("cached_token_count")
+                    or attrs.get("cache_tokens")
+                    or 0
+                )
+
+                session.input_tokens += input_tokens
+                session.output_tokens += output_tokens
+                session.cache_tokens += cached_tokens
+
+                # Calculate cost for Codex (not included in telemetry)
                 if input_tokens > 0 or output_tokens > 0:
-                    session.input_tokens += input_tokens
-                    session.output_tokens += output_tokens
-                    # Calculate cost
                     cost, is_estimated = calculate_cost(
                         session.provider,
                         session.model,
@@ -371,11 +375,6 @@ class SessionTracker:
                     )
                     session.cost_usd += cost
                     session.cost_estimated = is_estimated
-                # Check for errors
-                error_type = self._extract_error(attrs)
-                if error_type:
-                    session.error_count += 1
-                    session.last_error_type = error_type
             except Exception:
                 pass
 
@@ -412,15 +411,38 @@ class SessionTracker:
                 session.cost_usd += cost
                 session.cost_estimated = is_estimated
 
-        # Handle Gemini API request events
-        elif event.event_name in (EventNames.GEMINI_API_REQUEST, EventNames.GENAI_OPERATION):
+        # Gemini CLI per-request token usage (api_response/api_error)
+        elif event.event_name in {
+            EventNames.GEMINI_API_RESPONSE,
+            EventNames.GEMINI_API_ERROR,
+            EventNames.GEMINI_API_RESPONSE_DOT,
+            EventNames.GEMINI_API_ERROR_DOT,
+        }:
             try:
-                input_tokens = int(attrs.get("gen_ai.usage.input_tokens") or attrs.get("input_tokens") or 0)
-                output_tokens = int(attrs.get("gen_ai.usage.output_tokens") or attrs.get("output_tokens") or 0)
+                input_tokens = int(
+                    attrs.get("input_token_count")
+                    or attrs.get("gen_ai.usage.input_tokens")
+                    or attrs.get("prompt_tokens")
+                    or 0
+                )
+                output_tokens = int(
+                    attrs.get("output_token_count")
+                    or attrs.get("gen_ai.usage.output_tokens")
+                    or attrs.get("completion_tokens")
+                    or 0
+                )
+                cached_tokens = int(
+                    attrs.get("cached_content_token_count")
+                    or attrs.get("cache_tokens")
+                    or 0
+                )
+
+                session.input_tokens += input_tokens
+                session.output_tokens += output_tokens
+                session.cache_tokens += cached_tokens
+
+                # Calculate cost for Gemini API events
                 if input_tokens > 0 or output_tokens > 0:
-                    session.input_tokens += input_tokens
-                    session.output_tokens += output_tokens
-                    # Calculate cost
                     cost, is_estimated = calculate_cost(
                         session.provider,
                         session.model,
@@ -429,6 +451,7 @@ class SessionTracker:
                     )
                     session.cost_usd += cost
                     session.cost_estimated = is_estimated
+
                 # Check for errors
                 error_type = self._extract_error(attrs)
                 if error_type:

@@ -2,6 +2,24 @@
 
 This repo collects Claude Code telemetry via Grafana Alloy and exports to an LGTM stack (Tempo/Mimir/Loki).
 
+## Codex CLI note (traces are synthesized)
+
+Codex CLI currently emits **OTEL log events** (not spans) via `[otel]` in `~/.codex/config.toml`.
+
+To get Claude-like traces (Session → Turn → LLM/Tool), we:
+- Route Codex OTLP logs through `scripts/codex-otel-interceptor.js` (it forwards logs to Alloy and **synthesizes OTLP traces**).
+- Use Codex’s `notify` hook to post `agent-turn-complete` to the interceptor for accurate turn end boundaries.
+- Normalize the join key by copying `conversation.id` → `session.id` in forwarded Codex logs, and using the same `session.id` on synthesized spans.
+
+## Gemini CLI note (traces are synthesized)
+
+Gemini CLI exports OpenTelemetry telemetry configured via `~/.gemini/settings.json` (`telemetry.*`). We route its telemetry through a local interceptor to synthesize coherent Session → Turn → LLM/Tool traces.
+
+To get Claude-like traces (Session → Turn → LLM/Tool), we:
+- Route Gemini OTLP envelopes through `scripts/gemini-otel-interceptor.js` (it forwards logs/metrics to the collector and **synthesizes OTLP traces**).
+- Use log events (`gemini_cli.user_prompt`, `gemini_cli.api_*`, `gemini_cli.tool_call`) for span boundaries (Gemini currently has no notify hook like Codex).
+  - Note: `OTEL_EXPORTER_OTLP_ENDPOINT` overrides `telemetry.otlpEndpoint`; if set, it can bypass the interceptor and you’ll lose synthesized traces.
+
 ## 1) The join key: `session.id`
 
 Claude Code native OpenTelemetry telemetry uses `session.id` (UUID per conversation).
