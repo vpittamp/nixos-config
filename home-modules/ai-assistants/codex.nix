@@ -23,6 +23,13 @@ let
     # when Codex is run from within Claude Code's Bash tool
     unset NODE_OPTIONS
 
+    # Clear OTEL env vars that would override config.toml settings
+    # Codex uses its own config file for OTEL endpoints
+    unset OTEL_EXPORTER_OTLP_ENDPOINT
+    unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+    unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+    unset OTEL_EXPORTER_OTLP_PROTOCOL
+
     # Force frequent batch exports for real-time monitoring
     # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)
     export OTEL_BLRP_SCHEDULE_DELAY=''${OTEL_BLRP_SCHEDULE_DELAY:-100}
@@ -105,15 +112,16 @@ in
       };
 
       # Feature 123: OpenTelemetry configuration for OTLP export
-      # Sends logs to OTEL Collector for session tracking
+      # Sends logs to local interceptor which synthesizes traces and forwards to Alloy
       otel = {
         environment = "dev";
         log_user_prompt = true;  # Enable for debugging (disable in production)
         exporter = {
           otlp-http = {
-            # Send Codex OTLP *logs* to local interceptor (it forwards to Alloy)
+            # Send Codex OTLP *logs* to local interceptor (synthesizes traces + forwards)
             endpoint = "http://${codexOtelInterceptorHost}:${toString codexOtelInterceptorPort}/v1/logs";
-            traces_endpoint = "http://localhost:4318/v1/traces";
+            # NOTE: traces_endpoint removed - interceptor synthesizes traces from logs
+            # Native Codex traces are low-signal; let interceptor create proper OpenInference spans
             protocol = "json";  # Use JSON for compatibility with our receiver
           };
         };
@@ -197,13 +205,13 @@ in
         ${pkgs.coreutils}/bin/cat >> "$TEMP" << 'EOF'
 
 # Feature 123: OpenTelemetry configuration for OTLP export
+# NOTE: traces_endpoint removed - interceptor synthesizes traces from logs
 [otel]
 environment = "dev"
 log_user_prompt = true
 
 [otel.exporter.otlp-http]
 endpoint = "http://${codexOtelInterceptorHost}:${toString codexOtelInterceptorPort}/v1/logs"
-traces_endpoint = "http://localhost:4318/v1/traces"
 protocol = "json"
 EOF
       fi

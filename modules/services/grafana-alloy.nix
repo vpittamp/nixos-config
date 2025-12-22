@@ -102,6 +102,26 @@ let
       }
 
       output {
+        traces = [otelcol.processor.filter.drop_beyla.input]
+      }
+    }
+
+    // =============================================================================
+    // Filter Processor - Drop Beyla auto-instrumentation traces
+    //
+    // Beyla generates HTTP/gRPC spans via eBPF that aren't LLM-specific.
+    // Filter them out before sending to AI-focused backends (Langfuse, local monitor).
+    // =============================================================================
+
+    otelcol.processor.filter "drop_beyla" {
+      error_mode = "ignore"
+
+      traces {
+        // Drop spans from Beyla (telemetry.sdk.name is a resource attribute)
+        span = ["resource.attributes[\"telemetry.sdk.name\"] == \"beyla\""]
+      }
+
+      output {
         traces = [
           otelcol.processor.batch.default.input,
           otelcol.connector.spanmetrics.ai.input,

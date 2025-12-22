@@ -27,10 +27,20 @@ let
       # from being loaded when Gemini is run from within Claude Code's Bash tool,
       # then set IPv4-first for reliable OAuth, plus OTEL service name for identification.
       # Also unset any OTEL exporter vars to prevent conflicts with our local interceptor.
+      #
+      # Gemini CLI telemetry configuration (set per-process to avoid contaminating others):
+      # - GEMINI_TELEMETRY_* vars control the Gemini-specific telemetry
+      # - OTEL_SERVICE_NAME identifies this process in OTEL payloads
       wrapProgram $out/bin/gemini \
         --unset NODE_OPTIONS \
         --set NODE_OPTIONS "--dns-result-order=ipv4first" \
         --set OTEL_SERVICE_NAME "gemini-cli" \
+        --set GEMINI_TELEMETRY_ENABLED "true" \
+        --set GEMINI_TELEMETRY_TARGET "local" \
+        --set GEMINI_TELEMETRY_OTLP_ENDPOINT "http://127.0.0.1:4322" \
+        --set GEMINI_TELEMETRY_OTLP_PROTOCOL "http" \
+        --set GEMINI_TELEMETRY_USE_COLLECTOR "true" \
+        --set GEMINI_TELEMETRY_LOG_PROMPTS "true" \
         --unset OTEL_EXPORTER_OTLP_ENDPOINT \
         --unset OTEL_EXPORTER_OTLP_PROTOCOL \
         --unset OTEL_LOGS_EXPORTER \
@@ -189,19 +199,11 @@ EOF
     commands = commands;
   };
 
-  # Feature 125: Gemini CLI telemetry environment variables
-  # Note: Gemini CLI uses GEMINI_TELEMETRY_* vars, NOT standard OTEL_* vars
-  home.sessionVariables = {
-    # Gemini CLI native telemetry configuration
-    GEMINI_TELEMETRY_ENABLED = "true";
-    GEMINI_TELEMETRY_TARGET = "local";
-    GEMINI_TELEMETRY_OTLP_ENDPOINT = "http://localhost:4318";
-    GEMINI_TELEMETRY_OTLP_PROTOCOL = "http";  # Use HTTP, not gRPC
-    GEMINI_TELEMETRY_USE_COLLECTOR = "true";
-    GEMINI_TELEMETRY_LOG_PROMPTS = "true";
-    # Also set OTEL_SERVICE_NAME for any OTEL-aware components
-    OTEL_SERVICE_NAME = "gemini-cli";
-  };
+  # NOTE: Gemini CLI telemetry is configured via:
+  # 1. ~/.gemini/settings.json (written by activation script above)
+  # 2. Wrapper script (sets OTEL_SERVICE_NAME only for gemini process)
+  # We do NOT set session-level env vars here to avoid contaminating
+  # other processes (like Claude Code) with Gemini's OTEL_SERVICE_NAME.
 
   # Feature 128: Gemini OTEL interceptor (local user service)
   # Receives OTLP from Gemini CLI and synthesizes proper trace spans

@@ -158,7 +158,7 @@ in
 
 
   # Arize Phoenix - GenAI Observability (Local)
-  services.arize-phoenix.enable = true;
+  services.arize-phoenix.enable = false;  # Disabled: port 4317 conflicts with Alloy
 
   # Feature 123: LiteLLM Proxy for full OTEL tracing of Claude API calls
   # DISABLED: Incompatible with Claude Code Max subscription (OAuth authentication)
