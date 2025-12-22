@@ -1,6 +1,8 @@
 { config, pkgs, lib, self, pkgs-unstable ? pkgs, ... }:
 
 let
+  repoRoot = ../../.;
+
   # Chromium is only available on Linux
   # On Darwin, MCP servers requiring Chromium will be disabled
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
@@ -84,7 +86,9 @@ let
     telemetry = {
       enabled = true;
       target = "local";  # Use local OTLP collector
-      otlpEndpoint = "http://localhost:4318";
+      # Gemini CLI posts OTLP/HTTP JSON envelopes to `/` (not `/v1/*`).
+      # Route via local interceptor which forwards to the collector and synthesizes traces.
+      otlpEndpoint = "http://127.0.0.1:4322";
       otlpProtocol = "http";  # Use HTTP for compatibility with our receiver
       logPrompts = true;  # Enable for debugging (helps with session detection)
       useCollector = true;  # Enable external OTLP collector
@@ -146,11 +150,20 @@ ${settingsJson}
 EOF
       $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
     else
-      # Feature 123: Ensure telemetry config is present (merge into existing settings)
-      # This preserves user customizations while ensuring OTEL is configured
-      if ! ${pkgs.jq}/bin/jq -e '.telemetry.signals' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
-        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '. + {telemetry: {enabled: true, target: "local", otlpEndpoint: "http://localhost:4318", otlpProtocol: "http", logPrompts: true, useCollector: true, signals: {logs: true, metrics: true, traces: true}}}' \
-          "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
+      # Ensure telemetry config is present and points at our interceptor.
+      # Preserve user settings outside `.telemetry`, but enforce the OTLP endpoint so telemetry works.
+      WANT_ENDPOINT="http://127.0.0.1:4322"
+      if ! ${pkgs.jq}/bin/jq -e --arg ep "$WANT_ENDPOINT" '.telemetry.otlpEndpoint == $ep' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
+        $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" '
+          .telemetry = (.telemetry // {}) |
+          .telemetry.enabled = true |
+          .telemetry.target = "local" |
+          .telemetry.otlpEndpoint = $ep |
+          .telemetry.otlpProtocol = (.telemetry.otlpProtocol // "http") |
+          .telemetry.logPrompts = (.telemetry.logPrompts // true) |
+          .telemetry.useCollector = (.telemetry.useCollector // true) |
+          .telemetry.signals = (.telemetry.signals // {logs: true, metrics: true, traces: true})
+        ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
         $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
         $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
       fi
@@ -188,5 +201,35 @@ EOF
     OTEL_METRIC_EXPORT_TIMEOUT = "30000";
     OTEL_LOGS_EXPORT_INTERVAL = "5000";
     OTEL_LOG_USER_PROMPTS = "1";
+  };
+
+  # Gemini OTEL interceptor (local user service)
+  systemd.user.services.gemini-otel-interceptor = lib.mkIf pkgs.stdenv.isLinux {
+    Unit = {
+      Description = "Gemini OTEL interceptor (forward OTLP envelopes + synthesize traces)";
+      After = [ "default.target" ];
+      PartOf = [ "default.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.nodejs}/bin/node ${repoRoot}/scripts/gemini-otel-interceptor.js";
+      Restart = "on-failure";
+      RestartSec = 2;
+
+      Environment = [
+        "GEMINI_OTEL_INTERCEPTOR_HOST=127.0.0.1"
+        "GEMINI_OTEL_INTERCEPTOR_PORT=4322"
+        "GEMINI_OTEL_INTERCEPTOR_FORWARD_BASE=http://127.0.0.1:4318"
+      ];
+
+      StandardOutput = "journal";
+      StandardError = "journal";
+      SyslogIdentifier = "gemini-otel-interceptor";
+    };
+
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
   };
 }

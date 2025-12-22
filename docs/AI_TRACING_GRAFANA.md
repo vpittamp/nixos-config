@@ -11,6 +11,14 @@ To get Claude-like traces (Session → Turn → LLM/Tool), we:
 - Use Codex’s `notify` hook to post `agent-turn-complete` to the interceptor for accurate turn end boundaries.
 - Normalize the join key by copying `conversation.id` → `session.id` in forwarded Codex logs, and using the same `session.id` on synthesized spans.
 
+## Gemini CLI note (traces are synthesized)
+
+Gemini CLI emits OTLP/HTTP **JSON** logs/metrics/traces, but posts them to `/` as OTLP “envelopes” (not `/v1/*`), and its native spans are currently low-signal.
+
+To get Claude-like traces (Session → Turn → LLM/Tool), we:
+- Route Gemini OTLP envelopes through `scripts/gemini-otel-interceptor.js` (it forwards logs/metrics to the collector and **synthesizes OTLP traces**).
+- Use log events (`gemini_cli.user_prompt`, `gemini_cli.api_*`, `gemini_cli.tool_call`) for span boundaries (Gemini currently has no notify hook like Codex).
+
 ## 1) The join key: `session.id`
 
 Claude Code native OpenTelemetry telemetry uses `session.id` (UUID per conversation).
