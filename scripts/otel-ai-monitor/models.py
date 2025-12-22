@@ -167,11 +167,19 @@ class EventNames:
     CODEX_TOOL_DECISION = "codex.tool_decision"
     CODEX_TOOL_RESULT = "codex.tool_result"
 
-    # Gemini CLI events (OpenTelemetry GenAI conventions)
-    GEMINI_API_REQUEST = "gemini_cli.api.request"
-    GEMINI_TOKEN_USAGE = "gemini_cli.token.usage"
+    # Gemini CLI events
+    # NOTE: Gemini CLI uses underscore-style event names (gemini_cli.api_request, ...)
+    # Some docs/tools also refer to dot-style variants; keep both for compatibility.
+    GEMINI_CONFIG = "gemini_cli.config"
     GEMINI_USER_PROMPT = "gemini_cli.user_prompt"
+    GEMINI_API_REQUEST = "gemini_cli.api_request"
+    GEMINI_API_RESPONSE = "gemini_cli.api_response"
+    GEMINI_API_ERROR = "gemini_cli.api_error"
     GEMINI_TOOL_CALL = "gemini_cli.tool_call"
+    GEMINI_API_REQUEST_DOT = "gemini_cli.api.request"
+    GEMINI_API_RESPONSE_DOT = "gemini_cli.api.response"
+    GEMINI_API_ERROR_DOT = "gemini_cli.api.error"
+    GEMINI_TOKEN_USAGE = "gemini_cli.token.usage"
     # GenAI semantic convention events (used by Gemini CLI)
     GENAI_TOKEN_USAGE = "gen_ai.client.token.usage"
     GENAI_OPERATION = "gen_ai.client.operation"
@@ -187,6 +195,7 @@ class EventNames:
         CODEX_CONVERSATION_STARTS,
         GEMINI_USER_PROMPT,
         GEMINI_API_REQUEST,
+        GEMINI_API_REQUEST_DOT,
     }
 
     # Claude Code additional events
@@ -205,6 +214,11 @@ class EventNames:
         CODEX_TOOL_DECISION,
         CODEX_TOOL_RESULT,
         GEMINI_API_REQUEST,
+        GEMINI_API_REQUEST_DOT,
+        GEMINI_API_RESPONSE,
+        GEMINI_API_RESPONSE_DOT,
+        GEMINI_API_ERROR,
+        GEMINI_API_ERROR_DOT,
         GEMINI_TOKEN_USAGE,
         GEMINI_TOOL_CALL,
         GENAI_TOKEN_USAGE,

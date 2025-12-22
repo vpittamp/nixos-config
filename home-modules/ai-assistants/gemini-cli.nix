@@ -24,7 +24,12 @@ let
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/gemini \
-        --set NODE_OPTIONS "--dns-result-order=ipv4first"
+        --set NODE_OPTIONS "--dns-result-order=ipv4first" \
+        --unset OTEL_EXPORTER_OTLP_ENDPOINT \
+        --unset OTEL_EXPORTER_OTLP_PROTOCOL \
+        --unset OTEL_LOGS_EXPORTER \
+        --unset OTEL_METRICS_EXPORTER \
+        --unset OTEL_TRACES_EXPORTER
     '';
   };
 
@@ -82,22 +87,13 @@ let
     theme = "Default";
     vimMode = true;
     # Feature 123: OpenTelemetry configuration for OTLP export
-    # Sends telemetry to otel-ai-monitor service for session tracking
+    # Sends telemetry to otel-ai-monitor (via our local interceptor).
     telemetry = {
       enabled = true;
-      target = "local";  # Use local OTLP collector
-      # Gemini CLI posts OTLP/HTTP JSON envelopes to `/` (not `/v1/*`).
+      target = "local";
       # Route via local interceptor which forwards to the collector and synthesizes traces.
       otlpEndpoint = "http://127.0.0.1:4322";
-      otlpProtocol = "http";  # Use HTTP for compatibility with our receiver
-      logPrompts = true;  # Enable for debugging (helps with session detection)
-      useCollector = true;  # Enable external OTLP collector
-      # Enable all signals
-      signals = {
-        logs = true;
-        metrics = true;
-        traces = true;
-      };
+      logPrompts = true;
     };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
@@ -159,10 +155,7 @@ EOF
           .telemetry.enabled = true |
           .telemetry.target = "local" |
           .telemetry.otlpEndpoint = $ep |
-          .telemetry.otlpProtocol = (.telemetry.otlpProtocol // "http") |
-          .telemetry.logPrompts = (.telemetry.logPrompts // true) |
-          .telemetry.useCollector = (.telemetry.useCollector // true) |
-          .telemetry.signals = (.telemetry.signals // {logs: true, metrics: true, traces: true})
+          .telemetry.logPrompts = (.telemetry.logPrompts // true)
         ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
         $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
         $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
@@ -188,19 +181,6 @@ EOF
 
     # Custom commands for common workflows - auto-imported from .gemini/commands/
     commands = commands;
-  };
-
-  # Feature 123: OTEL environment variables for Gemini CLI telemetry
-  home.sessionVariables = {
-    OTEL_LOGS_EXPORTER = "otlp";
-    OTEL_METRICS_EXPORTER = "otlp";
-    OTEL_TRACES_EXPORTER = "otlp";
-    OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
-    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
-    OTEL_METRIC_EXPORT_INTERVAL = "60000";
-    OTEL_METRIC_EXPORT_TIMEOUT = "30000";
-    OTEL_LOGS_EXPORT_INTERVAL = "5000";
-    OTEL_LOG_USER_PROMPTS = "1";
   };
 
   # Gemini OTEL interceptor (local user service)

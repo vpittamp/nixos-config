@@ -26,7 +26,7 @@ const zlib = require('node:zlib');
 // Config
 // =============================================================================
 
-const INTERCEPTOR_VERSION = '0.1.0';
+const INTERCEPTOR_VERSION = '0.1.1';
 
 const LISTEN_HOST = process.env.CODEX_OTEL_INTERCEPTOR_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.CODEX_OTEL_INTERCEPTOR_PORT || '4319', 10);
@@ -55,6 +55,15 @@ const TURN_IDLE_END_MS = Number.parseInt(
   10
 ); // default: 15 seconds (fallback only; prefer notify hook)
 
+// For one-shot commands (like `codex exec`), export the Session/root span shortly after the
+// Turn completes so Tempo doesn't show "<root span not yet received>" for minutes.
+//
+// NOTE: We wait a bit to allow late-arriving `response.completed` token events to hydrate LLM spans.
+const ONESHOT_SESSION_FINALIZE_MS = Number.parseInt(
+  process.env.CODEX_OTEL_INTERCEPTOR_ONESHOT_SESSION_FINALIZE_MS || '2500',
+  10
+); // default: 2.5 seconds
+
 const DEBUG = process.env.CODEX_OTEL_INTERCEPTOR_DEBUG === '1';
 
 // =============================================================================
@@ -82,6 +91,100 @@ function getPreview(text, maxLen = 80) {
   return clean.slice(0, Math.max(0, maxLen - 3)) + '...';
 }
 
+function tryParseJson(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function toSafeString(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseToolArgs(rawArgs) {
+  if (rawArgs == null) return { raw: null, parsed: null };
+  if (typeof rawArgs === 'object') return { raw: null, parsed: rawArgs };
+  const raw = toSafeString(rawArgs);
+  const parsed = raw ? tryParseJson(raw) : null;
+  return { raw, parsed };
+}
+
+function toolArgsSummary(toolName, parsedArgs, rawArgs) {
+  const t = String(toolName || 'tool');
+  const a = parsedArgs && typeof parsedArgs === 'object' ? parsedArgs : null;
+
+  // Common keys across our tool ecosystem.
+  const candidates = [
+    a && typeof a.command === 'string' ? a.command : null,
+    a && typeof a.cmd === 'string' ? a.cmd : null,
+    a && typeof a.expression === 'string' ? a.expression : null,
+    a && typeof a.path === 'string' ? a.path : null,
+    a && typeof a.directory === 'string' ? a.directory : null,
+    a && typeof a.dir_path === 'string' ? a.dir_path : null,
+    a && typeof a.directory_path === 'string' ? a.directory_path : null,
+    a && typeof a.filePath === 'string' ? a.filePath : null,
+    a && typeof a.file_path === 'string' ? a.file_path : null,
+    a && typeof a.filename === 'string' ? a.filename : null,
+    a && typeof a.ref_id === 'string' ? a.ref_id : null,
+    a && typeof a.url === 'string' ? a.url : null,
+    a && typeof a.q === 'string' ? a.q : null,
+    a && typeof a.query === 'string' ? a.query : null,
+    a && typeof a.pattern === 'string' ? a.pattern : null,
+    a && typeof a.location === 'string' ? a.location : null,
+    a && typeof a.ticker === 'string' ? a.ticker : null,
+    rawArgs,
+  ].filter(Boolean);
+
+  const first = candidates[0];
+  if (!first) return null;
+  const preview = getPreview(String(first), 80);
+  return preview ? `${t} ${preview}` : null;
+}
+
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getToolSpanName(toolName, rawArgs) {
+  const { raw, parsed } = parseToolArgs(rawArgs);
+  const summary = toolArgsSummary(toolName, parsed, raw);
+  if (!summary) return `Tool: ${toolName}`;
+  const detail = summary.replace(new RegExp(`^${escapeRegex(toolName)}\\s*`, 'i'), '');
+  return detail ? `Tool: ${toolName} (${detail})` : `Tool: ${toolName}`;
+}
+
+function parseShellCommandOutput(output) {
+  if (!output || typeof output !== 'string') return { exitCode: null, wallTimeMs: null };
+  const exitMatch = output.match(/Exit\\s+code:\\s*(\\d+)/i);
+  const wallMatch = output.match(/Wall\\s+time:\\s*(\\d+(?:\\.\\d+)?)\\s*seconds?/i);
+  const exitCode = exitMatch ? Number.parseInt(exitMatch[1], 10) : null;
+  const wallTimeMs = wallMatch ? Math.round(Number.parseFloat(wallMatch[1]) * 1000) : null;
+  return {
+    exitCode: Number.isFinite(exitCode) ? exitCode : null,
+    wallTimeMs: Number.isFinite(wallTimeMs) ? wallTimeMs : null,
+  };
+}
+
+function isOneShotCodexServiceName(serviceName) {
+  const s = String(serviceName || '').trim().toLowerCase();
+  if (!s) return false;
+  // Interactive services (keep the session open across multiple turns).
+  if (s === 'codex_cli_rs' || s === 'codex_tui') return false;
+  // Non-interactive subcommands typically show up as `codex_*` (e.g., codex_exec, codex_review).
+  return s.startsWith('codex_');
+}
+
 function anyValueToJs(value) {
   if (!value || typeof value !== 'object') return null;
   if (Object.prototype.hasOwnProperty.call(value, 'stringValue')) return value.stringValue;
@@ -91,6 +194,20 @@ function anyValueToJs(value) {
   }
   if (Object.prototype.hasOwnProperty.call(value, 'doubleValue')) return Number(value.doubleValue);
   if (Object.prototype.hasOwnProperty.call(value, 'boolValue')) return Boolean(value.boolValue);
+  if (Object.prototype.hasOwnProperty.call(value, 'arrayValue')) {
+    const vs = value.arrayValue && Array.isArray(value.arrayValue.values) ? value.arrayValue.values : [];
+    return vs.map(anyValueToJs);
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'kvlistValue')) {
+    const out = {};
+    const vs = value.kvlistValue && Array.isArray(value.kvlistValue.values) ? value.kvlistValue.values : [];
+    for (const kv of vs) {
+      if (!kv || typeof kv.key !== 'string') continue;
+      out[kv.key] = anyValueToJs(kv.value);
+    }
+    return out;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'bytesValue')) return value.bytesValue;
   return null;
 }
 
@@ -197,6 +314,7 @@ function jsonOk(res) {
 // =============================================================================
 
 function newSession(conversationId, meta) {
+  const isOneShot = isOneShotCodexServiceName(meta.serviceName);
   return {
     conversationId,
     traceId: randomHex(16),
@@ -227,13 +345,23 @@ function newSession(conversationId, meta) {
       tool: 0,
     },
 
+    // Linkage + summary counters (mirrors Claude Code conventions where possible)
+    lastLlmSpanId: null,
+    pendingToolSpanRefs: [],
+    toolCallCount: 0,
+    toolErrorCount: 0,
+
     currentTurn: null,
     pendingLlmCalls: [],
     pendingToolDecisions: new Map(),
 
+    isOneShot,
+    oneShotFinalize: null,
+
     timers: {
       sessionIdle: null,
       turnIdle: null,
+      oneShotFinalize: null,
     },
   };
 }
@@ -241,6 +369,44 @@ function newSession(conversationId, meta) {
 const state = {
   sessions: new Map(), // conversationId -> session
 };
+
+function scheduleOneShotFinalize(session, reason) {
+  if (!session?.isOneShot) return;
+  if (!Number.isFinite(ONESHOT_SESSION_FINALIZE_MS) || ONESHOT_SESSION_FINALIZE_MS <= 0) return;
+
+  if (session.timers.oneShotFinalize) clearTimeout(session.timers.oneShotFinalize);
+  session.oneShotFinalize = {
+    reason: `oneshot_${reason}`,
+    deadlineMs: Date.now() + 15_000,
+  };
+
+  session.timers.oneShotFinalize = setTimeout(() => {
+    attemptOneShotFinalize(session.conversationId);
+  }, ONESHOT_SESSION_FINALIZE_MS);
+}
+
+function attemptOneShotFinalize(conversationId) {
+  const session = state.sessions.get(conversationId);
+  if (!session || !session.oneShotFinalize) return;
+
+  // Only finalize once the turn is closed and we don't have pending LLM spans awaiting usage hydration.
+  const hasActiveTurn = Boolean(session.currentTurn);
+  const hasPendingLlm = Array.isArray(session.pendingLlmCalls) && session.pendingLlmCalls.length > 0;
+  const now = Date.now();
+
+  if ((hasActiveTurn || hasPendingLlm) && now < session.oneShotFinalize.deadlineMs) {
+    if (session.timers.oneShotFinalize) clearTimeout(session.timers.oneShotFinalize);
+    session.timers.oneShotFinalize = setTimeout(() => attemptOneShotFinalize(conversationId), 500);
+    return;
+  }
+
+  const reason = session.oneShotFinalize.reason || 'oneshot_turn_complete';
+  session.oneShotFinalize = null;
+  if (session.timers.oneShotFinalize) clearTimeout(session.timers.oneShotFinalize);
+  session.timers.oneShotFinalize = null;
+
+  finalizeSession(conversationId, reason);
+}
 
 function scheduleSessionIdleFlush(session) {
   if (session.timers.sessionIdle) clearTimeout(session.timers.sessionIdle);
@@ -337,6 +503,8 @@ function endTurnIfOpen(session, endTimeMs, reason) {
     { key: 'turn.number', value: { intValue: String(turn.turnNumber) } },
     { key: 'turn.end_reason', value: { stringValue: reason } },
     { key: 'prompt.length', value: { intValue: String(turn.promptLength || 0) } },
+    { key: 'turn.tool_call_count', value: { intValue: String(turn.toolCallCount || 0) } },
+    { key: 'turn.tool_error_count', value: { intValue: String(turn.toolErrorCount || 0) } },
   ];
 
   if (turn.promptPreview) {
@@ -384,6 +552,8 @@ function finalizeSession(conversationId, reason) {
 
   if (session.timers.sessionIdle) clearTimeout(session.timers.sessionIdle);
   if (session.timers.turnIdle) clearTimeout(session.timers.turnIdle);
+  if (session.timers.oneShotFinalize) clearTimeout(session.timers.oneShotFinalize);
+  session.oneShotFinalize = null;
 
   // End any active turn.
   endTurnIfOpen(session, session.lastEventTimeMs || Date.now(), `session_${reason}`);
@@ -398,8 +568,13 @@ function finalizeSession(conversationId, reason) {
     ...baseSpanAttrs(session),
     { key: 'session.turn_count', value: { intValue: String(session.turnCount) } },
     { key: 'session.api_call_count', value: { intValue: String(session.apiCallCount) } },
+    { key: 'session.tool_call_count', value: { intValue: String(session.toolCallCount) } },
+    { key: 'session.tool_error_count', value: { intValue: String(session.toolErrorCount) } },
     { key: 'gen_ai.usage.input_tokens', value: { intValue: String(session.tokens.input) } },
     { key: 'gen_ai.usage.output_tokens', value: { intValue: String(session.tokens.output) } },
+    { key: 'codex.usage.cached_token_count', value: { intValue: String(session.tokens.cached) } },
+    { key: 'codex.usage.reasoning_token_count', value: { intValue: String(session.tokens.reasoning) } },
+    { key: 'codex.usage.tool_token_count', value: { intValue: String(session.tokens.tool) } },
     { key: 'codex.session_end_reason', value: { stringValue: reason } },
   ];
 
@@ -444,6 +619,12 @@ function handleCodexLogEvent(meta, attrsObj) {
   meta.terminalType = attrsObj['terminal.type'] || meta.terminalType;
 
   const session = getOrCreateSession(conversationId, meta);
+  // New events mean we're not done yet; cancel any pending one-shot finalization.
+  if (session.timers.oneShotFinalize) {
+    clearTimeout(session.timers.oneShotFinalize);
+    session.timers.oneShotFinalize = null;
+    session.oneShotFinalize = null;
+  }
   session.lastEventTimeMs = timestampMs;
   if (meta.cwd) session.cwd = meta.cwd;
 
@@ -483,6 +664,10 @@ function handleCodexLogEvent(meta, attrsObj) {
       promptPreview,
       lastAssistantMessage: null,
       tokens: { input: 0, output: 0 },
+      lastLlmSpanId: null,
+      pendingToolSpanRefs: [],
+      toolCallCount: 0,
+      toolErrorCount: 0,
     };
     logDebug('user_prompt', conversationId, `turn=${turnNumber}`);
     return;
@@ -503,8 +688,21 @@ function handleCodexLogEvent(meta, attrsObj) {
     const inTurn = Boolean(session.currentTurn);
     const turnNumber = session.currentTurn ? session.currentTurn.turnNumber : 0;
     const parentSpanId = session.currentTurn ? session.currentTurn.spanId : session.rootSpanId;
+    const ctx = session.currentTurn || session;
+
+    const consumedToolRefs = Array.isArray(ctx.pendingToolSpanRefs) ? ctx.pendingToolSpanRefs.splice(0) : [];
+    const links = [];
+    for (const t of consumedToolRefs) {
+      if (!t || typeof t.spanId !== 'string') continue;
+      const linkAttrs = [{ key: 'link.type', value: { stringValue: 'consumes_tool_result' } }];
+      if (t.callId) {
+        linkAttrs.push({ key: 'gen_ai.tool.call.id', value: { stringValue: String(t.callId) } });
+      }
+      links.push({ traceId: session.traceId, spanId: t.spanId, attributes: linkAttrs });
+    }
 
     const spanId = randomHex(8);
+    ctx.lastLlmSpanId = spanId;
     const base = [
       { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
       ...baseSpanAttrs(session),
@@ -528,13 +726,14 @@ function handleCodexLogEvent(meta, attrsObj) {
       traceId: session.traceId,
       spanId,
       parentSpanId,
-      name: `LLM Call: ${model}`,
+      name: `LLM Call: ${model} (?→? tokens)`,
       kind: 'SPAN_KIND_CLIENT',
       startTimeUnixNano: msToNanos(startTimeMs),
       endTimeUnixNano: msToNanos(endTimeMs),
       attributes: base,
       status: errorMessage || (typeof httpStatus === 'number' && httpStatus >= 400) ? spanStatusError(errorMessage || '') : spanStatusOk(),
     };
+    if (links.length > 0) span.links = links;
 
     const pending = { span, timer: null, inTurn, turnNumber };
     pending.timer = setTimeout(() => {
@@ -626,10 +825,12 @@ function handleCodexLogEvent(meta, attrsObj) {
     const startTimeMs = Math.max(0, timestampMs - duration);
     const endTimeMs = timestampMs;
     const callId = attrsObj.call_id ? String(attrsObj.call_id) : null;
-    const success = String(attrsObj.success || 'true').toLowerCase() === 'true';
+    const successRaw = attrsObj.success;
+    const success = successRaw == null ? true : String(successRaw).toLowerCase() === 'true';
 
     const parentSpanId = session.currentTurn ? session.currentTurn.spanId : session.rootSpanId;
     const turnNumber = session.currentTurn ? session.currentTurn.turnNumber : 0;
+    const ctx = session.currentTurn || session;
 
     const spanAttrs = [
       { key: 'openinference.span.kind', value: { stringValue: 'TOOL' } },
@@ -640,7 +841,10 @@ function handleCodexLogEvent(meta, attrsObj) {
       { key: 'tool.duration_ms', value: { intValue: String(duration) } },
     ];
 
-    if (callId) spanAttrs.push({ key: 'tool.call_id', value: { stringValue: callId } });
+    if (callId) {
+      spanAttrs.push({ key: 'tool.call_id', value: { stringValue: callId } });
+      spanAttrs.push({ key: 'gen_ai.tool.call.id', value: { stringValue: callId } });
+    }
 
     const decision = callId ? session.pendingToolDecisions.get(callId) : null;
     if (decision) {
@@ -649,23 +853,68 @@ function handleCodexLogEvent(meta, attrsObj) {
       session.pendingToolDecisions.delete(callId);
     }
 
+    // Tool arguments (usually JSON); avoid high-volume capture and keep only a preview.
+    const argsValue = attrsObj.arguments ?? null;
+    const argsString = argsValue == null ? null : (typeof argsValue === 'string' ? argsValue : toSafeString(argsValue));
+    if (argsString) {
+      spanAttrs.push({ key: 'tool.args_preview', value: { stringValue: getPreview(argsString, 400) } });
+      spanAttrs.push({ key: 'tool.args_length', value: { intValue: String(argsString.length) } });
+    }
+
     // Avoid high-volume outputs; keep only a short preview.
     if (attrsObj.output && typeof attrsObj.output === 'string') {
       spanAttrs.push({ key: 'tool.output_preview', value: { stringValue: getPreview(attrsObj.output, 400) } });
       spanAttrs.push({ key: 'tool.output_length', value: { intValue: String(attrsObj.output.length) } });
+
+      // Parse common shell wrapper output for quick debugging fields.
+      const parsed = parseShellCommandOutput(attrsObj.output);
+      if (parsed.exitCode != null) {
+        spanAttrs.push({ key: 'tool.execution.exit_code', value: { intValue: String(parsed.exitCode) } });
+      }
+      if (parsed.wallTimeMs != null) {
+        spanAttrs.push({ key: 'tool.execution.wall_time_ms', value: { intValue: String(parsed.wallTimeMs) } });
+      }
     }
+
+    session.toolCallCount += 1;
+    if (!success) session.toolErrorCount += 1;
+    if (session.currentTurn) {
+      session.currentTurn.toolCallCount += 1;
+      if (!success) session.currentTurn.toolErrorCount += 1;
+    }
+
+    const toolSpanId = randomHex(8);
+    const links = [];
+    if (ctx.lastLlmSpanId) {
+      links.push({
+        traceId: session.traceId,
+        spanId: ctx.lastLlmSpanId,
+        attributes: [{ key: 'link.type', value: { stringValue: 'produced_by_llm' } }],
+      });
+    }
+
+    const spanName = getToolSpanName(toolName, argsValue);
 
     exportSpan(session, {
       traceId: session.traceId,
-      spanId: randomHex(8),
+      spanId: toolSpanId,
       parentSpanId,
-      name: `Tool: ${toolName}`,
+      name: spanName,
       kind: 'SPAN_KIND_INTERNAL',
       startTimeUnixNano: msToNanos(startTimeMs),
       endTimeUnixNano: msToNanos(endTimeMs),
       attributes: spanAttrs,
+      ...(links.length > 0 ? { links } : {}),
       status: success ? spanStatusOk() : spanStatusError('tool_failed'),
     });
+
+    if (Array.isArray(ctx.pendingToolSpanRefs)) {
+      ctx.pendingToolSpanRefs.push({
+        spanId: toolSpanId,
+        callId,
+        toolName: String(toolName),
+      });
+    }
 
     return;
   }
@@ -691,6 +940,10 @@ function handleNotify(notification) {
   }
 
   finalizeTurn(conversationId, Date.now(), 'notify.agent-turn-complete');
+
+  // One-shot commands (codex_exec, codex_review, etc) should export the session root span quickly
+  // to avoid Tempo showing "<root span not yet received>".
+  scheduleOneShotFinalize(session, 'agent-turn-complete');
 }
 
 // =============================================================================

@@ -348,7 +348,7 @@ class OTLPReceiver:
 
         # Convert span name to event name format
         # e.g., 'claude.agent.run' -> 'claude_code.agent_run'
-        event_name = self._span_name_to_event(span_name)
+        event_name = self._span_name_to_event(span_name, service_name)
         if not event_name:
             return None
 
@@ -441,7 +441,7 @@ class OTLPReceiver:
             return None
 
         # Convert span name to event name format
-        event_name = self._span_name_to_event(span_name)
+        event_name = self._span_name_to_event(span_name, service_name)
         if not event_name:
             return None
 
@@ -511,13 +511,24 @@ class OTLPReceiver:
             span_id=span_id,
         )
 
-    def _span_name_to_event(self, span_name: str) -> Optional[str]:
+    def _span_name_to_event(
+        self, span_name: str, service_name: Optional[str] = None
+    ) -> Optional[str]:
         """Convert span name to event name format.
 
         Maps span names to event names that trigger session state changes.
         e.g., 'claude.agent.run' -> 'claude_code.agent_run'
               'tool.read' -> 'claude_code.tool_result'
         """
+        # We only use trace spans for local session tracking for Claude Code today.
+        # Codex/Gemini now emit synthesized OpenInference spans that may also start
+        # with `LLM...`; avoid misclassifying those as Claude events.
+        span_lower = span_name.lower()
+        if span_lower.startswith("llm") and service_name:
+            svc = service_name.lower()
+            if "claude" not in svc:
+                return None
+
         # Map of span name patterns to event names
         span_mappings = {
             # Agent lifecycle spans
@@ -707,7 +718,7 @@ class OTLPReceiver:
             span_id = log_record.span_id.hex()
 
         token_preview = ""
-        if event_name in ("claude_code.api_request", "codex.api_request", "gemini_cli.api.request"):
+        if event_name in ("claude_code.api_request", "codex.api_request", "gemini_cli.api_request", "gemini_cli.api.request"):
             token_preview = (
                 f", model={attributes.get('model')}, input_tokens={attributes.get('input_tokens')}, "
                 f"output_tokens={attributes.get('output_tokens')}, cost_usd={attributes.get('cost_usd')}"

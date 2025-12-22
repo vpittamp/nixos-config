@@ -27,7 +27,7 @@ const zlib = require('node:zlib');
 // Config
 // =============================================================================
 
-const INTERCEPTOR_VERSION = '0.1.0';
+const INTERCEPTOR_VERSION = '0.1.1';
 
 const LISTEN_HOST = process.env.GEMINI_OTEL_INTERCEPTOR_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.GEMINI_OTEL_INTERCEPTOR_PORT || '4322', 10);
@@ -63,6 +63,13 @@ const TURN_IDLE_END_MS = Number.parseInt(
   10
 ); // default: 15 seconds
 
+// For one-shot commands (non-interactive), export the Session/root span as soon as the Turn completes
+// so Tempo doesn't show "<root span not yet received>" for minutes.
+const ONESHOT_SESSION_FINALIZE_MS = Number.parseInt(
+  process.env.GEMINI_OTEL_INTERCEPTOR_ONESHOT_SESSION_FINALIZE_MS || '0',
+  10
+); // default: immediate
+
 const DEBUG = process.env.GEMINI_OTEL_INTERCEPTOR_DEBUG === '1';
 
 // =============================================================================
@@ -90,6 +97,121 @@ function getPreview(text, maxLen = 80) {
   return clean.slice(0, Math.max(0, maxLen - 3)) + '...';
 }
 
+function tryParseJson(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function toSafeString(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseToolArgs(rawArgs) {
+  if (rawArgs == null) return { raw: null, parsed: null };
+  if (typeof rawArgs === 'object') return { raw: null, parsed: rawArgs };
+  const raw = toSafeString(rawArgs);
+  const parsed = raw ? tryParseJson(raw) : null;
+  return { raw, parsed };
+}
+
+function toolArgsSummary(toolName, parsedArgs, rawArgs) {
+  const t = String(toolName || 'tool');
+  const a = parsedArgs && typeof parsedArgs === 'object' ? parsedArgs : null;
+
+  // Common keys across Gemini CLI tools and our MCP-like tool ecosystem.
+  const candidates = [
+    a && typeof a.command === 'string' ? a.command : null,
+    a && typeof a.cmd === 'string' ? a.cmd : null,
+    a && typeof a.expression === 'string' ? a.expression : null,
+    a && typeof a.path === 'string' ? a.path : null,
+    a && typeof a.directory === 'string' ? a.directory : null,
+    a && typeof a.dir_path === 'string' ? a.dir_path : null,
+    a && typeof a.directory_path === 'string' ? a.directory_path : null,
+    a && typeof a.filePath === 'string' ? a.filePath : null,
+    a && typeof a.file_path === 'string' ? a.file_path : null,
+    a && typeof a.filename === 'string' ? a.filename : null,
+    a && typeof a.ref_id === 'string' ? a.ref_id : null,
+    a && typeof a.url === 'string' ? a.url : null,
+    a && typeof a.q === 'string' ? a.q : null,
+    a && typeof a.query === 'string' ? a.query : null,
+    a && typeof a.pattern === 'string' ? a.pattern : null,
+    a && typeof a.location === 'string' ? a.location : null,
+    a && typeof a.ticker === 'string' ? a.ticker : null,
+    rawArgs,
+  ].filter(Boolean);
+
+  const first = candidates[0];
+  if (!first) return null;
+  const preview = getPreview(String(first), 80);
+  return preview ? `${t} ${preview}` : null;
+}
+
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getToolSpanName(toolName, rawArgs) {
+  const { raw, parsed } = parseToolArgs(rawArgs);
+  const summary = toolArgsSummary(toolName, parsed, raw);
+  if (!summary) return `Tool: ${toolName}`;
+  const detail = summary.replace(new RegExp(`^${escapeRegex(toolName)}\\s*`, 'i'), '');
+  return detail ? `Tool: ${toolName} (${detail})` : `Tool: ${toolName}`;
+}
+
+function extractGeminiTextsFromResponseChunk(chunk) {
+  const candidates = Array.isArray(chunk?.candidates) ? chunk.candidates : [];
+  const visibleParts = [];
+  const thoughtParts = [];
+
+  for (const c of candidates) {
+    const parts = Array.isArray(c?.content?.parts) ? c.content.parts : [];
+    for (const p of parts) {
+      if (!p || typeof p.text !== 'string') continue;
+      if (p.thought === true) thoughtParts.push(p.text);
+      else visibleParts.push(p.text);
+    }
+  }
+
+  return {
+    visibleText: visibleParts.length > 0 ? visibleParts.join('\n') : null,
+    thoughtText: thoughtParts.length > 0 ? thoughtParts.join('\n') : null,
+  };
+}
+
+function extractGeminiResponseText(responseText) {
+  if (!responseText || typeof responseText !== 'string') return { text: null, thoughts: null };
+
+  const parsed = tryParseJson(responseText);
+  if (!parsed) return { text: responseText, thoughts: null };
+
+  const chunks = Array.isArray(parsed) ? parsed : [parsed];
+  const visible = [];
+  const thoughts = [];
+
+  for (const chunk of chunks) {
+    const out = extractGeminiTextsFromResponseChunk(chunk);
+    if (out.visibleText) visible.push(out.visibleText);
+    if (out.thoughtText) thoughts.push(out.thoughtText);
+  }
+
+  return {
+    text: visible.length > 0 ? visible.join('\n') : (thoughts.length > 0 ? thoughts.join('\n') : null),
+    thoughts: thoughts.length > 0 ? thoughts.join('\n') : null,
+  };
+}
+
 function anyValueToJs(value) {
   if (!value || typeof value !== 'object') return null;
   if (Object.prototype.hasOwnProperty.call(value, 'stringValue')) return value.stringValue;
@@ -101,6 +223,20 @@ function anyValueToJs(value) {
   }
   if (Object.prototype.hasOwnProperty.call(value, 'doubleValue')) return Number(value.doubleValue);
   if (Object.prototype.hasOwnProperty.call(value, 'boolValue')) return Boolean(value.boolValue);
+  if (Object.prototype.hasOwnProperty.call(value, 'arrayValue')) {
+    const vs = value.arrayValue && Array.isArray(value.arrayValue.values) ? value.arrayValue.values : [];
+    return vs.map(anyValueToJs);
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'kvlistValue')) {
+    const out = {};
+    const vs = value.kvlistValue && Array.isArray(value.kvlistValue.values) ? value.kvlistValue.values : [];
+    for (const kv of vs) {
+      if (!kv || typeof kv.key !== 'string') continue;
+      out[kv.key] = anyValueToJs(kv.value);
+    }
+    return out;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'bytesValue')) return value.bytesValue;
   return null;
 }
 
@@ -221,6 +357,7 @@ function newSession(sessionId, meta) {
     serviceName: meta.serviceName || 'gemini-cli',
     serviceVersion: meta.serviceVersion || meta.appVersion || 'unknown',
     env: meta.env || 'dev',
+    interactive: meta.interactive ?? null,
 
     providerName: meta.providerName || 'Google',
     model: meta.model || null,
@@ -231,7 +368,14 @@ function newSession(sessionId, meta) {
 
     turnCount: 0,
     apiCallCount: 0,
+    llmRequestSeq: 0,
     tokens: { input: 0, output: 0, cached: 0, thoughts: 0, tool: 0, total: 0 },
+
+    // Linkage + summary counters (mirrors Claude Code conventions where possible)
+    lastLlmSpanId: null,
+    pendingToolSpanRefs: [],
+    toolCallCount: 0,
+    toolErrorCount: 0,
 
     currentTurn: null,
 
@@ -328,6 +472,8 @@ function endTurnIfOpen(session, endTimeMs, reason) {
     { key: 'turn.number', value: { intValue: String(turn.turnNumber) } },
     { key: 'turn.end_reason', value: { stringValue: reason } },
     { key: 'prompt.length', value: { intValue: String(turn.promptLength || 0) } },
+    { key: 'turn.tool_call_count', value: { intValue: String(turn.toolCallCount || 0) } },
+    { key: 'turn.tool_error_count', value: { intValue: String(turn.toolErrorCount || 0) } },
   ];
 
   if (turn.promptId) attrs.push({ key: 'gemini.prompt_id', value: { stringValue: String(turn.promptId) } });
@@ -357,6 +503,15 @@ function finalizeTurn(sessionId, endTimeMs, reason) {
   const session = state.sessions.get(sessionId);
   if (!session) return;
   endTurnIfOpen(session, endTimeMs, reason);
+
+  // In one-shot mode (non-interactive), close the session promptly once the turn is done so
+  // Tempo receives the root span and can display the correct root service name.
+  if (session.interactive === false && reason === 'idle_timeout') {
+    const delay = Number.isFinite(ONESHOT_SESSION_FINALIZE_MS) && ONESHOT_SESSION_FINALIZE_MS > 0
+      ? ONESHOT_SESSION_FINALIZE_MS
+      : 0;
+    setTimeout(() => finalizeSession(sessionId, 'oneshot_turn_complete'), delay);
+  }
 }
 
 function finalizeSession(sessionId, reason) {
@@ -376,8 +531,14 @@ function finalizeSession(sessionId, reason) {
     ...baseSpanAttrs(session),
     { key: 'session.turn_count', value: { intValue: String(session.turnCount) } },
     { key: 'session.api_call_count', value: { intValue: String(session.apiCallCount) } },
+    { key: 'session.tool_call_count', value: { intValue: String(session.toolCallCount) } },
+    { key: 'session.tool_error_count', value: { intValue: String(session.toolErrorCount) } },
     { key: 'gen_ai.usage.input_tokens', value: { intValue: String(session.tokens.input) } },
     { key: 'gen_ai.usage.output_tokens', value: { intValue: String(session.tokens.output) } },
+    { key: 'gemini.usage.cached_content_token_count', value: { intValue: String(session.tokens.cached) } },
+    { key: 'gemini.usage.thoughts_token_count', value: { intValue: String(session.tokens.thoughts) } },
+    { key: 'gemini.usage.tool_token_count', value: { intValue: String(session.tokens.tool) } },
+    { key: 'gemini.usage.total_token_count', value: { intValue: String(session.tokens.total) } },
     { key: 'gemini.session_end_reason', value: { stringValue: reason } },
   ];
 
@@ -412,7 +573,10 @@ function handleGeminiLogEvent(meta, attrsObj) {
   const eventName = attrsObj['event.name'];
   if (!eventName || typeof eventName !== 'string') return;
 
-  const sessionId = attrsObj['session.id'];
+  const sessionId =
+    (typeof attrsObj['session.id'] === 'string' && attrsObj['session.id'])
+    || (typeof attrsObj.sessionId === 'string' && attrsObj.sessionId)
+    || null;
   if (!sessionId || typeof sessionId !== 'string') return;
 
   const timestampMs = parseIsoToMs(attrsObj['event.timestamp']) || meta.timestampMs || Date.now();
@@ -428,6 +592,8 @@ function handleGeminiLogEvent(meta, attrsObj) {
   if (eventName === 'gemini_cli.config') {
     session.model = attrsObj.model || session.model;
     session.approvalMode = attrsObj.approval_mode || session.approvalMode;
+    if (typeof attrsObj.interactive === 'boolean') session.interactive = attrsObj.interactive;
+    else if (attrsObj.interactive != null) session.interactive = String(attrsObj.interactive).toLowerCase() === 'true';
     if (attrsObj.sandbox_enabled != null) session.sandboxEnabled = Boolean(attrsObj.sandbox_enabled);
     if (attrsObj.mcp_servers) session.mcpServers = String(attrsObj.mcp_servers);
     return;
@@ -456,12 +622,17 @@ function handleGeminiLogEvent(meta, attrsObj) {
       promptId,
       lastAssistantMessage: null,
       tokens: { input: 0, output: 0 },
+      lastLlmSpanId: null,
+      pendingToolSpanRefs: [],
+      toolCallCount: 0,
+      toolErrorCount: 0,
     };
     return;
   }
 
   if (eventName === 'gemini_cli.api_request') {
     session.apiCallCount += 1;
+    session.llmRequestSeq += 1;
 
     const promptId = attrsObj.prompt_id ? String(attrsObj.prompt_id) : null;
     const model = attrsObj.model || session.model || 'unknown';
@@ -474,6 +645,7 @@ function handleGeminiLogEvent(meta, attrsObj) {
       const q = session.pendingApiRequests.get(promptId) || [];
       q.push({
         timestampMs,
+        sequence: session.llmRequestSeq,
         model,
         requestTextPreview: requestText ? getPreview(requestText, 400) : null,
         requestTextLength: requestText && typeof requestText === 'string' ? requestText.length : 0,
@@ -499,9 +671,13 @@ function handleGeminiLogEvent(meta, attrsObj) {
     const toolTokens = parseDurationMs(attrsObj.tool_token_count) || 0;
     const totalTokens = parseDurationMs(attrsObj.total_token_count) || (inputTokens + outputTokens);
 
-    // Attach a short response preview to the current turn.
-    if (session.currentTurn && typeof attrsObj.response_text === 'string') {
-      session.currentTurn.lastAssistantMessage = getPreview(attrsObj.response_text, 400);
+    const rawResponseText = typeof attrsObj.response_text === 'string' ? attrsObj.response_text : null;
+    const extracted = rawResponseText ? extractGeminiResponseText(rawResponseText) : { text: null, thoughts: null };
+    const assistantPreview = extracted.text ? getPreview(extracted.text, 400) : null;
+
+    // Attach a short response preview to the current turn (prefer extracted model text over raw JSON).
+    if (session.currentTurn && assistantPreview) {
+      session.currentTurn.lastAssistantMessage = assistantPreview;
     }
 
     const pending = promptId ? (session.pendingApiRequests.get(promptId) || []).shift() : null;
@@ -514,6 +690,20 @@ function handleGeminiLogEvent(meta, attrsObj) {
     const inTurn = Boolean(session.currentTurn);
     const turnNumber = session.currentTurn ? session.currentTurn.turnNumber : 0;
     const parentSpanId = session.currentTurn ? session.currentTurn.spanId : session.rootSpanId;
+    const ctx = session.currentTurn || session;
+
+    const consumedToolRefs = Array.isArray(ctx.pendingToolSpanRefs) ? ctx.pendingToolSpanRefs.splice(0) : [];
+    const links = [];
+    for (const t of consumedToolRefs) {
+      if (!t || typeof t.spanId !== 'string') continue;
+      const linkAttrs = [{ key: 'link.type', value: { stringValue: 'consumes_tool_result' } }];
+      if (t.callId) linkAttrs.push({ key: 'gen_ai.tool.call.id', value: { stringValue: String(t.callId) } });
+      links.push({ traceId: session.traceId, spanId: t.spanId, attributes: linkAttrs });
+    }
+
+    const llmSpanId = randomHex(8);
+    ctx.lastLlmSpanId = llmSpanId;
+    const sequence = pending && typeof pending.sequence === 'number' ? pending.sequence : session.llmRequestSeq;
 
     const spanAttrs = [
       { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
@@ -521,6 +711,7 @@ function handleGeminiLogEvent(meta, attrsObj) {
       { key: 'gen_ai.operation.name', value: { stringValue: 'chat' } },
       { key: 'gen_ai.request.model', value: { stringValue: model } },
       { key: 'llm.latency.total_ms', value: { intValue: String(duration) } },
+      { key: 'llm.request.sequence', value: { intValue: String(sequence) } },
       { key: 'turn.number', value: { intValue: String(turnNumber) } },
     ];
 
@@ -529,6 +720,10 @@ function handleGeminiLogEvent(meta, attrsObj) {
 
     if (pending?.requestTextPreview) spanAttrs.push({ key: 'llm.request_text_preview', value: { stringValue: pending.requestTextPreview } });
     if (pending?.requestTextLength) spanAttrs.push({ key: 'llm.request_text_length', value: { intValue: String(pending.requestTextLength) } });
+
+    if (session.currentTurn?.promptPreview) spanAttrs.push({ key: 'input.value', value: { stringValue: session.currentTurn.promptPreview } });
+    if (assistantPreview) spanAttrs.push({ key: 'output.value', value: { stringValue: assistantPreview } });
+    if (extracted.thoughts) spanAttrs.push({ key: 'gemini.output.thoughts_preview', value: { stringValue: getPreview(extracted.thoughts, 400) } });
 
     // Usage (Gemini naming differs slightly; normalize to GenAI conventions + keep raw fields).
     spanAttrs.push({ key: 'gen_ai.usage.input_tokens', value: { intValue: String(inputTokens) } });
@@ -543,13 +738,14 @@ function handleGeminiLogEvent(meta, attrsObj) {
 
     exportSpan(session, {
       traceId: session.traceId,
-      spanId: randomHex(8),
+      spanId: llmSpanId,
       parentSpanId,
       name: `LLM Call: ${model} (${inputTokens}→${outputTokens} tokens)`,
       kind: 'SPAN_KIND_CLIENT',
       startTimeUnixNano: msToNanos(startTimeMs),
       endTimeUnixNano: msToNanos(endTimeMs),
       attributes: spanAttrs,
+      ...(links.length > 0 ? { links } : {}),
       status: isError ? spanStatusError(errMsg) : spanStatusOk(),
     });
 
@@ -580,9 +776,11 @@ function handleGeminiLogEvent(meta, attrsObj) {
     const endTimeMs = timestampMs;
     const status = attrsObj.status || null;
     const decision = attrsObj.decision || null;
+    const successRaw = attrsObj.success;
 
     const parentSpanId = session.currentTurn ? session.currentTurn.spanId : session.rootSpanId;
     const turnNumber = session.currentTurn ? session.currentTurn.turnNumber : 0;
+    const ctx = session.currentTurn || session;
 
     const spanAttrs = [
       { key: 'openinference.span.kind', value: { stringValue: 'TOOL' } },
@@ -604,19 +802,58 @@ function handleGeminiLogEvent(meta, attrsObj) {
       spanAttrs.push({ key: 'tool.args_length', value: { intValue: String(attrsObj.function_args.length) } });
     }
 
-    const success = String(status || '').toLowerCase() === 'success';
+    let success = null;
+    if (typeof successRaw === 'boolean') success = successRaw;
+    else if (successRaw != null) {
+      const s = String(successRaw).toLowerCase();
+      if (s === 'true') success = true;
+      else if (s === 'false') success = false;
+      else if (s === 'success') success = true;
+      else if (['error', 'failed', 'failure'].includes(s)) success = false;
+    }
+    if (success == null && status != null) success = String(status).toLowerCase() === 'success';
+    if (success == null) success = !(attrsObj.error || attrsObj.error_type);
+
+    spanAttrs.push({ key: 'tool.success', value: { boolValue: Boolean(success) } });
+
+    session.toolCallCount += 1;
+    if (!success) session.toolErrorCount += 1;
+    if (session.currentTurn) {
+      session.currentTurn.toolCallCount += 1;
+      if (!success) session.currentTurn.toolErrorCount += 1;
+    }
+
+    const toolSpanId = randomHex(8);
+    const links = [];
+    if (ctx.lastLlmSpanId) {
+      links.push({
+        traceId: session.traceId,
+        spanId: ctx.lastLlmSpanId,
+        attributes: [{ key: 'link.type', value: { stringValue: 'produced_by_llm' } }],
+      });
+    }
+
+    const spanName = getToolSpanName(fn, attrsObj.function_args);
 
     exportSpan(session, {
       traceId: session.traceId,
-      spanId: randomHex(8),
+      spanId: toolSpanId,
       parentSpanId,
-      name: `Tool: ${fn}`,
+      name: spanName,
       kind: 'SPAN_KIND_INTERNAL',
       startTimeUnixNano: msToNanos(startTimeMs),
       endTimeUnixNano: msToNanos(endTimeMs),
       attributes: spanAttrs,
+      ...(links.length > 0 ? { links } : {}),
       status: success ? spanStatusOk() : spanStatusError(String(attrsObj.error || '')),
     });
+
+    if (Array.isArray(ctx.pendingToolSpanRefs)) {
+      ctx.pendingToolSpanRefs.push({
+        spanId: toolSpanId,
+        toolName: String(fn),
+      });
+    }
 
     return;
   }
@@ -653,8 +890,10 @@ async function handleGeminiOtlpEnvelope(req, res) {
         for (const lr of logRecords) {
           const attrs = Array.isArray(lr?.attributes) ? lr.attributes : [];
 
-          const sid = attrGetString(attrs, 'session.id');
+          const sid = attrGetString(attrs, 'session.id') || attrGetString(attrs, 'sessionId');
           if (sid) {
+            // Normalize join keys with Codex/Claude: use session.id everywhere.
+            attrUpsert(attrs, 'session.id', { stringValue: sid });
             attrUpsert(attrs, 'conversation.id', { stringValue: sid });
             attrUpsert(attrs, 'gen_ai.conversation.id', { stringValue: sid });
           }
@@ -671,6 +910,7 @@ async function handleGeminiOtlpEnvelope(req, res) {
             env,
             model: attrsObj.model || null,
             timestampMs: parseIsoToMs(attrsObj['event.timestamp']),
+            interactive: typeof attrsObj.interactive === 'boolean' ? attrsObj.interactive : null,
             providerName: 'Google',
           };
 
@@ -736,4 +976,3 @@ server.listen(LISTEN_PORT, LISTEN_HOST, () => {
   // eslint-disable-next-line no-console
   console.error(`[gemini-otel-interceptor] forward native traces = ${FORWARD_NATIVE_TRACES ? 'on' : 'off'}`);
 });
-

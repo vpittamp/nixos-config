@@ -324,12 +324,36 @@ class SessionTracker:
 
         # Handle Codex token events
         if event.event_name == EventNames.CODEX_SSE_EVENT:
-            if "input_tokens" in attrs:
-                session.input_tokens = int(attrs["input_tokens"])
-            if "output_tokens" in attrs:
-                session.output_tokens = int(attrs["output_tokens"])
-            if "cache_tokens" in attrs:
-                session.cache_tokens = int(attrs["cache_tokens"])
+            # Codex emits per-request token counts on `response.completed`.
+            # Prefer the `*_token_count` fields (Codex), but accept generic fallbacks.
+            try:
+                kind = attrs.get("event.kind")
+                if kind and str(kind) != "response.completed":
+                    return
+
+                input_tokens = (
+                    attrs.get("input_token_count")
+                    or attrs.get("gen_ai.usage.input_tokens")
+                    or attrs.get("input_tokens")
+                    or 0
+                )
+                output_tokens = (
+                    attrs.get("output_token_count")
+                    or attrs.get("gen_ai.usage.output_tokens")
+                    or attrs.get("output_tokens")
+                    or 0
+                )
+                cached_tokens = (
+                    attrs.get("cached_token_count")
+                    or attrs.get("cache_tokens")
+                    or 0
+                )
+
+                session.input_tokens += int(input_tokens)
+                session.output_tokens += int(output_tokens)
+                session.cache_tokens += int(cached_tokens)
+            except Exception:
+                pass
 
         # Handle Gemini/GenAI standard token events
         elif event.event_name == EventNames.GEMINI_TOKEN_USAGE:
@@ -347,6 +371,38 @@ class SessionTracker:
                 if key in attrs:
                     session.output_tokens = int(attrs[key])
                     break
+
+        # Gemini CLI per-request token usage (api_response/api_error)
+        elif event.event_name in {
+            EventNames.GEMINI_API_RESPONSE,
+            EventNames.GEMINI_API_ERROR,
+            EventNames.GEMINI_API_RESPONSE_DOT,
+            EventNames.GEMINI_API_ERROR_DOT,
+        }:
+            try:
+                input_tokens = (
+                    attrs.get("input_token_count")
+                    or attrs.get("gen_ai.usage.input_tokens")
+                    or attrs.get("prompt_tokens")
+                    or 0
+                )
+                output_tokens = (
+                    attrs.get("output_token_count")
+                    or attrs.get("gen_ai.usage.output_tokens")
+                    or attrs.get("completion_tokens")
+                    or 0
+                )
+                cached_tokens = (
+                    attrs.get("cached_content_token_count")
+                    or attrs.get("cache_tokens")
+                    or 0
+                )
+
+                session.input_tokens += int(input_tokens)
+                session.output_tokens += int(output_tokens)
+                session.cache_tokens += int(cached_tokens)
+            except Exception:
+                pass
 
         # Handle Claude Code per-request token usage (sum across the session)
         elif event.event_name == EventNames.CLAUDE_API_REQUEST:

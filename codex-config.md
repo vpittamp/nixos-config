@@ -8,6 +8,17 @@ This document captures the Codex-side signals we can use to synthesize traces an
 
 Codex exports OTEL **log records** (not spans) when `[otel]` is enabled in `~/.codex/config.toml`.
 
+### Native knobs (Codex-side)
+
+- `~/.codex/config.toml` (TOML)
+  - `[otel]` enables log export and controls exporter options
+  - `notify = ["node", "/path/to/notify.js"]` enables turn-end notifications
+- Batch log export timing (env vars read by the Rust OTEL SDK):
+  - `OTEL_BLRP_SCHEDULE_DELAY` (ms)
+  - `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE`
+  - `OTEL_BLRP_MAX_QUEUE_SIZE`
+  - We set aggressive defaults in our `codex` wrapper so logs arrive near-real-time.
+
 ### Common metadata (present on all events)
 
 - `conversation.id` (session identifier)
@@ -62,6 +73,10 @@ To mirror our Claude Code trace hierarchy:
 - **Turn span (AGENT)**: start on `codex.user_prompt`, end on `notify` (`agent-turn-complete`), fallback to idle timeout.
 - **LLM spans (LLM/CLIENT)**: start/end derived from `codex.api_request.duration_ms`, token counts attached from `codex.sse_event` `response.completed`.
 - **Tool spans (TOOL)**: created from `codex.tool_result.duration_ms`, enriched with `codex.tool_decision` by `call_id` when available.
+  - We also parse `arguments` (when present) to generate semantic tool span names and attach `tool.args_preview`.
+  - We emit span links:
+    - Tool span `produced_by_llm` → the most recent LLM span in the Turn
+    - Next LLM span `consumes_tool_result` → prior tool span(s)
 
 To keep the same join key as Claude traces, we treat:
 - `session.id = conversation.id` (and inject this into forwarded Codex logs).
@@ -71,4 +86,3 @@ To keep the same join key as Claude traces, we treat:
 - OTEL log → trace synthesis: `scripts/codex-otel-interceptor.js`
 - Codex notify hook handler: `scripts/codex-hooks/notify.js`
 - Codex config + user service wiring: `home-modules/ai-assistants/codex.nix`
-
