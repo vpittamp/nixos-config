@@ -33,20 +33,20 @@
 
     k8sEndpoint = lib.mkOption {
       type = lib.types.str;
-      default = "http://otel-collector.tail286401.ts.net:4318";
-      description = "Kubernetes OTEL collector endpoint";
+      default = "https://otel-collector-<cluster>.tail286401.ts.net";
+      description = "Kubernetes OTEL collector endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     lokiEndpoint = lib.mkOption {
       type = lib.types.str;
-      default = "http://loki.tail286401.ts.net:3100";
-      description = "Loki push endpoint";
+      default = "https://loki-<cluster>.tail286401.ts.net";
+      description = "Loki push endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     mimirEndpoint = lib.mkOption {
       type = lib.types.str;
-      default = "http://mimir.tail286401.ts.net";
-      description = "Mimir remote write endpoint";
+      default = "https://mimir-<cluster>.tail286401.ts.net";
+      description = "Mimir remote write endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     enableNodeExporter = lib.mkOption {
@@ -161,7 +161,7 @@
 
   services.grafana-alloy = {
     enable = true;
-    k8sEndpoint = "http://otel-collector.tail286401.ts.net:4318";
+    k8sEndpoint = "https://otel-collector-<cluster>.tail286401.ts.net";
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [

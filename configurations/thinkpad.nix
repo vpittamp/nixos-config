@@ -19,6 +19,14 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+
+  tailscaleTailnet = "tail286401.ts.net";
+  # Prefer per-cluster Tailscale Services (no collisions across clusters).
+  # If this machine isn't a cluster host, fall back to the primary cluster (ryzen).
+  telemetryCluster =
+    let host = config.networking.hostName;
+    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
+  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
 in
 {
   imports = [
@@ -127,12 +135,12 @@ in
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack
   # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # Tailscale Operator Ingress endpoints use HTTPS:443 (terminated at edge)
+  # Tailscale Serve endpoints use HTTPS:443 (terminated at edge)
   services.grafana-alloy = {
     enable = true;
-    k8sEndpoint = "https://otel-collector-1.tail286401.ts.net";
-    lokiEndpoint = "https://loki.tail286401.ts.net";
-    mimirEndpoint = "https://mimir.tail286401.ts.net";
+    k8sEndpoint = tsServiceUrl "otel-collector";
+    lokiEndpoint = tsServiceUrl "loki";
+    mimirEndpoint = tsServiceUrl "mimir";
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [

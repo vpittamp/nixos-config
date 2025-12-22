@@ -21,6 +21,14 @@ with lib;
 let
   cfg = config.services.grafana-alloy;
 
+  tailscaleTailnet = "tail286401.ts.net";
+  # Prefer per-cluster Tailscale Services (no collisions across clusters).
+  # If this machine isn't a cluster host, fall back to the primary cluster (ryzen).
+  telemetryCluster =
+    let host = config.networking.hostName;
+    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
+  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
+
   # Generate journal source blocks for each configured unit
   journalSourceBlocks = concatMapStringsSep "\n\n" (unit:
     let
@@ -337,8 +345,8 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      default = "https://otel-collector-1.tail286401.ts.net";
-      description = "Kubernetes OTEL collector endpoint (via Tailscale Operator Ingress, HTTPS:443)";
+      default = tsServiceUrl "otel-collector";
+      description = "Kubernetes OTEL collector endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     phoenixEndpoint = mkOption {
@@ -349,13 +357,13 @@ in
 
     lokiEndpoint = mkOption {
       type = types.str;
-      default = "https://loki.tail286401.ts.net";
+      default = tsServiceUrl "loki";
       description = "Loki push endpoint (via Tailscale Serve, HTTPS:443)";
     };
 
     mimirEndpoint = mkOption {
       type = types.str;
-      default = "https://mimir.tail286401.ts.net";
+      default = tsServiceUrl "mimir";
       description = "Mimir remote write endpoint (via Tailscale Serve, HTTPS:443)";
     };
 

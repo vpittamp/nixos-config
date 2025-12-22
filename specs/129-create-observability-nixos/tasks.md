@@ -121,7 +121,7 @@
 
 **Goal**: Collect journald logs and forward to Loki
 
-**Independent Test**: `journalctl -u grafana-alloy -n 1 && curl loki.tail286401.ts.net:3100/loki/api/v1/labels`
+**Independent Test**: `journalctl -u grafana-alloy -n 1 && curl -sS https://loki-<cluster>.tail286401.ts.net/loki/api/v1/labels`
 
 ### Implementation for User Story 4
 

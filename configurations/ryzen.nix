@@ -19,6 +19,14 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+
+  tailscaleTailnet = "tail286401.ts.net";
+  # Prefer per-cluster Tailscale Services (no collisions across clusters).
+  # If this machine isn't a cluster host, fall back to the primary cluster (ryzen).
+  telemetryCluster =
+    let host = config.networking.hostName;
+    in if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
+  tsServiceUrl = name: "https://${name}-${telemetryCluster}.${tailscaleTailnet}";
 in
 {
   imports = [
@@ -139,13 +147,14 @@ in
   # Feature 123: OpenTelemetry Collector for AI assistant telemetry
   # Receives OTLP from Claude Code on 4318, forwards to otel-ai-monitor on 4320
   # Also exports to K8s OTel stack via Tailscale for persistence (ClickHouse/Grafana)
-  # Dashboard: https://grafana.tail286401.ts.net/d/otel-traces
+  # Dashboard: https://grafana-ryzen.tail286401.ts.net/d/otel-traces
   services.otel-ai-collector = {
     enable = true;
     enableDebugExporter = false;  # Less verbose for desktop
     enableFileExporter = true;    # Raw telemetry for analysis
     enableK8sExporter = true;     # Export to K8s OTel Collector via Tailscale
-    # k8sExporterEndpoint defaults to http://otel-collector.tail286401.ts.net:4318
+    # Tailscale Serve endpoints use HTTPS:443 (terminated at edge)
+    k8sExporterEndpoint = tsServiceUrl "otel-collector";
   };
 
   # Beyla eBPF auto-instrumentation (Feature 110)
@@ -153,7 +162,7 @@ in
   services.beyla = {
     enable = true;
     monitorAiAssistants = true;
-    otlpEndpoint = "https://otel-collector.tail286401.ts.net";
+    otlpEndpoint = tsServiceUrl "otel-collector";
   };
 
   # Display manager - greetd for Wayland/Sway login

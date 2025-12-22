@@ -15,7 +15,10 @@ Add to your host configuration (e.g., `configurations/thinkpad.nix`):
 {
   services.grafana-alloy = {
     enable = true;
-    k8sEndpoint = "http://otel-collector.tail286401.ts.net:4318";
+    # Use the current cluster (ryzen/thinkpad) service suffix:
+    # - otel-collector-ryzen.tail286401.ts.net
+    # - otel-collector-thinkpad.tail286401.ts.net
+    k8sEndpoint = "https://otel-collector-<cluster>.tail286401.ts.net";
   };
 
   # Optional: eBPF auto-instrumentation
@@ -50,7 +53,7 @@ curl -X POST http://localhost:4318/v1/traces \
 
 ## View in Grafana
 
-1. Open Grafana: `http://grafana.tail286401.ts.net:3000`
+1. Open Grafana: `https://grafana-<cluster>.tail286401.ts.net`
 2. **Metrics**: Explore → Mimir → Query `node_cpu_seconds_total{host="thinkpad"}`
 3. **Logs**: Explore → Loki → Query `{host="thinkpad", service="otel-ai-monitor"}`
 4. **Traces**: Explore → Tempo → Search by service name
@@ -92,8 +95,8 @@ cat /proc/sys/kernel/perf_event_paranoid  # Should be ≤1
 ### Telemetry not reaching K8s
 
 ```bash
-# Test Tailscale connectivity
-ping otel-collector.tail286401.ts.net
+# Test Tailscale connectivity (Serve endpoints are HTTPS:443)
+curl -sS -D- -o /dev/null https://otel-collector-<cluster>.tail286401.ts.net | head
 
 # Check Alloy export queue
 curl -s localhost:12345/metrics | grep otelcol_exporter

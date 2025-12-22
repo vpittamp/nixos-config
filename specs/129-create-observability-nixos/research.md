@@ -99,7 +99,7 @@ otelcol.exporter.otlphttp "local" {
 // Remote K8s endpoint
 otelcol.exporter.otlphttp "k8s" {
   client {
-    endpoint = "http://k8s-otel-collector.tail286401.ts.net:4318"
+    endpoint = "https://otel-collector-<cluster>.tail286401.ts.net"
   }
 }
 ```
@@ -246,7 +246,7 @@ loki.relabel "add_host" {
 
 loki.write "k8s" {
   endpoint {
-    url = "http://loki.tail286401.ts.net:3100/loki/api/v1/push"
+    url = "https://loki-<cluster>.tail286401.ts.net/loki/api/v1/push"
   }
 }
 ```

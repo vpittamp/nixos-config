@@ -36,7 +36,7 @@ curl -s http://localhost:12345/metrics | grep otelcol_exporter
 
 ### 3. View Traces in Tempo
 
-1. Open Grafana at https://grafana.tail286401.ts.net
+1. Open Grafana at https://grafana-<cluster>.tail286401.ts.net
 2. Navigate to Explore → Tempo
 3. Search for `service.name = "claude-code"`
 4. Verify trace hierarchy shows: Session → Turn → LLM spans

@@ -178,11 +178,17 @@ curl -s localhost:12345/metrics             # Alloy metrics
 
 **Configuration** (`configurations/{thinkpad,hetzner}.nix`):
 ```nix
+let
+  tailnet = "tail286401.ts.net";
+  host = config.networking.hostName;
+  cluster = if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
+  tsServiceUrl = name: "https://${name}-${cluster}.${tailnet}";
+in
 services.grafana-alloy = {
   enable = true;
-  k8sEndpoint = "https://otel-collector-1.tail286401.ts.net";  # Via Tailscale Operator Ingress
-  lokiEndpoint = "https://loki.tail286401.ts.net";
-  mimirEndpoint = "https://mimir.tail286401.ts.net";
+  k8sEndpoint = tsServiceUrl "otel-collector";  # https://otel-collector-<cluster>.tail286401.ts.net
+  lokiEndpoint = tsServiceUrl "loki";
+  mimirEndpoint = tsServiceUrl "mimir";
   enableNodeExporter = true;  # System metrics
   enableJournald = true;      # Log collection
   journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
@@ -190,6 +196,14 @@ services.grafana-alloy = {
 ```
 
 **Graceful Degradation**: Local AI monitoring (EWW widgets) works when K8s offline. Remote telemetry queued (100MB buffer) and retried.
+
+**Known Issues / Troubleshooting**:
+- OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
+- If `otel-collector-<cluster>.tail286401.ts.net` is missing or `mimir/loki` return `502`, verify the Kubernetes LGTM stack is healthy and the Tailscale serve pods are up/approved.
+  - Quick checks:
+    - `curl -sS -D- -o /dev/null https://otel-collector-ryzen.tail286401.ts.net | head`
+    - `curl -sS https://mimir-ryzen.tail286401.ts.net/ready && echo`
+    - `curl -sS https://loki-ryzen.tail286401.ts.net/ready && echo`
 
 ## Testing
 
