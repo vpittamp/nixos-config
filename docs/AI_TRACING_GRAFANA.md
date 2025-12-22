@@ -2,6 +2,15 @@
 
 This repo collects Claude Code telemetry via Grafana Alloy and exports to an LGTM stack (Tempo/Mimir/Loki).
 
+## Codex CLI note (traces are synthesized)
+
+Codex CLI currently emits **OTEL log events** (not spans) via `[otel]` in `~/.codex/config.toml`.
+
+To get Claude-like traces (Session → Turn → LLM/Tool), we:
+- Route Codex OTLP logs through `scripts/codex-otel-interceptor.js` (it forwards logs to Alloy and **synthesizes OTLP traces**).
+- Use Codex’s `notify` hook to post `agent-turn-complete` to the interceptor for accurate turn end boundaries.
+- Normalize the join key by copying `conversation.id` → `session.id` in forwarded Codex logs, and using the same `session.id` on synthesized spans.
+
 ## 1) The join key: `session.id`
 
 Claude Code native OpenTelemetry telemetry uses `session.id` (UUID per conversation).
