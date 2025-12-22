@@ -1,30 +1,28 @@
 <!--
 Sync Impact Report:
-- Version: 1.6.0 → 1.7.0 (MINOR - New principle added for Sway Test Framework)
+- Version: 1.7.0 → 1.8.0 (MINOR - New principle added for Observability Standards)
 - Modified principles:
-  * Principle XIV: "Test-Driven Development & Autonomous Testing" - Updated Sway IPC state verification examples to reference sway-test framework
+  * Principle VIII: "Remote Desktop & Multi-Session Standards" - Added VNC as primary for Sway/Wayland
+  * Principle IX: "Tiling Window Manager & Productivity Standards" - Updated to reflect Sway as primary with i3wm references preserved for legacy systems
+  * Principle XI: "Sway/i3 IPC Alignment & State Authority" - Renamed to include Sway, updated examples to prefer swaymsg
+  * Principle XIV: "Test-Driven Development & Autonomous Testing" - Added Grafana/observability testing patterns
 - New principles created:
-  * Principle XV: "Sway Test Framework Standards" (NEW)
-    - Mandates TypeScript/Deno-based test framework for Sway/Wayland window manager testing
-    - Defines multi-mode state comparison: exact, partial, assertions, empty
-    - Establishes undefined semantics for partial state matching (undefined = "don't check")
-    - Requires declarative JSON test definitions with autonomous execution
-    - Specifies test result reporting with detailed diffs and mode indicators
-    - Mandates Sway IPC as authoritative state source for window manager testing
-- New sections added:
-  * None - principle added to existing Core Principles section
+  * Principle XVI: "Observability & Telemetry Standards" (NEW)
+    - Mandates Grafana Alloy for unified telemetry collection
+    - Defines multi-CLI AI tracing patterns (Claude Code, Codex, Gemini)
+    - Establishes trace synthesis standards for non-native OTEL sources
+    - Specifies Kubernetes LGTM stack integration
+    - Documents graceful degradation for local-first monitoring
 - Updated sections:
-  * None - existing sections remain compatible
+  * Platform Support Standards - Added Sway/Wayland notes for remote desktop
+  * Compliance Verification - Added observability standards check
 - Templates requiring updates:
-  ✅ .specify/templates/spec-template.md - Already includes testing requirements in user stories
-  ✅ .specify/templates/plan-template.md - Already includes test framework selection and Constitution Check
-  ✅ .specify/templates/tasks-template.md - Compatible with test task ordering
-  ⚠️ .specify/templates/commands/ - May benefit from sway-test workflow examples
+  ✅ .specify/templates/spec-template.md - Generic, no changes needed
+  ✅ .specify/templates/plan-template.md - Generic, no changes needed
+  ✅ .specify/templates/tasks-template.md - Generic, no changes needed
+  ✅ .specify/templates/checklist-template.md - Generic, no changes needed
 - Follow-up TODOs:
-  * Document sway-test framework installation and setup in CLAUDE.md
-  * Create example test templates for common Sway testing patterns
-  * Add CI/CD integration examples for automated sway-test execution
-  * Document best practices for Sway IPC state assertions vs UI simulation
+  * None - all updates complete
 -->
 
 # NixOS Modular Configuration Constitution
@@ -106,12 +104,16 @@ Modules MUST adapt to system capabilities through conditional logic rather than 
 ```nix
 let
   hasGui = config.services.xserver.enable or false;
+  hasSway = config.wayland.windowManager.sway.enable or false;
   hasI3 = config.services.i3wm.enable or false;
 in {
   environment.systemPackages = with pkgs; [
     package-cli  # Always installed
   ] ++ lib.optionals hasGui [
     package-gui  # Only with GUI
+  ] ++ lib.optionals hasSway [
+    wl-clipboard # Only with Sway
+    wofi         # Sway launcher
   ] ++ lib.optionals hasI3 [
     rofi         # Only with i3wm
     i3wsr        # i3 workspace renamer
@@ -119,7 +121,7 @@ in {
 }
 ```
 
-**Rationale**: A single module (e.g., `onepassword.nix`) can adapt to WSL (CLI-only), Hetzner (full GUI with i3), and containers (minimal) without duplication. Conditional features maintain consistency while supporting diverse deployment targets.
+**Rationale**: A single module (e.g., `onepassword.nix`) can adapt to WSL (CLI-only), Hetzner (full GUI with Sway), and containers (minimal) without duplication. Conditional features maintain consistency while supporting diverse deployment targets.
 
 ### VI. Declarative Configuration Over Imperative
 
@@ -132,7 +134,7 @@ All system configuration MUST be declared in Nix expressions; imperative post-in
 - Secrets MUST use 1Password integration or declarative secret management (sops-nix/agenix)
 - Desktop environment configurations MUST be declared in home-manager or NixOS modules
 - Configuration files MUST be generated via `environment.etc` or home-manager `home.file`
-- i3 window manager configuration MUST be declared in `environment.etc."i3/config".text`
+- Sway/i3 window manager configuration MUST be declared in home-manager or `environment.etc`
 - Limited exception: Temporary capture scripts (e.g., `scripts/*-rc2nix.sh`) MAY be used to extract live desktop environment settings during migration, with the intent to refactor captured settings into declarative modules
 
 **Rationale**: Declarative configuration is NixOS's core value proposition. It enables reproducible builds, atomic upgrades, and automatic rollbacks. Imperative changes create configuration drift and break the reproducibility guarantee. Configuration file generation via environment.etc ensures consistency and version control integration.
@@ -146,7 +148,7 @@ Every module, configuration change, and architectural decision MUST be documente
 - `docs/` MUST contain architecture documentation, setup guides, and troubleshooting
 - `CLAUDE.md` MUST be the primary LLM navigation guide with quick start commands
 - Breaking changes MUST update relevant documentation in the same commit
-- Migration guides MUST be created for major structural changes (e.g., KDE Plasma → i3wm)
+- Migration guides MUST be created for major structural changes (e.g., KDE Plasma → i3wm → Sway)
 - Module options MUST include `description` fields for documentation generation
 
 **Rationale**: This project's complexity demands clear documentation. LLM assistants, new contributors, and future maintainers rely on comprehensive guides to navigate the modular architecture effectively. Inline documentation via description fields enables automatic documentation generation.
@@ -160,73 +162,79 @@ Remote desktop access MUST support multiple concurrent sessions with proper isol
 - Session isolation MUST ensure independent desktop environments (separate window managers, application states)
 - Session persistence MUST maintain state across disconnections with automatic cleanup after 24 hours of idle time
 - Authentication MUST support password-based access with optional SSH key authentication
-- Display server MUST be X11 for mature RDP/xrdp compatibility (Wayland lacks stable multi-session RDP support)
-- Window manager MUST support multi-session isolation (i3wm preferred for lightweight resource usage)
+- Display server selection depends on remote access method:
+  * VNC: Use Wayland/Sway with wayvnc for modern compositor features
+  * RDP: Use X11 for mature xrdp multi-session compatibility
+- Window manager MUST support multi-session isolation (Sway preferred for Wayland, i3wm for X11)
 - Remote desktop configuration MUST preserve existing tool integrations (1Password, terminal customizations, browser extensions)
-- Clipboard integration MUST work across RDP sessions using clipcat or equivalent X11-compatible clipboard manager
+- Clipboard integration MUST work across sessions using wl-clipboard (Wayland) or clipcat (X11)
 - Resource limits MUST be documented and enforced to prevent system exhaustion
-- DISPLAY environment variable MUST be properly propagated to user services and applications
+- DISPLAY/WAYLAND_DISPLAY environment variable MUST be properly propagated to user services and applications
 
 **Configuration**:
-- Remote desktop service: xrdp with multi-session support enabled
-- Display server: X11 (via `services.xserver.enable = true`)
-- Window manager: i3wm (via custom `services.i3wm` module)
+- Remote desktop service: wayvnc for Sway/Wayland, xrdp for X11 multi-session
+- Display server: Wayland (via headless compositor) or X11 (via `services.xserver.enable = true`)
+- Window manager: Sway for Wayland, i3wm for X11
 - Session management: Automatic cleanup policies, reconnection handling
-- Clipboard manager: clipcat (started from i3 config to inherit DISPLAY variable)
+- Clipboard manager: wl-clipboard (Wayland) or clipcat (X11)
 
-**Rationale**: Remote development workstations require seamless multi-device access without workflow interruption. Microsoft Remote Desktop (RDP) is the standard cross-platform protocol. Multi-session support enables users to maintain separate contexts on different devices while sharing a single powerful remote system. X11 provides mature, stable RDP compatibility via xrdp, while Wayland's RDP support remains experimental. Session cleanup prevents resource exhaustion while maintaining reasonable persistence expectations.
+**Rationale**: Remote development workstations require seamless multi-device access without workflow interruption. VNC provides efficient Wayland-native remote access via wayvnc. RDP via xrdp remains supported for X11 deployments. Multi-session support enables users to maintain separate contexts on different devices while sharing a single powerful remote system. Session cleanup prevents resource exhaustion while maintaining reasonable persistence expectations.
 
 ### IX. Tiling Window Manager & Productivity Standards
 
 Desktop environments MUST prioritize keyboard-driven workflows with efficient window management for developer productivity.
 
 **Rules**:
-- Window manager MUST be i3wm or compatible tiling window manager (sway for Wayland, bspwm/awesome as alternatives)
+- Window manager MUST be Sway (Wayland) or i3wm (X11) or compatible tiling window manager
 - Keyboard shortcuts MUST be declaratively configured and documented
-- Workspace management MUST support dynamic naming with application-aware labels (via i3wsr)
-- Application launcher MUST be keyboard-driven (rofi preferred for consistency and extensibility)
-- Terminal emulator MUST support transparency, true color, and tmux integration (alacritty preferred)
-- Clipboard manager MUST provide history access across all applications with keyboard shortcuts (clipcat via Win+V)
-- Workspace naming MUST reflect running applications for context awareness (i3wsr with custom aliases)
+- Workspace management MUST support dynamic naming with application-aware labels
+- Application launcher MUST be keyboard-driven (rofi/wofi preferred for consistency and extensibility)
+- Terminal emulator MUST support transparency, true color, and tmux integration (ghostty/alacritty preferred)
+- Clipboard manager MUST provide history access across all applications with keyboard shortcuts
+- Workspace naming MUST reflect running applications for context awareness
 - Window management MUST support floating windows for specific applications (e.g., dialogs, popups)
-- Multi-monitor support MUST be configurable with declarative xrandr settings
+- Multi-monitor support MUST be configurable with declarative output settings (swaymsg or xrandr)
 - Session startup MUST be minimal and fast (<5 seconds to usable desktop)
 
-**i3wm Integration Requirements**:
+**Sway/Wayland Integration Requirements**:
+- `wofi` or `rofi`: Application launcher, window switcher, clipboard menu
+- `wl-clipboard`: Clipboard operations (wl-copy, wl-paste)
+- `ghostty` or `alacritty`: Primary terminal emulator
+- `waybar` or `eww`: Status bar with system information
+- `swaylock`: Screen locking
+
+**i3wm/X11 Integration Requirements** (legacy):
 - `rofi`: Application launcher, window switcher, clipboard menu
 - `i3wsr`: Dynamic workspace renaming based on window classes
 - `clipcat`: Clipboard history manager with rofi integration
 - `alacritty`: Primary terminal emulator
-- `i3status`: Status bar with system information
-- `i3lock`: Screen locking (optional, for physical access scenarios)
+- `i3status` or `i3bar+i3blocks`: Status bar with system information
 
 **Configuration Structure**:
 ```nix
-# System module: modules/desktop/i3wm.nix
-services.i3wm = {
+# Home-manager Sway module: home-modules/desktop/sway.nix
+wayland.windowManager.sway = {
   enable = true;
-  package = pkgs.i3;
-  extraPackages = [ pkgs.rofi pkgs.i3status ];
+  config = {
+    modifier = "Mod4";
+    terminal = "ghostty";
+    menu = "wofi --show drun";
+    # User-specific keybindings, workspace configuration, theme
+  };
 };
-
-# Home-manager module: home-modules/desktop/i3.nix
-# User-specific keybindings, workspace configuration, theme
-
-# Home-manager module: home-modules/desktop/i3wsr.nix
-# Application-aware workspace naming with custom aliases
 ```
 
 **Keyboard Shortcuts (Standard Bindings)**:
 - `Win+Return`: Open terminal
-- `Win+D`: Application launcher (rofi)
-- `Win+V`: Clipboard history (clipcat)
+- `Win+D` or `Alt+Space`: Application launcher
+- `Win+V`: Clipboard history
 - `Win+F`: Fullscreen toggle
-- `Ctrl+1-9`: Workspace switching (for RDP compatibility, avoids Win key issues)
+- `Win+1-9`: Workspace switching
 - `Win+Shift+1-9`: Move window to workspace
 - `Win+Shift+Q`: Close window
 - `Win+H/V`: Split horizontal/vertical
 
-**Rationale**: Tiling window managers maximize screen real estate and minimize mouse usage, critical for remote desktop scenarios where mouse precision is degraded. i3wm's minimal resource usage enables multiple concurrent sessions on a single server. Keyboard-first workflows improve productivity and reduce dependency on RDP's pointer handling. Dynamic workspace naming via i3wsr provides immediate context awareness across workspaces. Clipboard history via clipcat ensures seamless copy/paste workflow across applications and RDP sessions.
+**Rationale**: Tiling window managers maximize screen real estate and minimize mouse usage, critical for remote desktop scenarios where mouse precision is degraded. Sway's modern Wayland protocol provides better security isolation and HiDPI support. i3wm remains supported for X11 deployments requiring xrdp. Keyboard-first workflows improve productivity and reduce dependency on pointer handling. Dynamic workspace naming provides immediate context awareness across workspaces.
 
 ### X. Python Development & Testing Standards
 
@@ -234,7 +242,7 @@ Python-based system tooling MUST follow consistent patterns for async programmin
 
 **Rules**:
 - Python version MUST be 3.11+ for all new development (matches existing i3-project daemon)
-- Async/await patterns MUST be used for i3 IPC communication and daemon interaction (via i3ipc.aio, asyncio)
+- Async/await patterns MUST be used for IPC communication and daemon interaction (via i3ipc.aio, asyncio)
 - Testing framework MUST be pytest with support for async tests (pytest-asyncio)
 - Type hints MUST be used for function signatures and public APIs
 - Data validation MUST use Pydantic models or dataclasses with validation
@@ -250,7 +258,7 @@ Python-based system tooling MUST follow consistent patterns for async programmin
 - Integration tests MUST validate IPC communication and daemon interaction
 - Test scenarios MUST be independently executable and validate expected vs actual state
 - Tests MUST support headless operation for CI/CD environments
-- Mock patterns MUST be used to isolate tests from external dependencies (daemon, i3 IPC)
+- Mock patterns MUST be used to isolate tests from external dependencies (daemon, Sway IPC)
 - Test reports MUST be output in both human-readable (terminal) and machine-readable (JSON) formats
 - Automated tests MUST execute in under 10 seconds for full workflow validation
 - Test frameworks MUST support tmux integration for multi-pane monitoring during manual testing
@@ -283,58 +291,59 @@ tests/<tool-name>/
 - Implement auto-reconnection with exponential backoff for daemon connections
 - Include diagnostic modes in monitoring tools for troubleshooting
 
-**Rationale**: Features 017 and 018 established Python as the standard for i3-project system tooling. Consistent patterns across monitoring tools, test frameworks, and daemon extensions reduce cognitive load and improve maintainability. Async patterns are essential for event-driven i3 IPC integration. Rich library provides consistent terminal UI across all tools. pytest enables comprehensive test coverage including CI/CD integration. Type hints and validation prevent runtime errors and improve code quality.
+**Rationale**: Features 017 and 018 established Python as the standard for i3-project system tooling. Consistent patterns across monitoring tools, test frameworks, and daemon extensions reduce cognitive load and improve maintainability. Async patterns are essential for event-driven Sway/i3 IPC integration. Rich library provides consistent terminal UI across all tools. pytest enables comprehensive test coverage including CI/CD integration. Type hints and validation prevent runtime errors and improve code quality.
 
-### XI. i3 IPC Alignment & State Authority
+### XI. Sway/i3 IPC Alignment & State Authority
 
-All i3-related state queries and window management operations MUST use i3's native IPC API as the authoritative source of truth.
+All Sway/i3-related state queries and window management operations MUST use the native IPC API as the authoritative source of truth.
 
 **Rules**:
-- State queries MUST use i3's native IPC message types: GET_WORKSPACES, GET_OUTPUTS, GET_TREE, GET_MARKS
-- Workspace-to-output assignments MUST be validated against i3's GET_WORKSPACES response
-- Monitor/output configuration MUST be queried via GET_OUTPUTS, not xrandr or other tools
+- State queries MUST use native IPC message types: GET_WORKSPACES, GET_OUTPUTS, GET_TREE, GET_MARKS
+- Workspace-to-output assignments MUST be validated against GET_WORKSPACES response
+- Monitor/output configuration MUST be queried via GET_OUTPUTS, not external tools
 - Window marking and visibility MUST be verified via GET_TREE and GET_MARKS
-- Event subscriptions MUST use i3's SUBSCRIBE IPC message type (window, workspace, output, binding)
-- Custom state tracking (daemon, database) MUST be validated against i3 IPC data, not vice versa
-- When discrepancies occur between custom state and i3 IPC, i3 IPC data MUST be considered authoritative
-- i3ipc-python library (i3ipc.aio for async) MUST be used for all i3 IPC communication
-- State synchronization MUST be event-driven via i3 IPC subscriptions, not polling
-- Diagnostic tools MUST include i3 IPC state in all reports for validation
+- Event subscriptions MUST use SUBSCRIBE IPC message type (window, workspace, output, binding)
+- Custom state tracking (daemon, database) MUST be validated against IPC data, not vice versa
+- When discrepancies occur between custom state and IPC, IPC data MUST be considered authoritative
+- For Sway: use i3ipc-python library (i3ipc.aio for async) or swaymsg for shell scripting
+- For i3wm: use i3ipc-python library (i3ipc.aio for async)
+- State synchronization MUST be event-driven via IPC subscriptions, not polling
+- Diagnostic tools MUST include IPC state in all reports for validation
 
 **Event-Driven Architecture Requirements**:
-- Use i3 IPC subscriptions for real-time state updates (window events, workspace changes, output changes)
+- Use IPC subscriptions for real-time state updates (window events, workspace changes, output changes)
 - Process events asynchronously via asyncio event loops
-- Maintain minimal daemon state - query i3 IPC when authoritative state needed
+- Maintain minimal daemon state - query IPC when authoritative state needed
 - Implement event handlers with <100ms latency for window marking and state updates
 - Use event buffers (circular, max 500 events) for diagnostic history, not authoritative state
-- Fail gracefully when i3 IPC connection is lost with auto-reconnection (exponential backoff)
+- Fail gracefully when IPC connection is lost with auto-reconnection (exponential backoff)
 
-**i3 IPC Message Types (Standard Usage)**:
+**IPC Message Types (Standard Usage)**:
 - `GET_WORKSPACES`: Query workspace list with names, visible status, output assignments
 - `GET_OUTPUTS`: Query monitor/output configuration with names, active status, dimensions, workspaces
 - `GET_TREE`: Query complete window tree with containers, marks, focus, properties
 - `GET_MARKS`: Query all window marks in current session
 - `SUBSCRIBE`: Subscribe to events (window, workspace, output, binding, shutdown, tick)
-- `COMMAND`: Execute i3 commands (mark windows, move containers, switch workspaces)
+- `COMMAND`: Execute commands (mark windows, move containers, switch workspaces)
 
 **State Validation Pattern**:
 ```python
-# Query i3's authoritative state
-async with i3ipc.aio.Connection() as i3:
-    workspaces = await i3.get_workspaces()
-    outputs = await i3.get_outputs()
-    tree = await i3.get_tree()
+# Query Sway's authoritative state
+async with i3ipc.aio.Connection() as sway:
+    workspaces = await sway.get_workspaces()
+    outputs = await sway.get_outputs()
+    tree = await sway.get_tree()
 
-    # Validate daemon state against i3 state
+    # Validate daemon state against Sway state
     for workspace in workspaces:
         expected_output = workspace.output
         daemon_output = get_daemon_workspace_assignment(workspace.num)
         if expected_output != daemon_output:
-            # i3 state is authoritative - update daemon
+            # Sway state is authoritative - update daemon
             sync_daemon_state(workspace.num, expected_output)
 ```
 
-**Rationale**: Feature 018 identified critical issues when custom state tracking (daemon databases, configuration files) drifts from i3's actual state. i3's IPC API is the single source of truth for window management state - workspace assignments, output configuration, window marks, and focus state all originate from i3. Event-driven architecture via i3 IPC subscriptions replaced polling-based systems in Feature 015, reducing CPU usage to <1% and eliminating race conditions. All monitoring, testing, and diagnostic tools must align with i3's state to ensure accurate debugging and validation. When building extensions to i3, query i3 IPC to validate assumptions rather than maintaining parallel state that can desync.
+**Rationale**: Feature 018 identified critical issues when custom state tracking (daemon databases, configuration files) drifts from Sway/i3's actual state. The IPC API is the single source of truth for window management state - workspace assignments, output configuration, window marks, and focus state all originate from the compositor. Event-driven architecture via IPC subscriptions replaced polling-based systems in Feature 015, reducing CPU usage to <1% and eliminating race conditions. All monitoring, testing, and diagnostic tools must align with IPC state to ensure accurate debugging and validation. When building extensions, query IPC to validate assumptions rather than maintaining parallel state that can desync.
 
 ### XII. Forward-Only Development & Legacy Elimination
 
@@ -353,8 +362,8 @@ All solutions and features MUST be designed for optimal implementation without c
 
 **Examples of This Principle**:
 - ✅ **Polybar → i3bar+i3blocks migration**: Completely replaced polybar with i3bar+i3blocks, removed all polybar configuration, no dual support
-- ✅ **Polling → Event-driven architecture**: Replaced entire polling system with i3 IPC subscriptions, no backwards compatibility for polling mode
-- ✅ **Static i3 config → Dynamic window rules**: Will completely replace static `for_window` directives with dynamic rules engine, no preservation of old patterns
+- ✅ **Polling → Event-driven architecture**: Replaced entire polling system with IPC subscriptions, no backwards compatibility for polling mode
+- ✅ **i3wm → Sway migration**: Sway is primary, i3wm remains for specific X11 use cases (not backwards compatibility)
 - ❌ **BAD: Adding feature flags for "legacy mode"**: Would violate this principle
 - ❌ **BAD: Keeping old code "just in case"**: Would violate this principle
 - ❌ **BAD: Gradual migration with dual code paths**: Would violate this principle
@@ -442,7 +451,7 @@ deno compile --allow-net --allow-read --output=i3pm main.ts
 
 **When to Use Deno vs Python**:
 - **Use Deno for**: CLI tools, terminal UIs, JSON-RPC clients, standalone utilities, fast startup requirements
-- **Use Python for**: i3 event daemons with i3ipc-python, complex async workflows with asyncio, Rich terminal UIs, pytest-based testing frameworks
+- **Use Python for**: Sway/i3 event daemons with i3ipc-python, complex async workflows with asyncio, Rich terminal UIs, pytest-based testing frameworks
 - **Migration path**: Replace Python CLI tools with Deno equivalents when performance, distribution, or startup time is critical (e.g., Feature 026 TypeScript/Deno CLI rewrite)
 
 **Rationale**: Feature 026 (TypeScript/Deno CLI Rewrite) establishes Deno as the modern standard for CLI tool development. Deno's built-in TypeScript support eliminates build complexity, the extensive standard library reduces third-party dependencies, and compiled executables remove runtime installation requirements. The `parseArgs()` function from `@std/cli/parse-args` provides a mature, well-documented API for command-line parsing that rivals popular Node.js libraries. Deno's security model (explicit permissions) and fast startup time make it ideal for CLI tools that need to execute quickly and reliably. This principle positions Deno as the replacement for Python in CLI contexts while preserving Python's strengths in daemon/event-driven architectures.
@@ -463,6 +472,7 @@ All feature development MUST follow test-driven development principles with comp
 - Test failures MUST trigger iterative refinement: spec → plan → tasks → implementation → tests → fix → repeat until all tests pass
 - Test suites MUST be executable in headless CI/CD environments without human interaction
 - Test results MUST provide actionable failure messages with expected vs actual state diffs
+- Observability tests MUST verify telemetry emission and trace structure (see Principle XVI)
 
 **Test Pyramid Layers**:
 
@@ -473,10 +483,10 @@ All feature development MUST follow test-driven development principles with comp
    - Examples: Data model validation, utility functions, parsers
 
 2. **Integration Tests (20% of test suite)**:
-   - Test component interactions (daemon ↔ IPC, API ↔ database)
+   - Test component interactions (daemon ↔ IPC, API ↔ database, OTEL ↔ collector)
    - Use real dependencies where feasible, mocks for external services
    - Medium execution speed (<100ms per test)
-   - Examples: Daemon IPC communication, file system operations, subprocess interactions
+   - Examples: Daemon IPC communication, file system operations, subprocess interactions, telemetry pipeline
 
 3. **End-to-End Tests (10% of test suite)**:
    - Test complete user workflows from start to finish
@@ -856,6 +866,115 @@ Comparing 2 field(s), ignoring 0 field(s)
 
 **Rationale**: Feature 068 fixed critical bugs in state comparison and established the sway-test framework as the standard for declarative window manager testing. The multi-mode comparison system provides flexibility: partial mode for focused assertions (90% of tests), exact mode for comprehensive validation, assertions mode for complex queries, and empty mode for action-only testing. Undefined semantics (`undefined` = "don't check") enable precise control over which fields matter in each test. Enhanced error messages with mode indicators, field tracking, and contextual diffs dramatically improve debugging speed. The framework follows Principle XIII (Deno/TypeScript standards) and Principle XI (Sway IPC authority), ensuring consistency with project architecture. Declarative JSON test definitions enable autonomous execution, version control, and clear documentation of expected window manager behavior.
 
+### XVI. Observability & Telemetry Standards
+
+All system components with monitoring requirements MUST emit standardized telemetry via OpenTelemetry protocols, collected through a unified Grafana Alloy pipeline.
+
+**Rules**:
+- Telemetry collection MUST use Grafana Alloy as the unified local collector
+- All AI CLI tools (Claude Code, Codex CLI, Gemini CLI) MUST emit or have synthesized OTEL traces
+- Non-native OTEL sources (Codex, Gemini) MUST use interceptor scripts to synthesize coherent traces
+- Session correlation MUST use `session.id` as the primary join key across traces, metrics, and logs
+- Trace hierarchy MUST follow: Session → Turn → LLM Call/Tool spans
+- Remote telemetry export MUST target the Kubernetes LGTM stack (Tempo/Mimir/Loki)
+- Local monitoring (EWW widgets) MUST function when remote stack is offline (graceful degradation)
+- Span metrics MUST be derived via `otelcol.connector.spanmetrics` for RED metrics with exemplars
+- Telemetry MUST NOT introduce high-cardinality series (exclude `span.name` from metrics dimensions)
+- Subagent traces MUST include span links and `claude.parent_session_id` for cross-trace correlation
+
+**Telemetry Architecture**:
+```
+AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local EWW)
+                               → K8s OTEL Collector (remote)
+System  → node exporter → Alloy → Mimir (K8s)
+Journald → Alloy → Loki (K8s)
+```
+
+**Service Ports**:
+| Service | Port | Purpose |
+|---------|------|---------|
+| grafana-alloy | 4318 (OTLP HTTP), 12345 (UI) | Unified telemetry collector |
+| otel-ai-monitor | 4320 | Local AI session tracking for EWW (all CLIs) |
+| grafana-beyla | - | eBPF auto-instrumentation (optional) |
+| pyroscope-agent | - | Continuous profiling (optional) |
+
+**AI CLI Telemetry Patterns**:
+
+**Claude Code** (native OTEL):
+- Uses Node.js interceptor (`scripts/minimal-otel-interceptor.js`) for trace synthesis
+- Session ID hydrated via SessionStart hook
+- Turn boundaries from UserPromptSubmit + Stop hooks
+- Subagent traces linked via Task tool spans
+
+**Codex CLI** (synthesized traces):
+- OTEL logs routed through `scripts/codex-otel-interceptor.js`
+- Synthesizes Session → Turn → LLM/Tool trace hierarchy
+- Uses `notify` hook for accurate turn boundaries
+- Normalizes `conversation.id` → `session.id` for correlation
+
+**Gemini CLI** (synthesized traces):
+- OTEL configured via `~/.gemini/settings.json`
+- Routed through `scripts/gemini-otel-interceptor.js`
+- Synthesizes traces from log events (`gemini_cli.user_prompt`, `gemini_cli.api_*`, `gemini_cli.tool_call`)
+- No notify hook - uses log event boundaries
+
+**Trace Hierarchy Standard**:
+```
+Claude Code Session (root)
+├── Turn #1: [user prompt]
+│   ├── LLM Call: claude-3-opus
+│   ├── Tool: Read file
+│   └── Tool: Edit file
+├── Turn #2: [user prompt]
+│   ├── LLM Call: claude-3-opus
+│   └── Task (subagent)
+│       └── [linked to subagent trace]
+└── ...
+```
+
+**Grafana Correlation Queries**:
+- By session: `{session.id="abc123"}`
+- By provider: `{service.name=~"claude-code|codex|gemini"}`
+- By model: `{gen_ai.request.model="gpt-4o"}`
+
+**Interceptor Configuration Knobs**:
+- `OTEL_INTERCEPTOR_TURN_BOUNDARY_MODE`: `auto|hooks|heuristic`
+- `OTEL_INTERCEPTOR_TURN_IDLE_END_MS`: Debounce window for heuristic mode (default: 1500)
+- `OTEL_INTERCEPTOR_SESSION_ID_POLICY`: `buffer|eager` (default: buffer)
+- `OTEL_INTERCEPTOR_INJECT_TRACEPARENT`: Enable W3C trace context injection (for Beyla correlation)
+
+**Graceful Degradation**:
+- Local AI monitoring (EWW widgets) works when K8s offline
+- Remote telemetry queued in 100MB memory buffer
+- Automatic retry with exponential backoff
+- Alloy live debugging UI at http://localhost:12345
+
+**NixOS Configuration Pattern**:
+```nix
+let
+  tailnet = "tail286401.ts.net";
+  host = config.networking.hostName;
+  cluster = if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
+  tsServiceUrl = name: "https://${name}-${cluster}.${tailnet}";
+in
+services.grafana-alloy = {
+  enable = true;
+  k8sEndpoint = tsServiceUrl "otel-collector";
+  lokiEndpoint = tsServiceUrl "loki";
+  mimirEndpoint = tsServiceUrl "mimir";
+  enableNodeExporter = true;
+  enableJournald = true;
+  journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
+};
+```
+
+**Testing Observability** (integration with Principle XIV):
+- Unit tests: Validate span structure, attribute population, trace context propagation
+- Integration tests: Verify OTLP export to collector, session correlation across signals
+- E2E tests: Confirm traces appear in Grafana with correct hierarchy
+
+**Rationale**: Features 129, 130, 131, and 125 established a comprehensive observability stack for this project. All AI CLI tools now emit or have synthesized OTEL telemetry, enabling unified monitoring in Grafana. The `session.id` join key correlates traces, metrics, and logs for debugging AI workflows. Trace synthesis for non-native OTEL sources (Codex, Gemini) ensures consistent trace hierarchy regardless of provider. Local-first architecture via otel-ai-monitor enables EWW widget functionality even when the remote Kubernetes stack is unavailable. Span metrics with exemplars provide "click from metric to trace" functionality in Grafana. This observability foundation supports debugging, performance analysis, and cost tracking across all AI tooling.
+
 ## Platform Support Standards
 
 ### Multi-Platform Compatibility
@@ -871,16 +990,16 @@ The configuration MUST support WSL2, Hetzner Cloud, Apple Silicon Macs (via Asah
 
 **Testing Requirements**:
 - WSL: Docker Desktop integration, VS Code Remote, 1Password CLI
-- Hetzner: i3 tiling window manager, xrdp multi-session access, Tailscale VPN, development tools, clipcat clipboard manager
+- Hetzner: Sway tiling window manager, VNC multi-session access, Tailscale VPN, development tools, wl-clipboard
 - M1: ARM64 optimizations, Wayland session (for native display), Retina display scaling, requires `--impure` flag
 - Containers: Size constraints (<100MB minimal, <600MB development)
 
 **Desktop Environment Transitions**:
-When migrating desktop environments (e.g., KDE Plasma → i3wm, X11 → Wayland):
+When migrating desktop environments (e.g., KDE Plasma → i3wm → Sway):
 1. Research target environment's compatibility with existing tools and workflows
 2. Evaluate display server requirements (X11 vs Wayland) based on remote desktop needs
-3. For remote desktop scenarios: Prefer X11 for mature xrdp compatibility
-4. For native hardware: Consider Wayland for better HiDPI and modern features
+3. For remote desktop scenarios: Prefer Wayland with wayvnc or X11 with xrdp
+4. For native hardware: Prefer Wayland for better HiDPI and modern features
 5. Test migration on reference platform first
 6. Document configuration patterns and module structure
 7. Validate all critical integrations (1Password, terminal tools, browser extensions, clipboard)
@@ -888,15 +1007,15 @@ When migrating desktop environments (e.g., KDE Plasma → i3wm, X11 → Wayland)
 9. Create migration documentation in `docs/MIGRATION.md`
 
 **X11 vs Wayland Decision Criteria**:
-- **Choose X11 when**:
-  * Primary use case is remote desktop (RDP/xrdp)
-  * Multi-session support is required
-  * Mature tool compatibility is critical (screen sharing, recording, clipboard managers)
 - **Choose Wayland when**:
-  * Primary use case is native hardware (laptops, desktops)
+  * Primary use case is native hardware or VNC remote access
   * HiDPI scaling and modern input methods are priorities
   * Security isolation between applications is required
   * Native touchpad gestures are important (e.g., M1 Mac)
+- **Choose X11 when**:
+  * Primary use case is RDP multi-session (xrdp)
+  * Legacy application compatibility is critical
+  * Mature tool compatibility is required (older screen sharing, recording)
 
 ## Security & Authentication Standards
 
@@ -919,7 +1038,7 @@ Secret management MUST use 1Password for centralized, secure credential storage.
 - Conditional GUI/CLI support based on `config.services.xserver.enable`
 - PAM integration for system authentication
 - Polkit rules for desktop authentication
-- RDP session integration for persistent authentication state
+- VNC/RDP session integration for persistent authentication state
 
 ### SSH Hardening
 
@@ -931,7 +1050,7 @@ SSH access MUST use key-based authentication with rate limiting and fail2ban int
 - Rate limiting MUST be configured on public-facing systems
 - Fail2ban MUST be enabled on Hetzner and other exposed servers
 - Tailscale VPN MUST be the primary access method for remote systems
-- RDP authentication MAY use password-based access (separate from SSH) with optional SSH key support
+- VNC/RDP authentication MAY use password-based access (separate from SSH) with optional SSH key support
 
 ## Package Management Standards
 
@@ -962,7 +1081,7 @@ Packages MUST be organized by scope: system-wide, user-specific, module-specific
 4. **Target packages**: Platform-specific additions in target configurations
 
 **Rules**:
-- Prefer module-specific package definitions for better encapsulation (e.g., `modules/desktop/i3wm.nix` includes rofi, alacritty)
+- Prefer module-specific package definitions for better encapsulation (e.g., `modules/desktop/sway.nix` includes wofi, waybar)
 - Use system packages for tools required by multiple modules
 - Use user packages for development tools and personal utilities
 - Use target packages ONLY for platform-specific requirements (e.g., wsl.exe on WSL)
@@ -970,12 +1089,12 @@ Packages MUST be organized by scope: system-wide, user-specific, module-specific
 
 **Best Practice - Module Package Scoping**:
 ```nix
-# modules/desktop/i3wm.nix
+# modules/desktop/sway.nix
 config = mkIf cfg.enable {
   environment.systemPackages = with pkgs; [
-    cfg.package      # i3 itself
-    alacritty       # Terminal for i3
-    rofi            # Application launcher
+    cfg.package      # Sway itself
+    ghostty          # Terminal for Sway
+    wofi             # Application launcher
   ] ++ cfg.extraPackages;  # Allow extension
 };
 ```
@@ -988,10 +1107,10 @@ Python-based system tooling MUST include comprehensive automated tests for funct
 
 **Rules**:
 - All Python modules MUST have pytest-based unit tests for data models and business logic
-- Integration tests MUST validate daemon communication, i3 IPC interaction, and state synchronization
+- Integration tests MUST validate daemon communication, Sway IPC interaction, and state synchronization
 - Test scenarios MUST simulate real user workflows (project lifecycle, window management, monitor configuration)
 - Tests MUST support headless operation for CI/CD environments
-- Mock implementations MUST be provided for external dependencies (daemon, i3 IPC socket)
+- Mock implementations MUST be provided for external dependencies (daemon, Sway IPC socket)
 - Test reports MUST be output in machine-readable format (JSON) for CI/CD parsing
 - Automated test suites MUST execute in under 10 seconds for complete workflow validation
 - Failed tests MUST report expected vs actual state with detailed diff information
@@ -1000,7 +1119,7 @@ Python-based system tooling MUST include comprehensive automated tests for funct
 **Test Coverage Requirements**:
 - **Unit tests**: Data models, formatters, validators, business logic (>80% coverage target)
 - **Integration tests**: IPC communication, daemon interaction, state queries
-- **Contract tests**: JSON-RPC API endpoints, i3 IPC message types
+- **Contract tests**: JSON-RPC API endpoints, Sway IPC message types
 - **Scenario tests**: End-to-end user workflows with state validation
 - **Regression tests**: Previously identified bugs with validation to prevent recurrence
 
@@ -1013,7 +1132,7 @@ tests/<module-name>/
 │   └── test_formatters.py
 ├── integration/
 │   ├── test_daemon_client.py
-│   └── test_i3_ipc.py
+│   └── test_sway_ipc.py
 ├── scenarios/
 │   ├── test_project_lifecycle.py
 │   └── test_window_management.py
@@ -1031,8 +1150,8 @@ System tooling MUST provide observability and diagnostic capabilities for debugg
 **Rules**:
 - Monitoring tools MUST display real-time system state (active project, tracked windows, monitors, events)
 - Event streams MUST be captured and displayed with timestamps, event types, and payloads
-- Diagnostic capture MUST include: current state snapshot, recent event history (500 events), i3 tree structure, complete i3 IPC state (outputs, workspaces, marks)
-- State validation MUST compare custom daemon state against i3 IPC authoritative state
+- Diagnostic capture MUST include: current state snapshot, recent event history (500 events), Sway tree structure, complete Sway IPC state (outputs, workspaces, marks)
+- State validation MUST compare custom daemon state against Sway IPC authoritative state
 - Monitoring tools MUST support multiple display modes (live, events, history, tree, diagnose)
 - Connection status MUST be clearly indicated with auto-reconnection on failure
 - Error states MUST provide actionable troubleshooting guidance
@@ -1064,22 +1183,16 @@ Home-manager modules MUST follow consistent structure and import patterns.
 
 **Example Module Structure**:
 ```nix
-# home-modules/tools/clipcat.nix
+# home-modules/tools/wl-clipboard.nix
 { config, lib, pkgs, ... }:
 
 {
-  services.clipcat = {
-    enable = true;
-    package = pkgs.clipcat;
+  home.packages = with pkgs; [ wl-clipboard ];
 
-    daemonSettings = {
-      max_history = 100;
-      # ... configuration
-    };
+  # Ensure wl-copy/wl-paste available in user environment
+  home.sessionVariables = {
+    # Wayland clipboard integration
   };
-
-  # Ensure dependencies available
-  home.packages = with pkgs; [ xclip xsel ];
 }
 ```
 
@@ -1088,6 +1201,7 @@ Home-manager modules MUST follow consistent structure and import patterns.
 Configuration files MUST be generated declaratively, not copied from external sources.
 
 **Rules**:
+- Sway config MUST be generated via home-manager `wayland.windowManager.sway` or `xdg.configFile`
 - i3 config MUST be generated via `environment.etc."i3/config".text` (system-level) or `xdg.configFile."i3/config".text` (user-level)
 - Dotfiles MUST be generated via home-manager's `home.file` or `xdg.configFile`
 - Template-based generation MUST use Nix string interpolation with `${}` for variable substitution
@@ -1096,12 +1210,11 @@ Configuration files MUST be generated declaratively, not copied from external so
 
 **Example**:
 ```nix
-environment.etc."i3/config".text = ''
-  # i3 configuration
-  set $mod Mod4
-  bindsym $mod+Return exec ${pkgs.alacritty}/bin/alacritty
-  bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun
-'';
+wayland.windowManager.sway.config = {
+  modifier = "Mod4";
+  terminal = "${pkgs.ghostty}/bin/ghostty";
+  menu = "${pkgs.wofi}/bin/wofi --show drun";
+};
 ```
 
 ## Governance
@@ -1134,12 +1247,13 @@ All pull requests and configuration rebuilds MUST verify compliance with:
 - ✅ Documentation updates - architectural changes reflected in docs
 - ✅ Security standards - secrets via 1Password, SSH hardening maintained
 - ✅ Remote desktop standards - multi-session support, session isolation, resource limits
-- ✅ Tiling WM standards - i3wm configuration, keyboard-first workflows, workspace isolation
+- ✅ Tiling WM standards - Sway/i3 configuration, keyboard-first workflows, workspace isolation
 - ✅ Python standards - async patterns, pytest testing, type hints, Rich UI
-- ✅ i3 IPC alignment - state queries via native IPC, event-driven architecture
+- ✅ Sway/i3 IPC alignment - state queries via native IPC, event-driven architecture
 - ✅ Forward-only development - optimal solutions without legacy compatibility preservation
 - ✅ Test-driven development - tests written before implementation, autonomous test execution
 - ✅ Sway test framework - declarative JSON tests for window manager validation
+- ✅ Observability standards - OTEL telemetry via Grafana Alloy, AI CLI tracing
 
 ### Complexity Justification
 
@@ -1148,4 +1262,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.7.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-11-08
+**Version**: 1.8.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-12-22
