@@ -338,10 +338,12 @@ class OTLPReceiver:
         for resource_logs in otlp_request.resource_logs:
             # Extract service name from resource attributes
             service_name = self._extract_service_name(resource_logs.resource)
+            # Feature 135: Extract process.pid and other resource attrs for window correlation
+            resource_attrs = self._extract_resource_attributes(resource_logs.resource)
 
             for scope_logs in resource_logs.scope_logs:
                 for log_record in scope_logs.log_records:
-                    event = self._parse_log_record(log_record, service_name)
+                    event = self._parse_log_record(log_record, service_name, resource_attrs)
                     if event:
                         events.append(event)
 
@@ -364,10 +366,12 @@ class OTLPReceiver:
             # Extract service name
             resource = resource_logs.get("resource", {})
             service_name = self._extract_service_name_json(resource)
+            # Feature 135: Extract process.pid and other resource attrs for window correlation
+            resource_attrs = self._extract_resource_attributes_json(resource)
 
             for scope_logs in resource_logs.get("scopeLogs", []):
                 for log_record in scope_logs.get("logRecords", []):
-                    event = self._parse_log_record_json(log_record, service_name)
+                    event = self._parse_log_record_json(log_record, service_name, resource_attrs)
                     if event:
                         events.append(event)
 
@@ -395,10 +399,12 @@ class OTLPReceiver:
         events = []
         for resource_spans in otlp_request.resource_spans:
             service_name = self._extract_service_name(resource_spans.resource)
+            # Feature 135: Extract process.pid and other resource attrs for window correlation
+            resource_attrs = self._extract_resource_attributes(resource_spans.resource)
 
             for scope_spans in resource_spans.scope_spans:
                 for span in scope_spans.spans:
-                    event = self._parse_span(span, service_name)
+                    event = self._parse_span(span, service_name, resource_attrs)
                     if event:
                         events.append(event)
 
@@ -421,10 +427,12 @@ class OTLPReceiver:
         for resource_spans in body.get("resourceSpans", []):
             resource = resource_spans.get("resource", {})
             service_name = self._extract_service_name_json(resource)
+            # Feature 135: Extract process.pid and other resource attrs for window correlation
+            resource_attrs = self._extract_resource_attributes_json(resource)
 
             for scope_spans in resource_spans.get("scopeSpans", []):
                 for span in scope_spans.get("spans", []):
-                    event = self._parse_span_json(span, service_name)
+                    event = self._parse_span_json(span, service_name, resource_attrs)
                     if event:
                         events.append(event)
 
@@ -432,11 +440,18 @@ class OTLPReceiver:
             logger.info(f"Parsed {len(events)} events from JSON trace spans")
         return events
 
-    def _parse_span(self, span: Any, service_name: Optional[str]) -> Optional[TelemetryEvent]:
+    def _parse_span(
+        self,
+        span: Any,
+        service_name: Optional[str],
+        resource_attrs: Optional[dict] = None,
+    ) -> Optional[TelemetryEvent]:
         """Parse a protobuf Span into TelemetryEvent.
 
         Converts span name to event name (e.g., 'claude.agent.run' -> 'claude_code.agent_run').
         Extracts session ID from span attributes.
+
+        Feature 135: Accepts resource_attrs for process.pid-based window correlation.
         """
         span_name = span.name if hasattr(span, 'name') else None
         if not span_name:
@@ -448,8 +463,9 @@ class OTLPReceiver:
         if not event_name:
             return None
 
-        # Extract attributes
-        attributes = {}
+        # Feature 135: Start with resource attributes (process.pid, working_directory)
+        # These are used for deterministic window correlation in session_tracker
+        attributes = dict(resource_attrs) if resource_attrs else {}
         session_id = None
 
         try:
@@ -519,6 +535,22 @@ class OTLPReceiver:
         # Feature 132: Enrich attributes for Langfuse
         attributes = enrich_span_for_langfuse(attributes, event_name, session_id, tool)
 
+        # Feature 135: Extract finish_reason from span name if not in attributes
+        # Claude Code encodes stop_reason in span name: "LLM Call: Opus → tools" = tool_use
+        # Note: Only Opus/Sonnet indicate turn completion - Haiku is used for titles/summaries
+        if "gen_ai.response.finish_reasons" not in attributes:
+            if "→ tools" in span_name or "-> tools" in span_name:
+                attributes["gen_ai.response.finish_reasons"] = "tool_use"
+            elif span_name.startswith("LLM"):
+                # Only main models (Opus, Sonnet) indicate turn completion
+                # Haiku calls are ancillary (title generation, etc.)
+                is_main_model = any(m in span_name for m in ("Opus", "Sonnet", "opus", "sonnet"))
+                has_no_tools = "→ tools" not in span_name and "-> tools" not in span_name
+                if is_main_model and has_no_tools and "(" in span_name and "tokens)" in span_name:
+                    # Pattern: "LLM Call: Opus (X→Y tokens)" = turn complete
+                    attributes["gen_ai.response.finish_reasons"] = "end_turn"
+                    logger.info(f"Turn complete detected from span: {span_name}")
+
         logger.debug(
             f"Parsed span: {span_name} -> {event_name}, session_id: {session_id}, trace_id: {trace_id}, span_id: {span_id}"
         )
@@ -533,8 +565,16 @@ class OTLPReceiver:
             span_id=span_id,
         )
 
-    def _parse_span_json(self, span: dict, service_name: Optional[str]) -> Optional[TelemetryEvent]:
-        """Parse a JSON Span into TelemetryEvent."""
+    def _parse_span_json(
+        self,
+        span: dict,
+        service_name: Optional[str],
+        resource_attrs: Optional[dict] = None,
+    ) -> Optional[TelemetryEvent]:
+        """Parse a JSON Span into TelemetryEvent.
+
+        Feature 135: Accepts resource_attrs for process.pid-based window correlation.
+        """
         span_name = span.get("name")
         if not span_name:
             return None
@@ -544,8 +584,9 @@ class OTLPReceiver:
         if not event_name:
             return None
 
-        # Extract attributes
-        attributes = {}
+        # Feature 135: Start with resource attributes (process.pid, working_directory)
+        # These are used for deterministic window correlation in session_tracker
+        attributes = dict(resource_attrs) if resource_attrs else {}
         session_id = None
 
         for attr in span.get("attributes", []):
@@ -636,6 +677,16 @@ class OTLPReceiver:
             # Agent lifecycle spans
             "claude.agent.run": "claude_code.agent_run",
             "agent.run": "claude_code.agent_run",
+            # Feature 135: Tool lifecycle spans (for pending tool tracking)
+            "tool.start": "claude_code.tool_start",
+            "tool.complete": "claude_code.tool_complete",
+            "tool_start": "claude_code.tool_start",
+            "tool_complete": "claude_code.tool_complete",
+            # Feature 135: Streaming spans (for TTFT metrics)
+            "stream.start": "claude_code.stream_start",
+            "stream.token": "claude_code.stream_token",
+            "stream_start": "claude_code.stream_start",
+            "stream_token": "claude_code.stream_token",
             # Tool spans - map to tool_result for activity tracking
             "tool.read": "claude_code.tool_result",
             "tool.write": "claude_code.tool_result",
@@ -684,26 +735,49 @@ class OTLPReceiver:
             if span_lower.startswith(pattern.lower()):
                 return event
 
-        # For unknown spans, create a generic event based on provider keywords
-        if "claude" in span_lower or "tool" in span_lower:
-            # Convert dots to underscores and prefix with claude_code if needed
+        # For unknown spans, use service_name to determine provider first,
+        # then fall back to span name keywords. This prevents "Tool:" spans from
+        # Gemini being incorrectly classified as Claude Code.
+        svc_lower = (service_name or "").lower()
+        logger.debug(f"_span_name_to_event fallback: span='{span_name[:50]}', service='{service_name}'")
+
+        # Check service name first (most reliable)
+        if "gemini" in svc_lower:
+            normalized = span_name.replace(".", "_").replace("-", "_")
+            if not normalized.startswith("gemini_cli"):
+                normalized = f"gemini_cli.{normalized}"
+            return normalized
+
+        if "codex" in svc_lower or "openai" in svc_lower:
+            normalized = span_name.replace(".", "_").replace("-", "_")
+            if not normalized.startswith("codex"):
+                normalized = f"codex.{normalized}"
+            return normalized
+
+        if "claude" in svc_lower:
             normalized = span_name.replace(".", "_").replace("-", "_")
             if not normalized.startswith("claude_code"):
                 normalized = f"claude_code.{normalized}"
             return normalized
 
+        # Fall back to span name keywords only if service_name didn't match
         if "gemini" in span_lower or "gen_ai" in span_lower:
-            # Convert to gemini_cli event format
             normalized = span_name.replace(".", "_").replace("-", "_")
             if not normalized.startswith("gemini_cli"):
                 normalized = f"gemini_cli.{normalized}"
             return normalized
 
         if "codex" in span_lower or "openai" in span_lower:
-            # Convert to codex event format
             normalized = span_name.replace(".", "_").replace("-", "_")
             if not normalized.startswith("codex"):
                 normalized = f"codex.{normalized}"
+            return normalized
+
+        if "claude" in span_lower or "tool" in span_lower:
+            # "tool" keyword only applies to Claude Code when service_name is unknown
+            normalized = span_name.replace(".", "_").replace("-", "_")
+            if not normalized.startswith("claude_code"):
+                normalized = f"claude_code.{normalized}"
             return normalized
 
         # Ignore other spans
@@ -755,24 +829,105 @@ class OTLPReceiver:
                 return value.get("stringValue")
         return None
 
-    def _parse_log_record(self, log_record: Any, service_name: Optional[str]) -> Optional[TelemetryEvent]:
-        """Parse a protobuf LogRecord into TelemetryEvent."""
-        # Extract attributes
-        attributes = {}
+    def _extract_resource_attributes(self, resource: Any) -> dict:
+        """Extract useful resource attributes for session correlation.
+
+        Feature 135: Extract process.pid and working_directory from resource
+        attributes emitted by the Claude Code interceptor. These are used for
+        deterministic window correlation instead of relying on focused-window fallback.
+
+        Args:
+            resource: OTLP resource object
+
+        Returns:
+            Dict with process.pid, working_directory, etc.
+        """
+        attrs = {}
+        try:
+            # Check if resource has attributes at all
+            if not resource or not hasattr(resource, 'attributes'):
+                return attrs
+
+            for attr in resource.attributes:
+                if attr.key in ("process.pid", "working_directory", "host.name"):
+                    av = attr.value
+                    # Handle intValue (process.pid is emitted as int)
+                    if hasattr(av, 'int_value') and av.int_value:
+                        attrs[attr.key] = av.int_value
+                    elif hasattr(av, 'HasField') and av.HasField("int_value"):
+                        attrs[attr.key] = av.int_value
+                    # Handle stringValue
+                    elif hasattr(av, 'string_value') and av.string_value:
+                        attrs[attr.key] = av.string_value
+                    elif hasattr(av, 'HasField') and av.HasField("string_value"):
+                        attrs[attr.key] = av.string_value
+        except Exception as e:
+            logger.warning(f"Error extracting resource attributes: {e}")
+        if attrs:
+            logger.debug(f"Extracted resource attrs: {attrs}")
+        return attrs
+
+    def _extract_resource_attributes_json(self, resource: dict) -> dict:
+        """Extract useful resource attributes from JSON resource.
+
+        Feature 135: JSON equivalent of _extract_resource_attributes for
+        JSON-encoded OTLP requests.
+
+        Args:
+            resource: JSON resource dict
+
+        Returns:
+            Dict with process.pid, working_directory, etc.
+        """
+        attrs = {}
+        for attr in resource.get("attributes", []):
+            key = attr.get("key")
+            if key in ("process.pid", "working_directory", "host.name"):
+                value_obj = attr.get("value", {})
+                if "intValue" in value_obj:
+                    attrs[key] = int(value_obj["intValue"])
+                elif "stringValue" in value_obj:
+                    attrs[key] = value_obj["stringValue"]
+        return attrs
+
+    def _parse_log_record(
+        self,
+        log_record: Any,
+        service_name: Optional[str],
+        resource_attrs: Optional[dict] = None,
+    ) -> Optional[TelemetryEvent]:
+        """Parse a protobuf LogRecord into TelemetryEvent.
+
+        Feature 135: Accepts resource_attrs for process.pid-based window correlation.
+        Works with all CLIs: Claude Code, Codex CLI, Gemini CLI.
+        """
+        # Feature 135: Start with resource attributes (process.pid, working_directory)
+        # These are used for deterministic window correlation in session_tracker
+        attributes = dict(resource_attrs) if resource_attrs else {}
         session_id = None
         event_name = None
 
         # First, try to get event name from the log record body
         # The body contains the fully qualified event name (e.g., "claude_code.api_request")
         # while the event.name attribute only has the suffix (e.g., "api_request")
+        # NOTE: Gemini CLI's log body contains descriptive text (e.g., "GenAI operation details...")
+        # not the event type, so we validate the body looks like a known event name.
+        body_value = None
         try:
             body = log_record.body
             if hasattr(body, 'string_value') and body.string_value:
-                event_name = body.string_value
+                body_value = body.string_value
             elif hasattr(body, 'HasField') and body.HasField("string_value"):
-                event_name = body.string_value
+                body_value = body.string_value
         except Exception as e:
             logger.debug(f"Error parsing log record body: {e}")
+
+        # Only use body as event_name if it looks like a valid event prefix
+        # (Claude Code uses body for event name, Gemini CLI uses it for description)
+        if body_value:
+            valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.")
+            if any(body_value.startswith(p) for p in valid_prefixes):
+                event_name = body_value
 
         try:
             for attr in log_record.attributes:
@@ -870,19 +1025,34 @@ class OTLPReceiver:
             span_id=span_id,
         )
 
-    def _parse_log_record_json(self, log_record: dict, service_name: Optional[str]) -> Optional[TelemetryEvent]:
-        """Parse a JSON LogRecord into TelemetryEvent."""
-        # Extract attributes
-        attributes = {}
+    def _parse_log_record_json(
+        self,
+        log_record: dict,
+        service_name: Optional[str],
+        resource_attrs: Optional[dict] = None,
+    ) -> Optional[TelemetryEvent]:
+        """Parse a JSON LogRecord into TelemetryEvent.
+
+        Feature 135: Accepts resource_attrs for process.pid-based window correlation.
+        Works with all CLIs: Claude Code, Codex CLI, Gemini CLI.
+        """
+        # Feature 135: Start with resource attributes (process.pid, working_directory)
+        # These are used for deterministic window correlation in session_tracker
+        attributes = dict(resource_attrs) if resource_attrs else {}
         session_id = None
         event_name = None
 
         # First, try to get event name from the log record body
         # The body contains the fully qualified event name (e.g., "claude_code.api_request")
         # while the event.name attribute only has the suffix (e.g., "api_request")
+        # NOTE: Gemini CLI's log body contains descriptive text (e.g., "GenAI operation details...")
+        # not the event type, so we validate the body looks like a known event name.
         body = log_record.get("body", {})
         if "stringValue" in body:
-            event_name = body["stringValue"]
+            body_value = body["stringValue"]
+            valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.")
+            if any(body_value.startswith(p) for p in valid_prefixes):
+                event_name = body_value
 
         for attr in log_record.get("attributes", []):
             key = attr.get("key")
