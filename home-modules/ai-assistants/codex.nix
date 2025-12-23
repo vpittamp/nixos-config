@@ -242,6 +242,7 @@ EOF
         "CODEX_OTEL_INTERCEPTOR_HOST=${codexOtelInterceptorHost}"
         "CODEX_OTEL_INTERCEPTOR_PORT=${toString codexOtelInterceptorPort}"
         "CODEX_OTEL_INTERCEPTOR_FORWARD_BASE=http://127.0.0.1:4318"
+        "LANGFUSE_ENABLED=1"
       ];
 
       StandardOutput = "journal";

@@ -224,6 +224,7 @@ EOF
         "GEMINI_OTEL_INTERCEPTOR_HOST=127.0.0.1"
         "GEMINI_OTEL_INTERCEPTOR_PORT=4322"
         "GEMINI_OTEL_INTERCEPTOR_FORWARD_BASE=http://127.0.0.1:4318"
+        "LANGFUSE_ENABLED=1"
       ];
 
       StandardOutput = "journal";

@@ -66,6 +66,19 @@ const ONESHOT_SESSION_FINALIZE_MS = Number.parseInt(
 
 const DEBUG = process.env.CODEX_OTEL_INTERCEPTOR_DEBUG === '1';
 
+// Feature 132: Langfuse Integration Configuration
+const LANGFUSE_ENABLED = process.env.LANGFUSE_ENABLED === '1';
+const LANGFUSE_USER_ID = process.env.LANGFUSE_USER_ID || null;
+const LANGFUSE_TAGS = (() => {
+  const tags = process.env.LANGFUSE_TAGS;
+  if (!tags) return null;
+  try {
+    return JSON.parse(tags);
+  } catch {
+    return null;
+  }
+})();
+
 // =============================================================================
 // Utilities
 // =============================================================================
@@ -307,6 +320,57 @@ function jsonOk(res) {
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json');
   res.end('{}');
+}
+
+// =============================================================================
+// Feature 132: Langfuse Attribute Helpers
+// =============================================================================
+
+/**
+ * Add Langfuse-specific attributes to a span attributes array.
+ * @param {Array} attributes - OTEL span attributes array
+ * @param {object} options - Langfuse options
+ */
+function addLangfuseAttributes(attributes, options) {
+  if (!LANGFUSE_ENABLED) return;
+
+  const { spanKind, sessionId } = options;
+
+  // Add OpenInference span kind
+  if (spanKind) {
+    attributes.push({ key: 'openinference.span.kind', value: { stringValue: spanKind } });
+  }
+
+  // Add Langfuse session ID
+  if (sessionId) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: sessionId } });
+  }
+
+  // Add user ID if configured
+  if (LANGFUSE_USER_ID) {
+    attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+  }
+
+  // Add tags if configured
+  if (LANGFUSE_TAGS && Array.isArray(LANGFUSE_TAGS)) {
+    attributes.push({ key: 'langfuse.tags', value: { stringValue: JSON.stringify(LANGFUSE_TAGS) } });
+  }
+}
+
+/**
+ * Build Langfuse-compatible usage details object.
+ * @param {object} tokens - Token counts object
+ * @returns {object} Usage details for Langfuse
+ */
+function buildLangfuseUsageDetails(tokens) {
+  const details = {
+    input: tokens.input || 0,
+    output: tokens.output || 0,
+    total: (tokens.input || 0) + (tokens.output || 0),
+  };
+  if (tokens.reasoning > 0) details.reasoning = tokens.reasoning;
+  if (tokens.cached > 0) details.cached = tokens.cached;
+  return details;
 }
 
 // =============================================================================
@@ -584,6 +648,14 @@ function finalizeSession(conversationId, reason) {
   if (session.sandboxPolicy) attrs.push({ key: 'codex.sandbox_policy', value: { stringValue: session.sandboxPolicy } });
   if (session.mcpServers) attrs.push({ key: 'codex.mcp_servers', value: { stringValue: session.mcpServers } });
 
+  // Feature 132: Add Langfuse-specific attributes
+  addLangfuseAttributes(attrs, { spanKind: 'CHAIN', sessionId: session.sessionId || session.conversationId });
+  if (LANGFUSE_ENABLED) {
+    attrs.push({ key: 'langfuse.trace.name', value: { stringValue: 'Codex Session' } });
+    const usageDetails = buildLangfuseUsageDetails(session.tokens);
+    attrs.push({ key: 'langfuse.observation.usage_details', value: { stringValue: JSON.stringify(usageDetails) } });
+  }
+
   exportSpan(session, {
     traceId: session.traceId,
     spanId: session.rootSpanId,
@@ -720,6 +792,12 @@ function handleCodexLogEvent(meta, attrsObj) {
     }
     if (errorMessage) {
       base.push({ key: 'error.message', value: { stringValue: String(errorMessage) } });
+    }
+
+    // Feature 132: Add Langfuse-specific attributes for LLM span
+    addLangfuseAttributes(base, { spanKind: 'LLM', sessionId: session.sessionId || session.conversationId });
+    if (LANGFUSE_ENABLED) {
+      base.push({ key: 'langfuse.trace.name', value: { stringValue: 'Codex Session' } });
     }
 
     const span = {
@@ -894,6 +972,16 @@ function handleCodexLogEvent(meta, attrsObj) {
     }
 
     const spanName = getToolSpanName(toolName, argsValue);
+
+    // Feature 132: Add Langfuse-specific attributes for tool span
+    // Note: openinference.span.kind is already set to 'TOOL' above
+    if (LANGFUSE_ENABLED) {
+      spanAttrs.push({ key: 'langfuse.session.id', value: { stringValue: session.sessionId || session.conversationId } });
+      spanAttrs.push({ key: 'langfuse.trace.name', value: { stringValue: 'Codex Session' } });
+      if (LANGFUSE_USER_ID) {
+        spanAttrs.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+      }
+    }
 
     exportSpan(session, {
       traceId: session.traceId,

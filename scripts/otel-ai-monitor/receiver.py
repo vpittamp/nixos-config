@@ -9,21 +9,117 @@ Endpoints:
 - POST /v1/traces - Accept but ignore trace data
 - POST /v1/metrics - Accept but ignore metric data
 - GET /health - Health check endpoint
+
+Feature 132: Langfuse Integration
+- Enriches spans with Langfuse-specific attributes (openinference.span.kind)
+- Maps session.id to langfuse.session.id for trace grouping
+- Adds gen_ai.* semantic convention attributes for proper Langfuse categorization
 """
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from aiohttp import web
 
-from .models import AITool, EventNames, Provider, PROVIDER_DETECTION, SESSION_ID_ATTRIBUTES, TOOL_PROVIDER, TelemetryEvent
+from .models import (
+    AITool,
+    EventNames,
+    LangfuseAttributes,
+    Provider,
+    PROVIDER_DETECTION,
+    SESSION_ID_ATTRIBUTES,
+    TOOL_PROVIDER,
+    TelemetryEvent,
+)
 
 if TYPE_CHECKING:
     from .session_tracker import SessionTracker
 
 logger = logging.getLogger(__name__)
+
+# Feature 132: Check if Langfuse enrichment is enabled
+LANGFUSE_ENABLED = os.environ.get("LANGFUSE_ENABLED", "0") == "1"
+LANGFUSE_USER_ID = os.environ.get("LANGFUSE_USER_ID")
+LANGFUSE_DEFAULT_TAGS = os.environ.get("LANGFUSE_TAGS")
+
+
+def enrich_span_for_langfuse(
+    attributes: dict,
+    event_name: str,
+    session_id: Optional[str],
+    tool: Optional[AITool],
+) -> dict:
+    """Enrich span attributes with Langfuse-specific fields.
+
+    Feature 132: Add OpenInference semantic convention attributes that
+    Langfuse uses to categorize and display observations correctly.
+
+    Args:
+        attributes: Original span attributes dict
+        event_name: Event name (e.g., claude_code.api_request)
+        session_id: Session ID for trace grouping
+        tool: AI tool type for provider detection
+
+    Returns:
+        Enriched attributes dict (modified in place for efficiency)
+    """
+    if not LANGFUSE_ENABLED:
+        return attributes
+
+    # Determine span kind based on event type
+    # LLM for API calls, TOOL for tool operations, CHAIN for sessions
+    if event_name in {
+        EventNames.CLAUDE_API_REQUEST,
+        EventNames.CLAUDE_LLM_CALL,
+        EventNames.CODEX_API_REQUEST,
+        EventNames.GEMINI_API_REQUEST,
+        EventNames.GEMINI_API_REQUEST_DOT,
+    }:
+        span_kind = LangfuseAttributes.KIND_LLM
+    elif "tool" in event_name.lower():
+        span_kind = LangfuseAttributes.KIND_TOOL
+    elif event_name.endswith(".session") or event_name.endswith("_starts"):
+        span_kind = LangfuseAttributes.KIND_CHAIN
+    elif event_name.endswith(".agent_run"):
+        span_kind = LangfuseAttributes.KIND_AGENT
+    else:
+        # Default to CHAIN for unknown spans
+        span_kind = LangfuseAttributes.KIND_CHAIN
+
+    # Add OpenInference span kind
+    attributes[LangfuseAttributes.SPAN_KIND] = span_kind
+
+    # Add Langfuse session ID from session.id if available
+    if session_id:
+        attributes[LangfuseAttributes.LANGFUSE_SESSION_ID] = session_id
+
+    # Add user ID if configured
+    if LANGFUSE_USER_ID:
+        attributes[LangfuseAttributes.LANGFUSE_USER_ID] = LANGFUSE_USER_ID
+
+    # Add gen_ai.system based on tool
+    if tool:
+        provider = TOOL_PROVIDER.get(tool)
+        if provider == Provider.ANTHROPIC:
+            attributes[LangfuseAttributes.GEN_AI_SYSTEM] = "anthropic"
+        elif provider == Provider.OPENAI:
+            attributes[LangfuseAttributes.GEN_AI_SYSTEM] = "openai"
+        elif provider == Provider.GOOGLE:
+            attributes[LangfuseAttributes.GEN_AI_SYSTEM] = "google"
+
+    # Add tags if configured
+    if LANGFUSE_DEFAULT_TAGS:
+        try:
+            tags = json.loads(LANGFUSE_DEFAULT_TAGS)
+            if isinstance(tags, list):
+                attributes[LangfuseAttributes.LANGFUSE_TAGS] = json.dumps(tags)
+        except json.JSONDecodeError:
+            pass
+
+    return attributes
 
 
 class OTLPReceiver:
@@ -420,6 +516,9 @@ class OTLPReceiver:
         trace_id = span.trace_id.hex() if hasattr(span, 'trace_id') and span.trace_id else None
         span_id = span.span_id.hex() if hasattr(span, 'span_id') and span.span_id else None
 
+        # Feature 132: Enrich attributes for Langfuse
+        attributes = enrich_span_for_langfuse(attributes, event_name, session_id, tool)
+
         logger.debug(
             f"Parsed span: {span_name} -> {event_name}, session_id: {session_id}, trace_id: {trace_id}, span_id: {span_id}"
         )
@@ -498,6 +597,9 @@ class OTLPReceiver:
         # Extract trace context
         trace_id = span.get("traceId")
         span_id = span.get("spanId")
+
+        # Feature 132: Enrich attributes for Langfuse
+        attributes = enrich_span_for_langfuse(attributes, event_name, session_id, tool)
 
         logger.debug(f"Parsed JSON span: {span_name} -> {event_name}, session_id: {session_id}")
 
@@ -744,6 +846,9 @@ class OTLPReceiver:
         if log_record.span_id:
             span_id = log_record.span_id.hex()
 
+        # Feature 132: Enrich attributes for Langfuse
+        attributes = enrich_span_for_langfuse(attributes, event_name, session_id, tool)
+
         token_preview = ""
         if event_name in ("claude_code.api_request", "codex.api_request", "gemini_cli.api_request", "gemini_cli.api.request"):
             token_preview = (
@@ -825,6 +930,9 @@ class OTLPReceiver:
         # Extract trace context
         trace_id = log_record.get("traceId")
         span_id = log_record.get("spanId")
+
+        # Feature 132: Enrich attributes for Langfuse
+        attributes = enrich_span_for_langfuse(attributes, event_name, session_id, tool)
 
         return TelemetryEvent(
             event_name=event_name,

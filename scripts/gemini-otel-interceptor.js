@@ -72,6 +72,19 @@ const ONESHOT_SESSION_FINALIZE_MS = Number.parseInt(
 
 const DEBUG = process.env.GEMINI_OTEL_INTERCEPTOR_DEBUG === '1';
 
+// Feature 132: Langfuse Integration Configuration
+const LANGFUSE_ENABLED = process.env.LANGFUSE_ENABLED === '1';
+const LANGFUSE_USER_ID = process.env.LANGFUSE_USER_ID || null;
+const LANGFUSE_TAGS = (() => {
+  const tags = process.env.LANGFUSE_TAGS;
+  if (!tags) return null;
+  try {
+    return JSON.parse(tags);
+  } catch {
+    return null;
+  }
+})();
+
 // =============================================================================
 // Utilities
 // =============================================================================
@@ -340,6 +353,57 @@ function jsonOk(res) {
 }
 
 // =============================================================================
+// Feature 132: Langfuse Attribute Helpers
+// =============================================================================
+
+/**
+ * Add Langfuse-specific attributes to a span attributes array.
+ * @param {Array} attributes - OTEL span attributes array
+ * @param {object} options - Langfuse options
+ */
+function addLangfuseAttributes(attributes, options) {
+  if (!LANGFUSE_ENABLED) return;
+
+  const { spanKind, sessionId } = options;
+
+  // Add OpenInference span kind
+  if (spanKind) {
+    attributes.push({ key: 'openinference.span.kind', value: { stringValue: spanKind } });
+  }
+
+  // Add Langfuse session ID
+  if (sessionId) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: sessionId } });
+  }
+
+  // Add user ID if configured
+  if (LANGFUSE_USER_ID) {
+    attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+  }
+
+  // Add tags if configured
+  if (LANGFUSE_TAGS && Array.isArray(LANGFUSE_TAGS)) {
+    attributes.push({ key: 'langfuse.tags', value: { stringValue: JSON.stringify(LANGFUSE_TAGS) } });
+  }
+}
+
+/**
+ * Build Langfuse-compatible usage details object.
+ * @param {object} tokens - Token counts object
+ * @returns {object} Usage details for Langfuse
+ */
+function buildLangfuseUsageDetails(tokens) {
+  const details = {
+    input: tokens.input || 0,
+    output: tokens.output || 0,
+    total: (tokens.input || 0) + (tokens.output || 0),
+  };
+  if (tokens.cached > 0) details.cached = tokens.cached;
+  if (tokens.thoughts > 0) details.thoughts = tokens.thoughts;
+  return details;
+}
+
+// =============================================================================
 // Trace synthesis state
 // =============================================================================
 
@@ -547,6 +611,14 @@ function finalizeSession(sessionId, reason) {
   if (session.sandboxEnabled != null) attrs.push({ key: 'gemini.sandbox_enabled', value: { boolValue: Boolean(session.sandboxEnabled) } });
   if (session.mcpServers) attrs.push({ key: 'gemini.mcp_servers', value: { stringValue: String(session.mcpServers) } });
 
+  // Feature 132: Add Langfuse-specific attributes
+  addLangfuseAttributes(attrs, { spanKind: 'CHAIN', sessionId: sessionId });
+  if (LANGFUSE_ENABLED) {
+    attrs.push({ key: 'langfuse.trace.name', value: { stringValue: 'Gemini Session' } });
+    const usageDetails = buildLangfuseUsageDetails(session.tokens);
+    attrs.push({ key: 'langfuse.observation.usage_details', value: { stringValue: JSON.stringify(usageDetails) } });
+  }
+
   exportSpan(session, {
     traceId: session.traceId,
     spanId: session.rootSpanId,
@@ -733,6 +805,12 @@ function handleGeminiLogEvent(meta, attrsObj) {
     spanAttrs.push({ key: 'gemini.usage.tool_token_count', value: { intValue: String(toolTokens) } });
     spanAttrs.push({ key: 'gemini.usage.total_token_count', value: { intValue: String(totalTokens) } });
 
+    // Feature 132: Add Langfuse-specific attributes for LLM span
+    addLangfuseAttributes(spanAttrs, { spanKind: 'LLM', sessionId: session.sessionId });
+    if (LANGFUSE_ENABLED) {
+      spanAttrs.push({ key: 'langfuse.trace.name', value: { stringValue: 'Gemini Session' } });
+    }
+
     const isError = eventName === 'gemini_cli.api_error' || (typeof statusCode === 'number' && statusCode >= 400);
     const errMsg = typeof attrsObj.error === 'string' ? attrsObj.error : '';
 
@@ -834,6 +912,15 @@ function handleGeminiLogEvent(meta, attrsObj) {
     }
 
     const spanName = getToolSpanName(fn, attrsObj.function_args);
+
+    // Feature 132: Add Langfuse-specific attributes for tool span
+    if (LANGFUSE_ENABLED) {
+      spanAttrs.push({ key: 'langfuse.session.id', value: { stringValue: session.sessionId } });
+      spanAttrs.push({ key: 'langfuse.trace.name', value: { stringValue: 'Gemini Session' } });
+      if (LANGFUSE_USER_ID) {
+        spanAttrs.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+      }
+    }
 
     exportSpan(session, {
       traceId: session.traceId,
