@@ -186,6 +186,67 @@ let
             "move position center",
             "sticky enable"
           ]
+        },
+        {
+          "id": "1password-main",
+          "source": "nix",
+          "scope": "global",
+          "priority": 70,
+          "criteria": {
+            "app_id": "^1[Pp]assword$",
+            "title": "^1Password$"
+          },
+          "actions": [
+            "floating enable",
+            "resize set width 900 px height 600 px",
+            "move position center"
+          ]
+        },
+        {
+          "id": "1password-quick-access",
+          "source": "nix",
+          "scope": "global",
+          "priority": 71,
+          "criteria": {
+            "app_id": "^1[Pp]assword$",
+            "title": "^Quick Access"
+          },
+          "actions": [
+            "floating enable",
+            "sticky enable",
+            "move position center"
+          ]
+        },
+        {
+          "id": "1password-unlock",
+          "source": "nix",
+          "scope": "global",
+          "priority": 72,
+          "criteria": {
+            "app_id": "^1[Pp]assword$",
+            "title": "^Unlock"
+          },
+          "actions": [
+            "floating enable",
+            "sticky enable",
+            "move position center",
+            "focus"
+          ]
+        },
+        {
+          "id": "polkit-agent",
+          "source": "nix",
+          "scope": "global",
+          "priority": 80,
+          "criteria": {
+            "app_id": "^lxqt-policykit-agent$"
+          },
+          "actions": [
+            "floating enable",
+            "sticky enable",
+            "move position center",
+            "focus"
+          ]
         }
       ]
     }

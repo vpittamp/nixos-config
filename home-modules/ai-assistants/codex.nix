@@ -110,7 +110,7 @@ in
       # Additional settings
       auto_save = true;
       theme = "dark";
-      vim_mode = false;
+      vim_mode = true;
       # Enable new web search tool (replaces deprecated tools.web_search)
       # rmcp_client is REQUIRED for MCP server support
       features = {

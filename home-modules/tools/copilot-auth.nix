@@ -17,7 +17,7 @@
 #    # OR manually:
 #    op item create --category=login \
 #      --title="GitHub Copilot Token" \
-#      --vault="Private" \
+#      --vault="Personal" \
 #      "username=YOUR_GITHUB_USERNAME" \
 #      "password=ghu_YOUR_TOKEN_HERE"
 #
@@ -157,7 +157,7 @@ EOF
       if [ -z "$TOKEN" ]; then
         echo "Error: Token not found in 1Password"
         echo "Create it with:"
-        echo "  op item create --category=password --title='GitHub Copilot Token' --vault=Private token[password]='YOUR_TOKEN'"
+        echo "  op item create --category=password --title='GitHub Copilot Token' --vault=Personal token[password]='YOUR_TOKEN'"
         exit 1
       fi
 
@@ -229,20 +229,20 @@ EOF
         op item edit "GitHub Copilot Token" \
           "password=$TOKEN" \
           "username=$USER" \
-          --vault=Private
+          --vault=Personal
       else
         echo "Creating new 1Password item..."
         op item create \
           --category=login \
           --title="GitHub Copilot Token" \
-          --vault=Private \
+          --vault=Personal \
           "username=$USER" \
           "password=$TOKEN" \
           "website=https://github.com/features/copilot"
       fi
 
       echo ""
-      echo "✓ Token stored in 1Password (Private vault)"
+      echo "✓ Token stored in 1Password (Personal vault)"
       echo "✓ Now run: copilot-refresh-token"
       echo "✓ Or rebuild NixOS to auto-configure"
     '';

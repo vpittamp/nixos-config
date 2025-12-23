@@ -20,10 +20,28 @@
     # Wrapper functions for CLI tools that use 1Password credentials
     # These use `op run` to inject credentials securely
 
-    # GitHub CLI now uses SSH authentication via 1Password SSH agent
-    # No wrapper needed - gh will use the same SSH keys as git
+    # GitHub CLI with 1Password token injection
+    # Uses Personal Access Token from 1Password for API operations
+    # SSH via 1Password SSH agent is used for git operations
     gh() {
-      ${pkgs.gh}/bin/gh "$@"
+      # For auth subcommands, use passthrough (already authenticated)
+      if [ "$1" = "auth" ]; then
+        ${pkgs.gh}/bin/gh "$@"
+        return $?
+      fi
+
+      # For other operations, inject token from 1Password if available
+      if op account list &> /dev/null 2>&1; then
+        local env_file=$(mktemp)
+        echo 'GH_TOKEN="op://Employee/Github Personal Access Token/token"' > "$env_file"
+        op run --env-file="$env_file" -- ${pkgs.gh}/bin/gh "$@"
+        local exit_code=$?
+        rm -f "$env_file"
+        return $exit_code
+      else
+        # Fallback to standard gh (uses ~/.config/gh/hosts.yml)
+        ${pkgs.gh}/bin/gh "$@"
+      fi
     }
 
     hcloud() {
@@ -177,7 +195,7 @@
       echo "Credential injection: op run command"
       echo ""
       echo "Wrapped CLI tools:"
-      echo "  ✅ gh - GitHub CLI (op://Employee/Github Personal Access Token/token)"
+      echo "  ✅ gh - GitHub CLI (op://Employee/Github Personal Access Token/token + SSH agent)"
       echo "  ✅ hcloud - Hetzner Cloud CLI (op://CLI/Hetzner Cloud API/token)"
       echo "  ✅ openai - OpenAI CLI (op://CLI/OPENAI_API_KEY/api key)"
       echo "  ✅ argocd - Argo CD CLI (op://CLI/shdhimokibw653iy5gkyzay4qy/auth token)"
