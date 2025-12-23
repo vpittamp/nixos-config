@@ -64,29 +64,41 @@
   
   # Auto-start 1Password desktop app on login with proper environment
   # Using systemd user service for reliable autostart that works even after nixos-rebuild
-  # Optimized for i3 window manager with system tray support
+  # Optimized for Sway/i3 window manager with system tray support
+  #
+  # 1Password System Tray Behavior:
+  # - Starts minimized to system tray (--silent flag)
+  # - Persists in tray even when main window is closed
+  # - Uses system authentication (polkit) for biometric-like unlock
+  # - Click tray icon to open, close window to minimize back to tray
   systemd.user.services.onepassword-gui = {
     Unit = {
       Description = "1Password Desktop Application";
-      After = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" "tray.target" ];
       PartOf = [ "graphical-session.target" ];
-      # Ensure we wait for i3 to be ready
+      # Ensure we wait for system tray to be ready
       Wants = [ "tray.target" ];
+      # Don't start before tray is available
+      Requires = [ "tray.target" ];
     };
 
     Service = {
       Type = "simple";
       # Launch 1Password in background with system tray support
-      # --silent: Start in background (system tray)
+      # --silent: Start minimized to system tray (persists in tray)
       # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
-      # --ozone-platform=x11: Force X11 for compatibility with i3
-      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --enable-features=UseOzonePlatform --ozone-platform=x11";
+      # --ozone-platform-hint=auto: Auto-detect X11/Wayland
+      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
       Restart = "on-failure";
       RestartSec = 5;
+      # Ensure 1Password stays running
+      TimeoutStopSec = 10;
 
       # Environment for better integration
       Environment = [
         "PATH=/run/wrappers/bin:/run/current-system/sw/bin"
+        # Enable biometric unlock via polkit
+        "OP_BIOMETRIC_UNLOCK_ENABLED=true"
       ];
     };
 

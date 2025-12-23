@@ -1,7 +1,10 @@
-{ config, pkgs, lib, self, pkgs-unstable ? pkgs, ... }:
+{ config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 let
   repoRoot = ../../.;
+
+  # Alias for backward compatibility with patterns using 'self'
+  # All AI assistants now use repoRoot consistently
 
   # Chromium is only available on Linux
   # On Darwin, MCP servers requiring Chromium will be disabled
@@ -51,7 +54,7 @@ let
 
   # Auto-import all .md files from .gemini/commands/ as custom commands
   # This follows the same pattern as Claude Code's slash commands
-  commandFiles = builtins.readDir (self + "/.gemini/commands");
+  commandFiles = builtins.readDir (repoRoot + "/.gemini/commands");
   
   # Helper to parse simple YAML frontmatter in Nix
   # Expects format:
@@ -90,7 +93,7 @@ let
     (name: type:
       lib.nameValuePair
         (lib.removeSuffix ".md" name)
-        (parseCommand name (builtins.readFile (self + "/.gemini/commands/${name}")))
+        (parseCommand name (builtins.readFile (repoRoot + "/.gemini/commands/${name}")))
     )
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
 
