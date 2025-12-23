@@ -48,8 +48,21 @@ let
         (builtins.readFile (repoRoot + "/.claude/commands/${name}"))
     )
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
+  # Auto-import skills from .claude/skills/ directory
+  # Skills are symlinked to ~/.claude/skills/ for Claude Code to discover
+  skillsDir = repoRoot + "/.claude/skills";
+  hasSkills = builtins.pathExists skillsDir;
 in
 lib.mkIf enableClaudeCode {
+  # Symlink skills directory from repo to ~/.claude/skills/
+  # This centralizes skill management in version control
+  home.file = lib.optionalAttrs hasSkills {
+    ".claude/skills" = {
+      source = skillsDir;
+      recursive = true;
+    };
+  };
+
   # Feature 123: OTEL environment variables for Claude Code telemetry
   # These MUST be session variables (not just settings.env) because the OTEL SDK
   # initializes when Claude Code starts, before it reads settings.json.
