@@ -194,6 +194,33 @@
       "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
+
+    # Feature 132: Langfuse AI Observability
+    # Export traces to Langfuse for specialized LLM tracing and analytics
+    langfuse = {
+      enable = true;
+      endpoint = "https://cloud.langfuse.com/api/public/otel";
+
+      # Credential source options:
+      # - "env": Use LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables
+      # - "files": Use publicKeyFile and secretKeyFile paths (sops-nix, agenix)
+      # - "1password": Use 1Password CLI to fetch keys
+      # - "azure": Use Azure Key Vault to fetch keys
+      credentialSource = "1password";  # Use 1Password for local dev
+
+      # Azure Key Vault configuration (when credentialSource = "azure")
+      # Secrets expected: LANGFUSE-PUBLIC-KEY, LANGFUSE-SECRET-KEY
+      # azureKeyVaultName = "your-keyvault-name";
+
+      # 1Password configuration (when credentialSource = "1password")
+      onePasswordRefs = {
+        publicKey = "op://CLI/Langfuse/public_key";
+        secretKey = "op://CLI/Langfuse/secret_key";
+      };
+
+      batchTimeout = "10s";
+      batchSize = 100;
+    };
   };
 
   # Feature 123 (legacy): Disable otel-ai-collector since Alloy replaces it

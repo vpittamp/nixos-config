@@ -109,6 +109,21 @@ const SESSION_ID_BUFFER_MAX_SPANS = Number.parseInt(process.env.OTEL_INTERCEPTOR
 const HOOK_POLL_INTERVAL_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_HOOK_POLL_INTERVAL_MS || '200', 10);
 const TURN_IDLE_END_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_TURN_IDLE_END_MS || '1500', 10);
 const PROC_AVAILABLE = fs.existsSync('/proc');
+
+// Feature 132: Langfuse Integration Configuration
+// When enabled, spans include OpenInference attributes for proper Langfuse categorization
+const LANGFUSE_ENABLED = process.env.LANGFUSE_ENABLED === '1';
+const LANGFUSE_USER_ID = process.env.LANGFUSE_USER_ID || null;
+const LANGFUSE_TAGS = (() => {
+  const tags = process.env.LANGFUSE_TAGS;
+  if (!tags) return null;
+  try {
+    return JSON.parse(tags);
+  } catch {
+    return null;
+  }
+})();
+
 const CLAUDE_CODE_VERSION = (() => {
   const fromEnv = process.env.CLAUDE_CODE_VERSION;
   if (fromEnv && typeof fromEnv === 'string') return fromEnv;
@@ -227,6 +242,95 @@ function classifyErrorType(statusCode, responseBody) {
   }
 
   return null;
+}
+
+// =============================================================================
+// Feature 132: Langfuse Attribute Helpers
+// =============================================================================
+
+/**
+ * Add Langfuse-specific attributes to a span attributes array.
+ * These attributes enable proper categorization and display in Langfuse UI.
+ *
+ * @param {Array} attributes - OTEL span attributes array
+ * @param {object} options - Langfuse options
+ * @param {string} options.spanKind - OpenInference span kind (CHAIN, LLM, TOOL, AGENT)
+ * @param {string} [options.sessionId] - Session ID for trace grouping
+ * @param {string} [options.observationName] - Human-readable observation name
+ * @param {object} [options.usageDetails] - Token usage breakdown
+ * @param {object} [options.costDetails] - Cost breakdown
+ * @returns {Array} The modified attributes array
+ */
+function addLangfuseAttributes(attributes, options) {
+  if (!LANGFUSE_ENABLED) return attributes;
+
+  const { spanKind, sessionId, observationName, usageDetails, costDetails } = options;
+
+  // Add OpenInference span kind (required for Langfuse type detection)
+  if (spanKind) {
+    attributes.push({ key: 'openinference.span.kind', value: { stringValue: spanKind } });
+  }
+
+  // Add Langfuse session ID for trace grouping
+  if (sessionId) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: sessionId } });
+  }
+
+  // Add user ID if configured
+  if (LANGFUSE_USER_ID) {
+    attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+  }
+
+  // Add observation name
+  if (observationName) {
+    attributes.push({ key: 'langfuse.observation.name', value: { stringValue: observationName } });
+  }
+
+  // Add tags if configured
+  if (LANGFUSE_TAGS && Array.isArray(LANGFUSE_TAGS)) {
+    attributes.push({ key: 'langfuse.tags', value: { stringValue: JSON.stringify(LANGFUSE_TAGS) } });
+  }
+
+  // Add usage details (JSON serialized for Langfuse)
+  if (usageDetails) {
+    attributes.push({ key: 'langfuse.observation.usage_details', value: { stringValue: JSON.stringify(usageDetails) } });
+  }
+
+  // Add cost details (JSON serialized for Langfuse)
+  if (costDetails) {
+    attributes.push({ key: 'langfuse.observation.cost_details', value: { stringValue: JSON.stringify(costDetails) } });
+  }
+
+  return attributes;
+}
+
+/**
+ * Build Langfuse-compatible usage details object.
+ * @param {object} tokens - Token counts object
+ * @returns {object} Usage details for Langfuse
+ */
+function buildLangfuseUsageDetails(tokens) {
+  const details = {
+    input: tokens.input || 0,
+    output: tokens.output || 0,
+    total: (tokens.input || 0) + (tokens.output || 0),
+  };
+  if (tokens.cacheRead > 0) details.cache_read = tokens.cacheRead;
+  if (tokens.cacheWrite > 0) details.cache_creation = tokens.cacheWrite;
+  return details;
+}
+
+/**
+ * Build Langfuse-compatible cost details object.
+ * @param {number} costUsd - Total cost in USD
+ * @param {object} tokens - Token counts for cost breakdown
+ * @returns {object} Cost details for Langfuse
+ */
+function buildLangfuseCostDetails(costUsd, tokens) {
+  // We only have total cost from calculateCostUsd, not per-category
+  return {
+    total: costUsd,
+  };
 }
 
 // =============================================================================
@@ -1907,6 +2011,25 @@ function finalizeSessionSpan() {
     { key: 'gen_ai.usage.cost_usd', value: { doubleValue: state.session.tokens.costUsd } }
   ];
 
+  // Feature 132: Add Langfuse-specific attributes for session/trace grouping
+  if (LANGFUSE_ENABLED) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: state.session.sessionId } });
+    if (LANGFUSE_USER_ID) {
+      attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+    }
+    attributes.push({ key: 'langfuse.trace.name', value: { stringValue: 'Claude Code Session' } });
+    if (LANGFUSE_TAGS && Array.isArray(LANGFUSE_TAGS)) {
+      attributes.push({ key: 'langfuse.tags', value: { stringValue: JSON.stringify(LANGFUSE_TAGS) } });
+    }
+    // Add usage details for Langfuse cost tracking
+    const usageDetails = buildLangfuseUsageDetails(state.session.tokens);
+    attributes.push({ key: 'langfuse.observation.usage_details', value: { stringValue: JSON.stringify(usageDetails) } });
+    if (state.session.tokens.costUsd > 0) {
+      const costDetails = buildLangfuseCostDetails(state.session.tokens.costUsd, state.session.tokens);
+      attributes.push({ key: 'langfuse.observation.cost_details', value: { stringValue: JSON.stringify(costDetails) } });
+    }
+  }
+
   if (state.session.parentSessionId) {
     attributes.push({ key: 'claude.parent_session_id', value: { stringValue: state.session.parentSessionId } });
   }
@@ -2136,6 +2259,22 @@ function endCurrentTurn(endTime = Date.now(), endReason = 'unknown') {
     attributes.push({ key: 'input.value', value: { stringValue: turn.promptPreview } });
   }
 
+  // Feature 132: Add Langfuse-specific attributes for turn tracking
+  if (LANGFUSE_ENABLED) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: state.session.sessionId } });
+    attributes.push({ key: 'langfuse.trace.name', value: { stringValue: 'Claude Code Session' } });
+    if (LANGFUSE_USER_ID) {
+      attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+    }
+    // Add usage details for the turn
+    const usageDetails = buildLangfuseUsageDetails(turn.tokens);
+    attributes.push({ key: 'langfuse.observation.usage_details', value: { stringValue: JSON.stringify(usageDetails) } });
+    if (turn.tokens.costUsd > 0) {
+      const costDetails = buildLangfuseCostDetails(turn.tokens.costUsd, turn.tokens);
+      attributes.push({ key: 'langfuse.observation.cost_details', value: { stringValue: JSON.stringify(costDetails) } });
+    }
+  }
+
   const spanRecord = createOTLPSpan({
     traceId: state.session.traceId,
     spanId: turn.spanId,
@@ -2282,6 +2421,22 @@ function exportLLMSpan(requestBody, responseBody, startTime, endTime, consumedTo
   }
   if (tokens.cacheWrite > 0) {
     attributes.push({ key: 'llm.token_count.prompt_details.cache_write', value: { intValue: tokens.cacheWrite.toString() } });
+  }
+
+  // Feature 132: Add Langfuse-specific attributes for LLM generation tracking
+  if (LANGFUSE_ENABLED) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: state.session.sessionId } });
+    attributes.push({ key: 'langfuse.trace.name', value: { stringValue: 'Claude Code Session' } });
+    if (LANGFUSE_USER_ID) {
+      attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+    }
+    // Add usage details for Langfuse
+    const usageDetails = buildLangfuseUsageDetails(tokens);
+    attributes.push({ key: 'langfuse.observation.usage_details', value: { stringValue: JSON.stringify(usageDetails) } });
+    if (costUsd > 0) {
+      const costDetails = buildLangfuseCostDetails(costUsd, tokens);
+      attributes.push({ key: 'langfuse.observation.cost_details', value: { stringValue: JSON.stringify(costDetails) } });
+    }
   }
 
   // Optional request parameters
@@ -2512,6 +2667,28 @@ function completeToolSpan(toolCallId, result) {
     // Add error type from PostToolUse hook (may differ from LLM-inferred error)
     if (postToolMeta.errorType) {
       attributes.push({ key: 'tool.error.type', value: { stringValue: postToolMeta.errorType } });
+    }
+  }
+
+  // Feature 132: Add Langfuse-specific attributes for tool tracking
+  if (LANGFUSE_ENABLED) {
+    attributes.push({ key: 'langfuse.session.id', value: { stringValue: state.session.sessionId } });
+    if (LANGFUSE_USER_ID) {
+      attributes.push({ key: 'langfuse.user.id', value: { stringValue: LANGFUSE_USER_ID } });
+    }
+    // Set observation type for Langfuse
+    attributes.push({ key: 'langfuse.observation.type', value: { stringValue: 'span' } });
+    // Add error level for failed tools
+    if (isError) {
+      attributes.push({ key: 'langfuse.observation.level', value: { stringValue: 'ERROR' } });
+    }
+    // Add tool input as input.value for Langfuse (truncated)
+    if (pendingTool.input) {
+      try {
+        const inputStr = JSON.stringify(pendingTool.input).substring(0, 5000);
+        attributes.push({ key: 'input.value', value: { stringValue: inputStr } });
+        attributes.push({ key: 'langfuse.observation.input', value: { stringValue: inputStr } });
+      } catch {}
     }
   }
 

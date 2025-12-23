@@ -329,3 +329,171 @@ class EventNames:
         elif event_name.startswith("gemini_cli.") or event_name.startswith("gen_ai."):
             return AITool.GEMINI_CLI
         return None
+
+
+# =============================================================================
+# Feature 132: Langfuse OTEL Attribute Constants
+# =============================================================================
+# Langfuse uses OpenInference semantic conventions for trace type detection.
+# These constants define the attribute names and valid values for Langfuse
+# to properly categorize and display AI CLI traces.
+#
+# Reference: https://langfuse.com/docs/open-source/observability/opentelemetry
+
+class LangfuseAttributes:
+    """Langfuse-specific OTEL span attribute names and values.
+
+    Langfuse's OTLP receiver maps OpenTelemetry spans to Langfuse observations
+    using these attribute names. Proper attribute tagging ensures traces appear
+    correctly in the Langfuse UI with proper hierarchy and metadata.
+    """
+
+    # --- Observation Type Attributes ---
+    # Langfuse determines observation type from openinference.span.kind
+    SPAN_KIND = "openinference.span.kind"
+
+    # --- Span Kind Values (maps to Langfuse observation types) ---
+    # CHAIN -> "span" in Langfuse (parent trace or workflow)
+    # LLM -> "generation" in Langfuse (LLM API calls)
+    # TOOL -> "span" with tool metadata in Langfuse
+    # AGENT -> "span" in Langfuse (agent turns/steps)
+    KIND_CHAIN = "CHAIN"
+    KIND_LLM = "LLM"
+    KIND_TOOL = "TOOL"
+    KIND_AGENT = "AGENT"
+    KIND_RETRIEVER = "RETRIEVER"
+    KIND_EMBEDDING = "EMBEDDING"
+    KIND_RERANKER = "RERANKER"
+
+    # --- GenAI Semantic Convention Attributes ---
+    # These are standard OpenTelemetry GenAI attributes that Langfuse recognizes
+    GEN_AI_SYSTEM = "gen_ai.system"
+    GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
+    GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
+    GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
+    GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+    GEN_AI_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
+    GEN_AI_USAGE_COST = "gen_ai.usage.cost"
+
+    # --- Langfuse-Specific Attributes ---
+    # These attributes are specific to Langfuse and used for enhanced features
+    LANGFUSE_SESSION_ID = "langfuse.session.id"
+    LANGFUSE_USER_ID = "langfuse.user.id"
+    LANGFUSE_TRACE_NAME = "langfuse.trace.name"
+    LANGFUSE_OBSERVATION_NAME = "langfuse.observation.name"
+    LANGFUSE_TAGS = "langfuse.tags"
+    LANGFUSE_METADATA = "langfuse.metadata"
+    LANGFUSE_VERSION = "langfuse.version"
+    LANGFUSE_RELEASE = "langfuse.release"
+
+    # --- Usage Details (JSON object) ---
+    # Langfuse supports detailed token breakdown in usage_details
+    LANGFUSE_USAGE_DETAILS = "langfuse.observation.usage_details"
+    LANGFUSE_COST_DETAILS = "langfuse.observation.cost_details"
+
+    # --- Tool Call Attributes ---
+    TOOL_NAME = "tool.name"
+    TOOL_DESCRIPTION = "tool.description"
+    TOOL_INPUT = "input.value"
+    TOOL_OUTPUT = "output.value"
+
+    # --- Input/Output for Generations ---
+    INPUT_VALUE = "input.value"
+    INPUT_MIME_TYPE = "input.mime_type"
+    OUTPUT_VALUE = "output.value"
+    OUTPUT_MIME_TYPE = "output.mime_type"
+
+    # --- OpenInference Message Attributes ---
+    # For structured prompt/response content
+    LLM_INPUT_MESSAGES = "llm.input_messages"
+    LLM_OUTPUT_MESSAGES = "llm.output_messages"
+    LLM_PROMPTS = "llm.prompts"
+    LLM_PROMPT_TEMPLATE = "llm.prompt_template"
+    LLM_PROMPT_TEMPLATE_VARIABLES = "llm.prompt_template.variables"
+
+    # --- Error Attributes ---
+    ERROR_TYPE = "error.type"
+    ERROR_MESSAGE = "error.message"
+    EXCEPTION_TYPE = "exception.type"
+    EXCEPTION_MESSAGE = "exception.message"
+
+    @staticmethod
+    def get_span_kind_for_observation_type(obs_type: str) -> str:
+        """Map Langfuse observation type to OpenInference span kind.
+
+        Args:
+            obs_type: Langfuse observation type ("trace", "generation", "span")
+
+        Returns:
+            OpenInference span kind value
+        """
+        mapping = {
+            "trace": LangfuseAttributes.KIND_CHAIN,
+            "generation": LangfuseAttributes.KIND_LLM,
+            "span": LangfuseAttributes.KIND_CHAIN,
+            "tool": LangfuseAttributes.KIND_TOOL,
+            "event": LangfuseAttributes.KIND_CHAIN,
+        }
+        return mapping.get(obs_type.lower(), LangfuseAttributes.KIND_CHAIN)
+
+    @staticmethod
+    def build_usage_details(
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        reasoning_tokens: int = 0,
+    ) -> dict:
+        """Build a usage_details JSON object for Langfuse.
+
+        Langfuse accepts detailed token breakdown via langfuse.observation.usage_details.
+
+        Args:
+            input_tokens: Input/prompt tokens
+            output_tokens: Output/completion tokens
+            cache_read_tokens: Tokens read from cache
+            cache_creation_tokens: Tokens written to cache
+            reasoning_tokens: Tokens used for reasoning (o1 models)
+
+        Returns:
+            Dictionary suitable for JSON serialization
+        """
+        details = {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+        }
+        if cache_read_tokens > 0:
+            details["cache_read"] = cache_read_tokens
+        if cache_creation_tokens > 0:
+            details["cache_creation"] = cache_creation_tokens
+        if reasoning_tokens > 0:
+            details["reasoning"] = reasoning_tokens
+        return details
+
+    @staticmethod
+    def build_cost_details(
+        input_cost: float = 0.0,
+        output_cost: float = 0.0,
+        cache_read_cost: float = 0.0,
+        cache_creation_cost: float = 0.0,
+        total_cost: float = 0.0,
+    ) -> dict:
+        """Build a cost_details JSON object for Langfuse.
+
+        Args:
+            input_cost: Cost for input tokens (USD)
+            output_cost: Cost for output tokens (USD)
+            cache_read_cost: Cost for cache read tokens (USD)
+            cache_creation_cost: Cost for cache creation tokens (USD)
+            total_cost: Total cost (USD), or sum if not provided
+
+        Returns:
+            Dictionary suitable for JSON serialization
+        """
+        calculated_total = input_cost + output_cost + cache_read_cost + cache_creation_cost
+        return {
+            "input": round(input_cost, 8),
+            "output": round(output_cost, 8),
+            "total": round(total_cost if total_cost > 0 else calculated_total, 8),
+        }

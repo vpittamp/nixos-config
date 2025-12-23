@@ -141,6 +141,23 @@ in
       "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
+
+    # Feature 132: Langfuse AI Observability
+    # Export traces to Langfuse for specialized LLM tracing and analytics
+    langfuse = {
+      enable = true;
+      # Self-hosted Langfuse via Tailscale (matches Azure Key Vault credentials)
+      endpoint = "https://langfuse-thinkpad.tail286401.ts.net/api/public/otel";
+      credentialSource = "1password";  # Use 1Password for local dev
+      onePasswordRefs = {
+        publicKey = "op://CLI/Langfuse/public_key";
+        secretKey = "op://CLI/Langfuse/secret_key";
+      };
+      # Fallback: environment file for system services (1Password not available)
+      environmentFile = "/etc/langfuse/credentials";
+      batchTimeout = "10s";
+      batchSize = 100;
+    };
   };
 
   # Feature 123 (legacy): Disable otel-ai-collector - replaced by grafana-alloy
