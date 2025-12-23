@@ -54,6 +54,10 @@ lib.mkIf enableClaudeCode {
   # These MUST be session variables (not just settings.env) because the OTEL SDK
   # initializes when Claude Code starts, before it reads settings.json.
   # settings.env only affects subprocesses, not Claude Code itself.
+  #
+  # Feature 132: Langfuse integration environment variables
+  # LANGFUSE_* variables are optional - if set, traces will include Langfuse-specific
+  # attributes for proper observation mapping in Langfuse UI.
   home.sessionVariables = {
     CLAUDE_CODE_ENABLE_TELEMETRY = "1";
     OTEL_LOGS_EXPORTER = "otlp";
@@ -68,6 +72,14 @@ lib.mkIf enableClaudeCode {
     OTEL_LOG_USER_PROMPTS = "1";
     # Delta temporality for better memory efficiency with session metrics
     OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta";
+
+    # Feature 132: Langfuse integration
+    # These variables are used by the interceptor to add Langfuse-specific attributes
+    # LANGFUSE_ENABLED - Set to "1" to enable Langfuse-specific attribute emission
+    # LANGFUSE_USER_ID - Optional user identifier for Langfuse traces
+    # LANGFUSE_SESSION_ID - Optional override for session grouping (defaults to Claude session.id)
+    # LANGFUSE_TAGS - Optional JSON array of tags, e.g., '["production", "my-feature"]'
+    LANGFUSE_ENABLED = "1";
   };
 
   # Chromium is installed via programs.chromium in tools/chromium.nix

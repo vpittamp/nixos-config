@@ -111,3 +111,103 @@ All are optional (defaults are chosen to be safe and low-cardinality):
 - `OTEL_INTERCEPTOR_TURN_IDLE_END_MS` = debounce window for heuristic mode (default: `1500`)
 - `OTEL_INTERCEPTOR_SESSION_ID_POLICY` = `buffer|eager` (default: `buffer`)
 - `OTEL_INTERCEPTOR_SESSION_ID_BUFFER_MAX_MS` / `OTEL_INTERCEPTOR_SESSION_ID_BUFFER_MAX_SPANS` = safety caps for buffering
+
+## 8) Langfuse Integration (Feature 132)
+
+In addition to Grafana LGTM, traces can be exported to [Langfuse](https://langfuse.com) for specialized LLM observability.
+
+### What Langfuse provides
+
+- **LLM-specific trace views**: Hierarchical display of Session → Turn → LLM/Tool with generation-focused UI
+- **Token and cost analytics**: Aggregated usage metrics with cost breakdown by model
+- **Session grouping**: Related traces grouped by session ID in the Sessions tab
+- **Prompt/response visibility**: Full input/output content for debugging and analysis
+
+### Enabling Langfuse export
+
+In your NixOS configuration (`configurations/hetzner.nix` or equivalent):
+
+```nix
+services.grafana-alloy = {
+  enable = true;
+  # ... other settings ...
+
+  langfuse = {
+    enable = true;
+    endpoint = "https://cloud.langfuse.com/api/public/otel";
+    # Option 1: Key files (recommended for production)
+    # publicKeyFile = config.sops.secrets.langfuse-public-key.path;
+    # secretKeyFile = config.sops.secrets.langfuse-secret-key.path;
+    # Option 2: Environment variables (for development)
+    # Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY in systemd service
+    batchTimeout = "10s";
+    batchSize = 100;
+  };
+};
+```
+
+Set `LANGFUSE_ENABLED=1` in your shell or Claude Code environment to activate Langfuse attribute enrichment.
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `LANGFUSE_ENABLED` | Set to `1` to enable Langfuse-specific attributes |
+| `LANGFUSE_USER_ID` | Optional user ID for trace attribution |
+| `LANGFUSE_TAGS` | JSON array or comma-separated list of tags (e.g., `["production","team-a"]`) |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key (if not using key files) |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key (if not using key files) |
+
+### Trace hierarchy mapping
+
+Traces use [OpenInference semantic conventions](https://github.com/Arize-ai/openinference) for Langfuse compatibility:
+
+| Span Type | OpenInference Kind | Langfuse Observation |
+|-----------|-------------------|---------------------|
+| Session | `CHAIN` | Trace root |
+| Turn | `AGENT` | Nested span |
+| LLM Call | `LLM` | Generation |
+| Tool Call | `TOOL` | Span |
+| Subagent (Task) | `AGENT` | Nested agent span |
+
+### Key attributes
+
+Langfuse-specific attributes added to spans:
+
+| Attribute | Description |
+|-----------|-------------|
+| `openinference.span.kind` | Span type (CHAIN, LLM, TOOL, AGENT) |
+| `langfuse.session.id` | Session ID for trace grouping |
+| `langfuse.user.id` | User ID for attribution |
+| `langfuse.observation.name` | Human-readable observation name |
+| `langfuse.observation.type` | Observation type (generation, span) |
+| `langfuse.observation.usage_details` | JSON with token breakdown |
+| `langfuse.observation.cost_details` | JSON with cost breakdown |
+| `langfuse.observation.level` | Error level for failed operations |
+| `langfuse.trace.tags` | JSON array of trace tags |
+
+### Using Langfuse UI
+
+1. **Traces view**: Filter by `gen_ai.system` (anthropic, openai, google) or `gen_ai.request.model`
+2. **Sessions view**: Group related traces by `langfuse.session.id`
+3. **Generations**: View LLM calls with input/output content and token usage
+4. **Analytics**: Aggregate cost and usage metrics across sessions
+
+### Graceful degradation
+
+When Langfuse is unavailable:
+- Alloy buffers traces locally (100MB default)
+- Traces are retried with exponential backoff
+- Local EWW monitoring continues to work via otel-ai-monitor
+
+### Multi-provider support
+
+All three AI CLIs (Claude Code, Codex, Gemini) export Langfuse-compatible traces:
+
+| CLI | Provider | Model Examples |
+|-----|----------|---------------|
+| Claude Code | anthropic | claude-sonnet-4-20250514, claude-opus-4-5-20251101 |
+| Codex CLI | openai | gpt-4o, o3-mini |
+| Gemini CLI | google | gemini-2.5-pro, gemini-2.5-flash |
+
+Filter in Langfuse by `gen_ai.system` to view traces from specific providers.
