@@ -3,6 +3,12 @@
 let
   repoRoot = ../../.;
 
+  # Auto-import custom instructions from .codex/INSTRUCTIONS.md
+  # This follows the same centralization pattern as Claude Code and Gemini CLI
+  instructionsFile = repoRoot + "/.codex/INSTRUCTIONS.md";
+  hasInstructions = builtins.pathExists instructionsFile;
+  customInstructions = if hasInstructions then builtins.readFile instructionsFile else null;
+
   # Chromium is only available on Linux
   # On Darwin, MCP servers requiring Chromium will be disabled
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
@@ -51,8 +57,9 @@ in
     # We don't need backups; overwrite the config directly
     settings.force = lib.mkForce true;
 
-    # Custom instructions for the agent
-    # custom-instructions = 
+    # Custom instructions for the agent - auto-imported from .codex/INSTRUCTIONS.md
+    # This follows the same centralization pattern as Claude Code and Gemini CLI
+    custom-instructions = lib.mkIf hasInstructions customInstructions;
 
     # Configuration for codex (TOML format)
     settings = {
