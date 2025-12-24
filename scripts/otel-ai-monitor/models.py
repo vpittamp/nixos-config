@@ -19,6 +19,7 @@ class SessionState(str, Enum):
     WORKING = "working"
     COMPLETED = "completed"
     EXPIRED = "expired"
+    ATTENTION = "attention"  # Feature 135: User action needed (permissions, errors)
 
 
 class AITool(str, Enum):
