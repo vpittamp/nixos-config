@@ -679,6 +679,36 @@ let
     ${pkgs.libnotify}/bin/notify-send -t 3000 "Trace Started" "Template: $TEMPLATE_NAME\nTrace ID: $TRACE_ID"
   '';
 
+  # Open Langfuse trace in browser
+  openLangfuseTraceScript = pkgs.writeShellScriptBin "open-langfuse-trace" ''
+    #!${pkgs.bash}/bin/bash
+    # Open AI session trace in Langfuse web UI
+    TRACE_ID="''${1:-}"
+
+    # Debug log
+    echo "$(date): open-langfuse-trace called with: '$TRACE_ID'" >> /tmp/langfuse-debug.log
+
+    if [[ -z "$TRACE_ID" ]]; then
+      echo "$(date): Empty trace_id, exiting" >> /tmp/langfuse-debug.log
+      exit 0
+    fi
+
+    # Get hostname for Langfuse URL
+    HOSTNAME=$(${pkgs.hostname}/bin/hostname)
+
+    # Langfuse project (could be made configurable)
+    LANGFUSE_PROJECT="speckit-agents"
+
+    # Build URL
+    URL="https://langfuse-''${HOSTNAME}.tail286401.ts.net/project/''${LANGFUSE_PROJECT}/traces/''${TRACE_ID}"
+
+    echo "$(date): Opening URL: $URL" >> /tmp/langfuse-debug.log
+
+    # Open in Firefox with new tab (xdg-open can fail with running Firefox)
+    ${pkgs.sway}/bin/swaymsg exec "firefox --new-tab '$URL'" >> /tmp/langfuse-debug.log 2>&1 || \
+      ${pkgs.xdg-utils}/bin/xdg-open "$URL" &
+  '';
+
   # Keyboard handler script for view switching (Alt+1-7 or just 1-7)
 
 in
@@ -687,5 +717,6 @@ in
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
           toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
           fetchWindowEnvScript startWindowTraceScript fetchTraceEventsScript
-          navigateToTraceScript navigateToEventScript startTraceFromTemplateScript;
+          navigateToTraceScript navigateToEventScript startTraceFromTemplateScript
+          openLangfuseTraceScript;
 }

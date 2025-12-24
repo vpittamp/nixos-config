@@ -548,6 +548,46 @@
     opacity: 0.5;
   }
 
+  /* AI badge hover effect with PID tooltip */
+  .ai-badge-hover {
+    padding: 2px;
+    margin: 0 1px;
+    border-radius: 6px;
+    transition: all 200ms ease-out;
+    background: transparent;
+  }
+
+  .ai-badge-hover:hover {
+    background: rgba(137, 180, 250, 0.15);
+  }
+
+  .ai-badge-hover:hover .ai-badge-icon {
+    opacity: 1.0;
+  }
+
+  .ai-badge-hover:hover .ai-badge-icon.working {
+    opacity: 1.0;
+  }
+
+  .ai-badge-hover:hover .ai-badge-icon.idle,
+  .ai-badge-hover:hover .ai-badge-icon.completed {
+    opacity: 1.0;
+  }
+
+  /* Global AI session chip wrapper hover effect */
+  .ai-badge-hover.ai-session-chip-wrapper {
+    padding: 0;
+    border-radius: 12px;
+  }
+
+  .ai-badge-hover.ai-session-chip-wrapper:hover {
+    background: transparent;
+  }
+
+  .ai-badge-hover.ai-session-chip-wrapper:hover .ai-session-chip {
+    background: rgba(137, 180, 250, 0.2);
+  }
+
   /* Feature 136: Overflow badge for multiple AI indicators */
   .badge-overflow {
     color: ${mocha.text};

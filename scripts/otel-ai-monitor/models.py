@@ -140,6 +140,9 @@ class Session(BaseModel):
     pid: Optional[int] = Field(
         default=None, description="Process PID from telemetry for session correlation"
     )
+    trace_id: Optional[str] = Field(
+        default=None, description="OTLP trace ID for Langfuse link"
+    )
     model: Optional[str] = Field(
         default=None, description="LLM model name for cost calculation"
     )
@@ -238,6 +241,8 @@ class SessionListItem(BaseModel):
     state: str = Field(description="Current session state")
     project: Optional[str] = Field(default=None, description="Project context")
     window_id: Optional[int] = Field(default=None, description="Sway container ID for focus")
+    pid: Optional[int] = Field(default=None, description="Process ID for debugging/correlation")
+    trace_id: Optional[str] = Field(default=None, description="OTLP trace ID for Langfuse link")
     # Feature 136: Additional fields for multi-indicator support
     pending_tools: int = Field(default=0, description="Count of active tool executions")
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")

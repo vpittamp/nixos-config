@@ -1,4 +1,4 @@
-{ pkgs, focusWindowScript, closeWorktreeScript, closeAllWindowsScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, ... }:
+{ pkgs, focusWindowScript, closeWorktreeScript, closeAllWindowsScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openLangfuseTraceScript, ... }:
 
 ''
   ;; Windows View - Project-based hierarchy with real-time updates
@@ -124,38 +124,42 @@
                 :space-evenly false
                 :spacing 8
                 (for session in {monitoring_data.global_ai_sessions ?: []}
-                  (box
-                    :class {"ai-session-chip" +
-                      ((session.state ?: "idle") == "working" ? " working" :
-                       ((session.state ?: "idle") == "completed" ? " completed" :
-                        ((session.state ?: "idle") == "attention" ? " attention" : " idle")))}
-                    :orientation "h"
-                    :space-evenly false
-                    :spacing 4
-                    :tooltip {(session.tool ?: "Unknown") + " - " + (session.state ?: "idle") + (session.project != "" ? " (" + session.project + ")" : "")}
-                    (image
-                      :class {"ai-badge-icon" +
-                        ((session.state ?: "idle") == "working"
-                          ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
-                          : ((session.state ?: "idle") == "completed"
-                            ? " completed"
-                            : ((session.state ?: "idle") == "attention"
-                              ? " attention"
-                              : " idle")))}
-                      :path {(session.tool ?: "unknown") == "claude-code"
-                        ? "/etc/nixos/assets/icons/claude.svg"
-                        : ((session.tool ?: "unknown") == "codex"
-                          ? "/etc/nixos/assets/icons/codex.svg"
-                          : ((session.tool ?: "unknown") == "gemini"
-                            ? "/etc/nixos/assets/icons/gemini.svg"
-                            : "/etc/nixos/assets/icons/anthropic.svg"))}
-                      :image-width 18
-                      :image-height 18)
-                    (label
-                      :class "ai-session-label"
-                      :text {session.project != "" ? session.project : (session.tool ?: "AI")}
-                      :limit-width 15
-                      :truncate true))))))))))
+                  (eventbox
+                    :class "ai-badge-hover ai-session-chip-wrapper"
+                    :cursor {(session.trace_id ?: "") != "" ? "pointer" : "default"}
+                    :onclick {(session.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + session.trace_id + " &" : ""}
+                    :tooltip {((session.tool ?: "unknown") == "claude-code" ? "Claude Code" : ((session.tool ?: "unknown") == "codex" ? "Codex CLI" : ((session.tool ?: "unknown") == "gemini" ? "Gemini CLI" : (session.tool ?: "Unknown")))) + " · " + ((session.state ?: "idle") == "working" ? "⏳ Working" : ((session.state ?: "idle") == "completed" ? "✓ Ready" : ((session.state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((session.project ?: "") != "" ? " · " + session.project : "") + ((session.pid ?: "") != "" ? " · PID " + session.pid : "") + ((session.trace_id ?: "") != "" ? " · Click for trace" : "")}
+                    (box
+                      :class {"ai-session-chip" +
+                        ((session.state ?: "idle") == "working" ? " working" :
+                         ((session.state ?: "idle") == "completed" ? " completed" :
+                          ((session.state ?: "idle") == "attention" ? " attention" : " idle")))}
+                      :orientation "h"
+                      :space-evenly false
+                      :spacing 4
+                      (image
+                        :class {"ai-badge-icon" +
+                          ((session.state ?: "idle") == "working"
+                            ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                            : ((session.state ?: "idle") == "completed"
+                              ? " completed"
+                              : ((session.state ?: "idle") == "attention"
+                                ? " attention"
+                                : " idle")))}
+                        :path {(session.tool ?: "unknown") == "claude-code"
+                          ? "/etc/nixos/assets/icons/claude.svg"
+                          : ((session.tool ?: "unknown") == "codex"
+                            ? "/etc/nixos/assets/icons/codex.svg"
+                            : ((session.tool ?: "unknown") == "gemini"
+                              ? "/etc/nixos/assets/icons/gemini.svg"
+                              : "/etc/nixos/assets/icons/anthropic.svg"))}
+                        :image-width 18
+                        :image-height 18)
+                      (label
+                        :class "ai-session-label"
+                        :text {session.project != "" ? session.project : (session.tool ?: "AI")}
+                        :limit-width 15
+                        :truncate true)))))))))))
 
   (defwidget project-widget [project]
     (box
@@ -248,10 +252,9 @@
           :onrightclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"
           :cursor "pointer"
           :hexpand true
-                      (box
-                        :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
-                        :orientation "h"
-          
+          (box
+            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
+            :orientation "h"
             :space-evenly false
             :hexpand true
             (box
@@ -277,48 +280,52 @@
                 :halign "start"
                 :text "''${window.title ?: '#' + window.id}"
                 :limit-width 25
-                :truncate true))
-            ;; Feature 136: Multi-indicator support - display multiple AI badges per window
-            (box
-              :class "window-badges"
-              :orientation "h"
-              :space-evenly false
-              :halign "end"
-              (label
-                :class "badge badge-pwa"
-                :text "PWA"
-                :visible {window.is_pwa ?: false})
-              ;; Feature 136: Iterate over otel_badges array (max 3 visible) with status icons
-              (for badge in {arraylength(window.otel_badges ?: []) <= 3 ? (window.otel_badges ?: []) : jq(window.otel_badges ?: [], ".[:3]")}
-                (box
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 1
-                  (image
-                    :class {"ai-badge-icon" +
-                      ((badge.otel_state ?: "idle") == "working"
-                        ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
-                        : ((badge.otel_state ?: "idle") == "completed"
-                          ? " completed"
-                          : ((badge.otel_state ?: "idle") == "attention"
-                            ? " attention"
-                            : " idle")))}
-                    :path {(badge.otel_tool ?: "unknown") == "claude-code"
-                      ? "/etc/nixos/assets/icons/claude.svg"
-                      : ((badge.otel_tool ?: "unknown") == "codex"
-                        ? "/etc/nixos/assets/icons/codex.svg"
-                        : ((badge.otel_tool ?: "unknown") == "gemini"
-                          ? "/etc/nixos/assets/icons/gemini.svg"
-                          : "/etc/nixos/assets/icons/anthropic.svg"))}
-                    :image-width 16
-                    :image-height 16
-                    :tooltip {(badge.otel_tool ?: "Unknown") + " - " + (badge.otel_state ?: "idle")})))
-              ;; Feature 136: Overflow badge when more than 3 sessions
-              (label
-                :class "badge badge-overflow"
-                :text {"+''${arraylength(window.otel_badges ?: []) - 3}"}
-                :visible {arraylength(window.otel_badges ?: []) > 3}
-                :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")}))))
+                :truncate true))))
+        ;; Feature 136: Multi-indicator support - AI badges OUTSIDE focus eventbox for independent click handling
+        (box
+          :class "window-badges"
+          :orientation "h"
+          :space-evenly false
+          :halign "end"
+          (label
+            :class "badge badge-pwa"
+            :text "PWA"
+            :visible {window.is_pwa ?: false})
+          ;; Feature 136: Iterate over otel_badges array (max 3 visible) with status icons
+          (for badge in {arraylength(window.otel_badges ?: []) <= 3 ? (window.otel_badges ?: []) : jq(window.otel_badges ?: [], ".[:3]")}
+            (eventbox
+              :class "ai-badge-hover"
+              :cursor {(badge.trace_id ?: "") != "" ? "pointer" : "default"}
+              :onclick {(badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : ""}
+              :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.trace_id ?: "") != "" ? " · Click for trace" : "")}
+              (box
+                :orientation "h"
+                :space-evenly false
+                :spacing 1
+                (image
+                  :class {"ai-badge-icon" +
+                    ((badge.otel_state ?: "idle") == "working"
+                      ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                      : ((badge.otel_state ?: "idle") == "completed"
+                        ? " completed"
+                        : ((badge.otel_state ?: "idle") == "attention"
+                          ? " attention"
+                          : " idle")))}
+                  :path {(badge.otel_tool ?: "unknown") == "claude-code"
+                    ? "/etc/nixos/assets/icons/claude.svg"
+                    : ((badge.otel_tool ?: "unknown") == "codex"
+                      ? "/etc/nixos/assets/icons/codex.svg"
+                      : ((badge.otel_tool ?: "unknown") == "gemini"
+                        ? "/etc/nixos/assets/icons/gemini.svg"
+                        : "/etc/nixos/assets/icons/anthropic.svg"))}
+                  :image-width 16
+                  :image-height 16))))
+          ;; Feature 136: Overflow badge when more than 3 sessions
+          (label
+            :class "badge badge-overflow"
+            :text {"+''${arraylength(window.otel_badges ?: []) - 3}"}
+            :visible {arraylength(window.otel_badges ?: []) > 3}
+            :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")}))
         (eventbox
           :cursor "pointer"
           :class "hover-close-btn window-hover-close"

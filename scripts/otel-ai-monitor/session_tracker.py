@@ -224,6 +224,27 @@ class SessionTracker:
                 # Feature 135: NO FALLBACK - if daemon doesn't find the window, window_id stays None
                 # This is intentional: we prefer "unknown" over "wrong window"
 
+                # Feature 136: Cross-session PID correlation
+                # Native logs (session_id: UUID) arrive without PID → window_id=None
+                # Interceptor spans (session_id: tool-pid-ts) have PID → window_id set
+                # When we have a window_id, update any existing session for same tool
+                # that has window_id=None (likely the native logs session)
+                if window_id and event.tool:
+                    for existing_id, existing_session in self._sessions.items():
+                        if (
+                            existing_session.tool == event.tool
+                            and existing_session.window_id is None
+                            and existing_id != session_id
+                        ):
+                            # Found orphaned session for same tool - update its window_id
+                            existing_session.window_id = window_id
+                            if window_project:
+                                existing_session.project = window_project
+                            logger.info(
+                                f"Cross-session correlation: Updated {existing_id} "
+                                f"window_id=None → {window_id} via PID {client_pid}"
+                            )
+
                 # Check for existing session with same window_id AND tool (deduplicate)
                 # Important: Different AI tools (Claude, Codex, Gemini) in the same terminal
                 # should have separate sessions, so we check both window_id AND tool type.
@@ -252,6 +273,7 @@ class SessionTracker:
                         state=SessionState.IDLE,
                         project=project,
                         window_id=window_id,
+                        trace_id=event.trace_id,
                         created_at=now,
                         last_event_at=now,
                         state_changed_at=now,
@@ -259,8 +281,33 @@ class SessionTracker:
                     self._sessions[session_id] = session
                     logger.info(f"Created session {session_id} for {session.tool}/{provider.value} (window_id={window_id}, project={project})")
 
+                    # Feature 136: Reverse cross-session correlation
+                    # If this session has no window_id, check for existing session
+                    # of same tool that HAS a window_id and copy it
+                    if window_id is None and tool:
+                        for existing_id, existing_session in self._sessions.items():
+                            if (
+                                existing_session.tool == tool
+                                and existing_session.window_id is not None
+                                and existing_id != session_id
+                            ):
+                                session.window_id = existing_session.window_id
+                                if existing_session.project:
+                                    session.project = existing_session.project
+                                logger.info(
+                                    f"Reverse cross-session correlation: {session_id} "
+                                    f"window_id=None → {existing_session.window_id} from {existing_id}"
+                                )
+                                break
+
             # Update last event time
             session.last_event_at = now
+
+            # Update trace_id if session doesn't have one but event does
+            # (happens when session created from metrics heartbeat before spans arrive)
+            if session.trace_id is None and event.trace_id:
+                session.trace_id = event.trace_id
+                logger.debug(f"Updated session {session_id} trace_id: {event.trace_id}")
 
             # Feature 135: PID-based window correlation on every event
             # Always try PID correlation to handle worktree switching where
@@ -386,32 +433,76 @@ class SessionTracker:
         Falls back to extending ALL working sessions of the tool when PID is
         unavailable or doesn't match any session.
 
+        Feature 136: Creates a session from heartbeat if none exists for the pid.
+        This enables Gemini CLI sessions to appear even when idle (only sending metrics).
+
         Args:
             tool: AI tool type (CLAUDE_CODE, CODEX_CLI, etc.)
             pid: Optional process PID for more accurate session targeting
         """
         async with self._lock:
             now = datetime.now(timezone.utc)
-            found_by_pid = False
+            found_session = False
 
             # If PID provided, try to find specific session first
             if pid:
                 for session_id, session in self._sessions.items():
-                    if (
-                        session.tool == tool
-                        and session.state == SessionState.WORKING
-                        and session.pid == pid
-                    ):
+                    if session.tool == tool and session.pid == pid:
                         session.last_event_at = now
-                        self._reset_quiet_timer(session_id)
+                        if session.state == SessionState.WORKING:
+                            self._reset_quiet_timer(session_id)
                         logger.debug(
                             f"Session {session_id}: heartbeat extended by metrics (pid={pid})"
                         )
-                        found_by_pid = True
+                        found_session = True
                         break
 
+                # Feature 136: Create session from metrics heartbeat if none exists
+                if not found_session:
+                    # Generate a session ID based on tool and pid
+                    session_id = f"{tool.value.replace('_', '-').lower()}-{pid}-{int(now.timestamp() * 1000)}"
+                    provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
+
+                    # Try to find window by PID
+                    window_id = None
+                    project = None
+                    try:
+                        window = await find_window_by_pid(pid)
+                        if window:
+                            window_id = window.get("id")
+                            # Extract project from window marks
+                            marks = window.get("marks", [])
+                            for mark in marks:
+                                if mark.startswith("scoped:") or mark.startswith("project:"):
+                                    parts = mark.split(":")
+                                    if len(parts) >= 3:
+                                        project = parts[2]
+                                        break
+                    except Exception as e:
+                        logger.debug(f"Could not find window for pid {pid}: {e}")
+
+                    session = Session(
+                        session_id=session_id,
+                        tool=tool,
+                        provider=provider,
+                        state=SessionState.IDLE,
+                        project=project,
+                        window_id=window_id,
+                        pid=pid,
+                        created_at=now,
+                        last_event_at=now,
+                        state_changed_at=now,
+                    )
+                    self._sessions[session_id] = session
+                    self._session_pids[session_id] = pid
+                    logger.info(
+                        f"Created session {session_id} from metrics heartbeat "
+                        f"for {tool.value} (pid={pid}, window_id={window_id}, project={project})"
+                    )
+                    found_session = True
+
             # Fall back to extending all working sessions for tool
-            if not found_by_pid:
+            if not found_session:
                 for session_id, session in self._sessions.items():
                     if session.tool == tool and session.state == SessionState.WORKING:
                         session.last_event_at = now
@@ -1103,6 +1194,8 @@ class SessionTracker:
                 state=s.state,
                 project=s.project,
                 window_id=s.window_id,
+                pid=s.pid,
+                trace_id=s.trace_id,
                 pending_tools=s.pending_tools,
                 is_streaming=s.is_streaming,
             )

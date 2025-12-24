@@ -1113,6 +1113,8 @@ def _build_otel_badges(
             "otel_state": session.get("state", "idle"),
             "otel_tool": session.get("tool", "unknown"),
             "project": session.get("project"),
+            "pid": session.get("pid"),
+            "trace_id": session.get("trace_id"),
             "pending_tools": session.get("pending_tools", 0),
             "is_streaming": session.get("is_streaming", False),
         }
