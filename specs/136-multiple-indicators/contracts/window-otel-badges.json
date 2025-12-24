@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WindowOTELBadges",
+  "description": "OTEL badges array for a window in monitoring_data output (Feature 136)",
+  "type": "array",
+  "items": { "$ref": "#/definitions/OTELBadge" },
+  "definitions": {
+    "OTELBadge": {
+      "type": "object",
+      "description": "Single AI session badge for a window",
+      "required": ["session_id", "otel_state", "otel_tool"],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "description": "Unique session identifier for deduplication"
+        },
+        "otel_state": {
+          "type": "string",
+          "enum": ["idle", "working", "completed", "attention"],
+          "description": "Session state for visual styling"
+        },
+        "otel_tool": {
+          "type": "string",
+          "enum": ["claude-code", "codex", "gemini"],
+          "description": "AI tool type for icon selection"
+        },
+        "project": {
+          "type": ["string", "null"],
+          "description": "Project context for disambiguation"
+        },
+        "pending_tools": {
+          "type": "integer",
+          "default": 0,
+          "description": "Count of active tool executions"
+        },
+        "is_streaming": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if currently receiving streaming response"
+        }
+      }
+    }
+  },
+  "examples": [
+    [
+      {
+        "session_id": "claude-session-1",
+        "otel_state": "working",
+        "otel_tool": "claude-code",
+        "project": "nixos-config",
+        "pending_tools": 2,
+        "is_streaming": true
+      },
+      {
+        "session_id": "codex-session-1",
+        "otel_state": "idle",
+        "otel_tool": "codex",
+        "project": "nixos-config",
+        "pending_tools": 0,
+        "is_streaming": false
+      }
+    ]
+  ],
+  "notes": {
+    "ordering": "Array is sorted by state priority: working (3) > attention (2) > completed (1) > idle (0)",
+    "overflow": "EWW widget displays first 3 badges with '+N more' count badge for additional sessions",
+    "uniqueness": "Each session_id appears at most once in the array"
+  }
+}
