@@ -116,10 +116,6 @@
   ;; When true, debug features are visible
   (defvar debug_mode false)
 
-  ;; Hover tooltip state - Window ID being hovered (0 = none)
-  ;; Updated by onhover/onhoverlost events on window items
-  (defvar hover_window_id 0)
-
   ;; UX Enhancement: Inline action bar state - tracks which window has action bar visible
   (defvar context_menu_window_id 0)
 

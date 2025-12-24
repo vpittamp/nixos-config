@@ -100,17 +100,7 @@
                             ? "/etc/nixos/assets/icons/gemini.svg"
                             : "/etc/nixos/assets/icons/anthropic.svg"))}
                       :image-width 18
-                      :image-height 18)
-                    ;; Small status icon next to LLM icon
-                    (label
-                      :class {"ai-session-status-icon" +
-                        (session.state == "working" ? " working"
-                          : (session.state == "completed" ? " completed"
-                            : (session.needs_attention ? " attention" : "")))}
-                      :visible {session.state != "idle"}
-                      :text {session.state == "working" ? "●"
-                        : (session.state == "completed" ? "✓"
-                          : (session.needs_attention ? "!" : ""))})))))
+                      :image-height 18)))))
             ;; Projects list
             (for project in {monitoring_data.projects ?: []}
               (project-widget :project project))
@@ -270,12 +260,7 @@
               (image :class "window-icon-image"
                      :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
                      :image-width 20
-                     :image-height 20
-                     :visible {strlength(window.icon_path) > 0})
-              (label
-                :class "window-icon-fallback"
-                :text "''${window.floating ? '⚓' : '󱂬'}"
-                :visible {strlength(window.icon_path) == 0}))
+                     :image-height 20))
             (box
               :class "window-info"
               :orientation "v"
@@ -327,60 +312,19 @@
                           : "/etc/nixos/assets/icons/anthropic.svg"))}
                     :image-width 16
                     :image-height 16
-                    :tooltip {(badge.otel_tool ?: "Unknown") + " - " + (badge.otel_state ?: "idle")})
-                  ;; Small status icon next to each badge
-                  (label
-                    :class {"ai-session-status-icon" +
-                      ((badge.otel_state ?: "idle") == "working" ? " working"
-                        : ((badge.otel_state ?: "idle") == "completed" ? " completed"
-                          : ((badge.otel_state ?: "idle") == "attention" ? " attention" : "")))}
-                    :visible {(badge.otel_state ?: "idle") != "idle"}
-                    :text {(badge.otel_state ?: "idle") == "working" ? "●"
-                      : ((badge.otel_state ?: "idle") == "completed" ? "✓"
-                        : ((badge.otel_state ?: "idle") == "attention" ? "!" : ""))})))
+                    :tooltip {(badge.otel_tool ?: "Unknown") + " - " + (badge.otel_state ?: "idle")})))
               ;; Feature 136: Overflow badge when more than 3 sessions
               (label
                 :class "badge badge-overflow"
                 :text {"+''${arraylength(window.otel_badges ?: []) - 3}"}
                 :visible {arraylength(window.otel_badges ?: []) > 3}
-                :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")})
-              (label
-                :class "badge badge-urgent"
-                :text "!"
-                :visible {window.urgent ?: false})
-              (label
-                :class "badge badge-floating"
-                :text "⚓"
-                :visible {window.floating ?: false})
-              (label
-                :class "badge badge-sticky"
-                :text "📌"
-                :visible {window.sticky ?: false})
-              (label
-                :class "badge badge-fullscreen"
-                :text "󰊓"
-                :visible {window.fullscreen != 0})
-              (eventbox
-                :class "json-expand-trigger"
-                :onhover "eww update hover_window_id=''${window.id}"
-                :onhoverlost "eww update hover_window_id=0"
-                (label :class "expand-icon" :text "󰅂")))))
+                :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")}))))
         (eventbox
           :cursor "pointer"
           :class "hover-close-btn window-hover-close"
           :onclick "swaymsg [con_id=''${window.id}] kill"
           :tooltip "Close window"
           (label :class "hover-close-icon" :text "󰅖")))
-      (revealer
-        :reveal {hover_window_id == window.id}
-        :transition "slidedown"
-        :duration "150ms"
-        (box
-          :class "window-json-panel"
-          (scroll
-            :hscroll true
-            :vscroll false
-            (label :class "json-text" :text "''${window.json_repr}"))))
       (revealer
         :reveal {context_menu_window_id == window.id}
         :transition "slidedown"

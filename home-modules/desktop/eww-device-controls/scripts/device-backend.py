@@ -544,9 +544,9 @@ def get_battery_icon(percentage: int, state: str) -> str:
 
 def get_battery_level(percentage: int) -> str:
     """Get battery level category."""
-    if percentage <= 10:
+    if percentage <= 15:
         return "critical"
-    elif percentage <= 20:
+    elif percentage <= 30:
         return "low"
     elif percentage >= 95:
         return "full"

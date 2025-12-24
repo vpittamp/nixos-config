@@ -446,12 +446,6 @@
     min-height: 20px;
   }
 
-  .window-icon-fallback {
-    font-size: 14px;
-    color: ${mocha.subtext0};
-    min-width: 20px;
-  }
-
   .window-app-name {
     font-size: 11px;
     font-weight: 500;
@@ -674,24 +668,6 @@
     color: ${mocha.overlay0};
   }
 
-  .ai-session-status-icon {
-    font-size: 8px;
-    margin-left: 2px;
-    opacity: 0.8;
-  }
-
-  .ai-session-status-icon.completed {
-    color: ${mocha.teal};
-  }
-
-  .ai-session-status-icon.working {
-    color: ${mocha.red};
-  }
-
-  .ai-session-status-icon.attention {
-    color: ${mocha.peach};
-  }
-
   .ai-session-indicator {
     font-size: 12px;
     font-weight: bold;
@@ -708,105 +684,6 @@
 
   .ai-session-chip.attention .ai-session-source-icon {
     opacity: 1.0;
-  }
-
-  .json-expand-trigger {
-    padding: 4px 8px;
-    margin-left: 8px;
-    border-radius: 4px;
-    background-color: rgba(137, 180, 250, 0.15);
-    border: 1px dashed rgba(137, 180, 250, 0.35);
-    opacity: 0.7;
-    min-width: 28px;
-    min-height: 24px;
-  }
-
-  .json-expand-trigger:hover {
-    background-color: rgba(137, 180, 250, 0.2);
-    opacity: 1;
-  }
-
-  .json-expand-trigger.expanded {
-    background-color: rgba(137, 180, 250, 0.3);
-    opacity: 1;
-  }
-
-  .json-expand-icon {
-    font-size: 16px;
-    color: ${mocha.blue};
-    min-width: 18px;
-  }
-
-  .json-expand-trigger:hover .json-expand-icon {
-    color: ${mocha.sapphire};
-  }
-
-  .json-expand-trigger.expanded .json-expand-icon {
-    color: ${mocha.sky};
-  }
-
-  .window-json-tooltip {
-    background-color: rgba(24, 24, 37, 0.98);
-    border: 2px solid ${mocha.blue};
-    border-radius: 8px;
-    padding: 0;
-    margin: 4px 0 8px 0;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6),
-                0 0 0 1px rgba(137, 180, 250, 0.3);
-  }
-
-  .json-tooltip-header {
-    background-color: rgba(137, 180, 250, 0.15);
-    border-bottom: 1px solid ${mocha.blue};
-    padding: 8px 12px;
-    border-radius: 6px 6px 0 0;
-  }
-
-  .json-tooltip-title {
-    font-size: 11px;
-    font-weight: bold;
-    color: ${mocha.blue};
-  }
-
-  .json-copy-btn {
-    font-size: 14px;
-    padding: 4px 8px;
-    background-color: rgba(137, 180, 250, 0.2);
-    color: ${mocha.blue};
-    border: 1px solid ${mocha.blue};
-    border-radius: 4px;
-    min-width: 32px;
-  }
-
-  .json-copy-btn:hover {
-    background-color: rgba(137, 180, 250, 0.3);
-    box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
-  }
-
-  .json-copy-btn:active {
-    background-color: rgba(137, 180, 250, 0.5);
-    box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
-  }
-
-  .json-copy-btn.copied {
-    background-color: rgba(166, 227, 161, 0.3);
-    color: ${mocha.green};
-    border: 1px solid ${mocha.green};
-    box-shadow: 0 0 12px rgba(166, 227, 161, 0.5),
-                inset 0 0 8px rgba(166, 227, 161, 0.2);
-    font-weight: bold;
-  }
-
-  .json-copy-btn.copied:hover {
-    background-color: rgba(166, 227, 161, 0.4);
-    box-shadow: 0 0 16px rgba(166, 227, 161, 0.6);
-  }
-
-  .json-content {
-    font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
-    font-size: 10px;
-    padding: 10px 12px;
-    background-color: rgba(30, 30, 46, 0.4);
   }
 
   .env-expand-trigger {

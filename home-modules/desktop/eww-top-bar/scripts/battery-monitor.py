@@ -85,10 +85,10 @@ class BatteryMonitor:
             state = self.battery.State
             self.charging = state in (1, 4)  # Charging or fully charged
 
-            # Determine level threshold
-            if self.percentage < 20:
+            # Determine level threshold (aligned with device-backend.py)
+            if self.percentage <= 15:
                 self.level = "critical"
-            elif self.percentage < 50:
+            elif self.percentage <= 30:
                 self.level = "low"
             else:
                 self.level = "normal"
