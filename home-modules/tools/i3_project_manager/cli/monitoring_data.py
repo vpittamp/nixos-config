@@ -130,10 +130,20 @@ def load_otel_sessions() -> Dict[str, Any]:
     Feature 123: Reads session data written by otel-ai-monitor service.
     This is used by EWW monitoring panel for window badge rendering.
 
+    Feature 136: Also returns sessions_by_window for efficient lookup and
+    global_ai_sessions for orphaned sessions (window_id=-1).
+
     Returns:
-        Dict with 'sessions' list and 'has_working' boolean
+        Dict with 'sessions' list, 'has_working' boolean, 'sessions_by_window' dict,
+        and 'global_ai_sessions' list for orphaned sessions
     """
-    default_result = {"sessions": [], "has_working": False, "timestamp": 0}
+    default_result = {
+        "sessions": [],
+        "has_working": False,
+        "timestamp": 0,
+        "sessions_by_window": {},
+        "global_ai_sessions": [],
+    }
 
     if not OTEL_SESSIONS_FILE.exists():
         return default_result
@@ -145,10 +155,18 @@ def load_otel_sessions() -> Dict[str, Any]:
             sessions = data.get("sessions", [])
             has_working = data.get("has_working", False)
             timestamp = data.get("timestamp", 0)
+            sessions_by_window = data.get("sessions_by_window", {})
+
+            # Feature 136: Extract global AI sessions (window_id=-1 from session_tracker)
+            # Convert string key "-1" to int for consistent handling
+            global_ai_sessions = sessions_by_window.get("-1", sessions_by_window.get(-1, []))
+
             return {
                 "sessions": sessions,
                 "has_working": has_working,
                 "timestamp": timestamp,
+                "sessions_by_window": sessions_by_window,
+                "global_ai_sessions": global_ai_sessions,
             }
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 123: Failed to read OTEL sessions file: {e}")
@@ -1059,38 +1077,60 @@ def colorize_json_pango(data: Dict[str, Any]) -> str:
     return colorize_json_value(data, indent_level=1)
 
 
-def _merge_badge_with_otel(
-    badge: Dict[str, Any],
-    otel_session: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
-    """
-    Merge OTEL session info into badge dict for efficient widget rendering.
+# Feature 136: State priority for sorting multiple AI badges per window
+# Higher priority sessions appear first in the badge list
+_OTEL_STATE_PRIORITY = {
+    "attention": 4,  # Highest - needs user action
+    "working": 3,
+    "completed": 2,
+    "idle": 1,
+}
 
-    Feature 123: This eliminates the need for jq lookups in EWW widgets,
-    reducing CPU usage from repeated expression evaluation.
+
+def _build_otel_badges(
+    otel_sessions: Optional[List[Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    """
+    Build OTEL badges array for multi-indicator display.
+
+    Feature 136: Replaces _merge_badge_with_otel(). Returns an array of badges
+    for all AI sessions associated with a window, sorted by state priority.
 
     Args:
-        badge: Existing badge dict (may be empty)
-        otel_session: OTEL session info for this window (may be None)
+        otel_sessions: List of OTEL session info for this window (may be None or empty)
 
     Returns:
-        Badge dict with otel_state, otel_tool fields added if session exists
+        List of badge dicts with otel_state, otel_tool, session_id, etc.
+        Sorted by state priority (ATTENTION > WORKING > COMPLETED > IDLE)
     """
-    if not otel_session:
-        return badge
+    if not otel_sessions:
+        return []
 
-    # Merge otel session info into badge
-    merged = dict(badge) if badge else {}
-    merged["otel_state"] = otel_session.get("state", "none")
-    merged["otel_tool"] = otel_session.get("tool", "unknown")
-    merged["otel_session_id"] = otel_session.get("session_id", "")
-    return merged
+    badges = []
+    for session in otel_sessions:
+        badge = {
+            "session_id": session.get("session_id", ""),
+            "otel_state": session.get("state", "idle"),
+            "otel_tool": session.get("tool", "unknown"),
+            "project": session.get("project"),
+            "pending_tools": session.get("pending_tools", 0),
+            "is_streaming": session.get("is_streaming", False),
+        }
+        badges.append(badge)
+
+    # Sort by state priority (highest first)
+    badges.sort(
+        key=lambda b: _OTEL_STATE_PRIORITY.get(b.get("otel_state", "idle"), 0),
+        reverse=True
+    )
+
+    return badges
 
 
 def transform_window(
     window: Dict[str, Any],
     badge_state: Optional[Dict[str, Any]] = None,
-    otel_sessions_by_window: Optional[Dict[int, Dict[str, Any]]] = None
+    otel_sessions_by_window: Optional[Dict[int, List[Dict[str, Any]]]] = None
 ) -> Dict[str, Any]:
     """
     Transform daemon window data to Eww-friendly schema.
@@ -1099,8 +1139,8 @@ def transform_window(
         window: Window data from daemon (Sway IPC format)
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
-        otel_sessions_by_window: Optional dict mapping window IDs (as int) to OTEL session info
-                     (Feature 123: AI session state for window badges)
+        otel_sessions_by_window: Optional dict mapping window IDs (as int) to LIST of OTEL sessions
+                     (Feature 136: Multi-indicator support - multiple AI sessions per window)
 
     Returns:
         WindowInfo dict matching data-model.md specification
@@ -1170,9 +1210,10 @@ def transform_window(
         "geometry_height": geometry.get("height", 0),
         # Feature 095: Notification badge data (if present)
         # badge_state is dict mapping window ID (string) to {"count": "1", "timestamp": ..., "source": "..."}
-        # Feature 123: Merge OTEL session info into badge for efficient widget rendering
-        "badge": _merge_badge_with_otel(
-            badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
+        "badge": badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
+        # Feature 136: OTEL badges array for multi-indicator display
+        # otel_sessions_by_window maps window_id (int) to LIST of session dicts
+        "otel_badges": _build_otel_badges(
             otel_sessions_by_window.get(window.get("id", 0)) if otel_sessions_by_window else None
         ),
     }
@@ -1215,7 +1256,7 @@ def transform_workspace(
     workspace: Dict[str, Any],
     monitor_name: str,
     badge_state: Optional[Dict[str, Any]] = None,
-    otel_sessions_by_window: Optional[Dict[int, Dict[str, Any]]] = None
+    otel_sessions_by_window: Optional[Dict[int, List[Dict[str, Any]]]] = None
 ) -> Dict[str, Any]:
     """
     Transform daemon workspace data to Eww-friendly schema.
@@ -1225,8 +1266,8 @@ def transform_workspace(
         monitor_name: Parent monitor name
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
-        otel_sessions_by_window: Optional dict mapping window IDs (as int) to OTEL session info
-                     (Feature 123: AI session state for window badges)
+        otel_sessions_by_window: Optional dict mapping window IDs (as int) to LIST of OTEL sessions
+                     (Feature 136: Multi-indicator support)
 
     Returns:
         WorkspaceInfo dict matching data-model.md specification
@@ -1248,7 +1289,7 @@ def transform_workspace(
 def transform_monitor(
     output: Dict[str, Any],
     badge_state: Optional[Dict[str, Any]] = None,
-    otel_sessions_by_window: Optional[Dict[int, Dict[str, Any]]] = None
+    otel_sessions_by_window: Optional[Dict[int, List[Dict[str, Any]]]] = None
 ) -> Dict[str, Any]:
     """
     Transform daemon output/monitor data to Eww-friendly schema.
@@ -1257,8 +1298,8 @@ def transform_monitor(
         output: Output data from daemon (contains name, active status, workspaces)
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
-        otel_sessions_by_window: Optional dict mapping window IDs (as int) to OTEL session info
-                     (Feature 123: AI session state for window badges)
+        otel_sessions_by_window: Optional dict mapping window IDs (as int) to LIST of OTEL sessions
+                     (Feature 136: Multi-indicator support)
 
     Returns:
         MonitorInfo dict matching data-model.md specification
@@ -1578,14 +1619,16 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
 
-        # Feature 123: Load OTEL sessions BEFORE transforms to build lookup dict
-        # This eliminates jq lookups in EWW widgets, reducing CPU usage
+        # Feature 123/136: Load OTEL sessions BEFORE transforms to build lookup dict
+        # Feature 136: Changed to List to support multiple AI sessions per window
         otel_sessions = load_otel_sessions()
-        otel_sessions_by_window: Dict[int, Dict[str, Any]] = {}
+        otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
         for session in otel_sessions.get("sessions", []):
             window_id = session.get("window_id")
             if window_id is not None:
-                otel_sessions_by_window[window_id] = session
+                if window_id not in otel_sessions_by_window:
+                    otel_sessions_by_window[window_id] = []
+                otel_sessions_by_window[window_id].append(session)
 
         # Transform daemon response to Eww schema
         outputs = tree_data.get("outputs", [])
@@ -1663,6 +1706,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": ai_sessions,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions,
+            # Feature 136: Global AI sessions (orphaned, no window correlation)
+            "global_ai_sessions": otel_sessions.get("global_ai_sessions", []),
         }
 
     except DaemonError as e:
@@ -1682,6 +1727,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
             "otel_sessions": otel_sessions,
+            "global_ai_sessions": otel_sessions.get("global_ai_sessions", []),
         }
 
     except Exception as e:
@@ -1701,6 +1747,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
             "otel_sessions": otel_sessions,
+            "global_ai_sessions": otel_sessions.get("global_ai_sessions", []),
         }
 
 

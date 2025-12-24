@@ -13,7 +13,6 @@ State Machine:
 
 import asyncio
 import logging
-import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
@@ -48,25 +47,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Feature number extraction pattern: matches ":<number>" or "<number>-" at start of branch name
-_FEATURE_NUMBER_PATTERN = re.compile(r":(\d+)")
-
-
-def extract_feature_number(project: Optional[str]) -> Optional[str]:
-    """Extract feature number from project name for deduplication.
-
-    Examples:
-        "vpittamp/nixos-config:123-otel-tracing" → "123"
-        "owner/repo:456-feature" → "456"
-        "Global" → None
-        None → None
-    """
-    if not project or project == "Global":
-        return None
-    match = _FEATURE_NUMBER_PATTERN.search(project)
-    return match.group(1) if match else None
-
-
 def state_priority(state: SessionState) -> int:
     """Return priority for state comparison (higher = more important).
 
@@ -95,7 +75,7 @@ class SessionTracker:
         quiet_period_sec: float = 10.0,  # Feature 135: Increased from 3.0 to reduce flickering
         session_timeout_sec: float = 300.0,
         completed_timeout_sec: float = 30.0,
-        enable_notifications: bool = True,
+        enable_notifications: bool = False,
         broadcast_interval_sec: float = 5.0,
     ) -> None:
         """Initialize the session tracker.
@@ -134,7 +114,8 @@ class SessionTracker:
         # Notification debounce: session_id -> last notification timestamp
         # Prevents rapid-fire notifications during multi-turn conversations
         self._last_notification: dict[str, datetime] = {}
-        self._notification_debounce_sec = 30.0  # Minimum seconds between notifications
+        self._notification_debounce_sec = 120.0  # Feature 136: Increased from 30.0 to reduce spam
+        self._min_working_duration_sec = 5.0     # Feature 136: Min activity before notifying
 
         # Background tasks
         self._broadcast_task: Optional[asyncio.Task] = None
@@ -180,10 +161,18 @@ class SessionTracker:
         # Generate session ID if not present
         session_id = event.session_id
         if not session_id:
-            # Generate from tool + timestamp
-            # Note: event.tool is already a string due to use_enum_values = True in TelemetryEvent
+            # Feature 136: Use PID for more stable session ID fallback
+            # This prevents creating a new session every second for the same process
+            pid = event.attributes.get("process.pid") or event.attributes.get("pid")
             tool_name = event.tool if event.tool else "unknown"
-            session_id = f"{tool_name}-{int(event.timestamp.timestamp())}"
+            if pid:
+                session_id = f"{tool_name}-{pid}"
+            else:
+                # Last resort fallback: use minute-level timestamp for stability
+                # Sessions within the same minute will be grouped together,
+                # preventing ephemeral 1-second sessions when PID is unavailable
+                minute_ts = int(event.timestamp.timestamp()) // 60 * 60
+                session_id = f"{tool_name}-{minute_ts}"
 
         async with self._lock:
             session = self._sessions.get(session_id)
@@ -479,19 +468,15 @@ class SessionTracker:
         if needs_attention and str(needs_attention).lower() in ("true", "1", "yes"):
             return SessionState.ATTENTION
 
-        # Feature 135: Use gen_ai.response.finish_reasons for immediate state detection
-        # This eliminates the 15-second timeout delay for turn completion
+        # Feature 135: finish_reasons detection for UI hints
+        # We used to transition to COMPLETED immediately here, but it caused
+        # notification spam for multi-turn tasks. Now we just log it and let
+        # the quiet period (10s) handle the state transition.
         finish_reasons = attrs.get("gen_ai.response.finish_reasons") or ""
         if isinstance(finish_reasons, str) and finish_reasons:
             finish_lower = finish_reasons.lower()
-            # end_turn = Claude finished naturally, go to COMPLETED
             if finish_lower in ("end_turn", "stop"):
-                logger.debug(f"Turn complete: finish_reasons={finish_reasons} → COMPLETED")
-                return SessionState.COMPLETED
-            # tool_use = Claude wants to call tools, stay WORKING
-            elif finish_lower == "tool_use":
-                return SessionState.WORKING
-            # max_tokens = Hit limit, may need attention
+                logger.debug(f"Turn complete: finish_reasons={finish_reasons} (waiting for quiet period)")
             elif finish_lower == "max_tokens":
                 logger.debug(f"ATTENTION: finish_reasons=max_tokens")
                 return SessionState.ATTENTION
@@ -501,8 +486,10 @@ class SessionTracker:
             return SessionState.WORKING
 
         # Events that keep WORKING state (activity)
-        if current == SessionState.WORKING and event_name in EventNames.ACTIVITY_EVENTS:
-            return SessionState.WORKING
+        # Feature 136: Any event from the same tool counts as activity
+        if current == SessionState.WORKING:
+            if event.tool == session.tool or event_name in EventNames.ACTIVITY_EVENTS:
+                return SessionState.WORKING
 
         # COMPLETED → WORKING on new prompt
         if current == SessionState.COMPLETED and event_name in EventNames.WORKING_TRIGGERS:
@@ -995,13 +982,33 @@ class SessionTracker:
 
         # Send notification on completion - but only if:
         # 1. Coming from WORKING or ATTENTION (not from IDLE or already COMPLETED)
-        # 2. Not debounced (no notification in last N seconds)
+        # 2. Session has a window_id (suppress background/ghost notifications)
+        # 3. Session had minimum duration of activity (suppress trivial turns)
+        # 4. Not debounced (no notification in last N seconds)
         if new_state == SessionState.COMPLETED and self.enable_notifications:
             # Only notify when we actually completed work, not on spurious transitions
             if old_state not in (SessionState.WORKING, SessionState.ATTENTION):
                 logger.debug(
                     f"Session {session.session_id}: skipping notification "
                     f"(transition from {old_state}, not from WORKING/ATTENTION)"
+                )
+                return
+
+            # Feature 136: Suppress notifications for sessions without a window
+            if session.window_id is None:
+                logger.debug(
+                    f"Session {session.session_id}: skipping notification "
+                    f"(no window_id, likely background process)"
+                )
+                return
+
+            # Feature 136: Suppress notifications for very short bursts of activity
+            # Use last_event_at - created_at as a proxy for session duration
+            session_duration = (session.last_event_at - session.created_at).total_seconds()
+            if session_duration < self._min_working_duration_sec:
+                logger.debug(
+                    f"Session {session.session_id}: skipping notification "
+                    f"(duration {session_duration:.1f}s < {self._min_working_duration_sec}s)"
                 )
                 return
 
@@ -1077,38 +1084,18 @@ class SessionTracker:
     async def _broadcast_sessions_unlocked(self) -> None:
         """Broadcast current session list (caller must hold lock).
 
-        Deduplicates sessions by feature number - when multiple sessions have
-        the same feature number, only the highest priority one is shown:
-        - WORKING > COMPLETED > IDLE
-        - Within same priority, prefer the most recent session
+        Feature 136: Removed feature-based deduplication. All sessions are now
+        included, grouped by window_id for multi-indicator display.
+
+        Sessions are sorted by state priority within each window:
+        - ATTENTION > WORKING > COMPLETED > IDLE
         """
         active_sessions = [
             s for s in self._sessions.values()
             if s.state != SessionState.EXPIRED
         ]
 
-        # Deduplicate by feature number
-        # Key: feature_number (or project if no feature number, or session_id for Global)
-        # Value: best session for that key
-        best_by_feature: dict[str, Session] = {}
-        for session in active_sessions:
-            feature = extract_feature_number(session.project)
-            # Use feature number as key, fallback to full project, fallback to session_id
-            key = feature or session.project or session.session_id
-
-            if key not in best_by_feature:
-                best_by_feature[key] = session
-            else:
-                existing = best_by_feature[key]
-                # Compare by state priority, then by most recent state change
-                if state_priority(session.state) > state_priority(existing.state):
-                    best_by_feature[key] = session
-                elif (state_priority(session.state) == state_priority(existing.state)
-                      and session.state_changed_at > existing.state_changed_at):
-                    best_by_feature[key] = session
-
-        # Build deduplicated items list
-        deduplicated_sessions = list(best_by_feature.values())
+        # Feature 136: Build all items list (no deduplication)
         items = [
             SessionListItem(
                 session_id=s.session_id,
@@ -1116,16 +1103,41 @@ class SessionTracker:
                 state=s.state,
                 project=s.project,
                 window_id=s.window_id,
-                # Feature 135: Include pending_tools and streaming state for visual indicators
                 pending_tools=s.pending_tools,
                 is_streaming=s.is_streaming,
             )
-            for s in deduplicated_sessions
+            for s in active_sessions
         ]
-        has_working = any(s.state == SessionState.WORKING for s in deduplicated_sessions)
+
+        # Feature 136: Group sessions by window_id for efficient EWW lookup
+        # Orphaned sessions (window_id=None) are grouped under window_id=-1
+        # for display in a "Global AI Sessions" section
+        sessions_by_window: dict[int, list[SessionListItem]] = {}
+        orphan_sessions: list[SessionListItem] = []
+        for item in items:
+            if item.window_id is not None:
+                if item.window_id not in sessions_by_window:
+                    sessions_by_window[item.window_id] = []
+                sessions_by_window[item.window_id].append(item)
+            else:
+                orphan_sessions.append(item)
+
+        # Add orphan sessions under special window_id -1 for global display
+        if orphan_sessions:
+            sessions_by_window[-1] = orphan_sessions
+
+        # Sort each window's sessions by state priority (highest first)
+        for window_id in sessions_by_window:
+            sessions_by_window[window_id].sort(
+                key=lambda s: state_priority(SessionState(s.state)),
+                reverse=True
+            )
+
+        has_working = any(s.state == SessionState.WORKING for s in active_sessions)
 
         session_list = SessionList(
             sessions=items,
+            sessions_by_window=sessions_by_window,
             timestamp=int(datetime.now(timezone.utc).timestamp()),
             has_working=has_working,
         )

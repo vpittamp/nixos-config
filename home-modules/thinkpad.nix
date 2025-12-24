@@ -62,6 +62,7 @@
     enable = true;
     port = 4320;  # Non-standard port (collector uses 4318)
     verbose = true;  # Enable debug logging to trace event parsing
+    enableNotifications = false;  # Suppress "Claude Code Ready" alerts
   };
 
   # Sway Dynamic Configuration Management

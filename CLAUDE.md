@@ -271,6 +271,8 @@ journalctl --user -u i3-project-event-listener -f
 - N/A (in-memory session state in otel-ai-monitor) (125-tracing-parity-codex)
 - Python 3.11+ (otel-ai-monitor), JavaScript/Node.js (interceptors) + opentelemetry-proto, aiohttp, Grafana Alloy, existing interceptor scripts (132-langfuse-compatibility)
 - N/A (in-memory session state, remote Langfuse storage) (132-langfuse-compatibility)
+- Python 3.11+ (otel-ai-monitor), Nix (configuration), Yuck/SCSS (EWW widgets) + Pydantic, aiohttp, EWW 0.4+, i3ipc.aio (136-multiple-indicators)
+- In-memory session state in otel-ai-monitor (no persistence changes needed) (136-multiple-indicators)
 
 ## Recent Changes
 - 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools
