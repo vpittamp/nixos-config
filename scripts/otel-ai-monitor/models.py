@@ -19,6 +19,7 @@ class SessionState(str, Enum):
     WORKING = "working"
     COMPLETED = "completed"
     EXPIRED = "expired"
+    ATTENTION = "attention"  # Feature 135: User action needed (permissions, errors)
 
 
 class AITool(str, Enum):
@@ -136,6 +137,9 @@ class Session(BaseModel):
     window_id: Optional[int] = Field(
         default=None, description="Sway container ID of originating terminal window"
     )
+    pid: Optional[int] = Field(
+        default=None, description="Process PID from telemetry for session correlation"
+    )
     model: Optional[str] = Field(
         default=None, description="LLM model name for cost calculation"
     )
@@ -159,6 +163,14 @@ class Session(BaseModel):
     # Tool execution tracking
     pending_tools: int = Field(default=0, description="Count of active tool executions")
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
+
+    # Streaming metrics (Feature 136: fix missing fields referenced by session_tracker.py)
+    first_token_time: Optional[datetime] = Field(
+        default=None, description="Timestamp of first streaming token for TTFT calculation"
+    )
+    streaming_tokens: int = Field(
+        default=0, description="Count of streaming tokens received in current response"
+    )
 
     class Config:
         """Pydantic configuration."""
@@ -226,6 +238,9 @@ class SessionListItem(BaseModel):
     state: str = Field(description="Current session state")
     project: Optional[str] = Field(default=None, description="Project context")
     window_id: Optional[int] = Field(default=None, description="Sway container ID for focus")
+    # Feature 136: Additional fields for multi-indicator support
+    pending_tools: int = Field(default=0, description="Count of active tool executions")
+    is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
 
 
 class SessionList(BaseModel):
@@ -233,11 +248,18 @@ class SessionList(BaseModel):
 
     Broadcast periodically for EWW initialization and recovery.
     Allows widgets to get full state on startup or after reconnection.
+
+    Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
-        default_factory=list, description="All active sessions"
+        default_factory=list, description="All active sessions (not deduplicated)"
+    )
+    # Feature 136: Sessions grouped by window_id for efficient EWW lookup
+    sessions_by_window: dict[int, list[SessionListItem]] = Field(
+        default_factory=dict,
+        description="Sessions grouped by window_id for multi-indicator display"
     )
     timestamp: int = Field(description="Unix timestamp in seconds")
     has_working: bool = Field(

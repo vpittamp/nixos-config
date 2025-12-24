@@ -468,6 +468,17 @@ in
       description = "Systemd units to collect logs from";
     };
 
+    stopTimeout = mkOption {
+      type = types.str;
+      default = "10s";
+      description = ''
+        Maximum time to wait for Alloy to shutdown gracefully.
+        Telemetry collectors may try to flush buffered data on shutdown,
+        which can delay reboot/shutdown. A shorter timeout (10-30s) is
+        recommended since data loss on shutdown is generally acceptable.
+      '';
+    };
+
     # Feature 132: Langfuse Integration
     langfuse = {
       enable = mkEnableOption "Langfuse trace export for AI observability";
@@ -710,6 +721,9 @@ in
             "${cfg.package}/bin/alloy run /etc/alloy/config.alloy";
         Restart = "always";
         RestartSec = "5s";
+
+        # Limit shutdown wait time - telemetry data loss on reboot is acceptable
+        TimeoutStopSec = cfg.stopTimeout;
 
         # Feature 132: Load environment file for Langfuse credentials if configured
         EnvironmentFile = lib.mkIf (cfg.langfuse.enable && cfg.langfuse.environmentFile != null)

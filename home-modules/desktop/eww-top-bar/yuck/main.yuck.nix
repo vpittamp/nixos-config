@@ -190,33 +190,30 @@ in
 ;; (deflisten via notification-monitor.py replaces the old polling approach)
 
 ;; Feature 123: AI sessions data via OpenTelemetry
+;; Feature 136: DISABLED - AI indicators moved to monitoring panel only
 ;; Uses deflisten to consume JSON stream from otel-ai-monitor service (event-driven, no polling)
 ;; Falls back to error state (visible in UI) if pipe doesn't exist - avoids silent failures
-(deflisten ai_sessions_data
-  :initial '{"type":"session_list","sessions":[],"timestamp":0}'
-  `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0}'`)
+;; (deflisten ai_sessions_data
+;;   :initial '{"type":"session_list","sessions":[],"timestamp":0}'
+;;   `cat $XDG_RUNTIME_DIR/otel-ai-monitor.pipe 2>/dev/null || echo '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0}'`)
 
 ;; Feature 123: Pulsating circle for working AI sessions
+;; Feature 136: DISABLED - AI indicators moved to monitoring panel only
 ;; Static circle character - animation via opacity only (saves 1 defpoll)
-(defpoll topbar_spinner_frame
-  :interval "10s"
-  :run-while false
-  :initial "⬤"
-  `echo "⬤"`)
+;; (defpoll topbar_spinner_frame
+;;   :interval "10s"
+;;   :run-while false
+;;   :initial "⬤"
+;;   `echo "⬤"`)
 
 ;; Feature 123: Opacity for pulsating fade effect
+;; Feature 136: DISABLED - AI indicators moved to monitoring panel only
 ;; Cycles: 0.4 → 0.6 → 0.8 → 1.0 → 1.0 → 0.8 → 0.6 → 0.4
-(defpoll topbar_spinner_opacity
-  :interval "120ms"
-  :run-while {ai_sessions_data.has_working ?: false}
-  :initial "1.0"
-  `${topbarSpinnerOpacityScript}/bin/eww-topbar-spinner-opacity`)
-
-;; Feature 123: Active AI session highlighting uses active_project data
-;; Comparing session.project with active_project.project is more reliable than window IDs
-
-;; Feature 123: Active AI session highlighting uses active_project data
-;; Comparing session.project with active_project.project is more reliable than window IDs
+;; (defpoll topbar_spinner_opacity
+;;   :interval "120ms"
+;;   :run-while {ai_sessions_data.has_working ?: false}
+;;   :initial "1.0"
+;;   `${topbarSpinnerOpacityScript}/bin/eww-topbar-spinner-opacity`)
 
 ;; Interactions / popups
 (defvar volume_popup_visible false)
@@ -615,50 +612,51 @@ in
                 :text {notification_data.display_count}))))
 
 ;; Feature 123: AI Sessions widget for top bar (OTEL-based)
+;; Feature 136: DISABLED - AI indicators moved to monitoring panel only
 ;; Compact chips showing active AI assistants (Claude Code, Codex)
 ;; Three states: working (pulsating), completed/attention (bell), idle (muted)
 ;; Error state: shows red indicator when pipe is missing (visible failure, not silent)
 ;; Data comes from otel-ai-monitor service via deflisten (event-driven)
 ;; Feature 123 Enhancement: Project badge shows branch number (worktrees) or abbreviation
-(defwidget ai-sessions-widget []
-  (box :class "ai-sessions-container"
-       :visible {(ai_sessions_data.type ?: "") == "error" || arraylength(ai_sessions_data.sessions ?: []) > 0}
-       :orientation "h"
-       :space-evenly false
-       :spacing 4
-       ;; Error indicator when pipe is missing
-       (box :class "ai-chip error"
-            :visible {(ai_sessions_data.type ?: "") == "error"}
-            :tooltip {"AI Monitor Error: " + (ai_sessions_data.error ?: "unknown")}
-            (label :class "ai-chip-indicator" :text "󰅙"))
-       ;; Normal session chips
-       ;; Adds "focused" class when this session matches the active project
-       (for session in {ai_sessions_data.sessions ?: []}
-         (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + (session.window_id ?: "0") + "' &"}
-                   :cursor "pointer"
-                   :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Working" : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]" + ((session.project ?: "") == (active_project.project ?: "") ? " (Active)" : "")}
-           (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle")) + ((session.project ?: "") == (active_project.project ?: "") ? " focused" : "")}
-                :orientation "h"
-                :space-evenly false
-                :spacing 4
-                ;; State indicator (nerd font icons)
-                (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
-                       :text {session.state == "working" ? topbar_spinner_frame : (session.state == "completed" ? "󰂞" : "󰤄")})
-                ;; Project badge - extracts feature number from branch name
-                ;; Format: "owner/repo:branch" (e.g., "vpittamp/nixos-config:123-otel-tracing" → "123")
-                ;; Uses captures() to extract digits after colon; fallback: first 3 chars of branch
-                (label :class "ai-chip-project-badge"
-                       :halign "center"
-                       :visible {(session.project ?: "") != "" && (session.project ?: "") != "Global"}
-                       :text {arraylength(captures(session.project ?: "", ":([0-9]+)")) > 1
-                              ? captures(session.project ?: "", ":([0-9]+)")[1]
-                              : substring(replace(session.project ?: "???", ".*:", ""), 0, 3)})
-                ;; Tool icon (SVG images for claude and codex)
-                (image
-                  :class "ai-chip-source-icon"
-                  :path {session.tool == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.tool == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
-                  :image-width 16
-                  :image-height 16))))))
+;; (defwidget ai-sessions-widget []
+;;   (box :class "ai-sessions-container"
+;;        :visible {(ai_sessions_data.type ?: "") == "error" || arraylength(ai_sessions_data.sessions ?: []) > 0}
+;;        :orientation "h"
+;;        :space-evenly false
+;;        :spacing 4
+;;        ;; Error indicator when pipe is missing
+;;        (box :class "ai-chip error"
+;;             :visible {(ai_sessions_data.type ?: "") == "error"}
+;;             :tooltip {"AI Monitor Error: " + (ai_sessions_data.error ?: "unknown")}
+;;             (label :class "ai-chip-indicator" :text "󰅙"))
+;;        ;; Normal session chips
+;;        ;; Adds "focused" class when this session matches the active project
+;;        (for session in {ai_sessions_data.sessions ?: []}
+;;          (eventbox :onclick {"focus-window-action '" + (session.project ?: "Global") + "' '" + (session.window_id ?: "0") + "' &"}
+;;                    :cursor "pointer"
+;;                    :tooltip {session.tool == "claude-code" ? "Claude Code" : (session.tool == "codex" ? "Codex" : session.tool) + " - " + (session.state == "working" ? "Working" : (session.state == "completed" ? "Needs attention" : "Ready")) + " [" + (session.project ?: "Global") + "]" + ((session.project ?: "") == (active_project.project ?: "") ? " (Active)" : "")}
+;;            (box :class {"ai-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " attention" : " idle")) + ((session.project ?: "") == (active_project.project ?: "") ? " focused" : "")}
+;;                 :orientation "h"
+;;                 :space-evenly false
+;;                 :spacing 4
+;;                 ;; State indicator (nerd font icons)
+;;                 (label :class {"ai-chip-indicator" + (session.state == "working" ? " ai-opacity-" + (topbar_spinner_opacity == "0.4" ? "04" : (topbar_spinner_opacity == "0.6" ? "06" : (topbar_spinner_opacity == "0.8" ? "08" : "10"))) : "")}
+;;                        :text {session.state == "working" ? topbar_spinner_frame : (session.state == "completed" ? "󰂞" : "󰤄")})
+;;                 ;; Project badge - extracts feature number from branch name
+;;                 ;; Format: "owner/repo:branch" (e.g., "vpittamp/nixos-config:123-otel-tracing" → "123")
+;;                 ;; Uses captures() to extract digits after colon; fallback: first 3 chars of branch
+;;                 (label :class "ai-chip-project-badge"
+;;                        :halign "center"
+;;                        :visible {(session.project ?: "") != "" && (session.project ?: "") != "Global"}
+;;                        :text {arraylength(captures(session.project ?: "", ":([0-9]+)")) > 1
+;;                               ? captures(session.project ?: "", ":([0-9]+)")[1]
+;;                               : substring(replace(session.project ?: "???", ".*:", ""), 0, 3)})
+;;                 ;; Tool icon (SVG images for claude and codex)
+;;                 (image
+;;                   :class "ai-chip-source-icon"
+;;                   :path {session.tool == "claude-code" ? "/etc/nixos/assets/icons/claude.svg" : (session.tool == "codex" ? "/etc/nixos/assets/icons/chatgpt.svg" : "/etc/nixos/assets/icons/anthropic.svg")}
+;;                   :image-width 16
+;;                   :image-height 16))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
@@ -710,7 +708,9 @@ in
          :halign "center"
          :spacing 6
          (project-widget)
-         (ai-sessions-widget))
+         ;; Feature 136: AI sessions widget disabled - functionality moved to monitoring panel
+         ;; (ai-sessions-widget)
+         )
 
     ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Badge, and System Tray
     (box :class "right"

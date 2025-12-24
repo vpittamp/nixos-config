@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SessionList",
+  "description": "Session list output from otel-ai-monitor for EWW consumption (Feature 136)",
+  "type": "object",
+  "required": ["type", "sessions", "sessions_by_window", "timestamp", "has_working"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "session_list",
+      "description": "Event type for consumer routing"
+    },
+    "sessions": {
+      "type": "array",
+      "description": "Flat list of all active sessions (not deduplicated)",
+      "items": { "$ref": "#/definitions/SessionListItem" }
+    },
+    "sessions_by_window": {
+      "type": "object",
+      "description": "Sessions grouped by window_id for efficient EWW lookup",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/SessionListItem" }
+      }
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in seconds when list was generated"
+    },
+    "has_working": {
+      "type": "boolean",
+      "description": "True if any session is in working state (for animation trigger)"
+    }
+  },
+  "definitions": {
+    "SessionListItem": {
+      "type": "object",
+      "required": ["session_id", "tool", "state"],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "description": "Unique session identifier from telemetry"
+        },
+        "tool": {
+          "type": "string",
+          "enum": ["claude-code", "codex", "gemini"],
+          "description": "AI tool type"
+        },
+        "state": {
+          "type": "string",
+          "enum": ["idle", "working", "completed", "attention"],
+          "description": "Current session state"
+        },
+        "project": {
+          "type": ["string", "null"],
+          "description": "Project context if available"
+        },
+        "window_id": {
+          "type": ["integer", "null"],
+          "description": "Sway container ID for the terminal window"
+        },
+        "pending_tools": {
+          "type": "integer",
+          "default": 0,
+          "description": "Count of active tool executions"
+        },
+        "is_streaming": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if currently receiving streaming response"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "session_list",
+      "sessions": [
+        {"session_id": "claude-1", "tool": "claude-code", "state": "working", "window_id": 42, "project": "nixos"},
+        {"session_id": "codex-1", "tool": "codex", "state": "idle", "window_id": 42, "project": "nixos"},
+        {"session_id": "gemini-1", "tool": "gemini", "state": "working", "window_id": 43, "project": "other"}
+      ],
+      "sessions_by_window": {
+        "42": [
+          {"session_id": "claude-1", "tool": "claude-code", "state": "working", "project": "nixos"},
+          {"session_id": "codex-1", "tool": "codex", "state": "idle", "project": "nixos"}
+        ],
+        "43": [
+          {"session_id": "gemini-1", "tool": "gemini", "state": "working", "project": "other"}
+        ]
+      },
+      "timestamp": 1735056000,
+      "has_working": true
+    }
+  ]
+}

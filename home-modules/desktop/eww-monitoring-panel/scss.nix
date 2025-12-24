@@ -546,8 +546,23 @@
     opacity: 1.0;
   }
 
+  .ai-badge-icon.completed {
+    opacity: 0.8;
+  }
+
   .ai-badge-icon.idle {
-    opacity: 1.0;
+    opacity: 0.5;
+  }
+
+  /* Feature 136: Overflow badge for multiple AI indicators */
+  .badge-overflow {
+    color: ${mocha.text};
+    background-color: rgba(127, 132, 156, 0.3);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 4px;
+    margin-left: 2px;
   }
 
   .badge-focused-window {
@@ -558,6 +573,45 @@
   .ai-sessions-bar {
     padding: 4px 0;
     margin-bottom: 8px;
+  }
+
+  // Feature 136: Global AI Sessions section for orphaned sessions
+  .global-ai-sessions {
+    margin-top: 12px;
+    padding: 8px;
+    background: rgba(49, 50, 68, 0.3);
+    border-radius: 8px;
+    border: 1px solid rgba(137, 180, 250, 0.2);
+  }
+
+  .global-ai-header {
+    margin-bottom: 8px;
+    color: ${mocha.subtext0};
+  }
+
+  .global-ai-icon {
+    font-size: 14px;
+    margin-right: 6px;
+    color: ${mocha.blue};
+  }
+
+  .global-ai-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: ${mocha.subtext0};
+  }
+
+  .global-ai-count {
+    font-size: 11px;
+    color: ${mocha.overlay0};
+    margin-left: 4px;
+  }
+
+  // Note: .global-ai-sessions-container wrapping handled by EWW box widget (GTK3 doesn't support flex-wrap)
+
+  .ai-session-label {
+    font-size: 11px;
+    color: ${mocha.subtext0};
   }
 
   .ai-session-chip {
@@ -606,6 +660,18 @@
 
   .ai-session-chip.idle .ai-session-indicator {
     color: ${mocha.overlay0};
+  }
+
+  .ai-session-chip.completed {
+    background: rgba(166, 227, 161, 0.12);
+  }
+
+  .ai-session-chip.completed:hover {
+    background: rgba(166, 227, 161, 0.2);
+  }
+
+  .ai-session-chip.completed .ai-session-indicator {
+    color: ${mocha.green};
   }
 
   .ai-session-indicator {

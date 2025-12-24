@@ -39,8 +39,8 @@ let
   daemonSrc = ../desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon-v122";  # Bumped for Feature 117
-    version = "1.22.0";  # Feature 117: User service conversion
+    name = "i3-project-event-daemon-v135.2";  # Return structured not-found response
+    version = "1.35.2";  # Feature 135: Return {window_id: null} instead of null
     src = daemonSrc;
 
     installPhase = ''

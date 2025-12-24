@@ -384,6 +384,9 @@ class IPCServer:
                 result = await self._get_launch_stats()
             elif method == "get_pending_launches":
                 result = await self._get_pending_launches(params)
+            elif method == "get_window_by_launch_id":
+                # Feature 135: OTEL AI session window correlation
+                result = await self._get_window_by_launch_id(params)
 
             # Feature 042: Workspace mode navigation methods
             elif method == "workspace_mode.digit":
@@ -5387,6 +5390,79 @@ class IPCServer:
         )
 
         return {"launches": launches}
+
+    async def _get_window_by_launch_id(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Find window by correlation launch ID.
+
+        Feature 135 - OTEL AI session window correlation
+
+        This method enables otel-ai-monitor to correlate AI CLI sessions with
+        their terminal windows by matching the I3PM_APP_ID (app_name-timestamp)
+        that was set when the terminal was launched.
+
+        Args:
+            params: {
+                "app_name": str - Application name (e.g., "terminal"),
+                "timestamp": int - Unix timestamp (seconds) from I3PM_APP_ID
+            }
+
+        Returns:
+            {
+                "window_id": int - Sway window ID,
+                "project_name": str - Project associated with the window,
+                "correlation_confidence": float - Match confidence (0.0-1.0),
+                "matched_at": float - Unix timestamp when correlation was made
+            }
+            Or None if no matching window found.
+        """
+        start_time = time.perf_counter()
+
+        app_name = params.get("app_name")
+        timestamp = params.get("timestamp")
+
+        if not app_name or not timestamp:
+            raise ValueError("Both 'app_name' and 'timestamp' are required")
+
+        # Construct the correlation launch ID in the same format used by handlers.py
+        # Format: "{app_name}-{timestamp}"
+        target_launch_id = f"{app_name}-{timestamp}"
+
+        logger.debug(f"Searching for window with correlation_launch_id: {target_launch_id}")
+
+        # Search through tracked windows for matching correlation_launch_id
+        matched_window = None
+        for window_id, window_info in self.state_manager.state.window_map.items():
+            if hasattr(window_info, 'correlation_launch_id'):
+                if window_info.correlation_launch_id == target_launch_id:
+                    matched_window = (window_id, window_info)
+                    logger.debug(f"Found window {window_id} matching launch_id {target_launch_id}")
+                    break
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="get_window_by_launch_id",
+            duration_ms=duration_ms,
+            params={"app_name": app_name, "timestamp": timestamp, "found": matched_window is not None}
+        )
+
+        if matched_window:
+            window_id, window_info = matched_window
+            return {
+                "window_id": window_id,
+                "project_name": getattr(window_info, 'project_name', None),
+                "correlation_confidence": getattr(window_info, 'correlation_confidence', 1.0),
+                "matched_at": time.time()
+            }
+        else:
+            logger.debug(f"No window found for launch_id: {target_launch_id}")
+            # Return structured response to distinguish from daemon unavailable (None)
+            return {
+                "window_id": None,
+                "error": "not_found",
+                "message": f"No window with correlation_launch_id={target_launch_id}"
+            }
 
     # =============================================================================
     # Feature 042: Workspace Mode Navigation IPC Methods

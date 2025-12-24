@@ -61,6 +61,7 @@
   services.otel-ai-monitor = {
     enable = true;
     port = 4320;  # Non-standard port (collector uses 4318)
+    enableNotifications = false;
   };
 
   # Sway Dynamic Configuration Management
