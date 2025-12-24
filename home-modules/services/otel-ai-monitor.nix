@@ -55,7 +55,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.10.5";  # Add tmux to PATH for tmux client window lookup
+    version = "0.10.8";  # Add all missing model fields and event names
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];

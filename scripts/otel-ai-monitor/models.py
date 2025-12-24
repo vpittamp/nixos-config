@@ -156,6 +156,10 @@ class Session(BaseModel):
     error_count: int = Field(default=0, description="Cumulative error count")
     last_error_type: Optional[str] = Field(default=None, description="Last error type if any")
 
+    # Tool execution tracking
+    pending_tools: int = Field(default=0, description="Count of active tool executions")
+    is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
+
     class Config:
         """Pydantic configuration."""
 
@@ -248,6 +252,10 @@ class EventNames:
     # Claude Code events
     CLAUDE_USER_PROMPT = "claude_code.user_prompt"
     CLAUDE_TOOL_RESULT = "claude_code.tool_result"
+    CLAUDE_TOOL_START = "claude_code.tool_start"
+    CLAUDE_TOOL_COMPLETE = "claude_code.tool_complete"
+    CLAUDE_STREAM_START = "claude_code.stream_start"
+    CLAUDE_STREAM_TOKEN = "claude_code.stream_token"
     CLAUDE_API_REQUEST = "claude_code.api_request"
     CLAUDE_API_ERROR = "claude_code.api_error"
     # Interceptor / derived spans (kept distinct from native log events)
