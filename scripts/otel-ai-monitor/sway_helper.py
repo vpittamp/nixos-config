@@ -422,7 +422,9 @@ def _get_all_sway_pids(tree: dict) -> dict[int, int]:
     def collect_pids(node: dict) -> None:
         pid = node.get("pid")
         window_id = node.get("id")
-        if pid and window_id and node.get("type") == "con":
+        node_type = node.get("type")
+        # Include both regular and floating windows (scratchpad, hidden, etc.)
+        if pid and window_id and node_type in ("con", "floating_con"):
             pid_to_window[pid] = window_id
 
         for child in node.get("nodes", []) + node.get("floating_nodes", []):
