@@ -847,11 +847,16 @@ def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
     try:
         # Step 1: Get the TTY of the target process
         proc_stat = Path(f"/proc/{target_pid}/stat").read_text()
-        # Field 7 is tty_nr (TTY device number)
-        stat_fields = proc_stat.split()
-        if len(stat_fields) < 7:
+        # Format: pid (comm) state ppid pgrp session tty_nr ...
+        # The comm field can contain spaces (e.g., "tmux: client"), so we find the last ')'
+        last_paren = proc_stat.rfind(")")
+        if last_paren == -1:
             return None
-        tty_nr = int(stat_fields[6])
+        # Fields after comm: state(0) ppid(1) pgrp(2) session(3) tty_nr(4)
+        stat_fields = proc_stat[last_paren + 2:].split()
+        if len(stat_fields) < 5:
+            return None
+        tty_nr = int(stat_fields[4])
         if tty_nr == 0:
             # No TTY
             return None

@@ -55,7 +55,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.10.3";  # Fix floating window detection for tmux client lookup
+    version = "0.10.5";  # Add tmux to PATH for tmux client window lookup
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -169,9 +169,9 @@ in
         MemoryMax = "100M";
         CPUQuota = "10%";
 
-        # Environment for notifications
+        # Environment for notifications and tmux client lookup
         Environment = [
-          "PATH=${pkgs.libnotify}/bin:${pkgs.sway}/bin:${pkgs.coreutils}/bin"
+          "PATH=${pkgs.libnotify}/bin:${pkgs.sway}/bin:${pkgs.coreutils}/bin:${pkgs.tmux}/bin"
         ];
 
         # Logging
