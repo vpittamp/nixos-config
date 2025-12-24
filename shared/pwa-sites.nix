@@ -3,7 +3,7 @@
 # Feature 106: Portable icon paths via assetsPackage
 # Feature 113: URL routing - routing_domains defines which domains open in this PWA
 # Feature 118: Path-based routing (routing_paths) and internal auth (auth_domains)
-{ lib, assetsPackage ? null }:
+{ lib, assetsPackage ? null, hostName ? "" }:
 
 let
   # Feature 106: Helper to get icon path from Nix store or fallback to legacy path
@@ -11,21 +11,25 @@ let
     if assetsPackage != null
     then "${assetsPackage}/icons/${name}"
     else "/etc/nixos/assets/icons/${name}";
-in
-{
-  # List of PWA sites with static ULID identifiers
-  # App Registry Fields:
-  #   - app_scope: "scoped" (project-specific) or "global" (shared across projects)
-  #   - preferred_workspace: workspace number (50+ for PWAs, no upper bound; regular apps use 1-50)
-  #   - preferred_monitor_role: (optional) "primary", "secondary", or "tertiary" - Feature 001: User Story 3
-  #       If omitted, role is inferred from workspace number (WS 1-2→primary, 3-5→secondary, 6+→tertiary)
-  #   - routing_domains: (optional) list of domains that should open in this PWA - Feature 113
-  #       If omitted, defaults to [ domain ]. Use this to include www variants or related subdomains.
-  #   - routing_paths: (optional) list of path prefixes for path-based routing - Feature 118
-  #       Example: routing_paths = [ "/ai" ] to match google.com/ai/*
-  #   - auth_domains: (optional) list of auth provider domains - Feature 118
-  #       PWAs can navigate to these domains without opening external browser (for OAuth/SSO)
-  pwaSites = [
+
+  # Helper to determine if a PWA should be included for the current host
+  # If hostName is empty, all PWAs are included (legacy/global view)
+  # If hostName is provided, only global PWAs and host-matching PWAs are included
+  shouldInclude = pwa:
+    if hostName == "" then true
+    else if !(pwa ? host) || pwa.host == "global" || pwa.host == "hub" then true
+    else pwa.host == hostName;
+
+  # Helper to format PWA name - remove host suffix if viewing for a specific host
+  formatName = pwa:
+    if hostName != "" && pwa ? host && pwa.host == hostName && (lib.hasSuffix " ${lib.toUpper (lib.substring 0 1 pwa.host)}${lib.substring 1 (-1) pwa.host}" pwa.name)
+    then lib.removeSuffix " ${lib.toUpper (lib.substring 0 1 pwa.host)}${lib.substring 1 (-1) pwa.host}" pwa.name
+    # Special case for ThinkPad/Ryzen which I added with specific casing
+    else if hostName == "thinkpad" then lib.removeSuffix " ThinkPad" pwa.name
+    else if hostName == "ryzen" then lib.removeSuffix " Ryzen" pwa.name
+    else pwa.name;
+
+  allPwaSites = [
     # YouTube
     {
       name = "YouTube";
@@ -642,7 +646,180 @@ in
       # Feature 113: URL routing domains
       routing_domains = [ "keycloak.ai401kchat.com" ];
     }
+
+    # ============================================
+    # Observability Stack PWAs (Hub Cluster)
+    # ============================================
+
+    # Grafana Hub
+    {
+      name = "Grafana Hub";
+      host = "hub";
+      url = "https://grafana-hub.tail286401.ts.net";
+      domain = "grafana-hub.tail286401.ts.net";
+      icon = iconPath "grafana.svg";
+      description = "Grafana dashboard for Hub cluster";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;logs;hub;";
+      scope = "https://grafana-hub.tail286401.ts.net/";
+      ulid = "6F5SBQ6RZQPTASDHNFNERW976H";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 83;
+    }
+
+    # Langfuse Hub
+    {
+      name = "Langfuse Hub";
+      host = "hub";
+      url = "https://langfuse-hub.tail286401.ts.net";
+      domain = "langfuse-hub.tail286401.ts.net";
+      icon = iconPath "langfuse.svg";
+      description = "Langfuse AI observability for Hub cluster";
+      categories = "Network;Development;";
+      keywords = "langfuse;ai;observability;tracing;hub;";
+      scope = "https://langfuse-hub.tail286401.ts.net/";
+      ulid = "4NAWESCFFZM8CHZJBCMXVWF4TK";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 84;
+    }
+
+    # Alloy Hub
+    {
+      name = "Alloy Hub";
+      host = "hub";
+      url = "https://alloy-hub.tail286401.ts.net";
+      domain = "alloy-hub.tail286401.ts.net";
+      icon = iconPath "alloy.svg";
+      description = "Grafana Alloy debug UI for Hub cluster";
+      categories = "Network;Development;";
+      keywords = "alloy;grafana;collector;telemetry;hub;";
+      scope = "https://alloy-hub.tail286401.ts.net/";
+      ulid = "0YF8REBN1HG7BF9W7N2TJGC4JA";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 85;
+    }
+
+    # ============================================
+    # Observability Stack PWAs (ThinkPad Cluster)
+    # ============================================
+
+    # Grafana ThinkPad
+    {
+      name = "Grafana ThinkPad";
+      host = "thinkpad";
+      url = "https://grafana-thinkpad.tail286401.ts.net";
+      domain = "grafana-thinkpad.tail286401.ts.net";
+      icon = iconPath "grafana.svg";
+      description = "Grafana dashboard for ThinkPad cluster";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;logs;thinkpad;";
+      scope = "https://grafana-thinkpad.tail286401.ts.net/";
+      ulid = "7P1BD85PQGTZA9QHS5RAK2T1N6";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 86;
+    }
+
+    # Langfuse ThinkPad
+    {
+      name = "Langfuse ThinkPad";
+      host = "thinkpad";
+      url = "https://langfuse-thinkpad.tail286401.ts.net";
+      domain = "langfuse-thinkpad.tail286401.ts.net";
+      icon = iconPath "langfuse.svg";
+      description = "Langfuse AI observability for ThinkPad cluster";
+      categories = "Network;Development;";
+      keywords = "langfuse;ai;observability;tracing;thinkpad;";
+      scope = "https://langfuse-thinkpad.tail286401.ts.net/";
+      ulid = "7Z4BFAN380AZVXDJ4KB2SJM0SZ";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 87;
+    }
+
+    # Alloy ThinkPad
+    {
+      name = "Alloy ThinkPad";
+      host = "thinkpad";
+      url = "http://localhost:12345";
+      domain = "localhost";
+      icon = iconPath "alloy.svg";
+      description = "Grafana Alloy debug UI for ThinkPad cluster";
+      categories = "Network;Development;";
+      keywords = "alloy;grafana;collector;telemetry;thinkpad;";
+      scope = "http://localhost:12345/";
+      ulid = "3Q6FKYJZE0584G3Q2HW6SCRS5G";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 88;
+    }
+
+    # ============================================
+    # Observability Stack PWAs (Ryzen Cluster)
+    # ============================================
+
+    # Grafana Ryzen
+    {
+      name = "Grafana Ryzen";
+      host = "ryzen";
+      url = "https://grafana-ryzen.tail286401.ts.net";
+      domain = "grafana-ryzen.tail286401.ts.net";
+      icon = iconPath "grafana.svg";
+      description = "Grafana dashboard for Ryzen cluster";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;logs;ryzen;";
+      scope = "https://grafana-ryzen.tail286401.ts.net/";
+      ulid = "4GYTVH57ZRH7ZTBZQZZ5G6XAJX";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 89;
+    }
+
+    # Langfuse Ryzen
+    {
+      name = "Langfuse Ryzen";
+      host = "ryzen";
+      url = "https://langfuse-ryzen.tail286401.ts.net";
+      domain = "langfuse-ryzen.tail286401.ts.net";
+      icon = iconPath "langfuse.svg";
+      description = "Langfuse AI observability for Ryzen cluster";
+      categories = "Network;Development;";
+      keywords = "langfuse;ai;observability;tracing;ryzen;";
+      scope = "https://langfuse-ryzen.tail286401.ts.net/";
+      ulid = "037RT474WQM1AAKESX4J54W0TD";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 90;
+    }
+
+    # Alloy Ryzen
+    {
+      name = "Alloy Ryzen";
+      host = "ryzen";
+      url = "http://localhost:12345";
+      domain = "localhost";
+      icon = iconPath "alloy.svg";
+      description = "Grafana Alloy debug UI for Ryzen cluster";
+      categories = "Network;Development;";
+      keywords = "alloy;grafana;collector;telemetry;ryzen;";
+      scope = "http://localhost:12345/";
+      ulid = "4ZY96QS21XXYC2MY9PMPECBE7M";  # Generated 2025-12-24
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 91;
+    }
   ];
+
+  # Filter and format sites
+  filteredSites = builtins.filter shouldInclude allPwaSites;
+  pwaSites = builtins.map (pwa: pwa // { name = formatName pwa; }) filteredSites;
+
+in
+{
+  inherit pwaSites;
 
   # ULID validation function
   # ULID format: 26 characters from alphabet [0-9A-HJKMNP-TV-Z] (excludes I, L, O, U)

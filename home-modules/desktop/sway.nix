@@ -206,10 +206,12 @@ let
     '';
 
   # Feature 001: Import validated application definitions with monitor role preferences
-  appRegistryData = import ./app-registry-data.nix { inherit lib; };
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  appRegistryData = import ./app-registry-data.nix { inherit lib hostName; };
 
   # Feature 001 US3: Import PWA site definitions with monitor role preferences
-  pwaSitesData = import ../../shared/pwa-sites.nix { inherit lib; };
+  pwaSitesData = import ../../shared/pwa-sites.nix { inherit lib hostName; };
 
   # Feature 001: Generate workspace-to-monitor assignments from app registry
   # This creates the declarative workspace-assignments.json that the daemon reads

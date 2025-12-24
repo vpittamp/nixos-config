@@ -1,12 +1,14 @@
 # Declarative PWA Installation Module (Feature 056)
 # Fully declarative PWA management with controlled ULIDs
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig, ... }:
 
 with lib;
 
 let
   # Import centralized PWA site definitions
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwas = pwaSitesConfig.pwaSites;
   ensureFileUrl = path:
     if lib.hasPrefix "file://" path then path

@@ -1,5 +1,5 @@
 /**
- * minimal-otel-interceptor.js (v3.9.0)
+ * minimal-otel-interceptor.js (v3.10.0)
  *
  * Multi-span trace hierarchy for Claude Code sessions.
  * Creates proper hierarchical trace structure: Session -> Turns -> LLM/Tool spans
@@ -18,6 +18,10 @@
  * - Correlation with Claude Code's native telemetry via session.id
  *
  * Following OpenTelemetry GenAI semantic conventions (2025 edition).
+ *
+ * v3.10.0 Changes (Feature 137):
+ * - Inject process.pid into OTEL_RESOURCE_ATTRIBUTES at startup
+ * - Ensures native Claude Code telemetry includes PID for window correlation
  *
  * v3.9.0 Changes (Phase 3):
  * - Add PostToolUse hook integration: exit_code, output_summary, output_lines, error_type
@@ -74,6 +78,19 @@
  * - Added working_directory tracking
  * - Better error span semantics
  */
+
+// =============================================================================
+// Feature 137: Inject process.pid into OTEL resource attributes
+// This MUST run before any OTEL SDK initialization so Claude Code's native
+// telemetry includes PID for window correlation in otel-ai-monitor.
+// =============================================================================
+(function injectPidResource() {
+  const originalEnv = process.env.OTEL_RESOURCE_ATTRIBUTES || '';
+  const pidAttr = `process.pid=${process.pid}`;
+  process.env.OTEL_RESOURCE_ATTRIBUTES = originalEnv
+    ? `${originalEnv},${pidAttr}`
+    : pidAttr;
+})();
 
 const http = require('node:http');
 const os = require('node:os');

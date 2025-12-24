@@ -1,12 +1,14 @@
 # PWA Helper Commands (Feature 056, Phase 6)
 # Provides user-facing CLI tools for PWA management
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig, ... }:
 
 with lib;
 
 let
   # Import PWA configuration
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwas = pwaSitesConfig.pwaSites;
 
   # T077: pwa-list command

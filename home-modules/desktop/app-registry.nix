@@ -1,4 +1,4 @@
-{ config, lib, pkgs, assetsPackage, ... }:
+{ config, lib, pkgs, assetsPackage, osConfig, ... }:
 
 # Feature 034: Unified Application Launcher - Application Registry
 # Feature 106: Portable icon paths via assetsPackage
@@ -10,13 +10,16 @@
 # - Window rules at ~/.config/i3/window-rules-generated.json
 
 let
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+
   # Import validated application definitions from shared data file
   # Feature 106: Pass assetsPackage for portable icon paths
-  validated = import ./app-registry-data.nix { inherit lib assetsPackage; };
+  validated = import ./app-registry-data.nix { inherit lib assetsPackage hostName; };
 
   # Import PWA sites configuration
   # Feature 106: Pass assetsPackage for portable icon paths
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage; };
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage hostName; };
 
   # Transform PWA sites to simplified PWA registry format
   # Only include fields needed by sway-test framework and workspace panel

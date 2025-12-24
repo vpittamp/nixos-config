@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig, ... }:
 
 # Feature 035: Auto-generate i3 window rules from app-registry.nix
 #
@@ -14,8 +14,11 @@
 # - Removes need for hardcoded window rules in i3 config
 
 let
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+
   # Load validated application definitions (shared data file)
-  applications = import ./app-registry-data.nix { inherit lib; };
+  applications = import ./app-registry-data.nix { inherit lib hostName; };
 
   # Filter for global apps with preferred_workspace
   globalAppsWithWorkspace = lib.filter

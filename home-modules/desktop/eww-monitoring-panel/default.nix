@@ -48,7 +48,7 @@ let
     startTraceFromTemplateScript focusWindowScript switchProjectScript closeWorktreeScript
     closeAllWindowsScript closeWindowScript toggleProjectContextScript
     toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
-    fetchWindowEnvScript handleKeyScript pulsePhaseScript;
+    fetchWindowEnvScript openLangfuseTraceScript handleKeyScript pulsePhaseScript;
 
   mainYuck = import ./yuck/main.yuck.nix {
     inherit primaryOutput toggleDockModeScript;

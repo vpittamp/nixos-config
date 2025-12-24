@@ -2,7 +2,9 @@
 
 let
   # Import centralized PWA site definitions
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
 
   # Generate Firefox policy exception patterns from PWA sites
   trackingExceptions = pwaSitesConfig.helpers.getDomainPatterns

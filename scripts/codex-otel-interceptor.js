@@ -26,7 +26,7 @@ const zlib = require('node:zlib');
 // Config
 // =============================================================================
 
-const INTERCEPTOR_VERSION = '0.1.1';
+const INTERCEPTOR_VERSION = '0.1.2';  // Feature 137: Fix PID fallback to avoid incorrect window correlation
 
 const LISTEN_HOST = process.env.CODEX_OTEL_INTERCEPTOR_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.CODEX_OTEL_INTERCEPTOR_PORT || '4319', 10);
@@ -532,19 +532,22 @@ function spanStatusError(message = '') {
 }
 
 function makeSpanRecord(session, span) {
-  // Feature 135: Use client PID for window correlation instead of interceptor PID
-  const pid = session.clientPid || process.pid;
+  // Feature 137: Only include process.pid if we have the real client PID
+  // Don't fall back to interceptor's PID as that would cause incorrect window correlation
   const resourceAttrs = [
     { key: 'service.name', value: { stringValue: session.serviceName || 'codex' } },
     { key: 'service.version', value: { stringValue: session.serviceVersion || 'unknown' } },
     { key: 'codex.interceptor.version', value: { stringValue: INTERCEPTOR_VERSION } },
     { key: 'host.name', value: { stringValue: os.hostname() } },
     { key: 'os.type', value: { stringValue: os.platform() } },
-    { key: 'process.pid', value: { intValue: pid.toString() } },
     { key: 'service.instance.id', value: { stringValue: os.hostname() } },
     { key: 'env', value: { stringValue: session.env || 'dev' } },
     { key: 'deployment.environment', value: { stringValue: session.env || 'dev' } },
   ];
+  // Only add PID if we have the real client PID from incoming telemetry
+  if (session.clientPid) {
+    resourceAttrs.push({ key: 'process.pid', value: { intValue: session.clientPid.toString() } });
+  }
 
   if (session.cwd) {
     resourceAttrs.push({ key: 'working_directory', value: { stringValue: session.cwd } });

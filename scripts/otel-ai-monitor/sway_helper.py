@@ -937,11 +937,10 @@ async def find_window_for_session(pid: int) -> Optional[int]:
     It reads I3PM environment from the CLI process and queries the daemon for
     the exact terminal window using the unique launch timestamp.
 
-    Unlike the previous heuristic-based approaches, this method:
-    - Uses deterministic correlation (no guessing)
-    - Works correctly with multiple terminals for the same project
-    - Works with tmux because it uses I3PM_APP_ID, not process tree
-    - Has no fallback strategies - returns None if not found
+    Correlation strategies (in order):
+    1. Daemon lookup by correlation_launch_id (most accurate)
+    2. Tmux client lookup (handles detached sessions)
+    3. Project-based fallback via window marks (handles daemon restart)
 
     Args:
         pid: Process ID of the AI CLI (Claude Code, Codex, Gemini, etc.)
@@ -950,8 +949,7 @@ async def find_window_for_session(pid: int) -> Optional[int]:
         Sway container ID (con_id) of the window, or None if:
         - Process doesn't exist
         - Process has no I3PM_* environment
-        - Daemon is unavailable
-        - No window matches the correlation key
+        - Daemon is unavailable AND tmux lookup fails AND no project context
 
     Performance: Target <100ms end-to-end (SC-002)
     """
@@ -1030,6 +1028,42 @@ async def find_window_for_session(pid: int) -> Optional[int]:
             logger.warning(f"find_window_for_session: Exceeded 100ms target: {elapsed_ms:.2f}ms")
         return window_id
 
+    # Step 4: Project-based fallback when daemon and tmux lookups both fail
+    # This handles:
+    # - Daemon restarted (lost correlation_launch_id state)
+    # - Tmux lookup timeout/failure
+    # - Race condition at terminal startup
+    project_name = i3pm_env.get("I3PM_PROJECT_NAME")
+    if project_name:
+        project_windows = find_all_terminal_windows_for_project(project_name)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+        if len(project_windows) == 1:
+            # Unambiguous - single terminal for this project
+            logger.info(
+                f"find_window_for_session: PID {pid} → window {project_windows[0]} "
+                f"via project fallback (time={elapsed_ms:.2f}ms)"
+            )
+            return project_windows[0]
+
+        elif project_windows:
+            # Multiple terminals for project - try focused window disambiguation
+            focused_id, _ = get_focused_window_info()
+            if focused_id and focused_id in project_windows:
+                logger.info(
+                    f"find_window_for_session: PID {pid} → window {focused_id} "
+                    f"via focused+project fallback (time={elapsed_ms:.2f}ms)"
+                )
+                return focused_id
+
+            # Last resort: return first terminal (better than None/global)
+            logger.warning(
+                f"find_window_for_session: PID {pid} → window {project_windows[0]} "
+                f"via ambiguous project fallback ({len(project_windows)} candidates, time={elapsed_ms:.2f}ms)"
+            )
+            return project_windows[0]
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
     logger.debug(
         f"find_window_for_session: No window found for PID {pid}, "
         f"correlation_key={correlation_key}, time={elapsed_ms:.2f}ms"

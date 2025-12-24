@@ -1,13 +1,15 @@
 # Feature 113: PWA URL Router
 # Routes HTTP/HTTPS URLs to appropriate PWAs based on domain matching
 # Falls back to Firefox for non-matching URLs
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig, ... }:
 
 with lib;
 
 let
   # Import centralized PWA site definitions
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwas = pwaSitesConfig.pwaSites;
 
   # Generate PWA app name from display name (e.g., "GitHub" → "github-pwa")

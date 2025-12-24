@@ -1,4 +1,4 @@
-{ lib, assetsPackage ? null, ... }:
+{ lib, assetsPackage ? null, hostName ? "", ... }:
 
 # Feature 034/035: Application Registry Data
 # Feature 106: Portable icon paths via assetsPackage
@@ -38,7 +38,8 @@ let
 
   # Import centralized PWA site definitions (Feature 056)
   # Pass assetsPackage for portable icon paths
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage; };
+  # Feature 125: Pass hostName for host-specific parameterization
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage hostName; };
   pwas = pwaSitesConfig.pwaSites;
   # Validation helper: check for dangerous characters
   validateParameters = params:

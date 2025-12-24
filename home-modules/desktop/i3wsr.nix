@@ -1,12 +1,14 @@
-# i3wsr - Dynamic Workspace Renaming for i3wm
-# Automatically renames i3 workspaces to reflect running applications
-{ config, lib, pkgs, ... }:
+# Feature 009: Dynamic Workspace Naming for i3wm (i3wsr)
+# Maps window classes to icons and provides event-driven workspace updates
+{ config, lib, pkgs, osConfig, ... }:
 
 with lib;
 
 let
-  # Import PWA site definitions from shared location
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Import PWA site definitions to get icons for PWA windows
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwaSites = pwaSitesConfig.pwaSites;
 
   # Define emoji/icon mappings for PWAs (fallback if no custom icon)
