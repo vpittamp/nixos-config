@@ -3,7 +3,7 @@
 let
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
     #!${pkgs.bash}/bin/bash
-    # Version: 2025-12-15-v15 (Feature 117: AI Sessions bar with 3 states - working/attention/idle)
+    # Version: 2025-12-24-v16 (Feature 135: Fix inotify watching OTEL sessions file atomic writes)
 
     # Add user profile bin to PATH so i3pm can be found by subprocess calls
     export PATH="${config.home.profileDirectory}/bin:$PATH"

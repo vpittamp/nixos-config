@@ -178,21 +178,25 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     # Build list of paths to watch
     watch_paths = [str(BADGE_STATE_DIR)]
     # Feature 123: Also watch OTEL sessions file for AI state changes
+    # IMPORTANT: Watch the PARENT DIRECTORY, not the file itself!
+    # output.py uses atomic writes (temp file + rename), which generates
+    # inotify events on the directory, not the file being replaced.
     if OTEL_SESSIONS_FILE.parent.exists():
-        watch_paths.append(str(OTEL_SESSIONS_FILE))
+        watch_paths.append(str(OTEL_SESSIONS_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
         # -e create,modify,delete watches for file changes
         # -q quiet mode (no startup message)
-        # --format outputs just the event type and filename
+        # --format outputs watched path, event type, and filename
+        # Feature 135: %w included to distinguish badge dir events from XDG_RUNTIME_DIR events
         process = await asyncio.create_subprocess_exec(
             INOTIFYWAIT_CMD,
             "-m",           # Monitor mode (continuous)
             "-q",           # Quiet (no initial watching message)
             "-e", "create,modify,delete,moved_to",
-            "--format", "%e %f",  # Event type and filename
-            *watch_paths,   # Watch badge dir and OTEL sessions file
+            "--format", "%w|%e|%f",  # Watched path, event type, filename (pipe-delimited)
+            *watch_paths,   # Watch badge dir and OTEL sessions parent dir
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -210,6 +214,7 @@ async def read_inotify_events(
     """Read inotify events from subprocess and signal badge changes.
 
     Feature 107: Runs as background task, sets event when badge files change.
+    Feature 135: Filter events from XDG_RUNTIME_DIR to only OTEL sessions file.
 
     Args:
         process: inotifywait subprocess
@@ -217,6 +222,11 @@ async def read_inotify_events(
     """
     if process.stdout is None:
         return
+
+    # Get paths for filtering
+    otel_filename = OTEL_SESSIONS_FILE.name  # "otel-ai-sessions.json"
+    otel_tmp_filename = otel_filename.replace(".json", ".tmp")  # "otel-ai-sessions.tmp"
+    badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
         while True:
@@ -226,12 +236,28 @@ async def read_inotify_events(
                 logger.warning("Feature 107: inotifywait process terminated")
                 break
 
-            # Parse event line: "EVENT_TYPE filename"
+            # Parse event line: "watched_path|EVENT_TYPE|filename"
             event_line = line.decode().strip()
-            if event_line:
-                logger.debug(f"Feature 107: inotify event: {event_line}")
-                # Signal that badge files changed
+            if not event_line:
+                continue
+
+            # Split into watched path, event type, and filename
+            parts = event_line.split("|")
+            if len(parts) < 3:
+                continue
+
+            watched_path, event_type, filename = parts[0], parts[1], parts[2]
+
+            # Feature 135: Filter based on watched path
+            # Events from badge dir are always relevant
+            # Events from XDG_RUNTIME_DIR (OTEL sessions parent) must match specific files
+            is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
+            is_otel_file = filename in (otel_filename, otel_tmp_filename)
+
+            if is_badge_dir or is_otel_file:
+                logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
+            # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
 
     except asyncio.CancelledError:
         logger.debug("Feature 107: inotify reader cancelled")

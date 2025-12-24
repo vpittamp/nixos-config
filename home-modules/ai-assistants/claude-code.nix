@@ -162,131 +162,131 @@ lib.mkIf enableClaudeCode {
       # SessionStart: Persist Claude Code session_id (UUID) for the Node interceptor
       # SessionEnd: Clean up the persisted session metadata file
       # PostToolUse (Bash): Log bash commands to history
-      hooks = {
-        # UserPromptSubmit: Persist latest prompt + session_id (for turn boundaries)
-        UserPromptSubmit = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-user-prompt-submit.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # SessionStart: Persist Claude Code session_id (UUID) for trace correlation
-        SessionStart = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-session-start.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # PostToolUse: Multiple hooks for different purposes
-        PostToolUse = [
-          {
-            # Match all Bash tool executions for bash history logging
-            matcher = "Bash";
-            hooks = [{
-              type = "command";
-              # This script receives JSON via stdin with structure:
-              # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
-              command = "${repoRoot}/scripts/claude-hooks/bash-history.sh";
-              timeout = 5;
-            }];
-          }
-          {
-            # Feature 131 Phase 3: Capture tool execution metadata for all tools
-            matcher = "*";
-            hooks = [{
-              type = "command";
-              command = "${repoRoot}/scripts/claude-hooks/otel-posttool.sh";
-              timeout = 5;
-            }];
-          }
-        ];
-
-        # SessionEnd: Clean up the persisted session metadata file
-        SessionEnd = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # Stop: Mark end of a user turn (for turn boundaries)
-        Stop = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-stop.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # PermissionRequest: Capture permission wait start time for tracing
-        PermissionRequest = [{
-          # Match all tools (use "*" as universal matcher)
-          matcher = "*";
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-permission-request.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # Feature 131 Phase 3: SubagentStop - Capture when Task subagents complete
-        SubagentStop = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-subagent-stop.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # Feature 131 Phase 3: Notification - Capture notification events
-        Notification = [
-          {
-            # Capture permission dialog notifications
-            matcher = "permission_prompt";
-            hooks = [{
-              type = "command";
-              command = "${repoRoot}/scripts/claude-hooks/otel-notification.sh";
-              timeout = 5;
-            }];
-          }
-          {
-            # Capture auth success notifications
-            matcher = "auth_success";
-            hooks = [{
-              type = "command";
-              command = "${repoRoot}/scripts/claude-hooks/otel-notification.sh";
-              timeout = 5;
-            }];
-          }
-        ];
-
-        # Feature 131 Phase 3: PreCompact - Capture context compaction events
-        PreCompact = [
-          {
-            # Capture manual /compact commands
-            matcher = "manual";
-            hooks = [{
-              type = "command";
-              command = "${repoRoot}/scripts/claude-hooks/otel-precompact.sh";
-              timeout = 5;
-            }];
-          }
-          {
-            # Capture automatic context window compaction
-            matcher = "auto";
-            hooks = [{
-              type = "command";
-              command = "${repoRoot}/scripts/claude-hooks/otel-precompact.sh";
-              timeout = 5;
-            }];
-          }
-        ];
-      };
+      # hooks = {
+      #   # UserPromptSubmit: Persist latest prompt + session_id (for turn boundaries)
+      #   UserPromptSubmit = [{
+      #     hooks = [{
+      #       type = "command";
+      #       command = "${repoRoot}/scripts/claude-hooks/otel-user-prompt-submit.sh";
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # SessionStart: Persist Claude Code session_id (UUID) for trace correlation
+      #   SessionStart = [{
+      #     hooks = [{
+      #       type = "command";
+      #       command = "${repoRoot}/scripts/claude-hooks/otel-session-start.sh";
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # PostToolUse: Multiple hooks for different purposes
+      #   PostToolUse = [
+      #     {
+      #       # Match all Bash tool executions for bash history logging
+      #       matcher = "Bash";
+      #       hooks = [{
+      #         type = "command";
+      #         # This script receives JSON via stdin with structure:
+      #         # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
+      #         command = "${repoRoot}/scripts/claude-hooks/bash-history.sh";
+      #         timeout = 5;
+      #       }];
+      #     }
+      #     {
+      #       # Feature 131 Phase 3: Capture tool execution metadata for all tools
+      #       matcher = "*";
+      #       hooks = [{
+      #         type = "command";
+      #         command = "${repoRoot}/scripts/claude-hooks/otel-posttool.sh";
+      #         timeout = 5;
+      #       }];
+      #     }
+      #   ];
+      #
+      #   # SessionEnd: Clean up the persisted session metadata file
+      #   SessionEnd = [{
+      #     hooks = [{
+      #       type = "command";
+      #       command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # Stop: Mark end of a user turn (for turn boundaries)
+      #   Stop = [{
+      #     hooks = [{
+      #       type = "command";
+      #       command = "${repoRoot}/scripts/claude-hooks/otel-stop.sh";
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # PermissionRequest: Capture permission wait start time for tracing
+      #   PermissionRequest = [{
+      #     # Match all tools (use "*" as universal matcher)
+      #     matcher = "*";
+      #     hooks = [{
+      #       type = "command";
+      #       command = "${repoRoot}/scripts/claude-hooks/otel-permission-request.sh";
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # Feature 131 Phase 3: SubagentStop - Capture when Task subagents complete
+      #   SubagentStop = [{
+      #     hooks = [{
+      #       type = "command";
+      #       command = "${repoRoot}/scripts/claude-hooks/otel-subagent-stop.sh";
+      #       timeout = 5;
+      #     }];
+      #   }];
+      #
+      #   # Feature 131 Phase 3: Notification - Capture notification events
+      #   Notification = [
+      #     {
+      #       # Capture permission dialog notifications
+      #       matcher = "permission_prompt";
+      #       hooks = [{
+      #         type = "command";
+      #         command = "${repoRoot}/scripts/claude-hooks/otel-notification.sh";
+      #         timeout = 5;
+      #     }];
+      #     }
+      #     {
+      #       # Capture auth success notifications
+      #       matcher = "auth_success";
+      #       hooks = [{
+      #         type = "command";
+      #         command = "${repoRoot}/scripts/claude-hooks/otel-notification.sh";
+      #         timeout = 5;
+      #       }];
+      #     }
+      #   ];
+      #
+      #   # Feature 131 Phase 3: PreCompact - Capture context compaction events
+      #   PreCompact = [
+      #     {
+      #       # Capture manual /compact commands
+      #       matcher = "manual";
+      #       hooks = [{
+      #         type = "command";
+      #         command = "${repoRoot}/scripts/claude-hooks/otel-precompact.sh";
+      #         timeout = 5;
+      #       }];
+      #     }
+      #     {
+      #       # Capture automatic context window compaction
+      #       matcher = "auto";
+      #       hooks = [{
+      #         type = "command";
+      #         command = "${repoRoot}/scripts/claude-hooks/otel-precompact.sh";
+      #         timeout = 5;
+      #       }];
+      #     }
+      #   ];
+      # };
 
       # Permissions configuration for sandboxed environment
       # WARNING: This grants broad permissions. Only use in trusted/sandboxed environments.
