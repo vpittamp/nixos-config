@@ -242,6 +242,19 @@ function attrGetString(attributes, key) {
   return null;
 }
 
+function attrGetInt(attributes, key) {
+  const a = attrFind(attributes, key);
+  if (!a || !a.value) return null;
+  if (Object.prototype.hasOwnProperty.call(a.value, 'intValue')) {
+    const v = a.value.intValue;
+    return typeof v === 'number' ? v : Number.parseInt(v, 10);
+  }
+  if (Object.prototype.hasOwnProperty.call(a.value, 'stringValue')) {
+    return Number.parseInt(a.value.stringValue, 10) || null;
+  }
+  return null;
+}
+
 function attrUpsert(attributes, key, value) {
   if (!Array.isArray(attributes)) return;
   const existing = attrFind(attributes, key);
@@ -396,6 +409,8 @@ function newSession(conversationId, meta) {
     sandboxPolicy: meta.sandboxPolicy || null,
     mcpServers: meta.mcpServers || null,
     cwd: meta.cwd || null,
+    // Feature 135: Store client PID for window correlation
+    clientPid: meta.clientPid || null,
 
     turnCount: 0,
     apiCallCount: 0,
@@ -517,13 +532,15 @@ function spanStatusError(message = '') {
 }
 
 function makeSpanRecord(session, span) {
+  // Feature 135: Use client PID for window correlation instead of interceptor PID
+  const pid = session.clientPid || process.pid;
   const resourceAttrs = [
     { key: 'service.name', value: { stringValue: session.serviceName || 'codex' } },
     { key: 'service.version', value: { stringValue: session.serviceVersion || 'unknown' } },
     { key: 'codex.interceptor.version', value: { stringValue: INTERCEPTOR_VERSION } },
     { key: 'host.name', value: { stringValue: os.hostname() } },
     { key: 'os.type', value: { stringValue: os.platform() } },
-    { key: 'process.pid', value: { intValue: process.pid.toString() } },
+    { key: 'process.pid', value: { intValue: pid.toString() } },
     { key: 'service.instance.id', value: { stringValue: os.hostname() } },
     { key: 'env', value: { stringValue: session.env || 'dev' } },
     { key: 'deployment.environment', value: { stringValue: session.env || 'dev' } },
@@ -1061,6 +1078,8 @@ async function handleLogsRequest(req, res) {
     const serviceName = attrGetString(resourceAttrs, 'service.name') || 'codex';
     const serviceVersion = attrGetString(resourceAttrs, 'service.version') || 'unknown';
     const env = attrGetString(resourceAttrs, 'env') || 'dev';
+    // Feature 135: Extract client PID for window correlation
+    const clientPid = attrGetInt(resourceAttrs, 'process.pid');
 
     const scopeLogs = Array.isArray(rl?.scopeLogs) ? rl.scopeLogs : [];
     for (const sl of scopeLogs) {
@@ -1093,6 +1112,8 @@ async function handleLogsRequest(req, res) {
           model: attrsObj.model || attrsObj.slug || null,
           timestampMs: parseIsoToMs(attrsObj['event.timestamp']),
           cwd: null,
+          // Feature 135: Pass client PID for window correlation
+          clientPid,
         };
 
         events.push({ meta, attrsObj });

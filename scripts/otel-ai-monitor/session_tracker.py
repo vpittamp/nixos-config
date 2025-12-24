@@ -30,7 +30,18 @@ from .models import (
     TOOL_PROVIDER,
 )
 from .pricing import calculate_cost
-from .sway_helper import get_all_window_ids, get_focused_window_info
+from .sway_helper import (
+    get_all_window_ids,
+    get_focused_window_info,
+    get_process_i3pm_env,
+    find_window_by_i3pm_env,
+    find_window_by_pid,
+    find_window_by_i3pm_app_id,
+    find_all_terminal_windows_for_project,
+    # Feature 135: Deterministic correlation
+    find_window_for_session,
+    parse_correlation_key,
+)
 
 if TYPE_CHECKING:
     from .output import OutputWriter
@@ -57,8 +68,12 @@ def extract_feature_number(project: Optional[str]) -> Optional[str]:
 
 
 def state_priority(state: SessionState) -> int:
-    """Return priority for state comparison (higher = more important)."""
+    """Return priority for state comparison (higher = more important).
+
+    Feature 135: Added ATTENTION state with highest priority.
+    """
     return {
+        SessionState.ATTENTION: 4,  # Feature 135: Highest priority - needs user action
         SessionState.WORKING: 3,
         SessionState.COMPLETED: 2,
         SessionState.IDLE: 1,
@@ -77,7 +92,7 @@ class SessionTracker:
     def __init__(
         self,
         output: "OutputWriter",
-        quiet_period_sec: float = 3.0,
+        quiet_period_sec: float = 10.0,  # Feature 135: Increased from 3.0 to reduce flickering
         session_timeout_sec: float = 300.0,
         completed_timeout_sec: float = 30.0,
         enable_notifications: bool = True,
@@ -103,6 +118,12 @@ class SessionTracker:
         # Session storage: session_id -> Session
         self._sessions: dict[str, Session] = {}
         self._lock = asyncio.Lock()
+
+        # Feature 135: PID cache for cross-signal correlation
+        # Traces from interceptor include process.pid but native logs don't.
+        # When we see a trace with PID, cache it by session_id so we can
+        # correlate logs from the same session to the correct window.
+        self._session_pids: dict[str, int] = {}
 
         # Quiet period timers: session_id -> Task
         self._quiet_timers: dict[str, asyncio.Task] = {}
@@ -165,14 +186,57 @@ class SessionTracker:
 
             if session is None:
                 # Create new session
-                # Capture focused window ID and project from window marks
-                window_id, window_project = get_focused_window_info()
+                # Feature 135: Deterministic PID-based correlation via daemon IPC
+                # No fallback strategies - either we find the exact window or None
+                window_id, window_project = None, None
+                client_pid = event.attributes.get("process.pid") or event.attributes.get("pid")
 
-                # Check for existing session with same window_id (deduplicate)
+                # Feature 135: If no PID in event, try cached PID from earlier trace
+                # Traces from interceptor have PID, but native logs don't.
+                # Cross-signal correlation: use cached PID for same session_id.
+                if not client_pid and session_id in self._session_pids:
+                    client_pid = self._session_pids[session_id]
+                    logger.debug(f"Using cached PID {client_pid} for session {session_id}")
+
+                # Cache PID for future correlation with logs
+                if client_pid:
+                    try:
+                        pid_int = int(client_pid)
+                        if session_id not in self._session_pids:
+                            self._session_pids[session_id] = pid_int
+                            logger.debug(f"Cached PID {pid_int} for session {session_id}")
+                    except (ValueError, TypeError):
+                        pass
+
+                # Feature 135: Use deterministic daemon IPC correlation
+                # This is the ONLY correlation strategy - no fallbacks.
+                # Works with tmux, multiple terminals, and is 100% accurate.
+                if client_pid:
+                    try:
+                        pid = int(client_pid)
+                        # Read I3PM environment for project context
+                        i3pm_env = get_process_i3pm_env(pid)
+                        window_project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
+
+                        # Deterministic correlation via daemon IPC
+                        window_id = await find_window_for_session(pid)
+                        if window_id:
+                            logger.debug(f"Deterministic correlation: PID {pid} → window {window_id}")
+                        else:
+                            logger.debug(f"No window found for PID {pid} (daemon returned not_found)")
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"PID correlation failed: {e}")
+
+                # Feature 135: NO FALLBACK - if daemon doesn't find the window, window_id stays None
+                # This is intentional: we prefer "unknown" over "wrong window"
+
+                # Check for existing session with same window_id AND tool (deduplicate)
+                # Important: Different AI tools (Claude, Codex, Gemini) in the same terminal
+                # should have separate sessions, so we check both window_id AND tool type.
                 existing_for_window = None
-                if window_id:
+                if window_id and event.tool:
                     for existing_id, existing_session in self._sessions.items():
-                        if existing_session.window_id == window_id:
+                        if existing_session.window_id == window_id and existing_session.tool == event.tool:
                             existing_for_window = existing_session
                             break
 
@@ -204,6 +268,62 @@ class SessionTracker:
             # Update last event time
             session.last_event_at = now
 
+            # Feature 135: PID-based window correlation on every event
+            # Always try PID correlation to handle worktree switching where
+            # the window changes but session continues.
+            client_pid = event.attributes.get("process.pid") or event.attributes.get("pid")
+
+            # Use cached PID if not in event attributes
+            if not client_pid and session_id in self._session_pids:
+                client_pid = self._session_pids[session_id]
+
+            # Cache PID for future correlation
+            if client_pid:
+                try:
+                    pid_int = int(client_pid)
+                    if session_id not in self._session_pids:
+                        self._session_pids[session_id] = pid_int
+                except (ValueError, TypeError):
+                    pass
+
+            # Feature 135: Deterministic PID-based window re-correlation
+            # Use daemon IPC to re-check window correlation on every event.
+            # This handles worktree switching where the window may change.
+            # Multiple tmux panes in one Ghostty share the same I3PM_* env,
+            # so they'll all correlate to the same Sway window. This is correct
+            # for the UI model (one badge per window, not per pane).
+            if client_pid:
+                try:
+                    pid = int(client_pid)
+                    i3pm_env = get_process_i3pm_env(pid)
+                    new_project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
+
+                    # Feature 135: Deterministic correlation via daemon IPC
+                    new_window_id = await find_window_for_session(pid)
+
+                    if new_window_id and new_window_id != session.window_id:
+                        old_window = session.window_id
+                        session.window_id = new_window_id
+                        if new_project:
+                            session.project = new_project
+                        logger.info(
+                            f"Session {session.session_id}: window {old_window} → "
+                            f"{new_window_id} via PID {pid} (project={new_project})"
+                        )
+                    elif new_window_id and session.window_id is None:
+                        session.window_id = new_window_id
+                        if new_project:
+                            session.project = new_project
+                        logger.info(
+                            f"Session {session.session_id}: correlated to "
+                            f"window {new_window_id} via PID {pid}"
+                        )
+                except (ValueError, TypeError):
+                    pass
+
+            # Feature 135: NO FALLBACK - if daemon doesn't find the window, leave it as-is
+            # This is intentional: we prefer "unknown" over "wrong window"
+
             # Update project if available
             project = self._extract_project(event)
             if project:
@@ -211,6 +331,12 @@ class SessionTracker:
 
             # Update token metrics if available
             self._update_metrics(session, event)
+
+            # Feature 135: Handle tool lifecycle events for pending tool tracking
+            await self._handle_tool_lifecycle(session, event)
+
+            # Feature 135: Handle streaming events for TTFT metrics
+            await self._handle_streaming_events(session, event)
 
             # Handle state transitions based on event
             old_state = session.state
@@ -275,6 +401,9 @@ class SessionTracker:
     ) -> SessionState:
         """Compute new state based on current state and event.
 
+        Feature 135: Added ATTENTION state detection for permissions and errors.
+        Feature 135: Pending tool tracking - stay WORKING while tools are active.
+
         Args:
             session: Current session
             event: Incoming event
@@ -284,6 +413,55 @@ class SessionTracker:
         """
         current = session.state
         event_name = event.event_name
+        attrs = event.attributes
+
+        # Feature 135: Pending tool tracking
+        # If there are active tools, stay WORKING regardless of other signals.
+        # This prevents premature COMPLETED transitions during long tool executions.
+        if session.pending_tools > 0:
+            return SessionState.WORKING
+
+        # Feature 135: Detect ATTENTION state from permission prompts or errors
+        # Check for permission-related events
+        if "permission" in event_name.lower():
+            logger.debug(f"ATTENTION: Permission event detected: {event_name}")
+            return SessionState.ATTENTION
+
+        # Check for error types that need user attention
+        error_type = attrs.get("error.type") or attrs.get("error_type") or ""
+        if isinstance(error_type, str) and error_type.lower() in (
+            "rate_limit",
+            "rate_limit_error",
+            "auth",
+            "authentication_error",
+            "authorization_error",
+            "overloaded",
+            "overloaded_error",
+        ):
+            logger.debug(f"ATTENTION: Error type needs attention: {error_type}")
+            return SessionState.ATTENTION
+
+        # Check for needs_attention flag in attributes
+        needs_attention = attrs.get("needs_attention", False)
+        if needs_attention and str(needs_attention).lower() in ("true", "1", "yes"):
+            return SessionState.ATTENTION
+
+        # Feature 135: Use gen_ai.response.finish_reasons for immediate state detection
+        # This eliminates the 15-second timeout delay for turn completion
+        finish_reasons = attrs.get("gen_ai.response.finish_reasons") or ""
+        if isinstance(finish_reasons, str) and finish_reasons:
+            finish_lower = finish_reasons.lower()
+            # end_turn = Claude finished naturally, go to COMPLETED
+            if finish_lower in ("end_turn", "stop"):
+                logger.debug(f"Turn complete: finish_reasons={finish_reasons} → COMPLETED")
+                return SessionState.COMPLETED
+            # tool_use = Claude wants to call tools, stay WORKING
+            elif finish_lower == "tool_use":
+                return SessionState.WORKING
+            # max_tokens = Hit limit, may need attention
+            elif finish_lower == "max_tokens":
+                logger.debug(f"ATTENTION: finish_reasons=max_tokens")
+                return SessionState.ATTENTION
 
         # Events that trigger WORKING state
         if event_name in EventNames.WORKING_TRIGGERS:
@@ -295,6 +473,10 @@ class SessionTracker:
 
         # COMPLETED → WORKING on new prompt
         if current == SessionState.COMPLETED and event_name in EventNames.WORKING_TRIGGERS:
+            return SessionState.WORKING
+
+        # ATTENTION → WORKING on new activity (user resolved the issue)
+        if current == SessionState.ATTENTION and event_name in EventNames.WORKING_TRIGGERS:
             return SessionState.WORKING
 
         # Default: keep current state
@@ -516,6 +698,71 @@ class SessionTracker:
                 # Best-effort only
                 pass
 
+    async def _handle_tool_lifecycle(self, session: Session, event: TelemetryEvent) -> None:
+        """Handle tool lifecycle events for pending tool tracking.
+
+        Feature 135: Tracks active tool executions to prevent premature COMPLETED
+        transitions. When pending_tools > 0, the quiet timer is suppressed.
+
+        Args:
+            session: Session to update
+            event: Telemetry event
+        """
+        event_name = event.event_name
+
+        if event_name == EventNames.CLAUDE_TOOL_START:
+            session.pending_tools += 1
+            logger.debug(
+                f"Session {session.session_id}: tool_start, pending_tools={session.pending_tools}"
+            )
+            # Don't reset quiet timer - it will be suppressed by _compute_new_state
+
+        elif event_name == EventNames.CLAUDE_TOOL_COMPLETE:
+            session.pending_tools = max(0, session.pending_tools - 1)
+            logger.debug(
+                f"Session {session.session_id}: tool_complete, pending_tools={session.pending_tools}"
+            )
+            # If all tools completed, the quiet timer will start in process_event
+
+    async def _handle_streaming_events(self, session: Session, event: TelemetryEvent) -> None:
+        """Handle streaming events for TTFT metrics.
+
+        Feature 135: Tracks Time to First Token (TTFT) for streaming responses.
+        Also tracks streaming state for visual indicators.
+
+        Args:
+            session: Session to update
+            event: Telemetry event
+        """
+        event_name = event.event_name
+        attrs = event.attributes
+
+        if event_name == EventNames.CLAUDE_STREAM_START:
+            session.is_streaming = True
+            # Extract TTFT from attributes if provided by interceptor
+            ttft_ms = attrs.get("ttft_ms") or attrs.get("time_to_first_token_ms")
+            if ttft_ms:
+                logger.debug(
+                    f"Session {session.session_id}: stream_start, TTFT={ttft_ms}ms"
+                )
+            # Set first_token_time from event timestamp
+            session.first_token_time = event.timestamp
+
+        elif event_name == EventNames.CLAUDE_STREAM_TOKEN:
+            # Update streaming token count if available
+            tokens = attrs.get("tokens") or attrs.get("token_count") or 1
+            try:
+                session.streaming_tokens += int(tokens)
+            except (ValueError, TypeError):
+                session.streaming_tokens += 1
+
+        # Reset streaming state on LLM call completion
+        elif event_name == EventNames.CLAUDE_LLM_CALL:
+            if session.is_streaming:
+                session.is_streaming = False
+                session.streaming_tokens = 0
+                session.first_token_time = None
+
     def _extract_model(self, attrs: dict) -> Optional[str]:
         """Extract model name from event attributes.
 
@@ -624,6 +871,8 @@ class SessionTracker:
     async def _on_quiet_period_expired(self, session_id: str) -> None:
         """Handle quiet period expiration - transition to COMPLETED.
 
+        Feature 135: Suppresses transition if pending_tools > 0 (tools still active).
+
         Args:
             session_id: Session that has been quiet
         """
@@ -633,6 +882,14 @@ class SessionTracker:
                 return
 
             if session.state != SessionState.WORKING:
+                return
+
+            # Feature 135: Don't transition if tools are still active
+            if session.pending_tools > 0:
+                logger.debug(
+                    f"Session {session_id}: quiet period expired but {session.pending_tools} "
+                    f"tools pending, staying WORKING"
+                )
                 return
 
             # Transition to COMPLETED
@@ -725,7 +982,7 @@ class SessionTracker:
             session: Session with metrics
 
         Returns:
-            Dictionary of token, cost, and error metrics
+            Dictionary of token, cost, error, and streaming metrics
         """
         metrics = {
             "input_tokens": session.input_tokens,
@@ -738,6 +995,11 @@ class SessionTracker:
             metrics["error_count"] = session.error_count
             if session.last_error_type:
                 metrics["last_error_type"] = session.last_error_type
+
+        # Feature 135: Include pending_tools and streaming state for visual indicators
+        metrics["pending_tools"] = session.pending_tools
+        metrics["is_streaming"] = session.is_streaming
+
         return metrics
 
     async def _broadcast_loop(self) -> None:
@@ -798,6 +1060,9 @@ class SessionTracker:
                 state=s.state,
                 project=s.project,
                 window_id=s.window_id,
+                # Feature 135: Include pending_tools and streaming state for visual indicators
+                pending_tools=s.pending_tools,
+                is_streaming=s.is_streaming,
             )
             for s in deduplicated_sessions
         ]
@@ -849,6 +1114,8 @@ class SessionTracker:
                     self._quiet_timers.pop(session_id).cancel()
                 if session_id in self._completed_timers:
                     self._completed_timers.pop(session_id).cancel()
+                # Feature 135: Clean up PID cache
+                self._session_pids.pop(session_id, None)
 
                 # Emit expiry update
                 update = SessionUpdate(
@@ -894,6 +1161,8 @@ class SessionTracker:
                     self._quiet_timers.pop(session_id).cancel()
                 if session_id in self._completed_timers:
                     self._completed_timers.pop(session_id).cancel()
+                # Feature 135: Clean up PID cache
+                self._session_pids.pop(session_id, None)
 
             # Broadcast updated list if any were removed
             if orphaned:
