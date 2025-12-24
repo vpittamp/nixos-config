@@ -286,10 +286,58 @@ $mauve: ${mocha.mauve};
 // -----------------------------------------------------------------------------
 
 .battery-indicator {
+  &.low:not(.charging),
+  &.critical:not(.charging) {
+    background: rgba($red, 0.12);
+
+    .battery-percent {
+      color: $red;
+    }
+  }
+
+  &.low:not(.charging) {
+    animation: battery-pulse 1.4s ease-in-out infinite;
+  }
+
+  &.critical:not(.charging) {
+    animation: battery-pulse 0.9s ease-in-out infinite;
+  }
+
+  &.charging {
+    animation: none;
+  }
+
   .battery-percent {
     font-size: 11px;
     color: $subtext0;
     margin-left: 4px;
+  }
+
+  .battery-overview {
+    min-width: 80px;
+  }
+
+  .battery-summary {
+    align-items: center;
+  }
+
+  .battery-warning-chip {
+    background: rgba($red, 0.2);
+    border: 1px solid rgba($red, 0.5);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: $red;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .warning-icon {
+    font-size: 12px;
+  }
+
+  .warning-text {
+    font-weight: 600;
   }
 }
 
@@ -316,6 +364,18 @@ $mauve: ${mocha.mauve};
 
 .panel-value {
   font-weight: 500;
+}
+
+@keyframes battery-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba($red, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 12px 6px rgba($red, 0.0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba($red, 0.0);
+  }
 }
 
 .slider-row {

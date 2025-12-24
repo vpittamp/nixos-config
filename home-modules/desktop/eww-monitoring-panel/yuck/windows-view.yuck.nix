@@ -84,7 +84,7 @@
                     :class {"ai-session-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " completed" : (session.needs_attention ? " attention" : " idle")))}
                     :orientation "h"
                     :space-evenly false
-                    :spacing 4
+                    :spacing 2
                     (image
                       :class {"ai-badge-icon" +
                         (session.state == "working"
@@ -100,7 +100,17 @@
                             ? "/etc/nixos/assets/icons/gemini.svg"
                             : "/etc/nixos/assets/icons/anthropic.svg"))}
                       :image-width 18
-                      :image-height 18)))))
+                      :image-height 18)
+                    ;; Small status icon next to LLM icon
+                    (label
+                      :class {"ai-session-status-icon" +
+                        (session.state == "working" ? " working"
+                          : (session.state == "completed" ? " completed"
+                            : (session.needs_attention ? " attention" : "")))}
+                      :visible {session.state != "idle"}
+                      :text {session.state == "working" ? "●"
+                        : (session.state == "completed" ? "✓"
+                          : (session.needs_attention ? "!" : ""))})))))
             ;; Projects list
             (for project in {monitoring_data.projects ?: []}
               (project-widget :project project))))))) 
@@ -240,25 +250,39 @@
                 :class "badge badge-pwa"
                 :text "PWA"
                 :visible {window.is_pwa ?: false})
-              (image
-                :class {"ai-badge-icon" +
-                  ((window.badge.otel_state ?: "none") == "working"
-                    ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
-                    : ((window.badge.otel_state ?: "none") == "completed"
-                      ? " completed"
-                      : ((window.badge.otel_state ?: "none") == "attention"
-                        ? " attention"
-                        : " idle")))}
-                :path {window.badge.otel_tool == "claude-code"
-                  ? "/etc/nixos/assets/icons/claude.svg"
-                  : (window.badge.otel_tool == "codex"
-                    ? "/etc/nixos/assets/icons/codex.svg"
-                    : (window.badge.otel_tool == "gemini"
-                      ? "/etc/nixos/assets/icons/gemini.svg"
-                      : "/etc/nixos/assets/icons/anthropic.svg"))}
-                :image-width 16
-                :image-height 16
-                :visible {(window.badge.otel_tool ?: "none") != "none"})
+              (box
+                :orientation "h"
+                :space-evenly false
+                :spacing 1
+                :visible {(window.badge.otel_tool ?: "none") != "none"}
+                (image
+                  :class {"ai-badge-icon" +
+                    ((window.badge.otel_state ?: "none") == "working"
+                      ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                      : ((window.badge.otel_state ?: "none") == "completed"
+                        ? " completed"
+                        : ((window.badge.otel_state ?: "none") == "attention"
+                          ? " attention"
+                          : " idle")))}
+                  :path {window.badge.otel_tool == "claude-code"
+                    ? "/etc/nixos/assets/icons/claude.svg"
+                    : (window.badge.otel_tool == "codex"
+                      ? "/etc/nixos/assets/icons/codex.svg"
+                      : (window.badge.otel_tool == "gemini"
+                        ? "/etc/nixos/assets/icons/gemini.svg"
+                        : "/etc/nixos/assets/icons/anthropic.svg"))}
+                  :image-width 16
+                  :image-height 16)
+                ;; Small status icon
+                (label
+                  :class {"ai-session-status-icon" +
+                    ((window.badge.otel_state ?: "none") == "working" ? " working"
+                      : ((window.badge.otel_state ?: "none") == "completed" ? " completed"
+                        : ((window.badge.otel_state ?: "none") == "attention" ? " attention" : "")))}
+                  :visible {(window.badge.otel_state ?: "none") != "idle" && (window.badge.otel_state ?: "none") != "none"}
+                  :text {(window.badge.otel_state ?: "none") == "working" ? "●"
+                    : ((window.badge.otel_state ?: "none") == "completed" ? "✓"
+                      : ((window.badge.otel_state ?: "none") == "attention" ? "!" : ""))}))
               (label
                 :class "badge badge-urgent"
                 :text "!"
