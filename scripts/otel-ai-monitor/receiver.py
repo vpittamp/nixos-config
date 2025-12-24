@@ -237,24 +237,33 @@ class OTLPReceiver:
         Metrics serve as a heartbeat - when we receive metrics from Claude Code,
         it indicates the process is still running. We use this to extend the
         quiet period for active sessions.
+
+        Feature 135: Now extracts process.pid for more accurate session correlation.
         """
         content_type = request.headers.get("Content-Type", "")
 
-        # Extract tool info from metrics to use as heartbeat
-        tool = await self._extract_tool_from_metrics(request, content_type)
+        # Extract tool info and PID from metrics to use as heartbeat
+        tool, pid = await self._extract_tool_and_pid_from_metrics(request, content_type)
         if tool:
-            await self.tracker.process_heartbeat_for_tool(tool)
+            await self.tracker.process_heartbeat_for_tool(tool, pid)
 
         return self._create_empty_response(content_type)
 
-    async def _extract_tool_from_metrics(
+    async def _extract_tool_and_pid_from_metrics(
         self, request: web.Request, content_type: str
-    ) -> Optional[AITool]:
-        """Extract AI tool type from metrics request for heartbeat tracking.
+    ) -> tuple[Optional[AITool], Optional[int]]:
+        """Extract AI tool type and process PID from metrics request.
 
-        Claude Code metrics don't include session_id, so we identify the tool
-        from service.name and extend all working sessions for that tool.
+        Feature 135: Now extracts process.pid for more accurate session correlation.
+        When PID is available, we can target the specific session instead of all
+        sessions for that tool.
+
+        Returns:
+            Tuple of (tool, pid) where either may be None
         """
+        tool = None
+        pid = None
+
         try:
             if "application/x-protobuf" in content_type:
                 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
@@ -265,35 +274,62 @@ class OTLPReceiver:
                 otlp_request = ExportMetricsServiceRequest()
                 otlp_request.ParseFromString(body)
 
-                # Look for service.name in resource attributes
+                # Look for service.name and process.pid in resource attributes
                 for resource_metrics in otlp_request.resource_metrics:
-                    attrs = {attr.key: attr.value.string_value for attr in resource_metrics.resource.attributes}
-                    service_name = attrs.get("service.name", "")
-                    if "claude" in service_name.lower():
-                        return AITool.CLAUDE_CODE
-                    elif "codex" in service_name.lower():
-                        return AITool.CODEX_CLI
-                    elif "gemini" in service_name.lower():
-                        return AITool.GEMINI_CLI
+                    for attr in resource_metrics.resource.attributes:
+                        if attr.key == "service.name":
+                            # Handle string value
+                            if hasattr(attr.value, 'string_value') and attr.value.string_value:
+                                service_name = attr.value.string_value
+                            elif hasattr(attr.value, 'HasField') and attr.value.HasField("string_value"):
+                                service_name = attr.value.string_value
+                            else:
+                                continue
+                            if "claude" in service_name.lower():
+                                tool = AITool.CLAUDE_CODE
+                            elif "codex" in service_name.lower():
+                                tool = AITool.CODEX_CLI
+                            elif "gemini" in service_name.lower():
+                                tool = AITool.GEMINI_CLI
+                        elif attr.key == "process.pid":
+                            # Handle int value
+                            if hasattr(attr.value, 'int_value') and attr.value.int_value:
+                                pid = attr.value.int_value
+                            elif hasattr(attr.value, 'HasField') and attr.value.HasField("int_value"):
+                                pid = attr.value.int_value
+                    # Found what we need from this resource
+                    if tool:
+                        break
             else:
                 # JSON format
                 body = await request.json()
                 for resource_metrics in body.get("resourceMetrics", []):
                     resource = resource_metrics.get("resource", {})
                     for attr in resource.get("attributes", []):
-                        if attr.get("key") == "service.name":
-                            value = attr.get("value", {})
+                        key = attr.get("key")
+                        value = attr.get("value", {})
+                        if key == "service.name":
                             service_name = value.get("stringValue") or value.get("string_value") or ""
                             if "claude" in service_name.lower():
-                                return AITool.CLAUDE_CODE
+                                tool = AITool.CLAUDE_CODE
                             elif "codex" in service_name.lower():
-                                return AITool.CODEX_CLI
+                                tool = AITool.CODEX_CLI
                             elif "gemini" in service_name.lower():
-                                return AITool.GEMINI_CLI
+                                tool = AITool.GEMINI_CLI
+                        elif key == "process.pid":
+                            pid_val = value.get("intValue") or value.get("int_value")
+                            if pid_val:
+                                pid = int(pid_val)
+                    # Found what we need from this resource
+                    if tool:
+                        break
         except Exception as e:
-            logger.debug(f"Could not extract tool from metrics: {e}")
+            logger.debug(f"Could not extract tool/pid from metrics: {e}")
 
-        return None
+        if pid:
+            logger.debug(f"Metrics heartbeat: tool={tool}, pid={pid}")
+
+        return tool, pid
 
     async def _parse_protobuf_logs(self, request: web.Request) -> list[TelemetryEvent]:
         """Parse protobuf-encoded OTLP logs request.

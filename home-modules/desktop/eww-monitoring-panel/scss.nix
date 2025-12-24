@@ -544,10 +544,22 @@
 
   .ai-badge-icon.attention {
     opacity: 1.0;
+    /* Red border for errors/attention needed - GTK3 compatible */
+    border: 2px solid rgba(243, 139, 168, 0.9);
+    border-radius: 4px;
+    padding: 1px;
+  }
+
+  .ai-badge-icon.completed {
+    opacity: 1.0;
+    /* Green border for completed - user can provide next input - GTK3 compatible */
+    border: 2px solid rgba(166, 227, 161, 0.9);
+    border-radius: 4px;
+    padding: 1px;
   }
 
   .ai-badge-icon.idle {
-    opacity: 1.0;
+    opacity: 0.5;
   }
 
   .badge-focused-window {
@@ -606,6 +618,18 @@
 
   .ai-session-chip.idle .ai-session-indicator {
     color: ${mocha.overlay0};
+  }
+
+  .ai-session-chip.completed {
+    background: rgba(166, 227, 161, 0.12);
+  }
+
+  .ai-session-chip.completed:hover {
+    background: rgba(166, 227, 161, 0.2);
+  }
+
+  .ai-session-chip.completed .ai-session-indicator {
+    color: ${mocha.green};
   }
 
   .ai-session-indicator {

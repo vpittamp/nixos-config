@@ -79,9 +79,9 @@
                 (eventbox
                   :cursor "pointer"
                   :onclick "${focusWindowScript}/bin/focus-window-action ''${session.project} ''${session.id} &"
-                  :tooltip {"󱜙 Click to focus\n󰙅 " + (session.project != "" ? session.project : "Unknown") + "\n󰚩 " + (session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source)) + "\n" + (session.state == "working" ? "⏳ Processing..." : (session.needs_attention ? "🔔 Needs attention" : "💤 Ready for input"))}
+                  :tooltip {"󱜙 Click to focus\n󰙅 " + (session.project != "" ? session.project : "Unknown") + "\n󰚩 " + (session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source)) + "\n" + (session.state == "working" ? "⏳ Processing..." : (session.state == "completed" ? "✓ Completed - awaiting input" : (session.needs_attention ? "🔔 Needs attention" : "💤 Ready for input")))}
                   (box
-                    :class {"ai-session-chip" + (session.state == "working" ? " working" : (session.needs_attention ? " attention" : " idle"))}
+                    :class {"ai-session-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " completed" : (session.needs_attention ? " attention" : " idle")))}
                     :orientation "h"
                     :space-evenly false
                     :spacing 4
@@ -89,7 +89,9 @@
                       :class {"ai-badge-icon" +
                         (session.state == "working"
                           ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
-                          : (session.needs_attention ? " attention" : " idle"))}
+                          : (session.state == "completed"
+                            ? " completed"
+                            : (session.needs_attention ? " attention" : " idle")))}
                       :path {session.source == "claude-code"
                         ? "/etc/nixos/assets/icons/claude.svg"
                         : (session.source == "codex"
@@ -242,7 +244,11 @@
                 :class {"ai-badge-icon" +
                   ((window.badge.otel_state ?: "none") == "working"
                     ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
-                    : " attention")}
+                    : ((window.badge.otel_state ?: "none") == "completed"
+                      ? " completed"
+                      : ((window.badge.otel_state ?: "none") == "attention"
+                        ? " attention"
+                        : " idle")))}
                 :path {window.badge.otel_tool == "claude-code"
                   ? "/etc/nixos/assets/icons/claude.svg"
                   : (window.badge.otel_tool == "codex"

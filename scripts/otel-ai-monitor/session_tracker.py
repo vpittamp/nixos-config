@@ -277,12 +277,15 @@ class SessionTracker:
             if not client_pid and session_id in self._session_pids:
                 client_pid = self._session_pids[session_id]
 
-            # Cache PID for future correlation
+            # Cache PID for future correlation and store in session
             if client_pid:
                 try:
                     pid_int = int(client_pid)
                     if session_id not in self._session_pids:
                         self._session_pids[session_id] = pid_int
+                    # Feature 135: Also store in session model for heartbeat correlation
+                    if session.pid is None:
+                        session.pid = pid_int
                 except (ValueError, TypeError):
                     pass
 
@@ -377,24 +380,49 @@ class SessionTracker:
                 self._reset_quiet_timer(session_id)
                 logger.debug(f"Session {session_id}: heartbeat extended quiet period")
 
-    async def process_heartbeat_for_tool(self, tool: AITool) -> None:
-        """Process a heartbeat signal for all sessions of a given tool.
+    async def process_heartbeat_for_tool(
+        self, tool: AITool, pid: Optional[int] = None
+    ) -> None:
+        """Process a heartbeat signal for sessions of a given tool.
 
-        Since Claude Code metrics don't include session_id, we extend the quiet
-        period for ALL working sessions of that tool. This is safe because:
-        1. Metrics are only sent when the tool is actively running
-        2. Multiple sessions of the same tool are rare
+        Feature 135: When PID is provided, we target the specific session with that
+        process.pid. This enables accurate heartbeat correlation when multiple
+        sessions of the same tool are running.
+
+        Falls back to extending ALL working sessions of the tool when PID is
+        unavailable or doesn't match any session.
 
         Args:
             tool: AI tool type (CLAUDE_CODE, CODEX_CLI, etc.)
+            pid: Optional process PID for more accurate session targeting
         """
         async with self._lock:
             now = datetime.now(timezone.utc)
-            for session_id, session in self._sessions.items():
-                if session.tool == tool and session.state == SessionState.WORKING:
-                    session.last_event_at = now
-                    self._reset_quiet_timer(session_id)
-                    logger.debug(f"Session {session_id}: heartbeat extended by metrics")
+            found_by_pid = False
+
+            # If PID provided, try to find specific session first
+            if pid:
+                for session_id, session in self._sessions.items():
+                    if (
+                        session.tool == tool
+                        and session.state == SessionState.WORKING
+                        and session.pid == pid
+                    ):
+                        session.last_event_at = now
+                        self._reset_quiet_timer(session_id)
+                        logger.debug(
+                            f"Session {session_id}: heartbeat extended by metrics (pid={pid})"
+                        )
+                        found_by_pid = True
+                        break
+
+            # Fall back to extending all working sessions for tool
+            if not found_by_pid:
+                for session_id, session in self._sessions.items():
+                    if session.tool == tool and session.state == SessionState.WORKING:
+                        session.last_event_at = now
+                        self._reset_quiet_timer(session_id)
+                        logger.debug(f"Session {session_id}: heartbeat extended by metrics")
 
     def _compute_new_state(
         self, session: Session, event: TelemetryEvent

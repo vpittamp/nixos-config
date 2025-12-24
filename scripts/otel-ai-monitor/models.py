@@ -137,6 +137,9 @@ class Session(BaseModel):
     window_id: Optional[int] = Field(
         default=None, description="Sway container ID of originating terminal window"
     )
+    pid: Optional[int] = Field(
+        default=None, description="Process PID from telemetry for session correlation"
+    )
     model: Optional[str] = Field(
         default=None, description="LLM model name for cost calculation"
     )
