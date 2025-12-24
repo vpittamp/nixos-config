@@ -131,6 +131,11 @@ class SessionTracker:
         # Completed timeout timers: session_id -> Task
         self._completed_timers: dict[str, asyncio.Task] = {}
 
+        # Notification debounce: session_id -> last notification timestamp
+        # Prevents rapid-fire notifications during multi-turn conversations
+        self._last_notification: dict[str, datetime] = {}
+        self._notification_debounce_sec = 30.0  # Minimum seconds between notifications
+
         # Background tasks
         self._broadcast_task: Optional[asyncio.Task] = None
         self._expiry_task: Optional[asyncio.Task] = None
@@ -988,8 +993,31 @@ class SessionTracker:
         # Note: Caller already holds the lock, use unlocked version.
         await self._broadcast_sessions_unlocked()
 
-        # Send notification on completion
+        # Send notification on completion - but only if:
+        # 1. Coming from WORKING or ATTENTION (not from IDLE or already COMPLETED)
+        # 2. Not debounced (no notification in last N seconds)
         if new_state == SessionState.COMPLETED and self.enable_notifications:
+            # Only notify when we actually completed work, not on spurious transitions
+            if old_state not in (SessionState.WORKING, SessionState.ATTENTION):
+                logger.debug(
+                    f"Session {session.session_id}: skipping notification "
+                    f"(transition from {old_state}, not from WORKING/ATTENTION)"
+                )
+                return
+
+            # Debounce: don't spam notifications
+            now = datetime.now(timezone.utc)
+            last_notif = self._last_notification.get(session.session_id)
+            if last_notif:
+                elapsed = (now - last_notif).total_seconds()
+                if elapsed < self._notification_debounce_sec:
+                    logger.debug(
+                        f"Session {session.session_id}: skipping notification "
+                        f"(debounced, {elapsed:.1f}s < {self._notification_debounce_sec}s)"
+                    )
+                    return
+
+            self._last_notification[session.session_id] = now
             await self._send_completion_notification(session)
 
     async def _send_completion_notification(self, session: Session) -> None:
@@ -1144,6 +1172,8 @@ class SessionTracker:
                     self._completed_timers.pop(session_id).cancel()
                 # Feature 135: Clean up PID cache
                 self._session_pids.pop(session_id, None)
+                # Clean up notification debounce cache
+                self._last_notification.pop(session_id, None)
 
                 # Emit expiry update
                 update = SessionUpdate(
@@ -1191,6 +1221,8 @@ class SessionTracker:
                     self._completed_timers.pop(session_id).cancel()
                 # Feature 135: Clean up PID cache
                 self._session_pids.pop(session_id, None)
+                # Clean up notification debounce cache
+                self._last_notification.pop(session_id, None)
 
             # Broadcast updated list if any were removed
             if orphaned:
