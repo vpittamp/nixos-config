@@ -23,6 +23,7 @@ from .models import EventEntry
 from . import window_filtering  # Feature 037: Window filtering utilities
 from .worktree_utils import parse_mark, parse_qualified_name, is_qualified_name  # Feature 101
 from .constants import ConfigPaths  # Feature 101
+from .config import atomic_write_json  # Feature 137: Atomic file writes
 
 logger = logging.getLogger(__name__)
 
@@ -1157,16 +1158,16 @@ class IPCServer:
             save_active_project(active_state, config_file)
 
             # Feature 101: Also save active-worktree.json for app launcher context
+            # Feature 137: Use atomic write to prevent corruption
             worktree_context_file = config_dir / "active-worktree.json"
-            with open(worktree_context_file, "w") as f:
-                json.dump({
-                    "qualified_name": project_name,
-                    "repo_qualified_name": repo_qualified,
-                    "branch": wt.get("branch", ""),
-                    "directory": wt_path,
-                    "account": repo.get("account", ""),
-                    "repo_name": repo.get("name", ""),
-                }, f, indent=2)
+            atomic_write_json(worktree_context_file, {
+                "qualified_name": project_name,
+                "repo_qualified_name": repo_qualified,
+                "branch": wt.get("branch", ""),
+                "directory": wt_path,
+                "account": repo.get("account", ""),
+                "repo_name": repo.get("name", ""),
+            })
 
             logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
 
@@ -1174,18 +1175,29 @@ class IPCServer:
             logger.debug(f"IPC: Checking i3 connection: i3_connection={self.i3_connection}, conn={self.i3_connection.conn if self.i3_connection else None}")
             if self.i3_connection and self.i3_connection.conn:
                 logger.info(f"IPC: Applying mark-based window filtering for project '{project_name}'")
-                from .services.window_filter import filter_windows_by_project
-                filter_result = await filter_windows_by_project(
-                    self.i3_connection.conn,
-                    project_name,
-                    self.workspace_tracker  # Feature 038: Pass workspace_tracker for state persistence
-                )
-                windows_to_hide = filter_result.get("hidden", 0)
-                windows_to_show = filter_result.get("visible", 0)
-                logger.info(
-                    f"IPC: Window filtering applied: {windows_to_show} visible, {windows_to_hide} hidden "
-                    f"(via mark-based filtering)"
-                )
+                # Feature 137: Wrap in try/except for graceful degradation
+                try:
+                    from .services.window_filter import filter_windows_by_project
+                    filter_result = await filter_windows_by_project(
+                        self.i3_connection.conn,
+                        project_name,
+                        self.workspace_tracker  # Feature 038: Pass workspace_tracker for state persistence
+                    )
+                    windows_to_hide = filter_result.get("hidden", 0)
+                    windows_to_show = filter_result.get("visible", 0)
+                    logger.info(
+                        f"IPC: Window filtering applied: {windows_to_show} visible, {windows_to_hide} hidden "
+                        f"(via mark-based filtering)"
+                    )
+                except Exception as e:
+                    logger.error(f"IPC: Window filtering failed for '{project_name}': {e}")
+                    # Notify clients of partial failure - project switched but windows not filtered
+                    await self.broadcast_event({
+                        "type": "error",
+                        "action": "window_filter_failed",
+                        "project": project_name,
+                        "error": str(e)
+                    })
             else:
                 logger.warning(f"IPC: Cannot apply filtering - i3 connection not available")
 
@@ -6324,15 +6336,15 @@ class IPCServer:
                     # Parse qualified name parts
                     from .worktree_utils import parse_qualified_name
                     parsed = parse_qualified_name(name)
-                    with open(worktree_context_file, "w") as f:
-                        json.dump({
-                            "qualified_name": name,
-                            "repo_qualified_name": parsed.repo_qualified_name,
-                            "branch": parsed.branch,
-                            "directory": worktree.get("path", ""),
-                            "account": parsed.account,
-                            "repo_name": parsed.repo,  # Note: attribute is 'repo', not 'repo_name'
-                        }, f, indent=2)
+                    # Feature 137: Use atomic write to prevent corruption
+                    atomic_write_json(worktree_context_file, {
+                        "qualified_name": name,
+                        "repo_qualified_name": parsed.repo_qualified_name,
+                        "branch": parsed.branch,
+                        "directory": worktree.get("path", ""),
+                        "account": parsed.account,
+                        "repo_name": parsed.repo,  # Note: attribute is 'repo', not 'repo_name'
+                    })
                     logger.info(f"[Feature 101] Updated active-worktree.json for {name}")
 
             # Trigger window filtering (Feature 037 integration)
@@ -7061,10 +7073,8 @@ class IPCServer:
             max_depth=max_depth
         )
 
-        # Save to file
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_file, 'w') as f:
-            json.dump(new_config.model_dump(), f, indent=2)
+        # Save to file - Feature 137: Use atomic write to prevent corruption
+        atomic_write_json(config_file, new_config.model_dump())
 
         logger.info(f"[Feature 097] Updated discovery config: {len(scan_paths)} paths, auto_discover={auto_discover}")
 
@@ -8684,30 +8694,41 @@ class IPCServer:
             save_active_project(active_state, config_file)
 
             # Also save the directory mapping for quick lookup
+            # Feature 137: Use atomic write to prevent corruption
             worktree_context_file = config_dir / "active-worktree.json"
-            with open(worktree_context_file, "w") as f:
-                json.dump({
-                    "qualified_name": full_qualified_name,
-                    "repo_qualified_name": repo_name,
-                    "branch": worktree.get("branch", ""),
-                    "directory": worktree_path,
-                    "account": repo.get("account", ""),
-                    "repo_name": repo.get("name", ""),
-                }, f, indent=2)
+            atomic_write_json(worktree_context_file, {
+                "qualified_name": full_qualified_name,
+                "repo_qualified_name": repo_name,
+                "branch": worktree.get("branch", ""),
+                "directory": worktree_path,
+                "account": repo.get("account", ""),
+                "repo_name": repo.get("name", ""),
+            })
 
             # Apply window filtering based on new project context
+            # Feature 137: Wrap in try/except for graceful degradation
             if self.i3_connection and self.i3_connection.conn:
                 logger.info(f"[Feature 101] Applying window filtering for '{full_qualified_name}'")
-                from .services.window_filter import filter_windows_by_project
-                filter_result = await filter_windows_by_project(
-                    self.i3_connection.conn,
-                    full_qualified_name,
-                    self.workspace_tracker
-                )
-                logger.info(
-                    f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
-                    f"{filter_result.get('hidden', 0)} hidden"
-                )
+                try:
+                    from .services.window_filter import filter_windows_by_project
+                    filter_result = await filter_windows_by_project(
+                        self.i3_connection.conn,
+                        full_qualified_name,
+                        self.workspace_tracker
+                    )
+                    logger.info(
+                        f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
+                        f"{filter_result.get('hidden', 0)} hidden"
+                    )
+                except Exception as e:
+                    logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {e}")
+                    # Notify clients of partial failure - project switched but windows not filtered
+                    await self.broadcast_event({
+                        "type": "error",
+                        "action": "window_filter_failed",
+                        "project": full_qualified_name,
+                        "error": str(e)
+                    })
             else:
                 logger.warning("[Feature 101] Cannot apply filtering - i3 connection not available")
 

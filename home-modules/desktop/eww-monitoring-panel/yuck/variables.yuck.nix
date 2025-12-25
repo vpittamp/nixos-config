@@ -102,10 +102,16 @@
   ;; Feature 125: Panel dock mode state (toggled by Mod+Shift+M)
   ;; When false, panel floats over windows (overlay mode)
   ;; When true (default), panel reserves screen space (docked mode with exclusive zone)
-  ;; Read from state file - no external 'eww update' needed (avoids daemon race)
-  (defpoll panel_dock_mode :interval "2s"
+  ;; Feature 137: Use inotifywait for event-driven updates instead of polling
+  (deflisten panel_dock_mode
     :initial "true"
-    "MODE=$(cat $HOME/.local/state/eww-monitoring-panel/dock-mode 2>/dev/null); [[ \"$MODE\" == \"docked\" ]] && echo true || echo false")
+    `bash -c 'STATE_FILE="$HOME/.local/state/eww-monitoring-panel/dock-mode";
+     mkdir -p "$(dirname "$STATE_FILE")";
+     while true; do
+       MODE=$(cat "$STATE_FILE" 2>/dev/null);
+       [[ "$MODE" == "docked" ]] && echo true || echo false;
+       inotifywait -qq -e modify,create,delete "$STATE_FILE" 2>/dev/null || sleep 2;
+     done'`)
 
   ;; Feature 086: Selected index for keyboard navigation (-1 = none)
   ;; Updated by j/k or up/down in monitoring mode
