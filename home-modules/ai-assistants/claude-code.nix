@@ -52,16 +52,76 @@ let
   # Skills are symlinked to ~/.claude/skills/ for Claude Code to discover
   skillsDir = repoRoot + "/.claude/skills";
   hasSkills = builtins.pathExists skillsDir;
+  # LSP server configurations for Claude Code native LSP support
+  # These are JSON configs placed in ~/.claude/lsp/<language>/.lsp.json
+  lspConfigs = {
+    # Python (pyright)
+    python = {
+      command = "${pkgs.pyright}/bin/pyright-langserver";
+      args = [ "--stdio" ];
+      transport = "stdio";
+      extensionToLanguage = {
+        ".py" = "python";
+        ".pyi" = "python";
+        ".pyw" = "python";
+      };
+      initializationOptions = { };
+      settings = { };
+      maxRestarts = 3;
+    };
+
+    # TypeScript/JavaScript
+    typescript = {
+      command = "${pkgs.nodePackages_latest.typescript-language-server}/bin/typescript-language-server";
+      args = [ "--stdio" ];
+      transport = "stdio";
+      extensionToLanguage = {
+        ".ts" = "typescript";
+        ".tsx" = "typescriptreact";
+        ".js" = "javascript";
+        ".jsx" = "javascriptreact";
+        ".mjs" = "javascript";
+        ".cjs" = "javascript";
+      };
+      initializationOptions = { };
+      settings = { };
+      maxRestarts = 3;
+    };
+
+    # Nix (nil)
+    nix = {
+      command = "${pkgs.nil}/bin/nil";
+      args = [ ];
+      transport = "stdio";
+      extensionToLanguage = {
+        ".nix" = "nix";
+      };
+      initializationOptions = {
+        formatting.command = [ "${pkgs.nixpkgs-fmt}/bin/nixpkgs-fmt" ];
+      };
+      settings = { };
+      maxRestarts = 3;
+    };
+  };
+
+  # Generate home.file entries for LSP configs
+  lspFiles = lib.mapAttrs'
+    (lang: config: lib.nameValuePair
+      ".claude/lsp/${lang}/.lsp.json"
+      { text = builtins.toJSON config; }
+    )
+    lspConfigs;
 in
 lib.mkIf enableClaudeCode {
   # Symlink skills directory from repo to ~/.claude/skills/
   # This centralizes skill management in version control
+  # Also include LSP configuration files
   home.file = lib.optionalAttrs hasSkills {
     ".claude/skills" = {
       source = skillsDir;
       recursive = true;
     };
-  };
+  } // lspFiles;
 
   # Feature 123: OTEL environment variables for Claude Code telemetry
   # These MUST be session variables (not just settings.env) because the OTEL SDK
@@ -72,6 +132,8 @@ lib.mkIf enableClaudeCode {
   # LANGFUSE_* variables are optional - if set, traces will include Langfuse-specific
   # attributes for proper observation mapping in Langfuse UI.
   home.sessionVariables = {
+    # Enable native LSP support (requires ~/.claude/lsp/<lang>/.lsp.json configs)
+    ENABLE_LSP_TOOLS = "1";
     CLAUDE_CODE_ENABLE_TELEMETRY = "1";
     OTEL_LOGS_EXPORTER = "otlp";
     OTEL_METRICS_EXPORTER = "otlp";
@@ -128,6 +190,8 @@ lib.mkIf enableClaudeCode {
       includeCoAuthoredBy = true;
       messageIdleNotifThresholdMs = 60000;
       env = {
+        # Enable native LSP support for code intelligence
+        ENABLE_LSP_TOOLS = "1";
         # Feature 123: Full OpenTelemetry configuration for OTLP export
         # Enables native telemetry to otel-ai-monitor service
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
@@ -323,6 +387,7 @@ lib.mkIf enableClaudeCode {
 
           # MCP Server permissions - servers start disabled but need permissions when enabled via /mcp
           "mcp__context7"
+          "mcp__cclsp"  # LSP via MCP (workaround for native LSP bug)
           "mcp__playwright"  # Linux only
           "mcp__chrome-devtools"  # Linux only
         ];
@@ -510,6 +575,21 @@ lib.mkIf enableClaudeCode {
           "@upstash/context7-mcp@latest"
         ];
         disabled = true;
+      };
+
+      # cclsp - LSP through MCP (workaround for native LSP bug #14803)
+      # Provides go-to-definition, find-references, diagnostics via MCP protocol
+      # Config at ~/.config/cclsp/config.json
+      cclsp = {
+        command = "npx";
+        args = [
+          "-y"
+          "cclsp@latest"
+        ];
+        env = {
+          CCLSP_CONFIG_PATH = "/home/vpittamp/.config/cclsp/config.json";
+        };
+        disabled = false;  # Enable by default as workaround for LSP bug
       };
     } // lib.optionalAttrs enableChromiumMcpServers {
       # Playwright MCP server for browser automation (~13.7k tokens)

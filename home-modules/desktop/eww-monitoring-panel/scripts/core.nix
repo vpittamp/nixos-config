@@ -32,7 +32,8 @@ let
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
-    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
     STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
     DOCK_MODE_FILE="$STATE_DIR/dock-mode"
 
@@ -125,8 +126,9 @@ let
     # Feature 125: Toggle panel visibility via service start/stop
     # This avoids eww daemon auto-spawn issues with eww open --toggle
 
-    LOCK_FILE="/tmp/eww-monitoring-panel-toggle.lock"
-    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    LOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-toggle.lock"
+    PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
 
     # Debounce: prevent rapid toggling
     if [[ -f "$LOCK_FILE" ]]; then
@@ -162,8 +164,9 @@ let
     # Sends SIGUSR2 to wrapper - mode switch happens in wrapper context
     # This avoids eww auto-starting new daemons when commands fail to connect
 
-    PID_FILE="/tmp/eww-monitoring-panel-wrapper.pid"
-    LOCK_FILE="/tmp/panel-dock-toggle.lock"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
+    LOCK_FILE="$RUNTIME_DIR/panel-dock-toggle.lock"
 
     # Debounce: prevent rapid toggling
     if [[ -f "$LOCK_FILE" ]]; then

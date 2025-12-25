@@ -23,6 +23,47 @@ from .window_rules import WindowRule, load_window_rules as _load_window_rules_im
 logger = logging.getLogger(__name__)
 
 
+def atomic_write_json(file_path: Path, data: dict, indent: int = 2) -> None:
+    """Atomically write JSON data to a file.
+
+    Uses temp file + fsync + rename pattern to prevent corruption
+    during concurrent writes or system crashes.
+
+    Args:
+        file_path: Target file path
+        data: Dictionary to serialize as JSON
+        indent: JSON indentation (default 2)
+
+    Raises:
+        Exception: If write fails (temp file is cleaned up)
+    """
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create temp file in same directory for atomic rename
+    fd, temp_path = tempfile.mkstemp(
+        dir=file_path.parent,
+        prefix=f".{file_path.stem}-",
+        suffix=".json"
+    )
+
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())  # Ensure data is written to disk
+
+        # Atomic rename
+        os.rename(temp_path, file_path)
+        logger.debug(f"Atomic write: {file_path}")
+
+    except Exception:
+        # Clean up temp file on error
+        if Path(temp_path).exists():
+            os.unlink(temp_path)
+        raise
+
+
 def load_project_configs(config_dir: Path) -> Dict[str, "Project"]:
     """Load all project configurations from JSON files.
 
