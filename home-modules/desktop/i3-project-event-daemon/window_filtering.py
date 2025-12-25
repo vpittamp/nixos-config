@@ -25,6 +25,8 @@ except ImportError:
     import i3ipc as i3ipc_sync
     i3ipc.aio = None
 
+from .config import atomic_write_json  # Feature 137: Atomic file writes
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,9 +116,6 @@ class WorkspaceTracker:
         """Internal save without lock (assumes caller holds lock)."""
         self.last_updated = time.time()
 
-        # Ensure parent directory exists
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-
         # Build JSON data
         data = {
             "version": self.version,
@@ -124,20 +123,11 @@ class WorkspaceTracker:
             "windows": {str(k): v for k, v in self.windows.items()},
         }
 
-        # Atomic write: write to temp file, then rename
-        temp_file = self.state_file.with_suffix(".json.tmp")
-
+        # Feature 137: Use atomic write with fsync for durability
         try:
-            with temp_file.open("w") as f:
-                json.dump(data, f, indent=2)
-
-            # Atomic rename
-            temp_file.rename(self.state_file)
-
+            await asyncio.to_thread(atomic_write_json, self.state_file, data)
         except Exception as e:
             logger.error(f"Failed to save window-workspace-map.json: {e}")
-            if temp_file.exists():
-                temp_file.unlink()
             raise
 
     async def track_window(

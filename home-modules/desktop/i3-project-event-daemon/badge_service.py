@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Dict, Optional, Literal
 from pydantic import BaseModel, Field
 
+from .config import atomic_write_json  # Feature 137: Atomic file writes
+
 logger = logging.getLogger(__name__)
 
 # Feature 117: Badge timing constants
@@ -263,8 +265,8 @@ def write_badge_file(badge: WindowBadge) -> bool:
     badge_file = badge_dir / f"{badge.window_id}.json"
 
     try:
-        with open(badge_file, "w") as f:
-            json.dump(badge.model_dump(), f)
+        # Feature 137: Use atomic write to prevent corruption
+        atomic_write_json(badge_file, badge.model_dump(), indent=0)
         return True
     except Exception as e:
         logger.error(f"Failed to write badge file {badge_file}: {e}")

@@ -13,6 +13,7 @@ State Machine:
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
@@ -46,6 +47,10 @@ if TYPE_CHECKING:
     from .output import OutputWriter
 
 logger = logging.getLogger(__name__)
+
+# Feature 137: Maximum session count to prevent memory exhaustion
+MAX_SESSIONS = 100
+
 
 def state_priority(state: SessionState) -> int:
     """Return priority for state comparison (higher = more important).
@@ -151,6 +156,99 @@ class SessionTracker:
             self._expiry_task.cancel()
 
         logger.info("Session tracker stopped")
+
+    def _evict_oldest_idle_session(self) -> bool:
+        """Evict the oldest IDLE session to make room for new sessions.
+
+        Feature 137: Memory management to prevent unbounded growth.
+
+        Returns:
+            True if a session was evicted, False if no IDLE sessions exist.
+        """
+        # Find all IDLE sessions with their last_event_at timestamps
+        idle_sessions = [
+            (sid, s.last_event_at)
+            for sid, s in self._sessions.items()
+            if s.state == SessionState.IDLE
+        ]
+
+        if not idle_sessions:
+            # No IDLE sessions to evict - log warning but allow creation
+            # This means all sessions are actively WORKING or COMPLETED
+            logger.warning(
+                f"Session limit ({MAX_SESSIONS}) reached with no IDLE sessions to evict. "
+                "Consider increasing MAX_SESSIONS or reducing session_timeout_sec."
+            )
+            return False
+
+        # Sort by last_event_at (oldest first) and evict
+        idle_sessions.sort(key=lambda x: x[1])
+        oldest_id = idle_sessions[0][0]
+        oldest_session = self._sessions.pop(oldest_id)
+
+        # Clean up associated data
+        self._session_pids.pop(oldest_id, None)
+        if oldest_id in self._quiet_timers:
+            self._quiet_timers[oldest_id].cancel()
+            del self._quiet_timers[oldest_id]
+        if oldest_id in self._completed_timers:
+            self._completed_timers[oldest_id].cancel()
+            del self._completed_timers[oldest_id]
+        self._last_notification.pop(oldest_id, None)
+
+        logger.info(
+            f"Evicted oldest IDLE session {oldest_id} (tool={oldest_session.tool}, "
+            f"last_event={oldest_session.last_event_at}) to stay under limit"
+        )
+        return True
+
+    async def get_health(self) -> dict:
+        """Get health status and metrics for self-telemetry.
+
+        Feature 137: Expose internal metrics for debugging and monitoring.
+
+        Returns:
+            Dict with health status and metrics.
+        """
+        async with self._lock:
+            # Count sessions by state (handle both enum and string values)
+            state_counts = {}
+            for session in self._sessions.values():
+                state = session.state.value if hasattr(session.state, 'value') else str(session.state)
+                state_counts[state] = state_counts.get(state, 0) + 1
+
+            # Count sessions by tool (handle both enum and string values)
+            tool_counts = {}
+            for session in self._sessions.values():
+                if session.tool is None:
+                    tool = "unknown"
+                elif hasattr(session.tool, 'value'):
+                    tool = session.tool.value
+                else:
+                    tool = str(session.tool)
+                tool_counts[tool] = tool_counts.get(tool, 0) + 1
+
+            return {
+                "status": "healthy" if self._running else "stopped",
+                "running": self._running,
+                "sessions": {
+                    "total": len(self._sessions),
+                    "max_limit": MAX_SESSIONS,
+                    "by_state": state_counts,
+                    "by_tool": tool_counts,
+                },
+                "timers": {
+                    "quiet_timers": len(self._quiet_timers),
+                    "completed_timers": len(self._completed_timers),
+                },
+                "config": {
+                    "quiet_period_sec": self.quiet_period_sec,
+                    "session_timeout_sec": self.session_timeout_sec,
+                    "completed_timeout_sec": self.completed_timeout_sec,
+                    "broadcast_interval_sec": self.broadcast_interval_sec,
+                    "notifications_enabled": self.enable_notifications,
+                },
+            }
 
     async def process_event(self, event: TelemetryEvent) -> None:
         """Process a telemetry event and update session state.
@@ -278,6 +376,9 @@ class SessionTracker:
                         last_event_at=now,
                         state_changed_at=now,
                     )
+                    # Feature 137: Evict oldest IDLE session if at capacity
+                    if len(self._sessions) >= MAX_SESSIONS:
+                        self._evict_oldest_idle_session()
                     self._sessions[session_id] = session
                     logger.info(f"Created session {session_id} for {session.tool}/{provider.value} (window_id={window_id}, project={project})")
 
@@ -493,6 +594,9 @@ class SessionTracker:
                         last_event_at=now,
                         state_changed_at=now,
                     )
+                    # Feature 137: Evict oldest IDLE session if at capacity
+                    if len(self._sessions) >= MAX_SESSIONS:
+                        self._evict_oldest_idle_session()
                     self._sessions[session_id] = session
                     self._session_pids[session_id] = pid
                     logger.info(
@@ -1291,10 +1395,14 @@ class SessionTracker:
                 await self.output.write_update(update)
 
     async def _cleanup_orphaned_windows(self) -> None:
-        """Remove sessions whose windows no longer exist.
+        """Remove sessions whose windows or processes no longer exist.
 
         This handles the case where a terminal is closed but the session
         hasn't timed out yet. We validate that window_id still exists in Sway.
+
+        Feature 137: Also cleans up sessions whose PID has exited. This handles
+        the case where a user exits Claude Code but keeps the terminal open.
+        The session would otherwise persist until session_timeout_sec (5 min).
         """
         # Get current window IDs from Sway
         current_windows = get_all_window_ids()
@@ -1306,18 +1414,28 @@ class SessionTracker:
 
         async with self._lock:
             for session_id, session in self._sessions.items():
-                # Skip sessions without window_id
-                if not session.window_id:
+                # Check 1: Window no longer exists
+                if session.window_id and session.window_id not in current_windows:
+                    orphaned.append((session_id, f"window {session.window_id} closed"))
                     continue
 
-                # Check if window still exists
-                if session.window_id not in current_windows:
-                    orphaned.append(session_id)
+                # Check 2: Process no longer running (Feature 137)
+                # This catches sessions for Claude processes that exited while
+                # the terminal is still open (e.g., user Ctrl+C'd Claude Code)
+                if session.pid:
+                    try:
+                        os.kill(session.pid, 0)  # Check if process exists
+                    except ProcessLookupError:
+                        # Process doesn't exist - mark for cleanup
+                        orphaned.append((session_id, f"PID {session.pid} exited"))
+                    except PermissionError:
+                        # Process exists but we can't signal it - keep session
+                        pass
 
             # Remove orphaned sessions
-            for session_id in orphaned:
+            for session_id, reason in orphaned:
                 session = self._sessions.pop(session_id)
-                logger.info(f"Session {session_id} orphaned (window {session.window_id} closed)")
+                logger.info(f"Session {session_id} orphaned ({reason})")
 
                 # Cancel any timers
                 if session_id in self._quiet_timers:

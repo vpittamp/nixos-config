@@ -166,9 +166,27 @@ class OTLPReceiver:
     async def _handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint.
 
-        Returns 200 OK with JSON status for monitoring.
+        Feature 137: Returns comprehensive health status with session metrics.
+
+        Returns 200 OK with JSON status including:
+        - Overall status
+        - Session tracker metrics (counts by state, tool)
+        - Timer counts
+        - Configuration
         """
-        return web.json_response({"status": "ok"})
+        # Get detailed health from session tracker
+        tracker_health = await self.tracker.get_health()
+
+        response = {
+            "status": "ok" if tracker_health.get("running", False) else "degraded",
+            "receiver": {
+                "port": self.port,
+                "langfuse_enabled": LANGFUSE_ENABLED,
+            },
+            "tracker": tracker_health,
+        }
+
+        return web.json_response(response)
 
     async def _handle_logs(self, request: web.Request) -> web.Response:
         """Handle OTLP logs export requests.

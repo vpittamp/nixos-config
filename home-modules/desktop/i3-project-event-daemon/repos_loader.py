@@ -10,10 +10,59 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
 from .constants import ConfigPaths
 from .worktree_utils import parse_qualified_name, ParsedQualifiedName, validate_worktree_path
 
 logger = logging.getLogger(__name__)
+
+
+# Feature 137: Pydantic models for repos.json schema validation
+# Using extra='ignore' to allow additional fields from git status discovery
+class WorktreeEntry(BaseModel):
+    """Schema for a worktree entry in repos.json."""
+    model_config = ConfigDict(extra='ignore')
+
+    branch: str = Field(..., description="Git branch name")
+    path: str = Field(..., description="Filesystem path to worktree")
+    # Discovery adds these fields - use actual field names from discovery
+    is_main: bool = Field(default=False, description="Whether this is the main worktree")
+    # Git status fields (added by discovery, may not be present)
+    ahead: Optional[int] = Field(default=None, description="Commits ahead of upstream")
+    behind: Optional[int] = Field(default=None, description="Commits behind upstream")
+    is_clean: Optional[bool] = Field(default=None, description="Whether worktree is clean")
+    is_merged: Optional[bool] = Field(default=None, description="Whether branch is merged")
+    is_stale: Optional[bool] = Field(default=None, description="Whether branch is stale")
+    has_conflicts: Optional[bool] = Field(default=None, description="Whether there are conflicts")
+    commit: Optional[str] = Field(default=None, description="Current commit SHA")
+    last_commit_message: Optional[str] = Field(default=None, description="Last commit message")
+    last_commit_timestamp: Optional[int] = Field(default=None, description="Last commit timestamp")
+    staged_count: Optional[int] = Field(default=None, description="Staged file count")
+    modified_count: Optional[int] = Field(default=None, description="Modified file count")
+    untracked_count: Optional[int] = Field(default=None, description="Untracked file count")
+
+
+class RepositoryEntry(BaseModel):
+    """Schema for a repository entry in repos.json."""
+    model_config = ConfigDict(extra='ignore')
+
+    account: str = Field(..., description="Git account/organization name")
+    name: str = Field(..., description="Repository name")
+    path: str = Field(..., description="Filesystem path to repository")
+    worktrees: List[WorktreeEntry] = Field(default_factory=list, description="List of worktrees")
+    remote_url: Optional[str] = Field(default=None, description="Git remote URL")
+    default_branch: Optional[str] = Field(default=None, description="Default branch name")
+    discovered_at: Optional[str] = Field(default=None, description="Discovery timestamp")
+
+
+class ReposConfig(BaseModel):
+    """Schema for repos.json root object."""
+    model_config = ConfigDict(extra='ignore')
+
+    version: str = Field(default="1.0", description="Schema version")
+    repositories: List[RepositoryEntry] = Field(..., description="List of repositories")
+    last_updated: Optional[str] = Field(default=None, description="Last update timestamp")
 
 
 class ReposLoaderError(Exception):
@@ -119,15 +168,20 @@ class ReposLoader:
                 f"repos.json is malformed at line {e.lineno}: {e.msg}"
             )
 
-        # Validate basic structure
-        if not isinstance(data, dict):
-            raise ReposParseError("repos.json must be a JSON object")
-
-        if "repositories" not in data:
-            raise ReposParseError("repos.json must contain 'repositories' key")
-
-        if not isinstance(data["repositories"], list):
-            raise ReposParseError("repos.json 'repositories' must be an array")
+        # Feature 137: Validate with Pydantic for better error messages
+        try:
+            validated = ReposConfig.model_validate(data)
+            # Convert back to dict for compatibility with existing code
+            data = validated.model_dump(mode='json')
+        except ValidationError as e:
+            # Format validation errors for readability
+            error_msgs = []
+            for error in e.errors():
+                loc = ".".join(str(x) for x in error["loc"])
+                error_msgs.append(f"  - {loc}: {error['msg']}")
+            raise ReposParseError(
+                f"repos.json schema validation failed:\n" + "\n".join(error_msgs)
+            )
 
         # Update cache
         self._cache = data

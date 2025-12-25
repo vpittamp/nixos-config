@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from .models.monitor_config import OutputStatesFile, OutputState
+from .config import atomic_write_json  # Feature 137: Atomic file writes
 
 logger = logging.getLogger(__name__)
 
@@ -83,19 +84,17 @@ def save_output_states(states: OutputStatesFile, path: Optional[Path] = None) ->
     state_path = path or OUTPUT_STATES_PATH
 
     try:
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Update timestamp
         states.last_updated = datetime.now()
 
         # Serialize using Pydantic v2 compatible method
-        if hasattr(states, 'model_dump_json'):
-            json_str = states.model_dump_json(indent=2)
+        if hasattr(states, 'model_dump'):
+            data = states.model_dump(mode='json')
         else:
-            json_str = states.json(indent=2)
+            data = json.loads(states.json())
 
-        with open(state_path, "w") as f:
-            f.write(json_str)
+        # Feature 137: Use atomic write to prevent corruption
+        atomic_write_json(state_path, data)
 
         logger.debug(f"Saved output states to {state_path}")
         return True

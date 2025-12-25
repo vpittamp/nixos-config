@@ -123,10 +123,24 @@ export class DaemonClient {
     const encoder = new TextEncoder();
     await this.conn.write(encoder.encode(requestData));
 
-    // Read response
+    // Read response with timeout (Feature 137: prevent CLI hangs)
     const decoder = new TextDecoder();
     const buffer = new Uint8Array(65536); // 64KB buffer
-    const bytesRead = await this.conn.read(buffer);
+    const TIMEOUT_MS = 30000; // 30 second timeout
+
+    const readPromise = this.conn.read(buffer);
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new DaemonError(`Daemon response timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
+    );
+
+    let bytesRead: number | null;
+    try {
+      bytesRead = await Promise.race([readPromise, timeoutPromise]) as number | null;
+    } catch (e) {
+      // On timeout, close connection to prevent stale state
+      await this.close();
+      throw e;
+    }
 
     if (bytesRead === null) {
       throw new DaemonError("Connection closed by daemon");

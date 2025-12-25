@@ -2781,6 +2781,13 @@ globalThis.fetch = async (input, init) => {
     console.error(`[OTEL-Diag] fetch called: url=${url.substring(0, 80)}, hasBody=${hasBody}, isMessagesEndpoint=${isMessagesEndpoint}`);
   }
 
+  // Feature 137: Intercept OTLP trace exports to extract Claude Code's native session.id
+  // This allows us to use the same session.id across both native logs and interceptor spans.
+  if (url.includes('/v1/traces') && init && init.body) {
+    maybeExtractSessionIdFromOTLP(init.body);
+    return originalFetch(input, init);  // Forward to Alloy unchanged
+  }
+
   // Only intercept Anthropic messages API calls
   if (!isMessagesEndpoint || !init || !init.body) {
     return originalFetch(input, init);
