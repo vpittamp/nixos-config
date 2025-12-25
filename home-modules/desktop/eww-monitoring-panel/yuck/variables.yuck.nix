@@ -14,10 +14,10 @@
 
   ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
   ;; Used to show pulsating indicator on windows running AI assistants
-  ;; Falls back to empty state if pipe doesn't exist
+  ;; Keep command alive even if pipe is missing at startup
   (deflisten ai_sessions_data
     :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
-    `cat ${ai_sessions_data_path} 2>/dev/null || echo '{\"type\":\"error\",\"error\":\"pipe_missing\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}'`)
+    `bash -c 'PIPE="${ai_sessions_data_path}"; while true; do if [ -p "$PIPE" ]; then cat "$PIPE"; else echo "{\"type\":\"error\",\"error\":\"pipe_missing\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"; sleep 2; fi; done'`)
 
   ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
   ;; Only runs when Projects tab is active (index 1)

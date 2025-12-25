@@ -57,6 +57,11 @@
           (panel-header)
           (panel-body)
           (panel-footer)
+          ;; Keep ai_sessions_data deflisten alive even when not visibly rendered
+          (label
+            :class "ai-sessions-keepalive"
+            :text {ai_sessions_data.timestamp}
+            :style "opacity:0; font-size:0px; height:0px; margin:0; padding:0;")
           (conflict-resolution-dialog)
           (success-notification-toast)
           (error-notification-toast)
