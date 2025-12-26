@@ -69,6 +69,15 @@ export async function worktreeCreate(args: string[]): Promise<number> {
   const barePath = `${repoPath}/.bare`;
   const worktreePath = `${repoPath}/${branch}`;
 
+  // Feature 137: Look up default_branch from repos.json if --from not explicitly set
+  let baseBranch = request.from;
+  if (parsed.from === "main") {  // Only override if using default
+    const defaultBranch = await getDefaultBranch(repoPath);
+    if (defaultBranch) {
+      baseBranch = defaultBranch;
+    }
+  }
+
   // Check if worktree already exists
   try {
     await Deno.stat(worktreePath);
@@ -78,7 +87,7 @@ export async function worktreeCreate(args: string[]): Promise<number> {
     // Directory doesn't exist, good
   }
 
-  console.log(`Creating worktree '${branch}' from '${request.from}'...`);
+  console.log(`Creating worktree '${branch}' from '${baseBranch}'...`);
 
   // Create the worktree
   const cmd = new Deno.Command("git", {
@@ -87,7 +96,7 @@ export async function worktreeCreate(args: string[]): Promise<number> {
       "worktree", "add",
       worktreePath,
       "-b", branch,
-      request.from,
+      baseBranch,
     ],
     stdout: "piped",
     stderr: "piped",
@@ -209,6 +218,34 @@ async function detectRepoPath(repo?: string): Promise<string | null> {
       break;
     }
     dir = parent;
+  }
+
+  return null;
+}
+
+/**
+ * Feature 137: Look up default_branch from repos.json for a given repo path.
+ */
+async function getDefaultBranch(repoPath: string): Promise<string | null> {
+  const home = Deno.env.get("HOME") || "";
+  const reposFile = `${home}/.config/i3/repos.json`;
+
+  try {
+    const content = await Deno.readTextFile(reposFile);
+    const repos = JSON.parse(content);
+
+    // Extract account/repo from path like /home/user/repos/account/repo
+    const parts = repoPath.split("/");
+    const repoName = parts.pop();
+    const account = parts.pop();
+
+    for (const repo of repos.repositories || []) {
+      if (repo.account === account && repo.name === repoName) {
+        return repo.default_branch || null;
+      }
+    }
+  } catch {
+    // repos.json not found or invalid, fall back to default
   }
 
   return null;
