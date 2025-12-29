@@ -44,7 +44,7 @@ let
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 50;
-      preferred_monitor_role = "tertiary";  # Feature 001: Explicit tertiary assignment
+      preferred_monitor_role = "secondary";  # Feature 001: Separate from Firefox (tertiary)
       # Feature 113: URL routing domains
       routing_domains = [ "youtube.com" "www.youtube.com" "youtu.be" "m.youtube.com" ];
       # Feature 118: Auth domains
@@ -372,58 +372,58 @@ let
       routing_domains = [ "vscode.dev" "insiders.vscode.dev" ];
     }
 
-    # Keycloak (Tailscale)
+    # Keycloak (CNOE local)
     {
       name = "Keycloak";
-      url = "https://keycloak.tail286401.ts.net";
-      domain = "keycloak.tail286401.ts.net";
+      url = "https://keycloak.cnoe.localtest.me:8443";
+      domain = "keycloak.cnoe.localtest.me";
       icon = iconPath "keycloak.svg";
       description = "Keycloak identity and access management";
       categories = "Security;Network;";
       keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;";
-      scope = "https://keycloak.tail286401.ts.net/";
+      scope = "https://keycloak.cnoe.localtest.me:8443/";
       ulid = "01MD4CZ7H4KJ4TR0C2Q3C8ZQ9V";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 68;
       # Feature 113: URL routing domains
-      routing_domains = [ "keycloak.tail286401.ts.net" ];
+      routing_domains = [ "keycloak.cnoe.localtest.me" ];
     }
 
-    # Backstage (Tailscale)
+    # Backstage (CNOE local)
     {
       name = "Backstage";
-      url = "https://cnoe.tail286401.ts.net";
-      domain = "cnoe.tail286401.ts.net";
+      url = "https://backstage.cnoe.localtest.me:8443";
+      domain = "backstage.cnoe.localtest.me";
       icon = iconPath "backstage.svg";
       description = "Backstage developer portal";
       categories = "Development;Network;";
       keywords = "backstage;developer-portal;sdp;platform;kubernetes;";
-      scope = "https://cnoe.tail286401.ts.net/";
+      scope = "https://backstage.cnoe.localtest.me:8443/";
       ulid = "01MD4D0A6S2CVXKNNY4EJ5PQ1G";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 69;
       # Feature 113: URL routing domains
-      routing_domains = [ "cnoe.tail286401.ts.net" ];
+      routing_domains = [ "backstage.cnoe.localtest.me" ];
     }
 
-    # ArgoCD (Tailscale)
+    # ArgoCD (CNOE local)
     {
       name = "ArgoCD";
-      url = "https://argocd.tail286401.ts.net";
-      domain = "argocd.tail286401.ts.net";
+      url = "https://argocd.cnoe.localtest.me:8443";
+      domain = "argocd.cnoe.localtest.me";
       icon = iconPath "argocd.svg";
       description = "ArgoCD GitOps controller";
       categories = "Development;Network;System;";
       keywords = "argocd;gitops;cd;kubernetes;devops;";
-      scope = "https://argocd.tail286401.ts.net/";
+      scope = "https://argocd.cnoe.localtest.me:8443/";
       ulid = "01MD4D0N7A8F9P6QS0R1TV2WX3";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 70;
       # Feature 113: URL routing domains
-      routing_domains = [ "argocd.tail286401.ts.net" ];
+      routing_domains = [ "argocd.cnoe.localtest.me" ];
     }
 
     # ArgoCD (Talos/ai401kchat)
@@ -444,22 +444,22 @@ let
       routing_domains = [ "argocd.ai401kchat.com" ];
     }
 
-    # Gitea (Tailscale)
+    # Gitea (CNOE local)
     {
       name = "Gitea";
-      url = "https://gitea.tail286401.ts.net";
-      domain = "gitea.tail286401.ts.net";
+      url = "https://gitea.cnoe.localtest.me:8443";
+      domain = "gitea.cnoe.localtest.me";
       icon = iconPath "gitea.svg";
       description = "Gitea self-hosted git service";
       categories = "Development;Network;";
       keywords = "gitea;git;scm;code;devops;kubernetes;";
-      scope = "https://gitea.tail286401.ts.net/";
+      scope = "https://gitea.cnoe.localtest.me:8443/";
       ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 71;
       # Feature 113: URL routing domains
-      routing_domains = [ "gitea.tail286401.ts.net" ];
+      routing_domains = [ "gitea.cnoe.localtest.me" ];
     }
 
     # CVS Pharmacy
@@ -480,76 +480,76 @@ let
       routing_domains = [ "cvs.com" "www.cvs.com" ];
     }
 
-    # Kargo (Tailscale)
+    # Kargo (CNOE local)
     {
       name = "Kargo";
-      url = "https://kargo.tail286401.ts.net";
-      domain = "kargo.tail286401.ts.net";
+      url = "https://kargo.cnoe.localtest.me:8443";
+      domain = "kargo.cnoe.localtest.me";
       icon = iconPath "kargo.png";
       description = "Kargo continuous delivery and promotion engine for Kubernetes";
       categories = "Development;Network;System;";
       keywords = "kargo;kubernetes;cd;gitops;promotion;delivery;";
-      scope = "https://kargo.tail286401.ts.net/";
+      scope = "https://kargo.cnoe.localtest.me:8443/";
       ulid = "01MEQFV8K4N3R7S2T5W9X0Y1Z6";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 73;
       # Feature 113: URL routing domains
-      routing_domains = [ "kargo.tail286401.ts.net" ];
+      routing_domains = [ "kargo.cnoe.localtest.me" ];
     }
 
-    # Headlamp (Tailscale)
+    # Headlamp (CNOE local)
     {
       name = "Headlamp";
-      url = "https://headlamp.tail286401.ts.net";
-      domain = "headlamp.tail286401.ts.net";
+      url = "https://headlamp.cnoe.localtest.me:8443";
+      domain = "headlamp.cnoe.localtest.me";
       icon = iconPath "headlamp.svg";
       description = "Headlamp Kubernetes dashboard";
       categories = "Development;Network;System;";
       keywords = "headlamp;kubernetes;dashboard;k8s;cluster;";
-      scope = "https://headlamp.tail286401.ts.net/";
+      scope = "https://headlamp.cnoe.localtest.me:8443/";
       ulid = "01MEQFVCK5P4S8T3V6X0Y2Z7A1";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 74;
       # Feature 113: URL routing domains
-      routing_domains = [ "headlamp.tail286401.ts.net" ];
+      routing_domains = [ "headlamp.cnoe.localtest.me" ];
     }
 
-    # Kagent (Tailscale)
+    # Kagent (CNOE local)
     {
       name = "Kagent";
-      url = "https://kagent.tail286401.ts.net";
-      domain = "kagent.tail286401.ts.net";
+      url = "https://kagent.cnoe.localtest.me:8443";
+      domain = "kagent.cnoe.localtest.me";
       icon = iconPath "kagent.svg";
       description = "Kagent Kubernetes AI agent framework";
       categories = "Development;Network;System;";
       keywords = "kagent;kubernetes;ai;agent;llm;automation;";
-      scope = "https://kagent.tail286401.ts.net/";
+      scope = "https://kagent.cnoe.localtest.me:8443/";
       ulid = "01MEQFVGM6Q5T9V4W7Y1Z3A2B8";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 75;
       # Feature 113: URL routing domains
-      routing_domains = [ "kagent.tail286401.ts.net" ];
+      routing_domains = [ "kagent.cnoe.localtest.me" ];
     }
 
-    # Agent Gateway (Tailscale)
+    # Agent Gateway (CNOE local)
     {
       name = "Agent Gateway";
-      url = "https://agentgateway.tail286401.ts.net";
-      domain = "agentgateway.tail286401.ts.net";
+      url = "https://agentgateway.cnoe.localtest.me:8443";
+      domain = "agentgateway.cnoe.localtest.me";
       icon = iconPath "agent-gateway.svg";
       description = "Agent Gateway API gateway for AI agents";
       categories = "Development;Network;System;";
       keywords = "agent;gateway;api;kubernetes;ai;routing;";
-      scope = "https://agentgateway.tail286401.ts.net/";
+      scope = "https://agentgateway.cnoe.localtest.me:8443/";
       ulid = "01MEQFVKN7R6V0W5X8Z2A4B3C9";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 76;
       # Feature 113: URL routing domains
-      routing_domains = [ "agentgateway.tail286401.ts.net" ];
+      routing_domains = [ "agentgateway.cnoe.localtest.me" ];
     }
 
     # ============================================
