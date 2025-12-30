@@ -99,6 +99,11 @@ let
   # Headlamp - custom package for Kubernetes web UI
   headlamp = pkgs.callPackage ../packages/headlamp.nix { };
 
+  # VibeTyper - AI Voice Typing
+  # https://vibetyper.com - Voice-to-text with AI refinement
+  # Note: X11 fully supported, Wayland experimental
+  vibetyper = pkgs.callPackage ../packages/vibetyper.nix { };
+
 in
 {
   # Export different package sets
@@ -113,7 +118,7 @@ in
   kubernetes = kubernetesTools;
 
   # All system packages
-  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp ];
+  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp vibetyper ];
 
   # Essential system packages only
   essential = systemTools ++ (with pkgs; [

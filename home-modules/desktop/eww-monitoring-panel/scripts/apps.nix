@@ -1,6 +1,9 @@
-{ pkgs, pythonForBackend, ... }:
+{ pkgs, pythonForBackend, lib ? pkgs.lib, ... }:
 
 let
+  # Feature 106: Portable script wrappers for worktree support
+  scriptWrappers = import ../../../../shared/script-wrappers.nix { inherit pkgs lib; };
+
   appCreateOpenScript = pkgs.writeShellScriptBin "app-create-open" ''
     #!${pkgs.bash}/bin/bash
     # Open application create form
@@ -64,7 +67,7 @@ let
         NAME="''${NAME}-pwa"
       fi
       # Generate ULID for PWA
-      ULID=$(${pkgs.bash}/bin/bash /etc/nixos/scripts/generate-ulid.sh)
+      ULID=$(${scriptWrappers.generate-ulid}/bin/generate-ulid)
       EXPECTED_CLASS="FFPWA-$ULID"
 
       CONFIG_JSON=$(${pkgs.jq}/bin/jq -n \

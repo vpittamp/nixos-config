@@ -372,11 +372,12 @@ let
     })
 
     # WS9: Kubernetes (Primary: k9s)
+    # Uses sesh for tmux session persistence - can detach/reattach
     (mkApp {
       name = "k9s";
       display_name = "K9s";
       command = "ghostty";
-      parameters = "-e k9s";
+      parameters = "-e sesh connect k9s";
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 9;

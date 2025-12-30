@@ -359,7 +359,7 @@
         (input
           :class "field-input"
           :value worktree_form_branch_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='{}'"
+          :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='{}' && worktree-update-path '{}' &"
           :tooltip "Auto-generated from description, editable")
         (label
           :class "field-hint"

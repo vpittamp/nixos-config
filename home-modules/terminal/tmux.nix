@@ -1,7 +1,15 @@
 { config, pkgs, lib, ... }:
 
 let
-  i3pmProjectBadgeScript = "/etc/nixos/scripts/i3pm-project-badge.sh";
+  # Feature 106: Portable script wrappers for worktree support
+  scriptWrappers = import ../../shared/script-wrappers.nix { inherit pkgs lib; };
+
+  # Wrapper paths for tmux config
+  i3pmProjectBadgeScript = "${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge";
+  clipboardSyncScript = "${scriptWrappers.clipboard-sync}/bin/clipboard-sync";
+  clipboardPasteScript = "${scriptWrappers.clipboard-paste}/bin/clipboard-paste";
+  keybindingsCheatsheetScript = "${scriptWrappers.keybindings-cheatsheet}/bin/keybindings-cheatsheet";
+  clipcatFzfScript = "${scriptWrappers.clipcat-fzf}/bin/clipcat-fzf";
 in
 {
   # Tmux configuration - force rebuild 2025-09-19
@@ -191,10 +199,10 @@ in
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
 
       # 'y' key copies to KDE clipboard and stays in copy mode (for multiple selections)
-      bind -T copy-mode-vi y send-keys -X copy-pipe "/etc/nixos/scripts/clipboard-sync.sh"
+      bind -T copy-mode-vi y send-keys -X copy-pipe "${clipboardSyncScript}"
 
       # 'Y' copies to clipboard and exits copy mode
-      bind -T copy-mode-vi Y send-keys -X copy-pipe-and-cancel "/etc/nixos/scripts/clipboard-sync.sh"
+      bind -T copy-mode-vi Y send-keys -X copy-pipe-and-cancel "${clipboardSyncScript}"
 
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
@@ -206,21 +214,21 @@ in
 
       # Paste from system clipboard (KDE Plasma clipboard)
       # Use Ctrl+Shift+V or prefix + V to paste from system clipboard
-      bind V run-shell "/etc/nixos/scripts/clipboard-paste.sh | tmux load-buffer - && tmux paste-buffer"
-      bind ] run-shell "/etc/nixos/scripts/clipboard-paste.sh | tmux load-buffer - && tmux paste-buffer"
+      bind V run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
+      bind ] run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
 
       # Toggles
       bind S run-shell "tmux setw synchronize-panes && tmux display-message 'Synchronize panes: #{?pane_synchronized,ON,OFF}'"
       bind m run-shell "tmux set -g mouse && tmux display-message 'Mouse: #{?mouse,ON,OFF}'"
 
       # Keybinding cheatsheet (F1 or prefix + ?)
-      bind -n F1 run-shell "/etc/nixos/scripts/keybindings-cheatsheet.sh"
-      bind ? run-shell "/etc/nixos/scripts/keybindings-cheatsheet.sh"
+      bind -n F1 run-shell "${keybindingsCheatsheetScript}"
+      bind ? run-shell "${keybindingsCheatsheetScript}"
 
       # Clipboard history (Meta + v for clipboard history)
       # Restore prefix + v for vertical split
       # Use -b flag to run in background and suppress "ok" message
-      bind -n M-v run-shell -b "/etc/nixos/scripts/clipcat-fzf.sh"
+      bind -n M-v run-shell -b "${clipcatFzfScript}"
 
       # File path scanner (prefix + u) - extract valid file paths from entire scrollback history
       # Only shows files that exist on filesystem, opens in nvim on workspace 4
@@ -248,19 +256,19 @@ in
 
       # Enhanced mouse copy that integrates with KDE clipboard
       # Mouse drag exits copy mode after copying (native terminal feel)
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "/etc/nixos/scripts/clipboard-sync.sh"
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "${clipboardSyncScript}"
 
       # Double-click to select word and copy to clipboard (exits copy mode)
       bind -T copy-mode-vi DoubleClick1Pane \
         select-pane \; \
         send-keys -X select-word \; \
-        send-keys -X copy-pipe-and-cancel "/etc/nixos/scripts/clipboard-sync.sh"
+        send-keys -X copy-pipe-and-cancel "${clipboardSyncScript}"
 
       # Triple-click to select line and copy to clipboard (exits copy mode)
       bind -T copy-mode-vi TripleClick1Pane \
         select-pane \; \
         send-keys -X select-line \; \
-        send-keys -X copy-pipe-and-cancel "/etc/nixos/scripts/clipboard-sync.sh"
+        send-keys -X copy-pipe-and-cancel "${clipboardSyncScript}"
 
       # Sesh session management
       # Removed 'bind -n C-t' to allow bash's sesh_connect function to handle Ctrl+T
@@ -288,7 +296,7 @@ in
       # File picker popup (backtick + F) - Auto-copies selected path
       bind-key F display-popup -E -h 80% -w 80% 'file=$(find . -type f 2>/dev/null | fzf --preview="head -50 {}"); \
         if [ -n "$file" ]; then \
-          printf "%s" "$file" | /etc/nixos/scripts/clipboard-sync.sh; \
+          printf "%s" "$file" | ${clipboardSyncScript}; \
           echo "Copied: $file"; \
           sleep 1; \
         fi'

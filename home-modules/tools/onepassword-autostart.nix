@@ -109,7 +109,7 @@
   
   # Note: 1Password settings are managed by onepassword.nix
   # The CLI integration is already enabled in the existing settings
-  
+
   # Create environment file for 1Password with current display
   home.file.".config/1password/env" = {
     text = ''
@@ -117,6 +117,20 @@
       DISPLAY=:10.0
     '';
   };
+
+  # Ensure 1Password tray settings are enabled (merged with existing settings)
+  # This runs on every home-manager activation to ensure tray icon works
+  home.activation.onepasswordTraySettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    SETTINGS_FILE="$HOME/.config/1Password/settings/settings.json"
+    if [ -f "$SETTINGS_FILE" ]; then
+      # Merge tray settings into existing settings (preserves user settings)
+      ${pkgs.jq}/bin/jq '. + {
+        "app.keepInTray": true,
+        "app.minimizeToTray": true,
+        "app.useHardwareAcceleration": true
+      }' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    fi
+  '';
   
   
   # Shell alias for quick checks

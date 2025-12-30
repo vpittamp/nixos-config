@@ -420,6 +420,29 @@ asyncio.run(stream.run())
     $EWW_CMD update "edit_form_display_name=$DISPLAY_NAME"
   '';
 
+  # Feature 142: Update worktree path when branch name changes manually
+  worktreeUpdatePathScript = pkgs.writeShellScriptBin "worktree-update-path" ''
+    #!${pkgs.bash}/bin/bash
+    # Update worktree path when branch name changes
+    # Usage: worktree-update-path <branch_name>
+
+    BRANCH_NAME="$1"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$BRANCH_NAME" ]]; then
+      exit 0
+    fi
+
+    # Get stored repo path
+    REPO_PATH=$($EWW_CMD get worktree_form_repo_path 2>/dev/null || echo "")
+
+    # Auto-generate worktree path: <repo_path>/<branch_name>
+    if [[ -n "$REPO_PATH" ]]; then
+      WORKTREE_PATH="''${REPO_PATH}/''${BRANCH_NAME}"
+      $EWW_CMD update "worktree_form_path=$WORKTREE_PATH"
+    fi
+  '';
+
   # Feature 102: Open worktree delete confirmation dialog
   worktreeDeleteOpenScript = pkgs.writeShellScriptBin "worktree-delete-open" ''
     #!${pkgs.bash}/bin/bash
@@ -1635,7 +1658,7 @@ in
 {
   inherit projectCrudScript projectEditOpenScript projectEditSaveScript
           projectConflictResolveScript formValidationStreamScript
-          worktreeCreateOpenScript worktreeAutoPopulateScript
+          worktreeCreateOpenScript worktreeAutoPopulateScript worktreeUpdatePathScript
           worktreeDeleteOpenScript worktreeDeleteConfirmScript
           worktreeDeleteCancelScript worktreeValidateBranchScript
           worktreeEditOpenScript worktreeCreateScript worktreeDeleteScript

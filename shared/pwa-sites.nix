@@ -402,7 +402,7 @@ let
       scope = "https://backstage.cnoe.localtest.me:8443/";
       ulid = "01MD4D0A6S2CVXKNNY4EJ5PQ1G";  # Generated 2025-11-17
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 69;
       # Feature 113: URL routing domains
       routing_domains = [ "backstage.cnoe.localtest.me" ];
@@ -569,7 +569,7 @@ let
       scope = "https://backstage.ai401kchat.com/";
       ulid = "7KZ3PBQKJKQJKQ7ZA831VYAFXC";  # Generated 2025-12-09
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 78;
       # Feature 113: URL routing domains
       routing_domains = [ "backstage.ai401kchat.com" ];
@@ -664,25 +664,44 @@ let
       scope = "https://grafana-hub.tail286401.ts.net/";
       ulid = "6F5SBQ6RZQPTASDHNFNERW976H";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 83;
     }
 
-    # Langfuse Hub
+    # Langfuse (CNOE local)
     {
-      name = "Langfuse Hub";
-      host = "hub";
-      url = "https://langfuse-hub.tail286401.ts.net";
-      domain = "langfuse-hub.tail286401.ts.net";
+      name = "Langfuse";
+      url = "https://langfuse.cnoe.localtest.me:8443";
+      domain = "langfuse.cnoe.localtest.me";
       icon = iconPath "langfuse.svg";
-      description = "Langfuse AI observability for Hub cluster";
+      description = "Langfuse AI observability platform";
       categories = "Network;Development;";
-      keywords = "langfuse;ai;observability;tracing;hub;";
-      scope = "https://langfuse-hub.tail286401.ts.net/";
+      keywords = "langfuse;ai;observability;tracing;kubernetes;";
+      scope = "https://langfuse.cnoe.localtest.me:8443/";
       ulid = "4NAWESCFFZM8CHZJBCMXVWF4TK";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 84;
+      # Feature 113: URL routing domains
+      routing_domains = [ "langfuse.cnoe.localtest.me" ];
+    }
+
+    # Jaeger (CNOE local)
+    {
+      name = "Jaeger";
+      url = "https://jaeger.cnoe.localtest.me:8443";
+      domain = "jaeger.cnoe.localtest.me";
+      icon = iconPath "jaeger.svg";
+      description = "Jaeger distributed tracing platform";
+      categories = "Network;Development;";
+      keywords = "jaeger;tracing;observability;distributed;kubernetes;";
+      scope = "https://jaeger.cnoe.localtest.me:8443/";
+      ulid = "01JGNH8K2M3P4Q5R6S7T8V9W0X";  # Generated 2025-12-30
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 93;
+      # Feature 113: URL routing domains
+      routing_domains = [ "jaeger.cnoe.localtest.me" ];
     }
 
     # Alloy Hub
@@ -698,7 +717,7 @@ let
       scope = "https://alloy-hub.tail286401.ts.net/";
       ulid = "0YF8REBN1HG7BF9W7N2TJGC4JA";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 85;
     }
 
@@ -719,26 +738,10 @@ let
       scope = "https://grafana-thinkpad.tail286401.ts.net/";
       ulid = "7P1BD85PQGTZA9QHS5RAK2T1N6";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 86;
     }
 
-    # Langfuse ThinkPad
-    {
-      name = "Langfuse ThinkPad";
-      host = "thinkpad";
-      url = "https://langfuse-thinkpad.tail286401.ts.net";
-      domain = "langfuse-thinkpad.tail286401.ts.net";
-      icon = iconPath "langfuse.svg";
-      description = "Langfuse AI observability for ThinkPad cluster";
-      categories = "Network;Development;";
-      keywords = "langfuse;ai;observability;tracing;thinkpad;";
-      scope = "https://langfuse-thinkpad.tail286401.ts.net/";
-      ulid = "7Z4BFAN380AZVXDJ4KB2SJM0SZ";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "scoped";
-      preferred_workspace = 87;
-    }
 
     # Alloy ThinkPad
     {
@@ -753,7 +756,7 @@ let
       scope = "http://localhost:12345/";
       ulid = "3Q6FKYJZE0584G3Q2HW6SCRS5G";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 88;
     }
 
@@ -774,26 +777,10 @@ let
       scope = "https://grafana-ryzen.tail286401.ts.net/";
       ulid = "4GYTVH57ZRH7ZTBZQZZ5G6XAJX";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 89;
     }
 
-    # Langfuse Ryzen
-    {
-      name = "Langfuse Ryzen";
-      host = "ryzen";
-      url = "https://langfuse-ryzen.tail286401.ts.net";
-      domain = "langfuse-ryzen.tail286401.ts.net";
-      icon = iconPath "langfuse.svg";
-      description = "Langfuse AI observability for Ryzen cluster";
-      categories = "Network;Development;";
-      keywords = "langfuse;ai;observability;tracing;ryzen;";
-      scope = "https://langfuse-ryzen.tail286401.ts.net/";
-      ulid = "037RT474WQM1AAKESX4J54W0TD";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "scoped";
-      preferred_workspace = 90;
-    }
 
     # Alloy Ryzen
     {
@@ -808,8 +795,48 @@ let
       scope = "http://localhost:12345/";
       ulid = "4ZY96QS21XXYC2MY9PMPECBE7M";  # Generated 2025-12-24
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 91;
+    }
+
+    # ============================================
+    # CNOE/CAIPE PWAs (localtest.me)
+    # ============================================
+
+    # Flipt (CNOE local)
+    {
+      name = "Flipt";
+      url = "https://flipt.cnoe.localtest.me:8443";
+      domain = "flipt.cnoe.localtest.me";
+      icon = iconPath "flipt.svg";
+      description = "Flipt feature flag management platform";
+      categories = "Development;Network;";
+      keywords = "flipt;feature-flags;toggles;experimentation;kubernetes;";
+      scope = "https://flipt.cnoe.localtest.me:8443/";
+      ulid = "01KDPH3T12J6EQ2N6SZRGW1VPD";  # Generated 2025-12-29
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 92;
+      # Feature 113: URL routing domains
+      routing_domains = [ "flipt.cnoe.localtest.me" ];
+    }
+
+    # RAG WebUI (CNOE/CAIPE local)
+    {
+      name = "RAG WebUI";
+      url = "https://rag-webui.cnoe.localtest.me:8443";
+      domain = "rag-webui.cnoe.localtest.me";
+      icon = iconPath "rag-webui.svg";
+      description = "CAIPE RAG WebUI - AI-powered knowledge retrieval interface";
+      categories = "Development;Network;";
+      keywords = "rag;webui;caipe;ai;llm;retrieval;knowledge;cnoe;";
+      scope = "https://rag-webui.cnoe.localtest.me:8443/";
+      ulid = "01KDPH3T1CD7ECNDJPQ01VFH40";  # Generated 2025-12-29
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 94;
+      # Feature 113: URL routing domains
+      routing_domains = [ "rag-webui.cnoe.localtest.me" ];
     }
   ];
 

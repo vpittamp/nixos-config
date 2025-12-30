@@ -1,4 +1,4 @@
-{ config, lib, pkgs, osConfig ? null, monitorConfig ? {}, ... }:
+{ config, lib, pkgs, osConfig ? null, monitorConfig ? {}, assetsPackage ? null, ... }:
 
 with lib;
 
@@ -6,6 +6,23 @@ let
   cfg = config.programs.eww-monitoring-panel;
 
   hostname = osConfig.networking.hostName or "hetzner";
+
+  # Feature 106: Portable icon paths via assetsPackage
+  # Helper to get icon path from Nix store or fallback to legacy path
+  iconPath = name:
+    if assetsPackage != null
+    then "${assetsPackage}/icons/${name}"
+    else "/etc/nixos/assets/icons/${name}";
+
+  # Pre-computed icon paths for yuck files
+  iconPaths = {
+    claude = iconPath "claude.svg";
+    codex = iconPath "codex.svg";
+    gemini = iconPath "gemini.svg";
+    anthropic = iconPath "anthropic.svg";
+    tmux = iconPath "tmux-original.svg";
+    chatgpt = iconPath "chatgpt.svg";
+  };
 
   hostMonitors = monitorConfig.${hostname} or {
     primary = "HEADLESS-1";
@@ -34,7 +51,7 @@ let
     monitorPanelNavScript swayNCToggleScript restartServiceScript
     projectCrudScript projectEditOpenScript projectEditSaveScript
     projectConflictResolveScript formValidationStreamScript
-    worktreeCreateOpenScript worktreeAutoPopulateScript
+    worktreeCreateOpenScript worktreeAutoPopulateScript worktreeUpdatePathScript
     worktreeDeleteOpenScript worktreeDeleteConfirmScript
     worktreeDeleteCancelScript worktreeValidateBranchScript
     worktreeEditOpenScript worktreeCreateScript worktreeDeleteScript
@@ -59,7 +76,7 @@ let
     inherit monitoringDataScript pulsePhaseScript;
   };
 
-  windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs; });
+  windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs iconPaths; });
 
   projectsViewYuck = import ./yuck/projects-view.yuck.nix (scripts // { inherit pkgs; });
 
@@ -131,6 +148,7 @@ in
       projectsNavScript
       worktreeCreateOpenScript
       worktreeAutoPopulateScript
+      worktreeUpdatePathScript
       worktreeValidateBranchScript
       worktreeDeleteOpenScript
       worktreeDeleteConfirmScript

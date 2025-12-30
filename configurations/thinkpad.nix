@@ -501,6 +501,10 @@ in
     # Terminal
     ghostty
 
+    # AI Voice Typing - https://vibetyper.com
+    # Voice-to-text with AI refinement (X11 fully supported, Wayland experimental)
+    (callPackage ../packages/vibetyper.nix { })
+
     # Brightness control
     brightnessctl
 

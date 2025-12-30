@@ -427,6 +427,10 @@ in
         categoriesStr = if (pwa ? categories)
           then pwa.categories  # Already has semicolons from pwa-sites.nix
           else "Network;";
+        # Keywords for application search (used by Walker, rofi, etc.)
+        keywordsStr = if (pwa ? keywords)
+          then pwa.keywords  # Already has semicolons from pwa-sites.nix
+          else "";
         # PWA app name in app registry (e.g., "youtube-pwa")
         appName = "${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa";
       in {
@@ -440,6 +444,7 @@ in
           Icon=${pwa.icon}
           Terminal=false
           Categories=${categoriesStr}
+          ${if keywordsStr != "" then "Keywords=${keywordsStr}" else ""}
           StartupNotify=true
         '';
       }) pwas);

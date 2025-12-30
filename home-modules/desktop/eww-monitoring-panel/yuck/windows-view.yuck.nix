@@ -1,4 +1,4 @@
-{ pkgs, focusWindowScript, closeWorktreeScript, closeAllWindowsScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openLangfuseTraceScript, ... }:
+{ pkgs, focusWindowScript, closeWorktreeScript, closeAllWindowsScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openLangfuseTraceScript, iconPaths, ... }:
 
 ''
   ;; Windows View - Project-based hierarchy with real-time updates
@@ -93,12 +93,12 @@
                             ? " completed"
                             : (session.needs_attention ? " attention" : " idle")))}
                       :path {session.source == "claude-code"
-                        ? "/etc/nixos/assets/icons/claude.svg"
+                        ? "${iconPaths.claude}"
                         : (session.source == "codex"
-                          ? "/etc/nixos/assets/icons/codex.svg"
+                          ? "${iconPaths.codex}"
                           : (session.source == "gemini"
-                            ? "/etc/nixos/assets/icons/gemini.svg"
-                            : "/etc/nixos/assets/icons/anthropic.svg"))}
+                            ? "${iconPaths.gemini}"
+                            : "${iconPaths.anthropic}"))}
                       :image-width 18
                       :image-height 18)))))
             ;; Projects list
@@ -147,12 +147,12 @@
                                 ? " attention"
                                 : " idle")))}
                         :path {(session.tool ?: "unknown") == "claude-code"
-                          ? "/etc/nixos/assets/icons/claude.svg"
+                          ? "${iconPaths.claude}"
                           : ((session.tool ?: "unknown") == "codex"
-                            ? "/etc/nixos/assets/icons/codex.svg"
+                            ? "${iconPaths.codex}"
                             : ((session.tool ?: "unknown") == "gemini"
-                              ? "/etc/nixos/assets/icons/gemini.svg"
-                              : "/etc/nixos/assets/icons/anthropic.svg"))}
+                              ? "${iconPaths.gemini}"
+                              : "${iconPaths.anthropic}"))}
                         :image-width 18
                         :image-height 18)
                       (label
@@ -261,7 +261,7 @@
               :class "window-icon-container"
               :valign "center"
               (image :class "window-icon-image"
-                     :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
+                     :path {strlength(window.icon_path) > 0 ? window.icon_path : "${iconPaths.tmux}"}
                      :image-width 20
                      :image-height 20))
             (box
@@ -312,12 +312,12 @@
                           ? " attention"
                           : " idle")))}
                   :path {(badge.otel_tool ?: "unknown") == "claude-code"
-                    ? "/etc/nixos/assets/icons/claude.svg"
+                    ? "${iconPaths.claude}"
                     : ((badge.otel_tool ?: "unknown") == "codex"
-                      ? "/etc/nixos/assets/icons/codex.svg"
+                      ? "${iconPaths.codex}"
                       : ((badge.otel_tool ?: "unknown") == "gemini"
-                        ? "/etc/nixos/assets/icons/gemini.svg"
-                        : "/etc/nixos/assets/icons/anthropic.svg"))}
+                        ? "${iconPaths.gemini}"
+                        : "${iconPaths.anthropic}"))}
                   :image-width 16
                   :image-height 16))))
           ;; Feature 136: Overflow badge when more than 3 sessions

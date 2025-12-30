@@ -38,6 +38,26 @@ home-modules/       # User environment
 | `CapsLock` (M1) / `Ctrl+0` | Workspace mode |
 | `Mod+Tab` | Workspace overview |
 
+## Walker/Elephant Launcher
+
+`Meta+D` or `Alt+Space` opens Walker. Use prefixes for quick access:
+
+| Prefix | Provider | Description |
+|--------|----------|-------------|
+| `*` | 1Password | Search vaults (Return=password, Shift+Return=username, Ctrl+Return=OTP) |
+| `=` | Calculator | Math expressions |
+| `:` | Clipboard | Clipboard history |
+| `/` | Files | File browser |
+| `@` | Websearch | Web search |
+| `>` | Runner | Shell commands |
+| `?` | Help | List all providers |
+| `;p ` | Projects | Project switcher |
+| `;s ` | Sesh | Tmux session switcher |
+| `;m ` | Monitors | Monitor profile switcher |
+| `;h ` | History | Browser history |
+
+**1Password Integration**: Requires 1Password GUI running and `op` CLI authenticated.
+
 ## Monitoring Panel (Features 085, 086, 099, 109, 125)
 
 `Mod+M` toggle visibility | `Mod+Shift+M` toggle dock mode | `Alt+1-7` tabs

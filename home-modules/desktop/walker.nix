@@ -1052,6 +1052,12 @@ in
         prefix = ";h "
         provider = "menus:history"
 
+        # 1Password integration
+        # Return: copy password | Shift+Return: copy username | Ctrl+Return: copy OTP
+        [[providers.prefixes]]
+        prefix = "*"
+        provider = "1password"
+
         [[providers.actions.desktopapplications]]
         action = "open"
         after = "Close"
@@ -1108,6 +1114,29 @@ in
         after = "Nothing"
         bind = "ctrl m"
         label = "window actions"
+
+        # 1Password provider actions
+        # Return: copy password (default action)
+        [[providers.actions.1password]]
+        action = "copy"
+        after = "Close"
+        bind = "Return"
+        default = true
+        label = "copy password"
+
+        # Shift+Return: copy username
+        [[providers.actions.1password]]
+        action = "copy_username"
+        after = "Close"
+        bind = "shift Return"
+        label = "copy username"
+
+        # Ctrl+Return: copy OTP/TOTP
+        [[providers.actions.1password]]
+        action = "copy_otp"
+        after = "Close"
+        bind = "ctrl Return"
+        label = "copy OTP"
     '';
   };
 
@@ -1126,6 +1155,7 @@ in
   # Feature 050: Enhanced with domain-specific search engines
   xdg.configFile."elephant/websearch.toml".text = ''
     # Elephant Web Search Configuration
+    icon = "web-browser"
 
     [[engines]]
     name = "Google AI"
@@ -1178,6 +1208,7 @@ in
     # Shows all installed providers and configured menus
     # Access: Meta+D → ? → shows all providers with descriptions
 
+    icon = "help-about"
     # Minimum fuzzy match score (0-100)
     min_score = 30
 
@@ -1192,6 +1223,7 @@ in
     # Bookmarks are stored in CSV: ~/.cache/elephant/bookmarks/bookmarks.csv
     # Use Walker to add bookmarks: Meta+D → b → <url> → Return
 
+    icon = "user-bookmarks"
     # Minimum fuzzy match score (0-100)
     min_score = 30
 
@@ -1256,6 +1288,7 @@ in
     # Show hidden files (dotfiles) and search from home directory
     # NOTE: Removed --follow flag - it traverses ALL symlinks (too slow, indexes too much)
     # To search /etc/nixos: Type /etc/nixos in Walker file search
+    icon = "system-file-manager"
     fd_flags = "--hidden --ignore-vcs --type file --type directory"
 
     # Ignore performance-heavy directories
@@ -1283,6 +1316,105 @@ in
 
     # Icon for the provider
     icon = "preferences-system-windows"
+  '';
+
+  # Bluetooth provider configuration
+  xdg.configFile."elephant/bluetooth.toml".text = ''
+    # Elephant Bluetooth Provider Configuration
+    icon = "preferences-system-bluetooth"
+    min_score = 30
+  '';
+
+  # Desktop applications provider configuration
+  xdg.configFile."elephant/desktopapplications.toml".text = ''
+    # Elephant Desktop Applications Provider Configuration
+    icon = "applications-all"
+    min_score = 20
+    history = true
+
+    # Aliases for apps with fuzzy matching issues
+    # Format: alias = "desktop-file-id" (without .desktop extension)
+    # These aliases are prioritized in search results
+    [aliases]
+    backstage = "FFPWA-01MD4D0A6S2CVXKNNY4EJ5PQ1G"
+    "backstage talos" = "FFPWA-7KZ3PBQKJKQJKQ7ZA831VYAFXC"
+  '';
+
+  # Calculator provider configuration
+  xdg.configFile."elephant/calc.toml".text = ''
+    # Elephant Calculator Provider Configuration
+    icon = "accessories-calculator"
+    min_score = 30
+  '';
+
+  # Runner provider configuration
+  xdg.configFile."elephant/runner.toml".text = ''
+    # Elephant Runner Provider Configuration
+    icon = "utilities-terminal"
+    min_score = 30
+  '';
+
+  # Todo provider configuration
+  xdg.configFile."elephant/todo.toml".text = ''
+    # Elephant Todo Provider Configuration
+    icon = "view-task"
+    min_score = 30
+  '';
+
+  # Snippets provider configuration
+  xdg.configFile."elephant/snippets.toml".text = ''
+    # Elephant Snippets Provider Configuration
+    icon = "insert-text"
+    min_score = 30
+  '';
+
+  # Symbols provider configuration
+  xdg.configFile."elephant/symbols.toml".text = ''
+    # Elephant Symbols/Emoji Provider Configuration
+    icon = "preferences-desktop-font"
+    min_score = 30
+  '';
+
+  # Unicode provider configuration
+  xdg.configFile."elephant/unicode.toml".text = ''
+    # Elephant Unicode Provider Configuration
+    icon = "accessories-character-map"
+    min_score = 30
+  '';
+
+  # 1Password provider configuration
+  # Access via Walker: Meta+D → * → search for login items
+  # Features:
+  #   - Return: copy password (clears after 5 seconds)
+  #   - Shift+Return: copy username
+  #   - Ctrl+Return: copy OTP (if available)
+  # Requirements: 1Password GUI + op CLI (installed via onepassword module)
+  xdg.configFile."elephant/1password.toml".text = ''
+    # Elephant 1Password Provider Configuration
+    # Docs: elephant generatedoc 1password
+    icon = "1password"
+    name_pretty = "1Password"
+    min_score = 30
+
+    # Vaults to index - "Personal" and "Private" match our SSH vault config
+    vaults = ["Personal", "Private"]
+
+    # Notify after copying password
+    notify = true
+
+    # Clear clipboard after 5 seconds for security
+    clear_after = 5
+
+    # Category icons for visual distinction
+    [category_icons]
+    login = "dialog-password-symbolic"
+    secure_note = "accessories-text-editor-symbolic"
+    ssh_key = "utilities-terminal-symbolic"
+    credit_card = "auth-smartcard-symbolic"
+    identity = "avatar-default-symbolic"
+    document = "folder-documents-symbolic"
+    password = "dialog-password-symbolic"
+    api_credential = "network-server-symbolic"
   '';
 
   # Feature 083: Monitor profile switcher menu (Elephant Lua menu)
@@ -1498,9 +1630,10 @@ in
         # CURATED PRIORITY: Curated apps first, then user profile, then system
         # Directory 1: i3pmAppsDir = ~/.local/share/i3pm-applications (curated registry apps - PRIORITY)
         # Directory 2: ~/.local/share (PWAs + user apps)
-        # Directory 3: Per-user Nix profile (icon themes: Papirus, Breeze, etc.)
-        # Directory 4: System share (fallback icon themes)
-        "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
+        # Directory 3: Per-user Nix profile managed by home-manager (icon themes: Papirus, Breeze, etc.)
+        # Directory 4: User's nix-profile share
+        # Directory 5: System share (fallback icon themes)
+        "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:/etc/profiles/per-user/${config.home.username}/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
         "XDG_RUNTIME_DIR=%t"
       ];
       # CRITICAL: Pass compositor environment variables for launched apps
@@ -1523,6 +1656,6 @@ in
   # This ensures Walker (when invoked directly, not as service) prioritizes curated apps
   # CURATED PRIORITY: Curated apps first, then per-user profile (icon themes), then system
   home.sessionVariables = {
-    XDG_DATA_DIRS = "${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share";
+    XDG_DATA_DIRS = "${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:/etc/profiles/per-user/${config.home.username}/share:${config.home.profileDirectory}/share:/run/current-system/sw/share";
   };
 }

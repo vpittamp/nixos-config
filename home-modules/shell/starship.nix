@@ -1,5 +1,8 @@
 { config, pkgs, lib, ... }:
 let
+  # Feature 106: Portable script wrappers for worktree support
+  scriptWrappers = import ../../shared/script-wrappers.nix { inherit pkgs lib; };
+
   colors = {
     rosewater = "#f5e0dc";
     flamingo = "#f2cdcd";
@@ -103,9 +106,10 @@ in
         format = "[$output]($style) ";
       };
 
+      # Feature 106: portable wrapper for worktree support
       custom.i3pm_project = {
-        when = "[ -x /etc/nixos/scripts/i3pm-project-badge.sh ] && test -n \"$I3PM_PROJECT_NAME$I3PM_PROJECT_DISPLAY_NAME\"";
-        command = "/etc/nixos/scripts/i3pm-project-badge.sh --plain";
+        when = "[ -x ${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge ] && test -n \"$I3PM_PROJECT_NAME$I3PM_PROJECT_DISPLAY_NAME\"";
+        command = "${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge --plain";
         style = "fg:${colors.peach} bold";
         format = "[$output]($style)";
       };

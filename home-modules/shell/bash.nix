@@ -1,4 +1,9 @@
 { config, pkgs, lib, osConfig, ... }:
+
+let
+  # Feature 106: Portable script wrappers for worktree support
+  scriptWrappers = import ../../shared/script-wrappers.nix { inherit pkgs lib; };
+in
 {
   programs.bash = {
     enable = true;
@@ -163,16 +168,16 @@
       tpanes = "tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} → #{pane_current_command} (#{pane_current_path})'";
       tpinfo = "echo -e 'CURRENT PANE:\\n' && tmux display-message -p '  #{session_name}:#{window_index}.#{pane_index} (#{pane_current_command})\\n\\nALL PANES:' && tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} → #{pane_current_command}'";
 
-      # Keybinding cheatsheet
-      keys = "/etc/nixos/scripts/keybindings-cheatsheet.sh";
-      cheatsheet = "/etc/nixos/scripts/keybindings-cheatsheet.sh";
+      # Keybinding cheatsheet (Feature 106: portable wrappers)
+      keys = "${scriptWrappers.keybindings-cheatsheet}/bin/keybindings-cheatsheet";
+      cheatsheet = "${scriptWrappers.keybindings-cheatsheet}/bin/keybindings-cheatsheet";
 
-      # Clipboard management
-      clip = "/etc/nixos/scripts/clipcat-fzf.sh";
-      clips = "/etc/nixos/scripts/clipcat-fzf.sh";
+      # Clipboard management (Feature 106: portable wrappers)
+      clip = "${scriptWrappers.clipcat-fzf}/bin/clipcat-fzf";
+      clips = "${scriptWrappers.clipcat-fzf}/bin/clipcat-fzf";
 
-      # Background command management
-      bglast = "/etc/nixos/scripts/view-last-bg-command.sh";  # View last background command output
+      # Background command management (Feature 106: portable wrappers)
+      bglast = "${scriptWrappers.view-last-bg-command}/bin/view-last-bg-command";  # View last background command output
       bglog = "less ~/.cache/bg-commands.log";  # View all background command history
       
       # Kubernetes
@@ -196,7 +201,8 @@
       # Floating fzf terminal - defined as function in initExtra (not an alias)
 
       # History search with fzf in floating window (copies to clipboard)
-      fzfhist = "xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-history.sh";
+      # Feature 106: portable wrapper
+      fzfhist = "xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-history}/bin/fzf-history";
 
       # Platform-specific aliases moved to respective configurations
       
@@ -223,10 +229,10 @@
       nh-m1-fresh = "nh os switch --hostname m1 --impure --refresh -- --option eval-cache false";
       nh-wsl-fresh = "nh os switch --hostname wsl --refresh -- --option eval-cache false";
 
-      # Plasma config export with analysis
-      plasma-export = "/etc/nixos/scripts/plasma-rc2nix.sh";
-      plasma-diff = "/etc/nixos/scripts/plasma-diff.sh";
-      plasma-diff-summary = "/etc/nixos/scripts/plasma-diff.sh --summary";
+      # Plasma config export with analysis (Feature 106: portable wrappers)
+      plasma-export = "${scriptWrappers.plasma-rc2nix}/bin/plasma-rc2nix";
+      plasma-diff = "${scriptWrappers.plasma-diff}/bin/plasma-diff";
+      plasma-diff-summary = "${scriptWrappers.plasma-diff}/bin/plasma-diff --summary";
 
       # i3 Project Management (integrated with i3blocks status bar)
       # These replace the old i3-project command system

@@ -2,6 +2,10 @@
 # Works with both xsession and XRDP
 { config, lib, pkgs, ... }:
 
+let
+  # Feature 106: Portable script wrappers for worktree support
+  scriptWrappers = import ../../shared/script-wrappers.nix { inherit pkgs lib; };
+in
 {
   # Feature 034: Application launcher now uses Walker (configured in walker.nix)
   # Legacy rofi configuration archived in i3-launcher.nix
@@ -71,21 +75,22 @@
     # Use GDK_BACKEND=x11 to force X11 backend and avoid Wayland layer shell issues
     # Feature 034/035: Set XDG_DATA_DIRS to include i3pm-applications directory
     bindsym $mod+d exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
-    # FZF fallbacks for specific use cases
-    bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
-    bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-send-to-window.sh
+    # FZF fallbacks for specific use cases (Feature 106: portable wrappers)
+    bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-launcher}/bin/fzf-launcher
+    bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-send-to-window}/bin/fzf-send-to-window
     # Walker alternative keybinding (Alt+Space for muscle memory)
     bindsym Mod1+space exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
 
     # Sesh tmux session switcher (Meta+Shift+s)
     # Opens Walker in dmenu mode to select and launch tmux sessions
-    bindsym $mod+Shift+s exec /etc/nixos/scripts/sesh-switcher.sh
+    # Feature 106: portable wrapper
+    bindsym $mod+Shift+s exec ${scriptWrappers.sesh-switcher}/bin/sesh-switcher
 
-    # Keybinding cheatsheet (F1 for help)
-    bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
+    # Keybinding cheatsheet (F1 for help) - Feature 106: portable wrapper
+    bindsym F1 exec ${scriptWrappers.keybindings-cheatsheet}/bin/keybindings-cheatsheet
 
-    # Clipboard (using FZF for better tmux integration)
-    bindsym $mod+v exec /etc/nixos/scripts/clipcat-fzf.sh
+    # Clipboard (using FZF for better tmux integration) - Feature 106: portable wrapper
+    bindsym $mod+v exec ${scriptWrappers.clipcat-fzf}/bin/clipcat-fzf
     bindsym $mod+Shift+v exec ${pkgs.clipcat}/bin/clipcatctl clear
 
     # Screenshots (Spectacle)
@@ -119,8 +124,8 @@
     bindsym $mod+space focus mode_toggle
     bindsym $mod+Shift+9 move container to workspace $ws9
 
-    # Project management keybindings (fzf-based switcher)
-    bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh
+    # Project management keybindings (fzf-based switcher) - Feature 106: portable wrapper
+    bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e ${scriptWrappers.fzf-project-switcher}/bin/fzf-project-switcher
     bindsym $mod+Shift+p exec i3pm project clear
 
     # Project-aware application launchers (Feature 035: Registry-based with environment injection)
