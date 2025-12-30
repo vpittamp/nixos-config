@@ -372,6 +372,22 @@ in
   # Add user to required groups
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" ];
 
+  # ========== BLUETOOTH SUPPORT ==========
+  # For USB Bluetooth adapter or motherboard Bluetooth
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+    settings = {
+      General = {
+        Enable = "Source,Sink,Media,Socket";
+        Experimental = true;
+      };
+    };
+  };
+
+  # Bluetooth manager GUI
+  services.blueman.enable = true;
+
   # ========== FINGERPRINT AUTHENTICATION ==========
   # Fingerprint reader support (USB fingerprint reader)
   # Enroll fingerprint with: fprintd-enroll
@@ -519,6 +535,18 @@ in
           "default.clock.quantum" = 256;
           "default.clock.min-quantum" = 32;
           "default.clock.max-quantum" = 1024;
+        };
+      };
+    };
+
+    # WirePlumber configuration for Bluetooth audio (Bose QC35, etc.)
+    wireplumber.extraConfig = {
+      "10-bluez" = {
+        "monitor.bluez.properties" = {
+          "bluez5.enable-sbc-xq" = true;
+          "bluez5.enable-msbc" = true;
+          "bluez5.enable-hw-volume" = true;
+          "bluez5.codecs" = [ "sbc" "sbc_xq" "aac" "ldac" "aptx" "aptx_hd" ];
         };
       };
     };
