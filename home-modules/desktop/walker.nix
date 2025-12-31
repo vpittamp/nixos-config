@@ -1115,6 +1115,22 @@ in
         bind = "ctrl m"
         label = "window actions"
 
+        # Clipboard provider actions
+        # Return: copy selected item back to clipboard
+        [[providers.actions.clipboard]]
+        action = "copy"
+        after = "Close"
+        bind = "Return"
+        default = true
+        label = "copy to clipboard"
+
+        # Delete clipboard entry
+        [[providers.actions.clipboard]]
+        action = "delete"
+        after = "Nothing"
+        bind = "ctrl d"
+        label = "delete entry"
+
         # 1Password provider actions
         # Return: copy password (default action)
         [[providers.actions.1password]]
@@ -1141,11 +1157,12 @@ in
   };
 
   # Elephant clipboard provider configuration - centralizes clipboard sync
+  # Note: Using default wl-copy for reliability; clipboardSyncScript caused issues
+  # with Elephant 2.17.2 selection not copying items
   xdg.configFile."elephant/clipboard.toml".text = ''
     icon = "edit-paste"
     min_score = 30
     max_items = 500
-    command = "${clipboardSyncScript}"
     recopy = true
     ignore_symbols = false
     auto_cleanup = 0
