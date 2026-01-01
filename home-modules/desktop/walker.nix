@@ -106,9 +106,9 @@ let
   '';
 
   # Smart paste script for clipboard provider
-  # Detects window type and uses appropriate paste keystroke:
-  # - Terminals (ghostty, alacritty, tmux, etc.): Ctrl+Shift+V
-  # - Regular apps: Ctrl+V
+  # Copies to clipboard, then auto-pastes for regular apps only.
+  # For terminals, content is copied to clipboard but NOT auto-pasted,
+  # allowing users to use tmux's prefix+] or terminal's Ctrl+Shift+V.
   # Reference: https://github.com/abenz1267/walker/issues/560
   smartPasteScript = pkgs.writeShellScript "smart-paste" ''
     #!/usr/bin/env bash
@@ -123,14 +123,16 @@ let
     # Get focused window app_id or class
     focused=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused? == true) | .app_id // .window_properties.class // ""' 2>/dev/null | head -1)
 
-    # Terminal detection - includes common terminal emulators
+    # Terminal detection - for terminals, DON'T auto-paste
+    # This allows users to use their preferred paste method:
+    #   - tmux: prefix + ] (backtick + ])
+    #   - terminal native: Ctrl+Shift+V
     case "$focused" in
       ghostty|Ghostty|alacritty|Alacritty|kitty|Kitty|konsole|foot|Foot|xterm|XTerm|urxvt|URxvt|termite|gnome-terminal|tilix|wezterm|st|St)
-        # Terminal: use Ctrl+Shift+V
-        ${pkgs.wtype}/bin/wtype -M ctrl -M shift v
+        # Terminal: Don't auto-paste. Content is in clipboard.
         ;;
       *)
-        # Regular app: use Ctrl+V
+        # Regular app: use Ctrl+V for auto-paste
         ${pkgs.wtype}/bin/wtype -M ctrl v
         ;;
     esac
@@ -1188,14 +1190,16 @@ in
   };
 
   # Elephant clipboard provider configuration
-  # Auto-paste: copies to clipboard then simulates paste keystroke
-  # Uses smartPasteScript to detect terminals (Ctrl+Shift+V) vs regular apps (Ctrl+V)
+  # Smart clipboard handling:
+  # - Regular apps: Auto-paste with Ctrl+V
+  # - Terminals: Copy to clipboard only (no auto-paste)
+  #   User can then use tmux prefix+] or terminal Ctrl+Shift+V
   # Reference: https://github.com/abenz1267/walker/issues/560
   xdg.configFile."elephant/clipboard.toml".text = ''
     icon = "edit-paste"
     min_score = 30
     max_items = 500
-    # Smart auto-paste: detects window type for correct paste keystroke
+    # Smart paste: auto-pastes for regular apps, clipboard-only for terminals
     command = "${smartPasteScript}"
     recopy = true
     ignore_symbols = false
