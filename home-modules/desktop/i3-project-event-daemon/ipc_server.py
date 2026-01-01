@@ -2394,176 +2394,191 @@ class IPCServer:
                 logger.debug(f"[Feature 123] Returning cached window tree (age: {cache_age:.2f}s)")
                 return {**self._window_tree_cache, "cached": True}
 
-        try:
-            # Query i3 IPC for current state
-            tree = await self.i3_connection.conn.get_tree()
-            workspaces = await self.i3_connection.conn.get_workspaces()
-            outputs_list = await self.i3_connection.conn.get_outputs()
+        # Retry logic for resilience against Sway IPC corruption
+        max_retries = 3
+        last_error = None
 
-            # Build outputs structure
-            outputs = []
-            total_windows = 0
+        for attempt in range(max_retries):
+            try:
+                # Query i3 IPC for current state
+                tree = await self.i3_connection.conn.get_tree()
+                workspaces = await self.i3_connection.conn.get_workspaces()
+                outputs_list = await self.i3_connection.conn.get_outputs()
+                break  # Success, exit retry loop
+            except Exception as e:
+                last_error = e
+                logger.warning(f"get_tree attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt < max_retries - 1:
+                    # Try to reconnect before next attempt
+                    try:
+                        logger.info("Attempting i3 connection recovery...")
+                        await self.i3_connection.validate_and_reconnect_if_needed()
+                        await asyncio.sleep(0.5)  # Brief pause before retry
+                    except Exception as reconnect_error:
+                        logger.error(f"Reconnection failed: {reconnect_error}")
+                else:
+                    raise Exception(f"Failed to query i3 window tree after {max_retries} attempts: {last_error}")
 
-            for output in outputs_list:
-                if not output.active or output.name.startswith("__"):
-                    continue  # Skip inactive and special outputs
+        # Build outputs structure
+        outputs = []
+        total_windows = 0
 
-                # Find current workspace for this output
-                current_ws_name = next((ws.name for ws in workspaces if ws.output == output.name and ws.visible), "1")
+        for output in outputs_list:
+            if not output.active or output.name.startswith("__"):
+                continue  # Skip inactive and special outputs
 
-                output_node = {
-                    "name": output.name,
-                    "active": output.active,
-                    "primary": output.primary,
-                    "geometry": {
-                        "x": output.rect.x,
-                        "y": output.rect.y,
-                        "width": output.rect.width,
-                        "height": output.rect.height,
-                    },
-                    "current_workspace": current_ws_name,
-                    "workspaces": [],
+            # Find current workspace for this output
+            current_ws_name = next((ws.name for ws in workspaces if ws.output == output.name and ws.visible), "1")
+
+            output_node = {
+                "name": output.name,
+                "active": output.active,
+                "primary": output.primary,
+                "geometry": {
+                    "x": output.rect.x,
+                    "y": output.rect.y,
+                    "width": output.rect.width,
+                    "height": output.rect.height,
+                },
+                "current_workspace": current_ws_name,
+                "workspaces": [],
+            }
+
+            # Find workspaces on this output
+            for ws in workspaces:
+                if ws.output != output.name:
+                    continue
+
+                workspace_node = {
+                    "number": ws.num,
+                    "name": ws.name,
+                    "focused": ws.focused,
+                    "visible": ws.visible,
+                    "output": output.name,
+                    "windows": [],
                 }
 
-                # Find workspaces on this output
-                for ws in workspaces:
-                    if ws.output != output.name:
-                        continue
+                # Find windows in this workspace
+                ws_con = self._find_workspace_container(tree, ws.name)
+                if ws_con:
+                    windows = self._extract_windows_from_container(ws_con, ws.num, output.name)
+                    workspace_node["windows"] = windows
+                    total_windows += len(windows)
 
-                    workspace_node = {
-                        "number": ws.num,
-                        "name": ws.name,
-                        "focused": ws.focused,
-                        "visible": ws.visible,
-                        "output": output.name,
-                        "windows": [],
+                output_node["workspaces"].append(workspace_node)
+
+            outputs.append(output_node)
+
+        # Add scratchpad windows as a special workspace on first output
+        # This ensures ALL windows are visible by default (Feature 025 enhancement)
+        if outputs and self.workspace_tracker:
+            scratchpad_windows_list = await window_filtering.get_scratchpad_windows(
+                self.i3_connection.conn
+            )
+
+            if scratchpad_windows_list:
+                scratchpad_windows = []
+                for window in scratchpad_windows_list:
+                    # Get tracking info for workspace number
+                    tracking_info = self.workspace_tracker.windows.get(window.id, {})
+                    tracked_workspace = tracking_info.get("workspace_number", -1)
+
+                    # Read I3PM environment variables
+                    i3pm_env = await window_filtering.get_window_i3pm_env(
+                        window.id, window.pid, window.window
+                    )
+
+                    # Get project from marks or I3PM_PROJECT_NAME
+                    project = None
+                    scope = None
+                    for mark in window.marks:
+                        if mark.startswith("scoped:") or mark.startswith("global:"):
+                            # Feature 101: Use centralized mark parser
+                            parsed = parse_mark(mark, window.id)
+                            if parsed:
+                                scope = parsed.scope
+                                project = parsed.project_name
+                            break
+                    if not project:
+                        project = i3pm_env.get("I3PM_PROJECT_NAME")
+
+                    # Build marks list (include project mark for consistency)
+                    # Feature 101: Unified mark format - scratchpad terminals also use scoped: prefix
+                    marks = list(window.marks)
+                    has_project_mark = any(m.startswith("scoped:") or m.startswith("global:") for m in marks)
+                    if project and not has_project_mark:
+                        # Default to scoped if we don't have scope info
+                        marks.append(f"{scope or 'scoped'}:{project}")
+
+                    # Get window class
+                    window_class = window.window_class if hasattr(window, 'window_class') and window.window_class else (window.app_id if hasattr(window, 'app_id') else "unknown")
+
+                    # Determine if hidden (scoped to different project)
+                    classification = "global"
+                    hidden = True  # Scratchpad windows are hidden by definition
+                    if window_class and project:
+                        if window_class in self.state_manager.state.scoped_classes:
+                            classification = "scoped"
+
+                    # Read I3PM_APP_ID from environment
+                    app_id = i3pm_env.get("I3PM_APP_ID")
+
+                    # Feature 101: Format workspace field - include workspace 0 for scratchpad home
+                    if tracked_workspace is not None and tracked_workspace > 0:
+                        workspace_str = f"scratchpad (tracked: WS {tracked_workspace})"
+                    elif tracked_workspace == 0:
+                        # Feature 101: Workspace 0 = scratchpad home (deterministic)
+                        workspace_str = "scratchpad (home: WS 0)"
+                    else:
+                        workspace_str = "scratchpad"
+
+                    window_data = {
+                        "id": window.id,
+                        "pid": window.pid if hasattr(window, 'pid') else None,
+                        "app_id": app_id,
+                        "class": window_class,
+                        "instance": window.window_instance if hasattr(window, 'window_instance') else "",
+                        "title": window.name or "(no title)",
+                        "workspace": workspace_str,
+                        "output": outputs[0]["name"],  # Associate with first output
+                        "marks": marks,
+                        "floating": True,  # Scratchpad windows are always floating
+                        "focused": False,  # Can't be focused if in scratchpad
+                        "hidden": hidden,
+                        "fullscreen": False,
+                        "geometry": {
+                            "x": window.rect.x if hasattr(window, 'rect') else 0,
+                            "y": window.rect.y if hasattr(window, 'rect') else 0,
+                            "width": window.rect.width if hasattr(window, 'rect') else 0,
+                            "height": window.rect.height if hasattr(window, 'rect') else 0,
+                        },
+                        "classification": classification,
+                        "project": project or "",
                     }
+                    scratchpad_windows.append(window_data)
+                    total_windows += 1
 
-                    # Find windows in this workspace
-                    ws_con = self._find_workspace_container(tree, ws.name)
-                    if ws_con:
-                        windows = self._extract_windows_from_container(ws_con, ws.num, output.name)
-                        workspace_node["windows"] = windows
-                        total_windows += len(windows)
+                # Add scratchpad as a special workspace on the first output
+                scratchpad_workspace = {
+                    "number": -1,  # Special workspace number for scratchpad
+                    "name": "scratchpad",
+                    "focused": False,
+                    "visible": False,
+                    "output": outputs[0]["name"],
+                    "windows": scratchpad_windows,
+                }
+                outputs[0]["workspaces"].append(scratchpad_workspace)
 
-                    output_node["workspaces"].append(workspace_node)
+        # Feature 123: Cache the result for subsequent requests
+        result = {
+            "outputs": outputs,
+            "total_windows": total_windows,
+        }
+        self._window_tree_cache = result
+        self._window_tree_cache_time = time.time()
+        logger.debug(f"[Feature 123] Cached window tree ({total_windows} windows)")
 
-                outputs.append(output_node)
-
-            # Add scratchpad windows as a special workspace on first output
-            # This ensures ALL windows are visible by default (Feature 025 enhancement)
-            if outputs and self.workspace_tracker:
-                scratchpad_windows_list = await window_filtering.get_scratchpad_windows(
-                    self.i3_connection.conn
-                )
-
-                if scratchpad_windows_list:
-                    scratchpad_windows = []
-                    for window in scratchpad_windows_list:
-                        # Get tracking info for workspace number
-                        tracking_info = self.workspace_tracker.windows.get(window.id, {})
-                        tracked_workspace = tracking_info.get("workspace_number", -1)
-
-                        # Read I3PM environment variables
-                        i3pm_env = await window_filtering.get_window_i3pm_env(
-                            window.id, window.pid, window.window
-                        )
-
-                        # Get project from marks or I3PM_PROJECT_NAME
-                        project = None
-                        scope = None
-                        for mark in window.marks:
-                            if mark.startswith("scoped:") or mark.startswith("global:"):
-                                # Feature 101: Use centralized mark parser
-                                parsed = parse_mark(mark, window.id)
-                                if parsed:
-                                    scope = parsed.scope
-                                    project = parsed.project_name
-                                break
-                        if not project:
-                            project = i3pm_env.get("I3PM_PROJECT_NAME")
-
-                        # Build marks list (include project mark for consistency)
-                        # Feature 101: Unified mark format - scratchpad terminals also use scoped: prefix
-                        marks = list(window.marks)
-                        has_project_mark = any(m.startswith("scoped:") or m.startswith("global:") for m in marks)
-                        if project and not has_project_mark:
-                            # Default to scoped if we don't have scope info
-                            marks.append(f"{scope or 'scoped'}:{project}")
-
-                        # Get window class
-                        window_class = window.window_class if hasattr(window, 'window_class') and window.window_class else (window.app_id if hasattr(window, 'app_id') else "unknown")
-
-                        # Determine if hidden (scoped to different project)
-                        classification = "global"
-                        hidden = True  # Scratchpad windows are hidden by definition
-                        if window_class and project:
-                            if window_class in self.state_manager.state.scoped_classes:
-                                classification = "scoped"
-
-                        # Read I3PM_APP_ID from environment
-                        app_id = i3pm_env.get("I3PM_APP_ID")
-
-                        # Feature 101: Format workspace field - include workspace 0 for scratchpad home
-                        if tracked_workspace is not None and tracked_workspace > 0:
-                            workspace_str = f"scratchpad (tracked: WS {tracked_workspace})"
-                        elif tracked_workspace == 0:
-                            # Feature 101: Workspace 0 = scratchpad home (deterministic)
-                            workspace_str = "scratchpad (home: WS 0)"
-                        else:
-                            workspace_str = "scratchpad"
-
-                        window_data = {
-                            "id": window.id,
-                            "pid": window.pid if hasattr(window, 'pid') else None,
-                            "app_id": app_id,
-                            "class": window_class,
-                            "instance": window.window_instance if hasattr(window, 'window_instance') else "",
-                            "title": window.name or "(no title)",
-                            "workspace": workspace_str,
-                            "output": outputs[0]["name"],  # Associate with first output
-                            "marks": marks,
-                            "floating": True,  # Scratchpad windows are always floating
-                            "focused": False,  # Can't be focused if in scratchpad
-                            "hidden": hidden,
-                            "fullscreen": False,
-                            "geometry": {
-                                "x": window.rect.x if hasattr(window, 'rect') else 0,
-                                "y": window.rect.y if hasattr(window, 'rect') else 0,
-                                "width": window.rect.width if hasattr(window, 'rect') else 0,
-                                "height": window.rect.height if hasattr(window, 'rect') else 0,
-                            },
-                            "classification": classification,
-                            "project": project or "",
-                        }
-                        scratchpad_windows.append(window_data)
-                        total_windows += 1
-
-                    # Add scratchpad as a special workspace on the first output
-                    scratchpad_workspace = {
-                        "number": -1,  # Special workspace number for scratchpad
-                        "name": "scratchpad",
-                        "focused": False,
-                        "visible": False,
-                        "output": outputs[0]["name"],
-                        "windows": scratchpad_windows,
-                    }
-                    outputs[0]["workspaces"].append(scratchpad_workspace)
-
-            # Feature 123: Cache the result for subsequent requests
-            result = {
-                "outputs": outputs,
-                "total_windows": total_windows,
-            }
-            self._window_tree_cache = result
-            self._window_tree_cache_time = time.time()
-            logger.debug(f"[Feature 123] Cached window tree ({total_windows} windows)")
-
-            return {**result, "cached": False}
-
-        except Exception as e:
-            logger.error(f"Failed to get window tree: {e}")
-            raise Exception(f"Failed to query i3 window tree: {e}")
+        return {**result, "cached": False}
 
     def _find_workspace_container(self, tree, workspace_name: str):
         """Find workspace container in i3 tree by name.
