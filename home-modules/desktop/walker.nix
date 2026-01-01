@@ -105,6 +105,37 @@ let
     copy_osc52
   '';
 
+  # Smart paste script for clipboard provider
+  # Detects window type and uses appropriate paste keystroke:
+  # - Terminals (ghostty, alacritty, tmux, etc.): Ctrl+Shift+V
+  # - Regular apps: Ctrl+V
+  # Reference: https://github.com/abenz1267/walker/issues/560
+  smartPasteScript = pkgs.writeShellScript "smart-paste" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Copy content to clipboard first (reads from stdin)
+    ${pkgs.wl-clipboard}/bin/wl-copy
+
+    # Small delay for clipboard to sync and Walker window to close
+    sleep 0.15
+
+    # Get focused window app_id or class
+    focused=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused? == true) | .app_id // .window_properties.class // ""' 2>/dev/null | head -1)
+
+    # Terminal detection - includes common terminal emulators
+    case "$focused" in
+      ghostty|Ghostty|alacritty|Alacritty|kitty|Kitty|konsole|foot|Foot|xterm|XTerm|urxvt|URxvt|termite|gnome-terminal|tilix|wezterm|st|St)
+        # Terminal: use Ctrl+Shift+V
+        ${pkgs.wtype}/bin/wtype -M ctrl -M shift v
+        ;;
+      *)
+        # Regular app: use Ctrl+V
+        ${pkgs.wtype}/bin/wtype -M ctrl v
+        ;;
+    esac
+  '';
+
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
     # Launch an Alacritty terminal window with Neovim for a Walker-selected file path
@@ -1156,13 +1187,16 @@ in
     '';
   };
 
-  # Elephant clipboard provider configuration - centralizes clipboard sync
-  # Note: Using default wl-copy for reliability; clipboardSyncScript caused issues
-  # with Elephant 2.17.2 selection not copying items
+  # Elephant clipboard provider configuration
+  # Auto-paste: copies to clipboard then simulates paste keystroke
+  # Uses smartPasteScript to detect terminals (Ctrl+Shift+V) vs regular apps (Ctrl+V)
+  # Reference: https://github.com/abenz1267/walker/issues/560
   xdg.configFile."elephant/clipboard.toml".text = ''
     icon = "edit-paste"
     min_score = 30
     max_items = 500
+    # Smart auto-paste: detects window type for correct paste keystroke
+    command = "${smartPasteScript}"
     recopy = true
     ignore_symbols = false
     auto_cleanup = 0
