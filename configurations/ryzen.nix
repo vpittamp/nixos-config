@@ -140,12 +140,10 @@ in
   # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
-  # - All telemetry exported to K8s LGTM stack
-  # Feature 125: Use targetCluster for parameterized endpoint routing
-  # ryzen host → ryzen K8s cluster
+  # - All telemetry exported to K8s LGTM stack via cnoe.localtest.me:8443
   services.grafana-alloy = {
     enable = true;
-    targetCluster = "ryzen";  # Auto-computes endpoints: *-ryzen.tail286401.ts.net
+    # Endpoints default to *.cnoe.localtest.me:8443 (local K8s cluster)
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [

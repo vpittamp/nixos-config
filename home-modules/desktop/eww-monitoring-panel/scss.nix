@@ -708,6 +708,24 @@
     color: ${mocha.overlay0};
   }
 
+  .ai-session-status-icon {
+    font-size: 8px;
+    margin-left: 2px;
+    opacity: 0.8;
+  }
+
+  .ai-session-status-icon.completed {
+    color: ${mocha.teal};
+  }
+
+  .ai-session-status-icon.working {
+    color: ${mocha.red};
+  }
+
+  .ai-session-status-icon.attention {
+    color: ${mocha.peach};
+  }
+
   .ai-session-indicator {
     font-size: 12px;
     font-weight: bold;
