@@ -105,6 +105,39 @@ let
     copy_osc52
   '';
 
+  # Smart paste script for clipboard provider
+  # Copies to clipboard, then auto-pastes for regular apps only.
+  # For terminals, content is copied to clipboard but NOT auto-pasted,
+  # allowing users to use tmux's prefix+] or terminal's Ctrl+Shift+V.
+  # Reference: https://github.com/abenz1267/walker/issues/560
+  smartPasteScript = pkgs.writeShellScript "smart-paste" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Copy content to clipboard first (reads from stdin)
+    ${pkgs.wl-clipboard}/bin/wl-copy
+
+    # Small delay for clipboard to sync and Walker window to close
+    sleep 0.15
+
+    # Get focused window app_id or class
+    focused=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused? == true) | .app_id // .window_properties.class // ""' 2>/dev/null | head -1)
+
+    # Terminal detection - for terminals, DON'T auto-paste
+    # This allows users to use their preferred paste method:
+    #   - tmux: prefix + ] (backtick + ])
+    #   - terminal native: Ctrl+Shift+V
+    case "$focused" in
+      ghostty|Ghostty|alacritty|Alacritty|kitty|Kitty|konsole|foot|Foot|xterm|XTerm|urxvt|URxvt|termite|gnome-terminal|tilix|wezterm|st|St)
+        # Terminal: Don't auto-paste. Content is in clipboard.
+        ;;
+      *)
+        # Regular app: use Ctrl+V for auto-paste
+        ${pkgs.wtype}/bin/wtype -M ctrl v
+        ;;
+    esac
+  '';
+
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
     # Launch an Alacritty terminal window with Neovim for a Walker-selected file path
@@ -1115,6 +1148,22 @@ in
         bind = "ctrl m"
         label = "window actions"
 
+        # Clipboard provider actions
+        # Return: copy selected item back to clipboard
+        [[providers.actions.clipboard]]
+        action = "copy"
+        after = "Close"
+        bind = "Return"
+        default = true
+        label = "copy to clipboard"
+
+        # Delete clipboard entry
+        [[providers.actions.clipboard]]
+        action = "delete"
+        after = "Nothing"
+        bind = "ctrl d"
+        label = "delete entry"
+
         # 1Password provider actions
         # Return: copy password (default action)
         [[providers.actions.1password]]
@@ -1140,12 +1189,18 @@ in
     '';
   };
 
-  # Elephant clipboard provider configuration - centralizes clipboard sync
+  # Elephant clipboard provider configuration
+  # Smart clipboard handling:
+  # - Regular apps: Auto-paste with Ctrl+V
+  # - Terminals: Copy to clipboard only (no auto-paste)
+  #   User can then use tmux prefix+] or terminal Ctrl+Shift+V
+  # Reference: https://github.com/abenz1267/walker/issues/560
   xdg.configFile."elephant/clipboard.toml".text = ''
     icon = "edit-paste"
     min_score = 30
     max_items = 500
-    command = "${clipboardSyncScript}"
+    # Smart paste: auto-pastes for regular apps, clipboard-only for terminals
+    command = "${smartPasteScript}"
     recopy = true
     ignore_symbols = false
     auto_cleanup = 0

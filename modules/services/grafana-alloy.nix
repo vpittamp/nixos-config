@@ -388,19 +388,14 @@ in
     };
 
     # Feature 125: Parameterized cluster targeting for multi-cluster observability
+    # DEPRECATED: Use cnoe.localtest.me endpoints instead (same for all local clusters)
     targetCluster = mkOption {
       type = types.str;
       default = "";
       example = "ryzen";
       description = ''
-        Target K8s cluster name for observability endpoints.
-        When set, automatically computes endpoint URLs as:
-          otel-collector-{cluster}.tail286401.ts.net
-          loki-{cluster}.tail286401.ts.net
-          mimir-{cluster}.tail286401.ts.net
-
-        Valid values: "thinkpad", "ryzen", "hub"
-        Leave empty to use explicit endpoint overrides.
+        DEPRECATED: No longer used. Endpoints now default to cnoe.localtest.me:8443.
+        Kept for backwards compatibility.
       '';
     };
 
@@ -424,8 +419,8 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      default = "";  # Computed from targetCluster in config section
-      description = "Kubernetes OTEL collector endpoint (via Tailscale Operator Ingress, HTTPS:443)";
+      default = "https://otel-collector.cnoe.localtest.me:8443";
+      description = "Kubernetes OTEL collector endpoint (via nginx ingress)";
     };
 
     phoenixEndpoint = mkOption {
@@ -436,14 +431,14 @@ in
 
     lokiEndpoint = mkOption {
       type = types.str;
-      default = "";  # Computed from targetCluster in config section
-      description = "Loki push endpoint (via Tailscale Serve, HTTPS:443)";
+      default = "https://loki.cnoe.localtest.me:8443";
+      description = "Loki push endpoint (via nginx ingress)";
     };
 
     mimirEndpoint = mkOption {
       type = types.str;
-      default = "";  # Computed from targetCluster in config section
-      description = "Mimir remote write endpoint (via Tailscale Serve, HTTPS:443)";
+      default = "https://mimir.cnoe.localtest.me:8443";
+      description = "Mimir remote write endpoint (via nginx ingress)";
     };
 
     enableNodeExporter = mkOption {
@@ -587,23 +582,8 @@ in
   };
 
   config = mkIf cfg.enable {
-    # Feature 125: Compute endpoint defaults from targetCluster
-    # These use mkDefault so they can be overridden by explicit config
-    services.grafana-alloy.k8sEndpoint = lib.mkDefault (
-      if cfg.targetCluster != ""
-      then "https://otel-collector-${cfg.targetCluster}.tail286401.ts.net"
-      else "https://otel-collector-1.tail286401.ts.net"
-    );
-    services.grafana-alloy.lokiEndpoint = lib.mkDefault (
-      if cfg.targetCluster != ""
-      then "https://loki-${cfg.targetCluster}.tail286401.ts.net"
-      else "https://loki.tail286401.ts.net"
-    );
-    services.grafana-alloy.mimirEndpoint = lib.mkDefault (
-      if cfg.targetCluster != ""
-      then "https://mimir-${cfg.targetCluster}.tail286401.ts.net"
-      else "https://mimir.tail286401.ts.net"
-    );
+    # Endpoints now use cnoe.localtest.me:8443 by default (same for all local clusters)
+    # Can be overridden via explicit config if needed
 
     # Ensure package is available
     environment.systemPackages = [ cfg.package ];

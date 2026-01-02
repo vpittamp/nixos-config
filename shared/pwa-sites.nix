@@ -668,6 +668,24 @@ let
       preferred_workspace = 83;
     }
 
+    # Grafana (CNOE local)
+    {
+      name = "Grafana CNOE";
+      url = "https://grafana.cnoe.localtest.me:8443";
+      domain = "grafana.cnoe.localtest.me";
+      icon = iconPath "grafana.svg";
+      description = "Grafana observability dashboard for CNOE local";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;logs;kubernetes;cnoe;";
+      scope = "https://grafana.cnoe.localtest.me:8443/";
+      ulid = "01JGNK2P3Q4R5S6T7V8W9X0Y1Z";  # Generated 2026-01-01
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 95;
+      # Feature 113: URL routing domains
+      routing_domains = [ "grafana.cnoe.localtest.me" ];
+    }
+
     # Langfuse (CNOE local)
     {
       name = "Langfuse";

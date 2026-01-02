@@ -155,6 +155,16 @@
                               : "${iconPaths.anthropic}"))}
                         :image-width 18
                         :image-height 18)
+                      ;; Status icon next to LLM icon (restored from b658b3dc)
+                      (label
+                        :class {"ai-session-status-icon" +
+                          ((session.state ?: "idle") == "working" ? " working"
+                            : ((session.state ?: "idle") == "completed" ? " completed"
+                              : ((session.state ?: "idle") == "attention" ? " attention" : "")))}
+                        :visible {(session.state ?: "idle") != "idle"}
+                        :text {(session.state ?: "idle") == "working" ? "●"
+                          : ((session.state ?: "idle") == "completed" ? "✓"
+                            : ((session.state ?: "idle") == "attention" ? "!" : ""))})
                       (label
                         :class "ai-session-label"
                         :text {session.project != "" ? session.project : (session.tool ?: "AI")}
@@ -319,7 +329,17 @@
                         ? "${iconPaths.gemini}"
                         : "${iconPaths.anthropic}"))}
                   :image-width 16
-                  :image-height 16))))
+                  :image-height 16)
+                ;; Status icon next to each badge (restored from b658b3dc)
+                (label
+                  :class {"ai-session-status-icon" +
+                    ((badge.otel_state ?: "idle") == "working" ? " working"
+                      : ((badge.otel_state ?: "idle") == "completed" ? " completed"
+                        : ((badge.otel_state ?: "idle") == "attention" ? " attention" : "")))}
+                  :visible {(badge.otel_state ?: "idle") != "idle"}
+                  :text {(badge.otel_state ?: "idle") == "working" ? "●"
+                    : ((badge.otel_state ?: "idle") == "completed" ? "✓"
+                      : ((badge.otel_state ?: "idle") == "attention" ? "!" : ""))}))))
           ;; Feature 136: Overflow badge when more than 3 sessions
           (label
             :class "badge badge-overflow"

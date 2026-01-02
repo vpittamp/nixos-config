@@ -208,19 +208,14 @@ curl -s localhost:12345/metrics             # Alloy metrics
 
 **Alloy UI**: http://localhost:12345 (live debugging enabled)
 
-**Configuration** (`configurations/{thinkpad,hetzner}.nix`):
+**Configuration** (`configurations/{thinkpad,ryzen}.nix`):
 ```nix
-let
-  tailnet = "tail286401.ts.net";
-  host = config.networking.hostName;
-  cluster = if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
-  tsServiceUrl = name: "https://${name}-${cluster}.${tailnet}";
-in
 services.grafana-alloy = {
   enable = true;
-  k8sEndpoint = tsServiceUrl "otel-collector";  # https://otel-collector-<cluster>.tail286401.ts.net
-  lokiEndpoint = tsServiceUrl "loki";
-  mimirEndpoint = tsServiceUrl "mimir";
+  # Endpoints default to *.cnoe.localtest.me:8443 (local K8s cluster)
+  # k8sEndpoint = "https://otel-collector.cnoe.localtest.me:8443";
+  # lokiEndpoint = "https://loki.cnoe.localtest.me:8443";
+  # mimirEndpoint = "https://mimir.cnoe.localtest.me:8443";
   enableNodeExporter = true;  # System metrics
   enableJournald = true;      # Log collection
   journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
@@ -231,11 +226,12 @@ services.grafana-alloy = {
 
 **Known Issues / Troubleshooting**:
 - OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
-- If `otel-collector-<cluster>.tail286401.ts.net` is missing or `mimir/loki` return `502`, verify the Kubernetes LGTM stack is healthy and the Tailscale serve pods are up/approved.
+- If endpoints return `502` or `404`, verify the K8s cluster is running and ingresses exist.
   - Quick checks:
-    - `curl -sS -D- -o /dev/null https://otel-collector-ryzen.tail286401.ts.net | head`
-    - `curl -sS https://mimir-ryzen.tail286401.ts.net/ready && echo`
-    - `curl -sS https://loki-ryzen.tail286401.ts.net/ready && echo`
+    - `curl -sk https://otel-collector.cnoe.localtest.me:8443/`
+    - `curl -sk https://mimir.cnoe.localtest.me:8443/ready`
+    - `curl -sk https://loki.cnoe.localtest.me:8443/ready`
+    - `kubectl get ingress -n observability`
 
 ## Testing
 

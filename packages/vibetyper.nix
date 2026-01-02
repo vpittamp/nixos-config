@@ -1,7 +1,7 @@
 # VibeTyper - AI Voice Typing for Linux
 # https://vibetyper.com
 # Voice-to-text with AI that rewrites, replies, and refines
-{ lib, stdenv, fetchurl, appimageTools, makeWrapper, xdotool, libfuse2 }:
+{ lib, stdenv, fetchurl, appimageTools, makeWrapper, xdotool }:
 
 let
   pname = "vibetyper";

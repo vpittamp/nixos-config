@@ -125,14 +125,10 @@ in
   # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
-  # - All telemetry exported to K8s LGTM stack
-  # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # Tailscale Operator Ingress endpoints use HTTPS:443 (terminated at edge)
-  # Feature 125: Use targetCluster for parameterized endpoint routing
-  # thinkpad host → thinkpad K8s cluster
+  # - All telemetry exported to K8s LGTM stack via cnoe.localtest.me:8443
   services.grafana-alloy = {
     enable = true;
-    targetCluster = "thinkpad";  # Auto-computes endpoints: *-thinkpad.tail286401.ts.net
+    # Endpoints default to *.cnoe.localtest.me:8443 (local K8s cluster)
     enableNodeExporter = true;
     enableJournald = true;
     journaldUnits = [
@@ -146,8 +142,8 @@ in
     # Export traces to Langfuse for specialized LLM tracing and analytics
     langfuse = {
       enable = true;
-      # Self-hosted Langfuse via Tailscale (matches Azure Key Vault credentials)
-      endpoint = "https://langfuse-thinkpad.tail286401.ts.net/api/public/otel";
+      # Local Langfuse via cnoe.localtest.me ingress
+      endpoint = "https://langfuse.cnoe.localtest.me:8443/api/public/otel";
       credentialSource = "1password";  # Use 1Password for local dev
       onePasswordRefs = {
         publicKey = "op://CLI/Langfuse/public_key";

@@ -51,4 +51,57 @@
     k9s:
       skin: catppuccin-mocha
   '';
+
+  # K9s views for External Secrets Operator resources
+  xdg.configFile."k9s/views.yml".text = ''
+    k9s:
+      views:
+        # ExternalSecret - individual secrets being synced from external providers
+        external-secrets.io/v1beta1/externalsecrets:
+          columns:
+            - NAME
+            - STORE<:.spec.secretStoreRef.name>
+            - STORE_KIND<:.spec.secretStoreRef.kind>
+            - REFRESH<:.spec.refreshInterval>
+            - STATUS<:.status.conditions[0].reason>
+            - READY<:.status.conditions[0].status>
+            - AGE
+
+        # SecretStore - namespaced configuration for external API access
+        external-secrets.io/v1beta1/secretstores:
+          columns:
+            - NAME
+            - PROVIDER<:.spec.provider|keys|[0]>
+            - READY<:.status.conditions[0].status>
+            - STATUS<:.status.conditions[0].reason>
+            - AGE
+
+        # ClusterSecretStore - cluster-wide provider configurations
+        external-secrets.io/v1beta1/clustersecretstores:
+          columns:
+            - NAME
+            - PROVIDER<:.spec.provider|keys|[0]>
+            - READY<:.status.conditions[0].status>
+            - STATUS<:.status.conditions[0].reason>
+            - AGE
+
+        # ClusterExternalSecret - cluster-scoped external secrets
+        external-secrets.io/v1beta1/clusterexternalsecrets:
+          columns:
+            - NAME
+            - STORE<:.spec.externalSecretSpec.secretStoreRef.name>
+            - REFRESH<:.spec.externalSecretSpec.refreshInterval>
+            - READY<:.status.conditions[0].status>
+            - STATUS<:.status.conditions[0].reason>
+            - AGE
+
+        # PushSecret - secrets pushed to external providers
+        external-secrets.io/v1alpha1/pushsecrets:
+          columns:
+            - NAME
+            - STORE<:.spec.secretStoreRefs[0].name>
+            - STATUS<:.status.conditions[0].reason>
+            - READY<:.status.conditions[0].status>
+            - AGE
+  '';
 }
