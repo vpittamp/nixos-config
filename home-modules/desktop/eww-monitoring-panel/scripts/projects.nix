@@ -320,6 +320,22 @@ asyncio.run(stream.run())
     REPO_PATH=$($EWW_CMD get worktree_form_repo_path 2>/dev/null || echo "")
     PARENT_PROJECT=$($EWW_CMD get worktree_form_parent_project 2>/dev/null || echo "")
 
+    # Feature 143: Fallback to repos.json lookup if repo_path is empty (race condition fix)
+    # This handles the case where auto-populate runs before worktree-create-open finishes
+    if [[ -z "$REPO_PATH" && -n "$PARENT_PROJECT" ]]; then
+      REPOS_FILE="$HOME/.config/i3/repos.json"
+      if [[ -f "$REPOS_FILE" ]]; then
+        REPO_ACCOUNT=$(echo "$PARENT_PROJECT" | cut -d'/' -f1)
+        REPO_NAME=$(echo "$PARENT_PROJECT" | cut -d'/' -f2)
+        REPO_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+          '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+        # Also update the EWW variable so subsequent calls don't need to look it up
+        if [[ -n "$REPO_PATH" ]]; then
+          $EWW_CMD update "worktree_form_repo_path=$REPO_PATH"
+        fi
+      fi
+    fi
+
     # Function to generate branch suffix from description (same logic as create-new-feature.sh)
     generate_branch_suffix() {
       local description="$1"
@@ -433,8 +449,23 @@ asyncio.run(stream.run())
       exit 0
     fi
 
-    # Get stored repo path
+    # Get stored repo path and parent project
     REPO_PATH=$($EWW_CMD get worktree_form_repo_path 2>/dev/null || echo "")
+    PARENT_PROJECT=$($EWW_CMD get worktree_form_parent_project 2>/dev/null || echo "")
+
+    # Feature 143: Fallback to repos.json lookup if repo_path is empty (race condition fix)
+    if [[ -z "$REPO_PATH" && -n "$PARENT_PROJECT" ]]; then
+      REPOS_FILE="$HOME/.config/i3/repos.json"
+      if [[ -f "$REPOS_FILE" ]]; then
+        REPO_ACCOUNT=$(echo "$PARENT_PROJECT" | cut -d'/' -f1)
+        REPO_NAME=$(echo "$PARENT_PROJECT" | cut -d'/' -f2)
+        REPO_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+          '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+        if [[ -n "$REPO_PATH" ]]; then
+          $EWW_CMD update "worktree_form_repo_path=$REPO_PATH"
+        fi
+      fi
+    fi
 
     # Auto-generate worktree path: <repo_path>/<branch_name>
     if [[ -n "$REPO_PATH" ]]; then

@@ -623,6 +623,10 @@ def find_all_terminal_windows_for_project(project_name: str) -> list[int]:
     exist for the same project. Returns all matches so caller can
     disambiguate using additional context.
 
+    Feature 136-fix: Also matches on repo portion when worktree branches differ.
+    This handles the case where CLI runs in worktree (branch X) but terminal
+    was opened for different branch (e.g., main).
+
     Args:
         project_name: Project name to search for (e.g., "vpittamp/nixos-config:branch")
 
@@ -635,6 +639,10 @@ def find_all_terminal_windows_for_project(project_name: str) -> list[int]:
 
     window_ids: list[int] = []
 
+    # Extract repo portion for fallback matching
+    # project_name format: "owner/repo:branch" or just "owner/repo"
+    project_repo = project_name.split(":")[0] if ":" in project_name else project_name
+
     def search_tree(node: dict) -> None:
         """Recursively search for terminal windows with matching project marks."""
         marks = node.get("marks", [])
@@ -644,8 +652,16 @@ def find_all_terminal_windows_for_project(project_name: str) -> list[int]:
                 parts = mark.split(":")
                 if len(parts) >= 4:
                     # parts[2] = owner/repo, parts[3] = branch
-                    mark_project = f"{parts[2]}:{parts[3]}"
-                    if project_name in mark_project or mark_project in project_name:
+                    mark_repo = parts[2]
+                    mark_project = f"{mark_repo}:{parts[3]}"
+
+                    # Match on exact project name (with branch)
+                    # OR match on repo portion (handles worktree branch mismatches)
+                    if (
+                        project_name in mark_project
+                        or mark_project in project_name
+                        or project_repo == mark_repo
+                    ):
                         window_id = node.get("id")
                         if window_id:
                             window_ids.append(window_id)
@@ -656,7 +672,7 @@ def find_all_terminal_windows_for_project(project_name: str) -> list[int]:
             search_tree(child)
 
     search_tree(tree)
-    logger.debug(f"Found {len(window_ids)} terminal windows for project {project_name}: {window_ids}")
+    logger.debug(f"Found {len(window_ids)} terminal windows for project {project_name} (repo={project_repo}): {window_ids}")
     return window_ids
 
 
