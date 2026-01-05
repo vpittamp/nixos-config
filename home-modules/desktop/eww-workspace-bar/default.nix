@@ -100,9 +100,11 @@ let
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/${ewwConfigDir}"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
+    PREVIEW_DAEMON="${workspacePreviewDaemonBin}/bin/workspace-preview-daemon"
 
     # Cleanup on exit
     cleanup() {
+      kill $PREVIEW_DAEMON_PID 2>/dev/null
       kill $DAEMON_PID 2>/dev/null
     }
     trap cleanup EXIT
@@ -119,6 +121,12 @@ let
 
     # Open all workspace bar windows
     ${lib.concatMapStringsSep "\n    " (name: ''$EWW --config "$CONFIG" open ${name} || true'') windowNames}
+
+    # Start workspace preview daemon (Feature 057, 072)
+    # This daemon listens to i3pm workspace_mode/project_mode events and
+    # opens/closes the preview pane accordingly
+    $PREVIEW_DAEMON &
+    PREVIEW_DAEMON_PID=$!
 
     # Wait for daemon process
     wait $DAEMON_PID

@@ -3,7 +3,9 @@
 { config, lib, pkgs, ... }:
 
 {
-  # No imports needed - environment check will be in each specific config
+  imports = [
+    ../modules/services/cluster-certs.nix
+  ];
 
   # System identification
   system.stateVersion = lib.mkDefault "24.11";
@@ -93,6 +95,11 @@
     "d /nix/var/nix/profiles/per-user/vpittamp 0755 vpittamp users -"
   ];
 
+  # Trust local Kubernetes cluster CA certificates
+  # Required for Nix to fetch from Attic cache over HTTPS
+  # CA is synced by: stacks/scripts/certificates/sync-cluster-certificates.sh
+  services.clusterCerts.enable = true;
+
   # Core Nix configuration
   nix = {
     # Pin the daemon/client to the latest stable Nix to avoid 2.31.2 crash bug
@@ -111,6 +118,15 @@
       trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      ];
+
+      # Attic cache for backstage builds (local k8s cluster)
+      # Public key is persistent in Azure Key Vault (setup by setup-persistent-certs.sh)
+      extra-substituters = [
+        "https://attic.cnoe.localtest.me:8443/backstage"
+      ];
+      extra-trusted-public-keys = [
+        "backstage:MSuDAPGlAmwOAiSTeDW5JrFuh5f7UVX3I3k2G+Yerk4="
       ];
     };
     
