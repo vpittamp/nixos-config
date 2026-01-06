@@ -168,14 +168,7 @@
   ];
 
   # ========== NIX CONFIGURATION ==========
-  # Fonts and base nix config inherited from base.nix
-  # Add Attic cache as additional substituter for in-cluster rebuilds
-  nix.settings = {
-    extra-substituters = lib.mkAfter [
-      "http://attic.nix-cache.svc.cluster.local:8080/nixos"
-    ];
-    fallback = true;  # Allow builds even if Attic is unreachable
-  };
+  # Fonts and Cachix cache config inherited from base.nix
 
   # ========== DISK SIZE ==========
   # 80GB for full desktop + development tools

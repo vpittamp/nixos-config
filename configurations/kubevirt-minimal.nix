@@ -9,7 +9,7 @@
 # - Cloud-init support (auto-enabled by kubevirt.nix)
 # - OpenSSH server (auto-enabled by kubevirt.nix)
 # - Serial console on ttyS0 (auto-enabled by kubevirt.nix)
-# - Attic binary cache for fast nixos-rebuild
+# - Cachix binary cache for fast nixos-rebuild (via base.nix)
 # - Tailscale for remote access
 # - Virtio drivers for KubeVirt performance
 #
@@ -89,26 +89,8 @@
       trusted-users = [ "root" "vpittamp" "@wheel" ];
       auto-optimise-store = true;
 
-      # Attic cache as primary substituter (for in-cluster rebuilds)
-      # Falls back to official caches if Attic unavailable
-      substituters = lib.mkBefore [
-        "http://attic.nix-cache.svc.cluster.local:8080/nixos"
-      ];
-
-      # Standard caches as fallback
-      extra-substituters = [
-        "https://cache.nixos.org"
-        "https://nix-community.cachix.org"
-      ];
-
-      trusted-public-keys = [
-        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-        # Attic cache key will be added after init-attic-cache.sh generates it
-      ];
-
-      # Allow builds even if Attic is unreachable
-      fallback = true;
+      # Use Cachix for faster builds (configured in base.nix)
+      # Inherits substituters from base configuration
     };
   };
 

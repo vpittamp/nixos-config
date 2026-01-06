@@ -1,8 +1,8 @@
 # Cluster CA Certificate Trust Module
 #
 # Configures NixOS to trust self-signed CA certificates from local Kubernetes clusters.
-# This is required for Nix to fetch from binary caches (like Attic) that use HTTPS
-# with cluster-generated certificates.
+# This is required for HTTPS access to cluster services (Gitea, etc.) that use
+# cluster-generated certificates.
 #
 # The CA certificate is persistent and stored in Azure Key Vault.
 # It's valid for 10 years and doesn't change on cluster recreation.
@@ -70,7 +70,7 @@ in {
   config = mkIf cfg.enable {
     # Add the cluster CA to the system trust store
     # This allows curl, git, and other tools to trust HTTPS connections
-    # to services using cluster-issued certificates (e.g., Attic, Gitea)
+    # to services using cluster-issued certificates (e.g., Gitea)
     security.pki.certificates = [ persistentCaCert ];
 
     # CRITICAL: Configure Nix daemon to use the system CA bundle

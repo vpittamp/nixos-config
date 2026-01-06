@@ -96,7 +96,7 @@
   ];
 
   # Trust local Kubernetes cluster CA certificates
-  # Required for Nix to fetch from Attic cache over HTTPS
+  # Required for HTTPS access to cluster services (Gitea, etc.)
   # CA is synced by: stacks/scripts/certificates/sync-cluster-certificates.sh
   services.clusterCerts.enable = true;
 
@@ -111,22 +111,16 @@
       auto-optimise-store = true;
       
       # Use cachix for faster builds
+      # backstage cache: persistent Nix binary cache (survives cluster recreations)
       substituters = [
         "https://cache.nixos.org"
         "https://nix-community.cachix.org"
+        "https://backstage.cachix.org"
       ];
       trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-      ];
-
-      # Attic cache for backstage builds (local k8s cluster)
-      # Public key is persistent in Azure Key Vault (setup by setup-persistent-certs.sh)
-      extra-substituters = [
-        "https://attic.cnoe.localtest.me:8443/backstage"
-      ];
-      extra-trusted-public-keys = [
-        "backstage:MSuDAPGlAmwOAiSTeDW5JrFuh5f7UVX3I3k2G+Yerk4="
+        "backstage.cachix.org-1:MMgCWqeGJWbqGEC4CwNUnVvs0edWlxkolNChfTTzoUU="
       ];
     };
     
