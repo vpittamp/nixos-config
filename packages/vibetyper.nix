@@ -9,7 +9,7 @@ let
 
   src = fetchurl {
     url = "https://cdn.vibetyper.com/releases/linux/VibeTyper.AppImage";
-    sha256 = "1p0qgjbiczgbvcnqsv1658fidr902h33k8l5lzw6imi2n2qb7y7z";
+    sha256 = "0qczjja425mn11chmgwjsvvz1fxs4779mal0qvwqb2vxfjwb8syn";
   };
 
   appimageContents = appimageTools.extractType2 { inherit pname version src; };
