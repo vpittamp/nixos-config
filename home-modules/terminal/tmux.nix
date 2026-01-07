@@ -54,7 +54,7 @@ in
       set -ga terminal-overrides ",tmux-256color:Tc"
       set -sg escape-time 0
       set -g focus-events on
-      set -g detach-on-destroy off
+      set -g detach-on-destroy on
       set -g repeat-time 1000
       set -g set-clipboard on
 

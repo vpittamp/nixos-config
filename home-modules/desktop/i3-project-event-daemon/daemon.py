@@ -322,7 +322,9 @@ class I3ProjectDaemon:
         # Feature 062: Initialize scratchpad manager
         self.scratchpad_manager = ScratchpadManager(self.connection.conn)
         self.ipc_server.scratchpad_manager = self.scratchpad_manager
-        logger.info("Scratchpad manager initialized")
+        # Rediscover existing scratchpad terminals from previous daemon session
+        rediscovered = await self.scratchpad_manager.rediscover_terminals()
+        logger.info(f"Scratchpad manager initialized, rediscovered {rediscovered} terminal(s)")
 
         # Feature 051: Initialize run-raise manager
         self.run_raise_manager = RunRaiseManager(

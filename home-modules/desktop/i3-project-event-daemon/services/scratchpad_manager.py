@@ -63,6 +63,7 @@ class ScratchpadManager:
         self.terminals: Dict[str, ScratchpadTerminal] = {}
         self.sway = sway
         self.logger = logging.getLogger(__name__)
+        self._toggle_lock = asyncio.Lock()  # Prevents race conditions on rapid toggles
 
     async def launch_terminal(
         self,
@@ -83,109 +84,117 @@ class ScratchpadManager:
             RuntimeError: If terminal launch fails
             ValueError: If project already has scratchpad terminal
         """
-        # Validate project doesn't already have a terminal
-        if project_name in self.terminals:
-            raise ValueError(f"Scratchpad terminal already exists for project: {project_name}")
+        async with self._toggle_lock:
+            # First, check for orphaned windows (from daemon restart)
+            orphan = await self._find_orphaned_terminal(project_name)
+            if orphan:
+                self.logger.info(f"Reclaiming orphaned scratchpad for {project_name}")
+                self.terminals[project_name] = orphan
+                return orphan
 
-        # Validate working directory exists
-        if not working_dir.exists() or not working_dir.is_dir():
-            raise ValueError(f"Working directory does not exist: {working_dir}")
+            # Validate project doesn't already have a terminal
+            if project_name in self.terminals:
+                raise ValueError(f"Scratchpad terminal already exists for project: {project_name}")
 
-        # Feature 101: Mark is created AFTER window appears (needs window_id)
-        # We identify the window by I3PM_APP_NAME and I3PM_PROJECT_NAME in environment
+            # Validate working directory exists
+            if not working_dir.exists() or not working_dir.is_dir():
+                raise ValueError(f"Working directory does not exist: {working_dir}")
 
-        # Debug: Log Wayland environment
-        wayland_display = os.environ.get("WAYLAND_DISPLAY", "NOT_SET")
-        self.logger.info(f"Daemon WAYLAND_DISPLAY={wayland_display}")
+            # Feature 101: Mark is created AFTER window appears (needs window_id)
+            # We identify the window by I3PM_APP_NAME and I3PM_PROJECT_NAME in environment
 
-        env = {
-            **os.environ,  # Inherit user environment
-            "I3PM_SCRATCHPAD": "true",
-            "I3PM_PROJECT_NAME": project_name,
-            "I3PM_WORKING_DIR": str(working_dir),
-            "I3PM_APP_ID": f"scratchpad-{project_name}-{int(asyncio.get_event_loop().time())}",
-            "I3PM_APP_NAME": "scratchpad-terminal",
-            "I3PM_SCOPE": "scoped",
-            "I3PM_NO_SESH": "1",  # Signal to skip sesh/tmux auto-start in bashrc
-            # Force software rendering for headless/VNC environments
-            "LIBGL_ALWAYS_SOFTWARE": "1",
-        }
+            # Debug: Log Wayland environment
+            wayland_display = os.environ.get("WAYLAND_DISPLAY", "NOT_SET")
+            self.logger.info(f"Daemon WAYLAND_DISPLAY={wayland_display}")
 
-        self.logger.info(f"Launching scratchpad terminal for project '{project_name}' in {working_dir}")
+            env = {
+                **os.environ,  # Inherit user environment
+                "I3PM_SCRATCHPAD": "true",
+                "I3PM_PROJECT_NAME": project_name,
+                "I3PM_WORKING_DIR": str(working_dir),
+                "I3PM_APP_ID": f"scratchpad-{project_name}-{int(asyncio.get_event_loop().time())}",
+                "I3PM_APP_NAME": "scratchpad-terminal",
+                "I3PM_SCOPE": "scoped",
+                "I3PM_NO_SESH": "1",  # Signal to skip sesh/tmux auto-start in bashrc
+                # Force software rendering for headless/VNC environments
+                "LIBGL_ALWAYS_SOFTWARE": "1",
+            }
 
-        # Use Sway exec to launch Ghostty - this ensures proper display server context
-        # Sway runs the command in the compositor's environment with correct WAYLAND_DISPLAY etc.
-        # This is more reliable than subprocess which requires manual environment setup
+            self.logger.info(f"Launching scratchpad terminal for project '{project_name}' in {working_dir}")
 
-        # Build shell command with environment variables and Ghostty launch
-        # Export I3PM_* variables so daemon can identify the window
-        env_exports = []
-        for key, value in env.items():
-            if key.startswith('I3PM_'):
-                # Escape single quotes in values
-                safe_value = value.replace("'", "'\\''")
-                env_exports.append(f"export {key}='{safe_value}'")
+            # Use Sway exec to launch Ghostty - this ensures proper display server context
+            # Sway runs the command in the compositor's environment with correct WAYLAND_DISPLAY etc.
+            # This is more reliable than subprocess which requires manual environment setup
 
-        env_string = '; '.join(env_exports)
+            # Build shell command with environment variables and Ghostty launch
+            # Export I3PM_* variables so daemon can identify the window
+            env_exports = []
+            for key, value in env.items():
+                if key.startswith('I3PM_'):
+                    # Escape single quotes in values
+                    safe_value = value.replace("'", "'\\''")
+                    env_exports.append(f"export {key}='{safe_value}'")
 
-        # Build Ghostty command with tmux session
-        # Session name format: scratchpad-{project_name}
-        tmux_session_name = f"scratchpad-{project_name}"
+            env_string = '; '.join(env_exports)
 
-        # Wrap tmux in bash to ensure proper execution and environment
-        # Use double quotes for bash -c to allow variable expansion, escape inner quotes
-        tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
-        ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
+            # Build Ghostty command with tmux session
+            # Session name format: scratchpad-{project_name}
+            tmux_session_name = f"scratchpad-{project_name}"
 
-        # Complete shell command with environment setup
-        full_cmd = f"{env_string}; {ghostty_cmd}"
+            # Wrap tmux in bash to ensure proper execution and environment
+            # Use double quotes for bash -c to allow variable expansion, escape inner quotes
+            tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
+            ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
 
-        self.logger.info(f"Launching via Sway exec: {full_cmd[:200]}...")  # Log first 200 chars
+            # Complete shell command with environment setup
+            full_cmd = f"{env_string}; {ghostty_cmd}"
 
-        # Execute via Sway IPC - this runs in the compositor's context
-        try:
-            result = await self.sway.command(f'exec bash -c "{full_cmd}"')
-            self.logger.info(f"Sway exec result: {result}")
-        except Exception as e:
-            raise RuntimeError(f"Failed to execute Sway command: {e}")
+            self.logger.info(f"Launching via Sway exec: {full_cmd[:200]}...")  # Log first 200 chars
 
-        # Wait for window to appear (we don't have a PID anymore, so we search by app_id)
-        # Feature 101: Pass project_name to identify the correct window via environment
-        window_id = await self._wait_for_terminal_window_by_appid(
-            app_id="com.mitchellh.ghostty",
-            project_name=project_name,
-            timeout=5.0
-        )
+            # Execute via Sway IPC - this runs in the compositor's context
+            try:
+                result = await self.sway.command(f'exec bash -c "{full_cmd}"')
+                self.logger.info(f"Sway exec result: {result}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to execute Sway command: {e}")
 
-        if window_id is None:
-            raise RuntimeError(f"Terminal window did not appear within timeout for project: {project_name}")
+            # Wait for window to appear (we don't have a PID anymore, so we search by app_id)
+            # Feature 101: Pass project_name to identify the correct window via environment
+            window_id = await self._wait_for_terminal_window_by_appid(
+                app_id="com.mitchellh.ghostty",
+                project_name=project_name,
+                timeout=5.0
+            )
 
-        # Get PID from the window that appeared
-        tree = await self.sway.get_tree()
-        window = tree.find_by_id(window_id)
-        if not window or not window.pid:
-            raise RuntimeError(f"Could not get PID for window {window_id}")
+            if window_id is None:
+                raise RuntimeError(f"Terminal window did not appear within timeout for project: {project_name}")
 
-        terminal_pid = window.pid
+            # Get PID from the window that appeared
+            tree = await self.sway.get_tree()
+            window = tree.find_by_id(window_id)
+            if not window or not window.pid:
+                raise RuntimeError(f"Could not get PID for window {window_id}")
 
-        # Feature 101: Create mark AFTER window appears (unified scoped: format)
-        mark = ScratchpadTerminal.create_mark(project_name, window_id)
+            terminal_pid = window.pid
 
-        # Create terminal model
-        terminal = ScratchpadTerminal(
-            project_name=project_name,
-            pid=terminal_pid,
-            window_id=window_id,
-            mark=mark,
-            working_dir=working_dir,
-        )
+            # Feature 101: Create mark AFTER window appears (unified scoped: format)
+            mark = ScratchpadTerminal.create_mark(project_name, window_id)
 
-        # Track in state
-        self.terminals[project_name] = terminal
+            # Create terminal model
+            terminal = ScratchpadTerminal(
+                project_name=project_name,
+                pid=terminal_pid,
+                window_id=window_id,
+                mark=mark,
+                working_dir=working_dir,
+            )
 
-        self.logger.info(f"Scratchpad terminal launched: PID={terminal_pid}, WindowID={window_id}, Project={project_name}")
+            # Track in state
+            self.terminals[project_name] = terminal
 
-        return terminal
+            self.logger.info(f"Scratchpad terminal launched: PID={terminal_pid}, WindowID={window_id}, Project={project_name}")
+
+            return terminal
 
     async def _wait_for_terminal_window_by_appid(
         self,
@@ -554,3 +563,92 @@ class ScratchpadManager:
             List of ScratchpadTerminal instances
         """
         return list(self.terminals.values())
+
+    async def rediscover_terminals(self) -> int:
+        """
+        Scan Sway tree for existing scratchpad terminals and rebuild state.
+
+        Called on daemon startup to recover from restarts. This allows the daemon
+        to reclaim existing scratchpad terminal windows that were created in a
+        previous session but are still running.
+
+        Returns:
+            Count of terminals rediscovered
+        """
+        tree = await self.sway.get_tree()
+        rediscovered = 0
+
+        for window in tree.descendants():
+            # Find windows with scratchpad terminal marks
+            for mark in window.marks:
+                if mark.startswith("scoped:scratchpad-terminal:"):
+                    # Parse mark: scoped:scratchpad-terminal:{project_name}:{window_id}
+                    parts = mark.split(":")
+                    if len(parts) >= 4:
+                        project_name = parts[2]
+
+                        # Skip if already tracked
+                        if project_name in self.terminals:
+                            continue
+
+                        # Verify process environment
+                        if window.pid:
+                            try:
+                                env = read_process_environ(window.pid)
+                                if env.get("I3PM_SCRATCHPAD") == "true":
+                                    # Rebuild terminal state
+                                    working_dir = Path(env.get("I3PM_WORKING_DIR", str(Path.home())))
+                                    terminal = ScratchpadTerminal(
+                                        project_name=project_name,
+                                        pid=window.pid,
+                                        window_id=window.id,
+                                        mark=mark,
+                                        working_dir=working_dir,
+                                    )
+                                    self.terminals[project_name] = terminal
+                                    rediscovered += 1
+                                    self.logger.info(f"Rediscovered scratchpad terminal: {project_name}")
+                            except (ProcessLookupError, PermissionError) as e:
+                                self.logger.debug(f"Could not verify terminal for rediscovery: {e}")
+
+        if rediscovered > 0:
+            self.logger.info(f"Rediscovered {rediscovered} scratchpad terminal(s) on startup")
+
+        return rediscovered
+
+    async def _find_orphaned_terminal(self, project_name: str) -> Optional[ScratchpadTerminal]:
+        """
+        Find an orphaned scratchpad terminal window for a project.
+
+        An orphan is a window with the correct mark but not tracked in self.terminals.
+        This can happen after daemon restart or if tracking state was lost.
+
+        Args:
+            project_name: Project identifier to search for
+
+        Returns:
+            ScratchpadTerminal if orphan found, None otherwise
+        """
+        tree = await self.sway.get_tree()
+
+        for window in tree.descendants():
+            for mark in window.marks:
+                if mark.startswith(f"scoped:scratchpad-terminal:{project_name}:"):
+                    # Found orphaned window with matching project
+                    if window.pid:
+                        try:
+                            env = read_process_environ(window.pid)
+                            if env.get("I3PM_SCRATCHPAD") == "true":
+                                working_dir = Path(env.get("I3PM_WORKING_DIR", str(Path.home())))
+                                terminal = ScratchpadTerminal(
+                                    project_name=project_name,
+                                    pid=window.pid,
+                                    window_id=window.id,
+                                    mark=mark,
+                                    working_dir=working_dir,
+                                )
+                                self.logger.info(f"Found orphaned scratchpad terminal for {project_name}")
+                                return terminal
+                        except (ProcessLookupError, PermissionError):
+                            pass
+        return None
