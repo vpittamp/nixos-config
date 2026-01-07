@@ -90,6 +90,9 @@ in
         ConditionPathExists = cfg.tokenFile;
       };
 
+      # Ensure Nix binaries are in PATH for nix-store commands
+      path = [ config.nix.package pkgs.coreutils pkgs.bash ];
+
       serviceConfig = {
         Type = "simple";
         Restart = "always";
