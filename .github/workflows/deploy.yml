@@ -89,8 +89,8 @@ jobs:
     needs: build
     if: |
       always() &&
-      (needs.build.result == 'success' || inputs.deploy_only) &&
-      github.event_name == 'push' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped' || inputs.deploy_only) &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
