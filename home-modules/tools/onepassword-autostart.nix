@@ -84,6 +84,9 @@
 
     Service = {
       Type = "simple";
+      # Wait for StatusNotifierWatcher D-Bus service to be fully ready
+      # tray.target being reached doesn't guarantee the watcher is accepting registrations
+      ExecStartPre = "${pkgs.coreutils}/bin/sleep 3";
       # Launch 1Password in background with system tray support
       # --silent: Start minimized to system tray (persists in tray)
       # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
