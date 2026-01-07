@@ -105,6 +105,7 @@
   .meter-net scale highlight { background: linear-gradient(90deg, #94e2d5, #89dceb); }
   .meter-wifi scale highlight { background: linear-gradient(90deg, #a6e3a1, #74c7ec); }
   .meter-volume scale highlight { background: linear-gradient(90deg, #cba6f7, #89b4fa); }
+  .meter-brightness scale highlight { background: linear-gradient(90deg, #f9e2af, #fab387); }
   .meter-battery scale highlight { background: linear-gradient(90deg, #a6e3a1, #f9e2af); }
 
   /* Color accents per metric */
@@ -115,10 +116,28 @@
   .net .icon { color: #94e2d5; }
   .wifi .icon { color: #a6e3a1; }
   .volume .icon { color: #cba6f7; }
+  .brightness .icon { color: #f9e2af; }
   .battery-normal .icon, .battery .icon { color: #a6e3a1; }
-  .battery-low { color: #f9e2af; }
-  .battery-critical { color: #f38ba8; }
+  .battery-icon-low { color: #f9e2af; }
+  .battery-icon-very-low { color: #fab387; }
+  .battery-icon-critical { color: #f38ba8; font-weight: bold; }
+  .battery-time { color: #a6adc8; font-size: 0.85em; margin-left: 2px; }
   .bluetooth-icon { color: #89b4fa; }
+
+  /* Battery level state backgrounds */
+  .battery-low {
+    background: rgba(249, 226, 175, 0.12);
+    border-color: rgba(249, 226, 175, 0.4);
+  }
+  .battery-very-low {
+    background: rgba(250, 179, 135, 0.15);
+    border-color: rgba(250, 179, 135, 0.5);
+  }
+  .battery-critical {
+    background: rgba(243, 139, 168, 0.25);
+    border-color: rgba(243, 139, 168, 0.7);
+  }
+
   .health-healthy { color: #a6e3a1; }
   .health-warning { color: #f9e2af; }
   .health-error { color: #f38ba8; }
@@ -357,13 +376,6 @@
                  0 0 4px rgba(203, 166, 247, 0.6);
   }
 
-  /* CPU-optimized: opacity animation instead of expensive box-shadow */
-  @keyframes pulse-glow {
-    from { opacity: 0.85; }
-    50% { opacity: 1.0; }
-    to { opacity: 0.85; }
-  }
-
   /* Notification center toggle button styling (SwayNC) */
   .notification-toggle {
     background: linear-gradient(135deg, rgba(69, 71, 90, 0.5), rgba(49, 50, 68, 0.6));
@@ -408,13 +420,6 @@
     color: #89b4fa;
     text-shadow: 0 0 8px rgba(137, 180, 250, 0.9),
                  0 0 4px rgba(137, 180, 250, 0.6);
-  }
-
-  /* CPU-optimized: opacity animation instead of expensive box-shadow */
-  @keyframes pulse-notification {
-    from { opacity: 0.85; }
-    50% { opacity: 1.0; }
-    to { opacity: 0.85; }
   }
 
   /* Feature 110: Notification badge styling */
@@ -476,13 +481,6 @@
     border-radius: 6px;
     min-width: 12px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-
-  /* CPU-optimized: opacity animation instead of expensive box-shadow */
-  @keyframes pulse-unread {
-    from { opacity: 0.85; }
-    50% { opacity: 1.0; }
-    to { opacity: 0.85; }
   }
 
   /* Feature 117: AI Sessions widget styling */
@@ -584,13 +582,6 @@
   .ai-chip.error .ai-chip-indicator {
     color: #f38ba8;
     font-size: 12px;
-  }
-
-  /* CPU-optimized: opacity-only animation */
-  @keyframes ai-error-pulse {
-    from { opacity: 1; }
-    50% { opacity: 0.7; }
-    to { opacity: 1; }
   }
 
   /* Indicator icon styling */
@@ -714,19 +705,6 @@
 
   .ai-chip.attention .ai-chip-project-name {
     color: #fab387;
-  }
-
-  /* CPU-optimized: opacity-only animations */
-  @keyframes ai-working-pulse {
-    from { opacity: 0.85; }
-    50% { opacity: 1.0; }
-    to { opacity: 0.85; }
-  }
-
-  @keyframes ai-attention-pulse {
-    from { opacity: 0.85; }
-    50% { opacity: 1.0; }
-    to { opacity: 0.85; }
   }
 
   /* ==========================================================================

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Enhanced NixOS deployment script with SSH NodePort support
 # Combines the NixOS key handling with SSH port exposure
 
@@ -199,6 +199,16 @@ if [ -f "$FLAKE_ROOT/scripts/sync-jwks-to-azure.sh" ]; then  # Feature 106: Port
     fi
 else
     echo -e "${YELLOW}Skipping Azure JWKS sync (script not found)${NC}"
+fi
+
+# Step 12.5: Import CNOE CA certificate for Firefox/PWA trust
+# This extracts the root-ca from cert-manager and imports it into Firefox NSS databases
+# so that PWAs for ArgoCD, Backstage, etc. don't show certificate warnings
+if [ -f "$FLAKE_ROOT/scripts/cnoe-trust-cert.sh" ]; then
+    echo -e "${GREEN}Importing CNOE CA certificate for Firefox/PWAs...${NC}"
+    "$FLAKE_ROOT/scripts/cnoe-trust-cert.sh" || echo -e "${YELLOW}⚠️  Certificate import failed but continuing...${NC}"
+else
+    echo -e "${YELLOW}Skipping Firefox certificate import (script not found)${NC}"
 fi
 
 # Step 13: Show SSH port mappings

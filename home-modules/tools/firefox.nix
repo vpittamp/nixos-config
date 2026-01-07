@@ -10,6 +10,48 @@ let
   trackingExceptions = pwaSitesConfig.helpers.getDomainPatterns
     pwaSitesConfig.pwaSites
     pwaSitesConfig.additionalTrustedDomains;
+
+  # Cluster CA certificate for *.cnoe.localtest.me
+  # This is the CA certificate (with CA:TRUE) that signs the server certificates
+  # Firefox uses Certificates.Install policy + security.enterprise_roots.enabled
+  clusterCaCertFile = pkgs.writeText "cnoe-ca.pem" ''
+    -----BEGIN CERTIFICATE-----
+    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
+    CBn6
+    -----END CERTIFICATE-----
+  '';
 in
 {
   # Firefox browser configuration - simplified without extensions
@@ -23,6 +65,11 @@ in
       pkgs.firefoxpwa  # PWA native messaging host
     ];
     policies = {
+      # Install cluster CA certificate for HTTPS trust to *.cnoe.localtest.me
+      # This works alongside security.enterprise_roots.enabled in profile settings
+      Certificates = {
+        Install = [ "${clusterCaCertFile}" ];
+      };
       Extensions = {
         Install = [
           "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
@@ -139,6 +186,11 @@ in
           # Privacy and history settings
           "privacy.history.enabled" = true;
           "places.history.enabled" = true;
+
+          # Enable reading CA certificates from NSS database
+          # This allows dynamically imported certs (via certutil) to be trusted
+          # Used for CNOE/Kind cluster self-signed certificates
+          "security.enterprise_roots.enabled" = true;
         }
         // {
 
@@ -348,20 +400,11 @@ in
     enable = true;
 
     # Enforced defaults
-    # Feature 113: http/https schemes route through PWA URL router for external app links
-    # The router checks if the URL domain matches a PWA, otherwise falls back to Firefox
     defaultApplications = {
-      # HTML files opened directly → Firefox (not affected by URL routing)
       "text/html" = "firefox.desktop";
       "application/xhtml+xml" = "firefox.desktop";
-
-      # URL schemes → Firefox directly (pwa-url-router only used for explicit external calls)
-      # Feature 113: pwa-url-router is invoked explicitly from tmux-url-open, not as default handler
-      # This prevents infinite loops during Firefox/PWA session restore
       "x-scheme-handler/http" = "firefox.desktop";
       "x-scheme-handler/https" = "firefox.desktop";
-
-      # Non-web schemes → Firefox directly
       "x-scheme-handler/about" = "firefox.desktop";
       "x-scheme-handler/unknown" = "firefox.desktop";
     };

@@ -67,7 +67,6 @@ let
       preferred_workspace = 51;
       # Feature 113: URL routing - only AI-specific paths, not general google.com
       routing_domains = [ ];  # Disabled - google.com is too broad
-      # Feature 118: Path-based routing and auth
       routing_paths = [ "/ai" ];  # Match google.com/ai/*
       auth_domains = [ "accounts.google.com" ];
     }
@@ -492,7 +491,7 @@ let
       scope = "https://kargo.cnoe.localtest.me:8443/";
       ulid = "01MEQFV8K4N3R7S2T5W9X0Y1Z6";  # Generated 2025-11-18
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 73;
       # Feature 113: URL routing domains
       routing_domains = [ "kargo.cnoe.localtest.me" ];
@@ -556,24 +555,6 @@ let
     # Talos Cluster PWAs (ai401kchat.com)
     # Purple-themed icons to distinguish from Tailscale variants
     # ============================================
-
-    # Backstage (Talos/ai401kchat)
-    {
-      name = "Backstage Talos";
-      url = "https://backstage.ai401kchat.com";
-      domain = "backstage.ai401kchat.com";
-      icon = iconPath "backstage-talos.svg";
-      description = "Backstage developer portal for Talos Kubernetes cluster";
-      categories = "Development;Network;";
-      keywords = "backstage;developer-portal;sdp;platform;kubernetes;talos;ai401kchat;";
-      scope = "https://backstage.ai401kchat.com/";
-      ulid = "7KZ3PBQKJKQJKQ7ZA831VYAFXC";  # Generated 2025-12-09
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 78;
-      # Feature 113: URL routing domains
-      routing_domains = [ "backstage.ai401kchat.com" ];
-    }
 
     # Kargo (Talos/ai401kchat)
     {
@@ -855,6 +836,98 @@ let
       preferred_workspace = 94;
       # Feature 113: URL routing domains
       routing_domains = [ "rag-webui.cnoe.localtest.me" ];
+    }
+
+    # NocoDB (CNOE local)
+    {
+      name = "NocoDB";
+      url = "https://nocodb.cnoe.localtest.me:8443";
+      domain = "nocodb.cnoe.localtest.me";
+      icon = iconPath "nocodb.svg";
+      description = "NocoDB - Open source Airtable alternative";
+      categories = "Development;Network;Office;";
+      keywords = "nocodb;database;airtable;spreadsheet;no-code;kubernetes;";
+      scope = "https://nocodb.cnoe.localtest.me:8443/";
+      ulid = "7WK88MM2SQ3M161Q045W2R50HK";  # Generated 2026-01-04
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 96;
+      # Feature 113: URL routing domains
+      routing_domains = [ "nocodb.cnoe.localtest.me" ];
+    }
+
+    # Oracle Cloud Console
+    {
+      name = "Oracle Cloud";
+      url = "https://cloud.oracle.com";
+      domain = "cloud.oracle.com";
+      icon = iconPath "oracle-cloud.svg";
+      description = "Oracle Cloud Infrastructure management console";
+      categories = "Network;Development;System;";
+      keywords = "oracle;cloud;oci;infrastructure;server;hosting;devops;";
+      scope = "https://cloud.oracle.com/";
+      ulid = "WVSN1BT353D2TCM3F9BR9H6BVR";  # Generated 2026-01-04
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 97;
+      # Feature 113: URL routing domains
+      routing_domains = [ "cloud.oracle.com" "console.oracle.com" ];
+      # Feature 118: Oracle auth domains
+      auth_domains = [ "login.oracle.com" "idcs.oracle.com" ];
+    }
+
+    # Cachix
+    {
+      name = "Cachix";
+      url = "https://app.cachix.org";
+      domain = "app.cachix.org";
+      icon = iconPath "cachix.svg";
+      description = "Cachix - Nix binary cache hosting service";
+      categories = "Development;Network;";
+      keywords = "cachix;nix;cache;binary;ci;devops;";
+      scope = "https://app.cachix.org/";
+      ulid = "3NZ43C737HVW0NAHKEWD66FSDA";  # Generated 2026-01-06
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 98;
+      # Feature 113: URL routing domains
+      routing_domains = [ "app.cachix.org" "cachix.org" "www.cachix.org" ];
+    }
+
+    # Hercules CI
+    {
+      name = "Hercules CI";
+      url = "https://hercules-ci.com";
+      domain = "hercules-ci.com";
+      icon = iconPath "hercules-ci.png";
+      description = "Hercules CI - Nix-native CI/CD platform";
+      categories = "Development;Network;";
+      keywords = "hercules;ci;cd;nix;devops;continuous-integration;";
+      scope = "https://hercules-ci.com/";
+      ulid = "4QNRHPAS95TCX1XETP8EBGG97Y";  # Generated 2026-01-06
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 99;
+      # Feature 113: URL routing domains
+      routing_domains = [ "hercules-ci.com" "www.hercules-ci.com" ];
+    }
+
+    # Dapr Dashboard
+    {
+      name = "Dapr Dashboard";
+      url = "https://dapr.cnoe.localtest.me:8443";
+      domain = "dapr.cnoe.localtest.me";
+      icon = iconPath "dapr.svg";
+      description = "Dapr - Distributed application runtime dashboard";
+      categories = "Development;Network;";
+      keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;";
+      scope = "https://dapr.cnoe.localtest.me:8443/";
+      ulid = "01KEAAZKYV8GMQGH5YX6ZV4GS5";  # Generated 2026-01-06
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 100;
+      # Feature 113: URL routing domains
+      routing_domains = [ "dapr.cnoe.localtest.me" ];
     }
   ];
 

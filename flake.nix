@@ -71,6 +71,12 @@
       url = "github:olafkfreund/nix-ai-help";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Cachix Deploy for automated deployments
+    cachix-deploy-flake = {
+      url = "github:cachix/cachix-deploy-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs @ { self, flake-parts, ... }:

@@ -10,6 +10,48 @@ let
   hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwas = pwaSitesConfig.pwaSites;
+
+  # Cluster CA certificate for *.cnoe.localtest.me
+  # This is the CA certificate (with CA:TRUE) that signs the server certificates
+  # PWA profiles need this certificate for HTTPS trust to cluster services
+  clusterCaCertFile = pkgs.writeText "cnoe-ca.pem" ''
+    -----BEGIN CERTIFICATE-----
+    MIIGLzCCBBegAwIBAgIUD+PQqrSsss28Hntp4OJdzK97Mm0wDQYJKoZIhvcNAQEL
+    BQAwgZ4xCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQH
+    DA1TYW4gRnJhbmNpc2NvMR8wHQYDVQQKDBZDTk9FIExvY2FsIERldmVsb3BtZW50
+    MR0wGwYDVQQLDBRQbGF0Zm9ybSBFbmdpbmVlcmluZzEiMCAGA1UEAwwZQ05PRSBM
+    b2NhbCBEZXZlbG9wbWVudCBDQTAeFw0yNjAxMDcwODQ1MDJaFw0zNjAxMDUwODQ1
+    MDJaMIGeMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UE
+    BwwNU2FuIEZyYW5jaXNjbzEfMB0GA1UECgwWQ05PRSBMb2NhbCBEZXZlbG9wbWVu
+    dDEdMBsGA1UECwwUUGxhdGZvcm0gRW5naW5lZXJpbmcxIjAgBgNVBAMMGUNOT0Ug
+    TG9jYWwgRGV2ZWxvcG1lbnQgQ0EwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIK
+    AoICAQDAsSgTE3yaf4nrWD0h5eZJAKDnvmeR/vAK1l6S0yGsgerVtnW/pr3Z7fwa
+    tiUP0oKgGbsbqU0kdRk6bzN0rJHSoYhm0aPnRSevga9pcF/tXBGMC1Mr/rbCSwiO
+    4CVU7cvGqh9YXh7m/kU675hHDRKHz7tx7nYGcbPFWfz9AjUTC/k+JOC3NkfeNtrF
+    DY9L5KJc272ugQpHgFJRRhIWq5IvUl/oI0cISf3hvF+atJsRo9Keb3JlRcqLfaiV
+    s8BuA+lUPjuMp7sAYIyrPfb5A9yKrT0K83fGBjdmgt3YxUlwRbVBOb+bPyp7hZVn
+    YCBVaPf9TBc8hMms3anY2y8Ng7qtvq1/ccaUcZR6j/Pt5SXLVxR91LY4+tOBfGNn
+    gnL8pYM7/peeZOLMaU+lxu/io/HcBEjbx3YbC16660WY3cBwSUTFQWZYtXrIH1l8
+    rsmdEgpnRqMVAn6PJLLABTWeGIYIk3dMffjCPqkD8WbYYygiVB917t2w+g/SwXPS
+    nGMy8xj9T1upDWkKRkF5SxVvCFOjBpSg/sXBDw41W81guOzmP75LCD6o5qLjAaTK
+    0SLeq2AxQtBbJId1Fm0LYt/UJv64o3WvlUfoFdCd2AGQRlLshczpa8MbM6UtAS78
+    cxqTYylzkGp8APKM5iX40juY9fJGH6HeOBNO1ViUMIKBNlgI0QIDAQABo2MwYTAP
+    BgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQUxY3oHpbt
+    RCr54K/RGNOzoBCkkzQwHwYDVR0jBBgwFoAUxY3oHpbtRCr54K/RGNOzoBCkkzQw
+    DQYJKoZIhvcNAQELBQADggIBACKVRgns/3SbU4Jq+Zkyc8Z8YbG3TW1ZAQf/uodH
+    Dtb204SgJbj2qBW0AuzpcRymVtQbfTLGRpomHdBbdz3ebr7oXmVMTGtDTrUpvb4q
+    QP+5w5P3+kWirXUAxZHxqGrjM9XQazcR9DAWIf5oXGrZrU7C72vCdqePEvfCiqJb
+    yjqt0s1cWmG7ydgbwMGiiXeCO9V1m+7SgTfOhEGqbcPUFbstoneOGzp0eWmVn9VM
+    a8hHBrkf0SVvNAYEbfNvYy5m2fRv2YJ+cPv2NmQ9/MTXNZmN9T+s3T6Slku57IYc
+    vygihWGL48i5CxUeGADlp8KgPw1bNFieI1gW+Z/pRSmJQqaoHLAT8bXrAh7BOPA/
+    eqSIjEl/LZQ90XfiXCrw+nRIvDSrMyBy6nhAI2DULgtzbtsBaHmB7Lm/IRQf1h71
+    4J0Bl3wRysJwHxTLYMiUvL63pZqebout5AMolOtdooog62kIRwaPtQDtC8utBF1/
+    8EeAFrOLgVEso70tavV6Ekgpy4Ms5U3e8/HPMWckmUyVxJ0dZqdoVsAgH1v63fkb
+    rKSg3nDAqaXrr6BkaJShGr/I4RwMdoHkYI5TXCcLdCVHn8oU7V//YDY1QUIzOQVk
+    yVUj3gMPxXbYQQsV5saBRfmS6QGhFjaOR+XHJNocxjR1dIC2CDDUIS1/Suykz0A9
+    CBn6
+    -----END CERTIFICATE-----
+  '';
   ensureFileUrl = path:
     if lib.hasPrefix "file://" path then path
     else if lib.hasPrefix "/" path then "file://${path}"
@@ -89,23 +131,23 @@ user_pref("widget.use-xdg-desktop-portal.mime-handler", 0);
 user_pref("gfx.webrender.all", true);
 user_pref("gfx.webrender.enabled", true);
 
-// === Mesa/Asahi GPU Crash Workarounds ===
-// Fixes SIGSEGV crashes in libgallium on Apple Silicon
-// Bug: Use-after-free in Mesa GPU driver triggered by WebGL content
+// === WebGL and GPU Rendering ===
+// Enable WebGL2 for apps that require it (e.g., RAG WebUI with visualization libraries)
+// Note: The Mesa/Asahi GPU crash workaround was removed as it's only needed on Apple Silicon
 
-// Disable WebGL to prevent GPU driver crashes
-user_pref("webgl.disabled", true);
-user_pref("webgl.enable-webgl2", false);
+// Enable WebGL (required by visualization libraries like Three.js, TensorFlow.js, etc.)
+user_pref("webgl.disabled", false);
+user_pref("webgl.enable-webgl2", true);
 
-// Use software rendering for canvas operations
-user_pref("gfx.canvas.accelerated", false);
+// Enable hardware-accelerated canvas for better performance
+user_pref("gfx.canvas.accelerated", true);
 
-// Disable GPU process to reduce driver complexity
-user_pref("layers.gpu-process.enabled", false);
-user_pref("media.hardware-video-decoding.enabled", false);
+// Enable GPU process for hardware acceleration
+user_pref("layers.gpu-process.enabled", true);
+user_pref("media.hardware-video-decoding.enabled", true);
 
-// Keep basic GPU compositing but avoid problematic features
-user_pref("gfx.webrender.compositor", false);
+// Enable WebRender compositor for smoother rendering
+user_pref("gfx.webrender.compositor", true);
 
 // === 1Password Integration (Feature 056) ===
 // Enable 1Password extension and native messaging
@@ -141,9 +183,11 @@ user_pref("browser.uiCustomization.state", "{\"placements\":{\"widget-overflow-f
 // Auth flows (OAuth/SSO) will complete within the PWA window.
 user_pref("firefoxpwa.openOutOfScopeInDefaultBrowser", false);
 
-// Control how _blank target links are handled (OAuth popups)
-// 0=preserve, 1=force current tab (default), 2=force new window, 3=force new tab
-user_pref("firefoxpwa.linksTarget", 1);
+// === Enterprise Certificate Trust ===
+// Enable reading CA certificates from NSS database
+// This allows dynamically imported certs (via certutil) to be trusted
+// Used for CNOE/Kind cluster self-signed certificates at *.cnoe.localtest.me:8443
+user_pref("security.enterprise_roots.enabled", true);
 EOF
         echo "Updated: $profile/user.js"
         ((count++))
@@ -403,6 +447,30 @@ in
     home.activation.firefoxpwaEnsure1Password = entryAfter [ "firefoxpwaWaylandPrefs" ] ''
       if command -v pwa-enable-1password >/dev/null 2>&1; then
         pwa-enable-1password >/dev/null 2>&1 || true
+      fi
+    '';
+
+    # Add cluster CA certificate to all PWA profile NSS databases
+    # This enables PWAs to trust *.cnoe.localtest.me HTTPS connections
+    home.activation.firefoxpwaTrustClusterCert = entryAfter [ "firefoxpwaWaylandPrefs" ] ''
+      PROFILES_DIR="$HOME/.local/share/firefoxpwa/profiles"
+      CERT_NICKNAME="CNOE-Local-Dev-CA"
+
+      if [ -d "$PROFILES_DIR" ]; then
+        for profile in "$PROFILES_DIR"/*; do
+          if [ -d "$profile" ]; then
+            # Initialize NSS database if it doesn't exist (cert9.db is the SQLite format)
+            if [ ! -f "$profile/cert9.db" ]; then
+              ${pkgs.nssTools}/bin/certutil -d sql:"$profile" -N --empty-password 2>/dev/null || true
+            fi
+
+            # Remove existing cert if present (to update it)
+            ${pkgs.nssTools}/bin/certutil -d sql:"$profile" -D -n "$CERT_NICKNAME" 2>/dev/null || true
+
+            # Add the cluster CA certificate (CT,C,C = trusted for SSL/email/code)
+            ${pkgs.nssTools}/bin/certutil -d sql:"$profile" -A -n "$CERT_NICKNAME" -t "CT,C,C" -i "${clusterCaCertFile}" 2>/dev/null || true
+          fi
+        done
       fi
     '';
 

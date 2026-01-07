@@ -119,9 +119,9 @@ let
     fi
 
     # ============================================================================
-    # LOOP PREVENTION (Simplified - Feature 118)
+    # LOOP PREVENTION (Feature 118 Enhanced)
     # ============================================================================
-    # Single check: if I3PM_PWA_URL is set, we're already in a PWA launch context
+    # Check 1: if I3PM_PWA_URL is set, we're already in a PWA launch context
     if [ -n "''${I3PM_PWA_URL:-}" ]; then
       log "LOOP PREVENTION: I3PM_PWA_URL already set, bypassing to Firefox"
       exec ${pkgs.firefox}/bin/firefox "$URL"

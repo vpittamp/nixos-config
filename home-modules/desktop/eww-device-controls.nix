@@ -28,7 +28,8 @@ let
   };
 
   # Detect host type from hostname
-  hostname = osConfig.networking.hostName or "";
+  # Safely get hostname - osConfig may be null in standalone home-manager
+  hostname = if osConfig != null then (osConfig.networking.hostName or "") else "";
   isHeadless = hostname == "hetzner";
   isRyzen = hostname == "ryzen";
   isThinkPad = hostname == "thinkpad";

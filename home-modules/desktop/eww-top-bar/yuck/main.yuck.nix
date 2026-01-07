@@ -1,4 +1,4 @@
-{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), topbarSpinnerScript ? null, topbarSpinnerOpacityScript ? null, ... }:
+{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), topbarSpinnerScript ? null, topbarSpinnerOpacityScript ? null, isLaptop ? false, ... }:
 
 # Feature 061: Eww Top Bar - Enhanced widget definitions
 # Adds: System tray, WiFi widget, enhanced volume control with popup
@@ -127,6 +127,15 @@ in
   :initial '{"volume":0,"muted":false,"icon":"🔇"}'
   `bash ~/.config/eww/eww-top-bar/scripts/volume-status.sh`)
 
+${if isLaptop then ''
+;; Brightness status monitoring (laptop only)
+;; Uses device-backend.py from eww-device-controls module
+(defpoll brightness_state
+  :interval "2s"
+  :initial '{"display":50,"keyboard":null,"error":false}'
+  `~/.config/eww/eww-device-controls/scripts/device-backend.py --mode brightness 2>/dev/null || echo '{"display":50,"keyboard":null,"error":true}'`)
+'' else ""}
+
 ;; Volume monitoring (real-time via deflisten) - kept for compatibility
 (deflisten volume
   :initial '{\"volume_pct\":\"0\",\"muted\":true}'
@@ -134,7 +143,7 @@ in
 
 ;; Battery monitoring (real-time via deflisten)
 (deflisten battery
-  :initial '{\"percentage\":0,\"charging\":false,\"level\":\"unknown\"}'
+  :initial '{\"percentage\":0,\"charging\":false,\"level\":\"unknown\",\"time_remaining\":0,\"time_formatted\":\"--\",\"energy_rate\":0,\"energy\":0,\"energy_full\":0}'
   `python3 ~/.config/eww/eww-top-bar/scripts/battery-monitor.py`)
 
 ;; Bluetooth monitoring (real-time via deflisten)
@@ -219,6 +228,7 @@ in
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
 (defvar show_volume_peek false)
+(defvar show_brightness_peek false)
 (defvar show_metrics false)
 (defvar powermenu_confirm_action "")
 
@@ -330,21 +340,51 @@ in
                 :max 100
                 :value {volume.volume_pct ?: 0}))))
 
+${if isLaptop then ''
+;; Brightness widget (laptop only - requires backlight hardware)
+;; Icon + hover reveal slider, scroll to adjust
+(defwidget brightness-widget []
+  (eventbox :onclick ""
+            :onhover "eww update show_brightness_peek=true"
+            :onhoverlost "eww update show_brightness_peek=false"
+            :onscroll "~/.config/eww/eww-device-controls/scripts/brightness-control.sh {}"
+    (box :class "pill metric-pill brightness"
+         :spacing 2
+         :tooltip "Brightness: ''${brightness_state.display ?: 50}%"
+         (label :class "icon brightness-icon"
+                :text "󰃟")
+         (label :class "value brightness-value"
+                :text "''${brightness_state.display ?: 50}%")
+         (revealer :transition "slideleft"
+                   :reveal show_brightness_peek
+           (scale :class "meter meter-brightness"
+                  :min 5
+                  :max 100
+                  :value {brightness_state.display ?: 50}
+                  :onchange "~/.config/eww/eww-device-controls/scripts/brightness-control.sh set {}")))))
+'' else ""}
+
 ;; Battery widget (conditional - only shown if battery hardware present)
 (defwidget battery-widget []
   (box :class "pill metric-pill battery"
        :spacing 3
-       :tooltip "Battery status"
-       (label :class {battery.level == "critical" ? "icon battery-icon battery-critical" :
-                      battery.level == "low" ? "icon battery-icon battery-low" :
-                      "icon battery-icon battery-normal"}
+       :tooltip {battery.charging
+                  ? "Charging: ''${battery.percentage ?: 0}% (''${battery.time_formatted ?: '--'} to full)"
+                  : "Battery: ''${battery.percentage ?: 0}% (''${battery.time_formatted ?: '--'} remaining)"}
+       (label :class {battery.level == "critical" ? "icon battery-icon battery-icon-critical" :
+                      battery.level == "very_low" ? "icon battery-icon battery-icon-very-low" :
+                      battery.level == "low" ? "icon battery-icon battery-icon-low" :
+                      "icon battery-icon"}
               :text {battery.charging ? "" : ""})
        (scale :class "meter meter-battery"
               :min 0
               :max 100
               :value {battery.percentage ?: 0})
        (label :class "value battery-value"
-              :text "''${battery.percentage ?: '0'}%")))
+              :text "''${battery.percentage ?: '0'}%")
+       ;; Time remaining (compact display)
+       (label :class "value battery-time"
+              :text {battery.time_formatted ?: "--"})))
 
 ;; Bluetooth widget (conditional - only shown if bluetooth hardware present, with click handler)
 (defwidget bluetooth-widget []
@@ -695,6 +735,7 @@ in
 
           ;; Always-visible controls
           (volume-widget-enhanced)
+          ${if isLaptop then "(brightness-widget)" else ""}
           (battery-widget)
            (bluetooth-widget)
 

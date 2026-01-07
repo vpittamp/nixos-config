@@ -112,15 +112,18 @@
       
       # Use cachix for faster builds
       # backstage cache: persistent Nix binary cache (survives cluster recreations)
+      # pittampalli cache: Cachix Deploy for auto-deployments to thinkpad/ryzen
       substituters = [
         "https://cache.nixos.org"
         "https://nix-community.cachix.org"
         "https://backstage.cachix.org"
+        "https://pittampalli.cachix.org"
       ];
       trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
         "backstage.cachix.org-1:MMgCWqeGJWbqGEC4CwNUnVvs0edWlxkolNChfTTzoUU="
+        "pittampalli.cachix.org-1:DXxPXHm3F3DxxXw9puhmhXyBd9lS2N83FWpyNiTrg1s="
       ];
     };
     

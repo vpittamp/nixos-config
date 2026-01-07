@@ -1,0 +1,135 @@
+# Cachix Deploy - Automated NixOS Deployments
+#
+# This workflow builds NixOS configurations for thinkpad and ryzen,
+# pushes them to Cachix, and triggers deployment to agents.
+#
+# Required secrets:
+#   - CACHIX_AUTH_TOKEN: Write access to pittampalli cache
+#   - CACHIX_ACTIVATE_TOKEN: Deploy activation token
+#
+# Agents must be running on target machines with valid tokens.
+# See modules/services/cachix-deploy.nix for agent setup.
+
+name: Build and Deploy NixOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_only:
+        description: 'Skip build and deploy existing cache'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.host }}
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.deploy_only }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [thinkpad, ryzen]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: pittampalli
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build NixOS configuration
+        run: |
+          echo "Building ${{ matrix.host }}..."
+          nix build .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel \
+            --print-build-logs \
+            --show-trace
+
+      - name: Push to Cachix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Pushing ${{ matrix.host }} to Cachix..."
+          STORE_PATH=$(nix build .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel --print-out-paths)
+          echo "Store path: $STORE_PATH"
+          nix-store -qR "$STORE_PATH" | cachix push pittampalli
+
+  deploy:
+    name: Deploy to agents
+    needs: build
+    if: |
+      always() &&
+      (needs.build.result == 'success' || inputs.deploy_only) &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: pittampalli
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build deploy specification
+        id: build-spec
+        run: |
+          echo "Building deploy specification..."
+          SPEC=$(nix build .#deploy --print-out-paths)
+          echo "Deploy spec: $SPEC"
+          echo "spec=$SPEC" >> $GITHUB_OUTPUT
+
+      - name: Push deploy spec to Cachix
+        run: |
+          cachix push pittampalli ${{ steps.build-spec.outputs.spec }}
+
+      - name: Activate deployment
+        env:
+          CACHIX_ACTIVATE_TOKEN: ${{ secrets.CACHIX_ACTIVATE_TOKEN }}
+        run: |
+          echo "Activating deployment to agents..."
+          cachix deploy activate ${{ steps.build-spec.outputs.spec }}
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy spec**: \`${{ steps.build-spec.outputs.spec }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Targets**: thinkpad, ryzen" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: Activation triggered" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Agents will pull and activate the new configuration." >> $GITHUB_STEP_SUMMARY

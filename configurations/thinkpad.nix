@@ -60,6 +60,9 @@ in
 
     # Sunshine game streaming (Intel Quick Sync hardware encoding)
     ../modules/desktop/sunshine.nix
+
+    # Cachix Deploy for automated deployments
+    ../modules/services/cachix-deploy.nix
   ];
 
   # Firefox 146+ overlay for native Wayland fractional scaling support
@@ -429,6 +432,16 @@ in
   programs.firefox-1password = {
     enable = true;
     enablePWA = true;
+  };
+
+  # Cachix Deploy Agent - Auto-deploy on git push
+  # Token stored in 1Password, manually bootstrapped on first setup
+  services.cachix-deploy = {
+    enable = true;
+    onePassword = {
+      enable = true;
+      tokenReference = "op://CLI/Cachix Deploy Agent Thinkpad/token";
+    };
   };
 
   # Fallback password for initial setup

@@ -24,9 +24,12 @@ let
     mauve = "#cba6f7";
   };
 
-  hostname = osConfig.networking.hostName or "";
+  # Safely get hostname - osConfig may be null in standalone home-manager
+  hostname = if osConfig != null then (osConfig.networking.hostName or "") else "";
   isHeadless = hostname == "hetzner";
   isRyzen = hostname == "ryzen";
+  isThinkPad = hostname == "thinkpad";
+  isLaptop = isThinkPad;  # Laptops have brightness control
 
   topBarOutputs =
     if isHeadless then [
@@ -83,7 +86,7 @@ in
     xdg.configFile."eww/eww-top-bar/scripts/spinner-opacity.sh".source = ./scripts/spinner-opacity.sh;
 
     xdg.configFile."eww/eww-top-bar/eww.yuck".text = import ./yuck/main.yuck.nix {
-      inherit config lib pkgs topBarOutputs sanitizeOutputName topbarSpinnerScript topbarSpinnerOpacityScript;
+      inherit config lib pkgs topBarOutputs sanitizeOutputName topbarSpinnerScript topbarSpinnerOpacityScript isLaptop;
       inherit (pkgs.stdenv.hostPlatform) system;
       osConfig = osConfig;
     };

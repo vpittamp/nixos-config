@@ -136,6 +136,20 @@ in
 
       # Beyla eBPF auto-instrumentation
       beyla = pkgs.callPackage ../pkgs/beyla.nix { };
+
+      # Cachix Deploy specification
+      # Build with: nix build .#deploy
+      # Used by GitHub Actions to trigger deployments to agents
+      deploy =
+        let
+          cachix-deploy-lib = inputs.cachix-deploy-flake.lib pkgs;
+        in
+        cachix-deploy-lib.spec {
+          agents = {
+            thinkpad = self.nixosConfigurations.thinkpad.config.system.build.toplevel;
+            ryzen = self.nixosConfigurations.ryzen.config.system.build.toplevel;
+          };
+        };
     };
   };
 }

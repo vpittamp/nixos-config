@@ -69,7 +69,24 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      format = lib.concatStrings [
+        "$os$username$hostname"
+        "\${custom.tmux}"
+        "$directory"
+        # Git info: branch, commit, worktree context, status, state, metrics
+        "$git_branch"
+        "$git_commit"
+        "\${custom.git_worktree}"
+        "$git_status"
+        "$git_state"
+        "$git_metrics"
+        "$fill"
+        "$nix_shell"
+        "$kubernetes"
+        "$cmd_duration"
+        "$line_break"
+        "$character"
+      ];
 
       os = {
         disabled = false;
@@ -129,14 +146,100 @@ in
         format = "[$symbol$branch]($style)";
       };
 
+      # Show short commit hash (helpful for referencing specific commits)
+      git_commit = {
+        commit_hash_length = 7;
+        style = "fg:${colors.subtext0}";
+        format = "[@$hash]($style)";
+        tag_disabled = false;
+        tag_symbol = " 🏷 ";
+        tag_max_candidates = 1;
+        only_detached = false;
+      };
+
+      # Show lines added/deleted in current changes
+      git_metrics = {
+        disabled = false;
+        added_style = "fg:${colors.green}";
+        deleted_style = "fg:${colors.red}";
+        # Only show when there are actual changes
+        only_nonzero_diffs = true;
+        format = " [+$added]($added_style)/[-$deleted]($deleted_style)";
+      };
+
+      # Custom worktree indicator - shows when in a git worktree with context
+      custom.git_worktree = {
+        when = "test \"$I3PM_IS_WORKTREE\" = \"true\" || git rev-parse --is-inside-work-tree >/dev/null 2>&1 && test -n \"$(git rev-parse --git-common-dir 2>/dev/null)\" && [ \"$(git rev-parse --git-common-dir 2>/dev/null)\" != \"$(git rev-parse --git-dir 2>/dev/null)\" ]";
+        command = ''
+          if [ "$I3PM_IS_WORKTREE" = "true" ]; then
+            # Use I3PM environment for rich context
+            type="''${I3PM_BRANCH_TYPE:-wt}"
+            num="''${I3PM_BRANCH_NUMBER:-}"
+            if [ -n "$num" ]; then
+              echo "⌥$type#$num"
+            else
+              echo "⌥$type"
+            fi
+          else
+            # Fallback: detect git worktree without I3PM
+            echo "⌥wt"
+          fi
+        '';
+        style = "fg:${colors.pink} bold";
+        format = " [$output]($style)";
+      };
+
       git_status = {
-        style = "fg:${colors.yellow}";
-        format = " [$all_status$ahead_behind]($style)";
+        # Show explicit counts for each status type with clear symbols
+        format = lib.concatStrings [
+          "("
+          "[$conflicted](bold fg:${colors.red})"
+          "[$stashed](fg:${colors.mauve})"
+          "[$staged](fg:${colors.green})"
+          "[$modified](fg:${colors.yellow})"
+          "[$renamed](fg:${colors.peach})"
+          "[$deleted](fg:${colors.red})"
+          "[$untracked](fg:${colors.sky})"
+          "[$ahead_behind](fg:${colors.sapphire})"
+          ")"
+        ];
+        # Staged files (ready to commit)
+        staged = " +\${count}";
+        # Modified files (changed but not staged)
+        modified = " ~\${count}";
+        # Untracked files (new, not in git)
+        untracked = " ?\${count}";
+        # Deleted files
+        deleted = " ✗\${count}";
+        # Renamed files
+        renamed = " →\${count}";
+        # Merge conflicts
+        conflicted = " ⚠\${count}";
+        # Stashed changes
+        stashed = " ≡\${count}";
+        # Commits ahead of remote
+        ahead = " ↑\${count}";
+        # Commits behind remote
+        behind = " ↓\${count}";
+        # Branch has diverged (show both)
+        diverged = " ↑\${ahead_count}↓\${behind_count}";
+        # Up to date with remote (optional indicator)
+        up_to_date = "";
+        # File type changed
+        typechanged = " τ\${count}";
       };
 
       git_state = {
         style = "fg:${colors.maroon}";
         format = " [$state( $progress_current/$progress_total)]($style)";
+        # Clear labels for each operation type
+        rebase = "REBASING";
+        merge = "MERGING";
+        revert = "REVERTING";
+        cherry_pick = "CHERRY-PICK";
+        bisect = "BISECTING";
+        am = "AM";  # applying patches
+        am_or_rebase = "AM/REBASE";
       };
 
       nix_shell = {
