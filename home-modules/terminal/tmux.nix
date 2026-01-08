@@ -319,25 +319,21 @@ in
       # Quick copy popup (backtick + C) - Show current tmux buffer
       bind-key C display-popup -E -h 60% -w 70% 'echo "=== TMUX BUFFER ==="; tmux show-buffer | less'
 
-      # Clipboard history popup (backtick + Q) - Show clipcat clipboard items
-      # Uses clipcat for unified clipboard history across all applications
-      bind-key Q display-popup -E -h 70% -w 80% 'bash -c "\
-        if command -v clipcatctl &>/dev/null 2>&1; then \
-          echo \"=== CLIPBOARD HISTORY (clipcat) ===\"; \
-          echo; \
-          clipcatctl list | while IFS=: read -r hash content; do \
-            echo \"Hash: $hash\"; \
-            echo \"$content\" | head -3; \
-            echo \"----------------------------------------\"; \
-            echo; \
-          done; \
-        else \
-          echo \"Clipcat not available\"; \
-          if [ -n \"$WAYLAND_DISPLAY\" ]; then \
-            echo \"Current clipboard:\"; wl-paste; \
-          else \
-            echo \"Current clipboard:\"; xclip -selection clipboard -o; \
-          fi; \
+      # Clipboard history popup (backtick + Q) - Show Elephant clipboard items
+      # Uses Elephant for unified clipboard history across all applications
+      bind-key Q display-popup -E -h 70% -w 80% 'bash -c "
+        if command -v elephant >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+          echo === CLIPBOARD HISTORY ===
+          echo
+          elephant query clipboard;;30;false --json 2>/dev/null | jq -r \"select(.item) | .item.subtext + \\\"\\n\\\" + .item.text[0:500] + \\\"\\n---\\n\\\"\" | head -200
+        else
+          echo Elephant not available
+          if [ -n \"\$WAYLAND_DISPLAY\" ]; then
+            echo Current clipboard:
+            wl-paste
+          else
+            xclip -selection clipboard -o 2>/dev/null || echo No clipboard available
+          fi
         fi" | less'
     '';
   };

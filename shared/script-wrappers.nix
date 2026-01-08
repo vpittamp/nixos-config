@@ -67,10 +67,17 @@ let
       scriptPath = "scripts/keybindings-cheatsheet.sh";
       description = "Display keybinding cheatsheet";
     };
+    # Elephant-based clipboard history selector (replaces clipcat)
+    elephant-fzf = {
+      scriptPath = "scripts/elephant-fzf.sh";
+      extraInputs = [ pkgs.fzf pkgs.jq pkgs.wl-clipboard ];
+      description = "FZF-based clipboard history selector (Elephant)";
+    };
+    # Legacy alias - points to elephant-fzf for backward compatibility
     clipcat-fzf = {
-      scriptPath = "scripts/clipcat-fzf.sh";
-      extraInputs = [ pkgs.fzf pkgs.clipcat ];
-      description = "FZF-based clipboard history selector";
+      scriptPath = "scripts/elephant-fzf.sh";
+      extraInputs = [ pkgs.fzf pkgs.jq pkgs.wl-clipboard ];
+      description = "FZF-based clipboard history selector (Elephant) - legacy alias";
     };
     clipboard-sync = {
       scriptPath = "scripts/clipboard-sync.sh";
@@ -166,6 +173,7 @@ in {
   # Convenience accessors for common scripts
   inherit (wrappers)
     keybindings-cheatsheet
+    elephant-fzf
     clipcat-fzf
     clipboard-sync
     clipboard-paste

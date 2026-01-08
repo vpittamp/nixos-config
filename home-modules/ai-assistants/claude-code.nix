@@ -3,7 +3,7 @@
 let
   repoRoot = ../../.;
 
-  # Use claude-code from the dedicated flake for latest version (2.0.1)
+  # Use claude-code from the dedicated flake for latest version (2.1.1)
   # Fall back to nixpkgs-unstable if flake not available
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
