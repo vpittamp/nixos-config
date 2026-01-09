@@ -48,8 +48,15 @@ fi
 # Resolve to absolute path
 SESSION_DIR=$(cd "$SESSION_DIR" && pwd)
 
-# Session name: use provided name, or derive from directory
-SESSION_NAME="${2:-$(basename "$SESSION_DIR")}"
+# Session name: use provided name, or derive unique name from parent_basename
+# e.g., /repos/backstage/main -> backstage_main (avoids conflicts with other repos' "main")
+if [[ -n "${2:-}" ]]; then
+    SESSION_NAME="$2"
+else
+    PARENT_DIR=$(basename "$(dirname "$SESSION_DIR")")
+    BASE_DIR=$(basename "$SESSION_DIR")
+    SESSION_NAME="${PARENT_DIR}_${BASE_DIR}"
+fi
 
 # Sanitize session name for tmux (remove special chars, replace with dashes)
 SAFE_SESSION_NAME=$(echo "$SESSION_NAME" | tr -c '[:alnum:]-_' '-' | sed 's/--*/-/g; s/^-//; s/-$//')

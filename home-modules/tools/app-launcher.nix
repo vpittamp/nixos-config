@@ -59,18 +59,30 @@ EOF
       scriptContent
   );
 
+  # Devenv-aware terminal launcher script
+  devenv-terminal-launch-script = pkgs.writeScriptBin "devenv-terminal-launch" (
+    builtins.readFile ../../scripts/devenv-terminal-launch.sh
+  );
+
 in
 {
   # Install CLI tool
   home.packages = [
     app-launcher-cli
     wrapper-script
+    devenv-terminal-launch-script
   ];
 
   # Install wrapper script to standard location
   # This ensures it's accessible from desktop files
   home.file.".local/bin/app-launcher-wrapper.sh" = {
     source = "${wrapper-script}/bin/app-launcher-wrapper";
+    executable = true;
+  };
+
+  # Install devenv-aware terminal launcher
+  home.file.".local/bin/devenv-terminal-launch.sh" = {
+    source = "${devenv-terminal-launch-script}/bin/devenv-terminal-launch";
     executable = true;
   };
 

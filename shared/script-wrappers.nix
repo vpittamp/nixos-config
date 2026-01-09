@@ -154,6 +154,13 @@ let
       extraInputs = [ pkgs.tmux ];
       description = "Enhanced tmux supervisor dashboard";
     };
+
+    # Terminal launching
+    devenv-terminal-launch = {
+      scriptPath = "scripts/devenv-terminal-launch.sh";
+      extraInputs = [ pkgs.tmux pkgs.sesh pkgs.devenv ];
+      description = "Devenv-aware terminal launcher with tmux session and devenv up window";
+    };
   };
 
   # Generate wrapper packages from definitions
@@ -189,7 +196,8 @@ in {
     i3pm-clone
     generate-ulid
     onepassword-setup-token
-    tmux-supervisor-enhanced;
+    tmux-supervisor-enhanced
+    devenv-terminal-launch;
 
   # Combined package with all wrappers (for home.packages)
   package = pkgs.symlinkJoin {

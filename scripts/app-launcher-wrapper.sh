@@ -117,7 +117,8 @@ if [[ -f "$WORKTREE_CONTEXT_FILE" ]]; then
     WORKTREE_ACCOUNT=$(echo "$WORKTREE_JSON" | jq -r '.account // ""')
     WORKTREE_REPO_NAME=$(echo "$WORKTREE_JSON" | jq -r '.repo_name // ""')
     PROJECT_DISPLAY_NAME="$WORKTREE_BRANCH"
-    SESSION_NAME="$WORKTREE_BRANCH"
+    # Use repo_branch format for unique session names (e.g., nixos-config_main)
+    SESSION_NAME="${WORKTREE_REPO_NAME}_${WORKTREE_BRANCH}"
     PROJECT_ICON=""
     log "INFO" "Using worktree context - name: $PROJECT_NAME, dir: $PROJECT_DIR, branch: $WORKTREE_BRANCH"
 else
@@ -242,6 +243,28 @@ ARGS=("$COMMAND")
 if [[ -n "$PARAM_RESOLVED" ]]; then
     read -ra PARAMS <<< "$PARAM_RESOLVED"
     ARGS+=("${PARAMS[@]}")
+fi
+
+# ============================================================================
+# DEVENV INTEGRATION
+# ============================================================================
+# For terminal apps, if the project has devenv.nix, use devenv-aware launcher
+# which creates a tmux session with a dedicated "devenv" window running `devenv up`
+#
+# This enables:
+# - Automatic devenv environment activation via direnv
+# - Dedicated window for devenv services (devenv up)
+# - Fallback to standard sesh for non-devenv projects
+
+if [[ "$APP_NAME" == "terminal" ]] && [[ -n "$PROJECT_DIR" ]] && [[ -f "$PROJECT_DIR/devenv.nix" ]]; then
+    log "INFO" "Devenv project detected at $PROJECT_DIR, using devenv-terminal-launch"
+    # Override ARGS to use devenv-aware terminal launcher
+    # devenv-terminal-launch handles: session creation, devenv window, sesh fallback
+    # Use script path relative to this script's location (both in scripts/)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    DEVENV_LAUNCHER="$SCRIPT_DIR/devenv-terminal-launch.sh"
+    ARGS=("$COMMAND" "-e" "$DEVENV_LAUNCHER" "$PROJECT_DIR" "$SESSION_NAME")
+    log "DEBUG" "Devenv ARGS: ${ARGS[*]}"
 fi
 
 log "INFO" "Resolved command: ${ARGS[*]}"
