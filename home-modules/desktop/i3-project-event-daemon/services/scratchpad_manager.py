@@ -141,9 +141,13 @@ class ScratchpadManager:
             # Session name format: scratchpad-{project_name}
             tmux_session_name = f"scratchpad-{project_name}"
 
+            # Scratchpad uses simple tmux session (not devenv)
+            # Devenv integration is handled by regular terminal via app-launcher-wrapper.sh
+            # -A: attach if exists, create if not
+            tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
+
             # Wrap tmux in bash to ensure proper execution and environment
             # Use double quotes for bash -c to allow variable expansion, escape inner quotes
-            tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
             ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
 
             # Complete shell command with environment setup
@@ -583,10 +587,12 @@ class ScratchpadManager:
             for mark in window.marks:
                 if mark.startswith("scoped:scratchpad-terminal:"):
                     # Parse mark: scoped:scratchpad-terminal:{project_name}:{window_id}
-                    parts = mark.split(":")
-                    if len(parts) >= 4:
-                        project_name = parts[2]
-
+                    # Note: project_name may contain colons (e.g., "vpittamp/nixos-config:main")
+                    # so we extract window_id from the end and project_name is everything in between
+                    suffix = mark[len("scoped:scratchpad-terminal:"):]
+                    last_colon = suffix.rfind(":")
+                    if last_colon > 0:
+                        project_name = suffix[:last_colon]
                         # Skip if already tracked
                         if project_name in self.terminals:
                             continue
