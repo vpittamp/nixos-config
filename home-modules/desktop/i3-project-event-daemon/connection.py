@@ -233,6 +233,8 @@ class ResilientI3Connection:
 
         This handles the case where Sway restarts with a new socket path
         (e.g., after nixos-rebuild). The daemon's initial socket becomes stale.
+        Also handles the case where the socket path is unchanged but the
+        connection has gone stale (e.g., corrupted i3ipc connection state).
 
         Returns:
             True if connection is valid or reconnection succeeded, False otherwise
@@ -243,6 +245,10 @@ class ResilientI3Connection:
         # Get current socket from environment
         current_socket = os.environ.get("SWAYSOCK") or os.environ.get("I3SOCK")
 
+        # Track if the health check failed - even if socket path is same,
+        # we may need to force a reconnect to recover from stale connection
+        health_check_failed = False
+
         # Check if socket file still exists
         if current_socket and Path(current_socket).exists():
             # Socket exists, try a simple health check
@@ -252,6 +258,7 @@ class ResilientI3Connection:
                     return True
             except Exception as e:
                 logger.warning(f"Socket exists but connection failed: {e}")
+                health_check_failed = True
 
         # Socket is stale or connection failed - discover new socket
         new_socket = discover_sway_socket()
@@ -259,12 +266,17 @@ class ResilientI3Connection:
             logger.error("No Sway/i3 socket found for reconnection")
             return False
 
-        if new_socket == current_socket:
-            logger.debug("Socket unchanged, no reconnection needed")
+        # If socket path unchanged AND health check passed, no reconnection needed
+        # But if health check failed, we must force reconnect even with same socket
+        if new_socket == current_socket and not health_check_failed:
+            logger.debug("Socket unchanged and healthy, no reconnection needed")
             return self.is_connected
 
-        # New socket found - update environment and reconnect
-        logger.info(f"Sway socket changed: {current_socket} -> {new_socket}")
+        # Force reconnection: either socket changed OR connection is broken
+        if new_socket == current_socket:
+            logger.info(f"Forcing reconnection to same socket due to stale connection: {new_socket}")
+        else:
+            logger.info(f"Sway socket changed: {current_socket} -> {new_socket}")
         os.environ["SWAYSOCK"] = new_socket
         os.environ["I3SOCK"] = new_socket
 
