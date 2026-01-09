@@ -20,8 +20,8 @@ MAX_ITEMS=${ELEPHANT_FZF_MAX_ITEMS:-100}
 # Format: ID<tab>[timestamp] preview_text
 generate_entries() {
   elephant query "clipboard;;${MAX_ITEMS};false" --json 2>/dev/null | \
-    jq -r 'select(.item) |
-      "\(.item.identifier)\t[\(.item.subtext | split(",")[1] // .item.subtext | ltrimstr(" "))] \(.item.text | gsub("\n"; " \u22ef") | gsub("\t"; " ") | .[0:100])"'
+    jq -r 'select(.item) | select(.item.text != null) |
+      "\(.item.identifier)\t[\(.item.subtext // "unknown" | split(",")[1] // .item.subtext | ltrimstr(" "))] \(.item.text | gsub("\n"; " \u22ef") | gsub("\t"; " ") | .[0:100])"'
 }
 
 # Render full preview for a clipboard entry
@@ -35,7 +35,7 @@ render_preview() {
 
   local content
   content=$(elephant query "clipboard;;${MAX_ITEMS};false" --json 2>/dev/null | \
-    jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.text')
+    jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.text // empty')
 
   if [[ -z "$content" ]]; then
     printf 'Unable to load clip %s\n' "$clip_id"
@@ -45,7 +45,7 @@ render_preview() {
   # Get metadata
   local timestamp
   timestamp=$(elephant query "clipboard;;${MAX_ITEMS};false" --json 2>/dev/null | \
-    jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.subtext')
+    jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.subtext // "unknown"')
 
   local bytes lines
   bytes=$(printf '%s' "$content" | wc -c | awk '{print $1}')
@@ -105,7 +105,7 @@ selected=$(generate_entries | fzf \
   --preview-label=' Clipboard entry ' \
   --preview-window=right,60%,border-top,wrap \
   --bind 'ctrl-p:toggle-preview' \
-  --bind 'ctrl-y:execute-silent(elephant query "clipboard;;'"${MAX_ITEMS}"';false" --json 2>/dev/null | jq -r --arg id {1} '\''select(.item.identifier == $id) | .item.text'\'' | wl-copy)+abort' \
+  --bind 'ctrl-y:execute-silent(elephant query "clipboard;;'"${MAX_ITEMS}"';false" --json 2>/dev/null | jq -r --arg id {1} '\''select(.item.identifier == $id) | .item.text // empty'\'' | wl-copy)+abort' \
   --bind 'shift-up:preview-up,shift-down:preview-down' \
   --bind 'alt-up:preview-up,alt-down:preview-down' \
   --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
@@ -118,7 +118,7 @@ if [ -n "${selected:-}" ]; then
 
   # Get the full text content
   text=$(elephant query "clipboard;;${MAX_ITEMS};false" --json 2>/dev/null | \
-    jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.text')
+    jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.text // empty')
 
   if [[ -z "$text" ]]; then
     exit 1
