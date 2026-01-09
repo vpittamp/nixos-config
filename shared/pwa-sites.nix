@@ -42,7 +42,7 @@ let
       scope = "https://www.youtube.com/";
       ulid = "01K666N2V6BQMDSBMX3AY74TY7";  # FFPWA ID
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 50;
       preferred_monitor_role = "secondary";  # Feature 001: Separate from Firefox (tertiary)
       # Feature 113: URL routing domains
@@ -63,8 +63,9 @@ let
       scope = "https://google.com/";
       ulid = "01K665SPD8EPMP3JTW02JM1M0Z";  # FFPWA ID
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 51;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing - only AI-specific paths, not general google.com
       routing_domains = [ ];  # Disabled - google.com is too broad
       routing_paths = [ "/ai" ];  # Match google.com/ai/*
@@ -83,7 +84,7 @@ let
       scope = "https://claude.ai/";
       ulid = "01JCYF8Z2M7R4N6QW9XKPHVTB5";  # Generated 2025-11-02
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 52;
       preferred_monitor_role = "secondary";  # Feature 001: Explicit secondary assignment (dev tools on center monitor)
       # Feature 113: URL routing domains
@@ -102,8 +103,9 @@ let
       scope = "https://chatgpt.com/";
       ulid = "01K772ZBM45JD68HXYNM193CVW";  # FFPWA ID
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 53;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "chatgpt.com" "www.chatgpt.com" "chat.openai.com" ];
     }
@@ -120,8 +122,9 @@ let
       scope = "https://github.com/";
       ulid = "01JCYF9A3P8T5W7XH0KMQRNZC6";  # Generated 2025-11-02
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 54;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "github.com" "www.github.com" ];
     }
@@ -140,6 +143,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 55;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "github.dev" ];
     }
@@ -158,6 +162,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 56;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "mail.google.com" ];
       # Feature 118: Auth domains
@@ -178,6 +183,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 57;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "calendar.google.com" ];
       # Feature 118: Auth domains
@@ -198,6 +204,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 58;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing - only learning subdomain, not all of linkedin
       routing_domains = [ ];  # Disabled - linkedin.com is too broad
       # Feature 118: Path-based routing for /learning paths
@@ -218,6 +225,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 59;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "bostondogbutlers.com" "www.bostondogbutlers.com" "www.timetopet.com" ];
     }
@@ -295,6 +303,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 63;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "ubereats.com" "www.ubereats.com" ];
     }
@@ -313,6 +322,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 64;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing - localhost is too generic
       routing_domains = [ ];  # Disabled - localhost:8123 would conflict with other local services
     }
@@ -331,6 +341,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 65;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "pittampalli.1password.com" "my.1password.com" ];
     }
@@ -349,6 +360,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 66;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "perplexity.ai" "www.perplexity.ai" ];
     }
@@ -367,6 +379,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 67;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "vscode.dev" "insiders.vscode.dev" ];
     }
@@ -383,8 +396,9 @@ let
       scope = "https://keycloak.cnoe.localtest.me:8443/";
       ulid = "01MD4CZ7H4KJ4TR0C2Q3C8ZQ9V";  # Generated 2025-11-17
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 68;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "keycloak.cnoe.localtest.me" ];
     }
@@ -403,6 +417,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 69;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "backstage.cnoe.localtest.me" ];
     }
@@ -419,8 +434,9 @@ let
       scope = "https://argocd.cnoe.localtest.me:8443/";
       ulid = "01MD4D0N7A8F9P6QS0R1TV2WX3";  # Generated 2025-11-17
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 70;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "argocd.cnoe.localtest.me" ];
     }
@@ -437,8 +453,9 @@ let
       scope = "https://argocd.ai401kchat.com/";
       ulid = "3YBB66K55HEZRW2GC25M8W53NJ";  # Generated 2025-12-09
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 77;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "argocd.ai401kchat.com" ];
     }
@@ -455,8 +472,9 @@ let
       scope = "https://gitea.cnoe.localtest.me:8443/";
       ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 71;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "gitea.cnoe.localtest.me" ];
     }
@@ -475,6 +493,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 72;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "cvs.com" "www.cvs.com" ];
     }
@@ -493,6 +512,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 73;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "kargo.cnoe.localtest.me" ];
     }
@@ -509,8 +529,9 @@ let
       scope = "https://headlamp.cnoe.localtest.me:8443/";
       ulid = "01MEQFVCK5P4S8T3V6X0Y2Z7A1";  # Generated 2025-11-18
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 74;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "headlamp.cnoe.localtest.me" ];
     }
@@ -527,8 +548,9 @@ let
       scope = "https://kagent.cnoe.localtest.me:8443/";
       ulid = "01MEQFVGM6Q5T9V4W7Y1Z3A2B8";  # Generated 2025-11-18
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 75;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "kagent.cnoe.localtest.me" ];
     }
@@ -545,8 +567,9 @@ let
       scope = "https://agentgateway.cnoe.localtest.me:8443/";
       ulid = "01MEQFVKN7R6V0W5X8Z2A4B3C9";  # Generated 2025-11-18
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 76;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "agentgateway.cnoe.localtest.me" ];
     }
@@ -568,8 +591,9 @@ let
       scope = "https://kargo.ai401kchat.com/";
       ulid = "45XFC05KF4YM4GK9SMKW8S4EPZ";  # Generated 2025-12-09
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 79;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "kargo.ai401kchat.com" ];
     }
@@ -586,8 +610,9 @@ let
       scope = "https://headlamp.ai401kchat.com/";
       ulid = "7Q27F97E9F496X7ZQ47ANH88CP";  # Generated 2025-12-09
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 80;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "headlamp.ai401kchat.com" ];
     }
@@ -604,8 +629,9 @@ let
       scope = "https://gitea.ai401kchat.com/";
       ulid = "72TGWGVAMBGEA9T1M4MS75S8PG";  # Generated 2025-12-09
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 81;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "gitea.ai401kchat.com" ];
     }
@@ -622,8 +648,9 @@ let
       scope = "https://keycloak.ai401kchat.com/";
       ulid = "514S283M0EGKNVDMYKAR3635H6";  # Generated 2025-12-09
       # App registry metadata
-      app_scope = "scoped";
+      app_scope = "global";
       preferred_workspace = 82;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "keycloak.ai401kchat.com" ];
     }
@@ -647,6 +674,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 83;
+      preferred_monitor_role = "secondary";
     }
 
     # Grafana (CNOE local)
@@ -663,6 +691,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 95;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "grafana.cnoe.localtest.me" ];
     }
@@ -681,6 +710,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 84;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "langfuse.cnoe.localtest.me" ];
     }
@@ -699,6 +729,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 93;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "jaeger.cnoe.localtest.me" ];
     }
@@ -718,6 +749,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 85;
+      preferred_monitor_role = "secondary";
     }
 
     # ============================================
@@ -739,6 +771,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 86;
+      preferred_monitor_role = "secondary";
     }
 
 
@@ -757,6 +790,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 88;
+      preferred_monitor_role = "secondary";
     }
 
     # ============================================
@@ -778,6 +812,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 89;
+      preferred_monitor_role = "secondary";
     }
 
 
@@ -796,6 +831,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 91;
+      preferred_monitor_role = "secondary";
     }
 
     # ============================================
@@ -816,6 +852,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 92;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "flipt.cnoe.localtest.me" ];
     }
@@ -834,6 +871,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 94;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "rag-webui.cnoe.localtest.me" ];
     }
@@ -852,6 +890,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 96;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "nocodb.cnoe.localtest.me" ];
     }
@@ -870,6 +909,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 97;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "cloud.oracle.com" "console.oracle.com" ];
       # Feature 118: Oracle auth domains
@@ -890,6 +930,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 98;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "app.cachix.org" "cachix.org" "www.cachix.org" ];
     }
@@ -908,6 +949,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 99;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "hercules-ci.com" "www.hercules-ci.com" ];
     }
@@ -926,6 +968,7 @@ let
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 100;
+      preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "dapr.cnoe.localtest.me" ];
     }
