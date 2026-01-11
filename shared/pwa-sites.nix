@@ -679,7 +679,7 @@ let
 
     # Grafana (CNOE local)
     {
-      name = "Grafana CNOE";
+      name = "Grafana Local";
       url = "https://grafana.cnoe.localtest.me:8443";
       domain = "grafana.cnoe.localtest.me";
       icon = iconPath "grafana.svg";
