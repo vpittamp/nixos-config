@@ -99,8 +99,21 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Install i3pm package
-    home.packages = [ cfg.package ];
+    # Install i3pm package and wrapper scripts
+    # Wrapper scripts are needed because shell aliases don't work with Sway's exec command
+    home.packages = [
+      cfg.package
+      # Wrapper script for Win+P keybinding (sway-keybindings.nix)
+      (pkgs.writeShellScriptBin "i3-project-switch" ''
+        # Cancel workspace mode preview if active, then launch project switcher
+        i3pm-workspace-mode cancel 2>/dev/null || true
+        exec i3pm switch "$@"
+      '')
+      # Wrapper script for Win+Shift+P keybinding (sway-keybindings.nix)
+      (pkgs.writeShellScriptBin "i3-project-clear" ''
+        exec i3pm clear "$@"
+      '')
+    ];
 
     # Bash completion and aliases
     programs.bash.initExtra = mkIf cfg.enableBashIntegration ''
