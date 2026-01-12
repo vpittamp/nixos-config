@@ -972,6 +972,63 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "dapr.cnoe.localtest.me" ];
     }
+
+    # Attu (Milvus vector database UI)
+    {
+      name = "Attu";
+      url = "https://attu.cnoe.localtest.me:8443";
+      domain = "attu.cnoe.localtest.me";
+      icon = iconPath "milvus.svg";
+      description = "Attu - Milvus vector database administration UI";
+      categories = "Development;Network;";
+      keywords = "attu;milvus;vector;database;admin;kubernetes;";
+      scope = "https://attu.cnoe.localtest.me:8443/";
+      ulid = "03AYXQ8S24G2ZFWBJ54G83A4F7";  # Generated 2026-01-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 101;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "attu.cnoe.localtest.me" ];
+    }
+
+    # Crawl4AI (CNOE local)
+    {
+      name = "Crawl4AI";
+      url = "https://crawl4ai.cnoe.localtest.me:8443";
+      domain = "crawl4ai.cnoe.localtest.me";
+      icon = iconPath "crawl4ai.svg";
+      description = "Crawl4AI - Open-source LLM-friendly web crawler";
+      categories = "Development;Network;";
+      keywords = "crawl4ai;crawler;scraper;llm;ai;web;kubernetes;";
+      scope = "https://crawl4ai.cnoe.localtest.me:8443/";
+      ulid = "61ZKKF8QQHC7XYGFCWGMWY85CV";  # Generated 2026-01-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 102;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "crawl4ai.cnoe.localtest.me" ];
+    }
+
+    # AI Chatbot (Vercel AI SDK template - CNOE local)
+    {
+      name = "AI Chatbot";
+      url = "https://ai-chatbot.cnoe.localtest.me:8443";
+      domain = "ai-chatbot.cnoe.localtest.me";
+      icon = iconPath "ai-chatbot.svg";
+      description = "Vercel AI SDK Chatbot - Next.js AI chat template";
+      categories = "Development;Network;";
+      keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;";
+      scope = "https://ai-chatbot.cnoe.localtest.me:8443/";
+      ulid = "6EBKR8NA2A8TMS02SJ7NSR77RG";  # Generated 2026-01-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 103;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "ai-chatbot.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites
