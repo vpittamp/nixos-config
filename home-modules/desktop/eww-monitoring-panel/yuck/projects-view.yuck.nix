@@ -1,4 +1,9 @@
-{ pkgs, toggleExpandAllScript, projectCreateOpenScript, toggleProjectExpandedScript, worktreeCreateOpenScript, worktreeDeleteOpenScript, ... }:
+{ pkgs, config, toggleExpandAllScript, projectCreateOpenScript, toggleProjectExpandedScript, worktreeCreateOpenScript, worktreeDeleteOpenScript, switchProjectScript, ... }:
+
+let
+  # Full path to i3pm (user profile binary, not in standard PATH for EWW onclick commands)
+  i3pm = "${config.home.profileDirectory}/bin/i3pm";
+in
 
 ''
   ;; Projects View - Project list with metadata
@@ -203,7 +208,7 @@
       :class {"worktree-card-wrapper" + (worktree.is_main ? " is-main-worktree" : "")}
       (eventbox
         :cursor "pointer"
-        :onclick "i3pm worktree switch ''${worktree.qualified_name}"
+        :onclick "${switchProjectScript}/bin/switch-project-action ''${worktree.qualified_name}"
         :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
         :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
         (box
@@ -316,7 +321,7 @@
             :halign "end"
             (eventbox
               :cursor "pointer"
-              :onclick "i3pm scratchpad toggle ''${worktree.qualified_name}"
+              :onclick "${i3pm} scratchpad toggle ''${worktree.qualified_name}"
               :tooltip "Open terminal (t)"
               (label :class "action-btn action-terminal" :text ""))
             (eventbox

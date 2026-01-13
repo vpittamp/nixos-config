@@ -1,6 +1,9 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 
 let
+  # Full path to i3pm (user profile binary, not in standard PATH for EWW onclick commands)
+  i3pm = "${config.home.profileDirectory}/bin/i3pm";
+
   focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
     #!${pkgs.bash}/bin/bash
     # Feature 093: Focus window with automatic project switching
@@ -36,7 +39,7 @@ let
 
     # Conditional project switch (T013)
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
-        if ! i3pm worktree switch "$PROJECT_NAME"; then
+        if ! ${i3pm} worktree switch "$PROJECT_NAME"; then
             EXIT_CODE=$?
             ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
                 "Failed to switch to project $PROJECT_NAME (exit code: $EXIT_CODE)"
@@ -96,7 +99,7 @@ let
     fi
 
     # Execute project switch (T020)
-    if i3pm worktree switch "$PROJECT_NAME"; then
+    if ${i3pm} worktree switch "$PROJECT_NAME"; then
         ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
@@ -510,7 +513,7 @@ let
     $EWW_CMD update context_menu_window_id=0
 
     # Start trace using window ID (most deterministic identifier)
-    RESULT=$(i3pm trace start --id "$WINDOW_ID" 2>&1) || {
+    RESULT=$(${i3pm} trace start --id "$WINDOW_ID" 2>&1) || {
       ${pkgs.libnotify}/bin/notify-send -u critical "Trace Failed" "$RESULT"
       exit 1
     }

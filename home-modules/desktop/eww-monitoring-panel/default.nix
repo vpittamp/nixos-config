@@ -78,7 +78,7 @@ let
 
   windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs iconPaths; });
 
-  projectsViewYuck = import ./yuck/projects-view.yuck.nix (scripts // { inherit pkgs; });
+  projectsViewYuck = import ./yuck/projects-view.yuck.nix (scripts // { inherit pkgs config; });
 
   formsYuck = import ./yuck/forms.yuck.nix (scripts // { inherit pkgs; });
 
