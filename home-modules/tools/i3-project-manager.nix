@@ -107,11 +107,12 @@ in {
       (pkgs.writeShellScriptBin "i3-project-switch" ''
         # Cancel workspace mode preview if active, then launch project switcher
         i3pm-workspace-mode cancel 2>/dev/null || true
-        exec i3pm switch "$@"
+        # Launch Walker with the projects provider for fuzzy selection
+        exec ${pkgs.walker}/bin/walker -m projects
       '')
       # Wrapper script for Win+Shift+P keybinding (sway-keybindings.nix)
       (pkgs.writeShellScriptBin "i3-project-clear" ''
-        exec i3pm clear "$@"
+        exec i3pm project clear "$@"
       '')
     ];
 
