@@ -196,6 +196,18 @@ lib.mkIf enableClaudeCode {
     };
   } // lspFiles;
 
+  # Patch Claude Code plugin scripts for NixOS compatibility
+  # Problem: Plugins from the marketplace use #!/bin/bash which doesn't exist on NixOS
+  # Solution: Replace with #!/usr/bin/env bash which is portable
+  # This runs on every home-manager activation to handle plugin updates
+  home.activation.patchClaudePlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    PLUGIN_CACHE="$HOME/.claude/plugins/cache/claude-code-plugins"
+    if [ -d "$PLUGIN_CACHE" ]; then
+      run ${pkgs.findutils}/bin/find "$PLUGIN_CACHE" -name "*.sh" -type f \
+        -exec ${pkgs.gnused}/bin/sed -i 's|^#!/bin/bash|#!/usr/bin/env bash|' {} \;
+    fi
+  '';
+
   # Feature 123: OTEL environment variables for Claude Code telemetry
   # These MUST be session variables (not just settings.env) because the OTEL SDK
   # initializes when Claude Code starts, before it reads settings.json.
