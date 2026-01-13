@@ -1029,6 +1029,44 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "ai-chatbot.cnoe.localtest.me" ];
     }
+
+    # Open SWE (LangChain-based agent UI - CNOE local)
+    {
+      name = "Open SWE";
+      url = "https://open-swe-ui.cnoe.localtest.me:8443";
+      domain = "open-swe-ui.cnoe.localtest.me";
+      icon = iconPath "open-swe.png";
+      description = "Open SWE - LangChain-based asynchronous coding agent";
+      categories = "Development;Network;";
+      keywords = "open-swe;langchain;langgraph;agent;ai;coding;kubernetes;";
+      scope = "https://open-swe-ui.cnoe.localtest.me:8443/";
+      ulid = "5PCVTAVZTD0F050E23VXNXP7TK";  # Generated 2026-01-13
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 104;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "open-swe-ui.cnoe.localtest.me" ];
+    }
+
+    # Open WebUI (LLM interface - CNOE local)
+    {
+      name = "Open WebUI";
+      url = "https://openwebui.cnoe.localtest.me:8443";
+      domain = "openwebui.cnoe.localtest.me";
+      icon = iconPath "openwebui.svg";
+      description = "Open WebUI - Open source LLM user interface";
+      categories = "Development;Network;";
+      keywords = "openwebui;llm;ollama;chat;ai;interface;kubernetes;";
+      scope = "https://openwebui.cnoe.localtest.me:8443/";
+      ulid = "6M403VYCD36S0E6R0PTD2ZYA5M";  # Generated 2026-01-13
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 105;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "openwebui.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites
