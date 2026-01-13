@@ -102,6 +102,79 @@ let
       settings = { };
       maxRestarts = 3;
     };
+
+    # YAML (yaml-language-server) - includes Kubernetes schema support
+    yaml = {
+      command = "${pkgs.yaml-language-server}/bin/yaml-language-server";
+      args = [ "--stdio" ];
+      transport = "stdio";
+      extensionToLanguage = {
+        ".yaml" = "yaml";
+        ".yml" = "yaml";
+      };
+      initializationOptions = { };
+      settings = {
+        yaml = {
+          # Enable Kubernetes schema validation for common file patterns
+          # Aligned with PittampalliOrg/stacks Kustomize structure
+          schemas = {
+            "kubernetes" = [
+              # Kind-prefixed naming (Deployment-*, Service-*, etc.)
+              "Deployment-*.yaml"
+              "Service-*.yaml"
+              "ConfigMap-*.yaml"
+              "Secret-*.yaml"
+              "Namespace-*.yaml"
+              "StatefulSet-*.yaml"
+              "DaemonSet-*.yaml"
+              "Job-*.yaml"
+              "CronJob-*.yaml"
+              "Ingress-*.yaml"
+              "PersistentVolumeClaim-*.yaml"
+              "PersistentVolume-*.yaml"
+              "ServiceAccount-*.yaml"
+              "Role-*.yaml"
+              "RoleBinding-*.yaml"
+              "ClusterRole-*.yaml"
+              "ClusterRoleBinding-*.yaml"
+              "NetworkPolicy-*.yaml"
+              "HorizontalPodAutoscaler-*.yaml"
+              "ExternalSecret-*.yaml"
+              "Gateway-*.yaml"
+              "HTTPRoute-*.yaml"
+
+              # Kustomize packages structure (base, overlays, components)
+              "packages/**/*.yaml"
+              "packages/**/*.yml"
+
+              # Component manifests directories
+              "manifests/**/*.yaml"
+              "manifests/**/*.yml"
+
+              # Common K8s directories
+              "k8s/**/*.yaml"
+              "kubernetes/**/*.yaml"
+              "deploy/**/*.yaml"
+              "deployment/**/*.yaml"
+
+              # Distribution output
+              "dist/**/*.yaml"
+            ];
+          };
+          # Built-in schema store (Kustomize, Helm, ArgoCD, etc.)
+          schemaStore = {
+            enable = true;
+          };
+          validate = true;
+          completion = true;
+          hover = true;
+          format = {
+            enable = true;
+          };
+        };
+      };
+      maxRestarts = 3;
+    };
   };
 
   # Generate home.file entries for LSP configs
@@ -178,6 +251,28 @@ lib.mkIf enableClaudeCode {
 
     # Settings for Claude Code
     settings = {
+      # Plugin configuration
+      # Register the official Anthropic plugin marketplace
+      extraKnownMarketplaces = {
+        claude-code-plugins = {
+          source = {
+            source = "github";
+            repo = "anthropics/claude-code";
+          };
+        };
+      };
+
+      # Enable plugins
+      enabledPlugins = {
+        # Ralph Wiggum - autonomous iterative development loops
+        # Usage: /ralph-loop "task description" --max-iterations 20 --completion-promise "DONE"
+        # Cancel: /cancel-ralph
+        "ralph-wiggum@claude-code-plugins" = true;
+      };
+
+      # Note: LSP support is provided via native ~/.claude/lsp/<lang>/.lsp.json configs
+      # with full Nix store paths (Python/pyright, TypeScript, Nix/nil, YAML)
+
       # Model selection removed - will use default or user's choice
       theme = "dark";
       editorMode = "vim";
@@ -385,10 +480,7 @@ lib.mkIf enableClaudeCode {
           # Slash commands
           "SlashCommand"
 
-          # MCP Server permissions - servers start disabled but need permissions when enabled via /mcp
-          "mcp__context7"
-          "mcp__cclsp"  # LSP via MCP (workaround for native LSP bug)
-          "mcp__playwright"  # Linux only
+          # MCP Server permissions
           "mcp__chrome-devtools"  # Linux only
         ];
       };
@@ -562,58 +654,8 @@ lib.mkIf enableClaudeCode {
     };
 
     # MCP Servers configuration - using npx for cross-platform compatibility
-    # Servers are defined with `disabled = true` by default to save context tokens
     # Enable interactively via `/mcp` command or `@` menu when needed
-    # Note: Due to bug #11370, disabled servers may still consume some context tokens
-    mcpServers = {
-      # Context7 - Lightweight documentation lookup (~1.7k tokens)
-      # Available on all platforms
-      context7 = {
-        command = "npx";
-        args = [
-          "-y"
-          "@upstash/context7-mcp@latest"
-        ];
-        disabled = true;
-      };
-
-      # cclsp - LSP through MCP (workaround for native LSP bug #14803)
-      # Provides go-to-definition, find-references, diagnostics via MCP protocol
-      # Config at ~/.config/cclsp/config.json
-      cclsp = {
-        command = "npx";
-        args = [
-          "-y"
-          "cclsp@latest"
-        ];
-        env = {
-          CCLSP_CONFIG_PATH = "/home/vpittamp/.config/cclsp/config.json";
-        };
-        disabled = false;  # Enable by default as workaround for LSP bug
-      };
-    } // lib.optionalAttrs enableChromiumMcpServers {
-      # Playwright MCP server for browser automation (~13.7k tokens)
-      # Only available on Linux where Chromium is available via Nix
-      playwright = {
-        command = "npx";
-        args = [
-          "-y"
-          "@playwright/mcp@latest"
-          "--isolated"
-          "--browser"
-          "chromium"
-          "--executable-path"
-          chromiumConfig.chromiumBin
-        ];
-        env = {
-          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
-          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-          NODE_ENV = "production";
-          LOG_DIR = "/tmp/mcp-puppeteer-logs";
-        };
-        disabled = true;
-      };
-
+    mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       # Chrome DevTools MCP server for debugging and performance (~17k tokens)
       # Only available on Linux where Chromium is available via Nix
       chrome-devtools = {
