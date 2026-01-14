@@ -45,7 +45,7 @@ let
   '';
   # Preserve version attribute so home-manager uses TOML format (version >= 0.2.0)
   codexWrapped = codexWrapperScript // {
-    version = codexPackage.version or "0.73.0";
+    version = codexPackage.version or "0.80.0";
   };
 in
 
@@ -63,8 +63,8 @@ in
 
     # Configuration for codex (TOML format)
     settings = {
-      # Model configuration
-      model = "gpt-5-codex";
+      # Model configuration - using latest gpt-5.2-codex
+      model = "gpt-5.2-codex";
       model_provider = "openai";
       model_reasoning_effort = "high"; # Use high reasoning for complex tasks
 
@@ -116,6 +116,12 @@ in
       features = {
         web_search_request = true;
         rmcp_client = true;  # Required for MCP servers to work
+      };
+
+      # Experimental features
+      experimental = {
+        shell_snapshotting = true;   # Snapshot shell env to avoid re-running login scripts
+        background_terminal = true;  # Run long-running terminal commands in background
       };
 
       # Feature 123: OpenTelemetry configuration for OTLP export

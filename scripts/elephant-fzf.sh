@@ -14,6 +14,22 @@
 
 set -uo pipefail
 
+# Source Wayland environment from tmux global env if not set
+# This handles the case where script runs from tmux without Wayland vars
+if [[ -z "${WAYLAND_DISPLAY:-}" ]] && [[ -n "${TMUX:-}" ]]; then
+  wayland_from_tmux=$(tmux show-environment -g WAYLAND_DISPLAY 2>/dev/null | cut -d= -f2 || true)
+  if [[ -n "$wayland_from_tmux" ]]; then
+    export WAYLAND_DISPLAY="$wayland_from_tmux"
+  fi
+fi
+
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]] && [[ -n "${TMUX:-}" ]]; then
+  xdg_from_tmux=$(tmux show-environment -g XDG_RUNTIME_DIR 2>/dev/null | cut -d= -f2 || true)
+  if [[ -n "$xdg_from_tmux" ]]; then
+    export XDG_RUNTIME_DIR="$xdg_from_tmux"
+  fi
+fi
+
 MAX_ITEMS=${ELEPHANT_FZF_MAX_ITEMS:-100}
 
 # Generate list of clipboard entries for FZF
@@ -73,6 +89,18 @@ case "${1:-}" in
     generate_entries
     exit 0
     ;;
+  copy)
+    # Copy a specific clipboard entry by ID (used by Ctrl-Y binding)
+    clip_id="${2:-}"
+    if [[ -n "$clip_id" ]]; then
+      text=$(elephant query "clipboard;;${MAX_ITEMS};false" --json 2>/dev/null | \
+        jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.text // empty')
+      if [[ -n "$text" ]]; then
+        printf '%s' "$text" | wl-copy
+      fi
+    fi
+    exit 0
+    ;;
 esac
 
 # Resolve script path for preview callback
@@ -85,6 +113,7 @@ else
 fi
 
 printf -v PREVIEW_CMD '%q preview %s' "$SCRIPT_PATH" '{1}'
+printf -v COPY_CMD '%q copy %s' "$SCRIPT_PATH" '{1}'
 
 HEADER_MESSAGE=$'Enter\u2192paste | Ctrl-Y copy only | Ctrl-P toggle preview'
 
@@ -105,7 +134,7 @@ selected=$(generate_entries | fzf \
   --preview-label=' Clipboard entry ' \
   --preview-window=right,60%,border-top,wrap \
   --bind 'ctrl-p:toggle-preview' \
-  --bind 'ctrl-y:execute-silent(elephant query "clipboard;;'"${MAX_ITEMS}"';false" --json 2>/dev/null | jq -r --arg id {1} '\''select(.item.identifier == $id) | .item.text // empty'\'' | wl-copy)+abort' \
+  --bind "ctrl-y:execute-silent($COPY_CMD)+abort" \
   --bind 'shift-up:preview-up,shift-down:preview-down' \
   --bind 'alt-up:preview-up,alt-down:preview-down' \
   --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \

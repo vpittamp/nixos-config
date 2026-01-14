@@ -120,7 +120,9 @@ let
     done
 
     # Open all workspace bar windows
-    ${lib.concatMapStringsSep "\n    " (name: ''$EWW --config "$CONFIG" open ${name} || true'') windowNames}
+    # IMPORTANT: Run eww open with timeout - it can hang indefinitely due to IPC issues
+    ${lib.concatMapStringsSep "\n    " (name: ''$TIMEOUT 5s $EWW --config "$CONFIG" open ${name} &'') windowNames}
+    ${pkgs.coreutils}/bin/sleep 0.5
 
     # Start workspace preview daemon (Feature 057, 072)
     # This daemon listens to i3pm workspace_mode/project_mode events and

@@ -69,11 +69,15 @@ let
 
     # Open the appropriate window based on saved dock mode
     # Note: panel_dock_mode is read from state file via defpoll, no update needed
+    # IMPORTANT: Run eww open in background - it can hang indefinitely due to IPC issues
+    # (eww open should exit immediately but sometimes doesn't, causing duplicate processes)
     if [[ "$DOCK_MODE" == "docked" ]]; then
-      $EWW --config "$CONFIG" open monitoring-panel-docked || true
+      $TIMEOUT 5s $EWW --config "$CONFIG" open monitoring-panel-docked &
     else
-      $EWW --config "$CONFIG" open monitoring-panel-overlay || true
+      $TIMEOUT 5s $EWW --config "$CONFIG" open monitoring-panel-overlay &
     fi
+    # Wait briefly for window to open, but don't block on the eww open command
+    ${pkgs.coreutils}/bin/sleep 0.5
 
     # Re-sync stack index (workaround for eww #1192: index resets on reopen)
     ${pkgs.coreutils}/bin/sleep 0.2

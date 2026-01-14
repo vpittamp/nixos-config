@@ -77,7 +77,8 @@ let
     fi
 
     # Lock file mechanism for debouncing (T018)
-    LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME}.lock"
+    # Sanitize project name (replace / with _) to create valid file path
+    LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME//\//_}.lock"
 
     if [[ -f "$LOCK_FILE" ]]; then
         ${pkgs.libnotify}/bin/notify-send -u low "Project Switch" "Previous action still in progress"

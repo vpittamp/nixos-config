@@ -5,6 +5,22 @@
 
 set -euo pipefail
 
+# Source Wayland environment from tmux global env if not set
+# This handles the case where run-shell is called from a session without Wayland vars
+if [[ -z "${WAYLAND_DISPLAY:-}" ]] && [[ -n "${TMUX:-}" ]]; then
+  wayland_from_tmux=$(tmux show-environment -g WAYLAND_DISPLAY 2>/dev/null | cut -d= -f2 || true)
+  if [[ -n "$wayland_from_tmux" ]]; then
+    export WAYLAND_DISPLAY="$wayland_from_tmux"
+  fi
+fi
+
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]] && [[ -n "${TMUX:-}" ]]; then
+  xdg_from_tmux=$(tmux show-environment -g XDG_RUNTIME_DIR 2>/dev/null | cut -d= -f2 || true)
+  if [[ -n "$xdg_from_tmux" ]]; then
+    export XDG_RUNTIME_DIR="$xdg_from_tmux"
+  fi
+fi
+
 read_clipboard() {
   if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
     wl-paste

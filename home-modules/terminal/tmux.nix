@@ -56,7 +56,12 @@ in
       set -g focus-events on
       set -g detach-on-destroy on
       set -g repeat-time 1000
-      set -g set-clipboard on
+      set -g set-clipboard external
+
+      # Update environment variables when attaching to existing sessions
+      # Critical for Wayland clipboard access in long-running tmux sessions
+      # Without these, wl-paste/wl-copy won't work in sessions started before Sway
+      set -ga update-environment ' WAYLAND_DISPLAY XDG_RUNTIME_DIR'
 
       # Handle different terminal emulators properly
       # Use 'latest' window-size to track most recent active client
