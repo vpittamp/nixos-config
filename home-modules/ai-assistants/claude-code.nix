@@ -7,14 +7,15 @@ let
   # Fall back to nixpkgs-unstable if flake not available
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
-  # Wrapped Claude Code with payload interceptor
+  # Wrapped Claude Code with payload interceptor and Chrome integration
   claudeCodePackage = pkgs.symlinkJoin {
     name = "claude-code-wrapped";
     paths = [ baseClaudeCode ];
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/claude \
-        --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js"
+        --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js" \
+        --add-flags "--chrome"
     '';
   };
 
@@ -52,149 +53,55 @@ let
   # Skills are symlinked to ~/.claude/skills/ for Claude Code to discover
   skillsDir = repoRoot + "/.claude/skills";
   hasSkills = builtins.pathExists skillsDir;
-  # LSP server configurations for Claude Code native LSP support
-  # These are JSON configs placed in ~/.claude/lsp/<language>/.lsp.json
-  lspConfigs = {
-    # Python (pyright)
-    python = {
-      command = "${pkgs.pyright}/bin/pyright-langserver";
-      args = [ "--stdio" ];
-      transport = "stdio";
-      extensionToLanguage = {
-        ".py" = "python";
-        ".pyi" = "python";
-        ".pyw" = "python";
-      };
-      initializationOptions = { };
-      settings = { };
-      maxRestarts = 3;
+  # Note: LSP support is now provided via plugins from claude-code-lsps marketplace
+  # The plugins (pyright, vtsls, yaml-language-server) are enabled in settings.enabledPlugins
+  # Language server binaries are installed via home.packages
+
+  # Local TypeScript LSP plugin configuration
+  # Uses typescript-language-server (available in nixpkgs) instead of vtsls (not in nixpkgs)
+  typescriptLspPlugin = {
+    pluginJson = builtins.toJSON {
+      name = "typescript-language-server-local";
+      displayName = "TypeScript LSP (local)";
+      version = "1.0.0";
+      description = "TypeScript/JavaScript language server using typescript-language-server";
     };
-
-    # TypeScript/JavaScript
-    typescript = {
-      command = "${pkgs.nodePackages_latest.typescript-language-server}/bin/typescript-language-server";
-      args = [ "--stdio" ];
-      transport = "stdio";
-      extensionToLanguage = {
-        ".ts" = "typescript";
-        ".tsx" = "typescriptreact";
-        ".js" = "javascript";
-        ".jsx" = "javascriptreact";
-        ".mjs" = "javascript";
-        ".cjs" = "javascript";
-      };
-      initializationOptions = { };
-      settings = { };
-      maxRestarts = 3;
-    };
-
-    # Nix (nil)
-    nix = {
-      command = "${pkgs.nil}/bin/nil";
-      args = [ ];
-      transport = "stdio";
-      extensionToLanguage = {
-        ".nix" = "nix";
-      };
-      initializationOptions = {
-        formatting.command = [ "${pkgs.nixpkgs-fmt}/bin/nixpkgs-fmt" ];
-      };
-      settings = { };
-      maxRestarts = 3;
-    };
-
-    # YAML (yaml-language-server) - includes Kubernetes schema support
-    yaml = {
-      command = "${pkgs.yaml-language-server}/bin/yaml-language-server";
-      args = [ "--stdio" ];
-      transport = "stdio";
-      extensionToLanguage = {
-        ".yaml" = "yaml";
-        ".yml" = "yaml";
-      };
-      initializationOptions = { };
-      settings = {
-        yaml = {
-          # Enable Kubernetes schema validation for common file patterns
-          # Aligned with PittampalliOrg/stacks Kustomize structure
-          schemas = {
-            "kubernetes" = [
-              # Kind-prefixed naming (Deployment-*, Service-*, etc.)
-              "Deployment-*.yaml"
-              "Service-*.yaml"
-              "ConfigMap-*.yaml"
-              "Secret-*.yaml"
-              "Namespace-*.yaml"
-              "StatefulSet-*.yaml"
-              "DaemonSet-*.yaml"
-              "Job-*.yaml"
-              "CronJob-*.yaml"
-              "Ingress-*.yaml"
-              "PersistentVolumeClaim-*.yaml"
-              "PersistentVolume-*.yaml"
-              "ServiceAccount-*.yaml"
-              "Role-*.yaml"
-              "RoleBinding-*.yaml"
-              "ClusterRole-*.yaml"
-              "ClusterRoleBinding-*.yaml"
-              "NetworkPolicy-*.yaml"
-              "HorizontalPodAutoscaler-*.yaml"
-              "ExternalSecret-*.yaml"
-              "Gateway-*.yaml"
-              "HTTPRoute-*.yaml"
-
-              # Kustomize packages structure (base, overlays, components)
-              "packages/**/*.yaml"
-              "packages/**/*.yml"
-
-              # Component manifests directories
-              "manifests/**/*.yaml"
-              "manifests/**/*.yml"
-
-              # Common K8s directories
-              "k8s/**/*.yaml"
-              "kubernetes/**/*.yaml"
-              "deploy/**/*.yaml"
-              "deployment/**/*.yaml"
-
-              # Distribution output
-              "dist/**/*.yaml"
-            ];
-          };
-          # Built-in schema store (Kustomize, Helm, ArgoCD, etc.)
-          schemaStore = {
-            enable = true;
-          };
-          validate = true;
-          completion = true;
-          hover = true;
-          format = {
-            enable = true;
-          };
+    lspJson = builtins.toJSON {
+      typescript = {
+        command = "typescript-language-server";
+        args = ["--stdio"];
+        extensionToLanguage = {
+          ".ts" = "typescript";
+          ".tsx" = "typescriptreact";
+          ".js" = "javascript";
+          ".jsx" = "javascriptreact";
+          ".mjs" = "javascript";
+          ".cjs" = "javascript";
+          ".mts" = "typescript";
+          ".cts" = "typescript";
         };
       };
-      maxRestarts = 3;
     };
   };
-
-  # Generate home.file entries for LSP configs
-  lspFiles = lib.mapAttrs'
-    (lang: config: lib.nameValuePair
-      ".claude/lsp/${lang}/.lsp.json"
-      { text = builtins.toJSON config; }
-    )
-    lspConfigs;
 in
 lib.mkIf enableClaudeCode {
   # Symlink skills directory from repo to ~/.claude/skills/
   # This centralizes skill management in version control
-  # Also include LSP configuration files
+  # Local TypeScript LSP plugin (uses typescript-language-server from nixpkgs)
   home.file = lib.optionalAttrs hasSkills {
     ".claude/skills" = {
       source = skillsDir;
       recursive = true;
     };
-  } // lspFiles;
+  } // {
+    # Local TypeScript LSP plugin - uses typescript-language-server instead of vtsls
+    ".claude/plugins/local/typescript-language-server/.claude-plugin/plugin.json" = {
+      text = typescriptLspPlugin.pluginJson;
+    };
+    ".claude/plugins/local/typescript-language-server/.lsp.json" = {
+      text = typescriptLspPlugin.lspJson;
+    };
+  };
 
   # Patch Claude Code plugin scripts for NixOS compatibility
   # Problem: Plugins from the marketplace use #!/bin/bash which doesn't exist on NixOS
@@ -208,6 +115,24 @@ lib.mkIf enableClaudeCode {
     fi
   '';
 
+  # Register local TypeScript LSP plugin in Claude Code's installed_plugins.json
+  # This makes the local plugin available without marketplace installation
+  home.activation.registerLocalTypescriptLsp = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    PLUGINS_FILE="$HOME/.claude/plugins/installed_plugins.json"
+    LOCAL_PLUGIN="typescript-language-server-local@local"
+    LOCAL_PATH="$HOME/.claude/plugins/local/typescript-language-server"
+
+    if [ -f "$PLUGINS_FILE" ]; then
+      # Check if plugin is already registered
+      if ! ${pkgs.jq}/bin/jq -e ".plugins[\"$LOCAL_PLUGIN\"]" "$PLUGINS_FILE" > /dev/null 2>&1; then
+        # Add the local plugin entry
+        run ${pkgs.jq}/bin/jq --arg plugin "$LOCAL_PLUGIN" --arg path "$LOCAL_PATH" \
+          '.plugins[$plugin] = [{"scope": "user", "installPath": $path, "version": "1.0.0", "installedAt": (now | todate), "lastUpdated": (now | todate)}]' \
+          "$PLUGINS_FILE" > "$PLUGINS_FILE.tmp" && mv "$PLUGINS_FILE.tmp" "$PLUGINS_FILE"
+      fi
+    fi
+  '';
+
   # Feature 123: OTEL environment variables for Claude Code telemetry
   # These MUST be session variables (not just settings.env) because the OTEL SDK
   # initializes when Claude Code starts, before it reads settings.json.
@@ -217,8 +142,8 @@ lib.mkIf enableClaudeCode {
   # LANGFUSE_* variables are optional - if set, traces will include Langfuse-specific
   # attributes for proper observation mapping in Langfuse UI.
   home.sessionVariables = {
-    # Enable native LSP support (requires ~/.claude/lsp/<lang>/.lsp.json configs)
-    ENABLE_LSP_TOOLS = "1";
+    # Note: ENABLE_LSP_TOOLS is deprecated in Claude Code 2.1+
+    # LSP support is now provided via plugins from claude-code-lsps marketplace
     CLAUDE_CODE_ENABLE_TELEMETRY = "1";
     OTEL_LOGS_EXPORTER = "otlp";
     OTEL_METRICS_EXPORTER = "otlp";
@@ -247,8 +172,16 @@ lib.mkIf enableClaudeCode {
 
   # Install Claude Desktop if available
   # Provides native desktop app with git worktree support for parallel sessions
+  # Also install language servers for LSP plugins
   home.packages = lib.optionals (claudeDesktopPackage != null) [
     claudeDesktopPackage
+  ] ++ [
+    # Language servers for LSP plugins
+    pkgs.pyright                                  # Python LSP (for pyright@claude-code-lsps)
+    pkgs.nodePackages.vscode-langservers-extracted  # YAML/JSON/HTML/CSS LSP
+    pkgs.yaml-language-server                     # YAML LSP (for yaml-language-server@claude-code-lsps)
+    pkgs.nodePackages.typescript-language-server  # TypeScript LSP (for local plugin)
+    pkgs.nodePackages.typescript                  # TypeScript compiler (for project use)
   ];
 
   # Claude Code configuration with home-manager module
@@ -280,10 +213,25 @@ lib.mkIf enableClaudeCode {
         # Usage: /ralph-loop "task description" --max-iterations 20 --completion-promise "DONE"
         # Cancel: /cancel-ralph
         "ralph-wiggum@claude-code-plugins" = true;
+
+        # LSP plugins from claude-code-lsps marketplace (boostvolt/claude-code-lsps)
+        # These provide code intelligence: go-to-definition, find-references, diagnostics
+        # Note: Requires language server binaries to be installed (handled by Nix packages below)
+        "pyright@claude-code-lsps" = true;           # Python LSP
+        # Local TypeScript LSP plugin (uses typescript-language-server from nixpkgs)
+        "typescript-language-server-local@local" = true;
+        # Disable marketplace plugins that don't work:
+        # - typescript-lsp@claude-plugins-official: Just a README, no .lsp.json
+        # - vtsls@claude-code-lsps: Requires vtsls binary not in nixpkgs
+        "typescript-lsp@claude-plugins-official" = false;
+        "vtsls@claude-code-lsps" = false;
+        "yaml-language-server@claude-code-lsps" = true;  # YAML LSP with Kubernetes schemas
       };
 
-      # Note: LSP support is provided via native ~/.claude/lsp/<lang>/.lsp.json configs
-      # with full Nix store paths (Python/pyright, TypeScript, Nix/nil, YAML)
+      # Note: TypeScript LSP uses a local plugin with typescript-language-server from nixpkgs
+      # because marketplace plugins don't work:
+      # - typescript-lsp@claude-plugins-official: Just a README placeholder
+      # - vtsls@claude-code-lsps: Requires vtsls binary not available in nixpkgs
 
       # Model selection removed - will use default or user's choice
       theme = "dark";
@@ -297,8 +245,8 @@ lib.mkIf enableClaudeCode {
       includeCoAuthoredBy = true;
       messageIdleNotifThresholdMs = 60000;
       env = {
-        # Enable native LSP support for code intelligence
-        ENABLE_LSP_TOOLS = "1";
+        # Note: ENABLE_LSP_TOOLS is deprecated in Claude Code 2.1+
+        # LSP support is now provided via plugins from claude-code-lsps marketplace
         # Feature 123: Full OpenTelemetry configuration for OTLP export
         # Enables native telemetry to otel-ai-monitor service
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
@@ -665,13 +613,16 @@ lib.mkIf enableClaudeCode {
       ];
     };
 
-    # MCP Servers configuration - using npx for cross-platform compatibility
+    # MCP Servers configuration
+    # Uses full Nix store paths to work in isolated environments (devenv, nix-shell)
     # Enable interactively via `/mcp` command or `@` menu when needed
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       # Chrome DevTools MCP server for debugging and performance (~17k tokens)
       # Only available on Linux where Chromium is available via Nix
+      # Provides: take_snapshot, click, fill, navigate_page, evaluate_script, etc.
       chrome-devtools = {
-        command = "npx";
+        # Use full path to npx so it works in devenv/nix-shell environments
+        command = "${pkgs.nodejs}/bin/npx";
         args = [
           "-y"
           "chrome-devtools-mcp@latest"
@@ -680,7 +631,7 @@ lib.mkIf enableClaudeCode {
           "--executablePath"
           chromiumConfig.chromiumBin
         ];
-        disabled = true;
+        disabled = false;
       };
     };
   };
