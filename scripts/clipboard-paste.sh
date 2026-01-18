@@ -22,13 +22,17 @@ if [[ -z "${XDG_RUNTIME_DIR:-}" ]] && [[ -n "${TMUX:-}" ]]; then
 fi
 
 read_clipboard() {
+  # Wayland: prefer text/plain to avoid pasting HTML or image data from browser copies
   if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
-    wl-paste
+    # Try text/plain first (handles browser copies with multiple MIME types)
+    # Fall back to untyped paste if text/plain not available
+    wl-paste --type text/plain 2>/dev/null || wl-paste --no-newline 2>/dev/null || wl-paste
     return
   fi
 
+  # Fallback for wl-paste without WAYLAND_DISPLAY (might work via X11 bridge)
   if command -v wl-paste >/dev/null 2>&1; then
-    wl-paste
+    wl-paste --type text/plain 2>/dev/null || wl-paste --no-newline 2>/dev/null || wl-paste
     return
   fi
 

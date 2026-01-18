@@ -157,8 +157,12 @@ if [ -n "${selected:-}" ]; then
   printf '%s' "$text" | wl-copy
 
   # Paste into tmux if we're inside tmux
+  # Use load-buffer + paste-buffer instead of send-keys -l because:
+  # - send-keys -l sends character-by-character (slow, fails on special chars)
+  # - load-buffer + paste-buffer uses native tmux buffer system (robust, fast)
+  # - bracketed paste mode (-p) prevents accidental command execution
   if [ -n "${TMUX:-}" ]; then
-    # Use send-keys -l for literal text input
-    tmux send-keys -l "$text" >/dev/null 2>&1
+    printf '%s' "$text" | tmux load-buffer -
+    tmux paste-buffer -p
   fi
 fi

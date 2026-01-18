@@ -728,6 +728,13 @@ in
         # SWAYSOCK is needed for swaymsg commands in terminals
         { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK"; }
 
+        # Export Wayland environment to tmux global environment for clipboard access
+        # This ensures clipboard scripts can find WAYLAND_DISPLAY even in sessions
+        # started before Sway or from processes without inherited environment
+        { command = "${pkgs.tmux}/bin/tmux set-environment -g WAYLAND_DISPLAY \"$WAYLAND_DISPLAY\" 2>/dev/null || true"; }
+        { command = "${pkgs.tmux}/bin/tmux set-environment -g XDG_RUNTIME_DIR \"$XDG_RUNTIME_DIR\" 2>/dev/null || true"; }
+        { command = "${pkgs.tmux}/bin/tmux set-environment -g SWAYSOCK \"$SWAYSOCK\" 2>/dev/null || true"; }
+
         # Apply desired active outputs (reads ~/.config/sway/active-outputs)
       ] ++ lib.optionals isHeadless [
         { command = "~/.local/bin/active-monitors-auto"; }
