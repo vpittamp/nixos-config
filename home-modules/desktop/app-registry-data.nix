@@ -308,6 +308,23 @@ let
       description = "Qt-based GUI git client";
     })
 
+    # WS14: GitKraken (Feature-rich Git GUI)
+    (mkApp {
+      name = "gitkraken";
+      display_name = "GitKraken";
+      command = "gitkraken";
+      parameters = "--path $PROJECT_DIR";
+      scope = "scoped";
+      expected_class = "GitKraken";
+      preferred_workspace = 14;
+      preferred_monitor_role = "secondary";
+      icon = "gitkraken";
+      nix_package = "pkgs.gitkraken";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      description = "Feature-rich Git GUI client with GitHub integration";
+    })
+
     # WS6: GUI File Managers (Primary: thunar)
     (mkApp {
       name = "thunar";
