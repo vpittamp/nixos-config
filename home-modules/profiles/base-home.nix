@@ -70,6 +70,7 @@ in
     ../tools/clipcat.nix  # Clipboard history manager with X11 support (Feature 007)
     ../tools/screenshot-ocr.nix  # Screenshot (Spectacle) and OCR (gImageReader) tools
     ../tools/lazygit.nix  # Terminal UI for Git and Docker
+    ../tools/lazydocker.nix  # Lazydocker config with Gitea push commands
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
