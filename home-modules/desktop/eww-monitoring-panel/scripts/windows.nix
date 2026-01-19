@@ -23,16 +23,23 @@ let
         exit 1
     fi
 
-    # Lock file mechanism for debouncing (T011)
+    # Lock file mechanism for debouncing (T011) with timeout
+    # Use timestamp-based lock to prevent stale locks from blocking forever
     LOCK_FILE="/tmp/eww-monitoring-focus-''${WINDOW_ID}.lock"
+    CURRENT_TIME=$(date +%s)
 
     if [[ -f "$LOCK_FILE" ]]; then
-        # Silently ignore if previous action still in progress
-        exit 1
+        LOCK_TIME=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+        TIME_DIFF=$((CURRENT_TIME - LOCK_TIME))
+        # Allow retry after 5 seconds (stale lock timeout)
+        if [[ $TIME_DIFF -lt 5 ]]; then
+            # Silently ignore if previous action still in progress
+            exit 1
+        fi
     fi
 
-    touch "$LOCK_FILE"
-    trap "rm -f $LOCK_FILE" EXIT
+    echo "$CURRENT_TIME" > "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT INT TERM
 
     # Get current project (T012) - Read from active-worktree.json (Feature 101 single source of truth)
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
@@ -76,17 +83,24 @@ let
         exit 1
     fi
 
-    # Lock file mechanism for debouncing (T018)
+    # Lock file mechanism for debouncing (T018) with timeout
     # Sanitize project name (replace / with _) to create valid file path
+    # Use timestamp-based lock to prevent stale locks from blocking forever
     LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME//\//_}.lock"
+    CURRENT_TIME=$(date +%s)
 
     if [[ -f "$LOCK_FILE" ]]; then
-        ${pkgs.libnotify}/bin/notify-send -u low "Project Switch" "Previous action still in progress"
-        exit 1
+        LOCK_TIME=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+        TIME_DIFF=$((CURRENT_TIME - LOCK_TIME))
+        # Allow retry after 5 seconds (stale lock timeout)
+        if [[ $TIME_DIFF -lt 5 ]]; then
+            ${pkgs.libnotify}/bin/notify-send -u low "Project Switch" "Previous action still in progress"
+            exit 1
+        fi
     fi
 
-    touch "$LOCK_FILE"
-    trap "rm -f $LOCK_FILE" EXIT
+    echo "$CURRENT_TIME" > "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT INT TERM
 
     # Get current project (T019) - Read from active-worktree.json (Feature 101 single source of truth)
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")

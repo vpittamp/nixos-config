@@ -467,7 +467,6 @@ in
 
     # Hardware monitoring tools
     lm_sensors     # Temperature monitoring
-    zenmonitor     # AMD Ryzen monitoring
     corectrl       # AMD GPU/CPU control panel
 
     # Hardware info
