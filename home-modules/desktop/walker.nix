@@ -1629,6 +1629,102 @@ in
     end
   '';
 
+  # Feature 101: Project switcher menu (Elephant Lua menu)
+  # Access: Win+P or Meta+D → ;p → select project
+  # Uses i3pm worktree switch for bare repository support
+  xdg.configFile."elephant/menus/projects.lua".text = ''
+    Name = "projects"
+    NamePretty = "Projects"
+    Icon = "folder-code"
+    Cache = false  -- Always refresh project list
+    Action = "walker-project-switch '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "Switch between projects (bare repo worktrees)"
+    SearchName = true
+    GlobalSearch = false  -- Keep local to ;p prefix
+
+    function GetEntries()
+        local entries = {}
+
+        -- Get project list from walker-project-list
+        local handle = io.popen("walker-project-list 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                -- Parse tab-separated format: "display\tqualified_name"
+                local display, qualified_name = line:match("^(.+)\t(.+)$")
+                if display and qualified_name then
+                    -- Determine icon based on content
+                    local icon = "folder"
+                    if display:match("^∅") then
+                        icon = "edit-clear"  -- Clear project option
+                    elseif display:match("ACTIVE") then
+                        icon = "folder-open"  -- Active project
+                    elseif display:match("^📦") then
+                        icon = "folder-code"  -- Main branch
+                    elseif display:match("^🌿") then
+                        icon = "folder-new"  -- Feature branch
+                    end
+
+                    -- Build keywords from display name
+                    local keywords = {"project", "worktree", "switch"}
+                    for word in display:gmatch("%S+") do
+                        if not word:match("^[%[%]📦🌿∅🟢]") then
+                            table.insert(keywords, word:lower())
+                        end
+                    end
+
+                    table.insert(entries, {
+                        Text = display,
+                        Value = line,  -- Pass full line to walker-project-switch
+                        Icon = icon,
+                        Keywords = keywords
+                    })
+                end
+            end
+            handle:close()
+        end
+
+        return entries
+    end
+  '';
+
+  # Feature 101: Sesh (tmux session) switcher menu (Elephant Lua menu)
+  # Access: Meta+D → ;s → select session
+  xdg.configFile."elephant/menus/sesh.lua".text = ''
+    Name = "sesh"
+    NamePretty = "Tmux Sessions"
+    Icon = "utilities-terminal"
+    Cache = false  -- Always refresh session list
+    Action = "sesh connect '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "Switch between tmux sessions"
+    SearchName = true
+    GlobalSearch = false  -- Keep local to ;s prefix
+
+    function GetEntries()
+        local entries = {}
+
+        -- Get session list from sesh
+        local handle = io.popen("sesh list 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                local session_name = line:match("^%s*(.+)%s*$")
+                if session_name and session_name ~= "" then
+                    table.insert(entries, {
+                        Text = session_name,
+                        Value = session_name,
+                        Icon = "utilities-terminal",
+                        Keywords = {"tmux", "session", session_name:lower()}
+                    })
+                end
+            end
+            handle:close()
+        end
+
+        return entries
+    end
+  '';
+
   # NOTE: ~/nixos-config symlink removed - the actual git repo lives there
   # If you need /etc/nixos access, cd to ~/nixos-config directly
 

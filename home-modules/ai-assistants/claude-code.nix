@@ -146,7 +146,11 @@ lib.mkIf enableClaudeCode {
         # Ralph Wiggum - autonomous iterative development loops
         # Usage: /ralph-loop "task description" --max-iterations 20 --completion-promise "DONE"
         # Cancel: /cancel-ralph
-        "ralph-wiggum@claude-code-plugins" = true;
+        # Disabled by default - enable when needed for autonomous loops
+        "ralph-wiggum@claude-code-plugins" = false;
+
+        # Agent SDK Dev - development tools for building Claude Code agents
+        "agent-sdk-dev@claude-code-plugins" = true;
       };
 
       # Model selection removed - will use default or user's choice

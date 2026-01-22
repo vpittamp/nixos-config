@@ -102,8 +102,7 @@ let
   packageManagers = with pkgs; [
     yarn
     nodePackages.pnpm
-    poetry
-    uv # Fast Python package installer and resolver (for spec-kit and other tools)
+    uv # Fast Python package installer and resolver (replaces poetry)
   ];
 
   # File managers
