@@ -19,9 +19,14 @@
  *
  * Following OpenTelemetry GenAI semantic conventions (2025 edition).
  *
- * v3.10.0 Changes (Feature 137):
+ * v3.10.0 Changes (Features 137, 138):
  * - Inject process.pid into OTEL_RESOURCE_ATTRIBUTES at startup
  * - Ensures native Claude Code telemetry includes PID for window correlation
+ * - Feature 138: Direct session ID discovery from Claude Code internal files
+ *   - Parse --resume CLI argument for immediate session ID on resumed conversations
+ *   - Watch ~/.claude/history.jsonl for session ID (appended on each user prompt)
+ *   - Match by project path + timestamp within discovery window
+ *   - Sources: cli_resume (--resume arg), history (history.jsonl), hook (SessionStart), fallback
  *
  * v3.9.0 Changes (Phase 3):
  * - Add PostToolUse hook integration: exit_code, output_summary, output_lines, error_type
@@ -107,7 +112,7 @@ const TRACE_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/traces'
     : 'http://127.0.0.1:4318/v1/traces');
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'claude-code';
-const INTERCEPTOR_VERSION = '3.9.0';
+const INTERCEPTOR_VERSION = '3.10.0';
 const WORKING_DIRECTORY = process.cwd();
 const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR || os.tmpdir();
 const SESSION_META_FILE = path.join(RUNTIME_DIR, `claude-session-${process.pid}.json`);
@@ -126,6 +131,32 @@ const SESSION_ID_BUFFER_MAX_SPANS = Number.parseInt(process.env.OTEL_INTERCEPTOR
 const HOOK_POLL_INTERVAL_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_HOOK_POLL_INTERVAL_MS || '200', 10);
 const TURN_IDLE_END_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_TURN_IDLE_END_MS || '1500', 10);
 const PROC_AVAILABLE = fs.existsSync('/proc');
+
+// Feature 138: Direct session discovery from Claude Code's internal files
+// history.jsonl contains {sessionId, project, timestamp, display} for every user prompt
+// sessions-index.json contains session metadata with slug, summary, etc.
+const CLAUDE_HOME = path.join(os.homedir(), '.claude');
+const HISTORY_FILE = path.join(CLAUDE_HOME, 'history.jsonl');
+const HISTORY_DISCOVERY_ENABLED = process.env.OTEL_INTERCEPTOR_HISTORY_DISCOVERY !== '0';
+const HISTORY_DISCOVERY_WINDOW_MS = Number.parseInt(process.env.OTEL_INTERCEPTOR_HISTORY_DISCOVERY_WINDOW_MS || '10000', 10);
+const RESUME_SESSION_ID = (() => {
+  // Check for --resume or -r CLI argument
+  const argv = process.argv || [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--resume' || argv[i] === '-r') {
+      const nextArg = argv[i + 1];
+      if (nextArg && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nextArg)) {
+        return nextArg;
+      }
+    }
+    // Also handle --resume=<id> format
+    const match = argv[i].match(/^--resume=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+})();
 
 // Feature 132: Langfuse Integration Configuration
 // When enabled, spans include OpenInference attributes for proper Langfuse categorization
@@ -708,6 +739,176 @@ function maybeHydrateClaudeSessionId() {
 }
 
 // =============================================================================
+// Feature 138: Direct Session Discovery from Claude Code Internal Files
+// =============================================================================
+
+/**
+ * State for history file discovery
+ */
+const historyDiscoveryState = {
+  lastReadPosition: 0,
+  lastMtimeMs: 0,
+  sessionDiscovered: false,
+  watcherActive: false
+};
+
+/**
+ * Read the last N lines from a file efficiently (tail-like)
+ * @param {string} filePath - Path to the file
+ * @param {number} maxLines - Maximum number of lines to read
+ * @returns {string[]} Array of lines (newest last)
+ */
+function readLastLines(filePath, maxLines = 10) {
+  try {
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    if (fileSize === 0) return [];
+
+    // Read last 32KB or entire file if smaller
+    const readSize = Math.min(fileSize, 32768);
+    const buffer = Buffer.alloc(readSize);
+    const fd = fs.openSync(filePath, 'r');
+
+    try {
+      fs.readSync(fd, buffer, 0, readSize, fileSize - readSize);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    const content = buffer.toString('utf8');
+    const lines = content.split('\n').filter(line => line.trim());
+
+    return lines.slice(-maxLines);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Discover session ID from history.jsonl
+ *
+ * Claude Code appends to ~/.claude/history.jsonl on every user prompt:
+ * {"display": "...", "timestamp": 1234567890123, "project": "/path/to/project", "sessionId": "uuid"}
+ *
+ * We match by:
+ * 1. project path === current working directory
+ * 2. timestamp is within HISTORY_DISCOVERY_WINDOW_MS of our startup time
+ */
+function maybeHydrateSessionIdFromHistory() {
+  if (!HISTORY_DISCOVERY_ENABLED) return;
+  if (state.session.sessionIdSource !== 'fallback') return;
+  if (historyDiscoveryState.sessionDiscovered) return;
+
+  try {
+    if (!fs.existsSync(HISTORY_FILE)) return;
+
+    const stat = fs.statSync(HISTORY_FILE);
+    // Skip if file hasn't changed since last check
+    if (stat.mtimeMs === historyDiscoveryState.lastMtimeMs) return;
+    historyDiscoveryState.lastMtimeMs = stat.mtimeMs;
+
+    // Read last few lines of history file
+    const lines = readLastLines(HISTORY_FILE, 20);
+
+    // Search from newest to oldest
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const entry = JSON.parse(lines[i]);
+        if (!entry || typeof entry !== 'object') continue;
+
+        const { sessionId, project, timestamp } = entry;
+
+        // Validate fields
+        if (!sessionId || typeof sessionId !== 'string') continue;
+        if (!project || typeof project !== 'string') continue;
+        if (!timestamp || typeof timestamp !== 'number') continue;
+
+        // Check if project matches our working directory
+        // Normalize paths for comparison
+        const normalizedProject = path.resolve(project);
+        const normalizedCwd = path.resolve(WORKING_DIRECTORY);
+        if (normalizedProject !== normalizedCwd) continue;
+
+        // Check if timestamp is recent (within discovery window of startup)
+        const timeSinceStartup = timestamp - SESSION_START_TIME;
+        if (timeSinceStartup < -HISTORY_DISCOVERY_WINDOW_MS) continue; // Too old
+        if (timeSinceStartup > HISTORY_DISCOVERY_WINDOW_MS) continue; // Too new (shouldn't happen)
+
+        // Validate sessionId format (UUID)
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) continue;
+
+        // Found a matching session!
+        state.session.sessionId = sessionId;
+        state.session.sessionIdSource = 'history';
+        historyDiscoveryState.sessionDiscovered = true;
+        flushSpanBuffer();
+        return;
+      } catch {
+        // Invalid JSON line, skip
+        continue;
+      }
+    }
+  } catch (e) {
+    // Silent failure to avoid disrupting Claude Code
+  }
+}
+
+/**
+ * Initialize session ID from --resume CLI argument if present.
+ * Called once at startup.
+ */
+function maybeInitializeFromResumeArg() {
+  if (!RESUME_SESSION_ID) return;
+  if (state.session.sessionIdSource !== 'fallback') return;
+
+  state.session.sessionId = RESUME_SESSION_ID;
+  state.session.sessionIdSource = 'cli_resume';
+  historyDiscoveryState.sessionDiscovered = true;
+  // No need to flush buffer here - this runs before any spans are created
+}
+
+/**
+ * Start watching history.jsonl for session discovery.
+ * Uses fs.watch for efficient change detection.
+ */
+function startHistoryWatcher() {
+  if (!HISTORY_DISCOVERY_ENABLED) return;
+  if (historyDiscoveryState.watcherActive) return;
+  if (state.session.sessionIdSource !== 'fallback') return;
+
+  historyDiscoveryState.watcherActive = true;
+
+  try {
+    // Ensure parent directory exists
+    if (!fs.existsSync(CLAUDE_HOME)) return;
+
+    // Use fs.watch for efficient detection (falls back to polling on some systems)
+    const watcher = fs.watch(HISTORY_FILE, { persistent: false }, (eventType) => {
+      if (eventType === 'change') {
+        maybeHydrateSessionIdFromHistory();
+        // Stop watching once session is discovered
+        if (historyDiscoveryState.sessionDiscovered) {
+          watcher.close();
+        }
+      }
+    });
+
+    watcher.on('error', () => {
+      // Silent failure - file might not exist yet
+    });
+
+    // Auto-close after 30 seconds if session not discovered
+    setTimeout(() => {
+      if (!historyDiscoveryState.sessionDiscovered) {
+        try { watcher.close(); } catch {}
+      }
+    }, 30000);
+  } catch {
+    // Silent failure
+  }
+}
+
+// =============================================================================
 // Hook-driven Turn Boundaries (UserPromptSubmit + Stop)
 // =============================================================================
 
@@ -830,6 +1031,8 @@ function startTurnHookPoller() {
 
   state.hooks.pollerStarted = true;
   const interval = setInterval(() => {
+    // Feature 138: Try history discovery on each poll cycle
+    maybeHydrateSessionIdFromHistory();
     pollTurnHookFiles();
     pollPermissionFiles();
     pollPostToolFiles();
@@ -2968,9 +3171,18 @@ process.on('SIGTERM', () => {
 // Startup Logging
 // =============================================================================
 
+// Feature 138: Try to discover session ID immediately from --resume CLI arg
+maybeInitializeFromResumeArg();
+
+// Feature 138: Start history.jsonl watcher for session discovery
+startHistoryWatcher();
+
 // Enable hook-driven Turn boundaries (unref'd poller; won't keep process alive).
 startTurnHookPoller();
 pollTurnHookFiles();
+
+// Feature 138: Also try history discovery on startup (in case history was written before we started)
+maybeHydrateSessionIdFromHistory();
 
 console.error(`[OTEL-Interceptor v${INTERCEPTOR_VERSION}] Active`);
 console.error(`[OTEL-Interceptor]   Endpoint: ${TRACE_ENDPOINT}`);
