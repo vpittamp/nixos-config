@@ -164,9 +164,9 @@ in
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
     "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";
 
-    # Keyboard backlight (Apple Silicon laptops)
-    "XF86KbdBrightnessUp" = "exec sh -c 'if [ -d /sys/class/leds/kbd_backlight ]; then brightnessctl -d kbd_backlight -n 5 set +10%; fi'";
-    "XF86KbdBrightnessDown" = "exec sh -c 'if [ -d /sys/class/leds/kbd_backlight ]; then brightnessctl -d kbd_backlight -n 5 set 10%-; fi'";
+    # Keyboard backlight (ThinkPad: tpacpi::kbd_backlight, Apple Silicon: kbd_backlight)
+    "XF86KbdBrightnessUp" = "exec brightnessctl -d '*kbd_backlight*' -n 5 set +10%";
+    "XF86KbdBrightnessDown" = "exec brightnessctl -d '*kbd_backlight*' -n 5 set 10%-";
 
     # Volume control
     "XF86AudioRaiseVolume" = "exec pactl set-sink-volume @DEFAULT_SINK@ +5%";
