@@ -251,13 +251,15 @@ class ResilientI3Connection:
 
         # Check if socket file still exists
         if current_socket and Path(current_socket).exists():
-            # Socket exists, try a simple health check
+            # Socket exists, try a robust health check
+            # Note: get_version() can succeed while get_tree() fails on stale connections
             try:
                 if self.conn:
-                    await self.conn.get_version()
+                    # Use get_tree() for health check - it's more likely to fail on stale connections
+                    await self.conn.get_tree()
                     return True
             except Exception as e:
-                logger.warning(f"Socket exists but connection failed: {e}")
+                logger.warning(f"Socket exists but connection health check failed: {type(e).__name__}: {e}")
                 health_check_failed = True
 
         # Socket is stale or connection failed - discover new socket

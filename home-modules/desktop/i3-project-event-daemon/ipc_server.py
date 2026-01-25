@@ -8736,7 +8736,9 @@ class IPCServer:
                         f"{filter_result.get('hidden', 0)} hidden"
                     )
                 except Exception as e:
-                    logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {e}")
+                    import traceback
+                    logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {type(e).__name__}: {e}")
+                    logger.debug(f"[Feature 101] Traceback: {traceback.format_exc()}")
                     # Notify clients of partial failure - project switched but windows not filtered
                     await self.broadcast_event({
                         "type": "error",

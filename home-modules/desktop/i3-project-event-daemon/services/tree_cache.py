@@ -104,7 +104,12 @@ class TreeCacheService:
 
         # Cache miss - fetch fresh tree
         self._cache_misses += 1
-        tree = await self.conn.get_tree()
+        try:
+            tree = await self.conn.get_tree()
+        except Exception as e:
+            # Connection may be stale - raise with context for better debugging
+            logger.error(f"[Feature 091] Tree cache get_tree() failed: {type(e).__name__}: {e}")
+            raise ConnectionError(f"Failed to get Sway tree (connection may be stale): {type(e).__name__}: {e}") from e
         self._cache = TreeCacheEntry(tree, ttl_ms=self.ttl_ms)
 
         logger.debug(
