@@ -147,7 +147,7 @@ lib.mkIf enableClaudeCode {
         # Usage: /ralph-loop "task description" --max-iterations 20 --completion-promise "DONE"
         # Cancel: /cancel-ralph
         # Disabled by default - enable when needed for autonomous loops
-        "ralph-wiggum@claude-code-plugins" = false;
+        "ralph-wiggum@claude-code-plugins" = true;
 
         # Agent SDK Dev - development tools for building Claude Code agents
         "agent-sdk-dev@claude-code-plugins" = true;
