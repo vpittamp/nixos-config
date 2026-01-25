@@ -933,7 +933,9 @@ class I3ProjectDaemon:
                             if reconnected and self.ipc_server:
                                 # Update IPC server with new connection
                                 self.ipc_server.i3_connection = self.connection
-                                logger.info("IPC server updated after socket reconnection")
+                                # Reinitialize tree cache with new connection
+                                self.tree_cache = initialize_tree_cache(self.connection.conn, ttl_ms=100.0)
+                                logger.info("IPC server and tree cache updated after socket reconnection")
                     except asyncio.CancelledError:
                         break
                     except Exception as e:
