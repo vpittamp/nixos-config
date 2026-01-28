@@ -30,6 +30,7 @@ from .config import (
     reload_window_rules,
     WindowRulesWatcher,
     OutputStatesWatcher,
+    ApplicationRegistryWatcher,  # Auto-reload registry after NixOS rebuild
     MonitorProfileWatcher,  # Feature 083: Profile file watcher
     load_discovery_config,  # Feature 097: Git-based discovery
 )
@@ -182,6 +183,7 @@ class I3ProjectDaemon:
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
         self.output_states_watcher: Optional[OutputStatesWatcher] = None  # Output states file watcher
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
+        self.registry_watcher: Optional[ApplicationRegistryWatcher] = None  # Auto-reload on rebuild
         self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
         self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
@@ -247,6 +249,22 @@ class I3ProjectDaemon:
         app_registry_file = self.config_dir / "application-registry.json"
         self.application_registry = load_application_registry(app_registry_file)
         logger.info(f"Application registry loaded: {len(self.application_registry)} applications")
+
+        # Setup application registry file watcher (auto-reload after NixOS rebuild)
+        def on_registry_reload():
+            """Callback for application-registry.json changes."""
+            new_registry = load_application_registry(app_registry_file)
+            old_count = len(self.application_registry)
+            self.application_registry = new_registry
+            logger.info(f"Application registry reloaded: {old_count} → {len(new_registry)} applications")
+
+        self.registry_watcher = ApplicationRegistryWatcher(
+            config_file=app_registry_file,
+            reload_callback=on_registry_reload,
+            debounce_ms=200
+        )
+        self.registry_watcher.set_event_loop(asyncio.get_event_loop())
+        self.registry_watcher.start()
 
         # Feature 097: Load discovery configuration
         discovery_config_file = self.config_dir / "discovery-config.json"
@@ -995,13 +1013,20 @@ class I3ProjectDaemon:
             except Exception as e:
                 logger.error(f"Error shutting down project switch queue: {e}")
 
-            # Stop window rules watcher (Feature 021: T022) - synchronous, fast
+            # Stop file watchers - synchronous, fast
             if self.rules_watcher:
                 try:
                     self.rules_watcher.stop()
                     logger.info("Window rules watcher stopped")
                 except Exception as e:
                     logger.error(f"Error stopping rules watcher: {e}")
+
+            if self.registry_watcher:
+                try:
+                    self.registry_watcher.stop()
+                    logger.info("Application registry watcher stopped")
+                except Exception as e:
+                    logger.error(f"Error stopping registry watcher: {e}")
 
             # Stop IPC server (5s timeout)
             if self.ipc_server:

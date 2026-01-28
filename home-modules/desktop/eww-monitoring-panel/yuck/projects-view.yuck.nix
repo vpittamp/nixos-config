@@ -245,7 +245,7 @@ in
               (label
                 :class "worktree-branch"
                 :halign "start"
-                :limit-width 40
+                :limit-width 28
                 :truncate true
                 :text {(worktree.has_branch_number ?: false) ? (worktree.branch_description ?: worktree.branch) : worktree.branch}
                 :tooltip "''${worktree.branch}")
@@ -294,7 +294,7 @@ in
               (label
                 :class "worktree-path"
                 :halign "start"
-                :limit-width 45
+                :limit-width 35
                 :truncate true
                 :text "''${worktree.directory_display}"
                 :tooltip "''${worktree.path}")
@@ -310,7 +310,7 @@ in
               :class "worktree-last-commit"
               :halign "start"
               :visible {hover_worktree_name == worktree.qualified_name && (worktree.git_last_commit_relative ?: "") != ""}
-              :limit-width 50
+              :limit-width 38
               :truncate true
               :text {(worktree.git_last_commit_relative ?: "") + (worktree.git_last_commit_message != "" ? " - " + (worktree.git_last_commit_message ?: "") : "")}
               :tooltip {worktree.git_status_tooltip ?: ""})))

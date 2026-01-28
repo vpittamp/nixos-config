@@ -273,7 +273,9 @@
         (label
           :class "field-readonly"
           :halign "start"
+          :limit-width 40
           :truncate true
+          :tooltip worktree_form_path
           :text worktree_form_path))
       (box
         :class "form-field readonly-field"

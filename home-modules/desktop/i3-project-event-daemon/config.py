@@ -659,6 +659,62 @@ class OutputStatesWatcher:
         logger.info(f"Stopped watching {self.config_file}")
 
 
+class ApplicationRegistryWatcher:
+    """File system watcher for application-registry.json with auto-reload.
+
+    Watches for changes to the application registry file (e.g., after NixOS rebuild)
+    and triggers a callback to reload the registry so newly assigned workspaces
+    take effect without requiring a daemon restart.
+    """
+
+    def __init__(self,
+                 config_file: Path,
+                 reload_callback: Callable[[], None],
+                 debounce_ms: int = 200):
+        """Initialize application registry file watcher.
+
+        Args:
+            config_file: Path to application-registry.json
+            reload_callback: Function to call on file modification
+            debounce_ms: Debounce timeout in milliseconds (default: 200ms)
+        """
+        self.config_file = config_file
+        self.reload_callback = reload_callback
+        self.observer = Observer()
+        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms, target_filename=config_file.name)
+        self._started = False
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Set the asyncio event loop for debounced callbacks."""
+        self.handler.set_event_loop(loop)
+
+    def start(self) -> None:
+        """Start watching application-registry.json for modifications."""
+        if self._started:
+            logger.warning("Application registry watcher already started")
+            return
+
+        watch_dir = self.config_file.parent
+        watch_dir.mkdir(parents=True, exist_ok=True)
+
+        self.observer.schedule(self.handler, str(watch_dir), recursive=False)
+        self.observer.start()
+        self._started = True
+
+        logger.info(f"Started watching {self.config_file} for registry changes")
+
+    def stop(self) -> None:
+        """Stop watching for file modifications."""
+        if not self._started:
+            return
+
+        self.observer.stop()
+        self.observer.join(timeout=5.0)
+        self._started = False
+
+        logger.info(f"Stopped watching {self.config_file}")
+
+
 class MonitorProfileWatcher:
     """File system watcher for monitor-profile.current with auto-reload.
 

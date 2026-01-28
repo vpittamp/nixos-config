@@ -217,12 +217,7 @@ let
   # This creates the declarative workspace-assignments.json that the daemon reads
   # to determine which monitor role (primary/secondary/tertiary) each workspace should use
   workspaceAssignments = let
-    clampWorkspace = ws:
-      if ws < 1 then 1
-      else if ws > 70 then 70
-      else ws;
-
-    # Map monitor roles → concrete outputs and include schema-required fields
+    # Map monitor roles → concrete outputs
     monitorRoleToOutput = role:
       if isHeadless then headlessRoleToOutput role
       else
@@ -235,6 +230,29 @@ let
         headlessFallbackOutputs primary
       else
         builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
+
+    # Resolve monitor role: use explicit value or infer from workspace number
+    # Feature 001 US1: WS 1-2 → primary, WS 3-5 → secondary, WS 6+ → tertiary
+    resolveMonitorRole = entry:
+      if entry ? preferred_monitor_role && entry.preferred_monitor_role != null
+      then entry.preferred_monitor_role
+      else if entry.preferred_workspace <= 2 then "primary"
+      else if entry.preferred_workspace <= 5 then "secondary"
+      else "tertiary";
+
+    # Build a workspace assignment entry from an app or PWA
+    mkAssignment = name: entry: let
+      role = resolveMonitorRole entry;
+      output = monitorRoleToOutput role;
+    in {
+      workspace_number = entry.preferred_workspace;
+      app_name = name;
+      monitor_role = role;
+      primary_output = output;
+      fallback_outputs = fallbackOutputs output;
+      auto_reassign = true;
+      source = "nix";
+    };
   in {
     version = "1.0";
     # Feature 001: Explicit output preferences to ensure deterministic role→output mapping
@@ -253,77 +271,10 @@ let
       };
     assignments =
       # App registry assignments
-      (map (app: {
-        workspace_number = clampWorkspace app.preferred_workspace;
-        app_name = app.name;
-        monitor_role = if app ? preferred_monitor_role && app.preferred_monitor_role != null
-                       then app.preferred_monitor_role
-                       else (
-                         # Infer monitor role from workspace number (Feature 001 US1)
-                         # WS 1-2: primary, WS 3-5: secondary, WS 6+: tertiary
-                         if app.preferred_workspace <= 2 then "primary"
-                         else if app.preferred_workspace <= 5 then "secondary"
-                         else "tertiary"
-                       );
-        primary_output = monitorRoleToOutput (
-          if app ? preferred_monitor_role && app.preferred_monitor_role != null
-          then app.preferred_monitor_role
-          else (
-            if app.preferred_workspace <= 2 then "primary"
-            else if app.preferred_workspace <= 5 then "secondary"
-            else "tertiary"
-          )
-        );
-        fallback_outputs = fallbackOutputs (
-          monitorRoleToOutput (
-            if app ? preferred_monitor_role && app.preferred_monitor_role != null
-            then app.preferred_monitor_role
-            else (
-              if app.preferred_workspace <= 2 then "primary"
-              else if app.preferred_workspace <= 5 then "secondary"
-              else "tertiary"
-            )
-          )
-        );
-        auto_reassign = true;
-        source = "nix";
-      }) appRegistryData)
+      (map (app: mkAssignment app.name app) appRegistryData)
       ++
       # PWA site assignments (Feature 001 US3: PWA-specific monitor preferences)
-      (map (pwa: {
-        workspace_number = clampWorkspace pwa.preferred_workspace;
-        app_name = "${pwa.name}-pwa";  # Append -pwa for identification
-        monitor_role = if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
-                       then pwa.preferred_monitor_role
-                       else (
-                         # Infer monitor role from workspace number
-                         if pwa.preferred_workspace <= 2 then "primary"
-                         else if pwa.preferred_workspace <= 5 then "secondary"
-                         else "tertiary"
-                       );
-        primary_output = monitorRoleToOutput (
-          if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
-          then pwa.preferred_monitor_role
-          else (
-            if pwa.preferred_workspace <= 2 then "primary"
-            else if pwa.preferred_workspace <= 5 then "secondary"
-            else "tertiary"
-          )
-        );
-        fallback_outputs = fallbackOutputs (
-          monitorRoleToOutput (
-            if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
-            then pwa.preferred_monitor_role
-            else (
-              if pwa.preferred_workspace <= 2 then "primary"
-              else if pwa.preferred_workspace <= 5 then "secondary"
-              else "tertiary"
-            )
-          )
-        );
-        auto_reassign = true;
-        source = "nix";
-      }) pwaSitesData.pwaSites);
+      (map (pwa: mkAssignment "${pwa.name}-pwa" pwa) pwaSitesData.pwaSites);
   };
 in
 {

@@ -109,8 +109,8 @@ in
 
   # VSCode profile configuration
   # All VSCode instances (including activity-aware launchers) use this profile
-  # Use "nixos" to continue using your existing profile with all customizations
-  modules.tools.vscode.defaultProfile = "nixos";
+  # Use "default" to avoid home-manager warnings about mutableExtensionsDir and update checks
+  modules.tools.vscode.defaultProfile = "default";
 
   programs.home-manager.enable = true;
 

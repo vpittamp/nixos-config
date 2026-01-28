@@ -25,9 +25,12 @@ let
     (app: app.scope == "global" && app ? preferred_workspace)
     applications;
 
-  # Generate for_window rule for each app
+  # Generate for_window rules for each app.
+  # Wayland-native apps (Firefox, Ghostty) use app_id; XWayland apps (Chrome) use class.
+  # Generate both so the correct one matches regardless of protocol.
   generateWindowRule = app:
-    ''for_window [class="${app.expected_class}"] move to workspace number ${toString app.preferred_workspace}'';
+    ''for_window [class="${app.expected_class}"] move to workspace number ${toString app.preferred_workspace}
+for_window [app_id="${app.expected_class}"] move to workspace number ${toString app.preferred_workspace}'';
 
   # Generate all rules
   windowRules = lib.concatStringsSep "\n" (

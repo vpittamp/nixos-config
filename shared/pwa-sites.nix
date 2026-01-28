@@ -1016,7 +1016,7 @@ let
       name = "AI Chatbot";
       url = "https://ai-chatbot.cnoe.localtest.me:8443";
       domain = "ai-chatbot.cnoe.localtest.me";
-      icon = iconPath "ai-chatbot.svg";
+      icon = iconPath "nextjs.svg";
       description = "Vercel AI SDK Chatbot - Next.js AI chat template";
       categories = "Development;Network;";
       keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;";

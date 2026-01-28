@@ -241,7 +241,7 @@ let
       description = "Chromium web browser";
     })
 
-    # Google Chrome - Required for Claude in Chrome extension
+    # WS15: Google Chrome - Required for Claude in Chrome extension
     (mkApp {
       name = "google-chrome";
       display_name = "Google Chrome";
@@ -249,7 +249,7 @@ let
       parameters = "";
       scope = "global";
       expected_class = "Google-chrome";
-      preferred_workspace = 3;
+      preferred_workspace = 15;
       icon = "google-chrome";
       nix_package = "pkgs.google-chrome";
       multi_instance = false;

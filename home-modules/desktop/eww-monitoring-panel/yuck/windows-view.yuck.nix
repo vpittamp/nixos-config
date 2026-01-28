@@ -190,6 +190,9 @@
             :text {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "󰅀" : "󰅂"})
           (label
             :class "project-name"
+            :limit-width 30
+            :truncate true
+            :tooltip "''${project.name}"
             :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
           (label
             :class "active-indicator"

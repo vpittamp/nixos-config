@@ -22,7 +22,7 @@ let
     nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
     postFixup = (oldAttrs.postFixup or "") + ''
       wrapProgram $out/bin/code \
-        --add-flags "--profile ${primaryProfile}" \
+        ${lib.optionalString (primaryProfile != "default") ''--add-flags "--profile ${primaryProfile}"''} \
         --add-flags "--ozone-platform=wayland" \
         --add-flags "--enable-features=WaylandWindowDecorations" \
         --set ELECTRON_OZONE_PLATFORM_HINT "auto"
@@ -571,7 +571,6 @@ in
     # Per-activity customization is handled via working directories and environment variables
     profiles = {
       default = defaultProfile;
-      nixos = defaultProfile;  # Alias for nixos profile with same settings
     };
   };
 

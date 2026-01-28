@@ -230,6 +230,7 @@
 
   .view-container {
     background-color: transparent;
+    min-width: 0;
   }
 
   .content-container {
@@ -378,6 +379,7 @@
     font-size: 13px;
     font-weight: bold;
     color: ${mocha.text};
+    min-width: 0;
   }
 
   .window-count-badge {
@@ -1648,10 +1650,15 @@
     color: ${mocha.overlay0};
   }
 
+  .worktree-info {
+    min-width: 0;
+  }
+
   .worktree-branch {
     font-size: 11px;
     font-weight: 500;
     color: ${mocha.text};
+    min-width: 0;
   }
 
   .worktree-commit {
@@ -1663,6 +1670,7 @@
   .worktree-path {
     font-size: 9px;
     color: ${mocha.subtext0};
+    min-width: 0;
   }
 
   .worktree-last-commit {
