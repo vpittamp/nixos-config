@@ -1067,6 +1067,25 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "openwebui.cnoe.localtest.me" ];
     }
+
+    # Phoenix Azire (CNOE local)
+    {
+      name = "Phoenix Azire";
+      url = "https://phoenix.cnoe.localtest.me:8443";
+      domain = "phoenix.cnoe.localtest.me";
+      icon = iconPath "phoenix-azire.svg";
+      description = "Phoenix Azire - AI observability and LLM tracing platform";
+      categories = "Development;Network;";
+      keywords = "phoenix;azire;ai;observability;tracing;llm;kubernetes;";
+      scope = "https://phoenix.cnoe.localtest.me:8443/";
+      ulid = "5A70F22AX1NP456PSAFESPEZ5E";  # Generated 2026-01-26
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 106;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "phoenix.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites
