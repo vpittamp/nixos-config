@@ -395,6 +395,12 @@ class OTLPReceiver:
             # Feature 135: Extract process.pid and other resource attrs for window correlation
             resource_attrs = self._extract_resource_attributes(resource_logs.resource)
 
+            # DEBUG: Log all resource attributes to diagnose missing process.pid
+            if resource_logs.resource and hasattr(resource_logs.resource, 'attributes'):
+                all_attrs = [(a.key, str(a.value)) for a in resource_logs.resource.attributes]
+                logger.debug(f"Resource attributes: {all_attrs[:10]}")  # Limit to first 10
+            logger.debug(f"Extracted resource attrs: {resource_attrs}")
+
             for scope_logs in resource_logs.scope_logs:
                 for log_record in scope_logs.log_records:
                     event = self._parse_log_record(log_record, service_name, resource_attrs)

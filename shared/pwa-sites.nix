@@ -441,6 +441,25 @@ let
       routing_domains = [ "argocd.cnoe.localtest.me" ];
     }
 
+    # Argo Workflows (CNOE local)
+    {
+      name = "Argo Workflows";
+      url = "https://argo-workflows.cnoe.localtest.me:8443";
+      domain = "argo-workflows.cnoe.localtest.me";
+      icon = iconPath "argo-workflows.png";
+      description = "Argo Workflows - Kubernetes-native workflow engine";
+      categories = "Development;Network;System;";
+      keywords = "argo;workflows;kubernetes;pipelines;ci;automation;";
+      scope = "https://argo-workflows.cnoe.localtest.me:8443/";
+      ulid = "56RN5CMB8EJQ8KEVPWDR2GB7PX";  # Generated 2025-01-29
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 107;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "argo-workflows.cnoe.localtest.me" ];
+    }
+
     # ArgoCD (Talos/ai401kchat)
     {
       name = "ArgoCD Talos";
@@ -1085,6 +1104,25 @@ let
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "phoenix.cnoe.localtest.me" ];
+    }
+
+    # AI Workflow Builder (CNOE local)
+    {
+      name = "AI Workflow Builder";
+      url = "https://workflow-builder.cnoe.localtest.me:8443";
+      domain = "workflow-builder.cnoe.localtest.me";
+      icon = iconPath "ai-workflow-builder.svg";
+      description = "AI Workflow Builder - Visual node-based workflow automation editor";
+      categories = "Development;Network;";
+      keywords = "workflow;builder;visual;editor;automation;ai;nodes;react-flow;nextjs;";
+      scope = "https://workflow-builder.cnoe.localtest.me:8443/";
+      ulid = "31EYAA8SZG1WY6TCVYB2PJDNBM";  # Generated 2026-01-29
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 108;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "workflow-builder.cnoe.localtest.me" ];
     }
   ];
 
