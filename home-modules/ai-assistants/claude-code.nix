@@ -141,16 +141,16 @@ lib.mkIf enableClaudeCode {
         };
       };
 
-      # Enable plugins
+      # Plugins - disabled by default to reduce token overhead
+      # Enable interactively when needed via /plugins command
       enabledPlugins = {
         # Ralph Wiggum - autonomous iterative development loops
         # Usage: /ralph-loop "task description" --max-iterations 20 --completion-promise "DONE"
         # Cancel: /cancel-ralph
-        # Disabled by default - enable when needed for autonomous loops
-        "ralph-wiggum@claude-code-plugins" = true;
+        "ralph-wiggum@claude-code-plugins" = false;
 
         # Agent SDK Dev - development tools for building Claude Code agents
-        "agent-sdk-dev@claude-code-plugins" = true;
+        "agent-sdk-dev@claude-code-plugins" = false;
       };
 
       # Model selection removed - will use default or user's choice
