@@ -12,9 +12,12 @@ State Machine:
 """
 
 import asyncio
+import glob
+import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from .models import (
@@ -126,6 +129,60 @@ class SessionTracker:
         self._broadcast_task: Optional[asyncio.Task] = None
         self._expiry_task: Optional[asyncio.Task] = None
         self._running = False
+
+        # Feature 138: Cache for session metadata files (sessionId -> pid)
+        # These files are written by Claude Code hooks on session start
+        self._metadata_file_cache: dict[str, int] = {}
+        self._metadata_cache_mtime: float = 0.0
+
+    def _load_session_metadata_pid(self, session_id: str) -> Optional[int]:
+        """Look up PID for a session ID from hook-written metadata files.
+
+        Feature 138: Claude Code hooks write $XDG_RUNTIME_DIR/claude-session-{PID}.json
+        with {sessionId, pid}. This method scans those files to find the PID
+        for a given UUID session_id, enabling window correlation for native OTEL logs
+        which don't include process.pid.
+
+        Args:
+            session_id: The session ID (UUID) to look up
+
+        Returns:
+            PID if found in metadata files, None otherwise
+        """
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+        metadata_pattern = os.path.join(runtime_dir, "claude-session-*.json")
+
+        # Check if we need to refresh the cache (files changed in last 5 seconds)
+        try:
+            # Get the most recent mtime from metadata files
+            metadata_files = glob.glob(metadata_pattern)
+            if not metadata_files:
+                return None
+
+            current_mtime = max(os.path.getmtime(f) for f in metadata_files)
+
+            # Refresh cache if files are newer
+            if current_mtime > self._metadata_cache_mtime:
+                self._metadata_file_cache.clear()
+                for filepath in metadata_files:
+                    try:
+                        with open(filepath, "r") as f:
+                            data = json.load(f)
+                            sid = data.get("sessionId")
+                            pid = data.get("pid")
+                            if sid and pid:
+                                self._metadata_file_cache[sid] = int(pid)
+                                logger.debug(f"Loaded session metadata: {sid} -> PID {pid}")
+                    except (json.JSONDecodeError, IOError, KeyError) as e:
+                        logger.debug(f"Failed to read metadata file {filepath}: {e}")
+                self._metadata_cache_mtime = current_mtime
+                logger.debug(f"Refreshed session metadata cache: {len(self._metadata_file_cache)} entries")
+
+        except OSError as e:
+            logger.debug(f"Failed to scan metadata files: {e}")
+            return None
+
+        return self._metadata_file_cache.get(session_id)
 
     async def start(self) -> None:
         """Start background tasks for broadcasting and expiry."""
@@ -290,6 +347,16 @@ class SessionTracker:
                     client_pid = self._session_pids[session_id]
                     logger.debug(f"Using cached PID {client_pid} for session {session_id}")
 
+                # Feature 138: If still no PID, check session metadata files from hooks
+                # Claude Code hooks write $XDG_RUNTIME_DIR/claude-session-{PID}.json
+                # with {sessionId, pid} on session start. This enables correlation
+                # for native OTEL logs that don't include process.pid.
+                if not client_pid:
+                    metadata_pid = self._load_session_metadata_pid(session_id)
+                    if metadata_pid:
+                        client_pid = metadata_pid
+                        logger.debug(f"Found PID {client_pid} from session metadata for {session_id}")
+
                 # Cache PID for future correlation with logs
                 if client_pid:
                     try:
@@ -418,6 +485,13 @@ class SessionTracker:
             # Use cached PID if not in event attributes
             if not client_pid and session_id in self._session_pids:
                 client_pid = self._session_pids[session_id]
+
+            # Feature 138: Check session metadata files if still no PID
+            if not client_pid:
+                metadata_pid = self._load_session_metadata_pid(session_id)
+                if metadata_pid:
+                    client_pid = metadata_pid
+                    logger.debug(f"Found PID {client_pid} from session metadata for {session_id}")
 
             # Cache PID for future correlation and store in session
             if client_pid:

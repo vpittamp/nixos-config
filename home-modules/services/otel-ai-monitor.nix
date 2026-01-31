@@ -55,7 +55,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.10.11";  # DEBUG: Add resource attribute logging to diagnose missing PID
+    version = "0.10.12";  # Feature 138: Load session metadata files for PID correlation
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
