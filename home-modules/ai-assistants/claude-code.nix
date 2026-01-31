@@ -203,17 +203,22 @@ lib.mkIf enableClaudeCode {
         # SessionStart: Persist Claude Code session_id (UUID) for trace correlation
         # This enables the OTEL interceptor to discover the session ID and export
         # spans with process.pid for deterministic window correlation.
+        # Note: New hooks format (Claude Code 2.x) requires hooks array wrapper
         SessionStart = [{
-          type = "command";
-          command = "${repoRoot}/scripts/claude-hooks/otel-session-start.sh";
-          timeout = 5;
+          hooks = [{
+            type = "command";
+            command = "${repoRoot}/scripts/claude-hooks/otel-session-start.sh";
+            timeout = 5;
+          }];
         }];
 
         # SessionEnd: Clean up the persisted session metadata file
         SessionEnd = [{
-          type = "command";
-          command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
-          timeout = 5;
+          hooks = [{
+            type = "command";
+            command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
+            timeout = 5;
+          }];
         }];
       };
 
