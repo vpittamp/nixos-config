@@ -99,6 +99,12 @@ in
       set -ga terminal-overrides ',ghostty*:Tc'
       set -ga terminal-overrides ',ghostty*:RGB'
 
+      # Enable extended-keys for better modifier key passthrough (Ctrl+Shift+V, etc.)
+      # This allows terminals like Ghostty to send modifier keys through tmux
+      set -g extended-keys on
+      set -as terminal-features ',ghostty:extkeys'
+      set -as terminal-features ',xterm-256color:extkeys'
+
       # Allow passthrough for proper color handling, but disable for VSCode
       if-shell '[ -z "$VSCODE_TERMINAL" ]' \
         'set -g allow-passthrough on' \
@@ -217,8 +223,10 @@ in
       bind p paste-buffer
       bind B choose-buffer  # Changed from P to B to avoid conflict with popup
 
-      # Paste from system clipboard (KDE Plasma clipboard)
-      # Use Ctrl+Shift+V or prefix + V to paste from system clipboard
+      # Paste from system clipboard (Wayland wl-paste)
+      # Ctrl+Shift+V without prefix (root table binding)
+      bind -n C-S-v run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
+      # prefix + V or prefix + ] also paste from system clipboard
       bind V run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
       bind ] run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
 
