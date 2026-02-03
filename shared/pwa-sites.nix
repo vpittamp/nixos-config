@@ -1124,6 +1124,63 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "workflow-builder.cnoe.localtest.me" ];
     }
+
+    # Redis Insights (CNOE local)
+    {
+      name = "Redis Insights";
+      url = "https://redisinsight.cnoe.localtest.me:8443";
+      domain = "redisinsight.cnoe.localtest.me";
+      icon = iconPath "redis-insights.svg";
+      description = "Redis Insights - Redis database management and visualization tool";
+      categories = "Development;Network;";
+      keywords = "redis;insights;database;cache;visualization;kubernetes;cnoe;";
+      scope = "https://redisinsight.cnoe.localtest.me:8443/";
+      ulid = "348E7WKJSMP0YRHTHEY3ETR5J6";  # Generated 2026-02-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 109;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "redisinsight.cnoe.localtest.me" ];
+    }
+
+    # Dify (CNOE local)
+    {
+      name = "Dify";
+      url = "https://dify.cnoe.localtest.me:8443";
+      domain = "dify.cnoe.localtest.me";
+      icon = iconPath "dify.svg";
+      description = "Dify - Open-source LLM app development platform and AI workflow builder";
+      categories = "Development;Network;";
+      keywords = "dify;ai;llm;workflow;builder;chatbot;agent;kubernetes;cnoe;";
+      scope = "https://dify.cnoe.localtest.me:8443/";
+      ulid = "53SPYVASDFAZCB0X58DZZS29Y4";  # Generated 2026-02-03
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 110;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "dify.cnoe.localtest.me" ];
+    }
+
+    # JupyterHub (CNOE local)
+    {
+      name = "JupyterHub";
+      url = "https://jupyterhub.cnoe.localtest.me:8443";
+      domain = "jupyterhub.cnoe.localtest.me";
+      icon = iconPath "jupyterhub.svg";
+      description = "JupyterHub - Multi-user Jupyter notebook server";
+      categories = "Development;Network;Education;";
+      keywords = "jupyter;jupyterhub;notebook;python;data-science;kubernetes;cnoe;";
+      scope = "https://jupyterhub.cnoe.localtest.me:8443/";
+      ulid = "1JJBSGAS1QBR1875WQ1NARB1YK";  # Generated 2026-02-03
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 111;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "jupyterhub.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites
