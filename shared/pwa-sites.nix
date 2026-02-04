@@ -1181,6 +1181,25 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "jupyterhub.cnoe.localtest.me" ];
     }
+
+    # KubeVela
+    {
+      name = "KubeVela";
+      url = "https://velaux.cnoe.localtest.me";
+      domain = "velaux.cnoe.localtest.me";
+      icon = iconPath "kubevela.svg";
+      description = "KubeVela - Modern application delivery platform";
+      categories = "Development;Network;Utility;";
+      keywords = "kubevela;vela;velaux;kubernetes;k8s;deployment;oam;application;cnoe;";
+      scope = "https://velaux.cnoe.localtest.me/";
+      ulid = "3037TSQ2W3RH3M7PRDBXFCT2K0";  # Generated 2026-02-04
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 112;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "velaux.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites
