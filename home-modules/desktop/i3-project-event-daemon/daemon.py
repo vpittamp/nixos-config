@@ -406,7 +406,7 @@ class I3ProjectDaemon:
                     command_success=context.get("success"),
                     command_error_msg=context.get("error"),
                     command_batch_count=context.get("batch_count"),
-                    payload=context,
+                    command_batch_id=context.get("batch_id"),
                 )
                 await self.event_buffer.add_event(entry)
                 logger.debug(f"[Feature 102] Published {event_type} to EventBuffer")

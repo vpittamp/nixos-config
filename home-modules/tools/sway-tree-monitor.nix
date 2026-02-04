@@ -91,6 +91,11 @@ in
       Restart = "on-failure";
       RestartSec = "2";
 
+      # Feature 137: Prevent stale state accumulation
+      # Automatically restart every 12 hours to clear any accumulated
+      # edge-case state (e.g., ValueError on empty field_changes)
+      RuntimeMaxSec = "12h";
+
       # Resource limits (from Feature 064 spec)
       MemoryHigh = "40M";
       MemoryMax = "50M";

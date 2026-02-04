@@ -233,7 +233,7 @@ let
       parameters = "";
       scope = "global";
       expected_class = "Chromium-browser";
-      preferred_workspace = 3;
+      preferred_workspace = 16;  # Was 3 (duplicate with Firefox)
       icon = "chromium-browser";
       nix_package = "pkgs.chromium";
       multi_instance = false;
@@ -291,7 +291,7 @@ let
       description = "Terminal UI for Docker container management";
     })
 
-    # WS5: GUI Git Client (gittyup)
+    # WS17: GUI Git Client (gittyup)
     (mkApp {
       name = "gittyup";
       display_name = "Gittyup";
@@ -299,7 +299,7 @@ let
       parameters = "$PROJECT_DIR";
       scope = "scoped";
       expected_class = "Gittyup";
-      preferred_workspace = 5;
+      preferred_workspace = 17;  # Was 5 (duplicate with Lazygit)
       preferred_monitor_role = "tertiary";
       icon = iconPath "git.svg";
       nix_package = "pkgs.gittyup";
@@ -364,7 +364,7 @@ let
       parameters = "-e htop";
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
-      preferred_workspace = 7;
+      preferred_workspace = 18;  # Was 7 (duplicate with btop)
       icon = "htop";
       nix_package = "pkgs.htop";
       multi_instance = false;
@@ -461,7 +461,7 @@ let
       parameters = "";
       scope = "global";
       expected_class = "com.moonlight_stream.Moonlight";
-      preferred_workspace = 12;
+      preferred_workspace = 19;  # Was 12 (duplicate with Remmina)
       icon = "com.moonlight_stream.Moonlight";
       nix_package = "pkgs.moonlight-qt";
       multi_instance = false;

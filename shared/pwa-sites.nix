@@ -1185,13 +1185,13 @@ let
     # KubeVela
     {
       name = "KubeVela";
-      url = "https://velaux.cnoe.localtest.me";
+      url = "https://velaux.cnoe.localtest.me:8443";
       domain = "velaux.cnoe.localtest.me";
       icon = iconPath "kubevela.svg";
       description = "KubeVela - Modern application delivery platform";
       categories = "Development;Network;Utility;";
       keywords = "kubevela;vela;velaux;kubernetes;k8s;deployment;oam;application;cnoe;";
-      scope = "https://velaux.cnoe.localtest.me/";
+      scope = "https://velaux.cnoe.localtest.me:8443/";
       ulid = "3037TSQ2W3RH3M7PRDBXFCT2K0";  # Generated 2026-02-04
       # App registry metadata
       app_scope = "global";
@@ -1199,6 +1199,25 @@ let
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "velaux.cnoe.localtest.me" ];
+    }
+
+    # Activepieces (CNOE local)
+    {
+      name = "Activepieces";
+      url = "https://activepieces.cnoe.localtest.me:8443";
+      domain = "activepieces.cnoe.localtest.me";
+      icon = iconPath "activepieces.svg";
+      description = "Activepieces - Open source workflow automation platform";
+      categories = "Development;Network;";
+      keywords = "activepieces;automation;workflow;zapier;n8n;integrations;kubernetes;cnoe;";
+      scope = "https://activepieces.cnoe.localtest.me:8443/";
+      ulid = "7BW50E7SR9479J379C01JDP0Y6";  # Generated 2026-02-04
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 113;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "activepieces.cnoe.localtest.me" ];
     }
   ];
 

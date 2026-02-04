@@ -130,6 +130,12 @@ in
         # Shutdown timeout: 15s (daemon has 10s timeout internally + 5s buffer)
         TimeoutStopSec = 15;
 
+        # Feature 137: Prevent stale state accumulation
+        # Automatically restart daemon every 12 hours to clear accumulated
+        # failed launches, expired notifications, and other transient state
+        # that can cause PWA workspace assignment failures over time
+        RuntimeMaxSec = "12h";
+
         # Quick restart on failure
         Restart = "always";
         RestartSec = 2;
