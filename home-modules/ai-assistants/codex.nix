@@ -114,10 +114,11 @@ in
       auto_save = true;
       theme = "dark";
       vim_mode = true;
-      # Enable new web search tool (replaces deprecated tools.web_search)
+      # Web search: "live", "cached", or "disabled" (top-level, replaces deprecated features.web_search_request)
+      web_search = "live";
+
       # rmcp_client is REQUIRED for MCP server support
       features = {
-        web_search_request = true;
         rmcp_client = true;  # Required for MCP servers to work
       };
 
