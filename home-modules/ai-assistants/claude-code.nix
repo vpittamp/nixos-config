@@ -107,6 +107,10 @@ lib.mkIf enableClaudeCode {
     # LANGFUSE_SESSION_ID - Optional override for session grouping (defaults to Claude session.id)
     # LANGFUSE_TAGS - Optional JSON array of tags, e.g., '["production", "my-feature"]'
     LANGFUSE_ENABLED = "1";
+
+    # Experimental: Agent Teams - multi-agent coordination
+    # Session variable ensures it's set before Claude Code initializes
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
   };
 
   # Chromium is installed via programs.chromium in tools/chromium.nix
@@ -153,6 +157,11 @@ lib.mkIf enableClaudeCode {
         "agent-sdk-dev@claude-code-plugins" = false;
       };
 
+      # Experimental: Agent Teams - coordinate multiple Claude instances as a team
+      # Enables TeammateTool, spawnTeam, SendMessage for parallel agent collaboration
+      # Modes: "auto" (tmux if available, else in-process), "in-process", "tmux"
+      teammateMode = "auto";
+
       # Model selection removed - will use default or user's choice
       theme = "dark";
       editorMode = "vim";
@@ -184,6 +193,9 @@ lib.mkIf enableClaudeCode {
         # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
         # Use system ripgrep instead (available via home-manager)
         USE_BUILTIN_RIPGREP = "0";
+        # Experimental: Agent Teams - enables TeammateTool for multi-agent coordination
+        # Multiple Claude instances work in parallel with shared task lists and peer messaging
+        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
       };
 
       # Hooks - Commands that run in response to Claude Code events

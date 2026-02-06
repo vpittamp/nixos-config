@@ -34,6 +34,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    codex-cli-nix = {
+      url = "github:sadjow/codex-cli-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Claude Desktop for Linux (unofficial community package)
     # Provides native desktop app with git worktree support for parallel sessions
     claude-desktop = {

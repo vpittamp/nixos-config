@@ -1,4 +1,4 @@
-{ config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
+{ config, pkgs, lib, inputs, pkgs-unstable ? pkgs, ... }:
 
 let
   repoRoot = ../../.;
@@ -23,7 +23,7 @@ let
   codexOtelInterceptorPort = 4319;
 
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
-  codexPackage = pkgs-unstable.codex or pkgs.codex;
+  codexPackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
   codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
     # Feature 125: Clear NODE_OPTIONS to prevent Claude Code's interceptor from loading
     # when Codex is run from within Claude Code's Bash tool
@@ -35,6 +35,9 @@ let
     unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
     unset OTEL_EXPORTER_OTLP_PROTOCOL
+
+    # Fix missing libcap.so.2 in codex-cli-nix native binary packaging
+    export LD_LIBRARY_PATH="${pkgs.libcap.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
     # Force frequent batch exports for real-time monitoring
     # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)
@@ -63,8 +66,8 @@ in
 
     # Configuration for codex (TOML format)
     settings = {
-      # Model configuration - using latest gpt-5.2-codex
-      model = "gpt-5.2-codex";
+      # Model configuration - using latest gpt-5.3-codex (requires codex 0.98.0+)
+      model = "gpt-5.3-codex";
       model_provider = "openai";
       model_reasoning_effort = "high"; # Use high reasoning for complex tasks
 
