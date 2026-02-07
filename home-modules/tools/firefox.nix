@@ -393,44 +393,43 @@ in
   # Using both defaultApplications (enforced) and associations.added (preferences)
   # This ensures OAuth flows work while allowing PWAs to register themselves
   #
-  # Feature 113: URL scheme handlers (http/https) now route through pwa-url-router
-  # which opens PWAs for matching domains and falls back to Firefox for others.
-  # HTML files opened directly still use Firefox.
+  # Default browser: Google Chrome
+  # (PWA URL routing via pwa-url-router is disabled; all links go through Chrome)
   xdg.mimeApps = {
     enable = true;
 
     # Enforced defaults
     defaultApplications = {
-      "text/html" = "firefox.desktop";
-      "application/xhtml+xml" = "firefox.desktop";
-      "x-scheme-handler/http" = "firefox.desktop";
-      "x-scheme-handler/https" = "firefox.desktop";
-      "x-scheme-handler/about" = "firefox.desktop";
-      "x-scheme-handler/unknown" = "firefox.desktop";
+      "text/html" = "google-chrome.desktop";
+      "application/xhtml+xml" = "google-chrome.desktop";
+      "x-scheme-handler/http" = "google-chrome.desktop";
+      "x-scheme-handler/https" = "google-chrome.desktop";
+      "x-scheme-handler/about" = "google-chrome.desktop";
+      "x-scheme-handler/unknown" = "google-chrome.desktop";
     };
 
     # Additional associations - preferences, not enforced defaults
     associations.added = {
       # Web browsers - additional file types
-      "x-scheme-handler/ftp" = [ "firefox.desktop" ];
-      "x-scheme-handler/chrome" = [ "firefox.desktop" ];
-      "application/x-extension-htm" = [ "firefox.desktop" ];
-      "application/x-extension-html" = [ "firefox.desktop" ];
-      "application/x-extension-shtml" = [ "firefox.desktop" ];
-      "application/x-extension-xhtml" = [ "firefox.desktop" ];
-      "application/x-extension-xht" = [ "firefox.desktop" ];
-      "application/pdf" = [ "firefox.desktop" "okularApplication_pdf.desktop" ];  # Firefox first, Okular as fallback
+      "x-scheme-handler/ftp" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/chrome" = [ "google-chrome.desktop" ];
+      "application/x-extension-htm" = [ "google-chrome.desktop" ];
+      "application/x-extension-html" = [ "google-chrome.desktop" ];
+      "application/x-extension-shtml" = [ "google-chrome.desktop" ];
+      "application/x-extension-xhtml" = [ "google-chrome.desktop" ];
+      "application/x-extension-xht" = [ "google-chrome.desktop" ];
+      "application/pdf" = [ "google-chrome.desktop" "okularApplication_pdf.desktop" ];
 
       # Web content
-      "x-scheme-handler/webcal" = [ "firefox.desktop" ];
-      "x-scheme-handler/mailto" = [ "firefox.desktop" ];
+      "x-scheme-handler/webcal" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/mailto" = [ "google-chrome.desktop" ];
     };
   };
 
   # Set environment variables for default browser
   home.sessionVariables = {
-    DEFAULT_BROWSER = "${pkgs.firefox}/bin/firefox";
-    BROWSER = "${pkgs.firefox}/bin/firefox";
+    DEFAULT_BROWSER = "${pkgs.google-chrome}/bin/google-chrome-stable";
+    BROWSER = "${pkgs.google-chrome}/bin/google-chrome-stable";
   };
 
 }

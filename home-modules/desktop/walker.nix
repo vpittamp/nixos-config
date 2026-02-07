@@ -929,11 +929,10 @@ in
       " 2>/dev/null || echo "ERROR: Query failed" >&2
     '')
 
-    # walker-history-open: Opens a URL through pwa-url-router
+    # walker-history-open: Opens a URL via xdg-open (routes to default browser)
     (pkgs.writeShellScriptBin "walker-history-open" ''
       #!/usr/bin/env bash
-      # Feature 113: Open browser history URL via pwa-url-router
-      # Routes to appropriate PWA if domain matches, otherwise Firefox
+      # Open browser history URL via xdg-open (routes to default browser)
       set -euo pipefail
 
       URL="$1"
@@ -943,8 +942,7 @@ in
         exit 1
       fi
 
-      # Route through pwa-url-router for PWA detection
-      exec pwa-url-router "$URL"
+      exec ${pkgs.xdg-utils}/bin/xdg-open "$URL"
     '')
   ];
 

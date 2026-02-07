@@ -53,6 +53,7 @@ let
   aiTools = with pkgs; [
     goose-cli # Goose AI Agent CLI (from nixpkgs)
     openai # OpenAI Python CLI
+    playwright-test # Playwright CLI (codegen, test, inspector)
     # Note: gitingest is run on-demand via: uvx gitingest <repo-url>
     # This ensures we always use the latest version without pre-installation
     # See /etc/nixos/.claude/commands/gitingest.md for usage

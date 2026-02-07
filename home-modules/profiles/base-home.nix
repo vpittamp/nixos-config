@@ -105,7 +105,7 @@ in
   modules.tools.fzf-file-search.enable = true;  # Floating fzf file search
   modules.tools.docker.enable = true; # Docker with 1Password integration
   modules.tools.remoteKubeconfig.enable = true;
-  programs.pwa-url-router.enable = true;  # Feature 113: Route external URLs to PWAs by domain
+  programs.pwa-url-router.enable = false;  # Feature 113: DISABLED - using Chrome as default browser
 
   # VSCode profile configuration
   # All VSCode instances (including activity-aware launchers) use this profile

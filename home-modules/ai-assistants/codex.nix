@@ -23,7 +23,19 @@ let
   codexOtelInterceptorPort = 4319;
 
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
-  codexPackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
+  codexPackageRaw = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
+
+  # Fix missing libcap.so.2: patch RPATH on codex-raw binary so it finds libcap
+  # even when codex re-executes itself in a sandboxed subprocess (which strips LD_LIBRARY_PATH)
+  codexPackage = codexPackageRaw.overrideAttrs (old: {
+    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ pkgs.patchelf ];
+    postFixup = (old.postFixup or "") + ''
+      if [ -f $out/bin/codex-raw ]; then
+        patchelf --add-rpath "${pkgs.libcap.lib}/lib" $out/bin/codex-raw
+      fi
+    '';
+  });
+
   codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
     # Feature 125: Clear NODE_OPTIONS to prevent Claude Code's interceptor from loading
     # when Codex is run from within Claude Code's Bash tool
@@ -35,9 +47,6 @@ let
     unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
     unset OTEL_EXPORTER_OTLP_PROTOCOL
-
-    # Fix missing libcap.so.2 in codex-cli-nix native binary packaging
-    export LD_LIBRARY_PATH="${pkgs.libcap.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
     # Force frequent batch exports for real-time monitoring
     # OTEL_BLRP = Batch Log Record Processor settings (Rust SDK reads these)

@@ -38,24 +38,14 @@ sudo nixos-rebuild dry-build --flake .#wsl
 sudo nixos-rebuild switch --flake .#wsl
 ```
 
-#### For Hetzner Cloud
+#### For Ryzen Desktop
 ```bash
 # Test the configuration
-sudo nixos-rebuild dry-build --flake .#hetzner
+sudo nixos-rebuild dry-build --flake .#ryzen
 
 # Apply the configuration
-sudo nixos-rebuild switch --flake .#hetzner
+sudo nixos-rebuild switch --flake .#ryzen
 ```
-
-#### For Apple Silicon Mac
-```bash
-# Test the configuration (--impure required for firmware)
-sudo nixos-rebuild dry-build --flake .#m1 --impure
-
-# Apply the configuration
-sudo nixos-rebuild switch --flake .#m1 --impure
-```
-> **Note**: The `--impure` flag is required for M1 builds to access Asahi Linux firmware.
 
 #### For Containers
 ```bash
@@ -77,7 +67,7 @@ The configuration follows a modular, hierarchical design:
                │
 ┌──────────────▼──────────────────────┐
 │     configurations/*.nix            │  ← Target configs
-│  (hetzner, m1, wsl, container)      │
+│  (thinkpad, ryzen, kubevirt-sway)    │
 └──────────────┬──────────────────────┘
                │ imports
 ┌──────────────▼──────────────────────┐
@@ -99,7 +89,7 @@ The configuration follows a modular, hierarchical design:
 **Flake Organization (2025-11 Refactor):**
 - **`flake.nix`** - Main entry point (110 lines, uses flake-parts)
 - **`lib/`** - Common helper functions for consistency
-- **`nixos/`** - NixOS system configurations (hetzner-sway, m1)
+- **`nixos/`** - NixOS system configurations (thinkpad, ryzen, kubevirt-sway)
 - **`home/`** - Standalone Home Manager configs (macOS only)
 - **`packages/`** - Container and VM image builds
 - **`checks/`** - Flake test checks

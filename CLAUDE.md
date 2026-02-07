@@ -4,12 +4,12 @@
 
 ```bash
 # Test config (ALWAYS before applying)
-sudo nixos-rebuild dry-build --flake .#hetzner-sway  # Hetzner
-sudo nixos-rebuild dry-build --flake .#m1 --impure  # M1 Mac
+sudo nixos-rebuild dry-build --flake .#thinkpad     # ThinkPad
+sudo nixos-rebuild dry-build --flake .#ryzen        # Ryzen desktop
 sudo nixos-rebuild switch --flake .#<target>        # Apply
 ```
 
-**Targets**: `wsl` (Windows), `hetzner-sway` (remote), `m1` (Apple Silicon), containers
+**Targets**: `thinkpad`, `ryzen`, `kubevirt-sway`, `hetzner` (legacy), containers
 
 ## Directory Structure
 

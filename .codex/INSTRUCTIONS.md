@@ -19,9 +19,10 @@ bash -i -c "alias-name"
 ```
 
 ### NixOS Rebuild
-Use the `nh` (nix-helper) aliases for rebuilding:
-- `nh-hetzner` / `nh-hetzner-fresh` - Hetzner server
-- `nh-m1` / `nh-m1-fresh` - Apple Silicon Mac
+Primary targets: `thinkpad`, `ryzen`. Use `sudo nixos-rebuild switch --flake .#<target>`.
+
+Legacy `nh` (nix-helper) aliases also exist:
+- `nh-hetzner` / `nh-hetzner-fresh` - Hetzner server (legacy)
 - `nh-wsl` / `nh-wsl-fresh` - Windows Subsystem for Linux
 
 ### Project Management
