@@ -1553,8 +1553,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
         socket_path_str = os.environ.get("I3PM_DAEMON_SOCKET")
         socket_path = Path(socket_path_str) if socket_path_str else None
 
-        # Create daemon client with 2.0s timeout (per contracts/daemon-query.md)
-        client = DaemonClient(socket_path=socket_path, timeout=2.0)
+        # Create daemon client with 4.0s timeout (increased from 2.0s to accommodate
+        # large window trees with per-window /proc environ reads)
+        client = DaemonClient(socket_path=socket_path, timeout=4.0)
 
         # Connect to daemon
         await client.connect()

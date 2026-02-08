@@ -24,6 +24,7 @@ from . import window_filtering  # Feature 037: Window filtering utilities
 from .worktree_utils import parse_mark, parse_qualified_name, is_qualified_name  # Feature 101
 from .constants import ConfigPaths  # Feature 101
 from .config import atomic_write_json  # Feature 137: Atomic file writes
+from .services.window_filter import clear_pid_environ_cache
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class IPCServer:
         # Cache invalidated on any Sway event that modifies window/workspace state
         self._window_tree_cache: Optional[Dict[str, Any]] = None
         self._window_tree_cache_time: float = 0.0
-        self._window_tree_cache_ttl: float = 5.0  # Max cache age in seconds (fallback if invalidation missed)
+        self._window_tree_cache_ttl: float = 15.0  # Max cache age in seconds (fallback if invalidation missed)
 
         # Feature 123: Clients subscribed to state change events (for monitoring panel)
         self.state_change_subscribers: set[asyncio.StreamWriter] = set()
@@ -2291,11 +2292,13 @@ class IPCServer:
 
         Called by event handlers when window/workspace state changes.
         This forces the next get_window_tree() call to query Sway IPC fresh.
+        Also clears the PID environ cache since window state has changed.
         """
         if self._window_tree_cache is not None:
             logger.debug("[Feature 123] Window tree cache invalidated")
         self._window_tree_cache = None
         self._window_tree_cache_time = 0.0
+        clear_pid_environ_cache()
 
     async def notify_state_change(self, event_type: str = "state_changed") -> None:
         """Notify subscribed clients that state has changed.
@@ -2636,7 +2639,9 @@ class IPCServer:
                 # Get window class (X11 uses window_class, Wayland uses app_id)
                 window_class = node.window_class if hasattr(node, 'window_class') and node.window_class else (node.app_id if hasattr(node, 'app_id') else "")
 
-                # Read I3PM_* environment (single read reused for app_id + project metadata)
+                # Read I3PM_* environment for app_id and worktree metadata.
+                # Uses PID-level cache to avoid redundant /proc reads across windows
+                # sharing the same parent process.
                 env = {}
                 if hasattr(node, 'pid') and node.pid:
                     try:

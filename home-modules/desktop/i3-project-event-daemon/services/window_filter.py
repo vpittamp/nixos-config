@@ -15,7 +15,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 from datetime import datetime
 
 # Feature 091: Import performance optimization services
@@ -29,6 +29,17 @@ from .performance_tracker import PerformanceTrackerService, get_performance_trac
 from .window_tracer import get_tracer, TraceEventType
 
 logger = logging.getLogger(__name__)
+
+# PID environ cache: avoids re-reading /proc/<pid>/environ for the same PID
+# within a short window (e.g. during a single get_window_tree call).
+# Maps PID -> (timestamp, env_dict). TTL = 10 seconds.
+_pid_environ_cache: Dict[int, Tuple[float, Dict[str, str]]] = {}
+_PID_ENVIRON_CACHE_TTL = 10.0
+
+
+def clear_pid_environ_cache() -> None:
+    """Clear the PID environ cache. Called when window tree cache is invalidated."""
+    _pid_environ_cache.clear()
 
 
 @dataclass
@@ -128,6 +139,9 @@ def read_process_environ_with_fallback(pid: int, max_depth: int = 3) -> Dict[str
     up to parent process to find them (handles edge cases where child
     doesn't inherit environment).
 
+    Uses a short-TTL cache to avoid re-reading /proc/<pid>/environ for
+    the same PID within a single monitoring panel refresh cycle.
+
     Args:
         pid: Process ID
         max_depth: Maximum parent traversal depth (default 3)
@@ -135,6 +149,30 @@ def read_process_environ_with_fallback(pid: int, max_depth: int = 3) -> Dict[str
     Returns:
         Environment dictionary (may be empty if no I3PM vars found)
     """
+    # Check cache first
+    now = time.time()
+    cached = _pid_environ_cache.get(pid)
+    if cached is not None:
+        cache_time, cache_env = cached
+        if now - cache_time < _PID_ENVIRON_CACHE_TTL:
+            return cache_env
+
+    result = _read_process_environ_with_fallback_uncached(pid, max_depth)
+
+    # Cache the result (even empty dicts, to avoid re-traversing parents)
+    _pid_environ_cache[pid] = (now, result)
+
+    # Evict stale entries periodically (keep cache bounded)
+    if len(_pid_environ_cache) > 100:
+        stale_pids = [p for p, (t, _) in _pid_environ_cache.items() if now - t > _PID_ENVIRON_CACHE_TTL]
+        for p in stale_pids:
+            del _pid_environ_cache[p]
+
+    return result
+
+
+def _read_process_environ_with_fallback_uncached(pid: int, max_depth: int = 3) -> Dict[str, str]:
+    """Uncached implementation of read_process_environ_with_fallback."""
     current_pid = pid
     depth = 0
 
