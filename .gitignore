@@ -44,6 +44,8 @@ Thumbs.db
 *.bak
 *.backup
 
+# Claude Code
+.mcp.json
 # Claude Code tracing runtime artifacts
 /.claude-trace-context.json
 Trace-*.json
