@@ -1223,20 +1223,20 @@ let
     # MCP Inspector (CNOE local)
     {
       name = "MCP Inspector";
-      url = "https://mcp-inspector-proxy.cnoe.localtest.me:8443";
-      domain = "mcp-inspector-proxy.cnoe.localtest.me";
+      url = "https://mcp-inspector.cnoe.localtest.me:8443/?MCP_PROXY_PORT=8443";
+      domain = "mcp-inspector.cnoe.localtest.me";
       icon = iconPath "mcp-inspector.svg";
       description = "MCP Inspector - Visual testing and debugging tool for MCP servers";
       categories = "Development;Network;";
       keywords = "mcp;inspector;model;context;protocol;debug;test;server;ai;";
-      scope = "https://mcp-inspector-proxy.cnoe.localtest.me:8443/";
+      scope = "https://mcp-inspector.cnoe.localtest.me:8443/";
       ulid = "39ADZC4WY3Y4AKR1YVSZDR1NKQ";  # Generated 2026-02-11
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 114;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "mcp-inspector-proxy.cnoe.localtest.me" ];
+      routing_domains = [ "mcp-inspector.cnoe.localtest.me" ];
     }
   ];
 
