@@ -3,6 +3,31 @@
 let
   repoRoot = ../../.;
 
+  # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
+  # Installed into ~/.codex/skills/create-mcp-app
+  extApps = pkgs.fetchFromGitHub {
+    owner = "modelcontextprotocol";
+    repo = "ext-apps";
+    rev = "0bbbfee8c25e1217011c81b4bbd13c965ec6cb13";
+    hash = "sha256-RLdCfASQlf/Am96kYSaTFxpIJvIjItKypnvYDprKTGk=";
+  };
+  createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
+
+  codexSkillsDir = repoRoot + "/.codex/skills";
+  hasCodexSkillsDir = builtins.pathExists codexSkillsDir;
+  hasRepoCreateMcpAppSkill = hasCodexSkillsDir && builtins.pathExists (codexSkillsDir + "/create-mcp-app");
+
+  repoSkillEntries = if hasCodexSkillsDir then builtins.readDir codexSkillsDir else {};
+  repoSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") repoSkillEntries;
+  repoSkillHomeFiles = lib.mapAttrs'
+    (name: _:
+      lib.nameValuePair ".codex/skills/${name}" {
+        source = codexSkillsDir + "/${name}";
+        recursive = true;
+      }
+    )
+    repoSkillDirs;
+
   # Auto-import custom instructions from .codex/INSTRUCTIONS.md
   # This follows the same centralization pattern as Claude Code and Gemini CLI
   instructionsFile = repoRoot + "/.codex/INSTRUCTIONS.md";
@@ -62,6 +87,17 @@ let
 in
 
 {
+  # Install Codex skills into ~/.codex/skills/
+  # Repo-managed skills are linked individually so they remain editable in-tree.
+  home.file =
+    repoSkillHomeFiles
+    // (lib.optionalAttrs (!hasRepoCreateMcpAppSkill) {
+      ".codex/skills/create-mcp-app" = {
+        source = createMcpAppSkillDir;
+        recursive = true;
+      };
+    });
+
   # Codex - Lightweight coding agent (using native home-manager module with unstable package)
   programs.codex = {
     enable = true;

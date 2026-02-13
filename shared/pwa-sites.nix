@@ -1238,6 +1238,44 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "mcp-inspector.cnoe.localtest.me" ];
     }
+
+    # LibreChat (local)
+    {
+      name = "LibreChat";
+      url = "http://localhost:3080";
+      domain = "localhost";
+      icon = iconPath "librechat.svg";
+      description = "LibreChat - Open-source AI chat platform";
+      categories = "Development;Network;";
+      keywords = "librechat;ai;chat;llm;openai;anthropic;local;";
+      scope = "http://localhost:3080/";
+      ulid = "4VRKDPN8WG2M5T7X9Q1BJ3F6YH";  # Generated 2026-02-13
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 116;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing - localhost is too generic
+      routing_domains = [ ];  # Disabled - localhost:3080 would conflict with other local services
+    }
+
+    # Flowise
+    {
+      name = "Flowise";
+      url = "https://flowise.cnoe.localtest.me:8443";
+      domain = "flowise.cnoe.localtest.me";
+      icon = "/etc/nixos/assets/icons/flowise.svg";
+      description = "Flowise - Build AI Agents, Visually";
+      categories = "Development;Network;";
+      keywords = "flowise;ai;agent;flow;langchain;llm;chatbot;workflow;";
+      scope = "https://flowise.cnoe.localtest.me:8443/";
+      ulid = "36G226WSWG11H0T2ACVZ6FZXCN";  # Generated 2026-02-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 115;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "flowise.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites

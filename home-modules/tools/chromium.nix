@@ -51,9 +51,10 @@ in
   # Google Chrome browser configuration
   # Switched from Chromium to Chrome for Claude in Chrome compatibility
   # Claude in Chrome requires Google Chrome for full functionality
-  home.packages = [
-    pkgs.google-chrome
-  ];
+  home.packages =
+    [ pkgs.google-chrome ]
+    ++ lib.optionals (pkgs ? google-chrome-beta) [ pkgs.google-chrome-beta ]
+    ++ lib.optionals (pkgs ? google-chrome-unstable) [ pkgs.google-chrome-unstable ];
 
   # Native messaging host manifest for 1Password (Google Chrome)
   home.file.".config/google-chrome/NativeMessagingHosts/com.1password.1password.json" = {
@@ -130,6 +131,8 @@ EOF
   home.shellAliases = {
     chrome = "google-chrome-stable";
     browser = "google-chrome-stable";
+    chrome-beta = "google-chrome-beta";
+    chrome-dev = "google-chrome-unstable";
   };
 
   # Add cluster CA certificate to Chrome's NSS database for HTTPS trust

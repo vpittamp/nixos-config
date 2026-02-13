@@ -359,16 +359,25 @@ in
       fi
 
       # Claude wrappers: ensure scrollback in tmux by disabling alternate-screen per-window
+      # and prefer the Home Manager managed binary to avoid ~/.local shadowing.
       __claude_run() {
         local mode="$1"; shift || true
+        local claude_bin="${config.home.profileDirectory}/bin/claude"
+        if [ ! -x "$claude_bin" ]; then
+          claude_bin="$(type -P claude 2>/dev/null || true)"
+        fi
+        if [ -z "$claude_bin" ]; then
+          echo "claude not found in Home Manager profile or PATH" >&2
+          return 127
+        fi
         if [ -n "$TMUX" ]; then
           tmux setw alternate-screen off >/dev/null 2>&1 || true
           tmux setw @altscreen off >/dev/null 2>&1 || true
         fi
         case "$mode" in
-          continue) claude --continue --dangerously-skip-permissions "$@" ;;
-          resume)   claude --resume   --dangerously-skip-permissions "$@" ;;
-          *)        claude              --dangerously-skip-permissions "$@" ;;
+          continue) "$claude_bin" --continue --dangerously-skip-permissions "$@" ;;
+          resume)   "$claude_bin" --resume   --dangerously-skip-permissions "$@" ;;
+          *)        "$claude_bin"              --dangerously-skip-permissions "$@" ;;
         esac
       }
       cc()   { __claude_run continue  "$@"; }

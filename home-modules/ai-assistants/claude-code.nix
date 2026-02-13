@@ -3,6 +3,16 @@
 let
   repoRoot = ../../.;
 
+  # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
+  # Installed into ~/.claude/skills/create-mcp-app
+  extApps = pkgs.fetchFromGitHub {
+    owner = "modelcontextprotocol";
+    repo = "ext-apps";
+    rev = "0bbbfee8c25e1217011c81b4bbd13c965ec6cb13";
+    hash = "sha256-RLdCfASQlf/Am96kYSaTFxpIJvIjItKypnvYDprKTGk=";
+  };
+  createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
+
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
@@ -49,20 +59,33 @@ let
         (builtins.readFile (repoRoot + "/.claude/commands/${name}"))
     )
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
-  # Auto-import skills from .claude/skills/ directory
-  # Skills are symlinked to ~/.claude/skills/ for Claude Code to discover
+  # Auto-import skills from .claude/skills/ directory (repo-managed).
   skillsDir = repoRoot + "/.claude/skills";
-  hasSkills = builtins.pathExists skillsDir;
+  hasSkillsDir = builtins.pathExists skillsDir;
+  hasRepoCreateMcpAppSkill = hasSkillsDir && builtins.pathExists (skillsDir + "/create-mcp-app");
+
+  repoSkillEntries = if hasSkillsDir then builtins.readDir skillsDir else {};
+  repoSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") repoSkillEntries;
+  repoSkillHomeFiles = lib.mapAttrs'
+    (name: _:
+      lib.nameValuePair ".claude/skills/${name}" {
+        source = skillsDir + "/${name}";
+        recursive = true;
+      }
+    )
+    repoSkillDirs;
 in
 lib.mkIf enableClaudeCode {
-  # Symlink skills directory from repo to ~/.claude/skills/
-  # This centralizes skill management in version control
-  home.file = lib.optionalAttrs hasSkills {
-    ".claude/skills" = {
-      source = skillsDir;
-      recursive = true;
-    };
-  };
+  # Install skills into ~/.claude/skills/
+  # Repo-managed skills are linked individually so they remain editable in-tree.
+  home.file =
+    repoSkillHomeFiles
+    // (lib.optionalAttrs (!hasRepoCreateMcpAppSkill) {
+      ".claude/skills/create-mcp-app" = {
+        source = createMcpAppSkillDir;
+        recursive = true;
+      };
+    });
 
   # Patch Claude Code plugin scripts for NixOS compatibility
   # Problem: Plugins from the marketplace use #!/bin/bash which doesn't exist on NixOS

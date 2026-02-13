@@ -76,6 +76,7 @@ in
     ../tools/nix.nix
     ../tools/vscode.nix
     ../tools/gitkraken.nix
+    ../tools/postman.nix
     ../tools/kubernetes-apps.nix
     ../tools/remote-kubeconfig.nix
     ../tools/konsole-profiles.nix
@@ -84,6 +85,7 @@ in
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix
     ../ai-assistants/codex.nix
+    ../ai-assistants/copilot-cli.nix
     ../ai-assistants/gemini-cli.nix
     ../ai-assistants/nix-ai-help.nix
 

@@ -65,6 +65,10 @@ in
     (final: prev: {
       firefox = pkgs-unstable.firefox;
       firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
+
+      # Chrome 146 beta/dev channel (for testing features behind newer flags)
+      google-chrome-beta = prev.callPackage ../pkgs/google-chrome-beta.nix { };
+      google-chrome-unstable = prev.callPackage ../pkgs/google-chrome-unstable.nix { };
     })
     # Disable flaky tests for i3ipc Python package
     # The test_scratchpad test fails with ConnectionResetError in sandboxed builds
@@ -569,6 +573,30 @@ in
   # Automatic mounting of USB drives
   services.udisks2.enable = true;
   services.gvfs.enable = true;  # For GUI file managers
+
+  # ========== LIBRECHAT AI CHAT PLATFORM ==========
+  # Open-source AI chat UI with MongoDB backend
+  # Access at http://localhost:3080
+  services.librechat = {
+    enable = true;
+    enableLocalDB = true;  # Auto-provisions MongoDB
+
+    # Credentials file with secrets (CREDS_KEY, CREDS_IV, JWT_SECRET, JWT_REFRESH_SECRET)
+    # Generate with: for v in CREDS_KEY JWT_SECRET JWT_REFRESH_SECRET; do echo "$v=$(openssl rand -hex 32)"; done; echo "CREDS_IV=$(openssl rand -hex 16)"
+    credentialsFile = "/etc/librechat/credentials";
+
+    env = {
+      HOST = "0.0.0.0";
+      ALLOW_REGISTRATION = true;
+      # Trust K8s cluster CA for outbound HTTPS to *.cnoe.localtest.me services
+      NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
+    };
+
+    settings = {
+      version = "1.0.8";
+      cache = true;
+    };
+  };
 
   # System state version
   system.stateVersion = "25.11";
