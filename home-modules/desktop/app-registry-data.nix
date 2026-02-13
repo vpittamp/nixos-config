@@ -469,6 +469,22 @@ let
       description = "Moonlight game streaming client";
     })
 
+    # WS20: API Development (Postman)
+    (mkApp {
+      name = "postman";
+      display_name = "Postman";
+      command = "postman";
+      parameters = "";
+      scope = "global";
+      expected_class = "postman";
+      preferred_workspace = 20;
+      icon = "postman";
+      nix_package = "pkgs.postman";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "API development and testing platform";
+    })
+
     # Scratchpad Terminal (Feature 062, Feature 101)
     # Special floating terminal for quick project access
     # NOTE: Launched by daemon via Sway IPC, not through wrapper
