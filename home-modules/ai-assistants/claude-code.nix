@@ -479,6 +479,19 @@ lib.mkIf enableClaudeCode {
         ];
         disabled = true;
       };
+
+      # Mastra Docs MCP server - access Mastra's full documentation
+      # Provides tools for querying Mastra framework docs, examples, and API reference
+      # Enable interactively via `/mcp` command when working on Mastra projects
+      # See: https://mastra.ai/docs/getting-started/mcp-docs-server
+      mastra = {
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [
+          "-y"
+          "@mastra/mcp-docs-server@latest"
+        ];
+        disabled = true;
+      };
     } // lib.optionalAttrs enableChromiumMcpServers {
       # Chrome DevTools MCP server for debugging and performance (~17k tokens)
       # Only available on Linux where Chromium is available via Nix

@@ -1276,6 +1276,25 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "flowise.cnoe.localtest.me" ];
     }
+
+    # Mastra Playground
+    {
+      name = "Mastra Playground";
+      url = "https://mastra-playground.cnoe.localtest.me/";
+      domain = "mastra-playground.cnoe.localtest.me";
+      icon = "/etc/nixos/assets/icons/mastra-playground.svg";
+      description = "Mastra Playground - AI agent framework testing environment";
+      categories = "Development;Network;";
+      keywords = "mastra;ai;agent;playground;typescript;framework;llm;";
+      scope = "https://mastra-playground.cnoe.localtest.me/";
+      ulid = "34C8ASD2334ZVN4KP7JX1TJHPH";  # Generated 2026-02-14
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 78;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "mastra-playground.cnoe.localtest.me" ];
+    }
   ];
 
   # Filter and format sites

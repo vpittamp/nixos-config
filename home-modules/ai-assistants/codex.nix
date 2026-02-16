@@ -98,6 +98,50 @@ in
       };
     });
 
+  # Codex currently ignores skills whose `SKILL.md` is a symlink (home-manager typically
+  # materializes files as symlinks into the Nix store). After home.file links are in place,
+  # replace symlinked `SKILL.md` files with regular files so `codex /skills` can discover them.
+  #
+  # Also add minimal UI metadata for create-mcp-app (optional, but helps it look nicer in UIs).
+  home.activation.materializeCodexSkills = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    set -euo pipefail
+
+    SKILLS_ROOT="$HOME/.codex/skills"
+    if [ ! -d "$SKILLS_ROOT" ]; then
+      exit 0
+    fi
+
+    # Only touch user-installed skills; Codex manages `.system` itself.
+    for d in "$SKILLS_ROOT"/*; do
+      [ -d "$d" ] || continue
+      name="$(${pkgs.coreutils}/bin/basename "$d")"
+      [ "$name" = ".system" ] && continue
+
+      if [ -L "$d/SKILL.md" ]; then
+        target="$(${pkgs.coreutils}/bin/readlink -f "$d/SKILL.md" || true)"
+        if [ -n "$target" ] && [ -f "$target" ]; then
+          ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
+          ${pkgs.coreutils}/bin/install -m 0644 "$target" "$d/SKILL.md"
+        fi
+      fi
+    done
+
+    if [ -d "$SKILLS_ROOT/create-mcp-app" ]; then
+      ${pkgs.coreutils}/bin/mkdir -p "$SKILLS_ROOT/create-mcp-app/agents"
+
+      TMP="$(${pkgs.coreutils}/bin/mktemp)"
+      ${pkgs.coreutils}/bin/cat > "$TMP" <<'EOF'
+interface:
+  display_name: "Create MCP App"
+  short_description: "Scaffold MCP Apps (tool + UI resource) using @modelcontextprotocol/ext-apps patterns"
+EOF
+      if [ ! -f "$SKILLS_ROOT/create-mcp-app/agents/openai.yaml" ] || ! ${pkgs.diffutils}/bin/cmp -s "$TMP" "$SKILLS_ROOT/create-mcp-app/agents/openai.yaml"; then
+        ${pkgs.coreutils}/bin/install -m 0644 "$TMP" "$SKILLS_ROOT/create-mcp-app/agents/openai.yaml"
+      fi
+      ${pkgs.coreutils}/bin/rm -f "$TMP"
+    fi
+  '';
+
   # Codex - Lightweight coding agent (using native home-manager module with unstable package)
   programs.codex = {
     enable = true;
@@ -200,7 +244,22 @@ in
       # Note: Codex does NOT support a `disabled` flag for MCP servers
       # Servers are either defined (always active) or not defined (unavailable)
       # Only Linux is supported due to Chromium dependency
-      mcp_servers = lib.optionalAttrs enableChromiumMcpServers {
+      mcp_servers = {
+        # Mastra Docs MCP server - access Mastra's full documentation
+        # Provides tools for querying Mastra framework docs, examples, and API reference
+        # Enable via `codex mcp enable mastra-docs` when working on Mastra projects
+        # See: https://mastra.ai/docs/getting-started/mcp-docs-server
+        mastra-docs = {
+          command = "npx";
+          args = [
+            "-y"
+            "@mastra/mcp-docs-server@latest"
+          ];
+          enabled = false;
+          startup_timeout_sec = 30;
+          tool_timeout_sec = 60;
+        };
+      } // lib.optionalAttrs enableChromiumMcpServers {
         # Playwright MCP server for browser automation
         playwright = {
           command = "npx";

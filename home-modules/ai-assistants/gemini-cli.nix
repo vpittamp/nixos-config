@@ -3,6 +3,16 @@
 let
   repoRoot = ../../.;
 
+  # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
+  # Installed into ~/.gemini/skills/create-mcp-app so Gemini CLI can discover it as a user skill.
+  extApps = pkgs.fetchFromGitHub {
+    owner = "modelcontextprotocol";
+    repo = "ext-apps";
+    rev = "0bbbfee8c25e1217011c81b4bbd13c965ec6cb13";
+    hash = "sha256-RLdCfASQlf/Am96kYSaTFxpIJvIjItKypnvYDprKTGk=";
+  };
+  createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
+
   # Alias for backward compatibility with patterns using 'self'
   # All AI assistants now use repoRoot consistently
 
@@ -15,7 +25,122 @@ let
   };
 
   # Base gemini-cli package
-  baseGeminiCli = pkgs-unstable.gemini-cli or pkgs.gemini-cli;
+  # As of 2026-02-14, the latest stable release is v0.28.2.
+  #
+  # Note: We build our own package instead of `overrideAttrs` because the upstream
+  # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
+  baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
+    pname = "gemini-cli";
+    version = "0.28.2";
+
+    src = pkgs-unstable.fetchFromGitHub {
+      owner = "google-gemini";
+      repo = "gemini-cli";
+      tag = "v${finalAttrs.version}";
+      hash = "sha256-IOc4Y8U2J4Dpl0A5gfffAayiHKISlFiHU2qg61fR1Tw=";
+    };
+
+    nodejs = pkgs-unstable.nodejs_22;
+
+    npmDepsHash = "sha256-XfD+PmmeLsbb9rC7DCmqu08/+cXZpGewMN5olrHhH4M=";
+
+    dontPatchElf = pkgs-unstable.stdenv.isDarwin;
+
+    nativeBuildInputs =
+      [
+        pkgs-unstable.jq
+        pkgs-unstable.pkg-config
+      ]
+      ++ lib.optionals pkgs-unstable.stdenv.isDarwin [
+        # clang_21 breaks @vscode/vsce's optionalDependencies keytar
+        pkgs-unstable.clang_20
+      ];
+
+    buildInputs = [
+      pkgs-unstable.ripgrep
+      pkgs-unstable.libsecret
+    ];
+
+    preConfigure = ''
+      mkdir -p packages/generated
+      echo "export const GIT_COMMIT_INFO = { commitHash: '${finalAttrs.src.rev}' };" > packages/generated/git-commit.ts
+    '';
+
+    postPatch = ''
+      # Remove node-pty dependency from package.json (not needed, and causes build issues on Nix)
+      ${pkgs-unstable.jq}/bin/jq 'del(.optionalDependencies."node-pty")' package.json > package.json.tmp && mv package.json.tmp package.json
+      ${pkgs-unstable.jq}/bin/jq 'del(.optionalDependencies."node-pty")' packages/core/package.json > packages/core/package.json.tmp && mv packages/core/package.json.tmp packages/core/package.json
+
+      # Fix ripgrep path for SearchText: avoid downloading a dynamically-linked rg binary.
+      substituteInPlace packages/core/src/tools/ripGrep.ts \
+        --replace-fail "const rgPath = await ensureRgPath();" "const rgPath = '${lib.getExe pkgs-unstable.ripgrep}';"
+
+      # Fix OAuth browser launch on NixOS: gemini-cli uses the `open` npm package which prefers
+      # its bundled `xdg-open` script on Linux. In some environments that ends up launching the
+      # browser without the auth URL (opening the homepage). Use gemini-cli's secure launcher
+      # instead, which execs the system opener with proper argument passing.
+      substituteInPlace packages/core/src/code_assist/oauth2.ts \
+        --replace-fail "import open from 'open';" "import { openBrowserSecurely } from '../utils/secure-browser-launcher.js';"
+      substituteInPlace packages/core/src/code_assist/oauth2.ts \
+        --replace-fail "const childProcess = await open(webLogin.authUrl);" "await openBrowserSecurely(webLogin.authUrl);"
+      # Drop the childProcess error handler block (openBrowserSecurely throws on failure).
+      sed -i "/^      childProcess\\.on('error'/,/^      });/d" packages/core/src/code_assist/oauth2.ts
+
+      # Disable auto-update by default (auto-updating doesn't work with Nix-managed installs).
+      sed -i '/enableAutoUpdate: {/,/}/ s/default: true/default: false/' packages/cli/src/config/settingsSchema.ts
+      sed -i '/enableAutoUpdateNotification: {/,/}/ s/default: true/default: false/' packages/cli/src/config/settingsSchema.ts
+    '';
+
+    # Prevent npmDeps and python from getting into the closure
+    disallowedReferences = [
+      finalAttrs.npmDeps
+      pkgs-unstable.nodejs_22.python
+    ];
+
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/{bin,share/gemini-cli}
+
+      npm prune --omit=dev
+
+      # Remove python files to prevent python from getting into the closure
+      find node_modules -name "*.py" -delete
+      # keytar/build has gyp-mac-tool with a Python shebang that gets patched,
+      # creating a python3 reference in the closure
+      rm -rf node_modules/keytar/build
+
+      cp -r node_modules $out/share/gemini-cli/
+
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-core
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-a2a-server
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-test-utils
+      rm -f $out/share/gemini-cli/node_modules/gemini-cli-vscode-ide-companion
+      cp -r packages/cli $out/share/gemini-cli/node_modules/@google/gemini-cli
+      cp -r packages/core $out/share/gemini-cli/node_modules/@google/gemini-cli-core
+      cp -r packages/a2a-server $out/share/gemini-cli/node_modules/@google/gemini-cli-a2a-server
+
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-core/dist/docs/CONTRIBUTING.md
+
+      ln -s $out/share/gemini-cli/node_modules/@google/gemini-cli/dist/index.js $out/bin/gemini
+      chmod +x "$out/bin/gemini"
+
+      # Clean up any remaining references to npmDeps in node_modules metadata
+      find $out/share/gemini-cli/node_modules -name "package-lock.json" -delete
+      find $out/share/gemini-cli/node_modules -name ".package-lock.json" -delete
+      find $out/share/gemini-cli/node_modules -name "config.gypi" -delete
+
+      runHook postInstall
+    '';
+
+    meta = {
+      description = "AI agent that brings the power of Gemini directly into your terminal";
+      homepage = "https://github.com/google-gemini/gemini-cli";
+      license = lib.licenses.asl20;
+      platforms = lib.platforms.all;
+      mainProgram = "gemini";
+    };
+  });
 
   # Wrapped gemini-cli with IPv4-first fix for OAuth authentication
   # Issue: https://github.com/google-gemini/gemini-cli/issues/4984
@@ -100,11 +225,18 @@ let
   # Settings JSON for activation script - generated with dynamic chromium paths
   # This is written as a real file (not symlink) to allow gemini-cli to write credentials
   settingsJson = builtins.toJSON {
-    autoAccept = true;
-    preferredEditor = "nvim";
-    previewFeatures = true;
-    theme = "Default";
-    vimMode = true;
+    # Gemini CLI v0.28.x settings schema uses nested categories.
+    tools.autoAccept = true;
+    general = {
+      preferredEditor = "nvim";
+      previewFeatures = true;
+      vimMode = true;
+      # Gemini CLI auto-update doesn't work with Nix-managed installs.
+      enableAutoUpdate = false;
+      enableAutoUpdateNotification = false;
+    };
+    ui.theme = "Default";
+    model.name = "pro";
     # Feature 123: OpenTelemetry configuration for OTLP export
     # Sends telemetry to otel-ai-monitor (via our local interceptor).
     telemetry = {
@@ -150,6 +282,8 @@ in
   # Using activation script instead of home.file to allow gemini-cli to write credentials
   # Pattern from docker.nix, codex.nix, copilot-auth.nix
   home.activation.setupGeminiConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    set -euo pipefail
+
     GEMINI_DIR="$HOME/.gemini"
 
     # Create writable directory
@@ -165,21 +299,107 @@ ${settingsJson}
 EOF
       $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
     else
-      # Ensure telemetry config is present and points at our interceptor.
-      # Preserve user settings outside `.telemetry`, but enforce the OTLP endpoint so telemetry works.
+      # Ensure settings are compatible with modern gemini-cli schema and enforce
+      # a few critical defaults (telemetry endpoint + default model).
+      #
+      # We also migrate the legacy flat keys our older config used:
+      # - autoAccept -> tools.autoAccept
+      # - preferredEditor/previewFeatures/vimMode -> general.*
+      # - theme -> ui.theme
       WANT_ENDPOINT="http://127.0.0.1:4322"
-      if ! ${pkgs.jq}/bin/jq -e --arg ep "$WANT_ENDPOINT" '.telemetry.otlpEndpoint == $ep' "$GEMINI_DIR/settings.json" >/dev/null 2>&1; then
-        $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" '
-          .telemetry = (.telemetry // {}) |
-          .telemetry.enabled = true |
-          .telemetry.target = "local" |
-          .telemetry.otlpEndpoint = $ep |
-          .telemetry.logPrompts = (.telemetry.logPrompts // true)
-        ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
+      WANT_MODEL="pro"
+
+      $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" --arg model "$WANT_MODEL" '
+        # Migrate legacy top-level keys to the current schema.
+        (if (has("autoAccept") and (.tools.autoAccept? == null))
+         then (.tools = (.tools // {}) | .tools.autoAccept = .autoAccept)
+         else . end) |
+        (if (has("preferredEditor") and (.general.preferredEditor? == null))
+         then (.general = (.general // {}) | .general.preferredEditor = .preferredEditor)
+         else . end) |
+        (if (has("previewFeatures") and (.general.previewFeatures? == null))
+         then (.general = (.general // {}) | .general.previewFeatures = .previewFeatures)
+         else . end) |
+        (if (has("vimMode") and (.general.vimMode? == null))
+         then (.general = (.general // {}) | .general.vimMode = .vimMode)
+         else . end) |
+        (if (has("theme") and (.ui.theme? == null))
+         then (.ui = (.ui // {}) | .ui.theme = .theme)
+         else . end) |
+        del(.autoAccept, .preferredEditor, .previewFeatures, .vimMode, .theme) |
+
+        # Enforce telemetry routing to our local interceptor.
+        .telemetry = (.telemetry // {}) |
+        .telemetry.enabled = true |
+        .telemetry.target = "local" |
+        .telemetry.otlpEndpoint = $ep |
+        .telemetry.logPrompts = (.telemetry.logPrompts // true) |
+
+        # Make "Deep Think" the default: in gemini-cli, `pro` resolves to Gemini 3 Pro
+        # when preview features are enabled, otherwise falls back to Gemini 2.5 Pro.
+        .model = (.model // {}) |
+        .model.name = $model |
+
+        # Ensure reasonable defaults and disable auto-update (Nix-managed).
+        .general = (.general // {}) |
+        .general.enableAutoUpdate = false |
+        .general.enableAutoUpdateNotification = false |
+        .general.previewFeatures = (.general.previewFeatures // true) |
+        .general.vimMode = (.general.vimMode // true) |
+        .general.preferredEditor = (.general.preferredEditor // "nvim") |
+        .tools = (.tools // {}) |
+        .tools.autoAccept = (.tools.autoAccept // true) |
+        .ui = (.ui // {}) |
+        .ui.theme = (.ui.theme // "Default")
+      ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
+
+      if ! ${pkgs.diffutils}/bin/cmp -s "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"; then
         $DRY_RUN_CMD mv "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"
         $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
+      else
+        $DRY_RUN_CMD rm -f "$GEMINI_DIR/settings.json.tmp"
       fi
     fi
+  '';
+
+  # Install Gemini CLI Agent Skills into ~/.gemini/skills/
+  #
+  # Note: home-manager normally symlinks files into the Nix store, but Gemini/Codex skills
+  # discovery expects real files. We materialize SKILL.md and minimal UI metadata as regular
+  # files under ~/.gemini/skills so `gemini skills list` can discover them reliably.
+  home.activation.setupGeminiSkills = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    set -euo pipefail
+
+    GEMINI_DIR="$HOME/.gemini"
+    SKILLS_ROOT="$GEMINI_DIR/skills"
+    SKILL_DIR="$SKILLS_ROOT/create-mcp-app"
+
+    $DRY_RUN_CMD mkdir -p "$SKILL_DIR"
+    $DRY_RUN_CMD chmod 700 "$SKILLS_ROOT" || true
+
+    # Materialize SKILL.md as a real file (not a symlink).
+    if [ ! -f "$SKILL_DIR/SKILL.md" ] || [ -L "$SKILL_DIR/SKILL.md" ]; then
+      $DRY_RUN_CMD rm -f "$SKILL_DIR/SKILL.md"
+      $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "${createMcpAppSkillDir}/SKILL.md" "$SKILL_DIR/SKILL.md"
+    else
+      # Keep it up to date if the Nix-pinned source changes.
+      if ! ${pkgs.diffutils}/bin/cmp -s "$SKILL_DIR/SKILL.md" "${createMcpAppSkillDir}/SKILL.md"; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "${createMcpAppSkillDir}/SKILL.md" "$SKILL_DIR/SKILL.md"
+      fi
+    fi
+
+    # Optional UI metadata file (improves how the skill appears in some UIs).
+    $DRY_RUN_CMD mkdir -p "$SKILL_DIR/agents"
+    TMP="$(${pkgs.coreutils}/bin/mktemp)"
+    ${pkgs.coreutils}/bin/cat > "$TMP" <<'EOF'
+interface:
+  display_name: "Create MCP App"
+  short_description: "Scaffold MCP Apps (tool + UI resource) using @modelcontextprotocol/ext-apps patterns"
+EOF
+    if [ ! -f "$SKILL_DIR/agents/openai.yaml" ] || ! ${pkgs.diffutils}/bin/cmp -s "$TMP" "$SKILL_DIR/agents/openai.yaml"; then
+      $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "$TMP" "$SKILL_DIR/agents/openai.yaml"
+    fi
+    $DRY_RUN_CMD rm -f "$TMP"
   '';
 
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
@@ -192,7 +412,7 @@ EOF
     # - gemini-3-flash-preview (Gemini 3 Flash - fast, 78% SWE-bench)
     # - gemini-3-pro-preview-11-2025 (Gemini 3 Pro - complex tasks)
     # - gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-    defaultModel = "gemini-3-flash-preview";
+    defaultModel = "pro";
 
     # NOTE: settings are NOT managed here to allow credential persistence
     # Settings are written via home.activation.setupGeminiConfig as a real file
