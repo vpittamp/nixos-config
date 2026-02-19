@@ -292,9 +292,12 @@ class Project(BaseModel):
     @field_validator('name')
     @classmethod
     def validate_name(cls, v: str) -> str:
-        """Validate project name is alphanumeric with hyphens/underscores."""
-        if not re.match(r'^[a-z0-9_-]+$', v):
-            raise ValueError("Project name must be lowercase alphanumeric with hyphens/underscores")
+        """Validate project name for both legacy IDs and i3pm worktree IDs."""
+        if not re.match(r'^[A-Za-z0-9._/-]+(?::[A-Za-z0-9._/-]+)?$', v):
+            raise ValueError(
+                "Project name must be a valid legacy/project worktree identifier "
+                "(letters, digits, ., _, -, /, optional :branch)"
+            )
         return v
 
     @field_validator('directory')

@@ -47,6 +47,7 @@ let
 
   inherit (scripts)
     monitoringDataScript wrapperScript toggleScript toggleDockModeScript
+    refreshProjectsDataScript monitoringPanelHealthGuardScript monitoringPanelSmokeTestScript
     monitorPanelTabScript monitorPanelGetViewScript monitorPanelIsProjectsScript
     monitorPanelNavScript swayNCToggleScript restartServiceScript
     projectCrudScript projectEditOpenScript projectEditSaveScript
@@ -68,7 +69,7 @@ let
     fetchWindowEnvScript openLangfuseTraceScript handleKeyScript pulsePhaseScript;
 
   mainYuck = import ./yuck/main.yuck.nix {
-    inherit primaryOutput toggleDockModeScript;
+    inherit primaryOutput toggleDockModeScript refreshProjectsDataScript;
     panelWidth = cfg.panelWidth;
   };
 
@@ -123,6 +124,9 @@ in
       monitoringDataScript
       toggleScript
       toggleDockModeScript
+      refreshProjectsDataScript
+      monitoringPanelHealthGuardScript
+      monitoringPanelSmokeTestScript
       monitorPanelTabScript
       monitorPanelGetViewScript
       monitorPanelIsProjectsScript
@@ -200,6 +204,35 @@ in
 
       Install = {
         WantedBy = [ "sway-session.target" ];
+      };
+    };
+
+    systemd.user.services.eww-monitoring-panel-health-guard = {
+      Unit = {
+        Description = "Auto-heal guard for Eww Monitoring Panel";
+        After = [ "eww-monitoring-panel.service" ];
+      };
+
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${monitoringPanelHealthGuardScript}/bin/eww-monitoring-panel-health-guard";
+      };
+    };
+
+    systemd.user.timers.eww-monitoring-panel-health-guard = {
+      Unit = {
+        Description = "Periodic auto-heal checks for Eww Monitoring Panel";
+      };
+
+      Timer = {
+        OnBootSec = "2m";
+        OnUnitActiveSec = "2m";
+        RandomizedDelaySec = "20s";
+        Unit = "eww-monitoring-panel-health-guard.service";
+      };
+
+      Install = {
+        WantedBy = [ "timers.target" ];
       };
     };
   };

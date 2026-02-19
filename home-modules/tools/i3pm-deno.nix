@@ -25,6 +25,12 @@ let
       mkdir -p $out/share/i3pm
       cp -r * $out/share/i3pm/
 
+      # Ensure remote worktree command sources are packaged.
+      if [ ! -f "$out/share/i3pm/src/commands/worktree/remote.ts" ]; then
+        echo "ERROR: missing src/commands/worktree/remote.ts in i3pm package output" >&2
+        exit 1
+      fi
+
       mkdir -p $out/bin
 
       # Main i3pm CLI (v2.7.1 - fixed app_id nullable validation)

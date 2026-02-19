@@ -921,8 +921,10 @@ def resolve_icon(app_id: str, window_class: str = "") -> str:
     return ""
 
 # Configure logging (stderr only - stdout is for JSON)
+_log_level_name = os.environ.get("I3PM_MONITORING_DATA_LOG_LEVEL", "WARNING").upper()
+_log_level = getattr(logging, _log_level_name, logging.WARNING)
 logging.basicConfig(
-    level=logging.INFO,
+    level=_log_level,
     format="[%(asctime)s] %(levelname)s: %(message)s",
     stream=sys.stderr
 )
@@ -1873,6 +1875,7 @@ def load_discovered_repositories() -> Dict[str, List[Dict[str, Any]]]:
         Dict with "repositories" list (bare repos with worktrees nested)
     """
     repos_file = Path.home() / ".config" / "i3" / "repos.json"
+    remote_profiles = load_worktree_remote_profiles()
 
     if not repos_file.exists():
         logger.debug("Feature 100: No repos.json found, skipping bare repo discovery")
@@ -1907,12 +1910,78 @@ def load_discovered_repositories() -> Dict[str, List[Dict[str, Any]]]:
                 wt["parent_repo"] = repo["qualified_name"]
                 wt["directory_display"] = wt["path"].replace(str(Path.home()), "~")
 
+                # Feature 087: Overlay optional SSH remote profile for each worktree.
+                remote_profile = remote_profiles.get(wt["qualified_name"])
+                wt["remote"] = remote_profile if remote_profile else None
+                wt["remote_enabled"] = remote_profile is not None
+                if remote_profile:
+                    remote_dir = str(remote_profile.get("remote_dir", ""))
+                    wt["remote_directory_display"] = remote_dir.replace(str(Path.home()), "~")
+                    wt["remote_target"] = (
+                        f"{remote_profile.get('user', '')}@"
+                        f"{remote_profile.get('host', '')}:"
+                        f"{remote_profile.get('port', 22)}"
+                    )
+                else:
+                    wt["remote_directory_display"] = ""
+                    wt["remote_target"] = ""
+
         logger.debug(f"Feature 100: Loaded {len(repositories)} discovered bare repositories")
         return {"repositories": repositories, "last_discovery": last_discovery}
 
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 100: Failed to load repos.json: {e}")
         return {"repositories": [], "last_discovery": None}
+
+
+def load_worktree_remote_profiles() -> Dict[str, Dict[str, Any]]:
+    """Load enabled worktree SSH remote profiles keyed by qualified_name."""
+    profiles_file = Path.home() / ".config" / "i3" / "worktree-remote-profiles.json"
+    if not profiles_file.exists():
+        return {}
+
+    try:
+        with open(profiles_file, "r") as f:
+            data = json.load(f)
+
+        raw_profiles = data.get("profiles", {})
+        if not isinstance(raw_profiles, dict):
+            return {}
+
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for qualified_name, profile in raw_profiles.items():
+            if not isinstance(qualified_name, str) or not isinstance(profile, dict):
+                continue
+
+            enabled_raw = profile.get("enabled", True)
+            if isinstance(enabled_raw, str):
+                enabled = enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+            else:
+                enabled = bool(enabled_raw)
+            if not enabled:
+                continue
+
+            remote_dir = str(profile.get("remote_dir") or profile.get("working_dir") or "").strip()
+            if not remote_dir:
+                continue
+
+            try:
+                port = int(profile.get("port", 22))
+            except (TypeError, ValueError):
+                port = 22
+
+            normalized[qualified_name] = {
+                "enabled": True,
+                "host": str(profile.get("host") or "ryzen").strip(),
+                "user": str(profile.get("user") or os.environ.get("USER", "")).strip(),
+                "port": port,
+                "remote_dir": remote_dir,
+            }
+
+        return normalized
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Feature 087: Failed to load worktree remote profiles: {e}")
+        return {}
 
 
 async def query_projects_data() -> Dict[str, Any]:
@@ -1936,18 +2005,30 @@ async def query_projects_data() -> Dict[str, Any]:
         last_discovery = discovered_repos.get("last_discovery")
 
         # Get active project (uses qualified name like vpittamp/nixos:main)
+        # Prefer daemon query to avoid spawning i3pm/deno every poll cycle.
         active_project = None
         try:
-            result = subprocess.run(
-                ["i3pm", "project", "current"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            if result.returncode == 0:
-                active_project = result.stdout.strip()
-        except subprocess.TimeoutExpired:
-            pass
+            socket_path_str = os.environ.get("I3PM_DAEMON_SOCKET")
+            socket_path = Path(socket_path_str) if socket_path_str else None
+            daemon_client = DaemonClient(socket_path=socket_path, timeout=2.0)
+            await daemon_client.connect()
+            try:
+                active_project = await daemon_client.get_active_project()
+            finally:
+                await daemon_client.close()
+        except Exception:
+            # Fallback for edge cases where daemon query is temporarily unavailable.
+            try:
+                result = subprocess.run(
+                    ["i3pm", "project", "current"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if result.returncode == 0:
+                    active_project = result.stdout.strip()
+            except subprocess.TimeoutExpired:
+                pass
 
         # Enhance repositories with UI fields
         for repo in repositories:
@@ -1968,6 +2049,27 @@ async def query_projects_data() -> Dict[str, Any]:
                 wt["is_active"] = (active_project == wt_qualified)
                 wt["display_name"] = wt["branch"]
                 wt["directory_display"] = wt.get("path", "").replace(str(Path.home()), "~")
+                wt["remote_enabled"] = bool(wt.get("remote_enabled", False))
+
+                remote_profile = wt.get("remote")
+                if isinstance(remote_profile, dict) and wt["remote_enabled"]:
+                    remote_dir = str(remote_profile.get("remote_dir", ""))
+                    wt["remote_directory_display"] = remote_dir.replace(str(Path.home()), "~")
+                    wt["remote_target"] = (
+                        f"{remote_profile.get('user', '')}@"
+                        f"{remote_profile.get('host', '')}:"
+                        f"{remote_profile.get('port', 22)}"
+                    )
+                    wt["remote_host"] = remote_profile.get("host", "")
+                    wt["remote_user"] = remote_profile.get("user", "")
+                    wt["remote_port"] = remote_profile.get("port", 22)
+                else:
+                    wt["remote"] = None
+                    wt["remote_directory_display"] = ""
+                    wt["remote_target"] = ""
+                    wt["remote_host"] = ""
+                    wt["remote_user"] = ""
+                    wt["remote_port"] = 22
 
                 # Feature 109: Parse branch number from branch name (e.g., "108-show-worktree" -> "108")
                 branch = wt.get("branch", "")

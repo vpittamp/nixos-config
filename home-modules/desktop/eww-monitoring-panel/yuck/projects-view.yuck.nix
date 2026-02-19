@@ -1,4 +1,4 @@
-{ pkgs, config, toggleExpandAllScript, projectCreateOpenScript, toggleProjectExpandedScript, worktreeCreateOpenScript, worktreeDeleteOpenScript, switchProjectScript, ... }:
+{ pkgs, config, toggleExpandAllScript, projectCreateOpenScript, refreshProjectsDataScript, toggleProjectExpandedScript, worktreeCreateOpenScript, worktreeDeleteOpenScript, switchProjectScript, ... }:
 
 let
   # Full path to i3pm (user profile binary, not in standard PATH for EWW onclick commands)
@@ -31,6 +31,11 @@ in
             :onclick "${toggleExpandAllScript}/bin/toggle-expand-all-projects"
             :tooltip {projects_all_expanded ? "Collapse all" : "Expand all"}
             {projects_all_expanded ? "󰅀" : "󰅂"})
+          (button
+            :class "header-icon-button refresh-projects-btn"
+            :onclick "${refreshProjectsDataScript}/bin/refresh-projects-data &"
+            :tooltip "Refresh projects"
+            "󰑐")
           (button
             :class "header-icon-button new-project-btn"
             :onclick "${projectCreateOpenScript}/bin/project-create-open"
@@ -208,7 +213,7 @@ in
       :class {"worktree-card-wrapper" + (worktree.is_main ? " is-main-worktree" : "")}
       (eventbox
         :cursor "pointer"
-        :onclick "${switchProjectScript}/bin/switch-project-action ''${worktree.qualified_name}"
+        :onclick "${switchProjectScript}/bin/switch-project-action ''${worktree.qualified_name} &"
         :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
         :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
         (box
@@ -255,6 +260,11 @@ in
                 :limit-width 15
                 :text {" @ " + (worktree.commit ?: "unknown")})
               (label
+                :class "badge badge-remote"
+                :visible {worktree.remote_enabled ?: false}
+                :text " SSH "
+                :tooltip {"Remote: " + (worktree.remote_target ?: "") + ((worktree.remote_directory_display ?: "") != "" ? " • " + (worktree.remote_directory_display ?: "") : "")})
+              (label
                 :class "git-conflict"
                 :visible {worktree.git_has_conflicts ?: false}
                 :text " ''${worktree.git_conflict_indicator}"
@@ -296,12 +306,12 @@ in
                 :halign "start"
                 :limit-width 35
                 :truncate true
-                :text "''${worktree.directory_display}"
-                :tooltip "''${worktree.path}")
+                :text {worktree.remote_enabled ?: false ? (worktree.remote_directory_display ?: worktree.directory_display) : worktree.directory_display}
+                :tooltip {worktree.remote_enabled ?: false ? ("Remote: " + (worktree.remote.remote_dir ?: "") + "\nLocal: " + (worktree.path ?: "")) : (worktree.path ?: "")})
               (eventbox
                 :class {"copy-btn-container" + (hover_worktree_name == worktree.qualified_name ? " visible" : "")}
                 :cursor "pointer"
-                :onclick "echo -n '#{worktree.path}' | wl-copy && notify-send -t 1500 'Copied' '#{worktree.directory_display}'"
+                :onclick "echo -n '#{worktree.remote_enabled ? (worktree.remote.remote_dir ?: worktree.path) : worktree.path}' | wl-copy && notify-send -t 1500 'Copied' '#{worktree.remote_enabled ? (worktree.remote_directory_display ?: worktree.directory_display) : worktree.directory_display}'"
                 :tooltip "Copy directory path"
                 (label
                   :class "copy-btn"

@@ -22,10 +22,17 @@ let
   # Feature 110: Pulsating animation phase toggle (0/1)
   pulsePhaseScript = pkgs.writeShellScriptBin "eww-monitoring-panel-pulse-phase" ''
     #!${pkgs.bash}/bin/bash
-    STATE_FILE="/tmp/eww-monitoring-panel-pulse-state"
-    CURRENT=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
-    
-    if [ "$CURRENT" -eq 0 ]; then
+    set -euo pipefail
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    STATE_FILE="$RUNTIME_DIR/eww-monitoring-panel-pulse-state"
+    CURRENT=$(${pkgs.coreutils}/bin/cat "$STATE_FILE" 2>/dev/null || echo 0)
+
+    case "$CURRENT" in
+      0|1) ;;
+      *) CURRENT=0 ;;
+    esac
+
+    if [ "$CURRENT" = "0" ]; then
       echo 1
       echo 1 > "$STATE_FILE"
     else

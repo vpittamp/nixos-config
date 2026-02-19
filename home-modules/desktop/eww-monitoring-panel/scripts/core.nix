@@ -67,22 +67,19 @@ let
       fi
     fi
 
-    # Open the appropriate window based on saved dock mode
-    # Note: panel_dock_mode is read from state file via defpoll, no update needed
-    # IMPORTANT: Run eww open in background - it can hang indefinitely due to IPC issues
-    # (eww open should exit immediately but sometimes doesn't, causing duplicate processes)
+    # Open exactly one panel window to prevent duplicate widgets.
+    # Always close both window variants first to avoid transient double-panel
+    # rendering during startup/reload races.
     if [[ "$DOCK_MODE" == "docked" ]]; then
-      $TIMEOUT 5s $EWW --config "$CONFIG" open monitoring-panel-docked &
+      TARGET_WINDOW="monitoring-panel-docked"
     else
-      $TIMEOUT 5s $EWW --config "$CONFIG" open monitoring-panel-overlay &
+      TARGET_WINDOW="monitoring-panel-overlay"
     fi
-    # Wait briefly for window to open, but don't block on the eww open command
-    ${pkgs.coreutils}/bin/sleep 0.5
 
-    # Re-sync stack index (workaround for eww #1192: index resets on reopen)
-    ${pkgs.coreutils}/bin/sleep 0.2
-    IDX=$($EWW --config "$CONFIG" get current_view_index 2>/dev/null || echo 0)
-    $EWW --config "$CONFIG" update current_view_index=$IDX 2>/dev/null || true
+    # Close both window variants defensively, then open only the target mode.
+    $EWW --config "$CONFIG" close monitoring-panel-overlay >/dev/null 2>&1 || true
+    $EWW --config "$CONFIG" close monitoring-panel-docked >/dev/null 2>&1 || true
+    $EWW --config "$CONFIG" open "$TARGET_WINDOW" >/dev/null 2>&1 || true
 
     # Feature 125: Toggle handler - called when SIGUSR1 received
     # SOLUTION: Stop service to hide (releases struts), start to show
@@ -95,11 +92,12 @@ let
     trap toggle_panel SIGUSR1
 
     # Feature 125: Mode toggle handler - called when SIGUSR2 received
-    # SOLUTION: Restart entire service to switch modes reliably
-    # eww's auto-daemon spawning makes close+open unreliable, so we restart cleanly
+    # Switch modes in-place to avoid restart races that can briefly render both
+    # panel windows.
     toggle_dock_mode() {
       # Read current mode from state file
       local current_mode="docked"
+      local target_window="monitoring-panel-docked"
       if [[ -f "$DOCK_MODE_FILE" ]]; then
         local saved=$(${pkgs.coreutils}/bin/cat "$DOCK_MODE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')
         [[ "$saved" == "overlay" ]] && current_mode="overlay"
@@ -108,12 +106,16 @@ let
       # Toggle the mode in state file
       if [[ "$current_mode" == "overlay" ]]; then
         ${pkgs.coreutils}/bin/printf '%s' "docked" > "$DOCK_MODE_FILE"
+        target_window="monitoring-panel-docked"
       else
         ${pkgs.coreutils}/bin/printf '%s' "overlay" > "$DOCK_MODE_FILE"
+        target_window="monitoring-panel-overlay"
       fi
 
-      # Restart service - this exits the current wrapper, systemd restarts it with new mode
-      exec ${pkgs.systemd}/bin/systemctl --user restart eww-monitoring-panel.service
+      # Enforce single-window invariant in the running daemon.
+      $EWW --config "$CONFIG" close monitoring-panel-overlay >/dev/null 2>&1 || true
+      $EWW --config "$CONFIG" close monitoring-panel-docked >/dev/null 2>&1 || true
+      $EWW --config "$CONFIG" open "$target_window" >/dev/null 2>&1 || true
     }
     trap toggle_dock_mode SIGUSR2
 
@@ -131,8 +133,12 @@ let
     # This avoids eww daemon auto-spawn issues with eww open --toggle
 
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
+    FLOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-toggle.flock"
     LOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-toggle.lock"
     PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
+    exec 9>"$FLOCK_FILE"
+    ${pkgs.util-linux}/bin/flock -n 9 || exit 0
 
     # Debounce: prevent rapid toggling
     if [[ -f "$LOCK_FILE" ]]; then
@@ -169,8 +175,12 @@ let
     # This avoids eww auto-starting new daemons when commands fail to connect
 
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
+    FLOCK_FILE="$RUNTIME_DIR/panel-dock-toggle.flock"
     PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
     LOCK_FILE="$RUNTIME_DIR/panel-dock-toggle.lock"
+    exec 9>"$FLOCK_FILE"
+    ${pkgs.util-linux}/bin/flock -n 9 || exit 0
 
     # Debounce: prevent rapid toggling
     if [[ -f "$LOCK_FILE" ]]; then
@@ -194,6 +204,129 @@ let
         kill -SIGUSR2 "$WRAPPER_PID"
       fi
     fi
+  '';
+
+  # Refresh projects tab data on-demand to avoid high-frequency large JSON updates.
+  refreshProjectsDataScript = pkgs.writeShellScriptBin "refresh-projects-data" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    EWW="${pkgs.eww}/bin/eww"
+    CONFIG="$HOME/.config/eww-monitoring-panel"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
+    FLOCK_FILE="$RUNTIME_DIR/refresh-projects-data.flock"
+    exec 9>"$FLOCK_FILE"
+    ${pkgs.util-linux}/bin/flock -n 9 || exit 0
+
+    PROJECTS_JSON="$(${monitoringDataScript}/bin/monitoring-data-backend --mode projects 2>/dev/null || echo '{"status":"error","discovered_repositories":[],"repo_count":0,"worktree_count":0,"active_project":null,"error":"Failed to refresh projects data"}')"
+    "$EWW" --config "$CONFIG" update "projects_data=$PROJECTS_JSON" >/dev/null 2>&1 || true
+  '';
+
+  monitoringPanelHealthGuardScript = pkgs.writeShellScriptBin "eww-monitoring-panel-health-guard" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    SERVICE="eww-monitoring-panel.service"
+    WINDOW="''${EWW_MONITORING_GUARD_WINDOW:-5 minutes ago}"
+    THRESHOLD="''${EWW_MONITORING_GUARD_THRESHOLD:-4}"
+    COOLDOWN_SECONDS="''${EWW_MONITORING_GUARD_COOLDOWN_SECONDS:-600}"
+    STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
+    STAMP_FILE="$STATE_DIR/health-guard-last-restart"
+    LOCK_FILE="$STATE_DIR/health-guard.flock"
+
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+    exec 9>"$LOCK_FILE"
+    ${pkgs.util-linux}/bin/flock -n 9 || exit 0
+
+    if ! ${pkgs.systemd}/bin/systemctl --user is-active "$SERVICE" >/dev/null 2>&1; then
+      exit 0
+    fi
+
+    ERROR_COUNT="$(${pkgs.systemd}/bin/journalctl --user -u "$SERVICE" --since "$WINDOW" --no-pager 2>/dev/null \
+      | ${pkgs.gnugrep}/bin/grep -c 'Failed to send success response from application thread' || true)"
+
+    if [[ -z "$ERROR_COUNT" || "$ERROR_COUNT" -lt "$THRESHOLD" ]]; then
+      exit 0
+    fi
+
+    NOW="$(${pkgs.coreutils}/bin/date +%s)"
+    LAST_RESTART=0
+    if [[ -f "$STAMP_FILE" ]]; then
+      LAST_RESTART="$(${pkgs.coreutils}/bin/cat "$STAMP_FILE" 2>/dev/null || echo 0)"
+    fi
+    AGE=$((NOW - LAST_RESTART))
+
+    if [[ "$AGE" -lt "$COOLDOWN_SECONDS" ]]; then
+      echo "health-guard: threshold hit ($ERROR_COUNT) but cooldown active ($AGE < $COOLDOWN_SECONDS)" \
+        | ${pkgs.systemd}/bin/systemd-cat -t eww-monitoring-panel-health-guard
+      exit 0
+    fi
+
+    echo "$NOW" > "$STAMP_FILE"
+    echo "health-guard: restarting $SERVICE after $ERROR_COUNT errors in window '$WINDOW'" \
+      | ${pkgs.systemd}/bin/systemd-cat -t eww-monitoring-panel-health-guard
+    ${pkgs.systemd}/bin/systemctl --user restart "$SERVICE"
+  '';
+
+  monitoringPanelSmokeTestScript = pkgs.writeShellScriptBin "monitoring-panel-smoke-test" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    DURATION="''${1:-60}"
+    EWW="${pkgs.eww}/bin/eww"
+    CONFIG="$HOME/.config/eww-monitoring-panel"
+    SERVICE="eww-monitoring-panel.service"
+
+    count_windows() {
+      local windows count
+      windows="$($EWW --config "$CONFIG" active-windows 2>/dev/null || true)"
+      count=0
+      while IFS= read -r line; do
+        [[ "$line" == monitoring-panel-* ]] && count=$((count + 1))
+      done <<< "$windows"
+      echo "$count"
+    }
+
+    assert_single_window() {
+      local label count
+      label="$1"
+      count="$(count_windows)"
+      if [[ "$count" -ne 1 ]]; then
+        echo "Smoke test failed ($label): expected 1 monitoring panel window, got $count" >&2
+        $EWW --config "$CONFIG" active-windows 2>/dev/null || true
+        exit 1
+      fi
+    }
+
+    ${pkgs.systemd}/bin/systemctl --user start "$SERVICE"
+    ${pkgs.coreutils}/bin/sleep 2
+    assert_single_window "initial"
+
+    toggle-panel-dock-mode >/dev/null 2>&1 || true
+    ${pkgs.coreutils}/bin/sleep 2
+    assert_single_window "after first dock toggle"
+
+    toggle-panel-dock-mode >/dev/null 2>&1 || true
+    ${pkgs.coreutils}/bin/sleep 2
+    assert_single_window "after second dock toggle"
+
+    monitor-panel-tab 1 >/dev/null 2>&1 || true
+    refresh-projects-data >/dev/null 2>&1 || true
+    ${pkgs.coreutils}/bin/sleep 2
+    assert_single_window "after projects refresh"
+
+    START="$(${pkgs.coreutils}/bin/date --iso-8601=seconds)"
+    ${pkgs.coreutils}/bin/sleep "$DURATION"
+    ERROR_COUNT="$(${pkgs.systemd}/bin/journalctl --user -u "$SERVICE" --since "$START" --no-pager 2>/dev/null \
+      | ${pkgs.gnugrep}/bin/grep -c 'Failed to send success response from application thread' || true)"
+
+    if [[ -n "$ERROR_COUNT" && "$ERROR_COUNT" -gt 0 ]]; then
+      echo "Smoke test failed: found $ERROR_COUNT channel-closed errors in $DURATION seconds" >&2
+      exit 1
+    fi
+
+    echo "Smoke test passed: single-window invariant holds and no channel-closed errors in $DURATION seconds."
   '';
 
   # Wrapper script: Switch monitoring panel tab by index
@@ -224,6 +357,11 @@ let
 
     # Run sequentially with --kill-after to prevent orphans from rapid tab switching
     $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" || true
+
+    # Refresh projects payload when entering Projects tab.
+    if [[ "$INDEX" == "1" ]]; then
+      ${refreshProjectsDataScript}/bin/refresh-projects-data >/dev/null 2>&1 &
+    fi
   '';
 
   # Wrapper script: Get current monitoring panel view index
@@ -386,6 +524,7 @@ let
 in
 {
   inherit monitoringDataScript wrapperScript toggleScript toggleDockModeScript
+          refreshProjectsDataScript monitoringPanelHealthGuardScript monitoringPanelSmokeTestScript
           monitorPanelTabScript monitorPanelGetViewScript monitorPanelIsProjectsScript
           swayNCToggleScript restartServiceScript monitorPanelNavScript handleKeyScript;
 }

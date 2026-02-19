@@ -68,7 +68,7 @@ let
       (image :path icon :image-width 28 :image-height 28)
       (label :class "quick-action-label" :text label))))
 
-(defwidget quick-panel []
+(defwidget quick-panel-content []
   (box :class "quick-panel"
        :orientation "v"
        :spacing 16
@@ -103,7 +103,7 @@ let
         (quick-action-button :label "Lock" :icon "${icons.lock}" :command "swaylock -f"))
       (box :spacing 10
         (quick-action-button :label "Suspend" :icon "${icons.suspend}" :command "systemctl suspend")
-        (quick-action-button :label "Close Panel" :icon "${icons.lock}" :command "toggle-quick-panel"))))
+        (quick-action-button :label "Close Panel" :icon "${icons.lock}" :command "toggle-quick-panel")))))
 
 (defwindow quick-panel
   :monitor "${if isHeadless then "HEADLESS-1" else if isRyzen then "DP-1" else "eDP-1"}"
@@ -115,7 +115,7 @@ let
   :stacking "overlay"
   :focusable true
   :exclusive false
-  (quick-panel))
+  (quick-panel-content))
 '';
 
   ewwScss = ''
@@ -147,7 +147,14 @@ window {
 }
 
 .metrics-row {
-  spacing: 12px;
+}
+
+.metrics-row > * {
+  margin-right: 12px;
+}
+
+.metrics-row > *:last-child {
+  margin-right: 0;
 }
 
 .metric-card {
@@ -160,7 +167,6 @@ window {
 
 .metric-title {
   font-size: 10pt;
-  text-transform: uppercase;
   color: rgba(205, 214, 244, 0.7);
 }
 
@@ -171,7 +177,14 @@ window {
 }
 
 .metric-buttons {
-  spacing: 6px;
+}
+
+.metric-buttons > * {
+  margin-right: 6px;
+}
+
+.metric-buttons > *:last-child {
+  margin-right: 0;
 }
 
 .metric-btn {
@@ -199,7 +212,6 @@ window {
 }
 
 .quick-action-inner {
-  align-items: center;
 }
 
 .quick-action-label {
@@ -213,8 +225,8 @@ window {
 
   toggleScript = pkgs.writeShellScriptBin "toggle-quick-panel" ''
 CFG="${config.home.homeDirectory}/.config/${ewwConfigDir}"
-WINDOWS="$(${pkgs.eww}/bin/eww --config "$CFG" list-windows || true)"
-if echo "$WINDOWS" | grep -qx quick-panel; then
+WINDOWS="$(${pkgs.eww}/bin/eww --config "$CFG" active-windows 2>/dev/null || true)"
+if echo "$WINDOWS" | grep -q '^quick-panel:'; then
   ${pkgs.eww}/bin/eww --config "$CFG" close quick-panel
 else
   ${pkgs.eww}/bin/eww --config "$CFG" open quick-panel
@@ -262,7 +274,7 @@ in {
         ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} daemon --no-daemonize";
         # Use 'eww kill' to properly terminate daemon (not just close windows)
-        ExecStopPost = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true";
+        ExecStopPost = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${ewwConfigPath} kill 2>/dev/null || true'";
         Restart = "on-failure";
         RestartSec = 2;
         # Kill all child processes when service stops

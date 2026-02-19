@@ -88,7 +88,7 @@
                     (image
                       :class {"ai-badge-icon" +
                         (session.state == "working"
-                          ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                          ? " working"
                           : (session.state == "completed"
                             ? " completed"
                             : (session.needs_attention ? " attention" : " idle")))}
@@ -140,7 +140,7 @@
                       (image
                         :class {"ai-badge-icon" +
                           ((session.state ?: "idle") == "working"
-                            ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                            ? " working"
                             : ((session.state ?: "idle") == "completed"
                               ? " completed"
                               : ((session.state ?: "idle") == "attention"
@@ -227,12 +227,12 @@
           (eventbox
             :visible {project.scope == "scoped"}
             :cursor "pointer"
-            :onclick "${switchProjectScript}/bin/switch-project-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
+            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
             :tooltip "Switch to this worktree"
             (label :class "action-btn action-switch" :text "󰌑"))
           (eventbox
             :cursor "pointer"
-            :onclick "${closeWorktreeScript}/bin/close-worktree-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
+            :onclick "(${closeWorktreeScript}/bin/close-worktree-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
             :tooltip "Close all windows for this project"
             (label :class "action-btn action-close-project" :text "󰅖"))
           (eventbox
@@ -318,7 +318,7 @@
                 (image
                   :class {"ai-badge-icon" +
                     ((badge.otel_state ?: "idle") == "working"
-                      ? " working" + (pulse_phase == "1" ? " rotate-phase" : "")
+                      ? " working"
                       : ((badge.otel_state ?: "idle") == "completed"
                         ? " completed"
                         : ((badge.otel_state ?: "idle") == "attention"

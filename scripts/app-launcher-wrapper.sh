@@ -113,34 +113,50 @@ if [[ -f "$WORKTREE_CONTEXT_FILE" ]]; then
     WORKTREE_JSON=$(cat "$WORKTREE_CONTEXT_FILE" 2>/dev/null || echo '{}')
     PROJECT_NAME=$(echo "$WORKTREE_JSON" | jq -r '.qualified_name // ""')
     PROJECT_DIR=$(echo "$WORKTREE_JSON" | jq -r '.directory // ""')
+    LOCAL_PROJECT_DIR=$(echo "$WORKTREE_JSON" | jq -r '.local_directory // .directory // ""')
     WORKTREE_BRANCH=$(echo "$WORKTREE_JSON" | jq -r '.branch // ""')
     WORKTREE_ACCOUNT=$(echo "$WORKTREE_JSON" | jq -r '.account // ""')
     WORKTREE_REPO_NAME=$(echo "$WORKTREE_JSON" | jq -r '.repo_name // ""')
+    REMOTE_ENABLED=$(echo "$WORKTREE_JSON" | jq -r '.remote.enabled // false')
+    REMOTE_HOST=$(echo "$WORKTREE_JSON" | jq -r '.remote.host // ""')
+    REMOTE_USER=$(echo "$WORKTREE_JSON" | jq -r '.remote.user // ""')
+    REMOTE_WORKING_DIR=$(echo "$WORKTREE_JSON" | jq -r '.remote.remote_dir // .remote.working_dir // ""')
+    REMOTE_PORT=$(echo "$WORKTREE_JSON" | jq -r '.remote.port // 22')
+
+    # User preference: default SSH target uses Tailscale alias "ryzen".
+    if [[ "$REMOTE_ENABLED" == "true" ]] && [[ -z "$REMOTE_HOST" ]]; then
+        REMOTE_HOST="ryzen"
+    fi
+    if [[ "$REMOTE_ENABLED" == "true" ]] && [[ -z "$REMOTE_USER" ]]; then
+        REMOTE_USER="${USER:-vpittamp}"
+    fi
+    if [[ "$REMOTE_ENABLED" == "true" ]] && [[ -z "$REMOTE_WORKING_DIR" ]]; then
+        REMOTE_WORKING_DIR="$PROJECT_DIR"
+    fi
+
     PROJECT_DISPLAY_NAME="$WORKTREE_BRANCH"
     # Use repo_branch format for unique session names (e.g., nixos-config_main)
     SESSION_NAME="${WORKTREE_REPO_NAME}_${WORKTREE_BRANCH}"
     PROJECT_ICON=""
-    log "INFO" "Using worktree context - name: $PROJECT_NAME, dir: $PROJECT_DIR, branch: $WORKTREE_BRANCH"
+    log "INFO" "Using worktree context - name: $PROJECT_NAME, dir: $PROJECT_DIR, local_dir: $LOCAL_PROJECT_DIR, branch: $WORKTREE_BRANCH"
 else
     # No active worktree - global mode
     PROJECT_NAME=""
     PROJECT_DIR=""
+    LOCAL_PROJECT_DIR=""
     PROJECT_DISPLAY_NAME=""
     PROJECT_ICON=""
     SESSION_NAME=""
     WORKTREE_BRANCH=""
     WORKTREE_ACCOUNT=""
     WORKTREE_REPO_NAME=""
+    REMOTE_ENABLED="false"
+    REMOTE_HOST=""
+    REMOTE_USER=""
+    REMOTE_WORKING_DIR=""
+    REMOTE_PORT="22"
     log "DEBUG" "No active worktree context (global mode)"
 fi
-
-# Remote configuration is not supported with bare repository worktrees
-# (Feature 087 was for legacy projects with SSH remotes)
-REMOTE_ENABLED="false"
-REMOTE_HOST=""
-REMOTE_USER=""
-REMOTE_WORKING_DIR=""
-REMOTE_PORT="22"
 
 # Git metadata from worktree (simplified - can be extended if needed)
 GIT_BRANCH="$WORKTREE_BRANCH"
@@ -151,27 +167,41 @@ GIT_BEHIND=""
 
 log "DEBUG" "Project name: ${PROJECT_NAME:-<none>}"
 log "DEBUG" "Project directory: ${PROJECT_DIR:-<none>}"
+log "DEBUG" "Local project directory: ${LOCAL_PROJECT_DIR:-<none>}"
 log "DEBUG" "Worktree branch: ${WORKTREE_BRANCH:-<none>}"
+log "DEBUG" "Remote enabled: ${REMOTE_ENABLED:-false}"
+if [[ "${REMOTE_ENABLED:-false}" == "true" ]]; then
+    log "DEBUG" "Remote host: ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_WORKING_DIR} (port ${REMOTE_PORT})"
+fi
 
 # Validate project directory if present
-if [[ -n "$PROJECT_DIR" ]]; then
-    # Must be absolute path
-    if [[ "$PROJECT_DIR" != /* ]]; then
-        warn "Project directory is not absolute: $PROJECT_DIR"
-        PROJECT_DIR=""
+if [[ -n "$PROJECT_DIR" ]] && [[ "$PROJECT_DIR" == *$'\n'* ]]; then
+    warn "Project directory contains newlines"
+    PROJECT_DIR=""
+fi
+
+# Validate local project directory (used for local app launches and path substitutions)
+if [[ -n "$LOCAL_PROJECT_DIR" ]]; then
+    if [[ "$LOCAL_PROJECT_DIR" != /* ]]; then
+        warn "Local project directory is not absolute: $LOCAL_PROJECT_DIR"
+        LOCAL_PROJECT_DIR=""
     fi
 
-    # Must exist
-    if [[ -n "$PROJECT_DIR" ]] && [[ ! -d "$PROJECT_DIR" ]]; then
-        warn "Project directory does not exist: $PROJECT_DIR"
-        PROJECT_DIR=""
+    if [[ -n "$LOCAL_PROJECT_DIR" ]] && [[ ! -d "$LOCAL_PROJECT_DIR" ]]; then
+        warn "Local project directory does not exist: $LOCAL_PROJECT_DIR"
+        LOCAL_PROJECT_DIR=""
     fi
 
-    # Must not contain newlines or null bytes
-    if [[ -n "$PROJECT_DIR" ]] && [[ "$PROJECT_DIR" == *$'\n'* ]]; then
-        warn "Project directory contains newlines"
-        PROJECT_DIR=""
+    if [[ -n "$LOCAL_PROJECT_DIR" ]] && [[ "$LOCAL_PROJECT_DIR" == *$'\n'* ]]; then
+        warn "Local project directory contains newlines"
+        LOCAL_PROJECT_DIR=""
     fi
+fi
+
+# For local projects (non-remote), project_dir must exist on local filesystem.
+if [[ "$REMOTE_ENABLED" != "true" ]] && [[ -n "$PROJECT_DIR" ]] && [[ ! -d "$PROJECT_DIR" ]]; then
+    warn "Project directory does not exist: $PROJECT_DIR"
+    PROJECT_DIR=""
 fi
 
 # Apply fallback if no project context and parameters reference project variables
@@ -187,6 +217,7 @@ if [[ -z "$PROJECT_NAME" ]] && [[ "$PARAMETERS" == *'$PROJECT'* ]]; then
         "use_home")
             # Substitute HOME for PROJECT_DIR
             PROJECT_DIR="$USER_HOME"
+            LOCAL_PROJECT_DIR="$USER_HOME"
             PROJECT_NAME=""
             SESSION_NAME=""
             log "INFO" "Fallback (use_home): Using $USER_HOME"
@@ -256,14 +287,14 @@ fi
 # - Dedicated window for devenv services (devenv up)
 # - Fallback to standard sesh for non-devenv projects
 
-if [[ "$APP_NAME" == "terminal" ]] && [[ -n "$PROJECT_DIR" ]] && [[ -f "$PROJECT_DIR/devenv.nix" ]]; then
-    log "INFO" "Devenv project detected at $PROJECT_DIR, using devenv-terminal-launch"
+if [[ "$APP_NAME" == "terminal" ]] && [[ "$REMOTE_ENABLED" != "true" ]] && [[ -n "$LOCAL_PROJECT_DIR" ]] && [[ -f "$LOCAL_PROJECT_DIR/devenv.nix" ]]; then
+    log "INFO" "Devenv project detected at $LOCAL_PROJECT_DIR, using devenv-terminal-launch"
     # Override ARGS to use devenv-aware terminal launcher
     # devenv-terminal-launch handles: session creation, devenv window, sesh fallback
     # Use script path relative to this script's location (both in scripts/)
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     DEVENV_LAUNCHER="$SCRIPT_DIR/devenv-terminal-launch.sh"
-    ARGS=("$COMMAND" "-e" "$DEVENV_LAUNCHER" "$PROJECT_DIR" "$SESSION_NAME")
+    ARGS=("$COMMAND" "-e" "$DEVENV_LAUNCHER" "$LOCAL_PROJECT_DIR" "$SESSION_NAME")
     log "DEBUG" "Devenv ARGS: ${ARGS[*]}"
 fi
 
@@ -319,19 +350,25 @@ export I3PM_APP_ID="$APP_INSTANCE_ID"
 export I3PM_APP_NAME="$APP_NAME"
 export I3PM_PROJECT_NAME="${PROJECT_NAME:-}"
 export I3PM_PROJECT_DIR="${PROJECT_DIR:-}"
+export I3PM_LOCAL_PROJECT_DIR="${LOCAL_PROJECT_DIR:-}"
 export I3PM_PROJECT_DISPLAY_NAME="${PROJECT_DISPLAY_NAME:-}"
 export I3PM_PROJECT_ICON="${PROJECT_ICON:-}"
 export I3PM_SCOPE="$SCOPE"
 export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "false"; fi)
 export I3PM_LAUNCH_TIME="$(date +%s)"
 export I3PM_LAUNCHER_PID="$$"
+export I3PM_REMOTE_ENABLED="${REMOTE_ENABLED:-false}"
+export I3PM_REMOTE_HOST="${REMOTE_HOST:-}"
+export I3PM_REMOTE_USER="${REMOTE_USER:-}"
+export I3PM_REMOTE_PORT="${REMOTE_PORT:-22}"
+export I3PM_REMOTE_DIR="${REMOTE_WORKING_DIR:-}"
 
 # Worktree-specific environment variables
 export I3PM_WORKTREE_BRANCH="${WORKTREE_BRANCH:-}"
 export I3PM_WORKTREE_ACCOUNT="${WORKTREE_ACCOUNT:-}"
 export I3PM_WORKTREE_REPO="${WORKTREE_REPO_NAME:-}"
 
-log "DEBUG" "Env: I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME, I3PM_PROJECT_DIR=$I3PM_PROJECT_DIR, I3PM_WORKTREE_BRANCH=$I3PM_WORKTREE_BRANCH"
+log "DEBUG" "Env: I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME, I3PM_PROJECT_DIR=$I3PM_PROJECT_DIR, I3PM_LOCAL_PROJECT_DIR=$I3PM_LOCAL_PROJECT_DIR, I3PM_REMOTE_ENABLED=$I3PM_REMOTE_ENABLED, I3PM_WORKTREE_BRANCH=$I3PM_WORKTREE_BRANCH"
 
 # Workspace assignment (Feature 053: Reliable event-driven assignment)
 export I3PM_TARGET_WORKSPACE="$PREFERRED_WORKSPACE"
@@ -468,12 +505,18 @@ ENV_EXPORTS=(
     "export I3PM_APP_NAME='$I3PM_APP_NAME'"
     "export I3PM_PROJECT_NAME='$I3PM_PROJECT_NAME'"
     "export I3PM_PROJECT_DIR='$I3PM_PROJECT_DIR'"
+    "export I3PM_LOCAL_PROJECT_DIR='$I3PM_LOCAL_PROJECT_DIR'"
     "export I3PM_PROJECT_DISPLAY_NAME='$I3PM_PROJECT_DISPLAY_NAME'"
     "export I3PM_PROJECT_ICON='${PROJECT_ICON:-}'"
     "export I3PM_SCOPE='$I3PM_SCOPE'"
     "export I3PM_ACTIVE='$I3PM_ACTIVE'"
     "export I3PM_LAUNCH_TIME='$I3PM_LAUNCH_TIME'"
     "export I3PM_LAUNCHER_PID='$I3PM_LAUNCHER_PID'"
+    "export I3PM_REMOTE_ENABLED='$I3PM_REMOTE_ENABLED'"
+    "export I3PM_REMOTE_HOST='$I3PM_REMOTE_HOST'"
+    "export I3PM_REMOTE_USER='$I3PM_REMOTE_USER'"
+    "export I3PM_REMOTE_PORT='$I3PM_REMOTE_PORT'"
+    "export I3PM_REMOTE_DIR='$I3PM_REMOTE_DIR'"
     "export I3PM_TARGET_WORKSPACE='$I3PM_TARGET_WORKSPACE'"
     "export I3PM_EXPECTED_CLASS='$I3PM_EXPECTED_CLASS'"
 )
@@ -534,6 +577,12 @@ ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
     log "INFO" "Feature 087: Applying SSH wrapping for remote terminal app"
 
+    if [[ -z "$REMOTE_HOST" ]] || [[ -z "$REMOTE_USER" ]] || [[ -z "$REMOTE_WORKING_DIR" ]]; then
+        error "Feature 087: Remote profile for '$PROJECT_NAME' is incomplete.
+  Required: host, user, remote_dir.
+  Configure with: i3pm worktree remote set '$PROJECT_NAME' --host ryzen --user ${USER:-vpittamp} --dir <remote-path>"
+    fi
+
     # Extract command after -e flag for terminal applications
     # Terminal commands typically follow the pattern: ghostty -e <command>
     # We need to extract everything after -e to wrap it in SSH
@@ -555,14 +604,16 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
         warn "Feature 087: Terminal app without -e flag, cannot apply SSH wrapping"
         # Fall through to normal execution
     else
-        # Substitute local PROJECT_DIR with remote working directory in terminal command
-        # Note: $PROJECT_DIR has already been substituted with the local path earlier
-        # So we need to replace the local path with the remote path
-        TERMINAL_CMD_REMOTE="${TERMINAL_CMD//$PROJECT_DIR/$REMOTE_WORKING_DIR}"
+        # Substitute local project path with remote working directory in command.
+        # In SSH mode, parameter substitution may already have used remote path.
+        TERMINAL_CMD_REMOTE="$TERMINAL_CMD"
+        if [[ -n "$LOCAL_PROJECT_DIR" ]] && [[ "$LOCAL_PROJECT_DIR" != "$REMOTE_WORKING_DIR" ]]; then
+            TERMINAL_CMD_REMOTE="${TERMINAL_CMD_REMOTE//$LOCAL_PROJECT_DIR/$REMOTE_WORKING_DIR}"
+        fi
 
         log "DEBUG" "Feature 087: Original terminal command: $TERMINAL_CMD"
         log "DEBUG" "Feature 087: Remote terminal command: $TERMINAL_CMD_REMOTE"
-        log "DEBUG" "Feature 087: Substituted local path ($PROJECT_DIR) with remote path ($REMOTE_WORKING_DIR)"
+        log "DEBUG" "Feature 087: Substituted local path ($LOCAL_PROJECT_DIR) with remote path ($REMOTE_WORKING_DIR)"
 
         # Build SSH command with proper escaping
         # Single quotes around remote command prevent local shell expansion
@@ -630,7 +681,7 @@ if command -v swaymsg &>/dev/null; then
 else
     # Fallback to direct exec if swaymsg not available
     log "WARN" "swaymsg not found, using direct exec (may not work in all environments)"
-    if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
+    if [ "$REMOTE_ENABLED" != "true" ] && [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
         cd "$I3PM_PROJECT_DIR" || true
     fi
     exec "${ARGS[@]}"

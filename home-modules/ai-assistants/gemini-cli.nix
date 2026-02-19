@@ -25,24 +25,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-02-14, the latest stable release is v0.28.2.
+  # As of 2026-02-19, the latest stable release is v0.29.4.
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.28.2";
+    version = "0.29.4";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-IOc4Y8U2J4Dpl0A5gfffAayiHKISlFiHU2qg61fR1Tw=";
+      hash = "sha256-s2RrKByZAJu3uCp3CQb3KnJf20whZT4puKCSKPMuSuA=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-XfD+PmmeLsbb9rC7DCmqu08/+cXZpGewMN5olrHhH4M=";
+    npmDepsHash = "sha256-4U4QKNcfakMlrXMW4F5Q9ooA/CKunUCYdp38Y2pc8xk=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 
@@ -244,6 +244,7 @@ let
       target = "local";
       # Route via local interceptor which forwards to the collector and synthesizes traces.
       otlpEndpoint = "http://127.0.0.1:4322";
+      otlpProtocol = "http";
       logPrompts = true;
     };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
@@ -333,6 +334,7 @@ EOF
         .telemetry.enabled = true |
         .telemetry.target = "local" |
         .telemetry.otlpEndpoint = $ep |
+        .telemetry.otlpProtocol = "http" |
         .telemetry.logPrompts = (.telemetry.logPrompts // true) |
 
         # Make "Deep Think" the default: in gemini-cli, `pro` resolves to Gemini 3 Pro

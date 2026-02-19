@@ -471,6 +471,16 @@ class IPCServer:
             elif method == "worktree.clear":
                 # Feature 101: Clear active project (return to global mode)
                 result = await self._worktree_clear(params)
+            elif method == "worktree.remote.set":
+                result = await self._worktree_remote_set(params)
+            elif method == "worktree.remote.get":
+                result = await self._worktree_remote_get(params)
+            elif method == "worktree.remote.unset":
+                result = await self._worktree_remote_unset(params)
+            elif method == "worktree.remote.list":
+                result = await self._worktree_remote_list(params)
+            elif method == "worktree.remote.test":
+                result = await self._worktree_remote_test(params)
 
             # Feature 101: Window tracing for debugging
             elif method == "trace.start":
@@ -1161,14 +1171,10 @@ class IPCServer:
             # Feature 101: Also save active-worktree.json for app launcher context
             # Feature 137: Use atomic write to prevent corruption
             worktree_context_file = config_dir / "active-worktree.json"
-            atomic_write_json(worktree_context_file, {
-                "qualified_name": project_name,
-                "repo_qualified_name": repo_qualified,
-                "branch": wt.get("branch", ""),
-                "directory": wt_path,
-                "account": repo.get("account", ""),
-                "repo_name": repo.get("name", ""),
-            })
+            atomic_write_json(
+                worktree_context_file,
+                self._build_active_worktree_context(project_name, repo_qualified, repo, wt),
+            )
 
             logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
 
@@ -6350,21 +6356,30 @@ class IPCServer:
                     logger.info("Cleared active-worktree.json (global mode)")
             elif "/" in name and ":" in name:
                 # Worktree qualified name - also update active-worktree.json
-                from .repos_loader import find_worktree, ReposLoader
+                from .repos_loader import find_worktree
                 worktree = find_worktree(name)
                 if worktree:
                     # Parse qualified name parts
                     from .worktree_utils import parse_qualified_name
                     parsed = parse_qualified_name(name)
-                    # Feature 137: Use atomic write to prevent corruption
-                    atomic_write_json(worktree_context_file, {
-                        "qualified_name": name,
-                        "repo_qualified_name": parsed.repo_qualified_name,
-                        "branch": parsed.branch,
-                        "directory": worktree.get("path", ""),
+                    repo_data = {
                         "account": parsed.account,
-                        "repo_name": parsed.repo,  # Note: attribute is 'repo', not 'repo_name'
-                    })
+                        "name": parsed.repo,
+                    }
+                    worktree_data = {
+                        "branch": parsed.branch,
+                        "path": worktree.get("path", ""),
+                    }
+                    # Feature 137: Use atomic write to prevent corruption
+                    atomic_write_json(
+                        worktree_context_file,
+                        self._build_active_worktree_context(
+                            name,
+                            parsed.repo_qualified_name,
+                            repo_data,
+                            worktree_data,
+                        ),
+                    )
                     logger.info(f"[Feature 101] Updated active-worktree.json for {name}")
 
             # Trigger window filtering (Feature 037 integration)
@@ -7194,8 +7209,16 @@ class IPCServer:
         
         if not terminal:
             # Launch new terminal (starts hidden in scratchpad)
-            working_dir = await self._get_project_working_dir(project_name)
-            terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+            remote_profile = self._get_project_remote_profile(project_name)
+            if remote_profile:
+                working_dir = Path(remote_profile["remote_dir"])
+            else:
+                working_dir = await self._get_project_working_dir(project_name)
+            terminal = await self.scratchpad_manager.launch_terminal(
+                project_name,
+                working_dir,
+                remote_profile=remote_profile,
+            )
             # Show the newly launched terminal immediately
             await self.scratchpad_manager.toggle_terminal(project_name)
             return {
@@ -7209,8 +7232,16 @@ class IPCServer:
         # Validate existing terminal
         if not await self.scratchpad_manager.validate_terminal(project_name):
             # Terminal invalid, relaunch (starts hidden in scratchpad)
-            working_dir = await self._get_project_working_dir(project_name)
-            terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+            remote_profile = self._get_project_remote_profile(project_name)
+            if remote_profile:
+                working_dir = Path(remote_profile["remote_dir"])
+            else:
+                working_dir = await self._get_project_working_dir(project_name)
+            terminal = await self.scratchpad_manager.launch_terminal(
+                project_name,
+                working_dir,
+                remote_profile=remote_profile,
+            )
             # Show the relaunched terminal immediately
             await self.scratchpad_manager.toggle_terminal(project_name)
             return {
@@ -7251,13 +7282,20 @@ class IPCServer:
             
         # Get working directory
         working_dir_str = params.get("working_dir")
+        remote_profile = self._get_project_remote_profile(project_name)
         if working_dir_str:
             working_dir = Path(working_dir_str)
+        elif remote_profile:
+            working_dir = Path(remote_profile["remote_dir"])
         else:
             working_dir = await self._get_project_working_dir(project_name)
             
         # Launch terminal
-        terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+        terminal = await self.scratchpad_manager.launch_terminal(
+            project_name,
+            working_dir,
+            remote_profile=remote_profile,
+        )
         
         return {
             "project_name": terminal.project_name,
@@ -7696,6 +7734,28 @@ class IPCServer:
             logger.error(f"Failed to run app '{app_name}': {e}", exc_info=True)
             raise RuntimeError(f"Failed to run app '{app_name}': {e}")
 
+    def _get_project_remote_profile(self, project_name: str) -> Optional[Dict[str, Any]]:
+        """Get remote profile for project if SSH mode is enabled."""
+        if project_name == "global":
+            return None
+
+        # Prefer active context when project matches active worktree.
+        worktree_context_file = ConfigPaths.ACTIVE_WORKTREE_FILE
+        if worktree_context_file.exists():
+            try:
+                with open(worktree_context_file) as f:
+                    worktree_data = json.load(f)
+                if worktree_data.get("qualified_name") == project_name:
+                    remote = worktree_data.get("remote")
+                    if isinstance(remote, dict) and remote.get("enabled"):
+                        return self._normalize_remote_profile(remote)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"[Feature 087] Failed to read active-worktree remote profile: {e}")
+
+        if is_qualified_name(project_name):
+            return self._get_worktree_remote_profile(project_name)
+        return None
+
     async def _get_project_working_dir(self, project_name: str) -> Path:
         """Get working directory for project.
 
@@ -7720,6 +7780,12 @@ class IPCServer:
                     worktree_data = json.load(f)
                     # If the active worktree matches the requested project, use its directory
                     if worktree_data.get("qualified_name") == project_name:
+                        # In SSH mode, "directory" may be remote; prefer local_directory for local cwd usage.
+                        local_directory = worktree_data.get("local_directory")
+                        if local_directory and Path(local_directory).exists():
+                            logger.debug(f"[Feature 101] Got local working dir from active-worktree.json: {local_directory}")
+                            return Path(local_directory)
+
                         directory = worktree_data.get("directory")
                         if directory and Path(directory).exists():
                             logger.debug(f"[Feature 101] Got working dir from active-worktree.json: {directory}")
@@ -8551,6 +8617,170 @@ class IPCServer:
             logger.error(f"[Feature 100] worktree.remove error: {e}")
             raise
 
+    def _load_worktree_remote_profiles(self) -> Dict[str, Any]:
+        """Load worktree remote profile mapping from disk."""
+        default_data: Dict[str, Any] = {
+            "version": 1,
+            "updated_at": int(time.time()),
+            "profiles": {},
+        }
+
+        profiles_file = ConfigPaths.WORKTREE_REMOTE_PROFILES_FILE
+        if not profiles_file.exists():
+            return default_data
+
+        try:
+            data = json.loads(profiles_file.read_text())
+            if not isinstance(data, dict):
+                return default_data
+
+            profiles = data.get("profiles", {})
+            if not isinstance(profiles, dict):
+                profiles = {}
+
+            return {
+                "version": 1,
+                "updated_at": int(data.get("updated_at", int(time.time()))),
+                "profiles": profiles,
+            }
+        except Exception as e:
+            logger.warning(f"[Feature 087] Failed to read remote profiles (using empty map): {e}")
+            return default_data
+
+    def _save_worktree_remote_profiles(self, data: Dict[str, Any]) -> None:
+        """Persist worktree remote profile mapping to disk."""
+        profiles = data.get("profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+        to_save = {
+            "version": 1,
+            "updated_at": int(time.time()),
+            "profiles": profiles,
+        }
+        ConfigPaths.WORKTREE_REMOTE_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(ConfigPaths.WORKTREE_REMOTE_PROFILES_FILE, to_save)
+
+    def _normalize_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize profile payload and support legacy aliases."""
+        remote_dir = str(profile.get("remote_dir") or profile.get("working_dir") or "").strip()
+        host = str(profile.get("host") or "ryzen").strip()
+        user = str(profile.get("user") or os.environ.get("USER", "vpittamp")).strip()
+
+        enabled_raw = profile.get("enabled", True)
+        if isinstance(enabled_raw, str):
+            enabled = enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            enabled = bool(enabled_raw)
+
+        try:
+            port = int(profile.get("port", 22))
+        except Exception:
+            port = 22
+
+        return {
+            "enabled": enabled,
+            "host": host,
+            "user": user,
+            "port": port,
+            "remote_dir": remote_dir,
+        }
+
+    def _validate_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate normalized remote profile."""
+        normalized = self._normalize_remote_profile(profile)
+
+        if not normalized["host"]:
+            raise ValueError("host is required")
+        if not normalized["user"]:
+            raise ValueError("user is required")
+        if not normalized["remote_dir"]:
+            raise ValueError("remote_dir is required")
+        if not normalized["remote_dir"].startswith("/"):
+            raise ValueError("remote_dir must be an absolute path")
+        if not (1 <= normalized["port"] <= 65535):
+            raise ValueError("port must be between 1 and 65535")
+
+        return normalized
+
+    def _find_worktree_by_qualified_name(self, qualified_name: str) -> Dict[str, Any]:
+        """Resolve worktree metadata from repos.json."""
+        repos_file = ConfigPaths.REPOS_FILE
+        if not repos_file.exists():
+            raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
+
+        repos_data = json.loads(repos_file.read_text())
+        if ":" not in qualified_name:
+            raise ValueError(
+                "Branch is required in qualified name. Use 'account/repo:branch' format."
+            )
+        repo_name, branch = qualified_name.rsplit(":", 1)
+
+        repo = None
+        for r in repos_data.get("repositories", []):
+            r_qualified = f"{r.get('account', '')}/{r.get('name', '')}"
+            if r_qualified == repo_name:
+                repo = r
+                break
+
+        if not repo:
+            raise FileNotFoundError(f"Repository not found: {repo_name}")
+
+        worktree = None
+        worktrees = repo.get("worktrees", [])
+        for wt in worktrees:
+            if wt.get("branch") == branch:
+                worktree = wt
+                break
+
+        if not worktree:
+            available_branches = [wt.get("branch") for wt in worktrees]
+            raise FileNotFoundError(
+                f"Worktree '{branch}' not found in {repo_name}. "
+                f"Available branches: {', '.join(available_branches)}"
+            )
+
+        full_qualified_name = f"{repo_name}:{worktree.get('branch', branch)}"
+        return {
+            "repo_name": repo_name,
+            "repo": repo,
+            "worktree": worktree,
+            "full_qualified_name": full_qualified_name,
+        }
+
+    def _get_worktree_remote_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
+        """Get normalized remote profile for a specific worktree."""
+        data = self._load_worktree_remote_profiles()
+        raw_profile = data.get("profiles", {}).get(qualified_name)
+        if not isinstance(raw_profile, dict):
+            return None
+        normalized = self._normalize_remote_profile(raw_profile)
+        if not normalized.get("enabled"):
+            return None
+        return normalized
+
+    def _build_active_worktree_context(
+        self,
+        full_qualified_name: str,
+        repo_name: str,
+        repo: Dict[str, Any],
+        worktree: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build active-worktree.json payload with optional remote profile."""
+        local_directory = worktree.get("path", "")
+        remote_profile = self._get_worktree_remote_profile(full_qualified_name)
+        effective_directory = remote_profile["remote_dir"] if remote_profile else local_directory
+
+        return {
+            "qualified_name": full_qualified_name,
+            "repo_qualified_name": repo_name,
+            "branch": worktree.get("branch", ""),
+            "directory": effective_directory,
+            "local_directory": local_directory,
+            "account": repo.get("account", ""),
+            "repo_name": repo.get("name", ""),
+            "remote": remote_profile if remote_profile else None,
+        }
+
     def _record_project_usage(self, qualified_name: str) -> None:
         """Record project usage for ranking in ':' project list.
 
@@ -8637,58 +8867,11 @@ class IPCServer:
 
             logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
 
-            # Parse qualified name and find worktree from repos.json
-            repos_file = ConfigPaths.REPOS_FILE
-            if not repos_file.exists():
-                raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
-
-            with open(repos_file) as f:
-                repos_data = json.load(f)
-
-            # Parse qualified name: account/repo:branch or account/repo (for main)
-            if ":" in qualified_name:
-                repo_name, branch = qualified_name.rsplit(":", 1)
-            else:
-                repo_name = qualified_name
-                branch = None
-
-            # Find the repository
-            # qualified_name format: account/repo_name (e.g., vpittamp/nixos-config)
-            repo = None
-            for r in repos_data.get("repositories", []):
-                # Build qualified name from account and name fields
-                r_qualified = f"{r.get('account', '')}/{r.get('name', '')}"
-                if r_qualified == repo_name:
-                    repo = r
-                    break
-
-            if not repo:
-                raise FileNotFoundError(f"Repository not found: {repo_name}")
-
-            # Find the worktree - DETERMINISTIC: branch is required
-            # Feature 101: No implicit main/fallback selection
-            if not branch:
-                raise ValueError(
-                    f"Branch is required in qualified name. "
-                    f"Use 'account/repo:branch' format (e.g., '{repo_name}:main')"
-                )
-
-            worktree = None
-            worktrees = repo.get("worktrees", [])
-            for wt in worktrees:
-                if wt.get("branch") == branch:
-                    worktree = wt
-                    break
-
-            if not worktree:
-                available_branches = [wt.get("branch") for wt in worktrees]
-                raise FileNotFoundError(
-                    f"Worktree '{branch}' not found in {repo_name}. "
-                    f"Available branches: {', '.join(available_branches)}"
-                )
-
-            # Determine the full qualified name (ensure it includes branch)
-            full_qualified_name = f"{repo_name}:{worktree['branch']}"
+            resolved = self._find_worktree_by_qualified_name(qualified_name)
+            repo_name = resolved["repo_name"]
+            repo = resolved["repo"]
+            worktree = resolved["worktree"]
+            full_qualified_name = resolved["full_qualified_name"]
             worktree_path = worktree.get("path", "")
 
             # Get previous project
@@ -8713,17 +8896,13 @@ class IPCServer:
             config_file = config_dir / "active-project.json"
             save_active_project(active_state, config_file)
 
-            # Also save the directory mapping for quick lookup
-            # Feature 137: Use atomic write to prevent corruption
+            # Also save the active worktree context for launcher/scratchpad.
+            # directory is remote_dir when remote profile is enabled.
             worktree_context_file = config_dir / "active-worktree.json"
-            atomic_write_json(worktree_context_file, {
-                "qualified_name": full_qualified_name,
-                "repo_qualified_name": repo_name,
-                "branch": worktree.get("branch", ""),
-                "directory": worktree_path,
-                "account": repo.get("account", ""),
-                "repo_name": repo.get("name", ""),
-            })
+            worktree_context = self._build_active_worktree_context(
+                full_qualified_name, repo_name, repo, worktree
+            )
+            atomic_write_json(worktree_context_file, worktree_context)
 
             # Apply window filtering based on new project context
             # Feature 137: Wrap in try/except for graceful degradation
@@ -8770,7 +8949,9 @@ class IPCServer:
             return {
                 "success": True,
                 "qualified_name": full_qualified_name,
-                "directory": worktree_path,
+                "directory": worktree_context.get("directory", worktree_path),
+                "local_directory": worktree_path,
+                "remote": worktree_context.get("remote"),
                 "branch": worktree.get("branch", ""),
                 "previous_project": previous_project,
                 "duration_ms": duration_ms
@@ -8866,6 +9047,216 @@ class IPCServer:
         except Exception as e:
             logger.error(f"[Feature 101] worktree.clear error: {e}")
             raise
+
+    async def _worktree_remote_set(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set SSH remote profile for a worktree-qualified project."""
+        qualified_name = params.get("qualified_name")
+        if not qualified_name:
+            raise ValueError("qualified_name parameter is required")
+
+        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
+        full_qualified_name = resolved["full_qualified_name"]
+
+        existing = self._load_worktree_remote_profiles().get("profiles", {}).get(full_qualified_name, {})
+        if not isinstance(existing, dict):
+            existing = {}
+
+        raw_profile = {
+            "enabled": params.get("enabled", existing.get("enabled", True)),
+            "host": params.get("host") or params.get("remote_host") or existing.get("host") or "ryzen",
+            "user": params.get("user") or params.get("remote_user") or existing.get("user") or os.environ.get("USER", "vpittamp"),
+            "port": params.get("port", existing.get("port", 22)),
+            "remote_dir": (
+                params.get("remote_dir")
+                or params.get("working_dir")
+                or params.get("dir")
+                or existing.get("remote_dir")
+                or existing.get("working_dir")
+            ),
+        }
+        profile = self._validate_remote_profile(raw_profile)
+
+        data = self._load_worktree_remote_profiles()
+        profiles = data.get("profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+        profiles[full_qualified_name] = profile
+        data["profiles"] = profiles
+        self._save_worktree_remote_profiles(data)
+
+        active_updated = False
+        if self.state_manager.state.active_project == full_qualified_name:
+            config_dir = Path.home() / ".config" / "i3"
+            context = self._build_active_worktree_context(
+                full_qualified_name, resolved["repo_name"], resolved["repo"], resolved["worktree"]
+            )
+            atomic_write_json(config_dir / "active-worktree.json", context)
+            active_updated = True
+
+        return {
+            "success": True,
+            "qualified_name": full_qualified_name,
+            "remote": profile,
+            "active_context_updated": active_updated,
+        }
+
+    async def _worktree_remote_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get SSH remote profile for a worktree-qualified project."""
+        qualified_name = params.get("qualified_name")
+        if not qualified_name:
+            raise ValueError("qualified_name parameter is required")
+
+        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
+        full_qualified_name = resolved["full_qualified_name"]
+
+        data = self._load_worktree_remote_profiles()
+        profile = data.get("profiles", {}).get(full_qualified_name)
+        if isinstance(profile, dict):
+            profile = self._normalize_remote_profile(profile)
+        else:
+            profile = None
+
+        return {
+            "success": True,
+            "qualified_name": full_qualified_name,
+            "configured": profile is not None,
+            "remote": profile,
+        }
+
+    async def _worktree_remote_unset(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Unset SSH remote profile for a worktree-qualified project."""
+        qualified_name = params.get("qualified_name")
+        if not qualified_name:
+            raise ValueError("qualified_name parameter is required")
+
+        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
+        full_qualified_name = resolved["full_qualified_name"]
+
+        data = self._load_worktree_remote_profiles()
+        profiles = data.get("profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+
+        existed = full_qualified_name in profiles
+        if existed:
+            del profiles[full_qualified_name]
+            data["profiles"] = profiles
+            self._save_worktree_remote_profiles(data)
+
+        active_updated = False
+        if self.state_manager.state.active_project == full_qualified_name:
+            config_dir = Path.home() / ".config" / "i3"
+            context = self._build_active_worktree_context(
+                full_qualified_name, resolved["repo_name"], resolved["repo"], resolved["worktree"]
+            )
+            atomic_write_json(config_dir / "active-worktree.json", context)
+            active_updated = True
+
+        return {
+            "success": True,
+            "qualified_name": full_qualified_name,
+            "removed": existed,
+            "active_context_updated": active_updated,
+        }
+
+    async def _worktree_remote_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all configured worktree SSH remote profiles."""
+        data = self._load_worktree_remote_profiles()
+        profiles = data.get("profiles", {})
+        if not isinstance(profiles, dict):
+            profiles = {}
+
+        items = []
+        for qualified_name in sorted(profiles.keys()):
+            profile = profiles.get(qualified_name)
+            if not isinstance(profile, dict):
+                continue
+            items.append({
+                "qualified_name": qualified_name,
+                "remote": self._normalize_remote_profile(profile),
+                "is_active": self.state_manager.state.active_project == qualified_name,
+            })
+
+        return {
+            "success": True,
+            "count": len(items),
+            "profiles": items,
+        }
+
+    async def _worktree_remote_test(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Test SSH connectivity and remote directory validity for a worktree profile."""
+        import shlex
+        import subprocess
+
+        qualified_name = params.get("qualified_name")
+        if not qualified_name:
+            raise ValueError("qualified_name parameter is required")
+
+        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
+        full_qualified_name = resolved["full_qualified_name"]
+
+        data = self._load_worktree_remote_profiles()
+        stored_profile = data.get("profiles", {}).get(full_qualified_name, {})
+        if not isinstance(stored_profile, dict):
+            stored_profile = {}
+
+        raw_profile = {
+            "enabled": True,
+            "host": params.get("host") or params.get("remote_host") or stored_profile.get("host") or "ryzen",
+            "user": params.get("user") or params.get("remote_user") or stored_profile.get("user") or os.environ.get("USER", "vpittamp"),
+            "port": params.get("port", stored_profile.get("port", 22)),
+            "remote_dir": (
+                params.get("remote_dir")
+                or params.get("working_dir")
+                or stored_profile.get("remote_dir")
+                or stored_profile.get("working_dir")
+            ),
+        }
+        profile = self._validate_remote_profile(raw_profile)
+
+        ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+        if profile["port"] != 22:
+            ssh_cmd.extend(["-p", str(profile["port"])])
+        ssh_cmd.append(f"{profile['user']}@{profile['host']}")
+        remote_check = f"test -d {shlex.quote(profile['remote_dir'])}"
+        ssh_cmd.append(remote_check)
+
+        start = time.perf_counter()
+        try:
+            proc = subprocess.run(
+                ssh_cmd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            ok = proc.returncode == 0
+            return {
+                "success": ok,
+                "qualified_name": full_qualified_name,
+                "remote": profile,
+                "duration_ms": duration_ms,
+                "returncode": proc.returncode,
+                "stderr": proc.stderr.strip(),
+                "stdout": proc.stdout.strip(),
+                "message": (
+                    "SSH connectivity and remote directory check passed"
+                    if ok else
+                    "SSH connectivity or remote directory check failed"
+                ),
+            }
+        except subprocess.TimeoutExpired:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            return {
+                "success": False,
+                "qualified_name": full_qualified_name,
+                "remote": profile,
+                "duration_ms": duration_ms,
+                "returncode": None,
+                "stderr": "SSH test timed out after 10s",
+                "stdout": "",
+                "message": "SSH connectivity test timed out",
+            }
 
     # =========================================================================
     # Feature 101: Window Tracing for Debugging

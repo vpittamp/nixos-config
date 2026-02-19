@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import i3ipc
 
@@ -32,23 +32,45 @@ _pending_workspace_state: Optional[Dict[str, Any]] = None
 import os
 _runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 _daemon_ipc_socket = Path(f"{_runtime_dir}/i3-project-daemon/ipc.sock")
+_DEBUG = os.environ.get("I3PM_WORKSPACE_PANEL_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+_APP_NAME_CACHE_TTL_SECONDS = 5.0
+_app_name_cache: Dict[int, Tuple[float, Optional[str]]] = {}
+
+
+def debug_log(message: str) -> None:
+    """Emit debug logs only when explicitly enabled."""
+    if _DEBUG:
+        print(f"DEBUG: {message}", file=sys.stderr, flush=True)
 
 
 def read_i3pm_app_name(pid: Optional[int]) -> Optional[str]:
     """Read I3PM_APP_NAME from process environment (Feature 057 window matching)."""
     if pid is None or pid <= 0:
         return None
+    now = time.monotonic()
+    cached = _app_name_cache.get(pid)
+    if cached and (now - cached[0]) < _APP_NAME_CACHE_TTL_SECONDS:
+        return cached[1]
+    app_name: Optional[str] = None
     try:
         with open(f"/proc/{pid}/environ", "rb") as f:
             environ_bytes = f.read()
             environ_vars = environ_bytes.split(b'\0')
             for var in environ_vars:
                 if var.startswith(b'I3PM_APP_NAME='):
-                    app_name = var.split(b'=', 1)[1].decode('utf-8', errors='ignore')
-                    return app_name.strip() if app_name else None
+                    value = var.split(b'=', 1)[1].decode('utf-8', errors='ignore')
+                    app_name = value.strip() if value else None
+                    break
     except (FileNotFoundError, PermissionError, OSError):
         pass
-    return None
+    _app_name_cache[pid] = (now, app_name)
+    if len(_app_name_cache) > 2048:
+        # Keep cache bounded and drop stale entries opportunistically.
+        stale_before = now - _APP_NAME_CACHE_TTL_SECONDS
+        for cached_pid, (cached_at, _) in list(_app_name_cache.items()):
+            if cached_at < stale_before:
+                _app_name_cache.pop(cached_pid, None)
+    return app_name
 
 
 def pick_leaf(workspace_node: Optional[i3ipc.con.Con]) -> Optional[i3ipc.con.Con]:
@@ -91,18 +113,18 @@ def build_workspace_payload(
         if leaf and hasattr(leaf, 'pid') and leaf.pid:
             i3pm_app_name = read_i3pm_app_name(leaf.pid)
             if i3pm_app_name:
-                print(f"DEBUG: WS {reply.num} PID {leaf.pid} -> I3PM_APP_NAME={i3pm_app_name}", file=sys.stderr, flush=True)
+                debug_log(f"WS {reply.num} PID {leaf.pid} -> I3PM_APP_NAME={i3pm_app_name}")
 
         # Priority: I3PM_APP_NAME > app_id > window_class > window_instance
         # I3PM_APP_NAME provides accurate app identification for all launcher-launched apps
         if i3pm_app_name:
             icon_info = icon_index.lookup(app_id=i3pm_app_name, window_class=None, window_instance=None)
             if icon_info:
-                print(f"DEBUG: I3PM match - {i3pm_app_name} -> icon={icon_info.get('icon')}", file=sys.stderr, flush=True)
+                debug_log(f"I3PM match - {i3pm_app_name} -> icon={icon_info.get('icon')}")
         else:
             icon_info = icon_index.lookup(app_id=app_id, window_class=window_class, window_instance=window_instance)
             if icon_info:
-                print(f"DEBUG: Fallback match - app_id={app_id} -> icon={icon_info.get('icon')}", file=sys.stderr, flush=True)
+                debug_log(f"Fallback match - app_id={app_id} -> icon={icon_info.get('icon')}")
         app_name = icon_info.get("name", "") if icon_info else (leaf.name if leaf else "")
         icon_path = icon_info.get("icon", "") if icon_info else ""
         fallback_symbol_source = app_name or (leaf.name if leaf else "") or reply.name
@@ -119,13 +141,8 @@ def build_workspace_payload(
                 ws_num_match = pending_num == reply.num
                 output_match = pending_output == output
                 is_pending = ws_num_match and output_match
-                # Debug: Always log when checking workspace 5
-                if reply.num == 5:
-                    print(f"DEBUG BUILD WS5: pending_num={pending_num}, reply.num={reply.num}, match={ws_num_match}", file=sys.stderr, flush=True)
-                    print(f"DEBUG BUILD WS5: pending_output={pending_output}, output={output}, match={output_match}", file=sys.stderr, flush=True)
-                    print(f"DEBUG BUILD WS5: is_pending={is_pending}", file=sys.stderr, flush=True)
                 if is_pending:
-                    print(f"DEBUG BUILD: WS {reply.num} IS PENDING (output={output})", file=sys.stderr, flush=True)
+                    debug_log(f"BUILD: WS {reply.num} IS PENDING (output={output})")
 
         workspace_data = {
             "id": workspace_id,
@@ -209,7 +226,7 @@ def subscribe_to_workspace_mode_events(emit_callback: Callable[[], None], manage
                     event_type = event_payload.get("event_type")
                     pending_workspace = event_payload.get("pending_workspace")
 
-                    print(f"DEBUG: Received workspace_mode event: type={event_type}, pending_ws={pending_workspace}, output={managed_output}", file=sys.stderr, flush=True)
+                    debug_log(f"Received workspace_mode event: type={event_type}, pending_ws={pending_workspace}, output={managed_output}")
 
                     # Update global pending workspace state (thread-safe)
                     with _pending_workspace_lock:
@@ -217,15 +234,15 @@ def subscribe_to_workspace_mode_events(emit_callback: Callable[[], None], manage
                             # Filter by output if specified
                             if managed_output and pending_workspace.get("target_output") != managed_output:
                                 # Pending workspace is for different output, clear our state
-                                print(f"DEBUG: Clearing pending (different output): target={pending_workspace.get('target_output')}, managed={managed_output}", file=sys.stderr, flush=True)
+                                debug_log(f"Clearing pending (different output): target={pending_workspace.get('target_output')}, managed={managed_output}")
                                 _pending_workspace_state = None
                             else:
                                 # Update pending workspace state
-                                print(f"DEBUG: Setting pending workspace: {pending_workspace}", file=sys.stderr, flush=True)
+                                debug_log(f"Setting pending workspace: {pending_workspace}")
                                 _pending_workspace_state = pending_workspace
                         else:
                             # Clear pending state (cancel, enter, or invalid workspace)
-                            print(f"DEBUG: Clearing pending (event type: {event_type})", file=sys.stderr, flush=True)
+                            debug_log(f"Clearing pending (event type: {event_type})")
                             _pending_workspace_state = None
 
                     # Trigger UI update
@@ -327,7 +344,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     conn.on("workspace", lambda *_: emit())
     conn.on("window", lambda *_: emit())
-    conn.on("binding", lambda *_: emit())
 
     # Feature 058: Start workspace mode event subscription thread
     ipc_thread = threading.Thread(

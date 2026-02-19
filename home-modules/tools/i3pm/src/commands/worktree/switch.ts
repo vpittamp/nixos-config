@@ -68,7 +68,22 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
 
   try {
     const client = new DaemonClient();
-    const result = await client.request<{ success: boolean; qualified_name: string; directory: string; branch: string; previous_project?: string; duration_ms?: number }>("worktree.switch", {
+    const result = await client.request<{
+      success: boolean;
+      qualified_name: string;
+      directory: string;
+      local_directory?: string;
+      remote?: {
+        enabled: boolean;
+        host: string;
+        user: string;
+        port: number;
+        remote_dir: string;
+      } | null;
+      branch: string;
+      previous_project?: string;
+      duration_ms?: number;
+    }>("worktree.switch", {
       qualified_name: qualifiedName,
     });
 
@@ -77,6 +92,12 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
     } else {
       console.log(`✓ Switched to worktree: ${result.qualified_name}`);
       console.log(`  Directory: ${result.directory}`);
+      if (result.local_directory && result.local_directory !== result.directory) {
+        console.log(`  Local directory: ${result.local_directory}`);
+      }
+      if (result.remote?.enabled) {
+        console.log(`  Remote: ${result.remote.user}@${result.remote.host}:${result.remote.port}`);
+      }
       console.log(`  Branch: ${result.branch}`);
       if (result.previous_project) {
         console.log(`  Previous: ${result.previous_project}`);
@@ -89,10 +110,14 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
     return 0;
   } catch (error) {
     if (parsed.json) {
-      console.log(JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }, null, 2));
+      console.log(JSON.stringify(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        null,
+        2,
+      ));
     } else {
       console.error(`Error: ${error instanceof Error ? error.message : error}`);
     }

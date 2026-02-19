@@ -11,6 +11,7 @@ import { worktreeCreate } from "./worktree/create.ts";
 import { worktreeRemove } from "./worktree/remove.ts";
 import { worktreeList } from "./worktree/list.ts";
 import { worktreeSwitch } from "./worktree/switch.ts";
+import { worktreeRemote } from "./worktree/remote.ts";
 
 /**
  * Show worktree command help
@@ -27,6 +28,7 @@ SUBCOMMANDS:
   remove <branch>       Remove a worktree (Feature 100)
   list [repo]           List worktrees for a repository (Feature 100)
   switch <name>         Switch to a worktree by qualified name (Feature 101)
+  remote <subcommand>   Manage SSH remote profiles for worktrees (Feature 087)
 
 OPTIONS:
   -h, --help            Show this help message
@@ -43,6 +45,7 @@ EXAMPLES:
   # Remove a worktree
   i3pm worktree remove 100-feature
   i3pm worktree remove 100-feature --force
+  i3pm worktree remote set vpittamp/nixos-config:main --dir /home/vpittamp/repos/vpittamp/nixos-config/main
 
 For detailed help on a specific subcommand:
   i3pm worktree <subcommand> --help
@@ -87,10 +90,14 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       exitCode = await worktreeSwitch(subcommandArgs);
       break;
 
+    case "remote":
+      exitCode = await worktreeRemote(subcommandArgs);
+      break;
+
     default:
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
-      console.error("Available subcommands: create, remove, list, switch");
+      console.error("Available subcommands: create, remove, list, switch, remote");
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);
   }

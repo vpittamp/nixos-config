@@ -34,6 +34,7 @@ class ConfigPaths:
     ACCOUNTS_FILE: Final[Path] = I3_CONFIG_DIR / "accounts.json"
     ACTIVE_WORKTREE_FILE: Final[Path] = I3_CONFIG_DIR / "active-worktree.json"
     PROJECT_USAGE_FILE: Final[Path] = I3_CONFIG_DIR / "project-usage.json"
+    WORKTREE_REMOTE_PROFILES_FILE: Final[Path] = I3_CONFIG_DIR / "worktree-remote-profiles.json"
 
     # Legacy project files (deprecated, for backward compatibility)
     ACTIVE_PROJECT_FILE: Final[Path] = I3_CONFIG_DIR / "active-project.json"

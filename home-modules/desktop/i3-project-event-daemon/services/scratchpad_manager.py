@@ -7,8 +7,9 @@ Manages lifecycle and state of project-scoped scratchpad terminals.
 import asyncio
 import logging
 import os
+import shlex
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import psutil
 
 from i3ipc.aio import Connection
@@ -69,6 +70,7 @@ class ScratchpadManager:
         self,
         project_name: str,
         working_dir: Path,
+        remote_profile: Optional[Dict[str, Any]] = None,
     ) -> ScratchpadTerminal:
         """
         Launch new scratchpad terminal for project.
@@ -96,8 +98,10 @@ class ScratchpadManager:
             if project_name in self.terminals:
                 raise ValueError(f"Scratchpad terminal already exists for project: {project_name}")
 
-            # Validate working directory exists
-            if not working_dir.exists() or not working_dir.is_dir():
+            remote_enabled = bool(remote_profile and remote_profile.get("enabled"))
+
+            # Validate working directory exists for local mode only.
+            if not remote_enabled and (not working_dir.exists() or not working_dir.is_dir()):
                 raise ValueError(f"Working directory does not exist: {working_dir}")
 
             # Feature 101: Mark is created AFTER window appears (needs window_id)
@@ -119,6 +123,15 @@ class ScratchpadManager:
                 # Force software rendering for headless/VNC environments
                 "LIBGL_ALWAYS_SOFTWARE": "1",
             }
+
+            if remote_enabled and remote_profile:
+                env.update({
+                    "I3PM_REMOTE_ENABLED": "true",
+                    "I3PM_REMOTE_HOST": str(remote_profile.get("host", "")),
+                    "I3PM_REMOTE_USER": str(remote_profile.get("user", "")),
+                    "I3PM_REMOTE_PORT": str(remote_profile.get("port", 22)),
+                    "I3PM_REMOTE_DIR": str(remote_profile.get("remote_dir", "")),
+                })
 
             self.logger.info(f"Launching scratchpad terminal for project '{project_name}' in {working_dir}")
 
@@ -144,11 +157,28 @@ class ScratchpadManager:
             # Scratchpad uses simple tmux session (not devenv)
             # Devenv integration is handled by regular terminal via app-launcher-wrapper.sh
             # -A: attach if exists, create if not
-            tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
+            if remote_enabled and remote_profile:
+                remote_host = str(remote_profile.get("host", ""))
+                remote_user = str(remote_profile.get("user", ""))
+                remote_port = int(remote_profile.get("port", 22))
+                remote_dir = str(remote_profile.get("remote_dir", ""))
 
-            # Wrap tmux in bash to ensure proper execution and environment
-            # Use double quotes for bash -c to allow variable expansion, escape inner quotes
-            ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
+                if not remote_host or not remote_user or not remote_dir:
+                    raise ValueError("Remote scratchpad launch requires host, user, and remote_dir")
+
+                remote_cmd = f"cd {shlex.quote(remote_dir)} && tmux new-session -A -s {shlex.quote(tmux_session_name)}"
+                ssh_parts = ["ssh", "-t"]
+                if remote_port != 22:
+                    ssh_parts.extend(["-p", str(remote_port)])
+                ssh_parts.append(f"{remote_user}@{remote_host}")
+                ssh_parts.append(remote_cmd)
+
+                ssh_cmd = " ".join(shlex.quote(part) for part in ssh_parts)
+                ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -lc {shlex.quote(ssh_cmd)}"
+            else:
+                tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
+                # Wrap tmux in bash to ensure proper execution and environment.
+                ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
 
             # Complete shell command with environment setup
             full_cmd = f"{env_string}; {ghostty_cmd}"

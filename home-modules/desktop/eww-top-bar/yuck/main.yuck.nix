@@ -193,7 +193,7 @@ ${if isLaptop then ''
 (defpoll monitoring_panel_visible
   :interval "3s"
   :initial "false"
-  `${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | grep -q 'monitoring-panel' && echo true || echo false`)
+  `bash -c 'windows="$(${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null || true)"; [[ "$windows" == *"monitoring-panel"* ]] && echo true || echo false'`)
 
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)

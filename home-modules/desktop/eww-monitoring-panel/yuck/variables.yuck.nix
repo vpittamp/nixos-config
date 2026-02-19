@@ -1,4 +1,4 @@
-{ monitoringDataScript, pulsePhaseScript, ai_sessions_data_path ? "$XDG_RUNTIME_DIR/otel-ai-monitor.pipe", ... }:
+{ monitoringDataScript, ai_sessions_data_path ? "$XDG_RUNTIME_DIR/otel-ai-monitor.pipe", ... }:
 
 ''
   ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
@@ -19,13 +19,9 @@
     :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
     `bash -c 'PIPE="${ai_sessions_data_path}"; while true; do if [ -p "$PIPE" ]; then cat "$PIPE"; else echo "{\"type\":\"error\",\"error\":\"pipe_missing\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"; sleep 2; fi; done'`)
 
-  ;; Defpoll: Projects view data (10s refresh - slowed from 5s for CPU savings)
-  ;; Only runs when Projects tab is active (index 1)
-  (defpoll projects_data
-    :interval "10s"
-    :run-while {current_view_index == 1}
-    :initial "{\"status\":\"loading\",\"projects\":[],\"project_count\":0,\"active_project\":null}"
-    `${monitoringDataScript}/bin/monitoring-data-backend --mode projects`)
+  ;; Projects view data is refreshed on-demand when entering the Projects tab.
+  ;; This avoids large periodic updates that caused response channel instability.
+  (defvar projects_data "{\"status\":\"loading\",\"discovered_repositories\":[],\"repo_count\":0,\"worktree_count\":0,\"active_project\":null}")
 
   ;; Defpoll: Apps view data - DISABLED for CPU savings
   ;; Tab 2 is hidden, so this poll never needs to run
@@ -52,12 +48,8 @@
     `echo '{\"status\":\"disabled\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}'`)
 
   ;; Feature 110: Pulsating animation phase
-  ;; Animation runs via opacity transitions toggled by this variable
-  (defpoll pulse_phase
-    :interval "500ms"
-    :run-while {monitoring_data.has_working_badge ?: false}
-    :initial "0"
-    `${pulsePhaseScript}/bin/eww-monitoring-panel-pulse-phase`)
+  ;; Keep a static phase to avoid high-frequency script polling churn.
+  (defvar pulse_phase "0")
 
   ;; Feature 092: Defpoll: Sway event log - DISABLED for CPU savings
   ;; Tab 4 is hidden, so this poll never needs to run

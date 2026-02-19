@@ -224,15 +224,12 @@ class TreeDiff:
     def __post_init__(self):
         """Compute derived fields"""
         self.total_changes = sum(len(nc.field_changes) for nc in self.node_changes)
-
-        if self.node_changes:
-            self.significance_score = max(
-                fc.significance_score
-                for nc in self.node_changes
-                for fc in nc.field_changes
-            )
-        else:
-            self.significance_score = 0.0
+        field_scores = [
+            fc.significance_score
+            for nc in self.node_changes
+            for fc in nc.field_changes
+        ]
+        self.significance_score = max(field_scores, default=0.0)
 
     def get_changes_by_type(self, change_type: ChangeType) -> List[NodeChange]:
         """Filter node changes by type"""
@@ -535,7 +532,7 @@ class FilterCriteria:
     # Tree path filtering
     tree_path_pattern: Optional[Pattern] = None
     """
-    Regex pattern for tree path (e.g., r'outputs\[0\]\.workspaces\[2\].*')
+    Regex pattern for tree path (e.g., r'outputs\\[0\\]\\.workspaces\\[2\\].*')
     Only show changes under matching paths.
     """
 

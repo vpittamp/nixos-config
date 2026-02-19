@@ -1,4 +1,4 @@
-{ ... }:
+{ fallbackIconPath, ... }:
 
 ''
   (defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty]
@@ -20,7 +20,7 @@
       }
       (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
         (image :class "workspace-icon-image"
-               :path icon_path
+               :path {icon_path != "" ? icon_path : "${fallbackIconPath}"}
                :image-width 16
                :image-height 16)
         (label :class "workspace-number" :text number_label)))
@@ -35,4 +35,3 @@
             :spacing 3
         (literal :content markup_var))))
 ''
-

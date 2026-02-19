@@ -1,4 +1,4 @@
-{ ... }:
+{ fallbackIconPath, ... }:
 
 ''
   ;; Feature 057: User Story 2 - Workspace Preview Card Widget (T041)
@@ -127,7 +127,7 @@
                          :space-evenly false
                          :spacing 8
                       (image :class "preview-app-icon"
-                             :path {window.icon_path != "" ? window.icon_path : ""}
+                             :path {window.icon_path != "" ? window.icon_path : "${fallbackIconPath}"}
                              :image-width 24
                              :image-height 24)
                       (label :class "preview-app-name"
@@ -273,7 +273,7 @@
                  :space-evenly false
                  :spacing 8
               (image :class "preview-app-icon"
-                     :path {app.icon_path != "" ? app.icon_path : ""}
+                     :path {app.icon_path != "" ? app.icon_path : "${fallbackIconPath}"}
                      :image-width 24
                      :image-height 24)
               (label :class "preview-app-name"

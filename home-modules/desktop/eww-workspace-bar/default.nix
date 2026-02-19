@@ -147,6 +147,10 @@ let
     (defvar workspace_preview_data "{\"visible\": false}")
     (defvar keyboard_hints "")
   '';
+  fallbackWorkspaceIconPath = "${builtins.path {
+    path = ../../../assets/icons/Ghostty.png;
+    name = "eww-workspace-fallback-icon";
+  }}";
 
   windowBlocks = lib.concatStringsSep "\n\n" (map (output: 
     let 
@@ -177,8 +181,12 @@ let
     inherit workspaceMarkupDefs workspacePreviewDefs windowBlocks isHeadless isRyzen;
   };
 
-  workspacePreviewYuck = import ./yuck/workspace-preview.yuck.nix {};
-  workspaceStripYuck = import ./yuck/workspace-strip.yuck.nix {};
+  workspacePreviewYuck = import ./yuck/workspace-preview.yuck.nix {
+    fallbackIconPath = fallbackWorkspaceIconPath;
+  };
+  workspaceStripYuck = import ./yuck/workspace-strip.yuck.nix {
+    fallbackIconPath = fallbackWorkspaceIconPath;
+  };
 
   mainScss = import ./scss/main.scss.nix {
     inherit mocha;

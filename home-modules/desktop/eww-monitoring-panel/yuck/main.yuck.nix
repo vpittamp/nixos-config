@@ -1,4 +1,4 @@
-{ primaryOutput, panelWidth, toggleDockModeScript, ... }:
+{ primaryOutput, panelWidth, toggleDockModeScript, refreshProjectsDataScript, ... }:
 
 ''
   ;; Feature 125: Two window definitions for overlay vs docked modes
@@ -61,7 +61,7 @@
           (label
             :class "ai-sessions-keepalive"
             :text {ai_sessions_data.timestamp}
-            :style "opacity:0; font-size:0px; height:0px; margin:0; padding:0;")
+            :style "opacity:0; font-size:0px; min-height:0px; min-width:0px; margin:0; padding:0;")
           (conflict-resolution-dialog)
           (success-notification-toast)
           (error-notification-toast)
@@ -86,7 +86,7 @@
             "󰖯"))
         (eventbox
           :cursor "pointer"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=1"
+          :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=1; ${refreshProjectsDataScript}/bin/refresh-projects-data &"
           (button
             :class "tab ''${current_view_index == 1 ? 'active' : ""}"
             :tooltip "Projects (Alt+2)"
