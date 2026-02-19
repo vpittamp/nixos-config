@@ -8,8 +8,8 @@ let
   extApps = pkgs.fetchFromGitHub {
     owner = "modelcontextprotocol";
     repo = "ext-apps";
-    rev = "0bbbfee8c25e1217011c81b4bbd13c965ec6cb13";
-    hash = "sha256-RLdCfASQlf/Am96kYSaTFxpIJvIjItKypnvYDprKTGk=";
+    rev = "a8ff280145fccbbc2739f4a7e921b6d2daa57bad";
+    hash = "sha256-prtjhLhFIDPe7yVhpgqStpRZxFIMMt1q5jpVrNm7tXQ=";
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
@@ -255,7 +255,7 @@ EOF
             "-y"
             "@mastra/mcp-docs-server@latest"
           ];
-          enabled = false;
+          enabled = true;
           startup_timeout_sec = 30;
           tool_timeout_sec = 60;
         };

@@ -88,6 +88,7 @@ in
     ../ai-assistants/copilot-cli.nix
     ../ai-assistants/gemini-cli.nix
     ../ai-assistants/nix-ai-help.nix
+    ../ai-assistants/opencode.nix
 
     # External modules
     inputs.onepassword-shell-plugins.hmModules.default
