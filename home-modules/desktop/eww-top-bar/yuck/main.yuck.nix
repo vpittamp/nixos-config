@@ -443,17 +443,17 @@ ${if isLaptop then ''
 (defwidget project-widget []
   (eventbox :onclick "swaymsg mode '→ WS' && i3pm-workspace-mode char ':' &"
             :tooltip {(active_project.remote_enabled ?: false)
-                      ? ((active_project.formatted_label ?: "Global") + "\nSSH: " + (active_project.remote_target ?: "") +
+                      ? ("Mode: SSH\n" + (active_project.formatted_label ?: "Global") + "\nSSH: " + (active_project.remote_target ?: "") +
                          ((active_project.remote_directory_display ?: "") != "" ? "\n" + (active_project.remote_directory_display ?: "") : ""))
-                      : (active_project.formatted_label ?: "Global")}
-    (box :class {(active_project.is_worktree == true ? "pill project-pill-worktree" : "pill project-pill") + ((active_project.remote_enabled ?: false) ? " project-pill-ssh" : "")}
+                      : ("Mode: LOCAL\n" + (active_project.formatted_label ?: "Global"))}
+    (box :class {(active_project.is_worktree == true ? "pill project-pill-worktree" : "pill project-pill") +
+                 ((active_project.remote_enabled ?: false) ? " project-pill-ssh" : " project-pill-local")}
          :spacing 2
          ;; T052: Project icon from metadata
          (label :class "icon project-icon"
                 :text {active_project.icon ?: ""})
-         (label :class "project-ssh-indicator"
-                :visible {active_project.remote_enabled ?: false}
-                :text "󰣀 SSH")
+         (label :class {(active_project.remote_enabled ?: false) ? "project-connection-chip project-connection-chip-ssh" : "project-connection-chip project-connection-chip-local"}
+                :text {(active_project.remote_enabled ?: false) ? "󰣀 SSH" : "󰌽 LOCAL"})
          (label :class "project-ssh-target"
                 :visible {active_project.remote_enabled ?: false}
                 :limit-width 16

@@ -302,7 +302,7 @@ PY
       } |
       (if .branch == "main" or .branch == "master" then "📦" else "🌿" end) + " " +
       (if (.branch | test("^[0-9]+-")) then (.branch | capture("^(?<num>[0-9]+)-") | .num) + " - " else "" end) +
-      .display_name +
+      .display_name + ":" + .branch +
       " [" + (.directory | gsub("'$HOME'"; "~")) + "]" +
       (if .qualified_name == "'"$ACTIVE_PROJECT"'" then " 🟢 ACTIVE" else "" end) +
       "\t" + .qualified_name
@@ -335,8 +335,8 @@ PY
     if [ "$QUALIFIED_NAME" = "__CLEAR__" ]; then
       $I3PM project clear >/dev/null 2>&1
     else
-      # Feature 101: Use worktree switch with qualified name
-      $I3PM worktree switch "$QUALIFIED_NAME" >/dev/null 2>&1
+      # Feature 101: Local project list should always enter local context.
+      $I3PM worktree switch --local "$QUALIFIED_NAME" >/dev/null 2>&1
     fi
   '';
 
@@ -357,7 +357,7 @@ PY
 
     CACHE_DIR="$HOME/.cache/i3pm"
     CACHE_FILE="$CACHE_DIR/remote-''${REMOTE_HOST}-repos.json"
-    CACHE_TTL_SECONDS=30
+    CACHE_TTL_SECONDS=180
     REMOTE_REPOS_FILE="~/.config/i3/repos.json"
 
     LOCAL_REPOS_FILE="$HOME/.config/i3/repos.json"
@@ -399,12 +399,30 @@ PY
       return 1
     }
 
+    refresh_remote_repos_async() {
+      (
+        local lock_file="''${CACHE_FILE}.refresh.lock"
+        if [[ -e "$lock_file" ]]; then
+          exit 0
+        fi
+        : >"$lock_file" || exit 0
+        trap 'rm -f "$lock_file"' EXIT
+        fetch_remote_repos >/dev/null 2>&1 || true
+      ) >/dev/null 2>&1 &
+    }
+
     USING_STALE_CACHE="false"
-    if should_refresh_cache; then
+    if [[ ! -f "$CACHE_FILE" ]]; then
       if ! fetch_remote_repos; then
-        if [[ -f "$CACHE_FILE" ]]; then
-          USING_STALE_CACHE="true"
-        else
+        emit_error_entry "Remote index unavailable (''${REMOTE_HOST}). Run walker-ssh-worktree-diagnose."
+        exit 0
+      fi
+    elif should_refresh_cache; then
+      # Serve cached data immediately to keep Walker responsive, then refresh in background.
+      USING_STALE_CACHE="true"
+      refresh_remote_repos_async
+      if [[ ! -f "$CACHE_FILE" ]]; then
+        if ! fetch_remote_repos; then
           emit_error_entry "Remote index unavailable (''${REMOTE_HOST}). Run walker-ssh-worktree-diagnose."
           exit 0
         fi
@@ -445,8 +463,41 @@ PY
       return 1
     }
 
+    compact_path_tail() {
+      local path="$1"
+      local keep="''${2:-3}"
+      if [[ -z "$path" ]]; then
+        printf '%s' "-"
+        return
+      fi
+
+      local normalized="''${path%/}"
+      IFS='/' read -r -a segments <<<"$normalized"
+      local count="''${#segments[@]}"
+
+      if ! [[ "$keep" =~ ^[0-9]+$ ]]; then
+        keep=3
+      fi
+      if (( keep < 1 )); then
+        keep=1
+      fi
+
+      if (( count <= keep )); then
+        printf '%s' "$normalized"
+        return
+      fi
+
+      local start=$((count - keep))
+      local compact="…"
+      local i
+      for ((i = start; i < count; i++)); do
+        compact="$compact/''${segments[$i]}"
+      done
+      printf '%s' "$compact"
+    }
+
     if [[ "$MODE" == "repos" ]]; then
-      ${pkgs.jq}/bin/jq -c '
+      ${pkgs.jq}/bin/jq -r '
         [ .repositories[]? | {
             host: "ryzen",
             account: .account,
@@ -460,23 +511,27 @@ PY
         ]
         | sort_by(.account, .repo)
         | .[]
-      ' "$CACHE_FILE" | while IFS= read -r repo_json; do
-        qualified_repo=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -r '.qualified_repo')
-        remote_repo_path=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -r '.remote_repo_path')
-        default_branch=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -r '.default_branch')
-        stale_suffix=""
+        | [
+            .qualified_repo,
+            .remote_repo_path,
+            .default_branch,
+            (@base64)
+          ]
+        | @tsv
+      ' "$CACHE_FILE" | while IFS=$'\t' read -r qualified_repo remote_repo_path default_branch repo_b64; do
+        state_label="🟨 base:$default_branch"
         if [[ "$USING_STALE_CACHE" == "true" ]]; then
-          stale_suffix=" [stale]"
+          state_label="$state_label, stale"
         fi
         short_remote_path=$(echo "$remote_repo_path" | ${pkgs.gnused}/bin/sed "s#^/home/$REMOTE_USER#~#")
-        payload=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -c --arg user "$REMOTE_USER" '. + {user: $user, port: 22}')
-        encoded=$(printf '%s' "$payload" | ${pkgs.coreutils}/bin/base64 -w0)
-        printf '󰙅 %s %s [base:%s] [%s]%s\t%s\n' "$REMOTE_HOST" "$qualified_repo" "$default_branch" "$short_remote_path" "$stale_suffix" "$encoded"
+        compact_remote_path=$(compact_path_tail "$short_remote_path" 3)
+        encoded="$repo_b64"
+        printf '%s | %s | %s\t%s\n' "$qualified_repo" "$state_label" "$compact_remote_path" "$encoded"
       done
       exit 0
     fi
 
-    ${pkgs.jq}/bin/jq -c '
+    ${pkgs.jq}/bin/jq -r '
       [
         .repositories[]? as $repo |
         ($repo.worktrees // [])[]? |
@@ -496,11 +551,15 @@ PY
       ]
       | sort_by(.account, .repo, (if .is_main then 0 else 1 end), .branch)
       | .[]
-    ' "$CACHE_FILE" | while IFS= read -r item_json; do
-      qualified_name=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.qualified_name')
-      qualified_repo=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.account + "/" + .repo')
-      remote_worktree_path=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.remote_worktree_path')
-      is_main=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.is_main')
+      | [
+          .qualified_name,
+          (.account + "/" + .repo),
+          .remote_worktree_path,
+          (.is_main | tostring),
+          (@base64)
+        ]
+      | @tsv
+    ' "$CACHE_FILE" | while IFS=$'\t' read -r qualified_name qualified_repo remote_worktree_path is_main item_b64; do
 
       local_repo_exists="false"
       local_worktree_exists="false"
@@ -516,36 +575,27 @@ PY
         link_icon="↔"
       fi
 
-      main_tag=""
-      if [[ "$is_main" == "true" ]]; then
-        main_tag=" MAIN"
-      fi
-
-      active_tag=""
-      if [[ "$qualified_name" == "$ACTIVE_QUALIFIED" ]]; then
-        active_tag=" ● ACTIVE"
-      fi
-
-      stale_suffix=""
-      if [[ "$USING_STALE_CACHE" == "true" ]]; then
-        stale_suffix=" [stale]"
+      scope_tag="ssh-only"
+      scope_color="🟦"
+      if [[ "$local_worktree_exists" == "true" ]]; then
+        scope_tag="local+ssh"
+        scope_color="🟢"
       fi
 
       short_remote_path=$(echo "$remote_worktree_path" | ${pkgs.gnused}/bin/sed "s#^/home/$REMOTE_USER#~#")
+      compact_remote_path=$(compact_path_tail "$short_remote_path" 3)
 
-      payload=$(echo "$item_json" | ${pkgs.jq}/bin/jq -c \
-        --arg local_repo_exists "$local_repo_exists" \
-        --arg local_worktree_exists "$local_worktree_exists" \
-        --arg user "$REMOTE_USER" \
-        '. + {
-          local_repo_exists: ($local_repo_exists == "true"),
-          local_worktree_exists: ($local_worktree_exists == "true"),
-          user: $user,
-          port: 22
-        }')
-      encoded=$(printf '%s' "$payload" | ${pkgs.coreutils}/bin/base64 -w0)
+      state_label="$scope_color $scope_tag"
+      if [[ "$qualified_name" == "$ACTIVE_QUALIFIED" ]]; then
+        state_label="$state_label, active"
+      fi
+      if [[ "$USING_STALE_CACHE" == "true" ]]; then
+        state_label="$state_label, stale"
+      fi
 
-      printf '󰣀 %s %s %s%s [%s]%s\t%s\n' "$REMOTE_HOST" "$link_icon" "$qualified_name" "$main_tag" "$short_remote_path" "$active_tag$stale_suffix" "$encoded"
+      encoded="$item_b64"
+
+      printf '%s | %s | %s\t%s\n' "$qualified_name" "$state_label" "$compact_remote_path" "$encoded"
     done
   '';
 
@@ -611,7 +661,7 @@ PY
     local_bare_path="$local_repo_path/.bare"
     local_target_path="$local_repo_path/$branch"
     local_repo_qualified="$account/$repo"
-    local_repos_file="$HOME/.config/i3/repos.json"
+    repos_refreshed="false"
 
     log_step "ensure-local-repo qualified=$local_repo_qualified"
     if [[ ! -d "$local_bare_path" ]]; then
@@ -623,15 +673,21 @@ PY
         notify "Clone failed for $local_repo_qualified (see /tmp/walker-ssh-clone.log)"
         exit 1
       fi
+      repos_refreshed="false"
     fi
 
-    i3pm discover --quiet >/dev/null 2>&1 || true
-
     local_worktree_exists="false"
-    if [[ -f "$local_repos_file" ]]; then
-      if ${pkgs.jq}/bin/jq -e --arg acc "$account" --arg repo "$repo" --arg branch "$branch" \
-        '.repositories[]? | select(.account == $acc and .name == $repo) | .worktrees[]? | select(.branch == $branch)' \
-        "$local_repos_file" >/dev/null 2>&1; then
+    if [[ -d "$local_target_path" ]]; then
+      local_worktree_exists="true"
+    elif [[ -d "$local_bare_path" ]]; then
+      if ${pkgs.git}/bin/git -C "$local_bare_path" worktree list --porcelain | ${pkgs.gawk}/bin/awk -v b="$branch" '
+        /^branch refs\/heads\// {
+          if (substr($0, 18) == b) {
+            found=1
+          }
+        }
+        END { exit(found ? 0 : 1) }
+      ' >/dev/null 2>&1; then
         local_worktree_exists="true"
       fi
     fi
@@ -655,15 +711,15 @@ PY
           notify "Failed to add worktree from origin/$branch (see /tmp/walker-ssh-worktree-add.log)"
           exit 1
         fi
+        repos_refreshed="false"
       else
         if ! i3pm worktree create "$branch" --repo "$local_repo_qualified" --from "$default_branch" >/tmp/walker-ssh-worktree-create.log 2>&1; then
           notify "Failed to create local worktree from $default_branch (see /tmp/walker-ssh-worktree-create.log)"
           exit 1
         fi
+        repos_refreshed="false"
       fi
     fi
-
-    i3pm discover --quiet >/dev/null 2>&1 || true
 
     if [[ -z "$remote_worktree_path" ]]; then
       notify "Remote worktree path missing for $qualified_name"
@@ -678,8 +734,16 @@ PY
 
     log_step "switch qualified=$qualified_name"
     if ! i3pm worktree switch "$qualified_name" >/tmp/walker-ssh-switch.log 2>&1; then
-      notify "Failed to switch to $qualified_name (see /tmp/walker-ssh-switch.log)"
-      exit 1
+      # Fast path: avoid expensive discover unless switch cannot resolve worktree.
+      if [[ "$repos_refreshed" != "true" ]]; then
+        log_step "refresh-repo-index"
+        i3pm discover --quiet >/dev/null 2>&1 || true
+        repos_refreshed="true"
+      fi
+      if ! i3pm worktree switch "$qualified_name" >/tmp/walker-ssh-switch.log 2>&1; then
+        notify "Failed to switch to $qualified_name (see /tmp/walker-ssh-switch.log)"
+        exit 1
+      fi
     fi
 
     notify "Ready: $qualified_name on $host"
@@ -1632,11 +1696,19 @@ in
         provider = "menus:projects"
 
         [[providers.prefixes]]
+        prefix = ";r"
+        provider = "menus:ssh-worktrees"
+
+        [[providers.prefixes]]
         prefix = ";r "
         provider = "menus:ssh-worktrees"
 
         [[providers.prefixes]]
-        prefix = ";rc "
+        prefix = ";R"
+        provider = "menus:ssh-worktree-create"
+
+        [[providers.prefixes]]
+        prefix = ";R "
         provider = "menus:ssh-worktree-create"
 
         [[providers.prefixes]]
@@ -2239,6 +2311,10 @@ in
 
                     -- Build keywords from display name
                     local keywords = {"project", "worktree", "switch"}
+                    table.insert(keywords, qualified_name:lower())
+                    for token in qualified_name:gmatch("[^/:]+") do
+                        table.insert(keywords, token:lower())
+                    end
                     for word in display:gmatch("%S+") do
                         if not word:match("^[%[%]📦🌿∅🟢]") then
                             table.insert(keywords, word:lower())
@@ -2273,6 +2349,18 @@ in
     SearchName = true
     GlobalSearch = false
 
+    local function trim(s)
+        return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+
+    local function parseDisplay(display)
+        local name, state, path = display:match("^([^|]+)|([^|]+)|(.+)$")
+        if not name then
+            return trim(display), "", ""
+        end
+        return trim(name), trim(state), trim(path)
+    end
+
     function GetEntries()
         local entries = {}
         local handle = io.popen("walker-ssh-worktree-list 2>/dev/null")
@@ -2280,24 +2368,36 @@ in
             for line in handle:lines() do
                 local display, payload = line:match("^(.+)\t(.+)$")
                 if display and payload then
-                    local icon = "network-workgroup"
-                    if display:match("^⚠") then
+                    local name, state, path = parseDisplay(display)
+
+                    local icon = "folder-remote"
+                    if name:match("^⚠") then
                         icon = "dialog-warning"
-                    elseif display:match("↔") then
+                    elseif state:match("local%+ssh") then
                         icon = "folder-saved-search"
-                    elseif display:match("☁") then
+                    elseif state:match("ssh%-only") then
                         icon = "folder-remote"
                     end
 
                     local keywords = {"ssh", "worktree", "remote", "ryzen", "tailscale"}
-                    for word in display:gmatch("%S+") do
-                        if not word:match("^[%[%]󰣀↔☁●]") then
-                            table.insert(keywords, word:lower())
+                    local keyword_source = table.concat({name, state, path}, " ")
+                    for word in keyword_source:gmatch("%S+") do
+                        local normalized = word:lower():gsub("[^%w%-%+:/_.]", "")
+                        if normalized ~= "" then
+                            table.insert(keywords, normalized)
                         end
                     end
 
+                    local subtext = path
+                    if state ~= "" and path ~= "" then
+                        subtext = state .. " • " .. path
+                    elseif state ~= "" then
+                        subtext = state
+                    end
+
                     table.insert(entries, {
-                        Text = display,
+                        Text = name,
+                        Subtext = subtext,
                         Value = line,
                         Icon = icon,
                         Keywords = keywords
@@ -2323,6 +2423,18 @@ in
     SearchName = true
     GlobalSearch = false
 
+    local function trim(s)
+        return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+
+    local function parseDisplay(display)
+        local name, state, path = display:match("^([^|]+)|([^|]+)|(.+)$")
+        if not name then
+            return trim(display), "", ""
+        end
+        return trim(name), trim(state), trim(path)
+    end
+
     function GetEntries()
         local entries = {}
         local handle = io.popen("walker-ssh-worktree-list --repos-only 2>/dev/null")
@@ -2330,15 +2442,26 @@ in
             for line in handle:lines() do
                 local display, payload = line:match("^(.+)\t(.+)$")
                 if display and payload then
+                    local name, state, path = parseDisplay(display)
                     local keywords = {"ssh", "worktree", "create", "remote", "ryzen"}
-                    for word in display:gmatch("%S+") do
-                        if not word:match("^[%[%]󰙅]") then
-                            table.insert(keywords, word:lower())
+                    local keyword_source = table.concat({name, state, path}, " ")
+                    for word in keyword_source:gmatch("%S+") do
+                        local normalized = word:lower():gsub("[^%w%-%+:/_.]", "")
+                        if normalized ~= "" then
+                            table.insert(keywords, normalized)
                         end
                     end
 
+                    local subtext = path
+                    if state ~= "" and path ~= "" then
+                        subtext = state .. " • " .. path
+                    elseif state ~= "" then
+                        subtext = state
+                    end
+
                     table.insert(entries, {
-                        Text = display,
+                        Text = name,
+                        Subtext = subtext,
                         Value = line,
                         Icon = "folder-new",
                         Keywords = keywords

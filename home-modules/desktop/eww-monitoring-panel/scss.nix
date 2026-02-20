@@ -1221,6 +1221,16 @@
     padding: 1px 6px;
   }
 
+  .badge-local {
+    color: ${mocha.sapphire};
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.2), rgba(148, 226, 213, 0.15));
+    border: 1px solid rgba(137, 180, 250, 0.62);
+    box-shadow: 0 0 8px rgba(137, 180, 250, 0.2);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+  }
+
   .badge-remote-profile {
     color: ${mocha.yellow};
     background: rgba(249, 226, 175, 0.14);
@@ -1234,6 +1244,12 @@
     border-radius: 9px;
     font-size: 9px;
     letter-spacing: 0.2px;
+  }
+
+  .badge-connection-active {
+    border-radius: 10px;
+    letter-spacing: 0.3px;
+    padding: 1px 8px;
   }
 
   .project-git-status {

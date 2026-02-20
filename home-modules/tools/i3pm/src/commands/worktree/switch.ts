@@ -17,7 +17,7 @@ function showHelp(): void {
 i3pm worktree switch - Switch to a worktree by qualified name
 
 USAGE:
-  i3pm worktree switch <qualified_name>
+  i3pm worktree switch [--local] <qualified_name>
 
 ARGUMENTS:
   qualified_name    Worktree qualified name (account/repo:branch)
@@ -26,6 +26,7 @@ ARGUMENTS:
 OPTIONS:
   -h, --help        Show this help message
   --json            Output result as JSON
+  --local           Force local context (ignore SSH remote profile for this switch)
 
 EXAMPLES:
   # Switch to specific worktree
@@ -49,7 +50,7 @@ NOTES:
  */
 export async function worktreeSwitch(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    boolean: ["help", "json"],
+    boolean: ["help", "json", "local"],
     alias: { h: "help" },
     stopEarly: false,
   });
@@ -62,7 +63,7 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
 
   if (!qualifiedName) {
     console.error("Error: Qualified name is required");
-    console.error("Usage: i3pm worktree switch <account/repo:branch>");
+    console.error("Usage: i3pm worktree switch [--local] <account/repo:branch>");
     return 1;
   }
 
@@ -85,6 +86,7 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
       duration_ms?: number;
     }>("worktree.switch", {
       qualified_name: qualifiedName,
+      prefer_local: Boolean(parsed.local),
     });
 
     if (parsed.json) {

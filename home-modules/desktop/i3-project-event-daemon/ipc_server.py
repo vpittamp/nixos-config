@@ -8764,10 +8764,11 @@ class IPCServer:
         repo_name: str,
         repo: Dict[str, Any],
         worktree: Dict[str, Any],
+        prefer_local: bool = False,
     ) -> Dict[str, Any]:
         """Build active-worktree.json payload with optional remote profile."""
         local_directory = worktree.get("path", "")
-        remote_profile = self._get_worktree_remote_profile(full_qualified_name)
+        remote_profile = None if prefer_local else self._get_worktree_remote_profile(full_qualified_name)
         effective_directory = remote_profile["remote_dir"] if remote_profile else local_directory
 
         return {
@@ -8844,7 +8845,8 @@ class IPCServer:
 
         Args:
             params: {
-                "qualified_name": str  # e.g., "vpittamp/nixos-config:main" or "vpittamp/nixos-config"
+                "qualified_name": str,  # e.g., "vpittamp/nixos-config:main" or "vpittamp/nixos-config"
+                "prefer_local": bool    # optional: ignore SSH profile for this switch
             }
 
         Returns:
@@ -8864,6 +8866,7 @@ class IPCServer:
             qualified_name = params.get("qualified_name")
             if not qualified_name:
                 raise ValueError("qualified_name parameter is required")
+            prefer_local = bool(params.get("prefer_local"))
 
             logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
 
@@ -8900,7 +8903,7 @@ class IPCServer:
             # directory is remote_dir when remote profile is enabled.
             worktree_context_file = config_dir / "active-worktree.json"
             worktree_context = self._build_active_worktree_context(
-                full_qualified_name, repo_name, repo, worktree
+                full_qualified_name, repo_name, repo, worktree, prefer_local=prefer_local
             )
             atomic_write_json(worktree_context_file, worktree_context)
 

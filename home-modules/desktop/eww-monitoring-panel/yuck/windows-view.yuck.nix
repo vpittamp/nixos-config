@@ -174,7 +174,7 @@
   (defwidget project-widget [project]
     (box
       :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "") +
-              ((project.remote_enabled ?: false) ? " project-ssh-active" : ((project.remote_profile_enabled ?: false) ? " project-ssh-profile" : ""))}
+              ((project.remote_enabled ?: false) ? " project-ssh-active" : "")}
       :orientation "v"
       :space-evenly false
       (eventbox
@@ -183,22 +183,20 @@
         :cursor "pointer"
         :tooltip {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "Click to collapse" : "Click to expand"}
         (box
-          :class {"project-header" + ((project.remote_enabled ?: false) ? " project-header-ssh-active" : ((project.remote_profile_enabled ?: false) ? " project-header-ssh-profile" : ""))}
+          :class {"project-header" + ((project.remote_enabled ?: false) ? " project-header-ssh-active" : "")}
           :orientation "h"
           :space-evenly false
           (label
             :class "expand-icon"
             :text {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "󰅀" : "󰅂"})
           (label
-            :class {"project-name" + ((project.remote_enabled ?: false) ? " project-name-ssh-active" : ((project.remote_profile_enabled ?: false) ? " project-name-ssh-profile" : ""))}
+            :class {"project-name" + ((project.remote_enabled ?: false) ? " project-name-ssh-active" : "")}
             :limit-width 30
             :truncate true
             :tooltip {
               (project.remote_enabled ?: false)
               ? ("''${project.name}\nSSH Active: " + (project.remote_target ?: "") + ((project.remote_directory_display ?: "") != "" ? "\n" + (project.remote_directory_display ?: "") : ""))
-              : ((project.remote_profile_enabled ?: false)
-                ? ("''${project.name}\nSSH Profile: " + (project.remote_profile_target ?: "") + ((project.remote_profile_directory_display ?: "") != "" ? "\n" + (project.remote_profile_directory_display ?: "") : ""))
-                : "''${project.name}")
+              : "''${project.name}"
             }
             :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
           (label
@@ -211,11 +209,6 @@
             :visible {project.remote_enabled ?: false}
             :text "󰣀 SSH LIVE"
             :tooltip {"Remote: " + (project.remote_target ?: "") + ((project.remote_directory_display ?: "") != "" ? " • " + (project.remote_directory_display ?: "") : "")})
-          (label
-            :class "badge badge-remote-profile"
-            :visible {(project.remote_profile_enabled ?: false) && !(project.remote_enabled ?: false)}
-            :text "󱠾 SSH CFG"
-            :tooltip {"Profile: " + (project.remote_profile_target ?: "") + ((project.remote_profile_directory_display ?: "") != "" ? " • " + (project.remote_profile_directory_display ?: "") : "")})
           (box
             :hexpand true
             :halign "end"
@@ -313,7 +306,7 @@
                 :truncate true)
               (label
                 :class "window-ssh-target"
-                :visible {window.project_remote_enabled ?: false}
+                :visible {(window.focused ?: false) && (window.project_remote_enabled ?: false)}
                 :halign "start"
                 :limit-width 28
                 :truncate true
@@ -325,10 +318,12 @@
           :space-evenly false
           :halign "end"
           (label
-            :class "badge badge-remote badge-remote-window"
-            :text "󰣀 SSH"
-            :visible {window.project_remote_enabled ?: false}
-            :tooltip {"Remote: " + (window.project_remote_target ?: "") + ((window.project_remote_dir ?: "") != "" ? " • " + (window.project_remote_dir ?: "") : "")})
+            :class {"badge badge-connection-active " + ((window.project_remote_enabled ?: false) ? "badge-remote badge-remote-window" : "badge-local")}
+            :text {(window.project_remote_enabled ?: false) ? "󰣀 SSH LIVE" : "󰌽 LOCAL"}
+            :visible {window.focused ?: false}
+            :tooltip {(window.project_remote_enabled ?: false)
+              ? ("Focused window running over SSH: " + (window.project_remote_target ?: "") + ((window.project_remote_dir ?: "") != "" ? " • " + (window.project_remote_dir ?: "") : ""))
+              : "Focused window running locally"}
           (label
             :class "badge badge-pwa"
             :text "PWA"

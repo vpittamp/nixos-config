@@ -186,6 +186,24 @@
   .project-pill-worktree .value,
   .project-pill-worktree .icon { color: #94e2d5; }
 
+  .project-pill-local {
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.2), rgba(148, 226, 213, 0.16));
+    border: 1px solid rgba(137, 180, 250, 0.62);
+    box-shadow: inset 0 0 8px rgba(137, 180, 250, 0.15);
+  }
+
+  .project-pill-local:hover {
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.3), rgba(148, 226, 213, 0.24));
+    border-color: rgba(137, 180, 250, 0.85);
+    box-shadow: 0 0 14px rgba(137, 180, 250, 0.26);
+  }
+
+  .project-pill-local .project-value,
+  .project-pill-local .project-icon {
+    color: #89b4fa;
+    font-weight: 700;
+  }
+
   .project-pill-ssh {
     background: linear-gradient(135deg, rgba(166, 227, 161, 0.26), rgba(249, 226, 175, 0.2));
     border: 1px solid rgba(166, 227, 161, 0.75);
@@ -206,15 +224,26 @@
     font-weight: 700;
   }
 
-  .project-ssh-indicator {
+  .project-connection-chip {
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.4px;
+    border-radius: 7px;
+    padding: 1px 6px;
+  }
+
+  .project-connection-chip-ssh {
     color: #a6e3a1;
     background: rgba(22, 32, 22, 0.84);
     border: 1px solid rgba(166, 227, 161, 0.78);
-    border-radius: 7px;
-    padding: 1px 6px;
+    box-shadow: 0 0 8px rgba(166, 227, 161, 0.24);
+  }
+
+  .project-connection-chip-local {
+    color: #89b4fa;
+    background: rgba(20, 34, 50, 0.82);
+    border: 1px solid rgba(137, 180, 250, 0.72);
+    box-shadow: 0 0 8px rgba(137, 180, 250, 0.24);
   }
 
   .project-ssh-target {
