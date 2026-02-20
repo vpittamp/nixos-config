@@ -131,6 +131,7 @@ let
     # i3pm utilities
     i3pm-project-badge = {
       scriptPath = "scripts/i3pm-project-badge.sh";
+      extraInputs = [ pkgs.jq ];
       description = "Display current project badge for status bars";
     };
     i3pm-clone = {

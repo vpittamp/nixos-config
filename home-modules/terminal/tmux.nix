@@ -127,7 +127,8 @@ in
       set -g renumber-windows on
       set -g pane-border-lines heavy  # Thicker lines create more spacing
       set -g pane-border-status top  # Add padding line at top of each pane
-      set -g pane-border-format " "  # Empty padding space (invisible content)
+      # SSH-aware pane title strip (reads active-worktree.json to avoid stale tmux env)
+      set -g pane-border-format "#(${i3pmProjectBadgeScript} --tmux-pane --source file --max-len 26)"
 
       # Catppuccin Mocha theme - completely invisible borders with padding
       # Both active and inactive borders match their respective backgrounds
@@ -153,13 +154,13 @@ in
       set -g status-justify left
       set -g status-style "bg=#11111b fg=#a6adc8"  # Catppuccin Crust bg, Subtext0 fg
       set -g status-left-length 40
-      set -g status-right-length 60
+      set -g status-right-length 90
 
       # Status left with Catppuccin colors - COPY in blue, PREFIX in red, ZOOM icon in yellow, normal in green
       set -g status-left "#{?pane_in_mode,#[fg=#11111b bg=#89b4fa bold] COPY ,#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,#[fg=#11111b bg=#a6e3a1 bold] TMUX }}#{?window_zoomed_flag,#[fg=#11111b bg=#f9e2af bold] 🔍 ,}#[fg=#cdd6f4 bg=#313244] #S #[default] "
 
-      # Status right - Catppuccin colors
-      set -g status-right "#[fg=#cdd6f4 bg=#313244] #( ${i3pmProjectBadgeScript} --tmux ) #H | %H:%M #[default]"
+      # Status right - file-backed badge for reliable SSH/local context in long-lived tmux servers
+      set -g status-right "#(${i3pmProjectBadgeScript} --tmux --source file --max-len 34)#[fg=#cdd6f4 bg=#313244] #H | %H:%M #[default]"
 
       # Window status - inactive in muted colors, active in blue
       set -g window-status-format "#[fg=#a6adc8] #I:#W "
