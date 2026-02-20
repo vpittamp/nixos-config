@@ -57,12 +57,12 @@ in
               :class "project-filter-input"
               :hexpand true
               :value project_filter
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update project_filter={}"
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update project_filter={}"
               :timeout "100ms")
             (button
               :class "filter-clear-button"
               :visible {project_filter != ""}
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
+              :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
               :tooltip "Clear filter"
               "󰅖"))
           (label
@@ -109,7 +109,7 @@ in
               :orientation "v"
               :space-evenly false
               :class "worktrees-container"
-              (for wt in {repo.worktrees ?: []}
+              (for wt in {jq(repo.worktrees ?: [], "map(select(. != null))")}
                 (box
                   :visible {project_filter == "" ||
                             matches(wt.branch ?: "", "(?i).*" + project_filter + ".*") ||
@@ -119,8 +119,6 @@ in
 
   (defwidget discovered-repo-card [repo]
     (eventbox
-      :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${repo.qualified_name}"
-      :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
       (box
         :class {"repository-card project-card discovered-repo" + (repo.is_active ? " active-project" : "") + (repo.has_dirty_worktrees ? " has-dirty" : "")}
         :orientation "v"
@@ -182,10 +180,10 @@ in
             :class "project-action-bar"
             :orientation "h"
             :space-evenly false
-            :visible {hover_project_name == repo.qualified_name && !project_deleting}
+            :visible {!project_deleting}
             (eventbox
               :cursor "pointer"
-              :onclick "echo -n ''\'''${repo.directory}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${repo.directory}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+              :onclick "echo -n ''\'''${repo.directory}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${repo.directory}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
               :tooltip "Copy directory path"
               (label :class "action-btn action-copy" :text "󰆏"))
             (eventbox
@@ -214,10 +212,8 @@ in
       (eventbox
         :cursor "pointer"
         :onclick "${switchProjectScript}/bin/switch-project-action ''${worktree.qualified_name} &"
-        :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
-        :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
         (box
-          :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
+          :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "") + ((worktree.remote_enabled ?: false) ? " remote-worktree" : "")}
           :orientation "h"
           :space-evenly false
           (box
@@ -248,7 +244,7 @@ in
               :orientation "h"
               :space-evenly false
               (label
-                :class "worktree-branch"
+                :class {"worktree-branch" + ((worktree.remote_enabled ?: false) ? " worktree-branch-ssh" : "")}
                 :halign "start"
                 :limit-width 28
                 :truncate true
@@ -262,7 +258,7 @@ in
               (label
                 :class "badge badge-remote"
                 :visible {worktree.remote_enabled ?: false}
-                :text " SSH "
+                :text "󰣀 SSH"
                 :tooltip {"Remote: " + (worktree.remote_target ?: "") + ((worktree.remote_directory_display ?: "") != "" ? " • " + (worktree.remote_directory_display ?: "") : "")})
               (label
                 :class "git-conflict"
@@ -307,11 +303,11 @@ in
                 :limit-width 35
                 :truncate true
                 :text {worktree.remote_enabled ?: false ? (worktree.remote_directory_display ?: worktree.directory_display) : worktree.directory_display}
-                :tooltip {worktree.remote_enabled ?: false ? ("Remote: " + (worktree.remote.remote_dir ?: "") + "\nLocal: " + (worktree.path ?: "")) : (worktree.path ?: "")})
+                :tooltip {worktree.remote_enabled ?: false ? ("Remote: " + (worktree.remote_directory_display ?: "") + "\nLocal: " + (worktree.path ?: "")) : (worktree.path ?: "")})
               (eventbox
-                :class {"copy-btn-container" + (hover_worktree_name == worktree.qualified_name ? " visible" : "")}
+                :class "copy-btn-container visible"
                 :cursor "pointer"
-                :onclick "echo -n '#{worktree.remote_enabled ? (worktree.remote.remote_dir ?: worktree.path) : worktree.path}' | wl-copy && notify-send -t 1500 'Copied' '#{worktree.remote_enabled ? (worktree.remote_directory_display ?: worktree.directory_display) : worktree.directory_display}'"
+                :onclick "echo -n '#{worktree.remote_enabled ? (worktree.remote_directory_display ?: worktree.path) : worktree.path}' | wl-copy && notify-send -t 1500 'Copied' '#{worktree.remote_enabled ? (worktree.remote_directory_display ?: worktree.directory_display) : worktree.directory_display}'"
                 :tooltip "Copy directory path"
                 (label
                   :class "copy-btn"
@@ -319,13 +315,21 @@ in
             (label
               :class "worktree-last-commit"
               :halign "start"
-              :visible {hover_worktree_name == worktree.qualified_name && (worktree.git_last_commit_relative ?: "") != ""}
+              :visible {(worktree.git_last_commit_relative ?: "") != ""}
               :limit-width 38
               :truncate true
               :text {(worktree.git_last_commit_relative ?: "") + (worktree.git_last_commit_message != "" ? " - " + (worktree.git_last_commit_message ?: "") : "")}
-              :tooltip {worktree.git_status_tooltip ?: ""})))
+              :tooltip {worktree.git_status_tooltip ?: ""})
+            (label
+              :class "worktree-remote-target"
+              :halign "start"
+              :visible {worktree.remote_enabled ?: false}
+              :limit-width 38
+              :truncate true
+              :text {(worktree.remote_target ?: "") + ((worktree.remote_directory_display ?: "") != "" ? " • " + (worktree.remote_directory_display ?: "") : "")}
+              :tooltip {"Remote target: " + (worktree.remote_target ?: "") + ((worktree.remote_directory_display ?: "") != "" ? "\n" + (worktree.remote_directory_display ?: "") : "")})))
           (box
-            :class {"worktree-action-bar" + (hover_worktree_name == worktree.qualified_name && !worktree.is_main ? " visible" : "")}
+            :class {"worktree-action-bar" + (!worktree.is_main ? " visible" : "")}
             :orientation "h"
             :space-evenly false
             :halign "end"
@@ -336,7 +340,7 @@ in
               (label :class "action-btn action-terminal" :text ""))
             (eventbox
               :cursor "pointer"
-              :onclick "echo -n ''\'''${worktree.path}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${worktree.path}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+              :onclick "echo -n ''\'''${worktree.path}' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${worktree.path}' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
               :tooltip "Copy path (y)"
               (label :class "action-btn action-copy" :text "󰆏"))
             (eventbox

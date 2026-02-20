@@ -2,6 +2,8 @@
 
 let
   cfg = config.programs.walker;
+  remoteWorktreeHost = "ryzen";
+  remoteWorktreeUser = "vpittamp";
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
   isWaylandMode = config.wayland.windowManager.sway.enable or false;
@@ -335,6 +337,564 @@ PY
     else
       # Feature 101: Use worktree switch with qualified name
       $I3PM worktree switch "$QUALIFIED_NAME" >/dev/null 2>&1
+    fi
+  '';
+
+  # Walker SSH worktree list script - discovers remote worktrees via Tailscale SSH
+  # Output format: "display\tbase64(payload-json)"
+  walkerSshWorktreeList = pkgs.writeShellScriptBin "walker-ssh-worktree-list" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    MODE="worktrees"
+    if [[ "''${1:-}" == "--repos-only" ]]; then
+      MODE="repos"
+    fi
+
+    REMOTE_HOST="${remoteWorktreeHost}"
+    REMOTE_USER="${remoteWorktreeUser}"
+    REMOTE_TARGET="$REMOTE_USER@$REMOTE_HOST"
+
+    CACHE_DIR="$HOME/.cache/i3pm"
+    CACHE_FILE="$CACHE_DIR/remote-''${REMOTE_HOST}-repos.json"
+    CACHE_TTL_SECONDS=30
+    REMOTE_REPOS_FILE="~/.config/i3/repos.json"
+
+    LOCAL_REPOS_FILE="$HOME/.config/i3/repos.json"
+    ACTIVE_WORKTREE_FILE="$HOME/.config/i3/active-worktree.json"
+
+    mkdir -p "$CACHE_DIR"
+
+    emit_error_entry() {
+      local msg="$1"
+      local payload
+      payload=$(${pkgs.jq}/bin/jq -cn --arg action "error" --arg message "$msg" '{action: $action, message: $message}')
+      local encoded
+      encoded=$(printf '%s' "$payload" | ${pkgs.coreutils}/bin/base64 -w0)
+      printf '⚠ %s\t%s\n' "$msg" "$encoded"
+    }
+
+    should_refresh_cache() {
+      if [[ ! -f "$CACHE_FILE" ]]; then
+        return 0
+      fi
+      local now mtime age
+      now=$(date +%s)
+      mtime=$(${pkgs.coreutils}/bin/stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
+      age=$((now - mtime))
+      [[ "$age" -ge "$CACHE_TTL_SECONDS" ]]
+    }
+
+    fetch_remote_repos() {
+      local tmp
+      tmp=$(${pkgs.coreutils}/bin/mktemp "''${CACHE_FILE}.tmp.XXXXXX")
+
+      if ssh -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE_TARGET" "cat $REMOTE_REPOS_FILE" >"$tmp" 2>/dev/null \
+        && ${pkgs.jq}/bin/jq -e '.repositories and (.repositories | type == "array")' "$tmp" >/dev/null 2>&1; then
+        mv "$tmp" "$CACHE_FILE"
+        return 0
+      fi
+
+      rm -f "$tmp"
+      return 1
+    }
+
+    USING_STALE_CACHE="false"
+    if should_refresh_cache; then
+      if ! fetch_remote_repos; then
+        if [[ -f "$CACHE_FILE" ]]; then
+          USING_STALE_CACHE="true"
+        else
+          emit_error_entry "Remote index unavailable (''${REMOTE_HOST}). Run walker-ssh-worktree-diagnose."
+          exit 0
+        fi
+      fi
+    fi
+
+    if [[ ! -f "$CACHE_FILE" ]]; then
+      emit_error_entry "No remote cache available for ''${REMOTE_HOST}"
+      exit 0
+    fi
+
+    ACTIVE_QUALIFIED=""
+    if [[ -f "$ACTIVE_WORKTREE_FILE" ]]; then
+      ACTIVE_QUALIFIED=$(${pkgs.jq}/bin/jq -r '.qualified_name // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
+    fi
+
+    LOCAL_REPOS=()
+    LOCAL_WORKTREES=()
+    if [[ -f "$LOCAL_REPOS_FILE" ]]; then
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && LOCAL_REPOS+=("$line")
+      done < <(${pkgs.jq}/bin/jq -r '.repositories[]? | "\(.account)/\(.name)"' "$LOCAL_REPOS_FILE")
+
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && LOCAL_WORKTREES+=("$line")
+      done < <(${pkgs.jq}/bin/jq -r '.repositories[]? as $r | ($r.worktrees[]? | "\($r.account)/\($r.name):\(.branch)")' "$LOCAL_REPOS_FILE")
+    fi
+
+    array_contains() {
+      local needle="$1"
+      shift || true
+      local value
+      for value in "$@"; do
+        if [[ "$value" == "$needle" ]]; then
+          return 0
+        fi
+      done
+      return 1
+    }
+
+    if [[ "$MODE" == "repos" ]]; then
+      ${pkgs.jq}/bin/jq -c '
+        [ .repositories[]? | {
+            host: "ryzen",
+            account: .account,
+            repo: .name,
+            qualified_repo: (.account + "/" + .name),
+            remote_repo_path: (.path // ""),
+            remote_url: (.remote_url // ""),
+            default_branch: (.default_branch // "main"),
+            action: "create"
+          }
+        ]
+        | sort_by(.account, .repo)
+        | .[]
+      ' "$CACHE_FILE" | while IFS= read -r repo_json; do
+        qualified_repo=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -r '.qualified_repo')
+        remote_repo_path=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -r '.remote_repo_path')
+        default_branch=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -r '.default_branch')
+        stale_suffix=""
+        if [[ "$USING_STALE_CACHE" == "true" ]]; then
+          stale_suffix=" [stale]"
+        fi
+        short_remote_path=$(echo "$remote_repo_path" | ${pkgs.gnused}/bin/sed "s#^/home/$REMOTE_USER#~#")
+        payload=$(echo "$repo_json" | ${pkgs.jq}/bin/jq -c --arg user "$REMOTE_USER" '. + {user: $user, port: 22}')
+        encoded=$(printf '%s' "$payload" | ${pkgs.coreutils}/bin/base64 -w0)
+        printf '󰙅 %s %s [base:%s] [%s]%s\t%s\n' "$REMOTE_HOST" "$qualified_repo" "$default_branch" "$short_remote_path" "$stale_suffix" "$encoded"
+      done
+      exit 0
+    fi
+
+    ${pkgs.jq}/bin/jq -c '
+      [
+        .repositories[]? as $repo |
+        ($repo.worktrees // [])[]? |
+        {
+          host: "ryzen",
+          account: $repo.account,
+          repo: $repo.name,
+          branch: .branch,
+          qualified_name: ($repo.account + "/" + $repo.name + ":" + .branch),
+          remote_repo_path: ($repo.path // ""),
+          remote_worktree_path: (.path // (($repo.path // "") + "/" + .branch)),
+          remote_url: ($repo.remote_url // ""),
+          default_branch: ($repo.default_branch // "main"),
+          is_main: ((.branch == ($repo.default_branch // "main")) or (.branch == "main") or (.branch == "master")),
+          action: "switch"
+        }
+      ]
+      | sort_by(.account, .repo, (if .is_main then 0 else 1 end), .branch)
+      | .[]
+    ' "$CACHE_FILE" | while IFS= read -r item_json; do
+      qualified_name=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.qualified_name')
+      qualified_repo=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.account + "/" + .repo')
+      remote_worktree_path=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.remote_worktree_path')
+      is_main=$(echo "$item_json" | ${pkgs.jq}/bin/jq -r '.is_main')
+
+      local_repo_exists="false"
+      local_worktree_exists="false"
+      if array_contains "$qualified_repo" "''${LOCAL_REPOS[@]:-}"; then
+        local_repo_exists="true"
+      fi
+      if array_contains "$qualified_name" "''${LOCAL_WORKTREES[@]:-}"; then
+        local_worktree_exists="true"
+      fi
+
+      link_icon="☁"
+      if [[ "$local_worktree_exists" == "true" ]]; then
+        link_icon="↔"
+      fi
+
+      main_tag=""
+      if [[ "$is_main" == "true" ]]; then
+        main_tag=" MAIN"
+      fi
+
+      active_tag=""
+      if [[ "$qualified_name" == "$ACTIVE_QUALIFIED" ]]; then
+        active_tag=" ● ACTIVE"
+      fi
+
+      stale_suffix=""
+      if [[ "$USING_STALE_CACHE" == "true" ]]; then
+        stale_suffix=" [stale]"
+      fi
+
+      short_remote_path=$(echo "$remote_worktree_path" | ${pkgs.gnused}/bin/sed "s#^/home/$REMOTE_USER#~#")
+
+      payload=$(echo "$item_json" | ${pkgs.jq}/bin/jq -c \
+        --arg local_repo_exists "$local_repo_exists" \
+        --arg local_worktree_exists "$local_worktree_exists" \
+        --arg user "$REMOTE_USER" \
+        '. + {
+          local_repo_exists: ($local_repo_exists == "true"),
+          local_worktree_exists: ($local_worktree_exists == "true"),
+          user: $user,
+          port: 22
+        }')
+      encoded=$(printf '%s' "$payload" | ${pkgs.coreutils}/bin/base64 -w0)
+
+      printf '󰣀 %s %s %s%s [%s]%s\t%s\n' "$REMOTE_HOST" "$link_icon" "$qualified_name" "$main_tag" "$short_remote_path" "$active_tag$stale_suffix" "$encoded"
+    done
+  '';
+
+  # Materialize/sync a remote worktree locally, configure SSH profile, then switch.
+  walkerSshWorktreeMaterialize = pkgs.writeShellScriptBin "walker-ssh-worktree-materialize" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ $# -eq 0 ]]; then
+      echo "Usage: walker-ssh-worktree-materialize <payload-base64>" >&2
+      exit 1
+    fi
+
+    payload_b64="$1"
+    payload_json=$(printf '%s' "$payload_b64" | ${pkgs.coreutils}/bin/base64 -d 2>/dev/null || true)
+
+    if [[ -z "$payload_json" ]]; then
+      echo "Invalid payload" >&2
+      exit 1
+    fi
+
+    notify() {
+      local msg="$1"
+      if command -v ${pkgs.libnotify}/bin/notify-send >/dev/null 2>&1; then
+        ${pkgs.libnotify}/bin/notify-send "SSH Worktree" "$msg"
+      fi
+      echo "$msg"
+    }
+
+    log_step() {
+      echo "[walker-ssh-worktree] $1" >&2
+    }
+
+    action=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.action // ""')
+    if [[ "$action" == "error" ]]; then
+      msg=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.message // "Unknown error"')
+      notify "$msg"
+      exit 1
+    fi
+
+    host=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.host // "ryzen"')
+    user=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.user // "vpittamp"')
+    port=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.port // 22')
+    account=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.account // ""')
+    repo=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.repo // ""')
+    branch=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.branch // ""')
+    qualified_name=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.qualified_name // ""')
+    remote_repo_path=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.remote_repo_path // ""')
+    remote_worktree_path=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.remote_worktree_path // ""')
+    remote_url=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.remote_url // ""')
+    default_branch=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.default_branch // "main"')
+
+    if [[ -z "$account" || -z "$repo" || -z "$branch" || -z "$qualified_name" ]]; then
+      notify "Invalid selection payload (missing repo/branch metadata)"
+      exit 1
+    fi
+
+    if [[ -z "$remote_worktree_path" && -n "$remote_repo_path" ]]; then
+      remote_worktree_path="$remote_repo_path/$branch"
+    fi
+
+    local_repo_path="$HOME/repos/$account/$repo"
+    local_bare_path="$local_repo_path/.bare"
+    local_target_path="$local_repo_path/$branch"
+    local_repo_qualified="$account/$repo"
+    local_repos_file="$HOME/.config/i3/repos.json"
+
+    log_step "ensure-local-repo qualified=$local_repo_qualified"
+    if [[ ! -d "$local_bare_path" ]]; then
+      if [[ -z "$remote_url" ]]; then
+        notify "Cannot materialize $qualified_name: remote_url missing"
+        exit 1
+      fi
+      if ! i3pm clone "$remote_url" --account "$account" >/tmp/walker-ssh-clone.log 2>&1; then
+        notify "Clone failed for $local_repo_qualified (see /tmp/walker-ssh-clone.log)"
+        exit 1
+      fi
+    fi
+
+    i3pm discover --quiet >/dev/null 2>&1 || true
+
+    local_worktree_exists="false"
+    if [[ -f "$local_repos_file" ]]; then
+      if ${pkgs.jq}/bin/jq -e --arg acc "$account" --arg repo "$repo" --arg branch "$branch" \
+        '.repositories[]? | select(.account == $acc and .name == $repo) | .worktrees[]? | select(.branch == $branch)' \
+        "$local_repos_file" >/dev/null 2>&1; then
+        local_worktree_exists="true"
+      fi
+    fi
+
+    if [[ "$local_worktree_exists" != "true" ]]; then
+      log_step "create-local-worktree qualified=$qualified_name"
+      ${pkgs.git}/bin/git -C "$local_bare_path" fetch --all --prune >/dev/null 2>&1 || true
+
+      if [[ -e "$local_target_path" ]]; then
+        notify "Local target path already exists: $local_target_path"
+        exit 1
+      fi
+
+      if ${pkgs.git}/bin/git -C "$local_bare_path" show-ref --verify --quiet "refs/heads/$branch"; then
+        if ! ${pkgs.git}/bin/git -C "$local_bare_path" worktree add "$local_target_path" "$branch" >/tmp/walker-ssh-worktree-add.log 2>&1; then
+          notify "Failed to add existing local branch worktree (see /tmp/walker-ssh-worktree-add.log)"
+          exit 1
+        fi
+      elif ${pkgs.git}/bin/git -C "$local_bare_path" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        if ! ${pkgs.git}/bin/git -C "$local_bare_path" worktree add -b "$branch" "$local_target_path" "origin/$branch" >/tmp/walker-ssh-worktree-add.log 2>&1; then
+          notify "Failed to add worktree from origin/$branch (see /tmp/walker-ssh-worktree-add.log)"
+          exit 1
+        fi
+      else
+        if ! i3pm worktree create "$branch" --repo "$local_repo_qualified" --from "$default_branch" >/tmp/walker-ssh-worktree-create.log 2>&1; then
+          notify "Failed to create local worktree from $default_branch (see /tmp/walker-ssh-worktree-create.log)"
+          exit 1
+        fi
+      fi
+    fi
+
+    i3pm discover --quiet >/dev/null 2>&1 || true
+
+    if [[ -z "$remote_worktree_path" ]]; then
+      notify "Remote worktree path missing for $qualified_name"
+      exit 1
+    fi
+
+    log_step "set-remote-profile qualified=$qualified_name host=$host"
+    if ! i3pm worktree remote set "$qualified_name" --host "$host" --user "$user" --port "$port" --dir "$remote_worktree_path" >/tmp/walker-ssh-remote-set.log 2>&1; then
+      notify "Failed to set SSH profile for $qualified_name (see /tmp/walker-ssh-remote-set.log)"
+      exit 1
+    fi
+
+    log_step "switch qualified=$qualified_name"
+    if ! i3pm worktree switch "$qualified_name" >/tmp/walker-ssh-switch.log 2>&1; then
+      notify "Failed to switch to $qualified_name (see /tmp/walker-ssh-switch.log)"
+      exit 1
+    fi
+
+    notify "Ready: $qualified_name on $host"
+  '';
+
+  # Select script - unwraps Walker line payload and delegates to materialize workflow.
+  walkerSshWorktreeSelect = pkgs.writeShellScriptBin "walker-ssh-worktree-select" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ $# -eq 0 ]]; then
+      exit 0
+    fi
+
+    selected="$1"
+    payload=$(printf '%s' "$selected" | ${pkgs.coreutils}/bin/cut -f2-)
+    if [[ -z "$payload" || "$payload" == "$selected" ]]; then
+      payload="$selected"
+    fi
+
+    exec walker-ssh-worktree-materialize "$payload"
+  '';
+
+  # Create script - creates remote worktree on ryzen then materializes/switches locally.
+  walkerSshWorktreeCreate = pkgs.writeShellScriptBin "walker-ssh-worktree-create" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ $# -eq 0 ]]; then
+      exit 0
+    fi
+
+    selected="$1"
+    payload=$(printf '%s' "$selected" | ${pkgs.coreutils}/bin/cut -f2-)
+    if [[ -z "$payload" || "$payload" == "$selected" ]]; then
+      payload="$selected"
+    fi
+
+    payload_json=$(printf '%s' "$payload" | ${pkgs.coreutils}/bin/base64 -d 2>/dev/null || true)
+    if [[ -z "$payload_json" ]]; then
+      echo "Invalid payload" >&2
+      exit 1
+    fi
+
+    host=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.host // "ryzen"')
+    user=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.user // "vpittamp"')
+    port=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.port // 22')
+    account=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.account // ""')
+    repo=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.repo // ""')
+    remote_repo_path=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.remote_repo_path // ""')
+    remote_url=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.remote_url // ""')
+    default_branch=$(echo "$payload_json" | ${pkgs.jq}/bin/jq -r '.default_branch // "main"')
+
+    if [[ -z "$account" || -z "$repo" || -z "$remote_repo_path" ]]; then
+      echo "Invalid repo payload" >&2
+      exit 1
+    fi
+
+    prompt="New branch for $account/$repo"
+    branch="''${WALKER_SSH_WORKTREE_CREATE_BRANCH:-}"
+    if [[ -z "$branch" ]] && command -v ${pkgs.walker}/bin/walker >/dev/null 2>&1; then
+      branch=$(printf "%s" "" | ${pkgs.walker}/bin/walker --dmenu -p "$prompt" 2>/dev/null || true)
+    fi
+    if [[ -z "$branch" ]] && command -v ${pkgs.rofi}/bin/rofi >/dev/null 2>&1; then
+      branch=$(printf "%s" "" | ${pkgs.rofi}/bin/rofi -dmenu -p "$prompt" 2>/dev/null || true)
+    fi
+
+    branch=$(echo "$branch" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [[ -z "$branch" ]]; then
+      exit 0
+    fi
+
+    if ! ${pkgs.git}/bin/git check-ref-format --branch "$branch" >/dev/null 2>&1; then
+      ${pkgs.libnotify}/bin/notify-send "SSH Worktree" "Invalid branch name: $branch"
+      exit 1
+    fi
+
+    remote_worktree_path=$(ssh -o BatchMode=yes -o ConnectTimeout=8 -p "$port" "$user@$host" bash -s -- "$remote_repo_path" "$branch" "$default_branch" <<'REMOTE'
+set -euo pipefail
+
+repo_path="$1"
+branch="$2"
+base_branch="$3"
+bare_path="$repo_path/.bare"
+
+if [[ ! -d "$bare_path" ]]; then
+  echo "remote bare repo missing: $bare_path" >&2
+  exit 2
+fi
+
+git -C "$bare_path" fetch --all --prune >/dev/null 2>&1 || true
+
+existing_path=$(git -C "$bare_path" worktree list --porcelain | awk -v b="$branch" '
+  BEGIN { path="" }
+  /^worktree / { path=substr($0, 10) }
+  /^branch refs\/heads\// {
+    if (substr($0, 18) == b) {
+      print path
+      exit
+    }
+  }
+')
+
+if [[ -n "$existing_path" ]]; then
+  echo "$existing_path"
+  exit 0
+fi
+
+target_path="$repo_path/$branch"
+if [[ -e "$target_path" ]]; then
+  echo "remote target path already exists: $target_path" >&2
+  exit 3
+fi
+
+if git -C "$bare_path" show-ref --verify --quiet "refs/heads/$branch"; then
+  git -C "$bare_path" worktree add "$target_path" "$branch" >/dev/null 2>&1
+elif git -C "$bare_path" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+  git -C "$bare_path" worktree add -b "$branch" "$target_path" "origin/$branch" >/dev/null 2>&1
+else
+  git -C "$bare_path" worktree add -b "$branch" "$target_path" "$base_branch" >/dev/null 2>&1
+fi
+
+echo "$target_path"
+REMOTE
+    )
+
+    if [[ -z "$remote_worktree_path" ]]; then
+      ${pkgs.libnotify}/bin/notify-send "SSH Worktree" "Remote create failed for $account/$repo:$branch"
+      exit 1
+    fi
+
+    qualified_name="$account/$repo:$branch"
+
+    switch_payload=$(${pkgs.jq}/bin/jq -cn \
+      --arg action "switch" \
+      --arg host "$host" \
+      --arg user "$user" \
+      --argjson port "$port" \
+      --arg account "$account" \
+      --arg repo "$repo" \
+      --arg branch "$branch" \
+      --arg qualified_name "$qualified_name" \
+      --arg remote_repo_path "$remote_repo_path" \
+      --arg remote_worktree_path "$remote_worktree_path" \
+      --arg remote_url "$remote_url" \
+      --arg default_branch "$default_branch" \
+      '{
+        action: $action,
+        host: $host,
+        user: $user,
+        port: $port,
+        account: $account,
+        repo: $repo,
+        branch: $branch,
+        qualified_name: $qualified_name,
+        remote_repo_path: $remote_repo_path,
+        remote_worktree_path: $remote_worktree_path,
+        remote_url: $remote_url,
+        default_branch: $default_branch,
+        is_main: false
+      }')
+
+    switch_payload_b64=$(printf '%s' "$switch_payload" | ${pkgs.coreutils}/bin/base64 -w0)
+    exec walker-ssh-worktree-materialize "$switch_payload_b64"
+  '';
+
+  # Force cache refresh and print list (useful for diagnostics/manual workflows).
+  walkerSshWorktreeRefresh = pkgs.writeShellScriptBin "walker-ssh-worktree-refresh" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cache="$HOME/.cache/i3pm/remote-${remoteWorktreeHost}-repos.json"
+    rm -f "$cache"
+    walker-ssh-worktree-list >/dev/null
+    ${pkgs.libnotify}/bin/notify-send "SSH Worktree" "Refreshed remote index from ${remoteWorktreeHost}"
+  '';
+
+  # Connectivity diagnostics for remote ssh worktree workflow.
+  walkerSshWorktreeDiagnose = pkgs.writeShellScriptBin "walker-ssh-worktree-diagnose" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    host="${remoteWorktreeHost}"
+    user="${remoteWorktreeUser}"
+    target="$user@$host"
+    ok=true
+
+    echo "[ssh-worktree] target=$target"
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$target" "echo connected" >/dev/null 2>&1; then
+      echo "  ssh: ok"
+    else
+      echo "  ssh: failed"
+      ok=false
+    fi
+
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "$target" "test -f ~/.config/i3/repos.json" >/dev/null 2>&1; then
+      count=$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$target" "jq '.repositories | length' ~/.config/i3/repos.json 2>/dev/null || echo 0" 2>/dev/null || echo 0)
+      echo "  remote repos.json: ok (repositories=$count)"
+    else
+      echo "  remote repos.json: missing/unreadable"
+      ok=false
+    fi
+
+    if command -v i3pm >/dev/null 2>&1; then
+      echo "  local i3pm: $(i3pm --version 2>/dev/null || echo unavailable)"
+    else
+      echo "  local i3pm: missing"
+      ok=false
+    fi
+
+    if [[ "$ok" == "true" ]]; then
+      ${pkgs.libnotify}/bin/notify-send "SSH Worktree" "Diagnostics passed for $target"
+      exit 0
+    else
+      ${pkgs.libnotify}/bin/notify-send "SSH Worktree" "Diagnostics failed for $target"
+      exit 1
     fi
   '';
 
@@ -872,6 +1432,12 @@ in
     walkerOpenInNvim
     walkerProjectList
     walkerProjectSwitch
+    walkerSshWorktreeList
+    walkerSshWorktreeMaterialize
+    walkerSshWorktreeSelect
+    walkerSshWorktreeCreate
+    walkerSshWorktreeRefresh
+    walkerSshWorktreeDiagnose
     walkerWindowClose
     walkerWindowFloat
     walkerWindowFullscreen
@@ -1064,6 +1630,14 @@ in
         [[providers.prefixes]]
         prefix = ";p "
         provider = "menus:projects"
+
+        [[providers.prefixes]]
+        prefix = ";r "
+        provider = "menus:ssh-worktrees"
+
+        [[providers.prefixes]]
+        prefix = ";rc "
+        provider = "menus:ssh-worktree-create"
 
         [[providers.prefixes]]
         prefix = ";s "
@@ -1682,6 +2256,97 @@ in
             handle:close()
         end
 
+        return entries
+    end
+  '';
+
+  # SSH worktree switcher (ryzen) via Tailscale SSH
+  # Access: Meta+D -> ;r
+  xdg.configFile."elephant/menus/ssh-worktrees.lua".text = ''
+    Name = "ssh-worktrees"
+    NamePretty = "SSH Worktrees (ryzen)"
+    Icon = "network-workgroup"
+    Cache = false
+    Action = "walker-ssh-worktree-select '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "Discover and materialize remote worktrees from ryzen"
+    SearchName = true
+    GlobalSearch = false
+
+    function GetEntries()
+        local entries = {}
+        local handle = io.popen("walker-ssh-worktree-list 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                local display, payload = line:match("^(.+)\t(.+)$")
+                if display and payload then
+                    local icon = "network-workgroup"
+                    if display:match("^⚠") then
+                        icon = "dialog-warning"
+                    elseif display:match("↔") then
+                        icon = "folder-saved-search"
+                    elseif display:match("☁") then
+                        icon = "folder-remote"
+                    end
+
+                    local keywords = {"ssh", "worktree", "remote", "ryzen", "tailscale"}
+                    for word in display:gmatch("%S+") do
+                        if not word:match("^[%[%]󰣀↔☁●]") then
+                            table.insert(keywords, word:lower())
+                        end
+                    end
+
+                    table.insert(entries, {
+                        Text = display,
+                        Value = line,
+                        Icon = icon,
+                        Keywords = keywords
+                    })
+                end
+            end
+            handle:close()
+        end
+        return entries
+    end
+  '';
+
+  # SSH remote worktree create menu (ryzen)
+  # Access: Meta+D -> ;rc
+  xdg.configFile."elephant/menus/ssh-worktree-create.lua".text = ''
+    Name = "ssh-worktree-create"
+    NamePretty = "Create SSH Worktree (ryzen)"
+    Icon = "folder-new"
+    Cache = false
+    Action = "walker-ssh-worktree-create '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "Create worktree on ryzen and materialize locally"
+    SearchName = true
+    GlobalSearch = false
+
+    function GetEntries()
+        local entries = {}
+        local handle = io.popen("walker-ssh-worktree-list --repos-only 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                local display, payload = line:match("^(.+)\t(.+)$")
+                if display and payload then
+                    local keywords = {"ssh", "worktree", "create", "remote", "ryzen"}
+                    for word in display:gmatch("%S+") do
+                        if not word:match("^[%[%]󰙅]") then
+                            table.insert(keywords, word:lower())
+                        end
+                    end
+
+                    table.insert(entries, {
+                        Text = display,
+                        Value = line,
+                        Icon = "folder-new",
+                        Keywords = keywords
+                    })
+                end
+            end
+            handle:close()
+        end
         return entries
     end
   '';

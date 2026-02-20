@@ -25,24 +25,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-02-19, the latest stable release is v0.29.4.
+  # As of 2026-02-20, the latest stable release is v0.29.5.
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.29.4";
+    version = "0.29.5";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-s2RrKByZAJu3uCp3CQb3KnJf20whZT4puKCSKPMuSuA=";
+      hash = "sha256-+gFSTq0CXMZa2OhP2gOuWa5WtteKW7Ys78lgnz7J72g=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-4U4QKNcfakMlrXMW4F5Q9ooA/CKunUCYdp38Y2pc8xk=";
+    npmDepsHash = "sha256-RGiWtJkLFV1UfFahHPzxtzJIsPCseEwfSsPdLfBkavI=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 
@@ -236,7 +236,7 @@ let
       enableAutoUpdateNotification = false;
     };
     ui.theme = "Default";
-    model.name = "pro";
+    model.name = "gemini-3.1-pro";
     # Feature 123: OpenTelemetry configuration for OTLP export
     # Sends telemetry to otel-ai-monitor (via our local interceptor).
     telemetry = {
@@ -308,7 +308,7 @@ EOF
       # - preferredEditor/previewFeatures/vimMode -> general.*
       # - theme -> ui.theme
       WANT_ENDPOINT="http://127.0.0.1:4322"
-      WANT_MODEL="pro"
+      WANT_MODEL="gemini-3.1-pro"
 
       $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" --arg model "$WANT_MODEL" '
         # Migrate legacy top-level keys to the current schema.
@@ -337,8 +337,7 @@ EOF
         .telemetry.otlpProtocol = "http" |
         .telemetry.logPrompts = (.telemetry.logPrompts // true) |
 
-        # Make "Deep Think" the default: in gemini-cli, `pro` resolves to Gemini 3 Pro
-        # when preview features are enabled, otherwise falls back to Gemini 2.5 Pro.
+        # Default to Gemini 3.1 Pro (latest, most capable model).
         .model = (.model // {}) |
         .model.name = $model |
 
@@ -411,10 +410,10 @@ EOF
 
     # Default model: Available options with preview features enabled:
     # - Auto (let system choose based on task complexity)
+    # - gemini-3.1-pro (Gemini 3.1 Pro - latest, most capable)
     # - gemini-3-flash-preview (Gemini 3 Flash - fast, 78% SWE-bench)
-    # - gemini-3-pro-preview-11-2025 (Gemini 3 Pro - complex tasks)
     # - gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-    defaultModel = "pro";
+    defaultModel = "gemini-3.1-pro";
 
     # NOTE: settings are NOT managed here to allow credential persistence
     # Settings are written via home.activation.setupGeminiConfig as a real file

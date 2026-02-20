@@ -13,44 +13,24 @@
   .bar {
     background-color: rgba(30, 30, 46, 0.9);
     color: #cdd6f4;
-    padding: 3px 4px;
+    padding: 3px 6px;
     font-size: 11px;
     border: 1px solid #313244;
-    border-radius: 6px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(203, 166, 247, 0.06);
+    border-radius: 7px;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(203, 166, 247, 0.05);
   }
 
   .left, .center, .right {
-    margin: 0 3px;
-  }
-
-  /* Compact metrics trigger (always visible) */
-  .compact-trigger {
-    background: rgba(69, 71, 90, 0.35);
-    border: 1px solid rgba(108, 112, 134, 0.45);
-    padding: 2px 6px;
-    border-radius: 7px;
-    min-width: 14px;
-    min-height: 14px;
-    margin-right: 2px;
-  }
-
-  .compact-trigger .compact-icon {
-    color: #a6adc8;
-    font-size: 10px;
-  }
-
-  .metrics-revealer {
-    transition: all 180ms ease;
+    margin: 0 4px;
   }
 
   /* Pill foundation */
   .pill {
     background: rgba(49, 50, 68, 0.65);
     border: 1px solid rgba(108, 112, 134, 0.45);
-    border-radius: 7px;
-    padding: 1px 4px;
-    min-height: 13px;
+    border-radius: 8px;
+    padding: 2px 6px;
+    min-height: 14px;
     transition: background 120ms ease, border 120ms ease;
   }
 
@@ -65,7 +45,7 @@
 
   .icon {
     font-size: 10px;
-    margin-right: 1px;
+    margin-right: 2px;
     color: #cba6f7;
   }
 
@@ -73,7 +53,7 @@
   .value {
     font-size: 9px;
     font-weight: 600;
-    margin-left: 1px;
+    margin-left: 0;
   }
   .subtext { color: #a6adc8; font-size: 7px; }
 
@@ -85,7 +65,7 @@
 
   /* Meters and progress fills */
   .meter scale {
-    min-width: 44px;
+    min-width: 40px;
     min-height: 3px;
   }
 
@@ -198,18 +178,143 @@
     border: 1px solid rgba(148, 226, 213, 0.35);
   }
 
+  .project-pill-worktree:hover {
+    background: rgba(148, 226, 213, 0.2);
+    border-color: rgba(148, 226, 213, 0.55);
+  }
+
   .project-pill-worktree .value,
   .project-pill-worktree .icon { color: #94e2d5; }
+
+  .project-pill-ssh {
+    background: linear-gradient(135deg, rgba(166, 227, 161, 0.26), rgba(249, 226, 175, 0.2));
+    border: 1px solid rgba(166, 227, 161, 0.75);
+    box-shadow: 0 0 12px rgba(166, 227, 161, 0.26),
+                inset 0 0 10px rgba(249, 226, 175, 0.16);
+  }
+
+  .project-pill-ssh:hover {
+    background: linear-gradient(135deg, rgba(166, 227, 161, 0.34), rgba(249, 226, 175, 0.28));
+    border-color: rgba(249, 226, 175, 0.92);
+    box-shadow: 0 0 16px rgba(166, 227, 161, 0.42),
+                0 4px 14px rgba(249, 226, 175, 0.24);
+  }
+
+  .project-pill-ssh .project-value,
+  .project-pill-ssh .project-icon {
+    color: #a6e3a1;
+    font-weight: 700;
+  }
+
+  .project-ssh-indicator {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    color: #a6e3a1;
+    background: rgba(22, 32, 22, 0.84);
+    border: 1px solid rgba(166, 227, 161, 0.78);
+    border-radius: 7px;
+    padding: 1px 6px;
+  }
+
+  .project-ssh-target {
+    font-size: 9px;
+    font-weight: 700;
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    color: #f9e2af;
+    background: rgba(34, 33, 21, 0.78);
+    border-radius: 6px;
+    padding: 1px 6px;
+    border: 1px solid rgba(249, 226, 175, 0.45);
+  }
 
   /* Time pill */
   .time-pill {
     background: rgba(69, 71, 90, 0.35);
     border: 1px solid rgba(203, 166, 247, 0.35);
-    padding-right: 10px;
+    padding-right: 8px;
   }
 
   .time-pill .icon { color: #cba6f7; }
   .time-value { color: #cdd6f4; }
+
+  /* Status shelf trigger for secondary badges */
+  .status-shelf-toggle {
+    background: linear-gradient(135deg, rgba(69, 71, 90, 0.6), rgba(49, 50, 68, 0.75));
+    border-color: rgba(108, 112, 134, 0.58);
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+
+  .status-shelf-toggle:hover {
+    border-color: rgba(148, 226, 213, 0.75);
+    box-shadow: 0 2px 8px rgba(148, 226, 213, 0.25);
+  }
+
+  .status-shelf-icon {
+    color: #94e2d5;
+    font-size: 11px;
+  }
+
+  .status-shelf-alert {
+    background: linear-gradient(135deg, rgba(243, 139, 168, 0.2), rgba(250, 179, 135, 0.18));
+    border-color: rgba(243, 139, 168, 0.65);
+    box-shadow: 0 0 12px rgba(243, 139, 168, 0.24);
+  }
+
+  /* Compact always-visible health indicator */
+  .health-dot-pill {
+    min-width: 12px;
+    padding: 2px 5px;
+  }
+
+  .health-dot-icon {
+    font-size: 10px;
+    margin-right: 0;
+  }
+
+  .health-dot-healthy .health-dot-icon { color: #a6e3a1; }
+  .health-dot-warning .health-dot-icon { color: #f9e2af; }
+  .health-dot-error .health-dot-icon { color: #f38ba8; }
+  .health-dot-unknown .health-dot-icon { color: #6c7086; }
+
+  /* Popup badge shelf */
+  .badge-shelf-window {
+    background: transparent;
+    padding: 0;
+  }
+
+  .badge-shelf-card {
+    background: linear-gradient(180deg, rgba(24, 24, 37, 0.97), rgba(30, 30, 46, 0.95));
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+    padding: 4px 7px;
+    margin-right: 4px;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.42), 0 1px 0 rgba(203, 166, 247, 0.04) inset;
+  }
+
+  .badge-shelf-card .pill {
+    border-radius: 7px;
+    min-height: 13px;
+    padding: 1px 4px;
+  }
+
+  .badge-shelf-close {
+    background: rgba(69, 71, 90, 0.55);
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    border-radius: 7px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #a6adc8;
+    margin-left: 4px;
+  }
+
+  .badge-shelf-close:hover {
+    border-color: rgba(203, 166, 247, 0.75);
+    color: #cba6f7;
+  }
 
   /* Volume popup styling */
   .volume-popup {

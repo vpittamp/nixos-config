@@ -22,7 +22,7 @@
         (input
           :class "field-input"
           :value edit_form_display_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}")
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}")
         (revealer
           :reveal {validation_state.errors.display_name != ""}
           :transition "slidedown"
@@ -43,7 +43,7 @@
         (input
           :class "field-input"
           :value edit_form_icon
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}")
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}")
         (revealer
           :reveal {validation_state.errors.icon != ""}
           :transition "slidedown"
@@ -120,7 +120,7 @@
               (input
                 :class "field-input"
                 :value edit_form_remote_host
-                :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_host={}")
+                :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_remote_host={}")
               (revealer
                 :reveal {validation_state.errors["remote.host"] != ""}
                 :transition "slidedown"
@@ -141,7 +141,7 @@
               (input
                 :class "field-input"
                 :value edit_form_remote_user
-                :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_user={}")
+                :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_remote_user={}")
               (revealer
                 :reveal {validation_state.errors["remote.user"] != ""}
                 :transition "slidedown"
@@ -162,7 +162,7 @@
               (input
                 :class "field-input"
                 :value edit_form_remote_dir
-                :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_dir={}")
+                :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_remote_dir={}")
               (revealer
                 :reveal {validation_state.errors["remote.working_dir"] != ""}
                 :transition "slidedown"
@@ -183,7 +183,7 @@
               (input
                 :class "field-input"
                 :value edit_form_remote_port
-                :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_port={}")
+                :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_remote_port={}")
               (revealer
                 :reveal {validation_state.errors["remote.port"] != ""}
                 :transition "slidedown"
@@ -209,11 +209,11 @@
         :halign "end"
         (button
           :class "cancel-button"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
           "Cancel")
         (button
           :class "''${save_in_progress ? 'save-button-loading' : (validation_state.valid ? 'save-button' : 'save-button-disabled')}"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && project-edit-save &"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && project-edit-save &"
           "''${save_in_progress ? 'Saving...' : 'Save'}"))))
 
   ;; Worktree Edit Form
@@ -225,7 +225,7 @@
       (label
         :class "edit-form-header"
         :halign "start"
-        :text "Edit Worktree")
+        :text "Rename Worktree")
       (box
         :class "form-field"
         :orientation "v"
@@ -233,23 +233,11 @@
         (label
           :class "field-label"
           :halign "start"
-          :text "Display Name")
+          :text "New Branch Name")
         (input
           :class "field-input"
-          :value edit_form_display_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}"))
-      (box
-        :class "form-field"
-        :orientation "v"
-        :space-evenly false
-        (label
-          :class "field-label"
-          :halign "start"
-          :text "Icon")
-        (input
-          :class "field-input"
-          :value edit_form_icon
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}"))
+          :value worktree_form_branch_name
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='{}'"))
       (box
         :class "form-field readonly-field"
         :orientation "v"
@@ -257,11 +245,11 @@
         (label
           :class "field-label"
           :halign "start"
-          :text "Branch (read-only)")
+          :text "Current Qualified Name (read-only)")
         (label
           :class "field-readonly"
           :halign "start"
-          :text worktree_form_branch_name))
+          :text {project.name ?: worktree_form_parent_project}))
       (box
         :class "form-field readonly-field"
         :orientation "v"
@@ -305,11 +293,11 @@
         :halign "end"
         (button
           :class "cancel-button"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
           "Cancel")
         (button
           :class "save-button"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && worktree-edit-save ''${project.name} &"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && worktree-edit-save ''${project.name} &"
           "Save"))))
 
   ;; Worktree Create Form
@@ -345,7 +333,7 @@
         (input
           :class "field-input"
           :value worktree_form_description
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description='{}' && worktree-auto-populate '{}' &")
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_description='{}' && worktree-auto-populate '{}' &")
         (label
           :class "field-hint"
           :halign "start"
@@ -361,12 +349,28 @@
         (input
           :class "field-input"
           :value worktree_form_branch_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='{}' && worktree-update-path '{}' &"
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='{}' && worktree-update-path '{}' &"
           :tooltip "Auto-generated from description, editable")
         (label
           :class "field-hint"
           :halign "start"
-          :text "Auto-generated: NNN-short-name"))
+          :text "Auto-generated suggestion; editable to any valid git branch name"))
+      (box
+        :class "form-field"
+        :orientation "v"
+        :space-evenly false
+        (label
+          :class "field-label"
+          :halign "start"
+          :text "Base Branch")
+        (input
+          :class "field-input"
+          :value worktree_form_base_branch
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_base_branch='{}'")
+        (label
+          :class "field-hint"
+          :halign "start"
+          :text "Branch to create from (e.g., main, develop)"))
       (box
         :class "form-field"
         :orientation "v"
@@ -378,12 +382,84 @@
         (input
           :class "field-input"
           :value worktree_form_path
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path='{}'"
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_path='{}'"
           :tooltip "Auto-generated from branch name, editable")
         (label
           :class "field-hint"
           :halign "start"
           :text "Auto-filled from branch name"))
+      (box
+        :class "form-field form-field-checkbox"
+        :orientation "h"
+        :space-evenly false
+        (checkbox
+          :checked worktree_form_remote_enabled
+          :onchecked "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_enabled=true"
+          :onunchecked "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_enabled=false")
+        (label
+          :class "field-label checkbox-label"
+          :halign "start"
+          :text "Configure SSH remote profile"))
+      (revealer
+        :reveal worktree_form_remote_enabled
+        :transition "slidedown"
+        :duration "200ms"
+        (box
+          :class "remote-fields"
+          :orientation "v"
+          :space-evenly false
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "SSH Host")
+            (input
+              :class "field-input"
+              :value worktree_form_remote_host
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_host={}"))
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "SSH User")
+            (input
+              :class "field-input"
+              :value worktree_form_remote_user
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_user={}"))
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "Remote Directory")
+            (input
+              :class "field-input"
+              :value worktree_form_remote_dir
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_dir={}")
+            (label
+              :class "field-hint"
+              :halign "start"
+              :text "Auto-filled from branch name, editable"))
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "SSH Port")
+            (input
+              :class "field-input"
+              :value worktree_form_remote_port
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_port={}"))))
       (box
         :class "form-field"
         :orientation "v"
@@ -395,7 +471,7 @@
         (input
           :class "field-input"
           :value edit_form_display_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name='{}'"
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_display_name='{}'"
           :tooltip "Auto-generated from description, editable")
         (label
           :class "field-hint"
@@ -412,39 +488,7 @@
         (input
           :class "field-input"
           :value edit_form_icon
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon='{}'"))
-      (box
-        :class "form-field"
-        :orientation "v"
-        :space-evenly false
-        (label
-          :class "field-label"
-          :halign "start"
-          :text "AI Agent")
-        (box
-          :class "agent-buttons"
-          :orientation "h"
-          :space-evenly false
-          (button
-            :class "agent-btn claude ''${worktree_form_agent == 'claude' ? 'active' : '''}"
-            :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='claude'"
-            "Claude")
-          (button
-            :class "agent-btn gemini ''${worktree_form_agent == 'gemini' ? 'active' : '''}"
-            :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_agent='gemini'"
-            "Gemini")))
-      (box
-        :class "form-field form-field-checkbox"
-        :orientation "h"
-        :space-evenly false
-        (checkbox
-          :checked worktree_form_speckit
-          :onchecked "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=true"
-          :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=false")
-        (label
-          :class "field-label checkbox-label"
-          :halign "start"
-          :text "Setup speckit (creates specs directory)"))
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_icon='{}'"))
       (revealer
         :reveal {edit_form_error != ""}
         :transition "slidedown"
@@ -461,11 +505,11 @@
         :halign "end"
         (button
           :class "cancel-button"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_speckit=true && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update panel_focus_mode=false && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_base_branch='main' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_enabled=false && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_host='ryzen' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_user=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_dir=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_port='22' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update worktree_form_remote_base=''' && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
           "Cancel")
         (button
           :class "save-button"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && worktree-create &"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && worktree-create &"
           "Create"))))
 
   ;; Project Create Form
@@ -489,7 +533,7 @@
         (input
           :class "field-input"
           :value create_form_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_name={}")
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_name={}")
         (label
           :class "field-hint"
           :halign "start"
@@ -505,7 +549,7 @@
         (input
           :class "field-input"
           :value create_form_display_name
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_display_name={}"))
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_display_name={}"))
       (box
         :class "form-field"
         :orientation "v"
@@ -517,7 +561,7 @@
         (input
           :class "field-input icon-input"
           :value create_form_icon
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_icon={}"))
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_icon={}"))
       (box
         :class "form-field"
         :orientation "v"
@@ -529,7 +573,7 @@
         (input
           :class "field-input"
           :value create_form_working_dir
-          :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_working_dir={}")
+          :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_working_dir={}")
         (label
           :class "field-hint"
           :halign "start"
@@ -560,8 +604,8 @@
         :space-evenly false
         (checkbox
           :checked create_form_remote_enabled
-          :onchecked "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled=true"
-          :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled=false")
+          :onchecked "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled=true"
+          :onunchecked "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled=false")
         (label
           :class "field-label"
           :halign "start"
@@ -585,7 +629,7 @@
             (input
               :class "field-input"
               :value create_form_remote_host
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_host={}")
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_remote_host={}")
             (label
               :class "field-hint"
               :halign "start"
@@ -601,7 +645,7 @@
             (input
               :class "field-input"
               :value create_form_remote_user
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_user={}"))
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_remote_user={}"))
           (box
             :class "form-field"
             :orientation "v"
@@ -613,7 +657,7 @@
             (input
               :class "field-input"
               :value create_form_remote_dir
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_dir={}")
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_remote_dir={}")
             (label
               :class "field-hint"
               :halign "start"
@@ -629,7 +673,7 @@
             (input
               :class "field-input port-input"
               :value create_form_remote_port
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_port={}"))))
+              :onchange "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update create_form_remote_port={}"))))
       (revealer
         :reveal {create_form_error != ""}
         :transition "slidedown"
@@ -650,6 +694,6 @@
           "Cancel")
         (button
           :class "''${save_in_progress ? 'save-button-loading' : 'save-button'}"
-          :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && ${projectCreateSaveScript}/bin/project-create-save &"
+          :onclick "${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && ${projectCreateSaveScript}/bin/project-create-save &"
           "''${save_in_progress ? 'Creating...' : 'Create'}"))))
 ''

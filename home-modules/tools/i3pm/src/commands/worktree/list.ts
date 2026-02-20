@@ -2,7 +2,13 @@
 // T041: Create `i3pm worktree list [repo]` CLI command
 
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
-import { WorktreeSchema, type Worktree } from "../../../models/repository.ts";
+import { type Worktree, WorktreeSchema } from "../../../models/repository.ts";
+import {
+  detectRepoPath,
+  getDefaultBranch,
+  hasGitWorktreeRoot,
+  runGitGtr,
+} from "./helpers.ts";
 
 /**
  * List all worktrees for a repository.
@@ -32,26 +38,35 @@ export async function worktreeList(args: string[]): Promise<number> {
     return 1;
   }
 
-  const barePath = `${repoPath}/.bare`;
+  const defaultBranch = (await getDefaultBranch(repoPath)) || "main";
 
-  // Get worktree list from git
-  const cmd = new Deno.Command("git", {
-    args: ["-C", barePath, "worktree", "list", "--porcelain"],
-    stdout: "piped",
-    stderr: "piped",
-  });
-
-  const output = await cmd.output();
+  const useGtr = await hasGitWorktreeRoot(repoPath);
+  let output: Deno.CommandOutput;
+  if (useGtr) {
+    // gtr-first workflow: read worktrees through git gtr porcelain output.
+    output = await runGitGtr(repoPath, ["list", "--porcelain"]);
+  } else {
+    const cmd = new Deno.Command("git", {
+      args: ["-C", `${repoPath}/.bare`, "worktree", "list", "--porcelain"],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    output = await cmd.output();
+  }
 
   if (!output.success) {
     const stderr = new TextDecoder().decode(output.stderr);
-    console.error(`Error: git worktree list failed`);
-    console.error(stderr);
+    const stdout = new TextDecoder().decode(output.stdout);
+    console.error(useGtr ? "Error: git gtr list failed" : "Error: git worktree list failed");
+    if (stderr.trim()) console.error(stderr.trim());
+    else if (stdout.trim()) console.error(stdout.trim());
     return 1;
   }
 
   const stdout = new TextDecoder().decode(output.stdout);
-  const worktrees = parseWorktreeList(stdout, repoPath);
+  const worktrees = useGtr
+    ? parseGtrWorktreeList(stdout, defaultBranch)
+    : parseNativeWorktreeList(stdout, defaultBranch, repoPath);
 
   if (parsed.json) {
     console.log(JSON.stringify(worktrees, null, 2));
@@ -59,7 +74,7 @@ export async function worktreeList(args: string[]): Promise<number> {
   }
 
   // Get repo name from path
-  const parts = repoPath.split("/");
+  const parts = repoPath.split("/").filter(Boolean);
   const repoName = parts.slice(-2).join("/");
 
   console.log(`Worktrees for ${repoName}:`);
@@ -67,7 +82,7 @@ export async function worktreeList(args: string[]): Promise<number> {
 
   for (const wt of worktrees) {
     const mainMarker = wt.is_main ? " (main)" : "";
-    const cleanStatus = wt.is_clean === false ? " [dirty]" : "";
+    const cleanStatus = wt.is_clean === false ? " [dirty]" : " [clean]";
     const commitInfo = wt.commit ? ` @ ${wt.commit.substring(0, 7)}` : "";
 
     console.log(`  ${wt.branch}${mainMarker}${cleanStatus}${commitInfo}`);
@@ -78,51 +93,48 @@ export async function worktreeList(args: string[]): Promise<number> {
 }
 
 /**
- * Parse git worktree list --porcelain output.
+ * Parse git gtr list --porcelain output.
  */
-function parseWorktreeList(output: string, repoPath: string): Worktree[] {
+function parseGtrWorktreeList(output: string, defaultBranch: string): Worktree[] {
   const worktrees: Worktree[] = [];
-  const entries = output.split("\n\n").filter(e => e.trim());
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
-  for (const entry of entries) {
-    const lines = entry.split("\n");
-    const worktree: Partial<Worktree> = {
+  for (const line of lines) {
+    const parts = line.split("\t");
+    if (parts.length < 2) continue;
+
+    const rawPath = parts[0];
+    const path = rawPath.endsWith("/.bare") ? rawPath.slice(0, -"/.bare".length) : rawPath;
+    const branch = parts[1];
+    const status = (parts[2] || "ok").toLowerCase();
+
+    const isClean = status === "ok";
+    const isMain = branch === defaultBranch || branch === "main" || branch === "master";
+
+    const candidate = {
+      branch,
+      path,
+      commit: null,
+      is_clean: isClean,
       ahead: 0,
       behind: 0,
-      is_clean: true,
-      is_main: false,
+      is_main: isMain,
+      is_merged: false,
+      is_stale: false,
+      has_conflicts: status.includes("conflict"),
+      staged_count: 0,
+      modified_count: isClean ? 0 : 1,
+      untracked_count: 0,
+      last_commit_timestamp: 0,
+      last_commit_message: "",
     };
 
-    for (const line of lines) {
-      if (line.startsWith("worktree ")) {
-        worktree.path = line.substring("worktree ".length);
-      } else if (line.startsWith("HEAD ")) {
-        worktree.commit = line.substring("HEAD ".length);
-      } else if (line.startsWith("branch refs/heads/")) {
-        worktree.branch = line.substring("branch refs/heads/".length);
-      } else if (line === "bare") {
-        // Skip bare repo entry
-        worktree.path = undefined;
-      }
-    }
-
-    // Skip if this is the bare repo itself
-    if (!worktree.path || worktree.path.endsWith("/.bare")) {
-      continue;
-    }
-
-    // Skip if branch not detected (detached HEAD)
-    if (!worktree.branch) {
-      worktree.branch = "HEAD";
-    }
-
-    // Detect if this is the main worktree
-    if (worktree.branch === "main" || worktree.branch === "master") {
-      worktree.is_main = true;
-    }
-
-    if (worktree.path && worktree.branch) {
-      worktrees.push(worktree as Worktree);
+    const parsed = WorktreeSchema.safeParse(candidate);
+    if (parsed.success) {
+      worktrees.push(parsed.data);
     }
   }
 
@@ -130,67 +142,56 @@ function parseWorktreeList(output: string, repoPath: string): Worktree[] {
 }
 
 /**
- * Detect repository path from current directory or repo name.
+ * Parse native git worktree list --porcelain output.
  */
-async function detectRepoPath(repo?: string): Promise<string | null> {
-  const home = Deno.env.get("HOME") || "";
+function parseNativeWorktreeList(
+  output: string,
+  defaultBranch: string,
+  repoPath: string,
+): Worktree[] {
+  const worktrees: Worktree[] = [];
+  const entries = output.split("\n\n").filter((entry) => entry.trim());
 
-  if (repo) {
-    // Check if it's a full account/repo path
-    if (repo.includes("/")) {
-      const [account, repoName] = repo.split("/");
-      const path = `${home}/repos/${account}/${repoName}`;
-      try {
-        await Deno.stat(`${path}/.bare`);
-        return path;
-      } catch {
-        return null;
+  for (const entry of entries) {
+    const lines = entry.split("\n");
+    let path = "";
+    let branch = "HEAD";
+
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        path = line.slice("worktree ".length);
+      } else if (line.startsWith("branch refs/heads/")) {
+        branch = line.slice("branch refs/heads/".length);
       }
     }
 
-    // Search for repo by name in all account directories
-    const reposBase = `${home}/repos`;
-    try {
-      for await (const entry of Deno.readDir(reposBase)) {
-        if (entry.isDirectory) {
-          const path = `${reposBase}/${entry.name}/${repo}`;
-          try {
-            await Deno.stat(`${path}/.bare`);
-            return path;
-          } catch {
-            // Not found in this account, continue
-          }
-        }
-      }
-    } catch {
-      // repos directory doesn't exist
+    if (!path) continue;
+    if (path.endsWith("/.bare")) {
+      path = repoPath;
+      branch = defaultBranch;
     }
 
-    return null;
+    const candidate = {
+      branch,
+      path,
+      commit: null,
+      is_clean: true,
+      ahead: 0,
+      behind: 0,
+      is_main: branch === defaultBranch || branch === "main" || branch === "master",
+      is_merged: false,
+      is_stale: false,
+      has_conflicts: false,
+      staged_count: 0,
+      modified_count: 0,
+      untracked_count: 0,
+      last_commit_timestamp: 0,
+      last_commit_message: "",
+    };
+
+    const parsed = WorktreeSchema.safeParse(candidate);
+    if (parsed.success) worktrees.push(parsed.data);
   }
 
-  // Detect from current directory
-  const cwd = Deno.cwd();
-
-  // Walk up the directory tree looking for .bare/
-  let dir = cwd;
-  while (dir !== "/") {
-    try {
-      const bareStat = await Deno.stat(`${dir}/.bare`);
-      if (bareStat.isDirectory) {
-        return dir;
-      }
-    } catch {
-      // Not found, continue up
-    }
-
-    // Go up one level
-    const parent = dir.substring(0, dir.lastIndexOf("/"));
-    if (parent === dir || parent === "") {
-      break;
-    }
-    dir = parent;
-  }
-
-  return null;
+  return worktrees;
 }

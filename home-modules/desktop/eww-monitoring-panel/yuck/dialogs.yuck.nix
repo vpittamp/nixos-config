@@ -61,8 +61,8 @@
               (checkbox
                 :class "force-delete-checkbox"
                 :checked delete_force
-                :onchecked "eww --config $HOME/.config/eww-monitoring-panel update delete_force=true"
-                :onunchecked "eww --config $HOME/.config/eww-monitoring-panel update delete_force=false")
+                :onchecked "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update delete_force=true"
+                :onunchecked "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update delete_force=false")
               (label :class "force-delete-label" :halign "start" :text "Force delete (orphan worktrees)"))))
         (revealer
           :reveal {delete_error != ""}

@@ -265,6 +265,12 @@ asyncio.run(stream.run())
     # Feature 102: Get repo path from repos.json
     REPOS_FILE="$HOME/.config/i3/repos.json"
     REPO_PATH=""
+    DEFAULT_BRANCH="main"
+    REMOTE_ENABLED="false"
+    REMOTE_HOST="ryzen"
+    REMOTE_USER="''${USER:-vpittamp}"
+    REMOTE_PORT="22"
+    REMOTE_BASE=""
 
     if [[ -f "$REPOS_FILE" ]]; then
       # Parse qualified name: account/repo
@@ -274,6 +280,36 @@ asyncio.run(stream.run())
       # Get repo path for auto-populating worktree path
       REPO_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
         '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+      DEFAULT_BRANCH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+        '.repositories[] | select(.account == $acc and .name == $name) | .default_branch // "main"' "$REPOS_FILE")
+    fi
+
+    # If this repository already has any remote worktree profile, inherit those defaults.
+    REMOTE_PROFILES_FILE="$HOME/.config/i3/worktree-remote-profiles.json"
+    if [[ -f "$REMOTE_PROFILES_FILE" ]]; then
+      PROFILE_MATCH=$(${pkgs.jq}/bin/jq -c --arg prefix "$PARENT_PROJECT:" '
+        (.profiles // {})
+        | to_entries
+        | map(select((.key | startswith($prefix)) and ((.value.enabled // true) == true)))
+        | .[0] // empty
+      ' "$REMOTE_PROFILES_FILE")
+
+      if [[ -n "$PROFILE_MATCH" ]]; then
+        REMOTE_ENABLED="true"
+        REMOTE_HOST=$(echo "$PROFILE_MATCH" | ${pkgs.jq}/bin/jq -r '.value.host // "ryzen"')
+        REMOTE_USER=$(echo "$PROFILE_MATCH" | ${pkgs.jq}/bin/jq -r '.value.user // env.USER // "vpittamp"')
+        REMOTE_PORT=$(echo "$PROFILE_MATCH" | ${pkgs.jq}/bin/jq -r '.value.port // 22')
+        PROFILE_BRANCH=$(echo "$PROFILE_MATCH" | ${pkgs.jq}/bin/jq -r '.key | split(":")[1] // ""')
+        PROFILE_REMOTE_DIR=$(echo "$PROFILE_MATCH" | ${pkgs.jq}/bin/jq -r '.value.remote_dir // .value.working_dir // ""')
+
+        if [[ -n "$PROFILE_REMOTE_DIR" ]]; then
+          if [[ -n "$PROFILE_BRANCH" ]] && [[ "$PROFILE_REMOTE_DIR" == */"$PROFILE_BRANCH" ]]; then
+            REMOTE_BASE="''${PROFILE_REMOTE_DIR%/$PROFILE_BRANCH}"
+          else
+            REMOTE_BASE="$PROFILE_REMOTE_DIR"
+          fi
+        fi
+      fi
     fi
 
     # Clear form fields and set parent project
@@ -281,7 +317,6 @@ asyncio.run(stream.run())
     $EWW_CMD update panel_focus_mode=true
     $EWW_CMD update worktree_creating=true
     $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
-    $EWW_CMD update worktree_form_agent="claude"
     $EWW_CMD update edit_form_icon="🌿"
     $EWW_CMD update edit_form_error=""
 
@@ -290,8 +325,15 @@ asyncio.run(stream.run())
 
     # Clear fields - user enters description, branch name auto-generated
     $EWW_CMD update worktree_form_branch_name=""
+    $EWW_CMD update worktree_form_base_branch="$DEFAULT_BRANCH"
     $EWW_CMD update worktree_form_description=""
     $EWW_CMD update worktree_form_path=""
+    $EWW_CMD update worktree_form_remote_enabled="$REMOTE_ENABLED"
+    $EWW_CMD update worktree_form_remote_host="$REMOTE_HOST"
+    $EWW_CMD update worktree_form_remote_user="$REMOTE_USER"
+    $EWW_CMD update worktree_form_remote_port="$REMOTE_PORT"
+    $EWW_CMD update worktree_form_remote_base="$REMOTE_BASE"
+    $EWW_CMD update worktree_form_remote_dir=""
     $EWW_CMD update edit_form_display_name=""
 
     # Also expand the parent project to show the form in context
@@ -303,7 +345,7 @@ asyncio.run(stream.run())
   '';
 
   # Feature 102: Auto-populate worktree form fields based on description
-  # Uses the same branch naming logic as .specify/scripts/bash/create-new-feature.sh
+  # Uses legacy branch naming heuristics to generate a useful branch suggestion
   worktreeAutoPopulateScript = pkgs.writeShellScriptBin "worktree-auto-populate" ''
     #!${pkgs.bash}/bin/bash
     # Auto-populate worktree form fields when description changes
@@ -430,6 +472,22 @@ asyncio.run(stream.run())
       $EWW_CMD update "worktree_form_path=$WORKTREE_PATH"
     fi
 
+    # Auto-generate remote directory when remote profile is enabled.
+    REMOTE_ENABLED=$($EWW_CMD get worktree_form_remote_enabled 2>/dev/null || echo "false")
+    REMOTE_BASE=$($EWW_CMD get worktree_form_remote_base 2>/dev/null || echo "")
+    if [[ "$REMOTE_ENABLED" == "true" ]] && [[ -n "$BRANCH_NAME" ]]; then
+      if [[ -n "$REMOTE_BASE" ]]; then
+        REMOTE_DIR="''${REMOTE_BASE}/''${BRANCH_NAME}"
+      elif [[ -n "$WORKTREE_PATH" ]]; then
+        REMOTE_DIR="$WORKTREE_PATH"
+      else
+        REMOTE_DIR=""
+      fi
+      if [[ -n "$REMOTE_DIR" ]]; then
+        $EWW_CMD update "worktree_form_remote_dir=$REMOTE_DIR"
+      fi
+    fi
+
     # Auto-generate display name: NNN - Description (Title Case of original)
     TITLE_CASE=$(echo "$DESCRIPTION" | ${pkgs.gnused}/bin/sed 's/\b\(.\)/\u\1/g')
     DISPLAY_NAME="$FEATURE_NUM - $TITLE_CASE"
@@ -471,6 +529,18 @@ asyncio.run(stream.run())
     if [[ -n "$REPO_PATH" ]]; then
       WORKTREE_PATH="''${REPO_PATH}/''${BRANCH_NAME}"
       $EWW_CMD update "worktree_form_path=$WORKTREE_PATH"
+
+      # Keep remote directory in sync for SSH worktree mode.
+      REMOTE_ENABLED=$($EWW_CMD get worktree_form_remote_enabled 2>/dev/null || echo "false")
+      REMOTE_BASE=$($EWW_CMD get worktree_form_remote_base 2>/dev/null || echo "")
+      if [[ "$REMOTE_ENABLED" == "true" ]]; then
+        if [[ -n "$REMOTE_BASE" ]]; then
+          REMOTE_DIR="''${REMOTE_BASE}/''${BRANCH_NAME}"
+        else
+          REMOTE_DIR="$WORKTREE_PATH"
+        fi
+        $EWW_CMD update "worktree_form_remote_dir=$REMOTE_DIR"
+      fi
     fi
   '';
 
@@ -551,24 +621,13 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Execute git worktree remove
-    cd "$REPO_PATH" || {
-      $EWW_CMD update error_notification="Cannot access repo: $REPO_PATH"
-      $EWW_CMD update error_notification_visible=true
-      $EWW_CMD update worktree_delete_dialog_visible=false
-      exit 1
-    }
-
-    # Force remove the worktree (--force handles dirty worktrees after user confirmation)
-    if ! git worktree remove --force "$WORKTREE_PATH" 2>&1; then
+    # gtr-first removal through i3pm worktree command
+    if ! i3pm worktree remove "$BRANCH_NAME" --repo "$REPO_QUALIFIED" --force 2>&1; then
       $EWW_CMD update error_notification="Failed to remove worktree: $BRANCH_NAME"
       $EWW_CMD update error_notification_visible=true
       $EWW_CMD update worktree_delete_dialog_visible=false
       exit 1
     fi
-
-    # Trigger rediscovery to update repos.json
-    i3pm discover >/dev/null 2>&1 || true
 
     # Close dialog and show success
     $EWW_CMD update worktree_delete_dialog_visible=false
@@ -607,9 +666,9 @@ asyncio.run(stream.run())
     PARENT_PROJECT="$2"
     REPOS_FILE="$HOME/.config/i3/repos.json"
 
-    # Validate branch name pattern (should be NNN-description)
-    if [[ ! "$BRANCH_NAME" =~ ^[0-9]+-[a-z0-9-]+$ ]]; then
-      echo '{"valid": false, "error": "Branch name must match pattern: NNN-description (e.g., 103-new-feature)"}'
+    # Validate branch name using git's own ref rules
+    if ! ${pkgs.git}/bin/git check-ref-format --branch "$BRANCH_NAME" >/dev/null 2>&1; then
+      echo "{\"valid\": false, \"error\": \"Invalid git branch name: $BRANCH_NAME\"}"
       exit 0
     fi
 
@@ -633,15 +692,13 @@ asyncio.run(stream.run())
   # Feature 094 US5: Worktree edit form opener (T059)
   worktreeEditOpenScript = pkgs.writeShellScriptBin "worktree-edit-open" ''
     #!${pkgs.bash}/bin/bash
-    # Open worktree edit form by loading worktree data into eww variables
-    # Usage: worktree-edit-open <name> <display_name> <icon> <branch_name> <worktree_path> <parent_project>
+    # Open worktree rename form by loading worktree data into eww variables
+    # Usage: worktree-edit-open <qualified_name> <branch_name> <worktree_path> <parent_project>
 
-    NAME="$1"
-    DISPLAY_NAME="$2"
-    ICON="$3"
-    BRANCH_NAME="$4"
-    WORKTREE_PATH="$5"
-    PARENT_PROJECT="$6"
+    QUALIFIED_NAME="$1"
+    BRANCH_NAME="$2"
+    WORKTREE_PATH="$3"
+    PARENT_PROJECT="$4"
 
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
@@ -649,10 +706,7 @@ asyncio.run(stream.run())
     $EWW_CMD update panel_focus_mode=true
 
     # Update all eww variables for worktree edit
-    $EWW_CMD update editing_project_name="$NAME"
-    $EWW_CMD update edit_form_display_name="$DISPLAY_NAME"
-    $EWW_CMD update edit_form_icon="$ICON"
-    # Branch name and worktree path are read-only in edit mode (per spec.md US5 scenario 6)
+    $EWW_CMD update editing_project_name="$QUALIFIED_NAME"
     $EWW_CMD update worktree_form_branch_name="$BRANCH_NAME"
     $EWW_CMD update worktree_form_path="$WORKTREE_PATH"
     $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
@@ -672,26 +726,20 @@ asyncio.run(stream.run())
 
     # Read form values from Eww variables
     BRANCH_NAME=$($EWW get worktree_form_branch_name)
-    WORKTREE_PATH=$($EWW get worktree_form_path)
+    BASE_BRANCH=$($EWW get worktree_form_base_branch 2>/dev/null || echo "main")
+    WORKTREE_PATH=$($EWW get worktree_form_path 2>/dev/null || echo "")
     PARENT_PROJECT=$($EWW get worktree_form_parent_project)
-    DISPLAY_NAME=$($EWW get edit_form_display_name)
-    ICON=$($EWW get edit_form_icon)
-    SETUP_SPECKIT=$($EWW get worktree_form_speckit)  # Feature 112: Speckit scaffolding
-    AGENT_TYPE=$($EWW get worktree_form_agent)       # Feature 126: AI Agent
+    REMOTE_ENABLED=$($EWW get worktree_form_remote_enabled 2>/dev/null || echo "false")
+    REMOTE_HOST=$($EWW get worktree_form_remote_host 2>/dev/null || echo "ryzen")
+    REMOTE_USER=$($EWW get worktree_form_remote_user 2>/dev/null || echo "''${USER:-vpittamp}")
+    REMOTE_DIR=$($EWW get worktree_form_remote_dir 2>/dev/null || echo "")
+    REMOTE_PORT=$($EWW get worktree_form_remote_port 2>/dev/null || echo "22")
 
     # Validate required fields
     if [[ -z "$BRANCH_NAME" ]]; then
       $EWW update edit_form_error="Branch name is required"
       # Feature 096 T024: Show error notification
       $EWW update error_notification="Branch name is required"
-      $EWW update error_notification_visible=true
-      $EWW update save_in_progress=false
-      exit 1
-    fi
-    if [[ -z "$WORKTREE_PATH" ]]; then
-      $EWW update edit_form_error="Worktree path is required"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Worktree path is required"
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
       exit 1
@@ -705,13 +753,25 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Feature 102: Validate branch name format (NNN-description pattern)
-    if [[ ! "$BRANCH_NAME" =~ ^[0-9]+-[a-z0-9-]+$ ]]; then
-      $EWW update edit_form_error="Branch name must match pattern: NNN-description (e.g., 103-new-feature)"
-      $EWW update error_notification="Invalid branch name format"
-      $EWW update error_notification_visible=true
-      $EWW update save_in_progress=false
-      exit 1
+    if [[ "$REMOTE_ENABLED" == "true" ]]; then
+      if [[ -z "$REMOTE_HOST" ]] || [[ -z "$REMOTE_USER" ]] || [[ -z "$REMOTE_DIR" ]]; then
+        $EWW update edit_form_error="SSH host, user, and remote directory are required when remote profile is enabled"
+        $EWW update error_notification="SSH remote profile is incomplete"
+        $EWW update error_notification_visible=true
+        $EWW update save_in_progress=false
+        exit 1
+      fi
+      if [[ ! "$REMOTE_PORT" =~ ^[0-9]+$ ]] || [[ "$REMOTE_PORT" -lt 1 ]] || [[ "$REMOTE_PORT" -gt 65535 ]]; then
+        $EWW update edit_form_error="SSH port must be a number between 1 and 65535"
+        $EWW update error_notification="Invalid SSH port"
+        $EWW update error_notification_visible=true
+        $EWW update save_in_progress=false
+        exit 1
+      fi
+    fi
+
+    if [[ -z "$BASE_BRANCH" ]]; then
+      BASE_BRANCH="main"
     fi
 
     # Feature 101: Get parent project directory from repos.json
@@ -752,25 +812,8 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Check if worktree path already exists
-    if [[ -e "$WORKTREE_PATH" ]]; then
-      $EWW update edit_form_error="Path already exists: $WORKTREE_PATH"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Path already exists: $WORKTREE_PATH"
-      $EWW update error_notification_visible=true
-      $EWW update save_in_progress=false
-      exit 1
-    fi
-
-    # Create Git worktree using i3pm CLI (Feature 126: Unified logic)
-    SPECKIT_FLAG=""
-    if [[ "$SETUP_SPECKIT" == "true" ]]; then
-      SPECKIT_FLAG="--speckit"
-    fi
-
-    # Execute i3pm worktree create
-    # Use qualified repo name and specify agent
-    if ! i3pm worktree create "$BRANCH_NAME" --repo "$PARENT_PROJECT" --agent "$AGENT_TYPE" $SPECKIT_FLAG 2>&1; then
+    # Execute i3pm worktree create (gtr-backed)
+    if ! i3pm worktree create "$BRANCH_NAME" --repo "$PARENT_PROJECT" --from "$BASE_BRANCH" 2>&1; then
       $EWW update edit_form_error="Worktree creation failed. Check console for details."
       $EWW update error_notification="Worktree creation failed"
       $EWW update error_notification_visible=true
@@ -781,8 +824,12 @@ asyncio.run(stream.run())
     # Feature 101: Generate qualified worktree name
     # Format: account/repo:branch (e.g., vpittamp/nixos-config:101-worktree-click-switch)
     WORKTREE_NAME="''${PARENT_PROJECT}:''${BRANCH_NAME}"
-    if [[ -z "$DISPLAY_NAME" ]]; then
-      DISPLAY_NAME="$BRANCH_NAME"
+
+    REMOTE_WARNING=""
+    if [[ "$REMOTE_ENABLED" == "true" ]]; then
+      if ! i3pm worktree remote set "$WORKTREE_NAME" --host "$REMOTE_HOST" --user "$REMOTE_USER" --port "$REMOTE_PORT" --dir "$REMOTE_DIR" >/dev/null 2>&1; then
+        REMOTE_WARNING="Worktree created, but failed to set SSH profile for $WORKTREE_NAME"
+      fi
     fi
 
     # Success: clear form state and refresh
@@ -791,14 +838,36 @@ asyncio.run(stream.run())
     $EWW update worktree_creating=false
     $EWW update worktree_form_description=""
     $EWW update worktree_form_branch_name=""
+    $EWW update worktree_form_base_branch="main"
     $EWW update worktree_form_path=""
     $EWW update worktree_form_parent_project=""
     $EWW update worktree_form_repo_path=""
-    $EWW update worktree_form_speckit=true  # Feature 112: Reset to default (checked)
-    $EWW update worktree_form_agent="claude" # Feature 126: Reset to default
+    $EWW update worktree_form_remote_enabled=false
+    $EWW update worktree_form_remote_host="ryzen"
+    $EWW update worktree_form_remote_user=""
+    $EWW update worktree_form_remote_dir=""
+    $EWW update worktree_form_remote_port="22"
+    $EWW update worktree_form_remote_base=""
     $EWW update edit_form_display_name=""
     $EWW update edit_form_icon=""
     $EWW update edit_form_error=""
+    $EWW update save_in_progress=false
+
+    refresh-projects-data >/dev/null 2>&1 || true
+
+    if [[ -n "$REMOTE_WARNING" ]]; then
+      $EWW update warning_notification="$REMOTE_WARNING"
+      $EWW update warning_notification_visible=true
+      (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
+    else
+      if [[ "$REMOTE_ENABLED" == "true" ]]; then
+        $EWW update success_notification="Worktree '$WORKTREE_NAME' created (SSH: $REMOTE_USER@$REMOTE_HOST:$REMOTE_PORT)"
+      else
+        $EWW update success_notification="Worktree '$WORKTREE_NAME' created • Use t/l/y for terminal, lazygit, yazi"
+      fi
+      $EWW update success_notification_visible=true
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+    fi
   '';
 
   # Feature 094 US5: Worktree delete script (T060)
@@ -845,13 +914,11 @@ asyncio.run(stream.run())
     REPO_ACCOUNT=$(echo "$REPO_PART" | cut -d'/' -f1)
     REPO_NAME=$(echo "$REPO_PART" | cut -d'/' -f2)
 
-    # Find worktree in repos.json
-    WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
-      '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[] | select(.branch == $branch) | .path // empty' "$REPOS_FILE")
-    PARENT_DIR=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
-      '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+    # Verify branch exists in discovery data
+    EXISTING_BRANCH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[]? | select(.branch == $branch) | .branch // empty' "$REPOS_FILE")
 
-    if [[ -z "$WORKTREE_PATH" ]]; then
+    if [[ -z "$EXISTING_BRANCH" ]]; then
       $EWW update edit_form_error="Worktree not found: $PROJECT_NAME"
       # Feature 096 T024: Show error notification
       $EWW update error_notification="Worktree not found: $PROJECT_NAME"
@@ -861,22 +928,14 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Get parent directory for git worktree removal
-    GIT_CLEANUP_WARNING=""
-    if [[ -n "$PARENT_DIR" ]] && [[ -d "$PARENT_DIR" ]]; then
-      cd "$PARENT_DIR"
-      # Remove git worktree (use --force if dirty)
-      if ! git worktree remove "$WORKTREE_PATH" --force 2>/dev/null; then
-        GIT_CLEANUP_WARNING=" (Git cleanup may have failed)"
-      fi
-    fi
-
-    # Feature 101: Trigger rediscovery to update repos.json
-    # The git worktree remove above already deleted the worktree
-    # Now we just need to refresh repos.json via discovery
-    if ! i3pm discover >/dev/null 2>&1; then
-      # Non-fatal warning - worktree was still deleted
-      GIT_CLEANUP_WARNING="$GIT_CLEANUP_WARNING (repos.json refresh may have failed)"
+    # gtr-first delete workflow
+    if ! i3pm worktree remove "$BRANCH_NAME" --repo "$REPO_PART" --force >/dev/null 2>&1; then
+      $EWW update edit_form_error="Failed to remove worktree: $PROJECT_NAME"
+      $EWW update error_notification="Failed to remove worktree: $PROJECT_NAME"
+      $EWW update error_notification_visible=true
+      $EWW update worktree_delete_confirm=""
+      $EWW update save_in_progress=false
+      exit 1
     fi
 
     # Success: clear state and refresh
@@ -886,15 +945,9 @@ asyncio.run(stream.run())
     # Note: Project list will be refreshed by the deflisten stream automatically
 
     # Feature 096 T023: Show success notification (with optional warning)
-    if [[ -n "$GIT_CLEANUP_WARNING" ]]; then
-      $EWW update warning_notification="Worktree '$PROJECT_NAME' deleted$GIT_CLEANUP_WARNING"
-      $EWW update warning_notification_visible=true
-      (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
-    else
-      $EWW update success_notification="Worktree '$PROJECT_NAME' deleted successfully"
-      $EWW update success_notification_visible=true
-      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
-    fi
+    $EWW update success_notification="Worktree '$PROJECT_NAME' deleted successfully"
+    $EWW update success_notification_visible=true
+    (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
 
     # Feature 096 T022: Clear loading state
     $EWW update save_in_progress=false
@@ -910,6 +963,8 @@ asyncio.run(stream.run())
 
     PROJECT_NAME="$1"
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    PROJECTS_DATA_FILE="$RUNTIME_DIR/eww-monitoring-projects.json"
 
     if [[ -z "$PROJECT_NAME" ]]; then
       echo "Usage: toggle-project-expanded <project-name>" >&2
@@ -922,7 +977,19 @@ asyncio.run(stream.run())
     # Handle "all" case - when all expanded, clicking collapses just this one
     if [[ "$CURRENT" == "all" ]]; then
       # Get all project names and remove the clicked one
-      ALL_NAMES=$($EWW get projects_data | ${pkgs.jq}/bin/jq -r '[.repositories[]?.qualified_name // empty, .projects[]?.name // empty] | unique')
+      if [[ -s "$PROJECTS_DATA_FILE" ]]; then
+        PROJECTS_DATA=$(${pkgs.coreutils}/bin/cat "$PROJECTS_DATA_FILE")
+      else
+        PROJECTS_DATA='{"discovered_repositories":[],"repositories":[],"projects":[],"main_projects":[]}'
+      fi
+      ALL_NAMES=$(echo "$PROJECTS_DATA" | ${pkgs.jq}/bin/jq -r '
+        [
+          .discovered_repositories[]?.qualified_name // empty,
+          .repositories[]?.qualified_name // empty,
+          .projects[]?.name // empty,
+          .main_projects[]?.name // empty
+        ] | unique
+      ')
       NEW=$(echo "$ALL_NAMES" | ${pkgs.jq}/bin/jq -c "del(.[] | select(. == \"$PROJECT_NAME\"))")
       $EWW update "expanded_projects=$NEW" "projects_all_expanded=false"
     elif echo "$CURRENT" | ${pkgs.jq}/bin/jq -e "index(\"$PROJECT_NAME\")" > /dev/null 2>&1; then
@@ -961,8 +1028,8 @@ asyncio.run(stream.run())
   # Feature 094 US5: Worktree edit save script (T059)
   worktreeEditSaveScript = pkgs.writeShellScriptBin "worktree-edit-save" ''
     #!${pkgs.bash}/bin/bash
-    # Save worktree edit form (only editable fields: display_name, icon)
-    # Usage: worktree-edit-save <project-name>
+    # Rename worktree/branch using i3pm gtr-backed command
+    # Usage: worktree-edit-save <qualified-name>
 
     PROJECT_NAME="$1"
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
@@ -975,62 +1042,55 @@ asyncio.run(stream.run())
     # Feature 096 T022: Set loading state to prevent double-submit
     $EWW update save_in_progress=true
 
-    # Read form values (only editable fields for worktrees)
-    DISPLAY_NAME=$($EWW get edit_form_display_name)
-    ICON=$($EWW get edit_form_icon)
+    OLD_BRANCH=$(echo "$PROJECT_NAME" | cut -d':' -f2)
+    NEW_BRANCH=$($EWW get worktree_form_branch_name)
 
-    # Build JSON update object (worktrees only allow display_name and icon changes)
-    UPDATES=$(${pkgs.jq}/bin/jq -n \
-      --arg display_name "$DISPLAY_NAME" \
-      --arg icon "$ICON" \
-      '{display_name: $display_name, icon: $icon}')
+    if [[ -z "$NEW_BRANCH" ]]; then
+      $EWW update edit_form_error="New branch name is required"
+      $EWW update error_notification="New branch name is required"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
+      exit 1
+    fi
 
-    # Call CRUD handler
-    export PYTHONPATH="${../../../tools}"
-    RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler edit "$PROJECT_NAME" --updates "$UPDATES")
-
-    STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
-    CONFLICT=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.conflict // false')
-
-    if [[ "$STATUS" == "success" ]]; then
-      # Feature 096 T010: Handle conflicts as warnings, not errors
-      if [[ "$CONFLICT" == "true" ]]; then
-        $EWW update warning_notification="File was modified externally - your changes were saved (last write wins)"
-        $EWW update warning_notification_visible=true
-        (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
-      fi
-
-      # Success: clear editing state and refresh
-      # Feature 114: Disable focus mode to return to click-through
+    if [[ "$NEW_BRANCH" == "$OLD_BRANCH" ]]; then
       $EWW update panel_focus_mode=false
       $EWW update editing_project_name=""
       $EWW update edit_form_error=""
-
-      # Note: Project list will be refreshed by the deflisten stream automatically
-
-      # Feature 096 T023: Show success notification
-      $EWW update success_notification="Worktree saved successfully"
+      $EWW update save_in_progress=false
+      $EWW update success_notification="No changes to save"
       $EWW update success_notification_visible=true
-      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+      (sleep 2 && $EWW update success_notification_visible=false success_notification="") &
+      exit 0
+    fi
 
-      # Feature 096 T022: Clear loading state
-      $EWW update save_in_progress=false
-
-      echo "Worktree saved successfully"
-    else
-      ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
-      $EWW update edit_form_error="$ERROR"
-
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Failed to save worktree: $ERROR"
+    RENAME_LOG=$(mktemp)
+    if ! i3pm worktree rename "$PROJECT_NAME" "$NEW_BRANCH" >"$RENAME_LOG" 2>&1; then
+      ERROR=$(cat "$RENAME_LOG")
+      rm -f "$RENAME_LOG"
+      $EWW update edit_form_error="Failed to rename worktree"
+      $EWW update error_notification="Failed to rename worktree: $ERROR"
       $EWW update error_notification_visible=true
-
-      # Feature 096 T022: Clear loading state
       $EWW update save_in_progress=false
-
-      echo "Error: $ERROR" >&2
       exit 1
     fi
+    rm -f "$RENAME_LOG"
+
+    NEW_QUALIFIED="$(echo "$PROJECT_NAME" | cut -d':' -f1):$NEW_BRANCH"
+
+    # Success: clear editing state and refresh
+    $EWW update panel_focus_mode=false
+    $EWW update editing_project_name=""
+    $EWW update edit_form_error=""
+    $EWW update save_in_progress=false
+
+    refresh-projects-data >/dev/null 2>&1 || true
+
+    $EWW update success_notification="Renamed worktree to '$NEW_QUALIFIED'"
+    $EWW update success_notification_visible=true
+    (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+
+    echo "Worktree renamed: $PROJECT_NAME -> $NEW_QUALIFIED"
   '';
 
   # Feature 094 US3: Project create form opener (T066)
@@ -1411,35 +1471,105 @@ print(json.dumps(result))
 
     ACTION="$1"
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    PROJECTS_DATA_FILE="$RUNTIME_DIR/eww-monitoring-projects.json"
 
     # Get current state
     current_index=$($EWW_CMD get project_selected_index 2>/dev/null || echo "-1")
     filter_text=$($EWW_CMD get project_filter 2>/dev/null || echo "")
 
     # Get filtered project list
-    projects_data=$($EWW_CMD get projects_data 2>/dev/null)
+    if [[ -s "$PROJECTS_DATA_FILE" ]]; then
+      projects_data=$(${pkgs.coreutils}/bin/cat "$PROJECTS_DATA_FILE")
+    else
+      projects_data='{"discovered_repositories":[],"repositories":[],"projects":[],"main_projects":[],"worktrees":[]}'
+    fi
 
-    # Build combined list: main projects + worktrees (matching filter)
+    # Build combined list from discovered repositories + legacy structures.
     # Each entry: { name, type: "project"|"worktree", parent?, index }
     all_items=$(echo "$projects_data" | ${pkgs.jq}/bin/jq -c --arg filter "$filter_text" '
-      def matches_filter:
+      def txt(v): (v // "" | tostring);
+      def contains_filter(v):
         if $filter == "" then true
-        else
-          (.name | ascii_downcase | contains($filter | ascii_downcase)) or
-          ((.display_name // "") | ascii_downcase | contains($filter | ascii_downcase)) or
-          ((.branch_name // "") | ascii_downcase | contains($filter | ascii_downcase))
+        else (txt(v) | ascii_downcase | contains($filter | ascii_downcase))
         end;
 
-      [
-        (.main_projects // [])[] |
-        select(matches_filter) |
-        {name, type: "project", display_name, directory}
-      ] +
-      [
-        (.worktrees // [])[] |
-        select(matches_filter) |
-        {name, type: "worktree", parent: .parent_project, display_name, directory}
-      ]
+      (
+        [
+          (.discovered_repositories // .repositories // [])[] as $repo
+          | select(
+              contains_filter($repo.qualified_name)
+              or contains_filter($repo.name)
+              or contains_filter($repo.display_name)
+              or contains_filter($repo.account)
+            )
+          | {
+              name: ($repo.qualified_name // $repo.name // ""),
+              type: "project",
+              display_name: ($repo.display_name // $repo.name // $repo.qualified_name // ""),
+              directory: ($repo.directory // $repo.path // "")
+            }
+        ]
+        +
+        [
+          (.discovered_repositories // .repositories // [])[] as $repo
+          | ($repo.worktrees // [])[] as $wt
+          | select(
+              contains_filter($wt.qualified_name)
+              or contains_filter($wt.branch)
+              or contains_filter($wt.display_name)
+              or contains_filter($wt.branch_number)
+            )
+          | {
+              name: (
+                $wt.qualified_name
+                // (($repo.qualified_name // $repo.name // "") + ":" + ($wt.branch // $wt.name // ""))
+              ),
+              type: "worktree",
+              parent: ($repo.qualified_name // $repo.name // ""),
+              display_name: ($wt.display_name // $wt.branch // $wt.name // ""),
+              directory: (
+                if ($wt.remote_enabled // false)
+                then ($wt.remote.remote_dir // $wt.remote_dir // $wt.path // $wt.directory // "")
+                else ($wt.path // $wt.directory // "")
+                end
+              )
+            }
+        ]
+        +
+        [
+          (.main_projects // [])[]
+          | select(
+              contains_filter(.name)
+              or contains_filter(.display_name)
+              or contains_filter(.branch_name)
+            )
+          | {
+              name: .name,
+              type: "project",
+              display_name: (.display_name // .name // ""),
+              directory: (.directory // .worktree_path // "")
+            }
+        ]
+        +
+        [
+          (.worktrees // [])[]
+          | select(
+              contains_filter(.name)
+              or contains_filter(.display_name)
+              or contains_filter(.branch_name)
+            )
+          | {
+              name: .name,
+              type: "worktree",
+              parent: (.parent_project // ""),
+              display_name: (.display_name // .name // ""),
+              directory: (.worktree_path // .directory // "")
+            }
+        ]
+      )
+      | map(select(.name != "" and .name != null))
+      | unique_by(.name)
     ')
 
     max_items=$(echo "$all_items" | ${pkgs.jq}/bin/jq 'length')
@@ -1507,16 +1637,35 @@ print(json.dumps(result))
             if [ "$item_type" = "worktree" ]; then
               # Get worktree data for edit form
               worktree_data=$(echo "$projects_data" | ${pkgs.jq}/bin/jq -r --arg name "$project_name" '
-                .worktrees[] | select(.name == $name) |
-                "\(.display_name // .name)\t\(.icon)\t\(.branch_name // "")\t\(.worktree_path // "")\t\(.parent_project // "")"
+                (
+                  (.discovered_repositories // .repositories // [])[] as $repo
+                  | ($repo.worktrees // [])[]
+                  | select(
+                      (.qualified_name // (($repo.qualified_name // "") + ":" + (.branch // ""))) == $name
+                    )
+                  | "\(.branch // .branch_name // "")\t\(.path // .directory // "")\t\($repo.qualified_name // .parent_repo // "")"
+                ),
+                (
+                  (.worktrees // [])[] | select(.name == $name) |
+                  "\(.branch_name // "")\t\(.worktree_path // .directory // "")\t\(.parent_project // "")"
+                )
+                | select(length > 0)
               ')
-              IFS=$'\t' read -r display_name icon branch_name worktree_path parent_project <<< "$worktree_data"
-              worktree-edit-open "$project_name" "$display_name" "$icon" "$branch_name" "$worktree_path" "$parent_project"
+              IFS=$'\t' read -r branch_name worktree_path parent_project <<< "$worktree_data"
+              worktree-edit-open "$project_name" "$branch_name" "$worktree_path" "$parent_project"
             else
               # Get project data for edit form
               project_data=$(echo "$projects_data" | ${pkgs.jq}/bin/jq -r --arg name "$project_name" '
-                .main_projects[] | select(.name == $name) |
-                "\(.display_name // .name)\t\(.icon)\t\(.directory)\t\(.scope // "scoped")\t\(.remote.enabled // false)\t\(.remote.host // "")\t\(.remote.user // "")\t\(.remote.remote_dir // "")\t\(.remote.port // 22)"
+                (
+                  (.main_projects // [])[] | select(.name == $name) |
+                  "\(.display_name // .name)\t\(.icon)\t\(.directory)\t\(.scope // "scoped")\t\(.remote.enabled // false)\t\(.remote.host // "")\t\(.remote.user // "")\t\(.remote.remote_dir // "")\t\(.remote.port // 22)"
+                ),
+                (
+                  (.discovered_repositories // .repositories // [])[]
+                  | select((.qualified_name // .name // "") == $name)
+                  | "\(.display_name // .name // .qualified_name)\t\(.icon // "📂")\t\(.directory // .path // "")\t\("scoped")\t\(false)\t\("")\t\("")\t\("")\t\(22)"
+                )
+                | select(length > 0)
               ')
               IFS=$'\t' read -r display_name icon directory scope remote_enabled remote_host remote_user remote_dir remote_port <<< "$project_data"
               project-edit-open "$project_name" "$display_name" "$icon" "$directory" "$scope" "$remote_enabled" "$remote_host" "$remote_user" "$remote_dir" "$remote_port"
@@ -1559,24 +1708,29 @@ print(json.dumps(result))
         if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
           directory=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].directory')
           project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
+          if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
+            # Keep active-worktree context aligned with selected item so SSH-aware
+            # launchers can detect remote profiles reliably.
+            i3pm worktree switch "$project_name" >/dev/null 2>&1 || true
+          fi
+
+          # Select view: dirty -> status, behind -> branch, else status.
+          # Falls back to status if local metadata is unavailable.
+          view="status"
           if [ -n "$directory" ] && [ "$directory" != "null" ] && [ -d "$directory" ]; then
-            # Get git status for context-aware view selection
             git_dirty=$(cd "$directory" && ${pkgs.git}/bin/git status --porcelain 2>/dev/null | head -1)
             git_behind=$(cd "$directory" && ${pkgs.git}/bin/git rev-list --count HEAD..@{u} 2>/dev/null || echo "0")
-
-            # Select view: dirty -> status, behind -> branch, else status
-            if [ -n "$git_dirty" ]; then
-              view="status"
-            elif [ "$git_behind" -gt 0 ]; then
+            if [ -z "$git_dirty" ] && [ "$git_behind" -gt 0 ]; then
               view="branch"
-            else
-              view="status"
             fi
-
-            # Launch lazygit using the worktree-lazygit script
-            worktree-lazygit "$directory" "$view" &
-            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
           fi
+
+          if [ -n "$directory" ] && [ "$directory" != "null" ] && [ -d "$directory" ]; then
+            worktree-lazygit "$directory" "$view" &
+          elif [ -x "$HOME/.local/bin/app-launcher-wrapper.sh" ]; then
+            "$HOME/.local/bin/app-launcher-wrapper.sh" lazygit &
+          fi
+          # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
         fi
         ;;
       filter|/)
@@ -1629,11 +1783,20 @@ print(json.dumps(result))
       files|Shift+f)
         # Feature 109 T055: Open file manager (yazi) in selected worktree
         if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
+          project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
           directory=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].directory')
-          if [ -n "$directory" ] && [ "$directory" != "null" ] && [ -d "$directory" ]; then
-            ${pkgs.ghostty}/bin/ghostty -e ${pkgs.yazi}/bin/yazi "$directory" &
-            # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
+
+          if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
+            # Ensure launcher wrapper sees the selected worktree context (SSH/local).
+            i3pm worktree switch "$project_name" >/dev/null 2>&1 || true
           fi
+
+          if [ -x "$HOME/.local/bin/app-launcher-wrapper.sh" ]; then
+            "$HOME/.local/bin/app-launcher-wrapper.sh" yazi &
+          elif [ -n "$directory" ] && [ "$directory" != "null" ] && [ -d "$directory" ]; then
+            ${pkgs.ghostty}/bin/ghostty -e ${pkgs.yazi}/bin/yazi "$directory" &
+          fi
+          # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
         fi
         ;;
       refresh|r)

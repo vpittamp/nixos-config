@@ -2,7 +2,19 @@
 // T023: Create `i3pm worktree create <branch>` CLI command
 
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
-import { WorktreeCreateRequestSchema, type WorktreeCreateRequest } from "../../../models/repository.ts";
+import {
+  type WorktreeCreateRequest,
+  WorktreeCreateRequestSchema,
+} from "../../../models/repository.ts";
+import {
+  detectRepoPath,
+  findWorktreePath,
+  getDefaultBranch,
+  hasGitWorktreeRoot,
+  refreshDiscovery,
+  repoQualifiedFromPath,
+  runGitGtr,
+} from "./helpers.ts";
 
 /**
  * Create a new worktree as sibling to main.
@@ -12,26 +24,22 @@ import { WorktreeCreateRequestSchema, type WorktreeCreateRequest } from "../../.
  */
 export async function worktreeCreate(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    string: ["from", "repo", "agent"],
-    boolean: ["speckit"],  // Feature 112: Speckit scaffolding flag
+    string: ["from", "repo"],
     default: {
-      from: "main",
-      speckit: false,  // CLI default is opt-in (false)
-      agent: "claude",
+      from: "",
     },
   });
 
   const positionalArgs = parsed._ as string[];
 
   if (positionalArgs.length < 1) {
-    console.error("Usage: i3pm worktree create <branch> [--from <base>] [--repo <account/repo>] [--speckit] [--agent claude|gemini]");
+    console.error("Usage: i3pm worktree create <branch> [--from <base>] [--repo <account/repo>]");
     console.error("");
     console.error("Examples:");
     console.error("  i3pm worktree create 100-feature");
-    console.error("  i3pm worktree create 100-feature --speckit   # Create with speckit scaffolding");
-    console.error("  i3pm worktree create 100-feature --speckit --agent gemini");
+    console.error("  i3pm worktree create feature/auth --from main");
     console.error("  i3pm worktree create 101-bugfix --from develop");
-    console.error("  i3pm worktree create review --repo vpittamp/nixos");
+    console.error("  i3pm worktree create review --repo vpittamp/nixos-config");
     return 1;
   }
 
@@ -42,9 +50,8 @@ export async function worktreeCreate(args: string[]): Promise<number> {
   try {
     request = WorktreeCreateRequestSchema.parse({
       branch,
-      from: parsed.from,
+      from: parsed.from || "main",
       repo: parsed.repo,
-      agent: parsed.agent,
     });
   } catch (error: unknown) {
     if (error instanceof Error && error.name === "ZodError") {
@@ -66,187 +73,66 @@ export async function worktreeCreate(args: string[]): Promise<number> {
     return 1;
   }
 
-  const barePath = `${repoPath}/.bare`;
-  const worktreePath = `${repoPath}/${branch}`;
-
-  // Feature 137: Look up default_branch from repos.json if --from not explicitly set
+  // Prefer explicit --from; otherwise use discovered default branch.
   let baseBranch = request.from;
-  if (parsed.from === "main") {  // Only override if using default
-    const defaultBranch = await getDefaultBranch(repoPath);
-    if (defaultBranch) {
-      baseBranch = defaultBranch;
-    }
-  }
-
-  // Check if worktree already exists
-  try {
-    await Deno.stat(worktreePath);
-    console.error(`Error: Worktree directory already exists: ${worktreePath}`);
-    return 1;
-  } catch {
-    // Directory doesn't exist, good
+  if (!parsed.from) {
+    const discoveredDefault = await getDefaultBranch(repoPath);
+    if (discoveredDefault) baseBranch = discoveredDefault;
   }
 
   console.log(`Creating worktree '${branch}' from '${baseBranch}'...`);
 
-  // Create the worktree
-  const cmd = new Deno.Command("git", {
-    args: [
-      "-C", barePath,
-      "worktree", "add",
-      worktreePath,
-      "-b", branch,
-      baseBranch,
-    ],
-    stdout: "piped",
-    stderr: "piped",
-  });
+  const useGtr = await hasGitWorktreeRoot(repoPath);
+  let output: Deno.CommandOutput;
 
-  const output = await cmd.output();
+  if (useGtr) {
+    // gtr-first workflow for repositories with a git worktree root.
+    const gtrArgs = ["new", branch, "--yes"];
+    if (baseBranch) gtrArgs.push("--from", baseBranch);
+    output = await runGitGtr(repoPath, gtrArgs);
+  } else {
+    // Bare-repo fallback: preserve sibling worktree layout (<repo>/<branch>).
+    const worktreePath = `${repoPath}/${branch}`;
+    const cmd = new Deno.Command("git", {
+      args: [
+        "-C",
+        `${repoPath}/.bare`,
+        "worktree",
+        "add",
+        worktreePath,
+        "-b",
+        branch,
+        baseBranch,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    output = await cmd.output();
+  }
 
   if (!output.success) {
     const stderr = new TextDecoder().decode(output.stderr);
-    console.error(`Error: git worktree add failed`);
-    console.error(stderr);
+    const stdout = new TextDecoder().decode(output.stdout);
+    console.error(useGtr ? "Error: git gtr new failed" : "Error: git worktree add failed");
+    if (stderr.trim()) console.error(stderr.trim());
+    else if (stdout.trim()) console.error(stdout.trim());
     return 1;
   }
 
-  console.log(`Created worktree at: ${worktreePath}`);
+  // Keep repos.json current for panel and project switching.
+  await refreshDiscovery();
+  const repoQualified = request.repo || repoQualifiedFromPath(repoPath);
+  const discoveredPath = await findWorktreePath(repoQualified, branch);
+  const outputPath = discoveredPath || `${repoPath}/${branch}`;
 
-  // Feature 102: Auto-discover after worktree creation to update repos.json
-  // This ensures the monitoring panel and other tools see the new worktree immediately
-  const discoverCmd = new Deno.Command("i3pm", {
-    args: ["discover"],
-    stdout: "piped",
-    stderr: "piped",
-  });
-
-  const discoverOutput = await discoverCmd.output();
-  if (!discoverOutput.success) {
-    const stderr = new TextDecoder().decode(discoverOutput.stderr);
-    console.error("");
-    console.error("Warning: Failed to update repos.json (worktree still created)");
-    console.error(stderr);
-  }
-
-  // Feature 112: Create speckit directory structure if --speckit flag provided
-  if (parsed.speckit) {
-    const specsDir = `${worktreePath}/specs/${branch}`;
-    const checklistsDir = `${specsDir}/checklists`;
-
-    try {
-      await Deno.mkdir(checklistsDir, { recursive: true });
-      console.log(`Created speckit directory: ${specsDir}`);
-
-      // Feature 126: Initialize agent context file (CLAUDE.md or GEMINI.md)
-      const agentFile = request.agent === "gemini" ? "GEMINI.md" : "CLAUDE.md";
-      const agentPath = `${worktreePath}/${agentFile}`;
-      const templatePath = `${repoPath}/.specify/templates/agent-file-template.md`;
-
-      try {
-        // Only create if it doesn't exist
-        await Deno.stat(agentPath);
-      } catch {
-        // Doesn't exist, copy from template if available
-        try {
-          const templateContent = await Deno.readTextFile(templatePath);
-          const projectName = repoPath.split("/").pop() || "Project";
-          const date = new Date().toISOString().split("T")[0];
-          
-          let content = templateContent
-            .replace("[PROJECT NAME]", projectName)
-            .replace("[DATE]", date)
-            .replace("[EXTRACTED FROM ALL PLAN.MD FILES]", "- (Initial worktree setup)")
-            .replace("[ACTUAL STRUCTURE FROM PLANS]", "src/\ntests/")
-            .replace("[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]", "# Add commands here")
-            .replace("[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]", "Follow project conventions")
-            .replace("[LAST 3 FEATURES AND WHAT THEY ADDED]", `- ${branch}: Initial worktree setup`);
-            
-          await Deno.writeTextFile(agentPath, content);
-          console.log(`Initialized agent context: ${agentFile}`);
-        } catch (err) {
-          console.error(`Warning: Failed to initialize ${agentFile}: ${err.message}`);
-        }
-      }
-    } catch (error) {
-      // Non-fatal warning - worktree was created successfully
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Warning: Failed to create speckit directory: ${message}`);
-    }
-  }
+  console.log(`Created worktree at: ${outputPath}`);
 
   console.log("");
-  console.log(`To switch to this worktree:`);
-  console.log(`  cd ${worktreePath}`);
+  console.log("Next actions:");
+  console.log(`  i3pm worktree switch ${repoQualified}:${branch}`);
+  console.log(`  i3pm scratchpad toggle ${repoQualified}:${branch}`);
+  console.log(`  worktree-lazygit ${outputPath} status`);
+  console.log(`  ghostty -e yazi ${outputPath}`);
 
   return 0;
-}
-
-/**
- * Detect repository path from current directory or --repo flag.
- */
-async function detectRepoPath(repo?: string): Promise<string | null> {
-  if (repo) {
-    // Parse account/repo format
-    const parts = repo.split("/");
-    if (parts.length !== 2) {
-      return null;
-    }
-    const [account, repoName] = parts;
-    const home = Deno.env.get("HOME") || "";
-    return `${home}/repos/${account}/${repoName}`;
-  }
-
-  // Detect from current directory
-  const cwd = Deno.cwd();
-
-  // Walk up the directory tree looking for .bare/
-  let dir = cwd;
-  while (dir !== "/") {
-    try {
-      const bareStat = await Deno.stat(`${dir}/.bare`);
-      if (bareStat.isDirectory) {
-        return dir;
-      }
-    } catch {
-      // Not found, continue up
-    }
-
-    // Go up one level
-    const parent = dir.substring(0, dir.lastIndexOf("/"));
-    if (parent === dir || parent === "") {
-      break;
-    }
-    dir = parent;
-  }
-
-  return null;
-}
-
-/**
- * Feature 137: Look up default_branch from repos.json for a given repo path.
- */
-async function getDefaultBranch(repoPath: string): Promise<string | null> {
-  const home = Deno.env.get("HOME") || "";
-  const reposFile = `${home}/.config/i3/repos.json`;
-
-  try {
-    const content = await Deno.readTextFile(reposFile);
-    const repos = JSON.parse(content);
-
-    // Extract account/repo from path like /home/user/repos/account/repo
-    const parts = repoPath.split("/");
-    const repoName = parts.pop();
-    const account = parts.pop();
-
-    for (const repo of repos.repositories || []) {
-      if (repo.account === account && repo.name === repoName) {
-        return repo.default_branch || null;
-      }
-    }
-  } catch {
-    // repos.json not found or invalid, fall back to default
-  }
-
-  return null;
 }

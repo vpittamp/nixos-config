@@ -12,6 +12,7 @@ import { worktreeRemove } from "./worktree/remove.ts";
 import { worktreeList } from "./worktree/list.ts";
 import { worktreeSwitch } from "./worktree/switch.ts";
 import { worktreeRemote } from "./worktree/remote.ts";
+import { worktreeRename } from "./worktree/rename.ts";
 
 /**
  * Show worktree command help
@@ -26,6 +27,7 @@ USAGE:
 SUBCOMMANDS:
   create <branch>       Create a new worktree (Feature 100)
   remove <branch>       Remove a worktree (Feature 100)
+  rename <old> <new>    Rename worktree and branch via git gtr
   list [repo]           List worktrees for a repository (Feature 100)
   switch <name>         Switch to a worktree by qualified name (Feature 101)
   remote <subcommand>   Manage SSH remote profiles for worktrees (Feature 087)
@@ -45,6 +47,7 @@ EXAMPLES:
   # Remove a worktree
   i3pm worktree remove 100-feature
   i3pm worktree remove 100-feature --force
+  i3pm worktree rename 100-feature 100-feature-v2
   i3pm worktree remote set vpittamp/nixos-config:main --dir /home/vpittamp/repos/vpittamp/nixos-config/main
 
 For detailed help on a specific subcommand:
@@ -82,6 +85,11 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       exitCode = await worktreeRemove(subcommandArgs);
       break;
 
+    case "rename":
+    case "mv":
+      exitCode = await worktreeRename(subcommandArgs);
+      break;
+
     case "list":
       exitCode = await worktreeList(subcommandArgs);
       break;
@@ -97,7 +105,7 @@ export async function worktreeCommand(args: string[]): Promise<void> {
     default:
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
-      console.error("Available subcommands: create, remove, list, switch, remote");
+      console.error("Available subcommands: create, remove, rename, list, switch, remote");
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);
   }

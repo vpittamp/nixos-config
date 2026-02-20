@@ -49,7 +49,7 @@ let
     );
 
   scripts = import ./scripts.nix { inherit pkgs; };
-  inherit (scripts) hardwareDetectScript topbarSpinnerScript topbarSpinnerOpacityScript togglePowermenuScript;
+  inherit (scripts) hardwareDetectScript topbarSpinnerScript topbarSpinnerOpacityScript togglePowermenuScript toggleBadgeShelfScript;
 
 in
 {
@@ -64,7 +64,7 @@ in
   };
 
   config = mkIf cfg.enable {
-    home.packages = [ pkgs.eww togglePowermenuScript ];
+    home.packages = [ pkgs.eww togglePowermenuScript toggleBadgeShelfScript ];
 
     xdg.configFile."eww/eww-top-bar/scripts/hardware-detect.py" = {
       source = hardwareDetectScript;

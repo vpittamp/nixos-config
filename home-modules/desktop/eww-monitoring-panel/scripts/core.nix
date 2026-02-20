@@ -19,6 +19,103 @@ let
     exec ${pythonForBackend}/bin/python3 ${../../../tools/i3_project_manager/cli/monitoring_data.py} "$@"
   '';
 
+  aiSessionsStreamScript = pkgs.writeShellScriptBin "eww-monitoring-ai-sessions-stream" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    PIPE="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/otel-ai-monitor.pipe"
+    PYTHON="${pkgs.python3}/bin/python3"
+
+    while true; do
+      if [[ -p "$PIPE" ]]; then
+        "$PYTHON" -u - "$PIPE" <<'PY'
+import json
+import sys
+
+decoder = json.JSONDecoder()
+pipe_path = sys.argv[1]
+buffer = ""
+
+try:
+    with open(pipe_path, "r", encoding="utf-8", errors="ignore") as fifo:
+        while True:
+            chunk = fifo.read(4096)
+            if chunk == "":
+                break
+            buffer += chunk
+            while True:
+                buffer = buffer.lstrip()
+                if not buffer:
+                    break
+                try:
+                    obj, idx = decoder.raw_decode(buffer)
+                except json.JSONDecodeError:
+                    break
+                sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+                sys.stdout.flush()
+                buffer = buffer[idx:]
+except OSError:
+    pass
+PY
+        ${pkgs.coreutils}/bin/sleep 0.1
+      else
+        ${pkgs.coreutils}/bin/printf '%s\n' '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'
+        ${pkgs.coreutils}/bin/sleep 2
+      fi
+    done
+  '';
+
+  projectsDataStreamScript = pkgs.writeShellScriptBin "eww-monitoring-projects-stream" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    DATA_FILE="$RUNTIME_DIR/eww-monitoring-projects.json"
+    VERSION_FILE="$RUNTIME_DIR/eww-monitoring-projects.version"
+    INOTIFYWAIT="${pkgs.inotify-tools}/bin/inotifywait"
+    ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
+
+    emit_data() {
+      if [[ -s "$DATA_FILE" ]]; then
+        ${pkgs.coreutils}/bin/cat "$DATA_FILE"
+      else
+        ${pkgs.coreutils}/bin/printf '%s\n' '{"status":"loading","discovered_repositories":[],"repo_count":0,"worktree_count":0,"active_project":null}'
+      fi
+    }
+
+    emit_data
+    while true; do
+      if [[ -x "$INOTIFYWAIT" ]]; then
+        CHANGED=$("$INOTIFYWAIT" -q -e close_write,create,moved_to,delete --format "%f" "$RUNTIME_DIR" 2>/dev/null || true)
+        if [[ "$CHANGED" == "eww-monitoring-projects.json" || "$CHANGED" == "eww-monitoring-projects.version" ]]; then
+          emit_data
+        fi
+      else
+        ${pkgs.coreutils}/bin/sleep 2
+        emit_data
+      fi
+    done
+  '';
+
+  dockModeStreamScript = pkgs.writeShellScriptBin "eww-monitoring-dock-mode-stream" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    STATE_FILE="$HOME/.local/state/eww-monitoring-panel/dock-mode"
+    INOTIFYWAIT="${pkgs.inotify-tools}/bin/inotifywait"
+    ${pkgs.coreutils}/bin/mkdir -p "$(${pkgs.coreutils}/bin/dirname "$STATE_FILE")"
+
+    while true; do
+      MODE="$(${pkgs.coreutils}/bin/cat "$STATE_FILE" 2>/dev/null || true)"
+      if [[ "$MODE" == "docked" ]]; then
+        ${pkgs.coreutils}/bin/printf 'true\n'
+      else
+        ${pkgs.coreutils}/bin/printf 'false\n'
+      fi
+      "$INOTIFYWAIT" -qq -e modify,create,delete "$STATE_FILE" 2>/dev/null || ${pkgs.coreutils}/bin/sleep 2
+    done
+  '';
+
   # Feature 110: Spinner animation uses CSS transition (defpoll toggles pulse_phase)
   # GTK3 supports CSS transitions but EWW doesn't support @keyframes properly
 
@@ -30,12 +127,16 @@ let
     #!${pkgs.bash}/bin/bash
 
     EWW="${pkgs.eww}/bin/eww"
+    GREP="${pkgs.gnugrep}/bin/grep"
     CONFIG="$HOME/.config/eww-monitoring-panel"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
     STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
     DOCK_MODE_FILE="$STATE_DIR/dock-mode"
+    PANEL_WINDOW_ID="monitoring-panel-main"
+
+    ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR" "$STATE_DIR"
 
     # Write wrapper PID for toggle script to send signals directly to this process only
     echo $$ > "$PID_FILE"
@@ -53,7 +154,7 @@ let
 
     # Wait for daemon ready (max 6 seconds)
     for i in $(seq 1 30); do
-      $TIMEOUT 1s $EWW --config "$CONFIG" ping 2>/dev/null && break
+      $TIMEOUT 1s $EWW --no-daemonize --config "$CONFIG" ping 2>/dev/null && break
       ${pkgs.coreutils}/bin/sleep 0.2
     done
 
@@ -67,19 +168,32 @@ let
       fi
     fi
 
+    open_target_window() {
+      local target_window="$1"
+      local attempt
+      for attempt in $(seq 1 5); do
+        # eww can occasionally return a transient IPC error even when the
+        # window opens successfully; verify using active-windows before failing.
+        $TIMEOUT 2s $EWW --no-daemonize --config "$CONFIG" open --id "$PANEL_WINDOW_ID" "$target_window" >/dev/null 2>&1 || true
+        if $TIMEOUT 1s $EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null | $GREP -q "^$PANEL_WINDOW_ID:"; then
+          return 0
+        fi
+        ${pkgs.coreutils}/bin/sleep 0.2
+      done
+      return 1
+    }
+
     # Open exactly one panel window to prevent duplicate widgets.
-    # Always close both window variants first to avoid transient double-panel
-    # rendering during startup/reload races.
     if [[ "$DOCK_MODE" == "docked" ]]; then
       TARGET_WINDOW="monitoring-panel-docked"
     else
       TARGET_WINDOW="monitoring-panel-overlay"
     fi
 
-    # Close both window variants defensively, then open only the target mode.
-    $EWW --config "$CONFIG" close monitoring-panel-overlay >/dev/null 2>&1 || true
-    $EWW --config "$CONFIG" close monitoring-panel-docked >/dev/null 2>&1 || true
-    $EWW --config "$CONFIG" open "$TARGET_WINDOW" >/dev/null 2>&1 || true
+    if ! open_target_window "$TARGET_WINDOW"; then
+      echo "[eww-monitoring-panel] startup window open failed; exiting for systemd retry" >&2
+      exit 1
+    fi
 
     # Feature 125: Toggle handler - called when SIGUSR1 received
     # SOLUTION: Stop service to hide (releases struts), start to show
@@ -91,42 +205,13 @@ let
 
     trap toggle_panel SIGUSR1
 
-    # Feature 125: Mode toggle handler - called when SIGUSR2 received
-    # Switch modes in-place to avoid restart races that can briefly render both
-    # panel windows.
-    toggle_dock_mode() {
-      # Read current mode from state file
-      local current_mode="docked"
-      local target_window="monitoring-panel-docked"
-      if [[ -f "$DOCK_MODE_FILE" ]]; then
-        local saved=$(${pkgs.coreutils}/bin/cat "$DOCK_MODE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')
-        [[ "$saved" == "overlay" ]] && current_mode="overlay"
-      fi
-
-      # Toggle the mode in state file
-      if [[ "$current_mode" == "overlay" ]]; then
-        ${pkgs.coreutils}/bin/printf '%s' "docked" > "$DOCK_MODE_FILE"
-        target_window="monitoring-panel-docked"
-      else
-        ${pkgs.coreutils}/bin/printf '%s' "overlay" > "$DOCK_MODE_FILE"
-        target_window="monitoring-panel-overlay"
-      fi
-
-      # Enforce single-window invariant in the running daemon.
-      $EWW --config "$CONFIG" close monitoring-panel-overlay >/dev/null 2>&1 || true
-      $EWW --config "$CONFIG" close monitoring-panel-docked >/dev/null 2>&1 || true
-      $EWW --config "$CONFIG" open "$target_window" >/dev/null 2>&1 || true
-    }
-    trap toggle_dock_mode SIGUSR2
-
     # Wait for daemon (re-wait after signal interrupts)
     while kill -0 $DAEMON_PID 2>/dev/null; do
       wait $DAEMON_PID || true
     done
   '';
 
-  # Toggle script for panel visibility - sends signal directly to wrapper process
-  # Uses PID file to avoid sending signal to all processes in service cgroup
+  # Toggle script for panel visibility.
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
     # Feature 125: Toggle panel visibility via service start/stop
@@ -134,9 +219,8 @@ let
 
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
-    FLOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-toggle.flock"
+    FLOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-control.flock"
     LOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-toggle.lock"
-    PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
     exec 9>"$FLOCK_FILE"
     ${pkgs.util-linux}/bin/flock -n 9 || exit 0
 
@@ -150,16 +234,9 @@ let
     ${pkgs.coreutils}/bin/touch "$LOCK_FILE"
 
     # Toggle: if running -> stop (hide), if stopped -> start (show)
-    if ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
-      # Service running - send SIGUSR1 to stop it (hide panel)
-      if [[ -f "$PID_FILE" ]]; then
-        WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
-        if kill -0 "$WRAPPER_PID" 2>/dev/null; then
-          kill -SIGUSR1 "$WRAPPER_PID"
-        fi
-      fi
+    if ${pkgs.systemd}/bin/systemctl --user is-active --quiet eww-monitoring-panel.service; then
+      ${pkgs.systemd}/bin/systemctl --user stop eww-monitoring-panel.service
     else
-      # Service stopped - start it (show panel)
       ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
     fi
   '';
@@ -168,17 +245,18 @@ let
   # Focus mode functionality replaced by dock mode toggle (Mod+Shift+M)
 
   # Feature 125: Toggle between overlay and docked modes (Mod+Shift+M)
-  # Sends SIGUSR2 to wrapper process - wrapper handles all eww commands to avoid daemon races
+  # Uses persisted state + service restart for robust mode transitions.
   toggleDockModeScript = pkgs.writeShellScriptBin "toggle-panel-dock-mode" ''
     #!${pkgs.bash}/bin/bash
-    # Sends SIGUSR2 to wrapper - mode switch happens in wrapper context
-    # This avoids eww auto-starting new daemons when commands fail to connect
+    set -euo pipefail
 
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
+    STATE_FILE="$STATE_DIR/dock-mode"
     ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
-    FLOCK_FILE="$RUNTIME_DIR/panel-dock-toggle.flock"
-    PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
-    LOCK_FILE="$RUNTIME_DIR/panel-dock-toggle.lock"
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+    FLOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-control.flock"
+    LOCK_FILE="$RUNTIME_DIR/eww-monitoring-panel-dock.lock"
     exec 9>"$FLOCK_FILE"
     ${pkgs.util-linux}/bin/flock -n 9 || exit 0
 
@@ -191,36 +269,55 @@ let
     fi
     ${pkgs.coreutils}/bin/touch "$LOCK_FILE"
 
-    # Ensure service is running
-    if ! ${pkgs.systemd}/bin/systemctl --user is-active eww-monitoring-panel.service >/dev/null 2>&1; then
-      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
-      ${pkgs.coreutils}/bin/sleep 1
+    CURRENT_MODE="docked"
+    if [[ -f "$STATE_FILE" ]]; then
+      SAVED_MODE="$(${pkgs.coreutils}/bin/cat "$STATE_FILE" 2>/dev/null | ${pkgs.coreutils}/bin/tr -d '[:space:]')"
+      if [[ "$SAVED_MODE" == "overlay" ]]; then
+        CURRENT_MODE="overlay"
+      fi
     fi
 
-    # Send SIGUSR2 to wrapper process to toggle dock mode
-    if [[ -f "$PID_FILE" ]]; then
-      WRAPPER_PID=$(${pkgs.coreutils}/bin/cat "$PID_FILE")
-      if kill -0 "$WRAPPER_PID" 2>/dev/null; then
-        kill -SIGUSR2 "$WRAPPER_PID"
-      fi
+    if [[ "$CURRENT_MODE" == "overlay" ]]; then
+      ${pkgs.coreutils}/bin/printf '%s' "docked" > "$STATE_FILE"
+    else
+      ${pkgs.coreutils}/bin/printf '%s' "overlay" > "$STATE_FILE"
+    fi
+
+    if ${pkgs.systemd}/bin/systemctl --user is-active --quiet eww-monitoring-panel.service; then
+      ${pkgs.systemd}/bin/systemctl --user restart eww-monitoring-panel.service
+    else
+      ${pkgs.systemd}/bin/systemctl --user start eww-monitoring-panel.service
     fi
   '';
 
   # Refresh projects tab data on-demand to avoid high-frequency large JSON updates.
+  # Writes payload to runtime file to avoid `eww update` argv size limits.
   refreshProjectsDataScript = pkgs.writeShellScriptBin "refresh-projects-data" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
 
-    EWW="${pkgs.eww}/bin/eww"
-    CONFIG="$HOME/.config/eww-monitoring-panel"
+    I3PM="${config.home.profileDirectory}/bin/i3pm"
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR"
     FLOCK_FILE="$RUNTIME_DIR/refresh-projects-data.flock"
+    PROJECTS_FILE="$RUNTIME_DIR/eww-monitoring-projects.json"
+    VERSION_FILE="$RUNTIME_DIR/eww-monitoring-projects.version"
     exec 9>"$FLOCK_FILE"
     ${pkgs.util-linux}/bin/flock -n 9 || exit 0
 
-    PROJECTS_JSON="$(${monitoringDataScript}/bin/monitoring-data-backend --mode projects 2>/dev/null || echo '{"status":"error","discovered_repositories":[],"repo_count":0,"worktree_count":0,"active_project":null,"error":"Failed to refresh projects data"}')"
-    "$EWW" --config "$CONFIG" update "projects_data=$PROJECTS_JSON" >/dev/null 2>&1 || true
+    # Keep repos.json fresh so new/removed worktrees appear in the Projects view.
+    ${pkgs.coreutils}/bin/timeout 8s "$I3PM" discover >/dev/null 2>&1 || true
+
+    if ${monitoringDataScript}/bin/monitoring-data-backend --mode projects 2>/dev/null | ${pkgs.jq}/bin/jq -c '.' > "$PROJECTS_FILE" 2>/dev/null; then
+      :
+    else
+      ${pkgs.coreutils}/bin/cat > "$PROJECTS_FILE" <<'EOF'
+{"status":"error","discovered_repositories":[],"repo_count":0,"worktree_count":0,"active_project":null,"error":"Failed to refresh projects data"}
+EOF
+    fi
+
+    # Touch a version marker to signal listeners even when JSON content is unchanged.
+    ${pkgs.coreutils}/bin/date +%s%N > "$VERSION_FILE"
   '';
 
   monitoringPanelHealthGuardScript = pkgs.writeShellScriptBin "eww-monitoring-panel-health-guard" ''
@@ -229,17 +326,30 @@ let
 
     SERVICE="eww-monitoring-panel.service"
     WINDOW="''${EWW_MONITORING_GUARD_WINDOW:-5 minutes ago}"
-    THRESHOLD="''${EWW_MONITORING_GUARD_THRESHOLD:-4}"
+    # Default threshold raised to avoid restart thrash from transient startup
+    # channel-close noise while still catching sustained failures.
+    THRESHOLD="''${EWW_MONITORING_GUARD_THRESHOLD:-10}"
     COOLDOWN_SECONDS="''${EWW_MONITORING_GUARD_COOLDOWN_SECONDS:-600}"
     STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
     STAMP_FILE="$STATE_DIR/health-guard-last-restart"
     LOCK_FILE="$STATE_DIR/health-guard.flock"
+    EWW="${pkgs.eww}/bin/eww"
+    CONFIG="$HOME/.config/eww-monitoring-panel"
 
     ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
     exec 9>"$LOCK_FILE"
     ${pkgs.util-linux}/bin/flock -n 9 || exit 0
 
     if ! ${pkgs.systemd}/bin/systemctl --user is-active "$SERVICE" >/dev/null 2>&1; then
+      exit 0
+    fi
+
+    WINDOW_COUNT="$($EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Ec ': monitoring-panel-(overlay|docked)$' || true)"
+    WINDOW_COUNT="''${WINDOW_COUNT:-0}"
+    if [[ "$WINDOW_COUNT" -gt 1 ]]; then
+      echo "health-guard: detected $WINDOW_COUNT monitoring panel windows; restarting $SERVICE" \
+        | ${pkgs.systemd}/bin/systemd-cat -t eww-monitoring-panel-health-guard
+      ${pkgs.systemd}/bin/systemctl --user restart "$SERVICE"
       exit 0
     fi
 
@@ -280,12 +390,12 @@ let
 
     count_windows() {
       local windows count
-      windows="$($EWW --config "$CONFIG" active-windows 2>/dev/null || true)"
-      count=0
-      while IFS= read -r line; do
-        [[ "$line" == monitoring-panel-* ]] && count=$((count + 1))
-      done <<< "$windows"
-      echo "$count"
+      windows="$($EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true)"
+      if [[ -z "$windows" ]]; then
+        echo 0
+        return
+      fi
+      echo "$windows" | ${pkgs.gnugrep}/bin/grep -Ec ': monitoring-panel-(overlay|docked)$' || true
     }
 
     assert_single_window() {
@@ -294,22 +404,46 @@ let
       count="$(count_windows)"
       if [[ "$count" -ne 1 ]]; then
         echo "Smoke test failed ($label): expected 1 monitoring panel window, got $count" >&2
-        $EWW --config "$CONFIG" active-windows 2>/dev/null || true
+        $EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true
         exit 1
       fi
     }
 
+    wait_for_single_window() {
+      local label attempts count
+      label="$1"
+      attempts=0
+      while [[ "$attempts" -lt 20 ]]; do
+        count="$(count_windows)"
+        if [[ "$count" -eq 1 ]]; then
+          return 0
+        fi
+        ${pkgs.coreutils}/bin/sleep 0.4
+        attempts=$((attempts + 1))
+      done
+      echo "Smoke test timeout ($label): panel never stabilized to one window" >&2
+      $EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true
+      return 1
+    }
+
     ${pkgs.systemd}/bin/systemctl --user start "$SERVICE"
-    ${pkgs.coreutils}/bin/sleep 2
+    wait_for_single_window "initial stabilization"
     assert_single_window "initial"
 
     toggle-panel-dock-mode >/dev/null 2>&1 || true
-    ${pkgs.coreutils}/bin/sleep 2
+    wait_for_single_window "after first dock toggle"
     assert_single_window "after first dock toggle"
 
     toggle-panel-dock-mode >/dev/null 2>&1 || true
-    ${pkgs.coreutils}/bin/sleep 2
+    wait_for_single_window "after second dock toggle"
     assert_single_window "after second dock toggle"
+
+    # Rapid action stress: run multiple dock toggles and reconcile quickly.
+    for _i in 1 2 3; do
+      toggle-panel-dock-mode >/dev/null 2>&1 || true
+      wait_for_single_window "after stress cycle $_i"
+      assert_single_window "after stress cycle $_i"
+    done
 
     monitor-panel-tab 1 >/dev/null 2>&1 || true
     refresh-projects-data >/dev/null 2>&1 || true
@@ -351,12 +485,12 @@ let
     fi
 
     # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+    if ! $TIMEOUT 2s $EWW --no-daemonize --config "$CONFIG" ping >/dev/null 2>&1; then
       exit 0
     fi
 
     # Run sequentially with --kill-after to prevent orphans from rapid tab switching
-    $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" || true
+    $TIMEOUT --kill-after=1s 2s $EWW --no-daemonize --config "$CONFIG" update current_view_index="$INDEX" || true
 
     # Refresh projects payload when entering Projects tab.
     if [[ "$INDEX" == "1" ]]; then
@@ -373,7 +507,7 @@ let
     # Get current monitoring panel view index
     # Returns: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
 
-    ${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null || echo "-1"
+    ${pkgs.eww}/bin/eww --no-daemonize --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null || echo "-1"
   '';
 
   # Wrapper script: Check if current view is projects tab
@@ -385,7 +519,7 @@ let
     # Check if monitoring panel is on projects tab (index 1)
     # Exit code: 0 = on projects tab, 1 = not on projects tab
 
-    VIEW=$(${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null)
+    VIEW=$(${pkgs.eww}/bin/eww --no-daemonize --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null)
     [ "$VIEW" = "1" ]
   '';
 
@@ -448,7 +582,7 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 086: Handle navigation within monitoring panel
     ACTION="$1"
-    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
 
     # Get current state
     current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "0")
@@ -506,7 +640,7 @@ let
   # Feature 099 UX2: Projects tab keyboard navigation script
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
-    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
     # Debug: log the key to journal
     echo "Monitoring panel key pressed: '$KEY'" | ${pkgs.systemd}/bin/systemd-cat -t eww-keyhandler
     case "$KEY" in
@@ -523,7 +657,8 @@ let
 
 in
 {
-  inherit monitoringDataScript wrapperScript toggleScript toggleDockModeScript
+  inherit monitoringDataScript aiSessionsStreamScript projectsDataStreamScript dockModeStreamScript
+          wrapperScript toggleScript toggleDockModeScript
           refreshProjectsDataScript monitoringPanelHealthGuardScript monitoringPanelSmokeTestScript
           monitorPanelTabScript monitorPanelGetViewScript monitorPanelIsProjectsScript
           swayNCToggleScript restartServiceScript monitorPanelNavScript handleKeyScript;

@@ -79,14 +79,14 @@
         :space-evenly true
         (eventbox
           :cursor "pointer"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=0"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update current_view_index=0"
           (button
             :class "tab ''${current_view_index == 0 ? 'active' : ""}"
             :tooltip "Windows (Alt+1)"
             "󰖯"))
         (eventbox
           :cursor "pointer"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view_index=1; ${refreshProjectsDataScript}/bin/refresh-projects-data &"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update current_view_index=1; ${refreshProjectsDataScript}/bin/refresh-projects-data &"
           (button
             :class "tab ''${current_view_index == 1 ? 'active' : ""}"
             :tooltip "Projects (Alt+2)"

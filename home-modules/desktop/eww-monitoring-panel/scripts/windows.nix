@@ -715,7 +715,7 @@ let
     HOSTNAME=$(${pkgs.hostname}/bin/hostname)
 
     # Langfuse project (could be made configurable)
-    LANGFUSE_PROJECT="speckit-agents"
+    LANGFUSE_PROJECT="i3pm-worktree-agents"
 
     # Build URL
     URL="https://langfuse-''${HOSTNAME}.tail286401.ts.net/project/''${LANGFUSE_PROJECT}/traces/''${TRACE_ID}"

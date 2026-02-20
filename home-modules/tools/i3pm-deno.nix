@@ -25,11 +25,17 @@ let
       mkdir -p $out/share/i3pm
       cp -r * $out/share/i3pm/
 
-      # Ensure remote worktree command sources are packaged.
-      if [ ! -f "$out/share/i3pm/src/commands/worktree/remote.ts" ]; then
-        echo "ERROR: missing src/commands/worktree/remote.ts in i3pm package output" >&2
-        exit 1
-      fi
+      # Ensure key worktree command sources are packaged.
+      for required in \
+        "$out/share/i3pm/src/commands/worktree/remote.ts" \
+        "$out/share/i3pm/src/commands/worktree/helpers.ts" \
+        "$out/share/i3pm/src/commands/worktree/rename.ts"
+      do
+        if [ ! -f "$required" ]; then
+          echo "ERROR: missing ''${required#$out/share/i3pm/} in i3pm package output" >&2
+          exit 1
+        fi
+      done
 
       mkdir -p $out/bin
 

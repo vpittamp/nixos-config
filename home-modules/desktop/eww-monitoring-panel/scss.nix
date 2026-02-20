@@ -270,6 +270,40 @@
     color: ${mocha.blue};
   }
 
+  .project-ssh-active {
+    border-left-color: ${mocha.green};
+    background: linear-gradient(135deg, rgba(166, 227, 161, 0.12), rgba(249, 226, 175, 0.09));
+    box-shadow: inset 0 0 0 1px rgba(166, 227, 161, 0.2);
+  }
+
+  .project-ssh-profile {
+    border-left-color: ${mocha.yellow};
+    background: linear-gradient(135deg, rgba(249, 226, 175, 0.1), rgba(250, 179, 135, 0.08));
+  }
+
+  .project-header-ssh-active {
+    background: rgba(22, 36, 24, 0.72);
+    border: 1px solid rgba(166, 227, 161, 0.54);
+    border-radius: 6px;
+    padding: 5px 7px;
+  }
+
+  .project-header-ssh-profile {
+    background: rgba(41, 36, 22, 0.62);
+    border: 1px solid rgba(249, 226, 175, 0.36);
+    border-radius: 6px;
+    padding: 5px 7px;
+  }
+
+  .project-name-ssh-active {
+    color: ${mocha.green};
+    text-shadow: 0 0 6px rgba(166, 227, 161, 0.34);
+  }
+
+  .project-name-ssh-profile {
+    color: ${mocha.yellow};
+  }
+
   .active-indicator {
     font-size: 9px;
     font-weight: bold;
@@ -424,6 +458,13 @@
 
   .global-window {
     border-left-color: ${mocha.overlay0};
+  }
+
+  .ssh-window {
+    border-left-color: ${mocha.green};
+    border-right: 1px solid rgba(249, 226, 175, 0.45);
+    background: linear-gradient(90deg, rgba(24, 40, 24, 0.54), rgba(45, 42, 25, 0.16));
+    box-shadow: inset 0 0 0 1px rgba(166, 227, 161, 0.18);
   }
 
   .window:hover {
@@ -1171,10 +1212,28 @@
   }
 
   .badge-remote {
-    color: ${mocha.mauve};
-    background-color: rgba(203, 166, 247, 0.15);
+    color: ${mocha.green};
+    background: linear-gradient(135deg, rgba(166, 227, 161, 0.2), rgba(249, 226, 175, 0.18));
+    border: 1px solid rgba(166, 227, 161, 0.58);
+    box-shadow: 0 0 8px rgba(166, 227, 161, 0.24);
     font-size: 10px;
-    padding: 1px 4px;
+    font-weight: 700;
+    padding: 1px 6px;
+  }
+
+  .badge-remote-profile {
+    color: ${mocha.yellow};
+    background: rgba(249, 226, 175, 0.14);
+    border: 1px solid rgba(249, 226, 175, 0.42);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+  }
+
+  .badge-remote-window {
+    border-radius: 9px;
+    font-size: 9px;
+    letter-spacing: 0.2px;
   }
 
   .project-git-status {
@@ -1481,6 +1540,12 @@
     padding: 6px 8px;
   }
 
+  .remote-worktree {
+    border-color: rgba(166, 227, 161, 0.64);
+    background: linear-gradient(135deg, rgba(24, 40, 24, 0.68), rgba(45, 42, 25, 0.48));
+    box-shadow: inset 0 0 0 1px rgba(166, 227, 161, 0.2);
+  }
+
   .worktree-tree {
     color: ${mocha.overlay0};
     font-size: 11px;
@@ -1661,6 +1726,11 @@
     min-width: 0;
   }
 
+  .worktree-branch-ssh {
+    color: ${mocha.green};
+    font-weight: 700;
+  }
+
   .worktree-commit {
     font-size: 10px;
     color: ${mocha.overlay0};
@@ -1677,6 +1747,13 @@
     font-size: 9px;
     font-style: italic;
     color: ${mocha.overlay0};
+    margin-top: 2px;
+  }
+
+  .worktree-remote-target {
+    font-size: 9px;
+    color: ${mocha.yellow};
+    font-family: "JetBrainsMono Nerd Font", monospace;
     margin-top: 2px;
   }
 
@@ -3354,6 +3431,15 @@
     font-size: 10px;
     color: ${mocha.subtext0};
     min-width: 0;
+  }
+
+  .window-ssh-target {
+    font-size: 9px;
+    font-weight: 600;
+    color: ${mocha.yellow};
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    min-width: 0;
+    margin-top: 1px;
   }
 
   .events-view-container {

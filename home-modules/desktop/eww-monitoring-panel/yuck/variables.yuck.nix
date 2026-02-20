@@ -1,4 +1,4 @@
-{ monitoringDataScript, ai_sessions_data_path ? "$XDG_RUNTIME_DIR/otel-ai-monitor.pipe", ... }:
+{ pkgs, monitoringDataScript, aiSessionsStreamScript, projectsDataStreamScript, dockModeStreamScript, ... }:
 
 ''
   ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
@@ -14,14 +14,17 @@
 
   ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
   ;; Used to show pulsating indicator on windows running AI assistants
-  ;; Keep command alive even if pipe is missing at startup
+  ;; Keep command alive even if pipe is missing at startup.
+  ;; Parse concatenated JSON frames safely (FIFO writers may omit delimiters).
   (deflisten ai_sessions_data
     :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
-    `bash -c 'PIPE="${ai_sessions_data_path}"; while true; do if [ -p "$PIPE" ]; then cat "$PIPE"; else echo "{\"type\":\"error\",\"error\":\"pipe_missing\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"; sleep 2; fi; done'`)
+    `${aiSessionsStreamScript}/bin/eww-monitoring-ai-sessions-stream`)
 
   ;; Projects view data is refreshed on-demand when entering the Projects tab.
-  ;; This avoids large periodic updates that caused response channel instability.
-  (defvar projects_data "{\"status\":\"loading\",\"discovered_repositories\":[],\"repo_count\":0,\"worktree_count\":0,\"active_project\":null}")
+  ;; Read from runtime file to avoid passing large JSON via `eww update` argv.
+  (deflisten projects_data
+    :initial "{\"status\":\"loading\",\"discovered_repositories\":[],\"repo_count\":0,\"worktree_count\":0,\"active_project\":null}"
+    `${projectsDataStreamScript}/bin/eww-monitoring-projects-stream`)
 
   ;; Defpoll: Apps view data - DISABLED for CPU savings
   ;; Tab 2 is hidden, so this poll never needs to run
@@ -97,13 +100,7 @@
   ;; Feature 137: Use inotifywait for event-driven updates instead of polling
   (deflisten panel_dock_mode
     :initial "true"
-    `bash -c 'STATE_FILE="$HOME/.local/state/eww-monitoring-panel/dock-mode";
-     mkdir -p "$(dirname "$STATE_FILE")";
-     while true; do
-       MODE=$(cat "$STATE_FILE" 2>/dev/null);
-       [[ "$MODE" == "docked" ]] && echo true || echo false;
-       inotifywait -qq -e modify,create,delete "$STATE_FILE" 2>/dev/null || sleep 2;
-     done'`)
+    `${dockModeStreamScript}/bin/eww-monitoring-dock-mode-stream`)
 
   ;; Feature 086: Selected index for keyboard navigation (-1 = none)
   ;; Updated by j/k or up/down in monitoring mode
@@ -263,8 +260,13 @@
   (defvar worktree_form_path "")
   (defvar worktree_form_parent_project "")
   (defvar worktree_form_repo_path "")
-  (defvar worktree_form_speckit true)
-  (defvar worktree_form_agent "claude")
+  (defvar worktree_form_remote_enabled false)
+  (defvar worktree_form_remote_host "ryzen")
+  (defvar worktree_form_remote_user "")
+  (defvar worktree_form_remote_dir "")
+  (defvar worktree_form_remote_port "22")
+  (defvar worktree_form_remote_base "")
+  (defvar worktree_form_base_branch "main")
   (defvar worktree_delete_branch "")
   (defvar worktree_delete_is_dirty false)
   (defvar worktree_delete_confirm "")

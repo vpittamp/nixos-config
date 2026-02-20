@@ -95,13 +95,39 @@ FALLBACK_BEHAVIOR=$(echo "$APP_JSON" | jq -r '.fallback_behavior // "skip"')
 PREFERRED_WORKSPACE=$(echo "$APP_JSON" | jq -r '.preferred_workspace // ""')
 SCOPE=$(echo "$APP_JSON" | jq -r '.scope // "global"')
 EXPECTED_CLASS=$(echo "$APP_JSON" | jq -r '.expected_class // ""')
-# Feature 087: Terminal app detection for SSH wrapping
-IS_TERMINAL=$(echo "$APP_JSON" | jq -r '.terminal // false')
+# Feature 087: Terminal app detection for SSH wrapping.
+# Prefer explicit registry metadata, but fall back to command heuristics so
+# terminal-based launchers are covered consistently in remote mode.
+IS_TERMINAL_REGISTRY=$(echo "$APP_JSON" | jq -r '.terminal // false')
+COMMAND_BASENAME="${COMMAND##*/}"
+IS_TERMINAL="false"
+if [[ "$IS_TERMINAL_REGISTRY" == "true" ]]; then
+    IS_TERMINAL="true"
+else
+    case "$COMMAND_BASENAME" in
+        ghostty|alacritty|kitty|wezterm|foot|footclient|gnome-terminal|konsole|xterm|urxvt|tilix)
+            IS_TERMINAL="true"
+            ;;
+    esac
+
+    case " $PARAMETERS " in
+        *" -e "*)
+            IS_TERMINAL="true"
+            ;;
+    esac
+
+    case "$APP_NAME" in
+        terminal|ghostty|alacritty|kitty|wezterm|foot)
+            IS_TERMINAL="true"
+            ;;
+    esac
+fi
 
 log "DEBUG" "Command: $COMMAND"
 log "DEBUG" "Parameters: $PARAMETERS"
 log "DEBUG" "Scope: $SCOPE"
 log "DEBUG" "Expected class: $EXPECTED_CLASS"
+log "DEBUG" "Terminal detected: $IS_TERMINAL (registry=$IS_TERMINAL_REGISTRY, command=$COMMAND_BASENAME)"
 
 # Query active worktree context
 # active-worktree.json is the single source of truth for project context
@@ -615,24 +641,37 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
         log "DEBUG" "Feature 087: Remote terminal command: $TERMINAL_CMD_REMOTE"
         log "DEBUG" "Feature 087: Substituted local path ($LOCAL_PROJECT_DIR) with remote path ($REMOTE_WORKING_DIR)"
 
-        # Build SSH command with proper escaping
-        # Single quotes around remote command prevent local shell expansion
-        SSH_PORT_FLAG=""
+        # Build SSH command safely as an argument array and execute it from a
+        # temporary helper script. This avoids brittle nested bash -lc quoting.
+        REMOTE_CMD="cd $(printf '%q' "$REMOTE_WORKING_DIR") && $TERMINAL_CMD_REMOTE"
+        SSH_ARGS=(ssh -t)
         if [[ "$REMOTE_PORT" != "22" ]]; then
-            SSH_PORT_FLAG="-p $REMOTE_PORT"
+            SSH_ARGS+=(-p "$REMOTE_PORT")
         fi
+        SSH_ARGS+=("$REMOTE_USER@$REMOTE_HOST" "$REMOTE_CMD")
+        SSH_CMD_SERIALIZED=$(printf '%q ' "${SSH_ARGS[@]}")
+        SSH_CMD_SERIALIZED="${SSH_CMD_SERIALIZED% }"
 
-        # Escape single quotes in terminal command for safe nesting
-        TERMINAL_CMD_ESCAPED="${TERMINAL_CMD_REMOTE//\'/\'\\\'\'}"
+        log "INFO" "Feature 087: SSH command: ${SSH_CMD_SERIALIZED:0:200}..."
 
-        SSH_CMD="ssh -t $SSH_PORT_FLAG $REMOTE_USER@$REMOTE_HOST 'cd $REMOTE_WORKING_DIR && $TERMINAL_CMD_ESCAPED'"
+        RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        mkdir -p "$RUNTIME_DIR"
+        REMOTE_LAUNCH_SCRIPT="$(mktemp "$RUNTIME_DIR/i3pm-remote-launch.XXXXXX.sh")"
+        chmod 700 "$REMOTE_LAUNCH_SCRIPT"
+        cat > "$REMOTE_LAUNCH_SCRIPT" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if ! $SSH_CMD_SERIALIZED; then
+  echo
+  echo "[i3pm] SSH launch failed for $REMOTE_USER@$REMOTE_HOST."
+  echo "[i3pm] Press Enter to close..."
+  read -r
+fi
+rm -f -- "\$0" >/dev/null 2>&1 || true
+EOF
 
-        log "INFO" "Feature 087: SSH command: ${SSH_CMD:0:200}..."
-
-        # For remote execution, we need to bypass the normal ARGS-based command construction
-        # and build a properly-quoted command string directly.
-        # This is set as a flag that will be checked in the APP_CMD construction below.
-        REMOTE_TERMINAL_CMD="${ARGS[0]} -e bash -c $(printf '%q' "$SSH_CMD")"
+        # For remote execution, invoke terminal with helper script directly.
+        REMOTE_TERMINAL_CMD="${ARGS[0]} -e $REMOTE_LAUNCH_SCRIPT"
 
         log "DEBUG" "Feature 087: Remote terminal command: ${REMOTE_TERMINAL_CMD:0:200}"
     fi

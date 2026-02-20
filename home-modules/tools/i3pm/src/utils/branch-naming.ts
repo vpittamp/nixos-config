@@ -2,12 +2,12 @@
  * Branch Naming Utilities
  * Feature 077: Git Worktree Project Management
  *
- * Mirrors speckit's create-new-feature.sh logic for consistent branch naming
+ * Mirrors legacy create-new-feature logic for consistent branch naming
  */
 
 import { execGit } from "./git.ts";
 
-// Common stop words to filter out (matches speckit)
+// Common stop words to filter out (matches legacy branch naming behavior)
 const STOP_WORDS = new Set([
   "i", "a", "an", "the", "to", "for", "of", "in", "on", "at", "by", "with",
   "from", "is", "are", "was", "were", "be", "been", "being", "have", "has",

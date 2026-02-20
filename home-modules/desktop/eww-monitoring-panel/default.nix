@@ -46,7 +46,8 @@ let
   };
 
   inherit (scripts)
-    monitoringDataScript wrapperScript toggleScript toggleDockModeScript
+    monitoringDataScript aiSessionsStreamScript projectsDataStreamScript dockModeStreamScript
+    wrapperScript toggleScript toggleDockModeScript
     refreshProjectsDataScript monitoringPanelHealthGuardScript monitoringPanelSmokeTestScript
     monitorPanelTabScript monitorPanelGetViewScript monitorPanelIsProjectsScript
     monitorPanelNavScript swayNCToggleScript restartServiceScript
@@ -74,7 +75,7 @@ let
   };
 
   variablesYuck = import ./yuck/variables.yuck.nix {
-    inherit monitoringDataScript pulsePhaseScript;
+    inherit pkgs monitoringDataScript aiSessionsStreamScript projectsDataStreamScript dockModeStreamScript pulsePhaseScript;
   };
 
   windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs iconPaths; });

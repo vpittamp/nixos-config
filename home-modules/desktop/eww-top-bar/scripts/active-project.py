@@ -11,7 +11,12 @@ Output format:
   "branch_number": "079",   // extracted numeric prefix (or null)
   "icon": "🌿",             // project icon
   "is_worktree": true,      // true if worktree project (always true in Feature 101)
-  "formatted_label": "079 - nixos-config"  // formatted display name
+  "formatted_label": "079 - nixos-config",  // formatted display name
+  "remote_enabled": false,  // true when active worktree is configured as SSH project
+  "remote_target": "",      // formatted target like user@host:port
+  "remote_target_short": "",// formatted target without port
+  "remote_directory": "",   // remote working directory
+  "remote_directory_display": "" // home-shortened display path
 }
 
 Usage:
@@ -144,7 +149,21 @@ class ActiveProjectMonitor:
         self.icon = "📁"
         self.is_worktree = False
         self.formatted_label = "Global"
+        self.remote_enabled = False
+        self.remote_target = ""
+        self.remote_target_short = ""
+        self.remote_directory = ""
+        self.remote_directory_display = ""
         self._last_state_hash = None
+
+    def _format_remote_target(self, user: str, host: str, port: int) -> str:
+        """Format SSH target for display."""
+        if not host:
+            return ""
+        target = f"{user}@{host}" if user else host
+        if port and port != 22:
+            return f"{target}:{port}"
+        return target
 
     def _read_worktree_file(self) -> Optional[dict]:
         """Read active worktree from state file (Feature 101)"""
@@ -202,6 +221,34 @@ class ActiveProjectMonitor:
                 self.icon = "📦"  # Main/master branch
             else:
                 self.icon = "🌿"  # Feature/worktree branch
+
+            remote = worktree_data.get("remote")
+            remote_enabled = isinstance(remote, dict) and bool(remote.get("enabled"))
+            if remote_enabled:
+                host = str(remote.get("host") or "").strip()
+                user = str(remote.get("user") or "").strip()
+                port_raw = remote.get("port", 22)
+                try:
+                    port = int(port_raw)
+                except (TypeError, ValueError):
+                    port = 22
+                remote_dir = str(remote.get("remote_dir") or remote.get("working_dir") or "").strip()
+
+                self.remote_enabled = bool(host)
+                self.remote_target = self._format_remote_target(user, host, port)
+                self.remote_target_short = f"{user}@{host}" if user and host else host
+                self.remote_directory = remote_dir
+                self.remote_directory_display = (
+                    remote_dir.replace(str(Path.home()), "~")
+                    if remote_dir
+                    else ""
+                )
+            else:
+                self.remote_enabled = False
+                self.remote_target = ""
+                self.remote_target_short = ""
+                self.remote_directory = ""
+                self.remote_directory_display = ""
         else:
             # No active project - global mode
             self.project = "Global"
@@ -210,10 +257,17 @@ class ActiveProjectMonitor:
             self.is_worktree = False
             self.branch_number = None
             self.formatted_label = "Global"
+            self.remote_enabled = False
+            self.remote_target = ""
+            self.remote_target_short = ""
+            self.remote_directory = ""
+            self.remote_directory_display = ""
 
         # Check if state actually changed
         state_hash = (self.project, self.active, self.branch_number,
-                      self.icon, self.is_worktree, self.formatted_label)
+                      self.icon, self.is_worktree, self.formatted_label,
+                      self.remote_enabled, self.remote_target, self.remote_target_short,
+                      self.remote_directory, self.remote_directory_display)
         if state_hash == self._last_state_hash:
             return False
 
@@ -228,9 +282,19 @@ class ActiveProjectMonitor:
             "branch_number": self.branch_number,
             "icon": self.icon,
             "is_worktree": self.is_worktree,
-            "formatted_label": self.formatted_label
+            "formatted_label": self.formatted_label,
+            "remote_enabled": self.remote_enabled,
+            "remote_target": self.remote_target,
+            "remote_target_short": self.remote_target_short,
+            "remote_directory": self.remote_directory,
+            "remote_directory_display": self.remote_directory_display,
         }
-        print(json.dumps(state), flush=True)
+        try:
+            print(json.dumps(state), flush=True)
+        except BrokenPipeError:
+            # Eww can close the listener pipe during reload/restart.
+            # Exit cleanly instead of emitting traceback noise.
+            sys.exit(0)
 
     def run(self):
         """Watch state file for active project updates using inotify."""

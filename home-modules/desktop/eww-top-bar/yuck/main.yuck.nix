@@ -51,6 +51,27 @@ let
       (powermenu-overlay))
   '';
 
+  # Generate badge shelf overlay window definition for a monitor
+  mkBadgeShelfWindowDef = output: let
+    windowId = sanitizeOutputName output.name;
+  in ''
+    ;; Badge shelf overlay (${output.name})
+    (defwindow badge-shelf-${windowId}
+      :monitor "${output.name}"
+      :geometry (geometry
+        :anchor "top center"
+        :x "0px"
+        :y "25px"
+        :width "100%"
+        :height "44px")
+      :stacking "overlay"
+      :exclusive false
+      :focusable "ondemand"
+      :namespace "eww-top-bar"
+      :windowtype "dialog"
+      (badge-shelf-window :monitor_id "${windowId}"))
+  '';
+
   # Only add fallback window when no generated output covers eDP-1
   hasEDP1 = builtins.any (o: o.name == "eDP-1") topBarOutputs;
   fallbackWindow = lib.optionalString (!hasEDP1) ''
@@ -88,6 +109,24 @@ let
   :namespace "eww-top-bar"
   :windowtype "dialog"
   (powermenu-overlay))
+'';
+
+  fallbackBadgeShelfWindow = lib.optionalString (!hasEDP1) ''
+;; Fallback badge shelf overlay window (eDP-1)
+(defwindow badge-shelf-edp1
+  :monitor "eDP-1"
+  :geometry (geometry
+    :anchor "top center"
+    :x "0px"
+    :y "25px"
+    :width "100%"
+    :height "44px")
+  :stacking "overlay"
+  :exclusive false
+  :focusable "ondemand"
+  :namespace "eww-top-bar"
+  :windowtype "dialog"
+  (badge-shelf-window :monitor_id "edp1"))
 '';
 
   # Generate volume popup window for first monitor
@@ -193,7 +232,7 @@ ${if isLaptop then ''
 (defpoll monitoring_panel_visible
   :interval "3s"
   :initial "false"
-  `bash -c 'windows="$(${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null || true)"; [[ "$windows" == *"monitoring-panel"* ]] && echo true || echo false'`)
+  `bash -c '${pkgs.systemd}/bin/systemctl --user is-active --quiet eww-monitoring-panel.service && echo true || echo false'`)
 
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)
@@ -225,11 +264,8 @@ ${if isLaptop then ''
 ;;   `${topbarSpinnerOpacityScript}/bin/eww-topbar-spinner-opacity`)
 
 ;; Interactions / popups
-(defvar volume_popup_visible false)
-(defvar show_wifi_details false)
 (defvar show_volume_peek false)
 (defvar show_brightness_peek false)
-(defvar show_metrics false)
 (defvar powermenu_confirm_action "")
 
 ;; ============================================================================
@@ -285,11 +321,9 @@ ${if isLaptop then ''
          (label :class "value network-value"
                 :text "↓''${system_metrics.net_rx_mbps ?: '0.0'} ↑''${system_metrics.net_tx_mbps ?: '0.0'}"))))
 
-;; WiFi widget (icon + hover reveal strength bar)
+;; WiFi widget (click to open network settings)
 (defwidget wifi-widget []
   (eventbox :onclick "nm-connection-editor &"
-            :onhover "eww update show_wifi_details=true"
-            :onhoverlost "eww update show_wifi_details=false"
     (box :class {wifi_status.connected ? "pill metric-pill wifi" : "pill metric-pill wifi wifi-disconnected"}
          :spacing 2
          :tooltip {wifi_status.connected ? (wifi_status.ssid ?: "WiFi") : "Not connected"}
@@ -312,8 +346,8 @@ ${if isLaptop then ''
 ;; Volume widget (icon + hover slider)
 (defwidget volume-widget-enhanced []
   (eventbox :onclick ""
-            :onhover "eww update show_volume_peek=true"
-            :onhoverlost "eww update show_volume_peek=false"
+            :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_volume_peek=true"
+            :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_volume_peek=false"
     (box :class "pill metric-pill volume"
          :spacing 2
          :tooltip "Volume"
@@ -345,8 +379,8 @@ ${if isLaptop then ''
 ;; Icon + hover reveal slider, scroll to adjust
 (defwidget brightness-widget []
   (eventbox :onclick ""
-            :onhover "eww update show_brightness_peek=true"
-            :onhoverlost "eww update show_brightness_peek=false"
+            :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_brightness_peek=true"
+            :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_brightness_peek=false"
             :onscroll "~/.config/eww/eww-device-controls/scripts/brightness-control.sh {}"
     (box :class "pill metric-pill brightness"
          :spacing 2
@@ -368,6 +402,7 @@ ${if isLaptop then ''
 (defwidget battery-widget []
   (box :class "pill metric-pill battery"
        :spacing 3
+       :visible {hardware.battery ?: false}
        :tooltip {battery.charging
                   ? "Charging: ''${battery.percentage ?: 0}% (''${battery.time_formatted ?: '--'} to full)"
                   : "Battery: ''${battery.percentage ?: 0}% (''${battery.time_formatted ?: '--'} remaining)"}
@@ -407,11 +442,23 @@ ${if isLaptop then ''
 ;; Feature 079: US7 - T052/T053 - Enhanced with icon and branch number
 (defwidget project-widget []
   (eventbox :onclick "swaymsg mode '→ WS' && i3pm-workspace-mode char ':' &"
-    (box :class {active_project.is_worktree == true ? "pill project-pill-worktree" : "pill project-pill"}
+            :tooltip {(active_project.remote_enabled ?: false)
+                      ? ((active_project.formatted_label ?: "Global") + "\nSSH: " + (active_project.remote_target ?: "") +
+                         ((active_project.remote_directory_display ?: "") != "" ? "\n" + (active_project.remote_directory_display ?: "") : ""))
+                      : (active_project.formatted_label ?: "Global")}
+    (box :class {(active_project.is_worktree == true ? "pill project-pill-worktree" : "pill project-pill") + ((active_project.remote_enabled ?: false) ? " project-pill-ssh" : "")}
          :spacing 2
          ;; T052: Project icon from metadata
          (label :class "icon project-icon"
                 :text {active_project.icon ?: ""})
+         (label :class "project-ssh-indicator"
+                :visible {active_project.remote_enabled ?: false}
+                :text "󰣀 SSH")
+         (label :class "project-ssh-target"
+                :visible {active_project.remote_enabled ?: false}
+                :limit-width 16
+                :truncate true
+                :text {active_project.remote_target_short ?: active_project.remote_target ?: ""})
          ;; Truncate long project names to prevent top bar overflow
          (label :class "value project-value"
                 :limit-width 30
@@ -433,6 +480,54 @@ ${if isLaptop then ''
                 :text {build_health.hm_generation ?: "--"})
          (label :class "value health-status"
                 :text {build_health.status ?: "unknown"}))))
+
+;; Compact build health indicator for always-on top bar view
+(defwidget build-health-dot-widget [monitor_id]
+  (eventbox :onclick {"toggle-topbar-badge-shelf toggle " + monitor_id + " &"}
+    (box :class {build_health.status == "healthy" ? "pill metric-pill health-dot-pill health-dot-healthy" :
+                 build_health.status == "warning" ? "pill metric-pill health-dot-pill health-dot-warning" :
+                 build_health.status == "error" ? "pill metric-pill health-dot-pill health-dot-error" :
+                 "pill metric-pill health-dot-pill health-dot-unknown"}
+         :tooltip {"Build health: " + (build_health.status ?: "unknown") +
+                   " | OS " + (build_health.os_generation ?: "--") +
+                   " HM " + (build_health.hm_generation ?: "--")}
+         (label :class "icon health-dot-icon" :text "●"))))
+
+;; Opens the secondary badge shelf (CPU/mem/disk/net/etc.)
+(defwidget status-shelf-toggle [monitor_id]
+  (eventbox
+    :onclick {"toggle-topbar-badge-shelf toggle " + monitor_id + " &"}
+    (box :class {(build_health.status ?: "unknown") == "warning" ||
+                 (build_health.status ?: "unknown") == "error" ||
+                 (battery.level ?: "unknown") == "critical" ||
+                 (battery.level ?: "unknown") == "very_low"
+                 ? "pill metric-pill status-shelf-toggle status-shelf-alert"
+                 : "pill metric-pill status-shelf-toggle"}
+         :tooltip "System badges"
+         (label :class "icon status-shelf-icon" :text "󰖷"))))
+
+;; Secondary badge shelf: moved metrics and status badges
+(defwidget badge-shelf-window [monitor_id]
+  (box :class "badge-shelf-window"
+       :orientation "h"
+       :space-evenly false
+       :halign "end"
+    (box :class "badge-shelf-card"
+         :orientation "h"
+         :space-evenly false
+         :spacing 4
+         (cpu-widget)
+         (memory-widget)
+         (disk-widget)
+         (temperature-widget)
+         (network-widget)
+         (wifi-widget)
+         ${if isLaptop then "(brightness-widget)" else ""}
+         (bluetooth-widget)
+         (build-health-widget)
+         (button :class "badge-shelf-close"
+                 :onclick {"toggle-topbar-badge-shelf close " + monitor_id + " &"}
+                 ""))))
 
 ;; Separator between blocks
 ;; Visual separator between widget groups
@@ -698,73 +793,58 @@ ${if isLaptop then ''
 ;;                   :image-width 16
 ;;                   :image-height 16))))))
 
-;; Main bar layout - upgraded pill layout with reveals/hover states
+;; Main bar layout - static left metrics with compact interactive controls
 
 (defwidget main-bar [is_primary monitor_id]
   (centerbox :orientation "h"
              :class "bar"
-    ;; Left: Collapsible system metrics (click or hover to open); build health always visible
-    (eventbox :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_metrics=true"
-              :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_metrics=false"
+    ;; Left: Minimal always-on controls; extended badges move to shelf popup
+    ;; Wrapped in an expanding side container to keep the center group truly centered.
+    (box :class "bar-side bar-side-left"
+         :orientation "h"
+         :space-evenly false
+         :halign "start"
+         :hexpand true
       (box :class "left"
            :orientation "h"
            :space-evenly false
            :halign "start"
-           :spacing 3
-           ;; Compact trigger keeps footprint small when collapsed
-           (eventbox
-             :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_metrics=$( [ $(${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar get show_metrics) = true ] && echo false || echo true )"
-             (button :class "pill compact-trigger"
-                     :tooltip "Click to toggle system metrics"
-                     (label :class "icon compact-icon" :text "")))
-           ;; Expandable metrics
-           (revealer :class "metrics-revealer"
-                     :transition "slideleft"
-                     :reveal show_metrics
-             (box :class "metrics-expanded"
-                  :orientation "h"
-                  :space-evenly false
-                  :halign "start"
-                  :spacing 3
-                  (cpu-widget)
-                  (memory-widget)
-                  (disk-widget)
-                  (temperature-widget)
-                  (network-widget)
-                  (wifi-widget)))
-
-          ;; Always-visible controls
-          (volume-widget-enhanced)
-          ${if isLaptop then "(brightness-widget)" else ""}
-          (battery-widget)
-           (bluetooth-widget)
-
-           ;; Health widget stays visible with text
-           (build-health-widget)))
+           :spacing 5
+           (status-shelf-toggle :monitor_id monitor_id)
+           (volume-widget-enhanced)
+           (memory-widget)
+           (battery-widget)
+           (build-health-dot-widget :monitor_id monitor_id)))
 
     ;; Center: Active Project + AI Sessions
     (box :class "center"
          :orientation "h"
          :space-evenly false
          :halign "center"
-         :spacing 6
+         :spacing 5
          (project-widget)
          ;; Feature 136: AI sessions widget disabled - functionality moved to monitoring panel
          ;; (ai-sessions-widget)
          )
 
     ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Badge, and System Tray
-    (box :class "right"
+    ;; Wrapped in an expanding side container to mirror left-side expansion.
+    (box :class "bar-side bar-side-right"
          :orientation "h"
          :space-evenly false
          :halign "end"
-         :spacing 4
-          (monitor-profile-widget)
-          (monitoring-panel-toggle)
-          (notification-badge)
-          (datetime-widget)
-          (systray-widget :is_primary is_primary)
-          (powermenu-toggle :is_primary is_primary :monitor_id monitor_id))))
+         :hexpand true
+      (box :class "right"
+           :orientation "h"
+           :space-evenly false
+           :halign "end"
+           :spacing 5
+            (monitor-profile-widget)
+            (monitoring-panel-toggle)
+            (notification-badge)
+            (datetime-widget)
+            (systray-widget :is_primary is_primary)
+            (powermenu-toggle :is_primary is_primary :monitor_id monitor_id)))))
 
 ;; ============================================================================
 ;; Windows (per-monitor instances)
@@ -775,8 +855,11 @@ ${lib.concatMapStrings mkWindowDef topBarOutputs}
 ${fallbackWindow}
 
 ;; ============================================================================
-;; Powermenu Windows (per-monitor instances)
+;; Overlay Windows (per-monitor instances)
 ;; ============================================================================
+
+${lib.concatMapStrings mkBadgeShelfWindowDef topBarOutputs}
+${fallbackBadgeShelfWindow}
 
 ${lib.concatMapStrings mkPowermenuWindowDef topBarOutputs}
 ${fallbackPowermenuWindow}

@@ -47,7 +47,7 @@
               ;; Expand/Collapse All button
               (eventbox
                 :cursor "pointer"
-                :onclick {windows_all_expanded ? "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false" : "eww --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true"}
+                :onclick {windows_all_expanded ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true"}
                 :tooltip {windows_all_expanded ? "Collapse all worktrees" : "Expand all worktrees"}
                 (box
                   :class "expand-all-btn"
@@ -173,7 +173,8 @@
 
   (defwidget project-widget [project]
     (box
-      :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "")}
+      :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "") +
+              ((project.remote_enabled ?: false) ? " project-ssh-active" : ((project.remote_profile_enabled ?: false) ? " project-ssh-profile" : ""))}
       :orientation "v"
       :space-evenly false
       (eventbox
@@ -182,23 +183,39 @@
         :cursor "pointer"
         :tooltip {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "Click to collapse" : "Click to expand"}
         (box
-          :class "project-header"
+          :class {"project-header" + ((project.remote_enabled ?: false) ? " project-header-ssh-active" : ((project.remote_profile_enabled ?: false) ? " project-header-ssh-profile" : ""))}
           :orientation "h"
           :space-evenly false
           (label
             :class "expand-icon"
             :text {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + project.name + "\") != null")) ? "󰅀" : "󰅂"})
           (label
-            :class "project-name"
+            :class {"project-name" + ((project.remote_enabled ?: false) ? " project-name-ssh-active" : ((project.remote_profile_enabled ?: false) ? " project-name-ssh-profile" : ""))}
             :limit-width 30
             :truncate true
-            :tooltip "''${project.name}"
+            :tooltip {
+              (project.remote_enabled ?: false)
+              ? ("''${project.name}\nSSH Active: " + (project.remote_target ?: "") + ((project.remote_directory_display ?: "") != "" ? "\n" + (project.remote_directory_display ?: "") : ""))
+              : ((project.remote_profile_enabled ?: false)
+                ? ("''${project.name}\nSSH Profile: " + (project.remote_profile_target ?: "") + ((project.remote_profile_directory_display ?: "") != "" ? "\n" + (project.remote_profile_directory_display ?: "") : ""))
+                : "''${project.name}")
+            }
             :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
           (label
             :class "active-indicator"
             :visible {project.is_active}
             :tooltip "Active project"
             :text "●")
+          (label
+            :class "badge badge-remote"
+            :visible {project.remote_enabled ?: false}
+            :text "󰣀 SSH LIVE"
+            :tooltip {"Remote: " + (project.remote_target ?: "") + ((project.remote_directory_display ?: "") != "" ? " • " + (project.remote_directory_display ?: "") : "")})
+          (label
+            :class "badge badge-remote-profile"
+            :visible {(project.remote_profile_enabled ?: false) && !(project.remote_enabled ?: false)}
+            :text "󱠾 SSH CFG"
+            :tooltip {"Profile: " + (project.remote_profile_target ?: "") + ((project.remote_profile_directory_display ?: "") != "" ? " • " + (project.remote_profile_directory_display ?: "") : "")})
           (box
             :hexpand true
             :halign "end"
@@ -227,17 +244,17 @@
           (eventbox
             :visible {project.scope == "scoped"}
             :cursor "pointer"
-            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
+            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name}; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
             :tooltip "Switch to this worktree"
             (label :class "action-btn action-switch" :text "󰌑"))
           (eventbox
             :cursor "pointer"
-            :onclick "(${closeWorktreeScript}/bin/close-worktree-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
+            :onclick "(${closeWorktreeScript}/bin/close-worktree-action ''${project.name}; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
             :tooltip "Close all windows for this project"
             (label :class "action-btn action-close-project" :text "󰅖"))
           (eventbox
             :cursor "pointer"
-            :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_project="
+            :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project="
             :tooltip "Close menu"
             (label :class "action-btn action-dismiss" :text "󰅙"))))
       (revealer
@@ -262,11 +279,11 @@
         :space-evenly false
         (eventbox
           :onclick "${focusWindowScript}/bin/focus-window-action ''${window.project} ''${window.id} &"
-          :onrightclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"
+          :onrightclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"
           :cursor "pointer"
           :hexpand true
           (box
-            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
+            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${(window.project_remote_enabled ?: false) ? 'ssh-window' : ""} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
             :orientation "h"
             :space-evenly false
             :hexpand true
@@ -293,13 +310,25 @@
                 :halign "start"
                 :text "''${window.title ?: '#' + window.id}"
                 :limit-width 25
-                :truncate true))))
+                :truncate true)
+              (label
+                :class "window-ssh-target"
+                :visible {window.project_remote_enabled ?: false}
+                :halign "start"
+                :limit-width 28
+                :truncate true
+                :text {(window.project_remote_target ?: "") != "" ? ("SSH • " + (window.project_remote_target ?: "")) : "SSH session"}))))
         ;; Feature 136: Multi-indicator support - AI badges OUTSIDE focus eventbox for independent click handling
         (box
           :class "window-badges"
           :orientation "h"
           :space-evenly false
           :halign "end"
+          (label
+            :class "badge badge-remote badge-remote-window"
+            :text "󰣀 SSH"
+            :visible {window.project_remote_enabled ?: false}
+            :tooltip {"Remote: " + (window.project_remote_target ?: "") + ((window.project_remote_dir ?: "") != "" ? " • " + (window.project_remote_dir ?: "") : "")})
           (label
             :class "badge badge-pwa"
             :text "PWA"
@@ -363,8 +392,8 @@
           :class "window-action-bar"
           :orientation "h"
           :space-evenly true
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] focus && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Focus" (label :class "action-btn" :text "󰌑"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] floating toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Float" (label :class "action-btn" :text "󰊓"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] fullscreen toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Full" (label :class "action-btn" :text "󰊓"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙"))))))
+          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] focus && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Focus" (label :class "action-btn" :text "󰌑"))
+          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] floating toggle && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Float" (label :class "action-btn" :text "󰊓"))
+          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] fullscreen toggle && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Full" (label :class "action-btn" :text "󰊓"))
+          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙"))))))
 ''

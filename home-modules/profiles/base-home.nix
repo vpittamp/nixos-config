@@ -49,6 +49,7 @@ in
 
     # Tool configurations
     ../tools/git.nix
+    ../tools/git-gtr.nix
     ../tools/ssh.nix
     ../tools/onepassword.nix
     ../tools/onepassword-env.nix

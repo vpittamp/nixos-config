@@ -1457,7 +1457,67 @@ def _format_json_with_syntax_highlighting(data: Dict[str, Any]) -> str:
     return json_str
 
 
-def transform_to_project_view(monitors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _is_truthy(value: Any) -> bool:
+    """Parse common truthy string/bool values."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _format_remote_target(user: str, host: str, port: Any) -> str:
+    """Format user/host/port into a compact SSH target string."""
+    host = str(host or "").strip()
+    if not host:
+        return ""
+    user = str(user or "").strip()
+    user_part = f"{user}@" if user else ""
+    port_part = str(port or 22).strip()
+    return f"{user_part}{host}:{port_part}"
+
+
+def _read_window_remote_env(pid: Any) -> Dict[str, str]:
+    """
+    Read I3PM remote environment variables from /proc/<pid>/environ.
+
+    Returns only keys with prefix I3PM_REMOTE_ to keep parsing lightweight.
+    """
+    try:
+        pid_int = int(pid)
+    except (TypeError, ValueError):
+        return {}
+
+    if pid_int <= 0:
+        return {}
+
+    environ_path = Path("/proc") / str(pid_int) / "environ"
+    try:
+        raw = environ_path.read_bytes()
+    except OSError:
+        return {}
+
+    remote_env: Dict[str, str] = {}
+    for entry in raw.split(b"\0"):
+        if not entry or b"=" not in entry:
+            continue
+        key_b, value_b = entry.split(b"=", 1)
+        if not key_b.startswith(b"I3PM_REMOTE_"):
+            continue
+        try:
+            key = key_b.decode("utf-8", errors="ignore")
+            value = value_b.decode("utf-8", errors="ignore")
+        except Exception:
+            continue
+        remote_env[key] = value
+
+    return remote_env
+
+
+def transform_to_project_view(
+    monitors: List[Dict[str, Any]],
+    remote_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """
     Transform monitor-based hierarchy to project-based view.
 
@@ -1503,16 +1563,78 @@ def transform_to_project_view(monitors: List[Dict[str, Any]]) -> List[Dict[str, 
     for window in all_windows:
         if window["scope"] == "scoped" and window["project"]:
             project_name = window["project"]
+            remote_profile = (remote_profiles or {}).get(project_name)
+            profile_enabled = isinstance(remote_profile, dict) and bool(remote_profile.get("enabled", False))
+            profile_target = ""
+            profile_directory = ""
+            if profile_enabled:
+                profile_target = _format_remote_target(
+                    remote_profile.get("user", ""),
+                    remote_profile.get("host", ""),
+                    remote_profile.get("port", 22),
+                )
+                profile_directory = str(remote_profile.get("remote_dir", ""))
+
+            # Mark a window as remote only when its process environment confirms it.
+            # This avoids false SSH badges for local windows in projects that merely
+            # have a configured SSH profile.
+            remote_env = _read_window_remote_env(window.get("pid", 0))
+            window_remote_enabled = _is_truthy(remote_env.get("I3PM_REMOTE_ENABLED"))
+            window_remote_target = ""
+            window_remote_directory = ""
+            if window_remote_enabled:
+                window_remote_target = _format_remote_target(
+                    remote_env.get("I3PM_REMOTE_USER") or (remote_profile or {}).get("user", ""),
+                    remote_env.get("I3PM_REMOTE_HOST") or (remote_profile or {}).get("host", ""),
+                    remote_env.get("I3PM_REMOTE_PORT") or (remote_profile or {}).get("port", 22),
+                )
+                window_remote_directory = str(
+                    remote_env.get("I3PM_REMOTE_DIR")
+                    or (remote_profile or {}).get("remote_dir", "")
+                )
+
+            window["project_remote_enabled"] = window_remote_enabled
+            window["project_remote_target"] = window_remote_target
+            window["project_remote_dir"] = window_remote_directory
+
             if project_name not in projects_dict:
                 projects_dict[project_name] = {
                     "name": project_name,
                     "scope": "scoped",
                     "window_count": 0,
+                    # Active remote status (for badges) is based on actual window env.
+                    "remote_enabled": window_remote_enabled,
+                    "remote_target": window_remote_target,
+                    "remote_directory": window_remote_directory,
+                    "remote_directory_display": window_remote_directory.replace(str(Path.home()), "~")
+                    if window_remote_directory
+                    else "",
+                    # Keep configured profile metadata available for debugging/tooltips.
+                    "remote_profile_enabled": profile_enabled,
+                    "remote_profile_target": profile_target,
+                    "remote_profile_directory": profile_directory,
+                    "remote_profile_directory_display": profile_directory.replace(str(Path.home()), "~")
+                    if profile_directory
+                    else "",
                     "windows": []
                 }
+            elif window_remote_enabled and not projects_dict[project_name].get("remote_enabled"):
+                # Keep project-level active remote metadata in sync if first
+                # confirmed remote window arrives later.
+                projects_dict[project_name]["remote_enabled"] = True
+                projects_dict[project_name]["remote_target"] = window_remote_target
+                projects_dict[project_name]["remote_directory"] = window_remote_directory
+                projects_dict[project_name]["remote_directory_display"] = (
+                    window_remote_directory.replace(str(Path.home()), "~")
+                    if window_remote_directory
+                    else ""
+                )
             projects_dict[project_name]["windows"].append(window)
             projects_dict[project_name]["window_count"] += 1
         else:
+            window["project_remote_enabled"] = False
+            window["project_remote_target"] = ""
+            window["project_remote_dir"] = ""
             global_windows.append(window)
 
     # Convert dict to sorted list (alphabetical by project name)
@@ -1524,6 +1646,10 @@ def transform_to_project_view(monitors: List[Dict[str, Any]]) -> List[Dict[str, 
             "name": "Global Windows",
             "scope": "global",
             "window_count": len(global_windows),
+            "remote_enabled": False,
+            "remote_target": "",
+            "remote_directory": "",
+            "remote_directory_display": "",
             "windows": global_windows
         })
 
@@ -1642,8 +1768,10 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Validate and compute summary counts
         counts = validate_and_count(monitors)
 
-        # Transform to project-based view (default view)
-        projects = transform_to_project_view(monitors)
+        # Transform to project-based view (default view).
+        # Overlay SSH remote metadata so window view can surface remote worktree context.
+        remote_profiles = load_worktree_remote_profiles()
+        projects = transform_to_project_view(monitors, remote_profiles)
 
         # UX Enhancement: Add is_active flag to each project
         for project in projects:
