@@ -2,11 +2,12 @@
 
 ''
   ;; Disabled View Stubs - These replace heavy widget implementations
-  ;; Tabs 2-6 are hidden and these stubs prevent loading their full widget trees
+  ;; Tabs 3-6 are hidden and these stubs prevent loading their full widget trees
 
-  ;; Apps View - DISABLED (Tab 2)
+  ;; Legacy compatibility: if an older path still renders apps-view at Tab 2,
+  ;; route it to tailscale-view instead of showing an empty disabled stub.
   (defwidget apps-view []
-    (box (label :text "Apps view disabled")))
+    (tailscale-view))
   (defwidget app-card [app]
     (box))
 

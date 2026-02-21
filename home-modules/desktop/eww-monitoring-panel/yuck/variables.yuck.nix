@@ -1,9 +1,10 @@
-{ pkgs, monitoringDataScript, projectsDataStreamScript, dockModeStreamScript, ... }:
+{ pkgs, monitoringDataScript, projectsDataStreamScript, dockModeStreamScript, pulsePhaseScript, tailscaleTabEnabled, tailscalePollInterval, ... }:
 
 ''
   ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
   ;; Otherwise :run-while conditions don't work and all polls run continuously
-  (defvar current_view_index 0)  ;; Default to Windows tab (tabs 2,3,4,5,6 disabled)
+  (defvar current_view_index 0)
+  (defvar tailscale_tab_enabled ${if tailscaleTabEnabled then "true" else "false"})
 
   ;; Deflisten: Windows view data (event-driven with 5s heartbeat)
   ;; Uses --listen mode for instant updates on Sway events + inotify for badges
@@ -18,8 +19,15 @@
     :initial "{\"status\":\"loading\",\"discovered_repositories\":[],\"repo_count\":0,\"worktree_count\":0,\"active_project\":null}"
     `${projectsDataStreamScript}/bin/eww-monitoring-projects-stream`)
 
+  ;; Defpoll: Tailscale view data (local-first, on-demand tab polling)
+  (defpoll tailscale_data
+    :interval "${tailscalePollInterval}"
+    :run-while {tailscale_tab_enabled && current_view_index == 2}
+    :initial "{\"status\":\"loading\",\"timestamp\":0,\"timestamp_friendly\":\"Loading...\",\"self\":{},\"service\":{},\"peers\":{\"total\":0,\"online\":0,\"offline\":0,\"sample\":[]},\"kubernetes\":{\"available\":false},\"actions\":{},\"error\":null}"
+    `${monitoringDataScript}/bin/monitoring-data-backend --mode tailscale 2>/dev/null || echo '{"status":"error","timestamp":0,"timestamp_friendly":"Error","self":{},"service":{},"peers":{"total":0,"online":0,"offline":0,"sample":[]},"kubernetes":{"available":false},"actions":{},"error":"tailscale query failed"}'`)
+
   ;; Defpoll: Apps view data - DISABLED for CPU savings
-  ;; Tab 2 is hidden, so this poll never needs to run
+  ;; Tab 2 now serves Tailscale mode.
   (defpoll apps_data
     :interval "5s"
     :run-while false
@@ -66,6 +74,12 @@
     :run-while false
     :initial "{\"volume\":{\"volume\":50,\"muted\":false,\"icon\":\"󰕾\",\"current_device\":\"Unknown\"},\"bluetooth\":{\"enabled\":false,\"scanning\":false,\"devices\":[]},\"brightness\":{\"display\":50,\"keyboard\":0},\"battery\":{\"percentage\":100,\"state\":\"full\",\"icon\":\"󰁹\",\"level\":\"normal\",\"time_remaining\":\"\"},\"thermal\":{\"cpu_temp\":0,\"level\":\"normal\",\"icon\":\"󰔏\"},\"network\":{\"tailscale_connected\":false,\"wifi_connected\":false},\"hardware\":{\"has_battery\":false,\"has_brightness\":false,\"has_keyboard_backlight\":false,\"has_bluetooth\":true,\"has_power_profiles\":false,\"has_thermal_sensors\":true},\"power_profile\":{\"current\":\"balanced\",\"available\":[],\"icon\":\"󰾅\"}}"
     `echo '{}'`)
+
+  ;; Tailscale action state
+  (defvar tailscale_confirm_action "")
+  (defvar tailscale_action_namespace "default")
+  (defvar tailscale_action_target "")
+  (defvar tailscale_action_in_progress false)
 
   ;; NOTE: current_view_index is defined at the TOP of this file (before defpolls)
   ;; This is required for :run-while conditions to work correctly
