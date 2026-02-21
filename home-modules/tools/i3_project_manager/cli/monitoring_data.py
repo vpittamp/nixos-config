@@ -32,6 +32,7 @@ import logging
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -99,6 +100,15 @@ INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 # Remote sesh/tmux session discovery cache (for SSH project window augmentation)
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
 REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _normalize_session_name_key(value: str) -> str:
+    """Normalize session names so separator variants map to one logical key."""
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    # Treat stacks/main, stacks_main, and stacks-main as the same identity.
+    return re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
 
 
 def load_badge_state_from_files() -> Dict[str, Any]:
@@ -1673,6 +1683,8 @@ def _build_remote_session_window(
     if attached:
         summary = f"{summary} • attached"
 
+    identity = _connection_identity(True, remote_target)
+
     return {
         "id": synthetic_id,
         "pid": 0,
@@ -1705,6 +1717,10 @@ def _build_remote_session_window(
         "project_remote_enabled": True,
         "project_remote_target": remote_target,
         "project_remote_dir": remote_dir,
+        "execution_mode": identity["execution_mode"],
+        "host_alias": identity["host_alias"],
+        "connection_key": identity["connection_key"],
+        "identity_key": identity["identity_key"],
         "is_remote_session": True,
         "remote_session_name": session_name,
         "remote_session_summary": summary,
@@ -1754,13 +1770,73 @@ def _session_matches_profile(
     if suffix and session_name.endswith(suffix):
         return True
 
+    # Accept common legacy/new naming variants (e.g. stacks/main vs stacks_main).
+    if (
+        suffix
+        and _normalize_session_name_key(session_name)
+        == _normalize_session_name_key(suffix)
+    ):
+        return True
+
     return False
 
 
-def _project_card_key(project_name: str, remote_enabled: bool) -> str:
+def _normalize_connection_key(value: str) -> str:
+    """Normalize connection identity for stable, collision-resistant IDs."""
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return "unknown"
+    return re.sub(r"[^a-z0-9@._:-]+", "-", raw)
+
+
+def _local_connection_key() -> str:
+    """Return a stable local-host identity used in project card IDs."""
+    host = (
+        os.environ.get("I3PM_LOCAL_HOST_ALIAS")
+        or os.environ.get("HOSTNAME")
+        or socket.gethostname()
+    )
+    host = str(host).strip().lower() or "localhost"
+    return f"local@{_normalize_connection_key(host)}"
+
+
+def _connection_identity(remote_enabled: bool, remote_target: str = "") -> Dict[str, str]:
+    """
+    Build canonical execution identity fields for project/worktree cards.
+
+    Returns:
+      - execution_mode: local|ssh
+      - host_alias: local host alias or ssh target
+      - connection_key: normalized connection identity
+      - identity_key: execution_mode:connection_key
+    """
+    if remote_enabled:
+        host_alias = str(remote_target or "").strip() or "unknown"
+        connection_key = _normalize_connection_key(host_alias)
+        execution_mode = "ssh"
+    else:
+        host_alias = (
+            str(os.environ.get("I3PM_LOCAL_HOST_ALIAS") or os.environ.get("HOSTNAME") or socket.gethostname())
+            .strip()
+            .lower()
+            or "localhost"
+        )
+        connection_key = _local_connection_key()
+        execution_mode = "local"
+
+    return {
+        "execution_mode": execution_mode,
+        "host_alias": host_alias,
+        "connection_key": connection_key,
+        "identity_key": f"{execution_mode}:{connection_key}",
+    }
+
+
+def _project_card_key(project_name: str, remote_enabled: bool, remote_target: str = "") -> str:
     """Build a stable project-card identifier for local/SSH split cards."""
+    identity = _connection_identity(remote_enabled, remote_target)
     variant = "ssh" if remote_enabled else "local"
-    return f"{project_name}::{variant}"
+    return f"{project_name}::{variant}::{identity['connection_key']}"
 
 
 def _create_project_entry(
@@ -1780,12 +1856,17 @@ def _create_project_entry(
     remote_profile_directory_display = (
         remote_profile_directory.replace(home_str, "~") if remote_profile_directory else ""
     )
+    identity = _connection_identity(remote_enabled, remote_target)
 
     return {
-        "card_id": _project_card_key(project_name, remote_enabled),
+        "card_id": _project_card_key(project_name, remote_enabled, remote_target),
         "name": project_name,
         "scope": "scoped",
         "variant": variant,
+        "execution_mode": identity["execution_mode"],
+        "host_alias": identity["host_alias"],
+        "connection_key": identity["connection_key"],
+        "identity_key": identity["identity_key"],
         "variant_label": "SSH" if variant == "ssh" else "LOCAL",
         "window_count": 0,
         # Active remote status (for badges) is based on actual window env.
@@ -1854,7 +1935,7 @@ def _augment_projects_with_remote_sessions(
         if not matching_sessions:
             continue
 
-        remote_key = _project_card_key(project_name, True)
+        remote_key = _project_card_key(project_name, True, remote_target)
         if remote_key not in projects_dict:
             projects_dict[remote_key] = _create_project_entry(
                 project_name=project_name,
@@ -1874,6 +1955,11 @@ def _augment_projects_with_remote_sessions(
         project_entry["remote_directory_display"] = remote_dir.replace(str(Path.home()), "~")
 
         existing_ids = {int(w.get("id", 0)) for w in project_entry.get("windows", [])}
+        existing_session_names = {
+            _normalize_session_name_key(str(w.get("remote_session_name", "")).strip())
+            for w in project_entry.get("windows", [])
+            if str(w.get("remote_session_name", "")).strip()
+        }
         for session in matching_sessions:
             synthetic_window = _build_remote_session_window(
                 project_name,
@@ -1882,10 +1968,17 @@ def _augment_projects_with_remote_sessions(
                 session,
             )
             synthetic_id = int(synthetic_window["id"])
+            synthetic_session_name = _normalize_session_name_key(
+                str(synthetic_window.get("remote_session_name", "")).strip()
+            )
+            if synthetic_session_name and synthetic_session_name in existing_session_names:
+                continue
             if synthetic_id in existing_ids:
                 continue
             project_entry["windows"].append(synthetic_window)
             existing_ids.add(synthetic_id)
+            if synthetic_session_name:
+                existing_session_names.add(synthetic_session_name)
 
         project_entry["window_count"] = len(project_entry.get("windows", []))
 
@@ -1958,6 +2051,7 @@ def transform_to_project_view(
             window_remote_enabled = _is_truthy(remote_env.get("I3PM_REMOTE_ENABLED"))
             window_remote_target = ""
             window_remote_directory = ""
+            window_remote_session_name = ""
             if window_remote_enabled:
                 window_remote_target = _format_remote_target(
                     remote_env.get("I3PM_REMOTE_USER") or (remote_profile or {}).get("user", ""),
@@ -1968,12 +2062,20 @@ def transform_to_project_view(
                     remote_env.get("I3PM_REMOTE_DIR")
                     or (remote_profile or {}).get("remote_dir", "")
                 )
+                window_remote_session_name = str(remote_env.get("I3PM_REMOTE_SESSION_NAME", "")).strip()
 
             window["project_remote_enabled"] = window_remote_enabled
             window["project_remote_target"] = window_remote_target
             window["project_remote_dir"] = window_remote_directory
+            if window_remote_session_name:
+                window["remote_session_name"] = window_remote_session_name
+            identity = _connection_identity(window_remote_enabled, window_remote_target)
+            window["execution_mode"] = identity["execution_mode"]
+            window["host_alias"] = identity["host_alias"]
+            window["connection_key"] = identity["connection_key"]
+            window["identity_key"] = identity["identity_key"]
 
-            project_key = _project_card_key(project_name, window_remote_enabled)
+            project_key = _project_card_key(project_name, window_remote_enabled, window_remote_target)
             if project_key not in projects_dict:
                 projects_dict[project_key] = _create_project_entry(
                     project_name=project_name,
@@ -1991,6 +2093,12 @@ def transform_to_project_view(
                 # confirmed remote window arrives later.
                 project_entry["remote_enabled"] = True
                 project_entry["remote_target"] = window_remote_target
+                project_identity = _connection_identity(True, window_remote_target)
+                project_entry["execution_mode"] = project_identity["execution_mode"]
+                project_entry["host_alias"] = project_identity["host_alias"]
+                project_entry["connection_key"] = project_identity["connection_key"]
+                project_entry["identity_key"] = project_identity["identity_key"]
+                project_entry["card_id"] = _project_card_key(project_name, True, window_remote_target)
                 project_entry["remote_directory"] = window_remote_directory
                 project_entry["remote_directory_display"] = (
                     window_remote_directory.replace(str(Path.home()), "~")
@@ -2003,6 +2111,11 @@ def transform_to_project_view(
             window["project_remote_enabled"] = False
             window["project_remote_target"] = ""
             window["project_remote_dir"] = ""
+            global_identity = _connection_identity(False, "")
+            window["execution_mode"] = global_identity["execution_mode"]
+            window["host_alias"] = global_identity["host_alias"]
+            window["connection_key"] = global_identity["connection_key"]
+            window["identity_key"] = global_identity["identity_key"]
             global_windows.append(window)
 
     # Augment project windows with remote tmux/sesh sessions for SSH projects.
@@ -2029,6 +2142,10 @@ def transform_to_project_view(
             "scope": "global",
             "variant": "global",
             "variant_label": "GLOBAL",
+            "execution_mode": "global",
+            "host_alias": "global",
+            "connection_key": "global",
+            "identity_key": "global:global",
             "window_count": len(global_windows),
             "remote_enabled": False,
             "remote_target": "",

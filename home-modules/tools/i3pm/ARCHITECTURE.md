@@ -86,7 +86,7 @@ i3pm (i3 Project Manager) follows a **client-server architecture** with clear se
 
 ### JSON-RPC over Unix Socket
 
-**Socket Path**: `~/.cache/i3-project-event-daemon/ipc.sock`
+**Socket Path**: `${XDG_RUNTIME_DIR}/i3-project-daemon/ipc.sock` (default)
 
 **Request Format**:
 ```json
@@ -168,23 +168,23 @@ TypeScript formats and displays result
 ### Example 2: Switch Project
 
 ```
-User runs: i3pm project switch nixos
+User runs: i3pm worktree switch vpittamp/nixos-config:main
     ↓
 TypeScript CLI parses arguments
     ↓
-TypeScript sends JSON-RPC project_set_active request
+TypeScript sends JSON-RPC worktree.switch request
     ↓
 Python daemon receives request
     ↓
-ProjectService validates project exists
+ProjectService validates worktree exists (repos.json + active context)
     ↓
-Save active state to ~/.config/i3/active-project.json
+Save active state to ~/.config/i3/active-worktree.json
     ↓
 Trigger window filtering (scoped vs global)
     ↓
 Return success response to TypeScript
     ↓
-TypeScript displays "Switched to project: nixos"
+TypeScript displays "Switched to worktree: vpittamp/nixos-config:main"
 ```
 
 ---
@@ -229,7 +229,7 @@ TypeScript displays "Switched to project: nixos"
 1. **Single Responsibility**: Daemon handles backend, CLI handles UI
 2. **Event-Driven**: Daemon uses i3 IPC event subscriptions (not polling)
 3. **Type Safety**: Pydantic models enforce runtime validation
-4. **Backward Compatibility**: Layout schema versioning with automatic migration
+4. **Deterministic Identity**: Context keys include mode + host + qualified worktree
 5. **Error Transparency**: Daemon errors propagate to CLI with context
 6. **Performance First**: Direct library calls over shell commands
 7. **Atomic Operations**: File writes are atomic (write temp, rename)

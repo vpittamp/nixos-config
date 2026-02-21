@@ -55,6 +55,8 @@ class WindowEnvironment:
     launch_time: str  # I3PM_LAUNCH_TIME - unix timestamp
     launcher_pid: str  # I3PM_LAUNCHER_PID - wrapper script PID
     target_workspace: Optional[int] = None  # I3PM_TARGET_WORKSPACE - preferred workspace number (Feature 039 T060)
+    connection_key: Optional[str] = None  # I3PM_CONNECTION_KEY - host-aware connection identity
+    context_key: Optional[str] = None  # I3PM_CONTEXT_KEY - project/variant/connection identity
 
 
 def read_process_environ(pid: int) -> Dict[str, str]:
@@ -289,6 +291,8 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
             launch_time=env.get("I3PM_LAUNCH_TIME", ""),
             launcher_pid=env.get("I3PM_LAUNCHER_PID", ""),
             target_workspace=target_workspace,
+            connection_key=env.get("I3PM_CONNECTION_KEY"),
+            context_key=env.get("I3PM_CONTEXT_KEY"),
         )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse I3PM environment variables: {e}")

@@ -1,48 +1,12 @@
-{ config, lib, pkgs, ... }:
+{ config, pkgs, ... }:
 
-# Feature 034: Unified Application Launcher - Deno CLI Tool & Wrapper Script
+# Feature 034: Unified Application Launcher - Wrapper Scripts
 #
 # This module:
-# - Builds the Deno CLI tool (i3pm apps subcommand)
 # - Installs the launcher wrapper script
-# - Provides runtime command for application launching
+# - Installs the devenv-aware terminal launcher helper
 
 let
-  # Build Deno CLI tool using runtime wrapper pattern (not deno compile)
-  # See: /etc/nixos/specs/034-create-a-feature/DENO_PACKAGING_RESEARCH.md
-  app-launcher-cli = pkgs.stdenv.mkDerivation {
-    name = "app-launcher-cli";
-    src = ./app-launcher;
-
-    installPhase = ''
-      mkdir -p $out/bin $out/share/app-launcher
-
-      # Copy source files
-      cp -r src $out/share/app-launcher/ 2>/dev/null || true
-      cp main.ts $out/share/app-launcher/ 2>/dev/null || true
-      cp mod.ts $out/share/app-launcher/ 2>/dev/null || true
-      cp deno.json $out/share/app-launcher/ 2>/dev/null || true
-
-      # Create runtime wrapper script
-      cat > $out/bin/i3pm-apps <<'EOF'
-#!/usr/bin/env bash
-exec ${pkgs.deno}/bin/deno run \
-  --allow-read=/run/user,$HOME \
-  --allow-net=unix \
-  --allow-env=XDG_RUNTIME_DIR,HOME,USER \
-  --no-lock \
-  $out/share/app-launcher/main.ts "$@"
-EOF
-
-      chmod +x $out/bin/i3pm-apps
-    '';
-
-    meta = {
-      description = "Application launcher CLI for unified project-aware launching";
-      mainProgram = "i3pm-apps";
-    };
-  };
-
   # Launcher wrapper script (bash)
   # Feature 117: Socket path for user service daemon
   # User socket at XDG_RUNTIME_DIR with fallback to system socket
@@ -66,9 +30,7 @@ EOF
 
 in
 {
-  # Install CLI tool
   home.packages = [
-    app-launcher-cli
     wrapper-script
     devenv-terminal-launch-script
   ];

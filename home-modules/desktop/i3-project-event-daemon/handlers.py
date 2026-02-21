@@ -960,6 +960,7 @@ async def on_window_new(
                                 app_name=window_env.app_name,
                                 project=project,
                                 scope=window_env.scope,
+                                context_key=window_env.context_key,
                             )
                             mark_already_injected = True
                             logger.info(
@@ -1181,6 +1182,8 @@ async def on_window_new(
 
             # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
             await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
+            if window_env and window_env.context_key:
+                await conn.command(f'[con_id={window_id}] mark --add "ctx:{window_env.context_key}"')
 
             logger.info(f"[Feature 103] Marked window {window_id} with {mark} (fallback for manually launched app)")
 

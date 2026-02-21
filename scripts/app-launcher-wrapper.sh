@@ -69,20 +69,42 @@ escape_regex() {
     printf '%s' "$input" | sed -e 's/[][(){}.^$*+?|\\/]/\\&/g'
 }
 
+normalize_session_name_key() {
+    local input="$1"
+    # Treat stacks/main, stacks_main, and stacks-main as equivalent identifiers.
+    printf '%s' "$input" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+normalize_connection_key() {
+    local input="$1"
+    printf '%s' "$input" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9@._:-]+/-/g'
+}
+
 # Find an existing scoped/global window ID by unified mark format:
 #   scope:app:project:window_id
+# Optional context mark filter:
+#   ctx:qualified_project::variant::connection_key
 find_window_id_by_mark() {
     local scope="$1"
     local app_name="$2"
     local project_name="$3"
+    local context_key="${4:-}"
 
     if ! command -v swaymsg >/dev/null 2>&1; then
         return 1
     fi
 
-    local project_re mark_re tree_json window_id
+    local project_re mark_re tree_json window_id ctx_mark
     project_re=$(escape_regex "$project_name")
     mark_re="^${scope}:${app_name}:${project_re}:[0-9]+$"
+    ctx_mark=""
+    if [[ -n "$context_key" ]]; then
+        ctx_mark="ctx:${context_key}"
+    fi
 
     tree_json=$(swaymsg -t get_tree -r 2>/dev/null || true)
     if [[ -z "$tree_json" ]]; then
@@ -91,11 +113,12 @@ find_window_id_by_mark() {
 
     window_id=$(
         printf '%s\n' "$tree_json" \
-            | jq -r --arg mark_re "$mark_re" '
+            | jq -r --arg mark_re "$mark_re" --arg ctx_mark "$ctx_mark" '
                 first(
                     recurse(.nodes[]?, .floating_nodes[]?)
                     | select((.window != null) or (.app_id != null))
                     | select((.marks // []) | any(test($mark_re)))
+                    | select(($ctx_mark == "") or ((.marks // []) | index($ctx_mark)))
                     | .id
                 ) // empty
             ' 2>/dev/null || true
@@ -114,9 +137,10 @@ focus_existing_project_window() {
     local scope="$1"
     local app_name="$2"
     local project_name="$3"
+    local context_key="${4:-}"
 
     local window_id
-    if ! window_id=$(find_window_id_by_mark "$scope" "$app_name" "$project_name"); then
+    if ! window_id=$(find_window_id_by_mark "$scope" "$app_name" "$project_name" "$context_key"); then
         return 1
     fi
 
@@ -128,6 +152,107 @@ focus_existing_project_window() {
     fi
 
     warn "Failed to focus existing window $window_id for ${scope}:${app_name}:${project_name}"
+    return 1
+}
+
+# Focus an existing project-scoped terminal window for a specific remote session.
+focus_existing_remote_session_window() {
+    local scope="$1"
+    local app_name="$2"
+    local project_name="$3"
+    local session_name="$4"
+    local context_key="${5:-}"
+
+    if [[ -z "$session_name" ]]; then
+        return 1
+    fi
+
+    if ! command -v swaymsg >/dev/null 2>&1; then
+        return 1
+    fi
+
+    local project_re mark_re tree_json window_id="" session_lc session_key window_rows ctx_mark
+    project_re=$(escape_regex "$project_name")
+    mark_re="^${scope}:${app_name}:${project_re}:[0-9]+$"
+    session_lc=$(printf '%s' "$session_name" | tr '[:upper:]' '[:lower:]')
+    session_key=$(normalize_session_name_key "$session_name")
+    ctx_mark=""
+    if [[ -n "$context_key" ]]; then
+        ctx_mark="ctx:${context_key}"
+    fi
+
+    tree_json=$(swaymsg -t get_tree -r 2>/dev/null || true)
+    if [[ -z "$tree_json" ]]; then
+        return 1
+    fi
+
+    window_rows=$(
+        printf '%s\n' "$tree_json" \
+            | jq -r --arg mark_re "$mark_re" --arg ctx_mark "$ctx_mark" '
+                recurse(.nodes[]?, .floating_nodes[]?)
+                | select((.window != null) or (.app_id != null))
+                | select((.marks // []) | any(test($mark_re)))
+                | select(($ctx_mark == "") or ((.marks // []) | index($ctx_mark)))
+                | [(.id // 0), (.pid // 0), (.name // ""), (.window_properties.title // ""), (.window_properties.instance // "")]
+                | @tsv
+            ' 2>/dev/null || true
+    )
+
+    if [[ -z "$window_rows" ]]; then
+        return 1
+    fi
+
+    # Prefer exact env-level match when the terminal was launched with an explicit
+    # remote session override (I3PM_REMOTE_SESSION_NAME).
+    local candidate_id candidate_pid candidate_name candidate_title candidate_instance pid_session_name pid_session_key fallback_id combined_text combined_text_lc combined_session_name combined_session_key
+    fallback_id=""
+    while IFS=$'\t' read -r candidate_id candidate_pid candidate_name candidate_title candidate_instance; do
+        if [[ ! "$candidate_id" =~ ^[0-9]+$ ]]; then
+            continue
+        fi
+
+        if [[ "$candidate_pid" =~ ^[0-9]+$ ]] && [[ "$candidate_pid" -gt 1 ]] && [[ -r "/proc/${candidate_pid}/environ" ]]; then
+            pid_session_name=$(
+                { tr '\0' '\n' < "/proc/${candidate_pid}/environ" 2>/dev/null || true; } \
+                    | sed -n 's/^I3PM_REMOTE_SESSION_NAME=//p' \
+                    | head -n1
+            )
+            pid_session_key=$(normalize_session_name_key "$pid_session_name")
+            if [[ -n "$pid_session_name" ]] && [[ "$pid_session_name" == "$session_name" || "$pid_session_key" == "$session_key" ]]; then
+                window_id="$candidate_id"
+                break
+            fi
+        fi
+
+        if [[ -z "$fallback_id" ]]; then
+            combined_text="${candidate_name} ${candidate_title} ${candidate_instance}"
+            combined_text_lc=$(printf '%s' "$combined_text" | tr '[:upper:]' '[:lower:]')
+            combined_session_name="${candidate_name} ${candidate_title} ${candidate_instance}"
+            combined_session_key=$(normalize_session_name_key "$combined_session_name")
+            if [[ "$combined_text_lc" == *"$session_lc"* ]]; then
+                fallback_id="$candidate_id"
+            elif [[ -n "$session_key" ]] && [[ "$combined_session_key" == *"$session_key"* ]]; then
+                fallback_id="$candidate_id"
+            fi
+        fi
+    done <<< "$window_rows"
+
+    if [[ -z "$window_id" ]]; then
+        window_id="$fallback_id"
+    fi
+
+    if [[ ! "${window_id:-}" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+
+    local focus_result
+    focus_result=$(swaymsg "[con_id=${window_id}] focus" 2>/dev/null || true)
+    if printf '%s\n' "$focus_result" | jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1; then
+        log "INFO" "Focused existing remote session window $window_id for ${scope}:${app_name}:${project_name}:${session_name}"
+        return 0
+    fi
+
+    warn "Failed to focus remote session window $window_id for ${scope}:${app_name}:${project_name}:${session_name}"
     return 1
 }
 
@@ -456,6 +581,27 @@ export I3PM_REMOTE_HOST="${REMOTE_HOST:-}"
 export I3PM_REMOTE_USER="${REMOTE_USER:-}"
 export I3PM_REMOTE_PORT="${REMOTE_PORT:-22}"
 export I3PM_REMOTE_DIR="${REMOTE_WORKING_DIR:-}"
+export I3PM_REMOTE_SESSION_NAME="${I3PM_REMOTE_SESSION_NAME_OVERRIDE:-}"
+# Canonical context identity for host-aware dedupe and marking.
+# - connection key: local@<host> or <user>@<host>:<port>
+# - context key: <qualified_project>::<variant>::<connection_key>
+LOCAL_HOSTNAME="$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)"
+LOCAL_HOSTNAME="${LOCAL_HOSTNAME:-${HOSTNAME:-localhost}}"
+LOCAL_HOST_ALIAS="${I3PM_LOCAL_HOST_ALIAS:-$LOCAL_HOSTNAME}"
+export I3PM_LOCAL_HOST_ALIAS="$LOCAL_HOST_ALIAS"
+if [[ "${REMOTE_ENABLED:-false}" == "true" ]]; then
+    export I3PM_CONTEXT_VARIANT="ssh"
+    RAW_CONNECTION_KEY="${I3PM_REMOTE_USER:-${USER:-unknown}}@${I3PM_REMOTE_HOST:-unknown}:${I3PM_REMOTE_PORT:-22}"
+    export I3PM_CONNECTION_KEY="$(normalize_connection_key "$RAW_CONNECTION_KEY")"
+else
+    export I3PM_CONTEXT_VARIANT="local"
+    export I3PM_CONNECTION_KEY="local@$(normalize_connection_key "$LOCAL_HOST_ALIAS")"
+fi
+if [[ -n "${I3PM_PROJECT_NAME:-}" ]]; then
+    export I3PM_CONTEXT_KEY="${I3PM_PROJECT_NAME}::${I3PM_CONTEXT_VARIANT}::${I3PM_CONNECTION_KEY}"
+else
+    export I3PM_CONTEXT_KEY=""
+fi
 
 # Worktree-specific environment variables
 export I3PM_WORKTREE_BRANCH="${WORKTREE_BRANCH:-}"
@@ -481,19 +627,51 @@ log "DEBUG" "I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME"
 log "DEBUG" "I3PM_SCOPE=$I3PM_SCOPE"
 log "DEBUG" "I3PM_TARGET_WORKSPACE=$I3PM_TARGET_WORKSPACE"
 log "DEBUG" "I3PM_EXPECTED_CLASS=$I3PM_EXPECTED_CLASS"
+log "DEBUG" "I3PM_CONNECTION_KEY=$I3PM_CONNECTION_KEY"
+log "DEBUG" "I3PM_CONTEXT_KEY=$I3PM_CONTEXT_KEY"
 
 # Feature 087: Avoid duplicate SSH terminal windows.
 # If a project-scoped terminal already exists for this remote project, focus it
 # and skip launching a new terminal process.
 if [[ "$APP_NAME" == "terminal" ]] && [[ "$REMOTE_ENABLED" == "true" ]] && [[ -n "${PROJECT_NAME:-}" ]]; then
-    if focus_existing_project_window "${SCOPE:-scoped}" "$APP_NAME" "$PROJECT_NAME"; then
-        log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME'"
-        exit 0
-    fi
+    REMOTE_SESSION_NAME_OVERRIDE="${I3PM_REMOTE_SESSION_NAME_OVERRIDE:-}"
+    CONTEXT_KEY_OVERRIDE="${I3PM_CONTEXT_KEY:-}"
+    if [[ -n "$REMOTE_SESSION_NAME_OVERRIDE" ]]; then
+        if [[ -n "$CONTEXT_KEY_OVERRIDE" ]] && focus_existing_remote_session_window "${SCOPE:-scoped}" "$APP_NAME" "$PROJECT_NAME" "$REMOTE_SESSION_NAME_OVERRIDE" "$CONTEXT_KEY_OVERRIDE"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME' session '$REMOTE_SESSION_NAME_OVERRIDE' via context key"
+            exit 0
+        fi
+        if focus_existing_remote_session_window "${SCOPE:-scoped}" "$APP_NAME" "$PROJECT_NAME" "$REMOTE_SESSION_NAME_OVERRIDE"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME' session '$REMOTE_SESSION_NAME_OVERRIDE'"
+            exit 0
+        fi
 
-    if [[ "${SCOPE:-scoped}" != "scoped" ]] && focus_existing_project_window "scoped" "$APP_NAME" "$PROJECT_NAME"; then
-        log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME'"
-        exit 0
+        if [[ "${SCOPE:-scoped}" != "scoped" ]] && [[ -n "$CONTEXT_KEY_OVERRIDE" ]] && focus_existing_remote_session_window "scoped" "$APP_NAME" "$PROJECT_NAME" "$REMOTE_SESSION_NAME_OVERRIDE" "$CONTEXT_KEY_OVERRIDE"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME' session '$REMOTE_SESSION_NAME_OVERRIDE' via scoped context key"
+            exit 0
+        fi
+        if [[ "${SCOPE:-scoped}" != "scoped" ]] && focus_existing_remote_session_window "scoped" "$APP_NAME" "$PROJECT_NAME" "$REMOTE_SESSION_NAME_OVERRIDE"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME' session '$REMOTE_SESSION_NAME_OVERRIDE'"
+            exit 0
+        fi
+    else
+        if [[ -n "$CONTEXT_KEY_OVERRIDE" ]] && focus_existing_project_window "${SCOPE:-scoped}" "$APP_NAME" "$PROJECT_NAME" "$CONTEXT_KEY_OVERRIDE"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME' via context key"
+            exit 0
+        fi
+        if focus_existing_project_window "${SCOPE:-scoped}" "$APP_NAME" "$PROJECT_NAME"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME'"
+            exit 0
+        fi
+
+        if [[ "${SCOPE:-scoped}" != "scoped" ]] && [[ -n "$CONTEXT_KEY_OVERRIDE" ]] && focus_existing_project_window "scoped" "$APP_NAME" "$PROJECT_NAME" "$CONTEXT_KEY_OVERRIDE"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME' via scoped context key"
+            exit 0
+        fi
+        if [[ "${SCOPE:-scoped}" != "scoped" ]] && focus_existing_project_window "scoped" "$APP_NAME" "$PROJECT_NAME"; then
+            log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME'"
+            exit 0
+        fi
     fi
 fi
 
@@ -626,6 +804,10 @@ ENV_EXPORTS=(
     "export I3PM_REMOTE_USER='$I3PM_REMOTE_USER'"
     "export I3PM_REMOTE_PORT='$I3PM_REMOTE_PORT'"
     "export I3PM_REMOTE_DIR='$I3PM_REMOTE_DIR'"
+    "export I3PM_REMOTE_SESSION_NAME='$I3PM_REMOTE_SESSION_NAME'"
+    "export I3PM_CONTEXT_VARIANT='${I3PM_CONTEXT_VARIANT:-}'"
+    "export I3PM_CONNECTION_KEY='${I3PM_CONNECTION_KEY:-}'"
+    "export I3PM_CONTEXT_KEY='${I3PM_CONTEXT_KEY:-}'"
     "export I3PM_TARGET_WORKSPACE='$I3PM_TARGET_WORKSPACE'"
     "export I3PM_EXPECTED_CLASS='$I3PM_EXPECTED_CLASS'"
 )
@@ -730,8 +912,15 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
         # For the "terminal" app we always connect to a remote sesh session in
         # the active remote project directory, independent of local substitutions.
         if [[ "$APP_NAME" == "terminal" ]]; then
-            REMOTE_INNER_CMD="if ! command -v sesh >/dev/null 2>&1; then echo '[i3pm] sesh is not installed on remote host.'; exit 127; fi; if ! command -v tmux >/dev/null 2>&1; then echo '[i3pm] tmux is not installed on remote host.'; exit 127; fi; cd $(printf '%q' "$REMOTE_WORKING_DIR") && sesh connect $(printf '%q' "$REMOTE_WORKING_DIR")"
-            log "INFO" "Feature 087: terminal app in SSH mode will connect to remote sesh path: $REMOTE_WORKING_DIR"
+            REMOTE_WORKING_DIR_Q=$(printf '%q' "$REMOTE_WORKING_DIR")
+            if [[ -n "${I3PM_REMOTE_SESSION_NAME_OVERRIDE:-}" ]]; then
+                REMOTE_SESSION_NAME_Q=$(printf '%q' "$I3PM_REMOTE_SESSION_NAME_OVERRIDE")
+                REMOTE_INNER_CMD="if ! command -v sesh >/dev/null 2>&1; then echo '[i3pm] sesh is not installed on remote host.'; exit 127; fi; if ! command -v tmux >/dev/null 2>&1; then echo '[i3pm] tmux is not installed on remote host.'; exit 127; fi; sesh connect ${REMOTE_SESSION_NAME_Q}"
+                log "INFO" "Feature 087: terminal app in SSH mode will connect to remote sesh session: $I3PM_REMOTE_SESSION_NAME_OVERRIDE"
+            else
+                REMOTE_INNER_CMD="if ! command -v sesh >/dev/null 2>&1; then echo '[i3pm] sesh is not installed on remote host.'; exit 127; fi; if ! command -v tmux >/dev/null 2>&1; then echo '[i3pm] tmux is not installed on remote host.'; exit 127; fi; cd ${REMOTE_WORKING_DIR_Q} && sesh connect ${REMOTE_WORKING_DIR_Q}"
+                log "INFO" "Feature 087: terminal app in SSH mode will connect to remote sesh path: $REMOTE_WORKING_DIR"
+            fi
         else
             REMOTE_INNER_CMD="cd $(printf '%q' "$REMOTE_WORKING_DIR") && $TERMINAL_CMD_REMOTE"
         fi

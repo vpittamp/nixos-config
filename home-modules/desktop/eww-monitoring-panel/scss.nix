@@ -441,6 +441,8 @@
     background-color: transparent;
     border-left: 2px solid transparent;
     min-width: 0;
+    opacity: 0.8;
+    transition: opacity 120ms ease, background-color 120ms ease, border-left-width 120ms ease;
   }
 
   .window-main {
@@ -460,6 +462,7 @@
   .window-row.window-focused {
     background-color: rgba(137, 180, 250, 0.1);
     border-left-color: ${mocha.blue};
+    opacity: 1;
   }
 
   .window-floating,
@@ -469,7 +472,7 @@
 
   .window-hidden,
   .window-row.window-hidden {
-    opacity: 0.5;
+    opacity: 0.45;
     font-style: italic;
   }
 
@@ -508,6 +511,7 @@
   .window-row:hover {
     background-color: rgba(137, 180, 250, 0.15);
     border-left-width: 3px;
+    opacity: 1;
   }
 
   .window.clicked,
@@ -515,6 +519,7 @@
     background-color: rgba(137, 180, 250, 0.25);
     border-left-color: ${mocha.blue};
     border-left-width: 4px;
+    opacity: 1;
   }
 
   .window-icon-container {
@@ -531,21 +536,44 @@
   .window-app-name {
     font-size: 11px;
     font-weight: 500;
+    color: ${mocha.subtext0};
+    margin-left: 2px;
+  }
+
+  .window-title {
+    color: ${mocha.overlay0};
+    margin-left: 2px;
+  }
+
+  .window-info {
+    min-width: 0;
+    margin-right: 4px;
+  }
+
+  .window-row.window-focused .window-app-name,
+  .window-row.clicked .window-app-name,
+  .window-row:hover .window-app-name {
     color: ${mocha.text};
-    margin-left: 6px;
+  }
+
+  .window-row.window-focused .window-title,
+  .window-row.clicked .window-title,
+  .window-row:hover .window-title {
+    color: ${mocha.subtext0};
   }
 
   .window-badges {
-    margin-left: 4px;
+    margin-left: 0;
+    margin-right: 1px;
     min-width: 0;
   }
 
   .badge {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 600;
-    padding: 1px 4px;
+    padding: 1px 3px;
     border-radius: 2px;
-    margin-left: 4px;
+    margin-left: 1px;
   }
 
   .badge-pwa {
@@ -603,8 +631,8 @@
   }
 
   .ai-badge-icon {
-    margin-left: 4px;
-    margin-right: 2px;
+    margin-left: 2px;
+    margin-right: 1px;
     min-width: 16px;
     min-height: 16px;
     opacity: 1.0;
@@ -3485,7 +3513,7 @@
 
   .window-title {
     font-size: 10px;
-    color: ${mocha.subtext0};
+    color: ${mocha.overlay0};
     min-width: 0;
   }
 

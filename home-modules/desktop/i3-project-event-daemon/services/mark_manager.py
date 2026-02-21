@@ -210,6 +210,7 @@ class MarkManager:
         app_name: str,
         project: str,
         scope: str = "scoped",
+        context_key: Optional[str] = None,
         trigger: str = "window_new",
     ) -> str:
         """Inject unified mark onto window via Sway IPC.
@@ -251,6 +252,14 @@ class MarkManager:
             if not result or not result[0].success:
                 error_msg = result[0].error if result else "Unknown error"
                 raise Exception(f"Failed to inject mark '{mark}': {error_msg}")
+
+            if context_key:
+                context_mark = f"ctx:{context_key}"
+                context_cmd = f'[con_id={window_id}] mark --add "{context_mark}"'
+                context_result = await self.sway.command(context_cmd)
+                if not context_result or not context_result[0].success:
+                    error_msg = context_result[0].error if context_result else "Unknown error"
+                    raise Exception(f"Failed to inject context mark '{context_mark}': {error_msg}")
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[Feature 103] Failed to inject mark '{mark}' on window {window_id}: {e}")
@@ -321,6 +330,28 @@ class MarkManager:
         )
 
         return mark
+
+    async def _get_window_marks(self, window_id: int) -> list[str]:
+        """Return marks for a window ID, or empty list if not found."""
+        tree = await self.sway.get_tree()
+
+        def find_window(node):
+            if hasattr(node, 'id') and node.id == window_id:
+                return node
+            for child in getattr(node, 'nodes', []):
+                found = find_window(child)
+                if found:
+                    return found
+            for child in getattr(node, 'floating_nodes', []):
+                found = find_window(child)
+                if found:
+                    return found
+            return None
+
+        window = find_window(tree)
+        if not window:
+            return []
+        return list(window.marks if hasattr(window, "marks") else [])
 
     async def get_window_mark(self, window_id: int) -> Optional[ParsedMark]:
         """Get parsed unified mark for a window.
@@ -510,10 +541,32 @@ class MarkManager:
             trigger: What triggered this cleanup (default: "window_close")
 
         Returns:
-            Number of marks removed (0 or 1 for unified mark system)
+            Number of marks removed (unified mark + optional context mark)
         """
-        removed = await self.cleanup_mark(window_id, trigger=trigger)
-        return 1 if removed else 0
+        removed_count = 0
+        removed_unified = await self.cleanup_mark(window_id, trigger=trigger)
+        if removed_unified:
+            removed_count += 1
+
+        # Remove context marks added alongside unified marks.
+        # Keep cleanup best-effort and non-fatal.
+        try:
+            marks = await self._get_window_marks(window_id)
+            for mark in marks:
+                if not mark.startswith("ctx:"):
+                    continue
+                result = await self.sway.command(f'[con_id={window_id}] unmark "{mark}"')
+                if result and result[0].success:
+                    removed_count += 1
+                else:
+                    logger.debug(
+                        f"[Feature 103] Failed to remove context mark from window {window_id}: "
+                        f"{result[0].error if result else 'Unknown error'}"
+                    )
+        except Exception as e:
+            logger.debug(f"[Feature 103] Error cleaning context marks for window {window_id}: {e}")
+
+        return removed_count
 
     async def count_instances(
         self,

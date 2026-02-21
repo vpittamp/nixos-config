@@ -76,6 +76,7 @@ let
     set -euo pipefail
 
     PROJECT_NAME="''${1:-}"
+    REMOTE_SESSION_NAME="''${2:-}"
     if [[ -z "$PROJECT_NAME" ]]; then
       ${pkgs.libnotify}/bin/notify-send -u critical "Remote Session Open Failed" "No project name provided"
       exit 1
@@ -91,7 +92,12 @@ let
     fi
 
     if [[ -x "$HOME/.local/bin/app-launcher-wrapper.sh" ]]; then
-      "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
+      if [[ -n "$REMOTE_SESSION_NAME" ]]; then
+        I3PM_REMOTE_SESSION_NAME_OVERRIDE="$REMOTE_SESSION_NAME" \
+          "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
+      else
+        "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
+      fi
       exit 0
     fi
 
@@ -226,7 +232,7 @@ let
     sleep 0.2  # Brief wait for window close to propagate
     REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" '
       .. | objects | select(.marks? != null) |
-      select(.marks | map(test("^scoped:" + $proj + ":")) | any) |
+      select(.marks | map(test("^scoped:[^:]+:" + $proj + ":")) | any) |
       .id
     ' 2>/dev/null | wc -l || echo "0")
 

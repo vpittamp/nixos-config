@@ -285,7 +285,7 @@
             :halign "fill"
             (eventbox
               :onclick {(window.is_remote_session ?: false)
-                ? "${openRemoteSessionWindowScript}/bin/open-remote-session-window-action ''${window.project} &"
+                ? "${openRemoteSessionWindowScript}/bin/open-remote-session-window-action ''${window.project} ''${window.remote_session_name ?: ""} &"
                 : "${focusWindowScript}/bin/focus-window-action ''${window.project} ''${window.id} &"}
               :onrightclick {(window.is_remote_session ?: false)
                 ? ""
@@ -326,7 +326,7 @@
                     :truncate true)
                   (label
                     :class "window-ssh-target"
-                    :visible {(window.is_remote_session ?: false) || ((window.focused ?: false) && (window.project_remote_enabled ?: false))}
+                    :visible {(window.focused ?: false) && ((window.project_remote_enabled ?: false) || (window.is_remote_session ?: false))}
                     :halign "start"
                     :hexpand true
                     :truncate true
@@ -338,13 +338,6 @@
           :orientation "h"
           :space-evenly false
           :halign "end"
-          (label
-            :class {"badge badge-connection-active " + ((window.project_remote_enabled ?: false) ? "badge-remote badge-remote-window" : "badge-local")}
-            :text {(window.project_remote_enabled ?: false) ? "󰣀 SSH LIVE" : "󰌽 LOCAL"}
-            :visible {window.focused ?: false}
-            :tooltip {(window.project_remote_enabled ?: false)
-              ? ("Focused window running over SSH: " + (window.project_remote_target ?: "") + ((window.project_remote_dir ?: "") != "" ? " • " + (window.project_remote_dir ?: "") : ""))
-              : "Focused window running locally"}
           (label
             :class "badge badge-pwa"
             :text "PWA"
@@ -412,5 +405,5 @@
           (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] focus && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Focus" (label :class "action-btn" :text "󰌑"))
           (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] floating toggle && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Float" (label :class "action-btn" :text "󰊓"))
           (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] fullscreen toggle && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Full" (label :class "action-btn" :text "󰊓"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙")))))))
+          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙"))))))
 ''

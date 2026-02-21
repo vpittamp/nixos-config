@@ -529,6 +529,7 @@ class ResilientI3Connection:
                 project_name = i3pm_env.get('I3PM_PROJECT_NAME')
                 app_name = i3pm_env.get('I3PM_APP_NAME')
                 scope = i3pm_env.get('I3PM_SCOPE', 'scoped')
+                context_key = i3pm_env.get('I3PM_CONTEXT_KEY')
                 if project_name and app_name:
                     # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
                     # VSCode windows share a single process, so I3PM environment doesn't distinguish
@@ -553,7 +554,7 @@ class ResilientI3Connection:
                         else:
                             logger.debug(f"VSCode title '{container.name}' didn't match regex pattern")
 
-                    windows_to_mark.append((container, project_name, app_name, scope))
+                    windows_to_mark.append((container, project_name, app_name, scope, context_key))
 
             # Recursively scan children
             for child in container.nodes + container.floating_nodes:
@@ -567,7 +568,7 @@ class ResilientI3Connection:
         windows_to_mark.sort(key=lambda x: 1 if get_window_class(x[0]) == "Code" else 0)
 
         # Mark windows in the sorted order
-        for container, project_name, app_name, scope in windows_to_mark:
+        for container, project_name, app_name, scope, context_key in windows_to_mark:
             window_class = get_window_class(container)  # Feature 045: Sway-compatible
             # Feature 046: Use container.id (node ID) for both i3 and Sway compatibility
             window_id = container.id
@@ -588,6 +589,20 @@ class ResilientI3Connection:
             else:
                 logger.warning(f"Mark command for window {window_id} returned empty result")
 
+            if context_key:
+                context_mark = f"ctx:{context_key}"
+                context_command_str = f'[con_id={window_id}] mark --add "{context_mark}"'
+                logger.debug(f"Executing context mark command: {context_command_str}")
+                context_result = await self.conn.command(context_command_str)
+                if context_result and len(context_result) > 0:
+                    context_reply = context_result[0]
+                    logger.debug(
+                        f"Context mark command for window {window_id}: "
+                        f"success={context_reply.success}, error={getattr(context_reply, 'error', None)}"
+                    )
+                else:
+                    logger.warning(f"Context mark command for window {window_id} returned empty result")
+
             # Small delay to allow i3 to process the mark and fire window::mark event
             # before we mark the next window (prevents race conditions during startup scan)
             await asyncio.sleep(0.05)  # 50ms
@@ -601,7 +616,7 @@ class ResilientI3Connection:
                 window_instance=container.window_instance or "",
                 app_identifier=window_class,  # Feature 045: Use computed window_class
                 project=project_name,
-                marks=[mark] + list(container.marks),
+                marks=([mark, f"ctx:{context_key}"] if context_key else [mark]) + list(container.marks),
                 workspace=container.workspace().name if container.workspace() else "",
                 output=(
                     container.workspace().ipc_data.get("output", "")
