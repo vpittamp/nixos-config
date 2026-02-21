@@ -103,7 +103,7 @@
                       :image-height 18)))))
             ;; Projects list
             (for project in {monitoring_data.projects ?: []}
-              (project-widget :project project))))
+              (project-widget :project project)))))))
 
   (defwidget project-widget [project]
     (box
