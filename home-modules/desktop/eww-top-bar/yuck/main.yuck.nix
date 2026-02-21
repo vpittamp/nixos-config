@@ -59,11 +59,11 @@ let
     (defwindow badge-shelf-${windowId}
       :monitor "${output.name}"
       :geometry (geometry
-        :anchor "top center"
+        :anchor "top left"
         :x "0px"
         :y "25px"
         :width "100%"
-        :height "44px")
+        :height "102px")
       :stacking "overlay"
       :exclusive false
       :focusable "ondemand"
@@ -116,11 +116,11 @@ let
 (defwindow badge-shelf-edp1
   :monitor "eDP-1"
   :geometry (geometry
-    :anchor "top center"
+    :anchor "top left"
     :x "0px"
     :y "25px"
     :width "100%"
-    :height "44px")
+    :height "102px")
   :stacking "overlay"
   :exclusive false
   :focusable "ondemand"
@@ -481,6 +481,22 @@ ${if isLaptop then ''
          (label :class "value health-status"
                 :text {build_health.status ?: "unknown"}))))
 
+;; Compact build health widget for grouped shelf section
+(defwidget build-health-shelf-widget []
+  (eventbox :onclick "nixos-build-status --verbose | less"
+    (box :class "pill metric-pill build-health build-health-shelf"
+         :hexpand true
+         :halign "fill"
+         :spacing 2
+         (label :class {build_health.status == "healthy" ? "icon health-icon health-healthy" :
+                        build_health.status == "warning" ? "icon health-icon health-warning" :
+                        "icon health-icon health-error"}
+                :text "●")
+         (label :class "value health-os"
+                :text {build_health.os_generation ?: "--"})
+         (label :class "value health-hm"
+                :text {build_health.hm_generation ?: "--"}))))
+
 ;; Compact build health indicator for always-on top bar view
 (defwidget build-health-dot-widget [monitor_id]
   (eventbox :onclick {"toggle-topbar-badge-shelf toggle " + monitor_id + " &"}
@@ -509,25 +525,84 @@ ${if isLaptop then ''
 ;; Secondary badge shelf: moved metrics and status badges
 (defwidget badge-shelf-window [monitor_id]
   (box :class "badge-shelf-window"
-       :orientation "h"
+       :orientation "v"
        :space-evenly false
-       :halign "end"
+       :hexpand true
+       :halign "fill"
     (box :class "badge-shelf-card"
-         :orientation "h"
+         :orientation "v"
          :space-evenly false
+         :hexpand true
+         :halign "fill"
          :spacing 4
-         (cpu-widget)
-         (memory-widget)
-         (disk-widget)
-         (temperature-widget)
-         (network-widget)
-         (wifi-widget)
-         ${if isLaptop then "(brightness-widget)" else ""}
-         (bluetooth-widget)
-         (build-health-widget)
-         (button :class "badge-shelf-close"
-                 :onclick {"toggle-topbar-badge-shelf close " + monitor_id + " &"}
-                 ""))))
+         (box :class "badge-shelf-header"
+              :orientation "h"
+              :space-evenly false
+              :hexpand true
+              :halign "fill"
+              :spacing 6
+              (label :class "badge-shelf-title" :text "Status Shelf")
+              (label :class "badge-shelf-subtitle"
+                     :hexpand true
+                     :halign "start"
+                     :text "Detailed system badges")
+              (button :class "badge-shelf-close"
+                      :onclick {"toggle-topbar-badge-shelf close " + monitor_id + " &"}
+                      ""))
+         (box :class "badge-shelf-groups"
+              :orientation "v"
+              :space-evenly false
+              :hexpand true
+              :halign "fill"
+              :spacing 5
+              (box :class "badge-shelf-group"
+                   :orientation "h"
+                   :space-evenly false
+                   :hexpand true
+                   :halign "fill"
+                   :spacing 7
+                   (label :class "badge-shelf-group-title" :text "System")
+                   (box :class "badge-shelf-group-items"
+                        :orientation "h"
+                        :space-evenly true
+                        :hexpand true
+                        :halign "fill"
+                        :spacing 3
+                        (cpu-widget)
+                        (memory-widget)
+                        (disk-widget)
+                        (temperature-widget)))
+              (box :class "badge-shelf-group"
+                   :orientation "h"
+                   :space-evenly false
+                   :hexpand true
+                   :halign "fill"
+                   :spacing 7
+                   (label :class "badge-shelf-group-title" :text "Connectivity")
+                   (box :class "badge-shelf-group-items"
+                        :orientation "h"
+                        :space-evenly true
+                        :hexpand true
+                        :halign "fill"
+                        :spacing 3
+                        (network-widget)
+                        (wifi-widget)
+                        ${if isLaptop then "(brightness-widget)" else ""}
+                        (bluetooth-widget)))
+              (box :class "badge-shelf-group"
+                   :orientation "h"
+                   :space-evenly false
+                   :hexpand true
+                   :halign "fill"
+                   :spacing 7
+                   (label :class "badge-shelf-group-title" :text "Build")
+                   (box :class "badge-shelf-group-items"
+                        :orientation "h"
+                        :space-evenly true
+                        :hexpand true
+                        :halign "fill"
+                        :spacing 3
+                        (build-health-shelf-widget)))))))
 
 ;; Separator between blocks
 ;; Visual separator between widget groups

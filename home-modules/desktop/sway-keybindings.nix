@@ -39,7 +39,7 @@ in
 
     # ========== APPLICATION LAUNCHERS ==========
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
-    "${modifier}+Shift+Return" = "exec ghostty";
+    "${modifier}+Shift+Return" = "exec ~/.local/bin/app-launcher-wrapper.sh terminal";
     "${modifier}+d" = "exec walker";
     "${modifier}+Shift+f" = "exec i3pm run fzf-file-search --force";
 

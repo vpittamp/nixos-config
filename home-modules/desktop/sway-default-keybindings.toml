@@ -41,7 +41,7 @@
 "Mod+Shift+semicolon" = { command = "mode \"⇒ WS\"", description = "Enter move window mode (type digits + enter)" }
 
 # ========== APPLICATION LAUNCHERS ==========
-"Mod+Return" = { command = "exec ghostty", description = "Open terminal" }
+"Mod+Return" = { command = "exec ~/.local/bin/app-launcher-wrapper.sh terminal", description = "Open terminal" }
 "Mod+Shift+Return" = { command = "exec i3pm scratchpad toggle", description = "Toggle project scratchpad terminal (Feature 062)" }
 "Control+Alt+Return" = { command = "exec i3pm scratchpad toggle", description = "Toggle project scratchpad terminal (Feature 062)" }
 "Mod+d" = { command = "exec walker", description = "Application launcher" }

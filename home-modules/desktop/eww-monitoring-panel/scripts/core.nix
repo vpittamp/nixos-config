@@ -191,8 +191,9 @@ PY
     fi
 
     if ! open_target_window "$TARGET_WINDOW"; then
-      echo "[eww-monitoring-panel] startup window open failed; exiting for systemd retry" >&2
-      exit 1
+      # Do not crash-loop the service on transient IPC/startup races.
+      # Keep daemon/streams alive and allow manual toggle/reopen to recover.
+      echo "[eww-monitoring-panel] startup window open verification failed; continuing without fatal exit" >&2
     fi
 
     # Feature 125: Toggle handler - called when SIGUSR1 received

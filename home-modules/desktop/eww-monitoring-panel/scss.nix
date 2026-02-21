@@ -430,49 +430,88 @@
     margin-top: 2px;
   }
 
-  .window {
+  .window-container {
+    min-width: 0;
+  }
+
+  .window-row {
     padding: 4px 8px;
     margin-bottom: 1px;
     border-radius: 2px;
     background-color: transparent;
     border-left: 2px solid transparent;
+    min-width: 0;
   }
 
-  .window-focused {
+  .window-main {
+    min-width: 0;
+  }
+
+  .window {
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+    background-color: transparent;
+    border-left: 0;
+    min-width: 0;
+  }
+
+  .window-focused,
+  .window-row.window-focused {
     background-color: rgba(137, 180, 250, 0.1);
     border-left-color: ${mocha.blue};
   }
 
-  .window-floating {
+  .window-floating,
+  .window-row.window-floating {
     border-right: 2px solid ${mocha.yellow};
   }
 
-  .window-hidden {
+  .window-hidden,
+  .window-row.window-hidden {
     opacity: 0.5;
     font-style: italic;
   }
 
-  .scoped-window {
+  .scoped-window,
+  .window-row.scoped-window {
     border-left-color: ${mocha.teal};
   }
 
-  .global-window {
+  .global-window,
+  .window-row.global-window {
     border-left-color: ${mocha.overlay0};
   }
 
-  .ssh-window {
+  .ssh-window,
+  .window-row.ssh-window {
     border-left-color: ${mocha.green};
     border-right: 1px solid rgba(249, 226, 175, 0.45);
     background: linear-gradient(90deg, rgba(24, 40, 24, 0.54), rgba(45, 42, 25, 0.16));
     box-shadow: inset 0 0 0 1px rgba(166, 227, 161, 0.18);
   }
 
-  .window:hover {
+  .remote-session-window,
+  .window-row.remote-session-window {
+    border-left-color: ${mocha.green};
+    border-right: 1px dashed rgba(166, 227, 161, 0.48);
+    background: linear-gradient(90deg, rgba(20, 34, 24, 0.62), rgba(26, 44, 36, 0.34));
+    box-shadow: inset 0 0 0 1px rgba(148, 226, 213, 0.2);
+  }
+
+  .remote-session-window .window-app-name {
+    color: ${mocha.green};
+    font-weight: 700;
+  }
+
+  .window:hover,
+  .window-row:hover {
     background-color: rgba(137, 180, 250, 0.15);
     border-left-width: 3px;
   }
 
-  .window.clicked {
+  .window.clicked,
+  .window-row.clicked {
     background-color: rgba(137, 180, 250, 0.25);
     border-left-color: ${mocha.blue};
     border-left-width: 4px;
@@ -498,6 +537,7 @@
 
   .window-badges {
     margin-left: 4px;
+    min-width: 0;
   }
 
   .badge {

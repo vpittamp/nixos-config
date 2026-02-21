@@ -63,6 +63,74 @@ warn() {
     fi
 }
 
+# Escape a literal string for use in regex matching.
+escape_regex() {
+    local input="$1"
+    printf '%s' "$input" | sed -e 's/[][(){}.^$*+?|\\/]/\\&/g'
+}
+
+# Find an existing scoped/global window ID by unified mark format:
+#   scope:app:project:window_id
+find_window_id_by_mark() {
+    local scope="$1"
+    local app_name="$2"
+    local project_name="$3"
+
+    if ! command -v swaymsg >/dev/null 2>&1; then
+        return 1
+    fi
+
+    local project_re mark_re tree_json window_id
+    project_re=$(escape_regex "$project_name")
+    mark_re="^${scope}:${app_name}:${project_re}:[0-9]+$"
+
+    tree_json=$(swaymsg -t get_tree -r 2>/dev/null || true)
+    if [[ -z "$tree_json" ]]; then
+        return 1
+    fi
+
+    window_id=$(
+        printf '%s\n' "$tree_json" \
+            | jq -r --arg mark_re "$mark_re" '
+                first(
+                    recurse(.nodes[]?, .floating_nodes[]?)
+                    | select((.window != null) or (.app_id != null))
+                    | select((.marks // []) | any(test($mark_re)))
+                    | .id
+                ) // empty
+            ' 2>/dev/null || true
+    )
+
+    if [[ "$window_id" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$window_id"
+        return 0
+    fi
+
+    return 1
+}
+
+# Focus an existing project-scoped window if one is already open.
+focus_existing_project_window() {
+    local scope="$1"
+    local app_name="$2"
+    local project_name="$3"
+
+    local window_id
+    if ! window_id=$(find_window_id_by_mark "$scope" "$app_name" "$project_name"); then
+        return 1
+    fi
+
+    local focus_result
+    focus_result=$(swaymsg "[con_id=${window_id}] focus" 2>/dev/null || true)
+    if printf '%s\n' "$focus_result" | jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1; then
+        log "INFO" "Focused existing window $window_id for ${scope}:${app_name}:${project_name}"
+        return 0
+    fi
+
+    warn "Failed to focus existing window $window_id for ${scope}:${app_name}:${project_name}"
+    return 1
+}
+
 # Check arguments
 if [[ $# -lt 1 ]]; then
     error "Usage: app-launcher-wrapper.sh <app-name>"
@@ -414,6 +482,21 @@ log "DEBUG" "I3PM_SCOPE=$I3PM_SCOPE"
 log "DEBUG" "I3PM_TARGET_WORKSPACE=$I3PM_TARGET_WORKSPACE"
 log "DEBUG" "I3PM_EXPECTED_CLASS=$I3PM_EXPECTED_CLASS"
 
+# Feature 087: Avoid duplicate SSH terminal windows.
+# If a project-scoped terminal already exists for this remote project, focus it
+# and skip launching a new terminal process.
+if [[ "$APP_NAME" == "terminal" ]] && [[ "$REMOTE_ENABLED" == "true" ]] && [[ -n "${PROJECT_NAME:-}" ]]; then
+    if focus_existing_project_window "${SCOPE:-scoped}" "$APP_NAME" "$PROJECT_NAME"; then
+        log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME'"
+        exit 0
+    fi
+
+    if [[ "${SCOPE:-scoped}" != "scoped" ]] && focus_existing_project_window "scoped" "$APP_NAME" "$PROJECT_NAME"; then
+        log "INFO" "Feature 087: Reused existing SSH terminal for project '$PROJECT_NAME'"
+        exit 0
+    fi
+fi
+
 # ============================================================================
 # LAUNCH NOTIFICATION TO DAEMON (Feature 041)
 # ============================================================================
@@ -643,32 +726,52 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
 
         # Build SSH command safely as an argument array and execute it from a
         # temporary helper script. This avoids brittle nested bash -lc quoting.
-        REMOTE_CMD="cd $(printf '%q' "$REMOTE_WORKING_DIR") && $TERMINAL_CMD_REMOTE"
+        #
+        # For the "terminal" app we always connect to a remote sesh session in
+        # the active remote project directory, independent of local substitutions.
+        if [[ "$APP_NAME" == "terminal" ]]; then
+            REMOTE_INNER_CMD="if ! command -v sesh >/dev/null 2>&1; then echo '[i3pm] sesh is not installed on remote host.'; exit 127; fi; if ! command -v tmux >/dev/null 2>&1; then echo '[i3pm] tmux is not installed on remote host.'; exit 127; fi; cd $(printf '%q' "$REMOTE_WORKING_DIR") && sesh connect $(printf '%q' "$REMOTE_WORKING_DIR")"
+            log "INFO" "Feature 087: terminal app in SSH mode will connect to remote sesh path: $REMOTE_WORKING_DIR"
+        else
+            REMOTE_INNER_CMD="cd $(printf '%q' "$REMOTE_WORKING_DIR") && $TERMINAL_CMD_REMOTE"
+        fi
+
         SSH_ARGS=(ssh -t)
         if [[ "$REMOTE_PORT" != "22" ]]; then
             SSH_ARGS+=(-p "$REMOTE_PORT")
         fi
-        SSH_ARGS+=("$REMOTE_USER@$REMOTE_HOST" "$REMOTE_CMD")
-        SSH_CMD_SERIALIZED=$(printf '%q ' "${SSH_ARGS[@]}")
-        SSH_CMD_SERIALIZED="${SSH_CMD_SERIALIZED% }"
-
-        log "INFO" "Feature 087: SSH command: ${SSH_CMD_SERIALIZED:0:200}..."
+        # ssh takes a single remote command string; build bash -lc with robust quoting.
+        REMOTE_SSH_CMD="bash -lc $(printf '%q' "$REMOTE_INNER_CMD")"
+        SSH_ARGS+=("$REMOTE_USER@$REMOTE_HOST" "$REMOTE_SSH_CMD")
+        SSH_CMD_PREVIEW=$(printf '%q ' "${SSH_ARGS[@]}")
+        SSH_CMD_PREVIEW="${SSH_CMD_PREVIEW% }"
+        log "INFO" "Feature 087: SSH command: ${SSH_CMD_PREVIEW:0:200}..."
 
         RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
         mkdir -p "$RUNTIME_DIR"
         REMOTE_LAUNCH_SCRIPT="$(mktemp "$RUNTIME_DIR/i3pm-remote-launch.XXXXXX.sh")"
         chmod 700 "$REMOTE_LAUNCH_SCRIPT"
-        cat > "$REMOTE_LAUNCH_SCRIPT" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-if ! $SSH_CMD_SERIALIZED; then
+        {
+            echo "#!/usr/bin/env bash"
+            echo "set -euo pipefail"
+            echo "ssh_cmd=("
+            for arg in "${SSH_ARGS[@]}"; do
+                printf '  %q\n' "$arg"
+            done
+            cat <<'EOF'
+)
+if ! "${ssh_cmd[@]}"; then
   echo
-  echo "[i3pm] SSH launch failed for $REMOTE_USER@$REMOTE_HOST."
+  echo "[i3pm] SSH launch failed for __REMOTE_TARGET__."
   echo "[i3pm] Press Enter to close..."
   read -r
 fi
-rm -f -- "\$0" >/dev/null 2>&1 || true
+rm -f -- "$0" >/dev/null 2>&1 || true
 EOF
+        } > "$REMOTE_LAUNCH_SCRIPT"
+
+        # Substitute target marker without disturbing shell quoting above.
+        sed -i "s|__REMOTE_TARGET__|$REMOTE_USER@$REMOTE_HOST|g" "$REMOTE_LAUNCH_SCRIPT"
 
         # For remote execution, invoke terminal with helper script directly.
         REMOTE_TERMINAL_CMD="${ARGS[0]} -e $REMOTE_LAUNCH_SCRIPT"

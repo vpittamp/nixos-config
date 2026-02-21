@@ -68,6 +68,37 @@ let
     fi
   '';
 
+  # Open remote session item action:
+  # - Ensures project context is active
+  # - Launches project terminal (app-launcher-wrapper handles SSH sesh attach)
+  openRemoteSessionWindowScript = pkgs.writeShellScriptBin "open-remote-session-window-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+    if [[ -z "$PROJECT_NAME" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Remote Session Open Failed" "No project name provided"
+      exit 1
+    fi
+
+    CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
+
+    if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
+      if ! ${i3pm} worktree switch "$PROJECT_NAME" >/dev/null 2>&1; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" "Failed to switch to $PROJECT_NAME"
+        exit 1
+      fi
+    fi
+
+    if [[ -x "$HOME/.local/bin/app-launcher-wrapper.sh" ]]; then
+      "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
+      exit 0
+    fi
+
+    ${pkgs.libnotify}/bin/notify-send -u critical "Remote Session Open Failed" "app-launcher-wrapper.sh not found"
+    exit 1
+  '';
+
   # Feature 093: Switch project action script (T016-T020)
   # Switches to a different project context by name
   switchProjectScript = pkgs.writeShellScriptBin "switch-project-action" ''
@@ -338,18 +369,18 @@ let
   toggleProjectContextScript = pkgs.writeShellScriptBin "toggle-project-context" ''
     #!${pkgs.bash}/bin/bash
     # Toggle the project context menu in monitoring panel
-    PROJECT_NAME="''${1:-}"
-    if [[ -z "$PROJECT_NAME" ]]; then
+    PROJECT_KEY="''${1:-}"
+    if [[ -z "$PROJECT_KEY" ]]; then
         exit 1
     fi
 
     # Get current value
     CURRENT=$(${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel get context_menu_project 2>/dev/null || echo "")
 
-    if [[ "$CURRENT" == "$PROJECT_NAME" ]]; then
+    if [[ "$CURRENT" == "$PROJECT_KEY" ]]; then
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_project='''
     else
-        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update "context_menu_project=$PROJECT_NAME"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update "context_menu_project=$PROJECT_KEY"
     fi
   '';
 
@@ -358,8 +389,8 @@ let
   toggleWindowsProjectExpandScript = pkgs.writeShellScriptBin "toggle-windows-project-expand" ''
     #!${pkgs.bash}/bin/bash
     # Toggle individual project expand/collapse state
-    PROJECT_NAME="''${1:-}"
-    if [[ -z "$PROJECT_NAME" ]]; then
+    PROJECT_KEY="''${1:-}"
+    if [[ -z "$PROJECT_KEY" ]]; then
         exit 1
     fi
 
@@ -370,20 +401,20 @@ let
 
     if [[ "$CURRENT" == "all" ]]; then
         # Currently all expanded - clicking collapses this one only
-        # Get all project names and remove the clicked one
-        ALL_PROJECTS=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -r '[.projects[].name]')
-        NEW_LIST=$(echo "$ALL_PROJECTS" | ${pkgs.jq}/bin/jq -c --arg name "$PROJECT_NAME" '[.[] | select(. != $name)]')
+        # Use card_id for uniqueness; fall back to name for older payloads.
+        ALL_PROJECTS=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -r '[.projects[] | (.card_id // .name)]')
+        NEW_LIST=$(echo "$ALL_PROJECTS" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '[.[] | select(. != $key)]')
         $EWW update "windows_expanded_projects=$NEW_LIST" "windows_all_expanded=false"
     else
         # Array mode - toggle this project in/out
-        IS_EXPANDED=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -e --arg name "$PROJECT_NAME" '. | index($name) != null' 2>/dev/null || echo "false")
+        IS_EXPANDED=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -e --arg key "$PROJECT_KEY" '. | index($key) != null' 2>/dev/null || echo "false")
 
         if [[ "$IS_EXPANDED" == "true" ]]; then
             # Remove from array
-            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg name "$PROJECT_NAME" '[.[] | select(. != $name)]')
+            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '[.[] | select(. != $key)]')
         else
             # Add to array
-            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg name "$PROJECT_NAME" '. + [$name]')
+            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '. + [$key]')
         fi
 
         # Check if all projects are now expanded
@@ -736,5 +767,6 @@ in
           toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
           fetchWindowEnvScript startWindowTraceScript fetchTraceEventsScript
           navigateToTraceScript navigateToEventScript startTraceFromTemplateScript
+          openRemoteSessionWindowScript
           openLangfuseTraceScript;
 }

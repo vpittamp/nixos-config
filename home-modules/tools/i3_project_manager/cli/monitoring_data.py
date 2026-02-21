@@ -26,6 +26,7 @@ Stream Mode (--listen):
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -94,6 +95,10 @@ OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getu
 # Feature 107: inotify watcher for immediate badge detection (<15ms latency)
 # Uses subprocess inotifywait to avoid adding Python dependencies
 INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
+
+# Remote sesh/tmux session discovery cache (for SSH project window augmentation)
+REMOTE_SESH_CACHE_TTL_SECONDS = 15
+REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def load_badge_state_from_files() -> Dict[str, Any]:
@@ -1191,8 +1196,8 @@ def transform_window(
         "display_name": display_name,
         "class": window.get("class", ""),
         "instance": window.get("instance", ""),
-        # Truncate title to 50 chars for display performance
-        "title": window.get("title", "")[:50],
+        # Keep full title; Eww widget handles runtime truncation based on row width.
+        "title": window.get("title", ""),
         "full_title": window.get("title", ""),  # Keep full title for detail view
         "project": window.get("project", ""),
         "scope": scope,
@@ -1514,6 +1519,377 @@ def _read_window_remote_env(pid: Any) -> Dict[str, str]:
     return remote_env
 
 
+def _normalize_remote_path(path: str, remote_user: str = "") -> str:
+    """Normalize a filesystem path for stable comparisons."""
+    raw = str(path or "").strip()
+    if not raw:
+        return ""
+
+    # Expand home-shortcuts so profile paths like ~/repos/... match sesh output.
+    if raw == "~":
+        user = str(remote_user or os.environ.get("USER", "")).strip()
+        raw = f"/home/{user}" if user else str(Path.home())
+    elif raw.startswith("~/"):
+        user = str(remote_user or os.environ.get("USER", "")).strip()
+        home_prefix = f"/home/{user}" if user else str(Path.home())
+        raw = f"{home_prefix}/{raw[2:]}"
+
+    normalized = raw.rstrip("/")
+    return normalized if normalized else "/"
+
+
+def _extract_json_array(payload: str) -> List[Dict[str, Any]]:
+    """Best-effort parse JSON array from noisy SSH command output."""
+    text = str(payload or "").strip()
+    if not text:
+        return []
+
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("[")
+    end = text.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    try:
+        parsed = json.loads(text[start:end + 1])
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    except json.JSONDecodeError:
+        return []
+
+    return []
+
+
+def _remote_profile_cache_key(profile: Dict[str, Any]) -> str:
+    """Build a cache key for remote host/user/port."""
+    host = str(profile.get("host", "")).strip()
+    user = str(profile.get("user", "")).strip()
+    port = str(profile.get("port", 22)).strip()
+    return f"{user}@{host}:{port}"
+
+
+def _fetch_remote_tmux_sessions(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Fetch remote tmux-backed sesh entries via SSH.
+
+    Returns list of dicts:
+    [{"name": str, "path": str, "attached": bool, "windows": int}]
+    """
+    host = str(profile.get("host", "")).strip()
+    user = str(profile.get("user", "")).strip()
+    try:
+        port = int(profile.get("port", 22))
+    except (TypeError, ValueError):
+        port = 22
+
+    if not host:
+        return []
+
+    cache_key = _remote_profile_cache_key(profile)
+    now = time.time()
+    cached = REMOTE_SESH_CACHE.get(cache_key)
+    if cached and (now - float(cached.get("timestamp", 0))) < REMOTE_SESH_CACHE_TTL_SECONDS:
+        return list(cached.get("sessions", []))
+
+    target = f"{user}@{host}" if user else host
+    cmd: List[str] = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=2",
+        "-o",
+        "ServerAliveInterval=5",
+        "-o",
+        "ServerAliveCountMax=1",
+    ]
+    if port != 22:
+        cmd.extend(["-p", str(port)])
+    cmd.append(target)
+    cmd.append("bash -lc 'command -v sesh >/dev/null 2>&1 && sesh list -j || echo []'")
+
+    sessions: List[Dict[str, Any]] = []
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=6,
+            check=True,
+        )
+        payload = _extract_json_array(result.stdout)
+        for item in payload:
+            if str(item.get("Src", "")).strip() != "tmux":
+                continue
+            name = str(item.get("Name", "")).strip()
+            path = str(item.get("Path", "")).strip()
+            if not name or not path:
+                continue
+            try:
+                window_count = int(item.get("Windows", 0))
+            except (TypeError, ValueError):
+                window_count = 0
+            sessions.append(
+                {
+                    "name": name,
+                    "path": path,
+                    "attached": bool(item.get("Attached", False)),
+                    "windows": window_count,
+                }
+            )
+    except Exception as e:
+        logger.debug(f"Remote session fetch failed for {target}: {e}")
+        sessions = []
+
+    REMOTE_SESH_CACHE[cache_key] = {
+        "timestamp": now,
+        "sessions": sessions,
+    }
+    return sessions
+
+
+def _build_remote_session_window(
+    project_name: str,
+    remote_target: str,
+    remote_dir: str,
+    session: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Create synthetic window payload for a remote tmux/sesh session."""
+    seed = f"{project_name}|{remote_target}|{session.get('name', '')}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    synthetic_id = -(10_000_000 + (int(digest[:12], 16) % 900_000_000))
+
+    session_name = str(session.get("name", "")).strip()
+    session_windows = int(session.get("windows", 0))
+    attached = bool(session.get("attached", False))
+    summary = f"tmux: {session_name}"
+    if session_windows > 0:
+        summary = f"{summary} • {session_windows} win"
+    if attached:
+        summary = f"{summary} • attached"
+
+    return {
+        "id": synthetic_id,
+        "pid": 0,
+        "app_id": "remote-sesh",
+        "app_name": "remote-sesh",
+        "display_name": f"ssh:{session_name}",
+        "class": "remote-sesh",
+        "instance": session_name,
+        "title": summary,
+        "full_title": summary,
+        "project": project_name,
+        "scope": "scoped",
+        "icon_path": "",
+        "workspace": "ssh",
+        "workspace_number": 0,
+        "output": "remote",
+        "marks": [],
+        "floating": False,
+        "hidden": False,
+        "focused": False,
+        "fullscreen": False,
+        "is_pwa": False,
+        "state_classes": "window-remote-session",
+        "geometry_x": 0,
+        "geometry_y": 0,
+        "geometry_width": 0,
+        "geometry_height": 0,
+        "badge": {},
+        "otel_badges": [],
+        "project_remote_enabled": True,
+        "project_remote_target": remote_target,
+        "project_remote_dir": remote_dir,
+        "is_remote_session": True,
+        "remote_session_name": session_name,
+        "remote_session_summary": summary,
+        "monitor_name": "remote",
+        "workspace_name": "ssh",
+    }
+
+
+def _project_session_suffix(project_name: str) -> str:
+    """
+    Convert qualified project name to common sesh/tmux name suffix.
+
+    Example:
+      PittampalliOrg/stacks:main -> stacks/main
+    """
+    name = str(project_name or "").strip()
+    if not name:
+        return ""
+    if ":" not in name:
+        return ""
+    repo_part, branch = name.split(":", 1)
+    repo_name = repo_part.split("/")[-1]
+    if not repo_name or not branch:
+        return ""
+    return f"{repo_name}/{branch}"
+
+
+def _session_matches_profile(
+    project_name: str,
+    profile: Dict[str, Any],
+    session: Dict[str, Any],
+) -> bool:
+    """Match a remote tmux session to a project profile using path + suffix heuristics."""
+    remote_user = str(profile.get("user", "")).strip()
+    remote_dir = _normalize_remote_path(str(profile.get("remote_dir", "")), remote_user)
+    session_path = _normalize_remote_path(str(session.get("path", "")), remote_user)
+    if remote_dir and session_path and session_path == remote_dir:
+        return True
+
+    # Handle prefix/symlink variations where sesh may report a resolved path.
+    if remote_dir and session_path:
+        if session_path.endswith(remote_dir) or remote_dir.endswith(session_path):
+            return True
+
+    suffix = _project_session_suffix(project_name)
+    session_name = str(session.get("name", "")).strip()
+    if suffix and session_name.endswith(suffix):
+        return True
+
+    return False
+
+
+def _project_card_key(project_name: str, remote_enabled: bool) -> str:
+    """Build a stable project-card identifier for local/SSH split cards."""
+    variant = "ssh" if remote_enabled else "local"
+    return f"{project_name}::{variant}"
+
+
+def _create_project_entry(
+    *,
+    project_name: str,
+    remote_enabled: bool,
+    remote_target: str = "",
+    remote_directory: str = "",
+    remote_profile_enabled: bool = False,
+    remote_profile_target: str = "",
+    remote_profile_directory: str = "",
+) -> Dict[str, Any]:
+    """Create a project card entry for the windows overview."""
+    home_str = str(Path.home())
+    variant = "ssh" if remote_enabled else "local"
+    remote_directory_display = remote_directory.replace(home_str, "~") if remote_directory else ""
+    remote_profile_directory_display = (
+        remote_profile_directory.replace(home_str, "~") if remote_profile_directory else ""
+    )
+
+    return {
+        "card_id": _project_card_key(project_name, remote_enabled),
+        "name": project_name,
+        "scope": "scoped",
+        "variant": variant,
+        "variant_label": "SSH" if variant == "ssh" else "LOCAL",
+        "window_count": 0,
+        # Active remote status (for badges) is based on actual window env.
+        "remote_enabled": remote_enabled,
+        "remote_target": remote_target,
+        "remote_directory": remote_directory,
+        "remote_directory_display": remote_directory_display,
+        # Keep configured profile metadata available for debugging/tooltips.
+        "remote_profile_enabled": remote_profile_enabled,
+        "remote_profile_target": remote_profile_target,
+        "remote_profile_directory": remote_profile_directory,
+        "remote_profile_directory_display": remote_profile_directory_display,
+        "has_local_variant": False,
+        "has_remote_variant": False,
+        "windows": [],
+    }
+
+
+def _refresh_variant_flags(projects: List[Dict[str, Any]]) -> None:
+    """Mark whether each project has a paired local/SSH variant card."""
+    variants_by_name: Dict[str, set[str]] = {}
+    for project in projects:
+        name = str(project.get("name", "")).strip()
+        variant = str(project.get("variant", "")).strip()
+        if not name or not variant:
+            continue
+        variants_by_name.setdefault(name, set()).add(variant)
+
+    for project in projects:
+        name = str(project.get("name", "")).strip()
+        variants = variants_by_name.get(name, set())
+        project["has_local_variant"] = "local" in variants
+        project["has_remote_variant"] = "ssh" in variants
+
+
+def _augment_projects_with_remote_sessions(
+    projects_dict: Dict[str, Dict[str, Any]],
+    remote_profiles: Optional[Dict[str, Dict[str, Any]]],
+) -> None:
+    """
+    Add synthetic window items for remote SSH tmux/sesh sessions.
+
+    This makes active remote sessions visible even when no local Sway window is
+    currently attached to them.
+    """
+    if not isinstance(remote_profiles, dict):
+        return
+
+    for project_name, profile in remote_profiles.items():
+        if not isinstance(profile, dict) or not bool(profile.get("enabled", False)):
+            continue
+
+        remote_user = str(profile.get("user", "")).strip()
+        remote_dir = _normalize_remote_path(str(profile.get("remote_dir", "")), remote_user)
+        if not remote_dir:
+            continue
+
+        remote_target = _format_remote_target(
+            profile.get("user", ""),
+            profile.get("host", ""),
+            profile.get("port", 22),
+        )
+
+        remote_sessions = _fetch_remote_tmux_sessions(profile)
+        matching_sessions = [s for s in remote_sessions if _session_matches_profile(project_name, profile, s)]
+        if not matching_sessions:
+            continue
+
+        remote_key = _project_card_key(project_name, True)
+        if remote_key not in projects_dict:
+            projects_dict[remote_key] = _create_project_entry(
+                project_name=project_name,
+                remote_enabled=True,
+                remote_target=remote_target,
+                remote_directory=remote_dir,
+                remote_profile_enabled=True,
+                remote_profile_target=remote_target,
+                remote_profile_directory=remote_dir,
+            )
+
+        project_entry = projects_dict[remote_key]
+        project_entry["remote_enabled"] = True
+        if remote_target:
+            project_entry["remote_target"] = remote_target
+        project_entry["remote_directory"] = remote_dir
+        project_entry["remote_directory_display"] = remote_dir.replace(str(Path.home()), "~")
+
+        existing_ids = {int(w.get("id", 0)) for w in project_entry.get("windows", [])}
+        for session in matching_sessions:
+            synthetic_window = _build_remote_session_window(
+                project_name,
+                remote_target,
+                remote_dir,
+                session,
+            )
+            synthetic_id = int(synthetic_window["id"])
+            if synthetic_id in existing_ids:
+                continue
+            project_entry["windows"].append(synthetic_window)
+            existing_ids.add(synthetic_id)
+
+        project_entry["window_count"] = len(project_entry.get("windows", []))
+
+
 def transform_to_project_view(
     monitors: List[Dict[str, Any]],
     remote_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -1557,7 +1933,7 @@ def transform_to_project_view(
                 all_windows.append(window_with_meta)
 
     # Group windows by project
-    projects_dict = {}
+    projects_dict: Dict[str, Dict[str, Any]] = {}
     global_windows = []
 
     for window in all_windows:
@@ -1597,61 +1973,77 @@ def transform_to_project_view(
             window["project_remote_target"] = window_remote_target
             window["project_remote_dir"] = window_remote_directory
 
-            if project_name not in projects_dict:
-                projects_dict[project_name] = {
-                    "name": project_name,
-                    "scope": "scoped",
-                    "window_count": 0,
-                    # Active remote status (for badges) is based on actual window env.
-                    "remote_enabled": window_remote_enabled,
-                    "remote_target": window_remote_target,
-                    "remote_directory": window_remote_directory,
-                    "remote_directory_display": window_remote_directory.replace(str(Path.home()), "~")
-                    if window_remote_directory
-                    else "",
-                    # Keep configured profile metadata available for debugging/tooltips.
-                    "remote_profile_enabled": profile_enabled,
-                    "remote_profile_target": profile_target,
-                    "remote_profile_directory": profile_directory,
-                    "remote_profile_directory_display": profile_directory.replace(str(Path.home()), "~")
-                    if profile_directory
-                    else "",
-                    "windows": []
-                }
-            elif window_remote_enabled and not projects_dict[project_name].get("remote_enabled"):
+            project_key = _project_card_key(project_name, window_remote_enabled)
+            if project_key not in projects_dict:
+                projects_dict[project_key] = _create_project_entry(
+                    project_name=project_name,
+                    remote_enabled=window_remote_enabled,
+                    remote_target=window_remote_target,
+                    remote_directory=window_remote_directory,
+                    remote_profile_enabled=profile_enabled,
+                    remote_profile_target=profile_target,
+                    remote_profile_directory=profile_directory,
+                )
+
+            project_entry = projects_dict[project_key]
+            if window_remote_enabled and not project_entry.get("remote_enabled"):
                 # Keep project-level active remote metadata in sync if first
                 # confirmed remote window arrives later.
-                projects_dict[project_name]["remote_enabled"] = True
-                projects_dict[project_name]["remote_target"] = window_remote_target
-                projects_dict[project_name]["remote_directory"] = window_remote_directory
-                projects_dict[project_name]["remote_directory_display"] = (
+                project_entry["remote_enabled"] = True
+                project_entry["remote_target"] = window_remote_target
+                project_entry["remote_directory"] = window_remote_directory
+                project_entry["remote_directory_display"] = (
                     window_remote_directory.replace(str(Path.home()), "~")
                     if window_remote_directory
                     else ""
                 )
-            projects_dict[project_name]["windows"].append(window)
-            projects_dict[project_name]["window_count"] += 1
+            project_entry["windows"].append(window)
+            project_entry["window_count"] += 1
         else:
             window["project_remote_enabled"] = False
             window["project_remote_target"] = ""
             window["project_remote_dir"] = ""
             global_windows.append(window)
 
-    # Convert dict to sorted list (alphabetical by project name)
-    projects = sorted(projects_dict.values(), key=lambda p: p["name"].lower())
+    # Augment project windows with remote tmux/sesh sessions for SSH projects.
+    _augment_projects_with_remote_sessions(projects_dict, remote_profiles)
+
+    # Convert dict to sorted list:
+    # 1) project name alphabetical
+    # 2) local card before ssh card for the same project
+    variant_rank = {"local": 0, "ssh": 1, "global": 2}
+    projects = sorted(
+        projects_dict.values(),
+        key=lambda p: (
+            str(p.get("name", "")).lower(),
+            variant_rank.get(str(p.get("variant", "")), 9),
+            str(p.get("card_id", "")),
+        ),
+    )
 
     # Add global windows as a separate "project" at the end
     if global_windows:
         projects.append({
+            "card_id": "global::windows",
             "name": "Global Windows",
             "scope": "global",
+            "variant": "global",
+            "variant_label": "GLOBAL",
             "window_count": len(global_windows),
             "remote_enabled": False,
             "remote_target": "",
             "remote_directory": "",
             "remote_directory_display": "",
+            "remote_profile_enabled": False,
+            "remote_profile_target": "",
+            "remote_profile_directory": "",
+            "remote_profile_directory_display": "",
+            "has_local_variant": False,
+            "has_remote_variant": False,
             "windows": global_windows
         })
+
+    _refresh_variant_flags(projects)
 
     return projects
 
@@ -1772,10 +2164,21 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Overlay SSH remote metadata so window view can surface remote worktree context.
         remote_profiles = load_worktree_remote_profiles()
         projects = transform_to_project_view(monitors, remote_profiles)
+        active_remote_mode = load_active_worktree_remote_mode()
 
         # UX Enhancement: Add is_active flag to each project
         for project in projects:
-            project["is_active"] = (project.get("name") == active_project)
+            if project.get("name") != active_project:
+                project["is_active"] = False
+                continue
+
+            variant = str(project.get("variant", ""))
+            if variant == "ssh":
+                project["is_active"] = active_remote_mode
+            elif variant == "local":
+                project["is_active"] = not active_remote_mode
+            else:
+                project["is_active"] = True
 
         # Create flat list of all windows for easy ID lookup in detail view
         all_windows = []
@@ -2110,6 +2513,24 @@ def load_worktree_remote_profiles() -> Dict[str, Dict[str, Any]]:
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 087: Failed to load worktree remote profiles: {e}")
         return {}
+
+
+def load_active_worktree_remote_mode() -> bool:
+    """Return True when the active worktree context is currently in SSH mode."""
+    active_file = Path.home() / ".config" / "i3" / "active-worktree.json"
+    if not active_file.exists():
+        return False
+
+    try:
+        with open(active_file, "r") as f:
+            data = json.load(f)
+        remote = data.get("remote")
+        if isinstance(remote, dict):
+            return bool(remote.get("enabled", False))
+    except (json.JSONDecodeError, IOError) as e:
+        logger.debug(f"Feature 087: Failed to read active-worktree remote mode: {e}")
+
+    return False
 
 
 async def query_projects_data() -> Dict[str, Any]:

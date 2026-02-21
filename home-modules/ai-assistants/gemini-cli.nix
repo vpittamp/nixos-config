@@ -25,24 +25,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-02-20, the latest stable release is v0.29.5.
+  # As of 2026-02-20, using v0.30.0-preview.3 (pre-release).
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.29.5";
+    version = "0.30.0-preview.3";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-+gFSTq0CXMZa2OhP2gOuWa5WtteKW7Ys78lgnz7J72g=";
+      hash = "sha256-px3ksJZzPQLE5idW7W9egbFPS2so3bZhnMaUpQGouI4=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-RGiWtJkLFV1UfFahHPzxtzJIsPCseEwfSsPdLfBkavI=";
+    npmDepsHash = "sha256-+pvut1A8RP8dKp3tNAfzqTIu9YVLL8ZCZKtg44CsN0U=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 
@@ -114,11 +114,13 @@ let
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-core
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-a2a-server
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-sdk
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-test-utils
       rm -f $out/share/gemini-cli/node_modules/gemini-cli-vscode-ide-companion
       cp -r packages/cli $out/share/gemini-cli/node_modules/@google/gemini-cli
       cp -r packages/core $out/share/gemini-cli/node_modules/@google/gemini-cli-core
       cp -r packages/a2a-server $out/share/gemini-cli/node_modules/@google/gemini-cli-a2a-server
+      cp -r packages/sdk $out/share/gemini-cli/node_modules/@google/gemini-cli-sdk
 
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-core/dist/docs/CONTRIBUTING.md
 

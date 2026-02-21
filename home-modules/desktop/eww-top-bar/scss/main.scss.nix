@@ -319,8 +319,40 @@
     border-top: 0;
     border-radius: 0 0 12px 12px;
     padding: 4px 7px;
-    margin-right: 4px;
+    margin-left: 6px;
+    margin-right: 6px;
+    min-width: 960px;
     box-shadow: 0 12px 26px rgba(0, 0, 0, 0.42), 0 1px 0 rgba(203, 166, 247, 0.04) inset;
+  }
+
+  .badge-shelf-header {
+    padding: 1px 2px 3px 2px;
+  }
+
+  .badge-shelf-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #cdd6f4;
+  }
+
+  .badge-shelf-subtitle {
+    font-size: 10px;
+    color: #a6adc8;
+  }
+
+  .badge-shelf-group-title {
+    font-size: 10px;
+    font-weight: 800;
+    color: #89b4fa;
+    letter-spacing: 0.2px;
+    margin-left: 2px;
+    min-width: 86px;
+    margin-top: 2px;
+  }
+
+  .badge-shelf-group-items {
+    margin-right: 4px;
+    min-height: 18px;
   }
 
   .badge-shelf-card .pill {
