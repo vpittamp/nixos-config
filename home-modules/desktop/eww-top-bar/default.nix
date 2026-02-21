@@ -38,7 +38,6 @@ let
       { name = "DP-1"; showTray = true; }
       { name = "HDMI-A-1"; showTray = false; }
       { name = "DP-2"; showTray = false; }
-      { name = "DP-3"; showTray = false; }
     ] else [
       { name = "eDP-1"; showTray = true; }
     ];
@@ -49,7 +48,7 @@ let
     );
 
   scripts = import ./scripts.nix { inherit pkgs; };
-  inherit (scripts) hardwareDetectScript topbarSpinnerScript topbarSpinnerOpacityScript togglePowermenuScript toggleBadgeShelfScript;
+  inherit (scripts) hardwareDetectScript togglePowermenuScript toggleBadgeShelfScript;
 
 in
 {
@@ -82,11 +81,9 @@ in
     xdg.configFile."eww/eww-top-bar/scripts/wifi-status.sh".source = ./scripts/wifi-status.sh;
     xdg.configFile."eww/eww-top-bar/scripts/volume-status.sh".source = ./scripts/volume-status.sh;
     xdg.configFile."eww/eww-top-bar/scripts/notification-monitor.py".source = ./scripts/notification-monitor.py;
-    xdg.configFile."eww/eww-top-bar/scripts/spinner-frame.sh".source = ./scripts/spinner-frame.sh;
-    xdg.configFile."eww/eww-top-bar/scripts/spinner-opacity.sh".source = ./scripts/spinner-opacity.sh;
 
     xdg.configFile."eww/eww-top-bar/eww.yuck".text = import ./yuck/main.yuck.nix {
-      inherit config lib pkgs topBarOutputs sanitizeOutputName topbarSpinnerScript topbarSpinnerOpacityScript isLaptop;
+      inherit config lib pkgs topBarOutputs sanitizeOutputName isLaptop;
       inherit (pkgs.stdenv.hostPlatform) system;
       osConfig = osConfig;
     };
@@ -99,21 +96,19 @@ in
       Unit = {
         Description = "Eww top bar with system metrics";
         PartOf = [ "sway-session.target" ];
-        After = [ "sway-session.target" "i3-project-daemon.service" "otel-ai-monitor.service" "home-manager-vpittamp.service" ];
-        Wants = [ "i3-project-daemon.service" "otel-ai-monitor.service" ];
+        After = [ "sway-session.target" "i3-project-daemon.service" "home-manager-vpittamp.service" ];
+        Wants = [ "i3-project-daemon.service" ];
       };
 
       Service = {
         Type = "simple";
         ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww daemon --no-daemonize --config ${config.xdg.configHome}/eww/eww-top-bar";
-        # IMPORTANT: eww open-many can hang indefinitely due to IPC issues
-        # Run it with timeout and in background to prevent blocking ExecStartPost
         ExecStartPost = let
           windowIds = lib.concatMapStringsSep " " (output: "top-bar-${sanitizeOutputName output.name}") topBarOutputs;
           ewwCmd = "${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar";
           timeout = "${pkgs.coreutils}/bin/timeout";
-        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${timeout} 1s ${ewwCmd} ping >/dev/null 2>&1 && break; sleep 0.2; done; ${ewwCmd} close-all 2>/dev/null || true; ${timeout} 5s ${ewwCmd} open-many ${windowIds} & sleep 0.5'";
+        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${timeout} 1s ${ewwCmd} ping >/dev/null 2>&1 && break; sleep 0.2; done; ${ewwCmd} close-all 2>/dev/null || true; ${timeout} 10s ${ewwCmd} open-many ${windowIds} || true'";
         ExecStop = "${pkgs.eww}/bin/eww kill --config ${config.xdg.configHome}/eww/eww-top-bar";
         Restart = "on-failure";
         RestartSec = 3;

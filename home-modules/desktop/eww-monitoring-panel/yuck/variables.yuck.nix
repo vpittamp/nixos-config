@@ -1,4 +1,4 @@
-{ pkgs, monitoringDataScript, aiSessionsStreamScript, projectsDataStreamScript, dockModeStreamScript, ... }:
+{ pkgs, monitoringDataScript, projectsDataStreamScript, dockModeStreamScript, ... }:
 
 ''
   ;; CRITICAL: Define current_view_index BEFORE defpolls that use :run-while
@@ -11,14 +11,6 @@
   (deflisten monitoring_data
     :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
     `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
-
-  ;; Feature 123: AI sessions data via OpenTelemetry (same source as eww-top-bar)
-  ;; Used to show pulsating indicator on windows running AI assistants
-  ;; Keep command alive even if pipe is missing at startup.
-  ;; Parse concatenated JSON frames safely (FIFO writers may omit delimiters).
-  (deflisten ai_sessions_data
-    :initial "{\"type\":\"session_list\",\"sessions\":[],\"timestamp\":0,\"has_working\":false}"
-    `${aiSessionsStreamScript}/bin/eww-monitoring-ai-sessions-stream`)
 
   ;; Projects view data is refreshed on-demand when entering the Projects tab.
   ;; Read from runtime file to avoid passing large JSON via `eww update` argv.

@@ -86,25 +86,6 @@ PROVIDER_PRICING: dict[str, dict[str, tuple[float, float]]] = {
 # Default rate for unrecognized models (USD per 1M tokens)
 DEFAULT_PRICING = (5.00, 15.00)  # Conservative estimate
 
-# Provider detection mappings from service.name or gen_ai.system
-PROVIDER_DETECTION: dict[str, Provider] = {
-    "anthropic": Provider.ANTHROPIC,
-    "claude-code": Provider.ANTHROPIC,
-    "claude": Provider.ANTHROPIC,
-    "openai": Provider.OPENAI,
-    "codex": Provider.OPENAI,
-    "google": Provider.GOOGLE,
-    "gemini": Provider.GOOGLE,
-    "gemini-cli": Provider.GOOGLE,
-}
-
-# Session ID attribute priority per provider
-SESSION_ID_ATTRIBUTES: dict[Provider, list[str]] = {
-    Provider.ANTHROPIC: ["session.id", "thread_id", "conversation_id"],
-    Provider.OPENAI: ["conversation_id", "session.id"],
-    Provider.GOOGLE: ["session.id", "conversation.id"],
-}
-
 # Tool to Provider mapping
 TOOL_PROVIDER: dict[AITool, Provider] = {
     AITool.CLAUDE_CODE: Provider.ANTHROPIC,
@@ -166,6 +147,10 @@ class Session(BaseModel):
     # Tool execution tracking
     pending_tools: int = Field(default=0, description="Count of active tool executions")
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
+    state_seq: int = Field(default=0, description="Monotonic state sequence for UI dedupe")
+    status_reason: Optional[str] = Field(
+        default=None, description="Machine-readable reason for current state"
+    )
 
     # Streaming metrics (Feature 136: fix missing fields referenced by session_tracker.py)
     first_token_time: Optional[datetime] = Field(
@@ -246,6 +231,9 @@ class SessionListItem(BaseModel):
     # Feature 136: Additional fields for multi-indicator support
     pending_tools: int = Field(default=0, description="Count of active tool executions")
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
+    state_seq: int = Field(default=0, description="Monotonic state sequence")
+    status_reason: Optional[str] = Field(default=None, description="Machine-readable status reason")
+    updated_at: str = Field(description="RFC3339 timestamp when session was last updated")
 
 
 class SessionList(BaseModel):
@@ -257,6 +245,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
+    schema_version: str = Field(default="2", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"
@@ -267,6 +256,7 @@ class SessionList(BaseModel):
         description="Sessions grouped by window_id for multi-indicator display"
     )
     timestamp: int = Field(description="Unix timestamp in seconds")
+    updated_at: str = Field(description="RFC3339 timestamp when this payload was generated")
     has_working: bool = Field(
         default=False, description="True if any session is in working state"
     )

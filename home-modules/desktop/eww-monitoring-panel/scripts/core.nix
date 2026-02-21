@@ -19,52 +19,6 @@ let
     exec ${pythonForBackend}/bin/python3 ${../../../tools/i3_project_manager/cli/monitoring_data.py} "$@"
   '';
 
-  aiSessionsStreamScript = pkgs.writeShellScriptBin "eww-monitoring-ai-sessions-stream" ''
-    #!${pkgs.bash}/bin/bash
-    set -euo pipefail
-
-    PIPE="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/otel-ai-monitor.pipe"
-    PYTHON="${pkgs.python3}/bin/python3"
-
-    while true; do
-      if [[ -p "$PIPE" ]]; then
-        "$PYTHON" -u - "$PIPE" <<'PY'
-import json
-import sys
-
-decoder = json.JSONDecoder()
-pipe_path = sys.argv[1]
-buffer = ""
-
-try:
-    with open(pipe_path, "r", encoding="utf-8", errors="ignore") as fifo:
-        while True:
-            chunk = fifo.read(4096)
-            if chunk == "":
-                break
-            buffer += chunk
-            while True:
-                buffer = buffer.lstrip()
-                if not buffer:
-                    break
-                try:
-                    obj, idx = decoder.raw_decode(buffer)
-                except json.JSONDecodeError:
-                    break
-                sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-                sys.stdout.flush()
-                buffer = buffer[idx:]
-except OSError:
-    pass
-PY
-        ${pkgs.coreutils}/bin/sleep 0.1
-      else
-        ${pkgs.coreutils}/bin/printf '%s\n' '{"type":"error","error":"pipe_missing","sessions":[],"timestamp":0,"has_working":false}'
-        ${pkgs.coreutils}/bin/sleep 2
-      fi
-    done
-  '';
-
   projectsDataStreamScript = pkgs.writeShellScriptBin "eww-monitoring-projects-stream" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
@@ -658,7 +612,7 @@ EOF
 
 in
 {
-  inherit monitoringDataScript aiSessionsStreamScript projectsDataStreamScript dockModeStreamScript
+  inherit monitoringDataScript projectsDataStreamScript dockModeStreamScript
           wrapperScript toggleScript toggleDockModeScript
           refreshProjectsDataScript monitoringPanelHealthGuardScript monitoringPanelSmokeTestScript
           monitorPanelTabScript monitorPanelGetViewScript monitorPanelIsProjectsScript

@@ -153,9 +153,11 @@ def load_otel_sessions() -> Dict[str, Any]:
         and 'global_ai_sessions' list for orphaned sessions
     """
     default_result = {
+        "schema_version": "2",
         "sessions": [],
         "has_working": False,
         "timestamp": 0,
+        "updated_at": "",
         "sessions_by_window": {},
         "global_ai_sessions": [],
     }
@@ -170,6 +172,8 @@ def load_otel_sessions() -> Dict[str, Any]:
             sessions = data.get("sessions", [])
             has_working = data.get("has_working", False)
             timestamp = data.get("timestamp", 0)
+            updated_at = data.get("updated_at", "")
+            schema_version = str(data.get("schema_version", "1"))
             sessions_by_window = data.get("sessions_by_window", {})
 
             # Feature 136: Extract global AI sessions (window_id=-1 from session_tracker)
@@ -180,6 +184,8 @@ def load_otel_sessions() -> Dict[str, Any]:
                 "sessions": sessions,
                 "has_working": has_working,
                 "timestamp": timestamp,
+                "updated_at": updated_at,
+                "schema_version": schema_version,
                 "sessions_by_window": sessions_by_window,
                 "global_ai_sessions": global_ai_sessions,
             }

@@ -113,18 +113,6 @@ in
       description = "Seconds between full session list broadcasts";
     };
 
-    usePipe = mkOption {
-      type = types.bool;
-      default = true;
-      description = "Write JSON to named pipe instead of stdout";
-    };
-
-    pipePath = mkOption {
-      type = types.str;
-      default = "\${XDG_RUNTIME_DIR}/otel-ai-monitor.pipe";
-      description = "Path to named pipe for JSON output";
-    };
-
     verbose = mkOption {
       type = types.bool;
       default = false;
@@ -156,7 +144,6 @@ in
             "--completed-timeout" (toString cfg.completedTimeoutSec)
             "--broadcast-interval" (toString cfg.broadcastIntervalSec)
           ]
-          ++ lib.optionals cfg.usePipe [ "--pipe" cfg.pipePath ]
           ++ lib.optionals (!cfg.enableNotifications) [ "--no-notifications" ]
           ++ lib.optionals cfg.verbose [ "--verbose" ];
         in "${monitorPackage}/bin/otel-ai-monitor ${lib.concatStringsSep " " args}";

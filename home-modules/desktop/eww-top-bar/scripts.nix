@@ -27,28 +27,6 @@ let
         print(json.dumps(capabilities))
   '';
 
-  topbarSpinnerScript = pkgs.writeShellScriptBin "eww-topbar-spinner-frame" ''
-    #!/usr/bin/env bash
-    IDX_FILE="/tmp/eww-topbar-spinner-idx"
-    IDX=$(cat "$IDX_FILE" 2>/dev/null || echo 0)
-    FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-    echo "''${FRAMES[$IDX]}"
-    NEXT=$(( (IDX + 1) % 10 ))
-    echo "$NEXT" > "$IDX_FILE"
-  '';
-
-  topbarSpinnerOpacityScript = pkgs.writeShellScriptBin "eww-topbar-spinner-opacity" ''
-    #!/usr/bin/env bash
-    IDX=$(cat /tmp/eww-topbar-spinner-idx 2>/dev/null || echo 0)
-    case $IDX in
-      0|9)  echo "0.4" ;; 
-      1|8)  echo "0.6" ;; 
-      2|7)  echo "0.8" ;; 
-      3|4|5|6)  echo "1.0" ;; 
-      *)  echo "1.0" ;; 
-    esac
-  '';
-
   togglePowermenuScript = pkgs.writeShellScriptBin "toggle-topbar-powermenu" ''
     set -euo pipefail
     CFG="$HOME/.config/eww/eww-top-bar"
@@ -192,5 +170,5 @@ let
   '';
 in
 {
-  inherit hardwareDetectScript topbarSpinnerScript topbarSpinnerOpacityScript togglePowermenuScript toggleBadgeShelfScript;
+  inherit hardwareDetectScript togglePowermenuScript toggleBadgeShelfScript;
 }

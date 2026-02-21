@@ -14,7 +14,6 @@ Options:
     --quiet-period SECONDS  Quiet period for completion detection (default: 3)
     --session-timeout SECS  Session expiry timeout (default: 300)
     --no-notifications      Disable desktop notifications
-    --pipe PATH             Write JSON to named pipe instead of stdout
     --verbose               Enable verbose logging
 """
 
@@ -24,7 +23,6 @@ import logging
 import os
 import signal
 import sys
-from pathlib import Path
 
 from . import __version__
 
@@ -42,9 +40,6 @@ Examples:
 
     # Custom port and quiet period
     otel-ai-monitor --port 4319 --quiet-period 5
-
-    # Output to named pipe for EWW consumption
-    otel-ai-monitor --pipe $XDG_RUNTIME_DIR/otel-ai-monitor.pipe
 
 Environment Variables:
     OTLP_PORT               Override default port (4318)
@@ -94,13 +89,6 @@ Environment Variables:
     )
 
     parser.add_argument(
-        "--pipe",
-        type=Path,
-        default=None,
-        help="Write JSON stream to named pipe (default: stdout)",
-    )
-
-    parser.add_argument(
         "--broadcast-interval",
         type=float,
         default=float(os.environ.get("OTEL_AI_BROADCAST_INTERVAL", "5")),
@@ -124,7 +112,7 @@ def setup_logging(verbose: bool) -> None:
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stderr,  # Log to stderr, JSON output goes to stdout
+        stream=sys.stderr,
     )
 
 
@@ -141,7 +129,7 @@ async def main_async(args: argparse.Namespace) -> int:
     logger.info(f"OTLP receiver on port {args.port}")
 
     # Create output writer
-    output = OutputWriter(pipe_path=args.pipe)
+    output = OutputWriter()
 
     # Create session tracker with output writer
     tracker = SessionTracker(

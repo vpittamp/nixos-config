@@ -9,8 +9,6 @@ based on process presence.
 
 import asyncio
 import logging
-import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -193,15 +191,16 @@ class ProcessMonitor:
                 state=SessionState.WORKING,
                 project=project,
                 window_id=window_id,
+                pid=pid,
                 created_at=now,
                 last_event_at=now,
                 state_changed_at=now,
+                state_seq=1,
+                status_reason="process_detected",
             )
             self.tracker._sessions[session_id] = session
             logger.info(f"Process monitor: created session {session_id} for pid {pid}")
-
-            # Broadcast updated session list
-            await self.tracker._broadcast_sessions_unlocked()
+            self.tracker._mark_dirty_unlocked()
 
     async def _keepalive_session(self, session_id: str) -> None:
         """Keep a process-based session alive.
@@ -224,8 +223,10 @@ class ProcessMonitor:
                 old_state = session.state
                 session.state = SessionState.WORKING
                 session.state_changed_at = now
+                session.state_seq += 1
+                session.status_reason = "process_keepalive"
                 logger.info(f"Process monitor: session {session_id} {old_state} → WORKING")
-                await self.tracker._broadcast_sessions_unlocked()
+                self.tracker._mark_dirty_unlocked()
 
     async def _complete_session(self, session_id: str) -> None:
         """Mark a process-based session as completed.
@@ -244,12 +245,14 @@ class ProcessMonitor:
                 old_state = session.state
                 session.state = SessionState.COMPLETED
                 session.state_changed_at = now
+                session.state_seq += 1
+                session.status_reason = "process_exited"
                 logger.info(f"Process monitor: session {session_id} {old_state} → COMPLETED (process exited)")
 
                 # Start completed timeout timer
                 self.tracker._start_completed_timer(session_id)
 
                 # Broadcast and notify
-                await self.tracker._broadcast_sessions_unlocked()
+                self.tracker._mark_dirty_unlocked()
                 if self.tracker.enable_notifications:
                     await self.tracker._send_completion_notification(session)

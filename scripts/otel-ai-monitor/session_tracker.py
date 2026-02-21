@@ -13,11 +13,11 @@ State Machine:
 
 import asyncio
 import glob
+import hashlib
 import json
 import logging
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from .models import (
@@ -35,15 +35,9 @@ from .models import (
 from .pricing import calculate_cost
 from .sway_helper import (
     get_all_window_ids,
-    get_focused_window_info,
     get_process_i3pm_env,
-    find_window_by_i3pm_env,
     find_window_by_pid,
-    find_window_by_i3pm_app_id,
-    find_all_terminal_windows_for_project,
-    # Feature 135: Deterministic correlation
     find_window_for_session,
-    parse_correlation_key,
 )
 
 if TYPE_CHECKING:
@@ -129,6 +123,13 @@ class SessionTracker:
         self._broadcast_task: Optional[asyncio.Task] = None
         self._expiry_task: Optional[asyncio.Task] = None
         self._running = False
+        self._dirty = True
+        self._broadcast_event = asyncio.Event()
+        self._last_broadcast_fingerprint: Optional[str] = None
+        self._broadcast_debounce_sec = 0.25
+
+        # PID correlation cache: pid -> (expires_at_ts, window_id, project)
+        self._pid_context_cache: dict[int, tuple[float, Optional[int], Optional[str]]] = {}
 
         # Feature 138: Cache for session metadata files (sessionId -> pid)
         # These files are written by Claude Code hooks on session start
@@ -188,17 +189,20 @@ class SessionTracker:
         """Start background tasks for broadcasting and expiry."""
         self._running = True
 
-        # Start periodic broadcast task
+        # Start broadcast worker
         self._broadcast_task = asyncio.create_task(self._broadcast_loop())
 
         # Start session expiry checker
         self._expiry_task = asyncio.create_task(self._expiry_loop())
 
+        # Emit initial snapshot so consumers have deterministic startup state
+        self._broadcast_event.set()
         logger.info("Session tracker started")
 
     async def stop(self) -> None:
         """Stop background tasks and cleanup."""
         self._running = False
+        self._broadcast_event.set()
 
         # Cancel all timers
         for task in self._quiet_timers.values():
@@ -303,9 +307,78 @@ class SessionTracker:
                     "session_timeout_sec": self.session_timeout_sec,
                     "completed_timeout_sec": self.completed_timeout_sec,
                     "broadcast_interval_sec": self.broadcast_interval_sec,
+                    "broadcast_debounce_sec": self._broadcast_debounce_sec,
                     "notifications_enabled": self.enable_notifications,
                 },
             }
+
+    def _build_session_id(self, event: TelemetryEvent) -> str:
+        """Build stable session_id fallback when telemetry omits it."""
+        if event.session_id:
+            return event.session_id
+
+        pid = event.attributes.get("process.pid") or event.attributes.get("pid")
+        tool_name = event.tool if event.tool else "unknown"
+        if pid:
+            return f"{tool_name}-{pid}"
+
+        minute_ts = int(event.timestamp.timestamp()) // 60 * 60
+        return f"{tool_name}-{minute_ts}"
+
+    def _extract_client_pid(self, session_id: str, event: TelemetryEvent) -> Optional[int]:
+        """Extract and normalize PID from event/session metadata."""
+        client_pid = event.attributes.get("process.pid") or event.attributes.get("pid")
+
+        if client_pid is None:
+            client_pid = self._session_pids.get(session_id)
+
+        if client_pid is None:
+            client_pid = self._load_session_metadata_pid(session_id)
+
+        if client_pid is None:
+            return None
+
+        try:
+            return int(client_pid)
+        except (ValueError, TypeError):
+            return None
+
+    async def _resolve_window_context(
+        self, pid: int
+    ) -> tuple[Optional[int], Optional[str]]:
+        """Resolve PID -> window/project with short TTL cache."""
+        now = datetime.now(timezone.utc).timestamp()
+        if len(self._pid_context_cache) > 512:
+            self._pid_context_cache = {
+                cache_pid: cache_entry
+                for cache_pid, cache_entry in self._pid_context_cache.items()
+                if cache_entry[0] > now
+            }
+
+        cached = self._pid_context_cache.get(pid)
+        if cached and cached[0] > now:
+            return cached[1], cached[2]
+
+        window_id: Optional[int] = None
+        project: Optional[str] = None
+        try:
+            i3pm_env = get_process_i3pm_env(pid)
+            project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
+            window_id = await find_window_for_session(pid)
+        except Exception as e:
+            logger.debug(f"PID correlation failed for {pid}: {e}")
+
+        ttl = 5.0 if window_id else 1.0
+        self._pid_context_cache[pid] = (now + ttl, window_id, project)
+        return window_id, project
+
+    def _mark_dirty_unlocked(self) -> None:
+        """Mark output as dirty and signal broadcast worker.
+
+        Caller must hold _lock when mutating session state.
+        """
+        self._dirty = True
+        self._broadcast_event.set()
 
     async def process_event(self, event: TelemetryEvent) -> None:
         """Process a telemetry event and update session state.
@@ -313,265 +386,143 @@ class SessionTracker:
         Args:
             event: Parsed telemetry event from OTLP receiver
         """
-        # Generate session ID if not present
-        session_id = event.session_id
-        if not session_id:
-            # Feature 136: Use PID for more stable session ID fallback
-            # This prevents creating a new session every second for the same process
-            pid = event.attributes.get("process.pid") or event.attributes.get("pid")
-            tool_name = event.tool if event.tool else "unknown"
-            if pid:
-                session_id = f"{tool_name}-{pid}"
-            else:
-                # Last resort fallback: use minute-level timestamp for stability
-                # Sessions within the same minute will be grouped together,
-                # preventing ephemeral 1-second sessions when PID is unavailable
-                minute_ts = int(event.timestamp.timestamp()) // 60 * 60
-                session_id = f"{tool_name}-{minute_ts}"
+        session_id = self._build_session_id(event)
+        client_pid = self._extract_client_pid(session_id, event)
+
+        resolved_window_id: Optional[int] = None
+        resolved_project: Optional[str] = None
+        if client_pid is not None:
+            resolved_window_id, resolved_project = await self._resolve_window_context(client_pid)
 
         async with self._lock:
-            session = self._sessions.get(session_id)
             now = datetime.now(timezone.utc)
+            session = self._sessions.get(session_id)
 
             if session is None:
-                # Create new session
-                # Feature 135: Deterministic PID-based correlation via daemon IPC
-                # No fallback strategies - either we find the exact window or None
-                window_id, window_project = None, None
-                client_pid = event.attributes.get("process.pid") or event.attributes.get("pid")
-
-                # Feature 135: If no PID in event, try cached PID from earlier trace
-                # Traces from interceptor have PID, but native logs don't.
-                # Cross-signal correlation: use cached PID for same session_id.
-                if not client_pid and session_id in self._session_pids:
-                    client_pid = self._session_pids[session_id]
-                    logger.debug(f"Using cached PID {client_pid} for session {session_id}")
-
-                # Feature 138: If still no PID, check session metadata files from hooks
-                # Claude Code hooks write $XDG_RUNTIME_DIR/claude-session-{PID}.json
-                # with {sessionId, pid} on session start. This enables correlation
-                # for native OTEL logs that don't include process.pid.
-                if not client_pid:
-                    metadata_pid = self._load_session_metadata_pid(session_id)
-                    if metadata_pid:
-                        client_pid = metadata_pid
-                        logger.debug(f"Found PID {client_pid} from session metadata for {session_id}")
-
-                # Cache PID for future correlation with logs
-                if client_pid:
-                    try:
-                        pid_int = int(client_pid)
-                        if session_id not in self._session_pids:
-                            self._session_pids[session_id] = pid_int
-                            logger.debug(f"Cached PID {pid_int} for session {session_id}")
-                    except (ValueError, TypeError):
-                        pass
-
-                # Feature 135: Use deterministic daemon IPC correlation
-                # This is the ONLY correlation strategy - no fallbacks.
-                # Works with tmux, multiple terminals, and is 100% accurate.
-                if client_pid:
-                    try:
-                        pid = int(client_pid)
-                        # Read I3PM environment for project context
-                        i3pm_env = get_process_i3pm_env(pid)
-                        window_project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
-
-                        # Deterministic correlation via daemon IPC
-                        window_id = await find_window_for_session(pid)
-                        if window_id:
-                            logger.debug(f"Deterministic correlation: PID {pid} → window {window_id}")
-                        else:
-                            logger.debug(f"No window found for PID {pid} (daemon returned not_found)")
-                    except (ValueError, TypeError) as e:
-                        logger.debug(f"PID correlation failed: {e}")
-
-                # Feature 135: NO FALLBACK - if daemon doesn't find the window, window_id stays None
-                # This is intentional: we prefer "unknown" over "wrong window"
-
-                # Feature 136: Cross-session PID correlation
-                # Native logs (session_id: UUID) arrive without PID → window_id=None
-                # Interceptor spans (session_id: tool-pid-ts) have PID → window_id set
-                # When we have a window_id, update any existing session for same tool
-                # that has window_id=None (likely the native logs session)
-                if window_id and event.tool:
-                    for existing_id, existing_session in self._sessions.items():
-                        if (
-                            existing_session.tool == event.tool
-                            and existing_session.window_id is None
-                            and existing_id != session_id
-                        ):
-                            # Found orphaned session for same tool - update its window_id
-                            existing_session.window_id = window_id
-                            if window_project:
-                                existing_session.project = window_project
-                            logger.info(
-                                f"Cross-session correlation: Updated {existing_id} "
-                                f"window_id=None → {window_id} via PID {client_pid}"
-                            )
-
-                # Check for existing session with same window_id AND tool (deduplicate)
-                # Important: Different AI tools (Claude, Codex, Gemini) in the same terminal
-                # should have separate sessions, so we check both window_id AND tool type.
                 existing_for_window = None
-                if window_id and event.tool:
-                    for existing_id, existing_session in self._sessions.items():
-                        if existing_session.window_id == window_id and existing_session.tool == event.tool:
+                if resolved_window_id is not None and event.tool:
+                    for existing_session in self._sessions.values():
+                        if (
+                            existing_session.window_id == resolved_window_id
+                            and existing_session.tool == event.tool
+                        ):
                             existing_for_window = existing_session
                             break
 
-                if existing_for_window:
-                    # Reuse existing session for this window
+                if existing_for_window is not None:
                     session = existing_for_window
-                    session.last_event_at = now
-                    logger.debug(f"Reusing session {session.session_id} for window {window_id}")
+                    logger.debug(
+                        "Reusing session %s for window %s",
+                        session.session_id,
+                        resolved_window_id,
+                    )
                 else:
-                    # Prefer project from window marks, fall back to telemetry
-                    project = window_project or self._extract_project(event)
                     tool = event.tool or AITool.CLAUDE_CODE
-                    # Derive provider from tool
                     provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
+                    project = resolved_project or self._extract_project(event)
                     session = Session(
                         session_id=session_id,
                         tool=tool,
                         provider=provider,
                         state=SessionState.IDLE,
                         project=project,
-                        window_id=window_id,
+                        window_id=resolved_window_id,
+                        pid=client_pid,
                         trace_id=event.trace_id,
                         created_at=now,
                         last_event_at=now,
                         state_changed_at=now,
+                        state_seq=1,
+                        status_reason="created",
                     )
-                    # Feature 137: Evict oldest IDLE session if at capacity
                     if len(self._sessions) >= MAX_SESSIONS:
                         self._evict_oldest_idle_session()
                     self._sessions[session_id] = session
-                    logger.info(f"Created session {session_id} for {session.tool}/{provider.value} (window_id={window_id}, project={project})")
+                    logger.info(
+                        "Created session %s for %s/%s (window_id=%s, project=%s)",
+                        session_id,
+                        session.tool,
+                        provider.value,
+                        resolved_window_id,
+                        project,
+                    )
 
-                    # Feature 136: Reverse cross-session correlation
-                    # If this session has no window_id, check for existing session
-                    # of same tool that HAS a window_id and copy it
-                    if window_id is None and tool:
-                        for existing_id, existing_session in self._sessions.items():
-                            if (
-                                existing_session.tool == tool
-                                and existing_session.window_id is not None
-                                and existing_id != session_id
-                            ):
-                                session.window_id = existing_session.window_id
-                                if existing_session.project:
-                                    session.project = existing_session.project
-                                logger.info(
-                                    f"Reverse cross-session correlation: {session_id} "
-                                    f"window_id=None → {existing_session.window_id} from {existing_id}"
-                                )
-                                break
+            canonical_session_id = session.session_id
 
-            # Update last event time
+            # Cache PID for this session and alias session IDs to preserve correlation.
+            if client_pid is not None:
+                self._session_pids[canonical_session_id] = client_pid
+                self._session_pids[session_id] = client_pid
+                session.pid = client_pid
+
+            # Update primary window/project correlation for the session.
+            if resolved_window_id is not None and resolved_window_id != session.window_id:
+                old_window = session.window_id
+                session.window_id = resolved_window_id
+                if resolved_project:
+                    session.project = resolved_project
+                session.status_reason = "window_correlated"
+                logger.info(
+                    "Session %s: window %s -> %s via pid=%s",
+                    canonical_session_id,
+                    old_window,
+                    resolved_window_id,
+                    client_pid,
+                )
+
+            # Cross-session correlation: update orphaned sessions for the same tool.
+            if resolved_window_id is not None and event.tool:
+                for existing_id, existing_session in self._sessions.items():
+                    if existing_id == canonical_session_id:
+                        continue
+                    if existing_session.tool != event.tool:
+                        continue
+                    if existing_session.window_id is not None:
+                        continue
+                    existing_session.window_id = resolved_window_id
+                    if resolved_project:
+                        existing_session.project = resolved_project
+                    existing_session.status_reason = "window_correlated"
+                    logger.info(
+                        "Cross-session correlation: %s -> window %s via pid=%s",
+                        existing_id,
+                        resolved_window_id,
+                        client_pid,
+                    )
+
             session.last_event_at = now
 
-            # Update trace_id if session doesn't have one but event does
-            # (happens when session created from metrics heartbeat before spans arrive)
             if session.trace_id is None and event.trace_id:
                 session.trace_id = event.trace_id
-                logger.debug(f"Updated session {session_id} trace_id: {event.trace_id}")
+                session.status_reason = "trace_correlated"
 
-            # Feature 135: PID-based window correlation on every event
-            # Always try PID correlation to handle worktree switching where
-            # the window changes but session continues.
-            client_pid = event.attributes.get("process.pid") or event.attributes.get("pid")
+            extracted_project = self._extract_project(event)
+            if extracted_project:
+                session.project = extracted_project
 
-            # Use cached PID if not in event attributes
-            if not client_pid and session_id in self._session_pids:
-                client_pid = self._session_pids[session_id]
-
-            # Feature 138: Check session metadata files if still no PID
-            if not client_pid:
-                metadata_pid = self._load_session_metadata_pid(session_id)
-                if metadata_pid:
-                    client_pid = metadata_pid
-                    logger.debug(f"Found PID {client_pid} from session metadata for {session_id}")
-
-            # Cache PID for future correlation and store in session
-            if client_pid:
-                try:
-                    pid_int = int(client_pid)
-                    if session_id not in self._session_pids:
-                        self._session_pids[session_id] = pid_int
-                    # Feature 135: Also store in session model for heartbeat correlation
-                    if session.pid is None:
-                        session.pid = pid_int
-                except (ValueError, TypeError):
-                    pass
-
-            # Feature 135: Deterministic PID-based window re-correlation
-            # Use daemon IPC to re-check window correlation on every event.
-            # This handles worktree switching where the window may change.
-            # Multiple tmux panes in one Ghostty share the same I3PM_* env,
-            # so they'll all correlate to the same Sway window. This is correct
-            # for the UI model (one badge per window, not per pane).
-            if client_pid:
-                try:
-                    pid = int(client_pid)
-                    i3pm_env = get_process_i3pm_env(pid)
-                    new_project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
-
-                    # Feature 135: Deterministic correlation via daemon IPC
-                    new_window_id = await find_window_for_session(pid)
-
-                    if new_window_id and new_window_id != session.window_id:
-                        old_window = session.window_id
-                        session.window_id = new_window_id
-                        if new_project:
-                            session.project = new_project
-                        logger.info(
-                            f"Session {session.session_id}: window {old_window} → "
-                            f"{new_window_id} via PID {pid} (project={new_project})"
-                        )
-                    elif new_window_id and session.window_id is None:
-                        session.window_id = new_window_id
-                        if new_project:
-                            session.project = new_project
-                        logger.info(
-                            f"Session {session.session_id}: correlated to "
-                            f"window {new_window_id} via PID {pid}"
-                        )
-                except (ValueError, TypeError):
-                    pass
-
-            # Feature 135: NO FALLBACK - if daemon doesn't find the window, leave it as-is
-            # This is intentional: we prefer "unknown" over "wrong window"
-
-            # Update project if available
-            project = self._extract_project(event)
-            if project:
-                session.project = project
-
-            # Update token metrics if available
             self._update_metrics(session, event)
-
-            # Feature 135: Handle tool lifecycle events for pending tool tracking
             await self._handle_tool_lifecycle(session, event)
-
-            # Feature 135: Handle streaming events for TTFT metrics
             await self._handle_streaming_events(session, event)
 
-            # Handle state transitions based on event
             old_state = session.state
             new_state = self._compute_new_state(session, event)
-
             if new_state != old_state:
                 session.state = new_state
                 session.state_changed_at = now
-                logger.info(f"Session {session_id}: {old_state} → {new_state}")
-
-                # Handle state-specific actions
+                session.state_seq += 1
+                session.status_reason = f"event:{event.event_name}"
+                logger.info(
+                    "Session %s: %s -> %s",
+                    canonical_session_id,
+                    old_state,
+                    new_state,
+                )
                 await self._handle_state_change(session, old_state, new_state)
 
-            # Reset or start quiet timer for WORKING state
             if session.state == SessionState.WORKING:
-                self._reset_quiet_timer(session_id)
+                self._reset_quiet_timer(canonical_session_id)
+
+            self._mark_dirty_unlocked()
 
     async def process_heartbeat(self, session_id: str) -> None:
         """Process a heartbeat signal (from metrics) for a session.
@@ -615,9 +566,27 @@ class SessionTracker:
             tool: AI tool type (CLAUDE_CODE, CODEX_CLI, etc.)
             pid: Optional process PID for more accurate session targeting
         """
+        resolved_window_id: Optional[int] = None
+        resolved_project: Optional[str] = None
+        if pid:
+            try:
+                window = await find_window_by_pid(pid)
+                if window:
+                    resolved_window_id = window.get("id")
+                    marks = window.get("marks", [])
+                    for mark in marks:
+                        if mark.startswith("scoped:") or mark.startswith("project:"):
+                            parts = mark.split(":")
+                            if len(parts) >= 3:
+                                resolved_project = parts[2]
+                                break
+            except Exception as e:
+                logger.debug(f"Could not find window for pid {pid}: {e}")
+
         async with self._lock:
             now = datetime.now(timezone.utc)
             found_session = False
+            changed = False
 
             # If PID provided, try to find specific session first
             if pid:
@@ -630,6 +599,7 @@ class SessionTracker:
                             f"Session {session_id}: heartbeat extended by metrics (pid={pid})"
                         )
                         found_session = True
+                        changed = True
                         break
 
                 # Feature 136: Create session from metrics heartbeat if none exists
@@ -638,35 +608,19 @@ class SessionTracker:
                     session_id = f"{tool.value.replace('_', '-').lower()}-{pid}-{int(now.timestamp() * 1000)}"
                     provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
 
-                    # Try to find window by PID
-                    window_id = None
-                    project = None
-                    try:
-                        window = await find_window_by_pid(pid)
-                        if window:
-                            window_id = window.get("id")
-                            # Extract project from window marks
-                            marks = window.get("marks", [])
-                            for mark in marks:
-                                if mark.startswith("scoped:") or mark.startswith("project:"):
-                                    parts = mark.split(":")
-                                    if len(parts) >= 3:
-                                        project = parts[2]
-                                        break
-                    except Exception as e:
-                        logger.debug(f"Could not find window for pid {pid}: {e}")
-
                     session = Session(
                         session_id=session_id,
                         tool=tool,
                         provider=provider,
                         state=SessionState.IDLE,
-                        project=project,
-                        window_id=window_id,
+                        project=resolved_project,
+                        window_id=resolved_window_id,
                         pid=pid,
                         created_at=now,
                         last_event_at=now,
                         state_changed_at=now,
+                        state_seq=1,
+                        status_reason="metrics_heartbeat_created",
                     )
                     # Feature 137: Evict oldest IDLE session if at capacity
                     if len(self._sessions) >= MAX_SESSIONS:
@@ -675,9 +629,10 @@ class SessionTracker:
                     self._session_pids[session_id] = pid
                     logger.info(
                         f"Created session {session_id} from metrics heartbeat "
-                        f"for {tool.value} (pid={pid}, window_id={window_id}, project={project})"
+                        f"for {tool.value} (pid={pid}, window_id={resolved_window_id}, project={resolved_project})"
                     )
                     found_session = True
+                    changed = True
 
             # Fall back to extending all working sessions for tool
             if not found_session:
@@ -686,6 +641,10 @@ class SessionTracker:
                         session.last_event_at = now
                         self._reset_quiet_timer(session_id)
                         logger.debug(f"Session {session_id}: heartbeat extended by metrics")
+                        changed = True
+
+            if changed:
+                self._mark_dirty_unlocked()
 
     def _compute_new_state(
         self, session: Session, event: TelemetryEvent
@@ -1185,6 +1144,8 @@ class SessionTracker:
             old_state = session.state
             session.state = SessionState.COMPLETED
             session.state_changed_at = datetime.now(timezone.utc)
+            session.state_seq += 1
+            session.status_reason = "quiet_period_expired"
             logger.info(f"Session {session_id}: quiet period expired → COMPLETED")
 
             await self._handle_state_change(session, old_state, SessionState.COMPLETED)
@@ -1229,6 +1190,8 @@ class SessionTracker:
             old_state = session.state
             session.state = SessionState.IDLE
             session.state_changed_at = datetime.now(timezone.utc)
+            session.state_seq += 1
+            session.status_reason = "completed_timeout"
             logger.info(f"Session {session_id}: completed timeout → IDLE")
 
             await self._handle_state_change(session, old_state, SessionState.IDLE)
@@ -1243,11 +1206,8 @@ class SessionTracker:
             old_state: Previous state
             new_state: New state
         """
-        # Emit full session list on every state change
-        # EWW deflisten replaces the entire variable, so SessionUpdate would
-        # overwrite SessionList and break the widget. Always send full state.
-        # Note: Caller already holds the lock, use unlocked version.
-        await self._broadcast_sessions_unlocked()
+        # Mark dirty and let debounced broadcaster emit a deduplicated snapshot.
+        self._mark_dirty_unlocked()
 
         # Send notification on completion - but only if:
         # 1. Coming from WORKING or ATTENTION (not from IDLE or already COMPLETED)
@@ -1335,36 +1295,42 @@ class SessionTracker:
         return metrics
 
     async def _broadcast_loop(self) -> None:
-        """Periodically broadcast full session list."""
+        """Debounced session list broadcaster."""
         while self._running:
             try:
-                await asyncio.sleep(self.broadcast_interval_sec)
+                try:
+                    await asyncio.wait_for(
+                        self._broadcast_event.wait(),
+                        timeout=self.broadcast_interval_sec,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                if not self._running:
+                    break
+
+                if self._broadcast_event.is_set():
+                    self._broadcast_event.clear()
+                    await asyncio.sleep(self._broadcast_debounce_sec)
+
                 await self._broadcast_sessions()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Broadcast error: {e}")
 
-    async def _broadcast_sessions(self) -> None:
-        """Broadcast current session list (acquires lock)."""
-        async with self._lock:
-            await self._broadcast_sessions_unlocked()
+    def _build_session_list_unlocked(self) -> tuple[SessionList, str]:
+        """Build a session snapshot and deterministic fingerprint.
 
-    async def _broadcast_sessions_unlocked(self) -> None:
-        """Broadcast current session list (caller must hold lock).
-
-        Feature 136: Removed feature-based deduplication. All sessions are now
-        included, grouped by window_id for multi-indicator display.
-
-        Sessions are sorted by state priority within each window:
-        - ATTENTION > WORKING > COMPLETED > IDLE
+        Caller must hold _lock.
         """
         active_sessions = [
             s for s in self._sessions.values()
             if s.state != SessionState.EXPIRED
         ]
+        active_sessions.sort(key=lambda s: s.session_id)
 
-        # Feature 136: Build all items list (no deduplication)
+        updated_at = datetime.now(timezone.utc).isoformat()
+
         items = [
             SessionListItem(
                 session_id=s.session_id,
@@ -1376,13 +1342,13 @@ class SessionTracker:
                 trace_id=s.trace_id,
                 pending_tools=s.pending_tools,
                 is_streaming=s.is_streaming,
+                state_seq=s.state_seq,
+                status_reason=s.status_reason,
+                updated_at=s.last_event_at.isoformat(),
             )
             for s in active_sessions
         ]
 
-        # Feature 136: Group sessions by window_id for efficient EWW lookup
-        # Orphaned sessions (window_id=None) are grouped under window_id=-1
-        # for display in a "Global AI Sessions" section
         sessions_by_window: dict[int, list[SessionListItem]] = {}
         orphan_sessions: list[SessionListItem] = []
         for item in items:
@@ -1393,25 +1359,64 @@ class SessionTracker:
             else:
                 orphan_sessions.append(item)
 
-        # Add orphan sessions under special window_id -1 for global display
         if orphan_sessions:
             sessions_by_window[-1] = orphan_sessions
 
-        # Sort each window's sessions by state priority (highest first)
         for window_id in sessions_by_window:
             sessions_by_window[window_id].sort(
-                key=lambda s: state_priority(SessionState(s.state)),
+                key=lambda s: (
+                    state_priority(SessionState(s.state)),
+                    s.session_id,
+                ),
                 reverse=True
             )
 
         has_working = any(s.state == SessionState.WORKING for s in active_sessions)
+        fingerprint_source = [
+            (
+                s.session_id,
+                str(s.tool),
+                str(s.state),
+                s.project,
+                s.window_id,
+                s.pid,
+                s.trace_id,
+                s.pending_tools,
+                s.is_streaming,
+                s.state_seq,
+                s.status_reason,
+            )
+            for s in active_sessions
+        ]
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_source, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest()
 
         session_list = SessionList(
             sessions=items,
             sessions_by_window=sessions_by_window,
             timestamp=int(datetime.now(timezone.utc).timestamp()),
+            updated_at=updated_at,
             has_working=has_working,
         )
+        return session_list, fingerprint
+
+    async def _broadcast_sessions(self, force: bool = False) -> None:
+        """Broadcast current session list with deduplication."""
+        session_list: Optional[SessionList] = None
+
+        async with self._lock:
+            if not force and not self._dirty:
+                return
+
+            session_list, fingerprint = self._build_session_list_unlocked()
+            if not force and fingerprint == self._last_broadcast_fingerprint:
+                self._dirty = False
+                return
+
+            self._last_broadcast_fingerprint = fingerprint
+            self._dirty = False
+
         await self.output.write_session_list(session_list)
 
     async def _expiry_loop(self) -> None:
@@ -1437,6 +1442,7 @@ class SessionTracker:
         """Check for and remove expired sessions."""
         now = datetime.now(timezone.utc)
         expired = []
+        updates: list[SessionUpdate] = []
 
         async with self._lock:
             for session_id, session in self._sessions.items():
@@ -1466,7 +1472,13 @@ class SessionTracker:
                     project=session.project,
                     timestamp=int(now.timestamp()),
                 )
-                await self.output.write_update(update)
+                updates.append(update)
+
+            if expired:
+                self._mark_dirty_unlocked()
+
+        for update in updates:
+            await self.output.write_update(update)
 
     async def _cleanup_orphaned_windows(self) -> None:
         """Remove sessions whose windows or processes no longer exist.
@@ -1523,4 +1535,4 @@ class SessionTracker:
 
             # Broadcast updated list if any were removed
             if orphaned:
-                await self._broadcast_sessions_unlocked()
+                self._mark_dirty_unlocked()

@@ -46,7 +46,7 @@ let
   };
 
   inherit (scripts)
-    monitoringDataScript aiSessionsStreamScript projectsDataStreamScript dockModeStreamScript
+    monitoringDataScript projectsDataStreamScript dockModeStreamScript
     wrapperScript toggleScript toggleDockModeScript
     refreshProjectsDataScript monitoringPanelHealthGuardScript monitoringPanelSmokeTestScript
     monitorPanelTabScript monitorPanelGetViewScript monitorPanelIsProjectsScript
@@ -75,7 +75,7 @@ let
   };
 
   variablesYuck = import ./yuck/variables.yuck.nix {
-    inherit pkgs monitoringDataScript aiSessionsStreamScript projectsDataStreamScript dockModeStreamScript pulsePhaseScript;
+    inherit pkgs monitoringDataScript projectsDataStreamScript dockModeStreamScript pulsePhaseScript;
   };
 
   windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs iconPaths; });
@@ -188,8 +188,8 @@ in
     systemd.user.services.eww-monitoring-panel = {
       Unit = {
         Description = "Eww Monitoring Panel for Window/Project State";
-        After = [ "sway-session.target" "i3-project-daemon.service" "home-manager-vpittamp.service" ];
-        Wants = [ "i3-project-daemon.service" ];
+        After = [ "sway-session.target" "i3-project-daemon.service" "otel-ai-monitor.service" "home-manager-vpittamp.service" ];
+        Wants = [ "i3-project-daemon.service" "otel-ai-monitor.service" ];
         PartOf = [ "sway-session.target" ];
       };
 
