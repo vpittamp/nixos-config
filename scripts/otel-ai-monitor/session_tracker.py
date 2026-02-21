@@ -34,6 +34,7 @@ from .models import (
 )
 from .pricing import calculate_cost
 from .sway_helper import (
+    get_focused_window_info,
     get_all_window_ids,
     get_process_i3pm_env,
     find_window_by_pid,
@@ -372,6 +373,73 @@ class SessionTracker:
         self._pid_context_cache[pid] = (now + ttl, window_id, project)
         return window_id, project
 
+    @staticmethod
+    def _project_names_match(
+        preferred_project: Optional[str], candidate_project: Optional[str]
+    ) -> bool:
+        """Best-effort project name matching across short/qualified forms."""
+        if not preferred_project or not candidate_project:
+            return False
+
+        preferred = preferred_project.strip().lower()
+        candidate = candidate_project.strip().lower()
+        if not preferred or not candidate:
+            return False
+        if preferred == candidate:
+            return True
+
+        preferred_tail = preferred.split(":")[-1].split("/")[-1]
+        candidate_tail = candidate.split(":")[-1].split("/")[-1]
+        return preferred_tail == candidate_tail
+
+    def _resolve_context_from_process_sessions_unlocked(
+        self,
+        tool: AITool,
+        preferred_project: Optional[str] = None,
+    ) -> tuple[Optional[int], Optional[str], Optional[int]]:
+        """Fallback correlation using active process-backed sessions.
+
+        Used when telemetry lacks PID but we already have process monitor
+        sessions for the same tool with concrete window/project context.
+        Caller must hold self._lock.
+        """
+        candidates = [
+            s
+            for s in self._sessions.values()
+            if s.tool == tool
+            and s.pid is not None
+            and s.window_id is not None
+            and s.state != SessionState.EXPIRED
+        ]
+        if not candidates:
+            return None, None, None
+
+        if preferred_project:
+            project_matched = [
+                s
+                for s in candidates
+                if self._project_names_match(preferred_project, s.project)
+            ]
+            if project_matched:
+                candidates = project_matched
+
+        contexts = {(s.window_id, s.project) for s in candidates}
+        if len(contexts) > 1:
+            focused_window_id, _ = get_focused_window_info()
+            if focused_window_id is not None:
+                focused_candidates = [
+                    s for s in candidates if s.window_id == focused_window_id
+                ]
+                if focused_candidates:
+                    chosen = max(
+                        focused_candidates, key=lambda s: s.last_event_at.timestamp()
+                    )
+                    return chosen.window_id, chosen.project, chosen.pid
+            return None, None, None
+
+        chosen = max(candidates, key=lambda s: s.last_event_at.timestamp())
+        return chosen.window_id, chosen.project, chosen.pid
+
     def _mark_dirty_unlocked(self) -> None:
         """Mark output as dirty and signal broadcast worker.
 
@@ -499,6 +567,28 @@ class SessionTracker:
             extracted_project = self._extract_project(event)
             if extracted_project:
                 session.project = extracted_project
+
+            # Fallback correlation for events that don't include process.pid.
+            # Reuse context from active process-backed sessions when unambiguous.
+            if session.window_id is None and event.tool:
+                fallback_window_id, fallback_project, fallback_pid = (
+                    self._resolve_context_from_process_sessions_unlocked(
+                        event.tool, session.project
+                    )
+                )
+                if fallback_window_id is not None:
+                    session.window_id = fallback_window_id
+                    if fallback_project:
+                        session.project = fallback_project
+                    if session.pid is None and fallback_pid is not None:
+                        session.pid = fallback_pid
+                    session.status_reason = "window_correlated_fallback"
+                    logger.info(
+                        "Fallback correlation: %s -> window %s via active %s process session",
+                        canonical_session_id,
+                        fallback_window_id,
+                        event.tool,
+                    )
 
             self._update_metrics(session, event)
             await self._handle_tool_lifecycle(session, event)

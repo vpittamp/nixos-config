@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from .models import AITool, Session, SessionState
-from .sway_helper import get_focused_window_info
+from .sway_helper import (
+    find_window_for_session,
+    get_focused_window_info,
+    get_process_i3pm_env,
+)
 
 if TYPE_CHECKING:
     from .session_tracker import SessionTracker
@@ -95,6 +99,11 @@ class ProcessMonitor:
                     # Detect Codex CLI
                     if self._is_codex_process(cmdline):
                         current_pids[pid] = AITool.CODEX_CLI
+                        continue
+
+                    # Detect Claude Code CLI
+                    if self._is_claude_process(cmdline):
+                        current_pids[pid] = AITool.CLAUDE_CODE
 
                 except (PermissionError, FileNotFoundError, ProcessLookupError):
                     # Process may have exited
@@ -123,6 +132,42 @@ class ProcessMonitor:
             return True
         return False
 
+    def _is_claude_process(self, cmdline: str) -> bool:
+        """Check if command line is a Claude Code process."""
+        if "/bin/.claude-unwrapped" not in cmdline:
+            return False
+        # Exclude the native host helper process (not a user session).
+        if "--chrome-native-host" in cmdline:
+            return False
+        return True
+
+    async def _resolve_process_context(
+        self, pid: int
+    ) -> tuple[Optional[int], Optional[str]]:
+        """Resolve window/project for a detected process."""
+        project: Optional[str] = None
+        window_id: Optional[int] = None
+
+        try:
+            i3pm_env = get_process_i3pm_env(pid)
+            project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
+        except Exception as e:
+            logger.debug(f"Process monitor: unable to read I3PM env for pid {pid}: {e}")
+
+        try:
+            window_id = await find_window_for_session(pid)
+        except Exception as e:
+            logger.debug(f"Process monitor: window correlation failed for pid {pid}: {e}")
+
+        # Fallback only when deterministic correlation fails.
+        if window_id is None:
+            focused_window_id, focused_project = get_focused_window_info()
+            window_id = focused_window_id
+            if not project:
+                project = focused_project
+
+        return window_id, project
+
     async def _update_sessions(self, current_pids: dict[int, AITool]) -> None:
         """Update session tracker based on detected processes.
 
@@ -138,8 +183,8 @@ class ProcessMonitor:
                 session_id = f"proc-{tool.value}-{pid}"
                 self._process_sessions[pid] = session_id
 
-                # Get window context
-                window_id, window_project = get_focused_window_info()
+                # Get window/project context for this specific process.
+                window_id, window_project = await self._resolve_process_context(pid)
 
                 # Create session in tracker
                 await self._create_process_session(
