@@ -207,12 +207,12 @@
           (label
             :class "badge badge-local"
             :visible {(project.variant ?: "") == "local" && (project.has_remote_variant ?: false)}
-            :text "LOCAL"
-            :tooltip "Local window card")
+            :text "󰌽"
+            :tooltip "Local project card")
           (label
             :class "badge badge-remote"
             :visible {(project.variant ?: "") == "ssh" || (project.remote_enabled ?: false)}
-            :text "󰣀 SSH LIVE"
+            :text "☁"
             :tooltip {"Remote: " + (project.remote_target ?: "") + ((project.remote_directory_display ?: "") != "" ? " • " + (project.remote_directory_display ?: "") : "")})
           (box
             :hexpand true
@@ -330,7 +330,7 @@
                     :halign "start"
                     :hexpand true
                     :truncate true
-                    :text {(window.project_remote_target ?: "") != "" ? ("SSH • " + (window.project_remote_target ?: "")) : "SSH session"}))))
+                    :text {(window.project_remote_target ?: "") != "" ? ("☁ • " + (window.project_remote_target ?: "")) : "☁ session"}))))
           )
         ;; Feature 136: Multi-indicator support - AI badges OUTSIDE focus eventbox for independent click handling
         (box

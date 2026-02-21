@@ -1284,9 +1284,10 @@
     background: linear-gradient(135deg, rgba(166, 227, 161, 0.2), rgba(249, 226, 175, 0.18));
     border: 1px solid rgba(166, 227, 161, 0.58);
     box-shadow: 0 0 8px rgba(166, 227, 161, 0.24);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
-    padding: 1px 6px;
+    padding: 1px 5px;
+    min-width: 18px;
   }
 
   .badge-local {
@@ -1294,9 +1295,10 @@
     background: linear-gradient(135deg, rgba(137, 180, 250, 0.2), rgba(148, 226, 213, 0.15));
     border: 1px solid rgba(137, 180, 250, 0.62);
     box-shadow: 0 0 8px rgba(137, 180, 250, 0.2);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
-    padding: 1px 6px;
+    padding: 1px 5px;
+    min-width: 18px;
   }
 
   .badge-remote-profile {

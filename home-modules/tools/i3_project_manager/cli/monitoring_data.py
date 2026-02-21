@@ -2283,6 +2283,21 @@ async def query_monitoring_data() -> Dict[str, Any]:
         projects = transform_to_project_view(monitors, remote_profiles)
         active_remote_mode = load_active_worktree_remote_mode()
 
+        # Resolve local-vs-ssh active variant from the actually focused window
+        # first, then fall back to active-worktree.json remote mode when no
+        # focused window exists for the active project.
+        active_variant_override: Optional[str] = None
+        if active_project:
+            for project in projects:
+                if project.get("name") != active_project:
+                    continue
+                variant = str(project.get("variant", ""))
+                if variant not in {"local", "ssh"}:
+                    continue
+                if any(bool(window.get("focused", False)) for window in project.get("windows", [])):
+                    active_variant_override = variant
+                    break
+
         # UX Enhancement: Add is_active flag to each project
         for project in projects:
             if project.get("name") != active_project:
@@ -2291,9 +2306,15 @@ async def query_monitoring_data() -> Dict[str, Any]:
 
             variant = str(project.get("variant", ""))
             if variant == "ssh":
-                project["is_active"] = active_remote_mode
+                if active_variant_override is not None:
+                    project["is_active"] = active_variant_override == "ssh"
+                else:
+                    project["is_active"] = active_remote_mode
             elif variant == "local":
-                project["is_active"] = not active_remote_mode
+                if active_variant_override is not None:
+                    project["is_active"] = active_variant_override == "local"
+                else:
+                    project["is_active"] = not active_remote_mode
             else:
                 project["is_active"] = True
 

@@ -258,7 +258,7 @@ in
               (label
                 :class "badge badge-remote"
                 :visible {worktree.remote_enabled ?: false}
-                :text "󰣀 SSH"
+                :text "☁"
                 :tooltip {"Remote: " + (worktree.remote_target ?: "") + ((worktree.remote_directory_display ?: "") != "" ? " • " + (worktree.remote_directory_display ?: "") : "")})
               (label
                 :class "git-conflict"

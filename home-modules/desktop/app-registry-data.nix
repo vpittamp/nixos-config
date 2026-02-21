@@ -227,18 +227,18 @@ let
     })
 
     (mkApp {
-      name = "chromium-browser";
-      display_name = "Chromium";
-      command = "chromium";
+      name = "ghostty";
+      display_name = "Ghostty";
+      command = "ghostty";
       parameters = "";
       scope = "global";
-      expected_class = "Chromium-browser";
-      preferred_workspace = 16;  # Was 3 (duplicate with Firefox)
-      icon = "chromium-browser";
-      nix_package = "pkgs.chromium";
-      multi_instance = false;
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 16;
+      icon = iconPath "ghostty.svg";
+      nix_package = "pkgs.ghostty";
+      multi_instance = true;
       fallback_behavior = "skip";
-      description = "Chromium web browser";
+      description = "Ghostty terminal emulator (standalone, no sesh)";
     })
 
     # WS15: Google Chrome - Required for Claude in Chrome extension

@@ -453,7 +453,8 @@ ${if isLaptop then ''
          (label :class "icon project-icon"
                 :text {active_project.icon ?: ""})
          (label :class {(active_project.remote_enabled ?: false) ? "project-connection-chip project-connection-chip-ssh" : "project-connection-chip project-connection-chip-local"}
-                :text {(active_project.remote_enabled ?: false) ? "󰣀 SSH" : "󰌽 LOCAL"})
+                :text {(active_project.remote_enabled ?: false) ? "☁" : "󰌽"}
+                :tooltip {(active_project.remote_enabled ?: false) ? "Remote (SSH)" : "Local context"})
          (label :class "project-ssh-target"
                 :visible {active_project.remote_enabled ?: false}
                 :limit-width 16

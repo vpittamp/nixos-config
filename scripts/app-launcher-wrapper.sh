@@ -861,11 +861,19 @@ ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 # ============================================================================
 # Feature 087: SSH WRAPPING FOR REMOTE PROJECTS
 # ============================================================================
-# If this is a remote project AND a terminal application, wrap command with SSH
-# This enables terminal-based apps to run on remote hosts while maintaining
-# the same launch workflow (keybindings, project context, etc.)
+# Remote execution is only valid for project-scoped apps.
+# Global apps (including PWAs/browsers) should always launch locally, even when
+# the currently active worktree has remote mode enabled.
 
-if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
+USE_REMOTE_EXECUTION="false"
+if [[ "$SCOPE" == "scoped" ]] && [[ "$REMOTE_ENABLED" == "true" ]]; then
+    USE_REMOTE_EXECUTION="true"
+fi
+
+# If this is a remote scoped project AND a terminal application, wrap command
+# with SSH. This enables terminal-based apps to run on remote hosts while
+# maintaining the same launch workflow (keybindings, project context, etc.)
+if [[ "$USE_REMOTE_EXECUTION" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
     log "INFO" "Feature 087: Applying SSH wrapping for remote terminal app"
 
     if [[ -z "$REMOTE_HOST" ]] || [[ -z "$REMOTE_USER" ]] || [[ -z "$REMOTE_WORKING_DIR" ]]; then
@@ -968,7 +976,7 @@ EOF
         log "DEBUG" "Feature 087: Remote terminal command: ${REMOTE_TERMINAL_CMD:0:200}"
     fi
 
-elif [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "false" ]]; then
+elif [[ "$USE_REMOTE_EXECUTION" == "true" ]] && [[ "$IS_TERMINAL" == "false" ]]; then
     # GUI app in remote project - reject with clear error
     error "Feature 087: Cannot launch GUI application '$APP_NAME' in remote project '$PROJECT_NAME'.
   Remote projects only support terminal-based applications.

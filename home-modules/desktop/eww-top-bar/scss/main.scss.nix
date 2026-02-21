@@ -225,11 +225,12 @@
   }
 
   .project-connection-chip {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
-    letter-spacing: 0.4px;
+    letter-spacing: 0;
     border-radius: 7px;
-    padding: 1px 6px;
+    padding: 1px 5px;
+    min-width: 18px;
   }
 
   .project-connection-chip-ssh {
