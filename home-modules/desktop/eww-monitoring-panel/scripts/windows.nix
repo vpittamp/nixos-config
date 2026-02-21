@@ -4,6 +4,36 @@ let
   # Full path to i3pm (user profile binary, not in standard PATH for EWW onclick commands)
   i3pm = "${config.home.profileDirectory}/bin/i3pm";
 
+  variantSwitchHelpers = ''
+    get_current_variant() {
+      local variant
+      variant=$(${pkgs.jq}/bin/jq -r '
+        if (.remote != null and (.remote.enabled // false)) then "ssh" else "local" end
+      ' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "local")
+
+      case "$variant" in
+        local|ssh)
+          printf '%s\n' "$variant"
+          ;;
+        *)
+          printf 'local\n'
+          ;;
+      esac
+    }
+
+    switch_project_variant() {
+      local project_name="$1"
+      local variant="$2"
+      local switch_cmd=("${i3pm}" worktree switch)
+
+      if [[ "$variant" == "local" ]]; then
+        switch_cmd+=(--local)
+      fi
+      switch_cmd+=("$project_name")
+      "''${switch_cmd[@]}"
+    }
+  '';
+
   focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
     #!${pkgs.bash}/bin/bash
     # Feature 093: Focus window with automatic project switching
@@ -11,6 +41,12 @@ let
 
     PROJECT_NAME="''${1:-}"
     WINDOW_ID="''${2:-}"
+    TARGET_VARIANT="''${3:-}"
+    if [[ "$TARGET_VARIANT" != "local" && "$TARGET_VARIANT" != "ssh" ]]; then
+      TARGET_VARIANT=""
+    fi
+
+    ${variantSwitchHelpers}
 
     # Validate inputs (T010)
     if [[ -z "$PROJECT_NAME" ]]; then
@@ -44,12 +80,22 @@ let
     # Get current project (T012) - Read from active-worktree.json (Feature 101 single source of truth)
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
-    # Conditional project switch (T013)
+    # Conditional project switch (T013) with optional variant alignment
+    NEEDS_SWITCH=false
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
-        if ! ${i3pm} worktree switch "$PROJECT_NAME"; then
+        NEEDS_SWITCH=true
+    elif [[ -n "$TARGET_VARIANT" ]]; then
+        CURRENT_VARIANT=$(get_current_variant)
+        if [[ "$CURRENT_VARIANT" != "$TARGET_VARIANT" ]]; then
+            NEEDS_SWITCH=true
+        fi
+    fi
+
+    if [[ "$NEEDS_SWITCH" == "true" ]]; then
+        if ! switch_project_variant "$PROJECT_NAME" "$TARGET_VARIANT"; then
             EXIT_CODE=$?
             ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
-                "Failed to switch to project $PROJECT_NAME (exit code: $EXIT_CODE)"
+                "Failed to switch to project $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)} (exit code: $EXIT_CODE)"
             exit 1
         fi
     fi
@@ -77,6 +123,12 @@ let
 
     PROJECT_NAME="''${1:-}"
     REMOTE_SESSION_NAME="''${2:-}"
+    TARGET_VARIANT="''${3:-ssh}"
+    if [[ "$TARGET_VARIANT" != "local" && "$TARGET_VARIANT" != "ssh" ]]; then
+      TARGET_VARIANT="ssh"
+    fi
+
+    ${variantSwitchHelpers}
     if [[ -z "$PROJECT_NAME" ]]; then
       ${pkgs.libnotify}/bin/notify-send -u critical "Remote Session Open Failed" "No project name provided"
       exit 1
@@ -84,8 +136,18 @@ let
 
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
+    NEEDS_SWITCH=false
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
-      if ! ${i3pm} worktree switch "$PROJECT_NAME" >/dev/null 2>&1; then
+      NEEDS_SWITCH=true
+    else
+      CURRENT_VARIANT=$(get_current_variant)
+      if [[ "$CURRENT_VARIANT" != "$TARGET_VARIANT" ]]; then
+        NEEDS_SWITCH=true
+      fi
+    fi
+
+    if [[ "$NEEDS_SWITCH" == "true" ]]; then
+      if ! switch_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" >/dev/null 2>&1; then
         ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" "Failed to switch to $PROJECT_NAME"
         exit 1
       fi
@@ -113,6 +175,12 @@ let
     set -euo pipefail
 
     PROJECT_NAME="''${1:-}"
+    TARGET_VARIANT="''${2:-}"
+    if [[ "$TARGET_VARIANT" != "local" && "$TARGET_VARIANT" != "ssh" ]]; then
+      TARGET_VARIANT=""
+    fi
+
+    ${variantSwitchHelpers}
 
     # Validate input (T017)
     if [[ -z "$PROJECT_NAME" ]]; then
@@ -123,7 +191,11 @@ let
     # Lock file mechanism for debouncing (T018) with timeout
     # Sanitize project name (replace / with _) to create valid file path
     # Use timestamp-based lock to prevent stale locks from blocking forever
-    LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME//\//_}.lock"
+    LOCK_SUFFIX=""
+    if [[ -n "$TARGET_VARIANT" ]]; then
+      LOCK_SUFFIX="-''${TARGET_VARIANT}"
+    fi
+    LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME//\//_}''${LOCK_SUFFIX}.lock"
     CURRENT_TIME=$(date +%s)
 
     if [[ -f "$LOCK_FILE" ]]; then
@@ -142,17 +214,25 @@ let
     # Get current project (T019) - Read from active-worktree.json (Feature 101 single source of truth)
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
-    # Check if already in target project
-    if [[ "$PROJECT_NAME" == "$CURRENT_PROJECT" ]]; then
-        ${pkgs.libnotify}/bin/notify-send -u low "Already in project $PROJECT_NAME"
+    CURRENT_VARIANT=$(get_current_variant)
+    NEEDS_SWITCH=false
+    if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
+      NEEDS_SWITCH=true
+    elif [[ -n "$TARGET_VARIANT" ]] && [[ "$CURRENT_VARIANT" != "$TARGET_VARIANT" ]]; then
+      NEEDS_SWITCH=true
+    fi
+
+    # Check if already in target project + target variant
+    if [[ "$NEEDS_SWITCH" == "false" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Already in project $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)}"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
         exit 0
     fi
 
     # Execute project switch (T020)
-    if ${i3pm} worktree switch "$PROJECT_NAME"; then
-        ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME"
+    if switch_project_variant "$PROJECT_NAME" "$TARGET_VARIANT"; then
+        ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)}"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
         exit 0

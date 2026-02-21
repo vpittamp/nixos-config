@@ -240,7 +240,19 @@
           :space-evenly false
           :halign "end"
           (eventbox
-            :visible {project.scope == "scoped"}
+            :visible {project.scope == "scoped" && (project.variant ?: "") == "local"}
+            :cursor "pointer"
+            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name} local; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
+            :tooltip "Switch to this local worktree"
+            (label :class "action-btn action-switch" :text "󰌑"))
+          (eventbox
+            :visible {project.scope == "scoped" && (project.variant ?: "") == "ssh"}
+            :cursor "pointer"
+            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name} ssh; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
+            :tooltip "Switch to this SSH worktree"
+            (label :class "action-btn action-switch" :text "󰌑"))
+          (eventbox
+            :visible {project.scope == "scoped" && (project.variant ?: "") != "local" && (project.variant ?: "") != "ssh"}
             :cursor "pointer"
             :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name}; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
             :tooltip "Switch to this worktree"
@@ -273,7 +285,7 @@
       :hexpand true
       :space-evenly false
         (box
-          :class "window-row ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${(window.project_remote_enabled ?: false) ? 'ssh-window' : ""} ''${(window.is_remote_session ?: false) ? 'remote-session-window' : ""} ''${clicked_window_id == window.id ? 'clicked' : ""}"
+          :class "window-row ''${window.state_classes}"
           :orientation "h"
           :hexpand true
           :halign "fill"
@@ -285,8 +297,8 @@
             :halign "fill"
             (eventbox
               :onclick {(window.is_remote_session ?: false)
-                ? "${openRemoteSessionWindowScript}/bin/open-remote-session-window-action ''${window.project} ''${window.remote_session_name ?: ""} &"
-                : "${focusWindowScript}/bin/focus-window-action ''${window.project} ''${window.id} &"}
+                ? "${openRemoteSessionWindowScript}/bin/open-remote-session-window-action ''${window.project} ''${window.remote_session_name} ''${window.execution_mode} &"
+                : "${focusWindowScript}/bin/focus-window-action ''${window.project} ''${window.id} ''${window.execution_mode} &"}
               :onrightclick {(window.is_remote_session ?: false)
                 ? ""
                 : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"}
@@ -294,7 +306,7 @@
               :hexpand true
               :halign "fill"
               (box
-                :class "window ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
+                :class "window"
                 :orientation "h"
                 :space-evenly false
                 :hexpand true
