@@ -7,6 +7,7 @@ Tests data transformation, JSON output format, and error handling.
 import asyncio
 import json
 import pytest
+import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 import sys
@@ -21,6 +22,8 @@ from i3_project_manager.cli.monitoring_data import (
     transform_monitor,
     validate_and_count,
     query_monitoring_data,
+    query_tailscale_data,
+    main,
 )
 
 
@@ -460,6 +463,119 @@ class TestQueryMonitoringData:
             # Verify JSON serializable
             json_str = json.dumps(result)
             assert json_str is not None
+
+
+@pytest.mark.asyncio
+class TestQueryTailscaleData:
+    """Test Tailscale tab backend mode."""
+
+    async def test_tailscale_successful_query(self):
+        tailscale_payload = {
+            "BackendState": "Running",
+            "Health": [],
+            "CurrentTailnet": {"Name": "example.tailnet"},
+            "Self": {
+                "HostName": "ryzen",
+                "DNSName": "ryzen.example.ts.net.",
+                "Online": True,
+                "ExitNode": False,
+                "TailscaleIPs": ["100.64.0.1"],
+            },
+            "Peer": {
+                "peer-a": {"HostName": "peer-a", "DNSName": "peer-a.example.ts.net.", "Online": True, "TailscaleIPs": ["100.64.0.2"]},
+                "peer-b": {"HostName": "peer-b", "DNSName": "peer-b.example.ts.net.", "Online": False, "TailscaleIPs": ["100.64.0.3"]},
+            },
+        }
+
+        def which_side_effect(binary):
+            if binary in {"tailscale", "kubectl", "systemctl"}:
+                return f"/usr/bin/{binary}"
+            return None
+
+        def run_side_effect(cmd, capture_output=True, text=True, timeout=0, check=False):
+            if cmd[:3] == ["tailscale", "status", "--json"]:
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(tailscale_payload), "")
+            if cmd[:3] == ["systemctl", "is-active", "tailscaled"]:
+                return subprocess.CompletedProcess(cmd, 0, "active\n", "")
+            if cmd[:4] == ["kubectl", "config", "current-context"]:
+                return subprocess.CompletedProcess(cmd, 0, "kind-test\n", "")
+            if "ingress" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "ns-a ingress-a\n", "")
+            if "services" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "ns-a svc-a\n", "")
+            if "deployments" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "ns-a deploy-a\n", "")
+            if "daemonsets" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "ns-a ds-a\n", "")
+            if "pods" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "ns-a pod-a\n", "")
+            raise AssertionError(f"Unexpected command: {cmd}")
+
+        with patch("i3_project_manager.cli.monitoring_data.shutil.which", side_effect=which_side_effect), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.run", side_effect=run_side_effect):
+            result = await query_tailscale_data()
+
+        assert result["status"] == "ok"
+        assert result["self"]["hostname"] == "ryzen"
+        assert result["service"]["tailscaled_active"] is True
+        assert result["peers"]["total"] == 2
+        assert result["peers"]["online"] == 1
+        assert result["kubernetes"]["available"] is True
+        assert result["actions"]["reconnect"] is True
+        assert result["actions"]["k8s_rollout_restart"] is True
+        assert result["error"] is None
+
+    async def test_tailscale_partial_when_kubectl_missing(self):
+        tailscale_payload = {
+            "BackendState": "Running",
+            "Health": [],
+            "CurrentTailnet": {"Name": "example.tailnet"},
+            "Self": {"HostName": "thinkpad", "DNSName": "thinkpad.example.ts.net.", "Online": True, "ExitNode": False, "TailscaleIPs": ["100.64.0.10"]},
+            "Peer": {},
+        }
+
+        def which_side_effect(binary):
+            if binary in {"tailscale", "systemctl"}:
+                return f"/usr/bin/{binary}"
+            return None
+
+        def run_side_effect(cmd, capture_output=True, text=True, timeout=0, check=False):
+            if cmd[:3] == ["tailscale", "status", "--json"]:
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(tailscale_payload), "")
+            if cmd[:3] == ["systemctl", "is-active", "tailscaled"]:
+                return subprocess.CompletedProcess(cmd, 0, "active\n", "")
+            raise AssertionError(f"Unexpected command: {cmd}")
+
+        with patch("i3_project_manager.cli.monitoring_data.shutil.which", side_effect=which_side_effect), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.run", side_effect=run_side_effect):
+            result = await query_tailscale_data()
+
+        assert result["status"] == "partial"
+        assert result["kubernetes"]["available"] is False
+        assert result["actions"]["k8s_rollout_restart"] is False
+        assert "kubectl not found" in (result["error"] or "")
+
+    async def test_tailscale_error_when_core_commands_missing(self):
+        with patch("i3_project_manager.cli.monitoring_data.shutil.which", return_value=None):
+            result = await query_tailscale_data()
+
+        assert result["status"] == "error"
+        assert "tailscale command not found" in (result["error"] or "")
+        assert result["service"]["tailscaled_active"] is False
+        assert result["actions"]["reconnect"] is False
+
+    async def test_main_dispatches_tailscale_mode(self):
+        mock_response = {"status": "ok"}
+
+        with patch.object(sys, "argv", ["monitoring_data.py", "--mode", "tailscale"]), \
+             patch("i3_project_manager.cli.monitoring_data.query_tailscale_data", new=AsyncMock(return_value=mock_response)) as mock_query, \
+             patch("builtins.print"), \
+             patch("sys.exit", side_effect=SystemExit) as mock_exit:
+            with pytest.raises(SystemExit):
+                await main()
+
+        mock_query.assert_awaited_once()
+        mock_exit.assert_called_with(0)
 
 
 if __name__ == "__main__":

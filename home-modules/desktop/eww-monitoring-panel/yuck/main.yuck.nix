@@ -1,4 +1,4 @@
-{ primaryOutput, panelWidth, toggleDockModeScript, refreshProjectsDataScript, ... }:
+{ primaryOutput, panelWidth, toggleDockModeScript, refreshProjectsDataScript, tailscaleTabEnabled, ... }:
 
 ''
   ;; Feature 125: Two window definitions for overlay vs docked modes
@@ -86,6 +86,14 @@
             :class "tab ''${current_view_index == 1 ? 'active' : ""}"
             :tooltip "Projects (Alt+2)"
             "󱂬"))
+${if tailscaleTabEnabled then ''
+        (eventbox
+          :cursor "pointer"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update current_view_index=2"
+          (button
+            :class "tab ''${current_view_index == 2 ? 'active' : ""}"
+            :tooltip "Tailscale (Alt+3)"
+            "TS"))'' else ""}
         (eventbox
           :cursor "pointer"
           :onclick "${toggleDockModeScript}/bin/toggle-panel-dock-mode &"
@@ -103,7 +111,9 @@
       :same-size false
       (box :class "view-container" :vexpand true (windows-view))
       (box :class "view-container" :vexpand true (projects-view))
-      (box :class "view-container" :vexpand true (label :text "Apps view disabled"))
+${if tailscaleTabEnabled
+  then ''      (box :class "view-container" :vexpand true (tailscale-view))''
+  else ''      (box :class "view-container" :vexpand true (label :text "Tailscale view disabled"))''}
       (box :class "view-container" :vexpand true (label :text "Health view disabled"))
       (box :class "view-container" :vexpand true (label :text "Events view disabled"))
       (box :class "view-container" :vexpand true (label :text "Traces view disabled"))
@@ -112,6 +122,7 @@
   (include "./variables.yuck")
   (include "./windows-view.yuck")
   (include "./projects-view.yuck")
+  (include "./tailscale-view.yuck")
   (include "./forms.yuck")
   (include "./dialogs.yuck")
   (include "./notifications.yuck")

@@ -6,6 +6,8 @@ let
   cfg = config.programs.eww-monitoring-panel;
 
   hostname = osConfig.networking.hostName or "hetzner";
+  tailscaleTabEnabled = cfg.tailscale.enable && (builtins.elem hostname cfg.tailscale.showOnHosts);
+  tailscaleNamespacesCsv = concatStringsSep "," cfg.tailscale.k8sNamespaces;
 
   # Feature 106: Portable icon paths via assetsPackage
   # Helper to get icon path from Nix store or fallback to legacy path
@@ -42,7 +44,7 @@ let
   clipboardSyncScript = utils.clipboardSyncScript;
 
   scripts = import ./scripts/default.nix {
-    inherit pkgs config pythonForBackend mocha hostname cfg clipboardSyncScript;
+    inherit pkgs config pythonForBackend mocha hostname cfg clipboardSyncScript tailscaleNamespacesCsv;
   };
 
   inherit (scripts)
@@ -67,15 +69,17 @@ let
     startTraceFromTemplateScript focusWindowScript switchProjectScript closeWorktreeScript
     closeAllWindowsScript closeWindowScript toggleProjectContextScript
     toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
-    fetchWindowEnvScript openLangfuseTraceScript handleKeyScript pulsePhaseScript;
+    fetchWindowEnvScript openLangfuseTraceScript handleKeyScript pulsePhaseScript
+    tailscaleTabActionScript;
 
   mainYuck = import ./yuck/main.yuck.nix {
-    inherit primaryOutput toggleDockModeScript refreshProjectsDataScript;
+    inherit primaryOutput toggleDockModeScript refreshProjectsDataScript tailscaleTabEnabled;
     panelWidth = cfg.panelWidth;
   };
 
   variablesYuck = import ./yuck/variables.yuck.nix {
-    inherit pkgs monitoringDataScript projectsDataStreamScript dockModeStreamScript pulsePhaseScript;
+    inherit pkgs monitoringDataScript projectsDataStreamScript dockModeStreamScript pulsePhaseScript tailscaleTabEnabled;
+    tailscalePollInterval = cfg.tailscale.pollInterval;
   };
 
   windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs iconPaths; });
@@ -87,6 +91,8 @@ let
   dialogsYuck = import ./yuck/dialogs.yuck.nix (scripts // { inherit pkgs; });
 
   notificationsYuck = import ./yuck/notifications.yuck.nix {};
+
+  tailscaleViewYuck = import ./yuck/tailscale-view.yuck.nix (scripts // { inherit pkgs; });
 
   disabledStubsYuck = import ./yuck/disabled-stubs.yuck.nix {};
 
@@ -115,6 +121,56 @@ in
       type = types.int;
       default = if hostname == "thinkpad" || hostname == "ryzen" then 450 else 307;
       description = "Width of the monitoring panel in pixels.";
+    };
+
+    tailscale = {
+      enable = mkOption {
+        type = types.bool;
+        default = builtins.elem hostname [ "thinkpad" "ryzen" ];
+        description = "Enable Tailscale tab support in the monitoring panel.";
+      };
+
+      pollInterval = mkOption {
+        type = types.str;
+        default = "8s";
+        description = "Polling interval for Tailscale tab data.";
+      };
+
+      k8sNamespaces = mkOption {
+        type = types.listOf types.str;
+        default = [];
+        description = "Kubernetes namespaces to include in Tailscale tab summaries. Empty means all namespaces.";
+      };
+
+      showOnHosts = mkOption {
+        type = types.listOf types.str;
+        default = [ "thinkpad" "ryzen" ];
+        description = "Hostnames where the Tailscale tab is visible when enabled.";
+      };
+
+      enableApi = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Reserved flag for optional Tailnet API enrichment.";
+      };
+
+      apiCredentialsFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = "Reserved path to Tailnet API OAuth client credentials.";
+      };
+
+      enableTsnetBridge = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Reserved flag for optional tsnet bridge integration.";
+      };
+
+      tsnetHostname = mkOption {
+        type = types.str;
+        default = "eww-monitoring-panel";
+        description = "Reserved hostname for optional tsnet bridge service.";
+      };
     };
   };
 
@@ -172,12 +228,14 @@ in
       appDeleteCancelScript
       showSuccessNotificationScript
       pulsePhaseScript
+      tailscaleTabActionScript
     ];
 
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = mainYuck;
     xdg.configFile."eww-monitoring-panel/variables.yuck".text = variablesYuck;
     xdg.configFile."eww-monitoring-panel/windows-view.yuck".text = windowsViewYuck;
     xdg.configFile."eww-monitoring-panel/projects-view.yuck".text = projectsViewYuck;
+    xdg.configFile."eww-monitoring-panel/tailscale-view.yuck".text = tailscaleViewYuck;
     xdg.configFile."eww-monitoring-panel/forms.yuck".text = formsYuck;
     xdg.configFile."eww-monitoring-panel/dialogs.yuck".text = dialogsYuck;
     xdg.configFile."eww-monitoring-panel/notifications.yuck".text = notificationsYuck;

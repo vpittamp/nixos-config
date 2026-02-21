@@ -7,6 +7,7 @@ Usage:
     python3 -m i3_project_manager.cli.monitoring_data                   # Windows view (default)
     python3 -m i3_project_manager.cli.monitoring_data --mode projects   # Projects view
     python3 -m i3_project_manager.cli.monitoring_data --mode apps       # Apps view
+    python3 -m i3_project_manager.cli.monitoring_data --mode tailscale  # Tailscale view
     python3 -m i3_project_manager.cli.monitoring_data --mode events     # Events view
     python3 -m i3_project_manager.cli.monitoring_data --mode health     # Health view
     python3 -m i3_project_manager.cli.monitoring_data --mode traces     # Window traces view (Feature 101)
@@ -31,6 +32,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -3523,6 +3525,296 @@ async def query_health_data() -> Dict[str, Any]:
         }
 
 
+def _count_kubectl_rows(resource: str, namespaces: List[str], timeout_seconds: int = 3) -> Dict[str, Any]:
+    """
+    Count kubernetes resources with bounded command execution.
+
+    Returns:
+        {"count": int, "error": Optional[str]}
+    """
+    count = 0
+    errors: List[str] = []
+
+    namespace_targets = namespaces if namespaces else ["-A"]
+
+    for namespace in namespace_targets:
+        cmd = ["kubectl"]
+        if namespace == "-A":
+            cmd.extend(["get", resource, "-A", "--no-headers"])
+        else:
+            cmd.extend(["-n", namespace, "get", resource, "--no-headers"])
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            errors.append(f"kubectl get {resource} timed out")
+            continue
+        except Exception as e:
+            errors.append(f"kubectl get {resource} failed: {type(e).__name__}: {e}")
+            continue
+
+        if result.returncode != 0:
+            message = (result.stderr or result.stdout or "").strip().splitlines()
+            first_line = message[0] if message else f"exit={result.returncode}"
+            errors.append(f"kubectl get {resource}: {first_line}")
+            continue
+
+        rows = [
+            line for line in result.stdout.splitlines()
+            if line.strip() and not line.startswith("No resources found")
+        ]
+        count += len(rows)
+
+    return {
+        "count": count,
+        "error": "; ".join(errors) if errors else None,
+    }
+
+
+def _query_kubernetes_summary(namespaces: List[str]) -> Dict[str, Any]:
+    """Query kubernetes summary metrics for tailscale tab."""
+    scope = ",".join(namespaces) if namespaces else "all"
+
+    summary = {
+        "available": False,
+        "context": "",
+        "namespace_scope": scope,
+        "ingress_count": 0,
+        "service_count": 0,
+        "deployment_count": 0,
+        "daemonset_count": 0,
+        "pod_count": 0,
+        "error": None,
+    }
+
+    if not shutil.which("kubectl"):
+        summary["error"] = "kubectl not found"
+        return summary
+
+    try:
+        ctx_result = subprocess.run(
+            ["kubectl", "config", "current-context"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        summary["error"] = "kubectl current-context timed out"
+        return summary
+    except Exception as e:
+        summary["error"] = f"kubectl current-context failed: {type(e).__name__}: {e}"
+        return summary
+
+    if ctx_result.returncode != 0:
+        ctx_error = (ctx_result.stderr or ctx_result.stdout or "").strip()
+        summary["error"] = f"kubectl context unavailable: {ctx_error or 'unknown error'}"
+        return summary
+
+    summary["context"] = ctx_result.stdout.strip()
+
+    ingress = _count_kubectl_rows("ingress", namespaces)
+    services = _count_kubectl_rows("services", namespaces)
+    deployments = _count_kubectl_rows("deployments", namespaces)
+    daemonsets = _count_kubectl_rows("daemonsets", namespaces)
+    pods = _count_kubectl_rows("pods", namespaces)
+
+    summary["ingress_count"] = ingress["count"]
+    summary["service_count"] = services["count"]
+    summary["deployment_count"] = deployments["count"]
+    summary["daemonset_count"] = daemonsets["count"]
+    summary["pod_count"] = pods["count"]
+
+    errors = [
+        item["error"] for item in [ingress, services, deployments, daemonsets, pods]
+        if item["error"]
+    ]
+    if errors:
+        summary["error"] = "; ".join(errors)
+        summary["available"] = False
+    else:
+        summary["available"] = True
+
+    return summary
+
+
+async def query_tailscale_data() -> Dict[str, Any]:
+    """
+    Query tailscale/network + kubernetes summary data.
+
+    Local-first implementation:
+    - tailscale status --json
+    - systemctl is-active tailscaled
+    - kubectl summary counts (bounded timeouts)
+    """
+    current_timestamp = time.time()
+    friendly_time = format_friendly_timestamp(current_timestamp)
+
+    issues: List[str] = []
+    tailscale_status_ok = False
+    service_status_ok = False
+
+    tailscale_json: Dict[str, Any] = {}
+    tailscale_available = shutil.which("tailscale") is not None
+
+    if tailscale_available:
+        try:
+            tailscale_result = subprocess.run(
+                ["tailscale", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            if tailscale_result.returncode == 0:
+                tailscale_json = json.loads(tailscale_result.stdout or "{}")
+                tailscale_status_ok = True
+            else:
+                message = (tailscale_result.stderr or tailscale_result.stdout or "").strip().splitlines()
+                issues.append(f"tailscale status failed: {message[0] if message else 'unknown error'}")
+        except subprocess.TimeoutExpired:
+            issues.append("tailscale status timed out")
+        except json.JSONDecodeError:
+            issues.append("tailscale status returned invalid JSON")
+        except Exception as e:
+            issues.append(f"tailscale status failed: {type(e).__name__}: {e}")
+    else:
+        issues.append("tailscale command not found")
+
+    service = {
+        "tailscaled_active": False,
+        "tailscaled_state": "unknown",
+    }
+
+    if shutil.which("systemctl"):
+        try:
+            service_result = subprocess.run(
+                ["systemctl", "is-active", "tailscaled"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+            service_state = (service_result.stdout or service_result.stderr or "").strip() or "unknown"
+            service["tailscaled_state"] = service_state
+            service["tailscaled_active"] = service_result.returncode == 0 and service_state == "active"
+            service_status_ok = True
+        except subprocess.TimeoutExpired:
+            issues.append("systemctl tailscaled query timed out")
+        except Exception as e:
+            issues.append(f"systemctl tailscaled query failed: {type(e).__name__}: {e}")
+    else:
+        issues.append("systemctl not found")
+
+    self_data = {
+        "hostname": "",
+        "dns_name": "",
+        "online": False,
+        "tailscale_ips": [],
+        "tailnet": "",
+        "exit_node": False,
+        "backend_state": "",
+        "health_messages": [],
+    }
+    peers = {
+        "total": 0,
+        "online": 0,
+        "offline": 0,
+        "sample": [],
+    }
+
+    if tailscale_status_ok:
+        self_node = tailscale_json.get("Self") or {}
+        current_tailnet = tailscale_json.get("CurrentTailnet") or {}
+        peer_map = tailscale_json.get("Peer") or {}
+        health_messages = tailscale_json.get("Health") or []
+
+        self_data = {
+            "hostname": str(self_node.get("HostName", "")),
+            "dns_name": str(self_node.get("DNSName", "")).rstrip("."),
+            "online": bool(self_node.get("Online", False)),
+            "tailscale_ips": self_node.get("TailscaleIPs", []) if isinstance(self_node.get("TailscaleIPs"), list) else [],
+            "tailnet": str(current_tailnet.get("Name", "")),
+            "exit_node": bool(self_node.get("ExitNode", False)),
+            "backend_state": str(tailscale_json.get("BackendState", "")),
+            "health_messages": [str(m) for m in health_messages if str(m).strip()],
+        }
+
+        if isinstance(peer_map, dict):
+            peer_list = []
+            for peer in peer_map.values():
+                if not isinstance(peer, dict):
+                    continue
+                hostname = str(peer.get("HostName", "")).strip()
+                dns_name = str(peer.get("DNSName", "")).rstrip(".")
+                ips = peer.get("TailscaleIPs", [])
+                ip = ""
+                if isinstance(ips, list) and ips:
+                    ip = str(ips[0])
+                peer_list.append({
+                    "hostname": hostname or dns_name or "unknown",
+                    "dns_name": dns_name,
+                    "online": bool(peer.get("Online", False)),
+                    "ip": ip,
+                })
+
+            online_count = sum(1 for peer in peer_list if peer["online"])
+            peers = {
+                "total": len(peer_list),
+                "online": online_count,
+                "offline": len(peer_list) - online_count,
+                "sample": sorted(
+                    peer_list,
+                    key=lambda peer: (not peer["online"], peer["hostname"].lower()),
+                )[:5],
+            }
+        else:
+            issues.append("tailscale peer map missing")
+
+    namespaces_env = os.environ.get("EWW_TAILSCALE_K8S_NAMESPACES", "")
+    namespaces = [ns.strip() for ns in namespaces_env.split(",") if ns.strip()]
+    kubernetes = _query_kubernetes_summary(namespaces)
+    if kubernetes.get("error"):
+        issues.append(f"kubernetes summary unavailable: {kubernetes['error']}")
+
+    if not tailscale_status_ok and not service_status_ok:
+        status = "error"
+    elif issues:
+        status = "partial"
+    else:
+        status = "ok"
+
+    kubernetes_actions_available = bool(kubernetes.get("available"))
+
+    return {
+        "status": status,
+        "timestamp": current_timestamp,
+        "timestamp_friendly": friendly_time,
+        "self": self_data,
+        "service": service,
+        "peers": peers,
+        "kubernetes": kubernetes,
+        "api": {
+            "enabled": False,
+            "status": "disabled",
+        },
+        "actions": {
+            "reconnect": tailscale_available,
+            "restart_service": False,
+            "set_exit_node": False,
+            "k8s_rollout_restart": kubernetes_actions_available,
+            "k8s_restart_daemonset": kubernetes_actions_available,
+        },
+        "error": "; ".join(issues) if issues else None,
+    }
+
+
 async def query_traces_data() -> Dict[str, Any]:
     """
     Query window traces view data (Feature 101).
@@ -4148,6 +4440,7 @@ async def main():
     - windows (default): Window/project hierarchy view
     - projects: Project list view
     - apps: Application registry view
+    - tailscale: Tailscale + Kubernetes status view
     - health: System health view
     - events: Sway IPC event log view (Feature 092)
     - traces: Window traces view (Feature 101)
@@ -4161,7 +4454,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Monitoring panel data backend")
     parser.add_argument(
         "--mode",
-        choices=["windows", "projects", "apps", "health", "events", "traces"],
+        choices=["windows", "projects", "apps", "tailscale", "health", "events", "traces"],
         default="windows",
         help="View mode (default: windows)"
     )
@@ -4192,6 +4485,8 @@ async def main():
             data = await query_projects_data()
         elif args.mode == "apps":
             data = await query_apps_data()
+        elif args.mode == "tailscale":
+            data = await query_tailscale_data()
         elif args.mode == "health":
             data = await query_health_data()
         elif args.mode == "events":

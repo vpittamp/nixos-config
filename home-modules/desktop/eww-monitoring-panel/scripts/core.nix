@@ -1,4 +1,4 @@
-{ pkgs, config, pythonForBackend, mocha, hostname, cfg, clipboardSyncScript, ... }:
+{ pkgs, config, pythonForBackend, mocha, hostname, cfg, clipboardSyncScript, tailscaleNamespacesCsv, ... }:
 
 let
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
@@ -13,6 +13,7 @@ let
 
     # Feature 117: Set daemon socket path (user service at XDG_RUNTIME_DIR)
     export I3PM_DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+    export EWW_TAILSCALE_K8S_NAMESPACES="${tailscaleNamespacesCsv}"
 
     # Use Python with i3ipc package included
     # Pass through all arguments (e.g., --listen flag)
@@ -125,10 +126,12 @@ let
     open_target_window() {
       local target_window="$1"
       local attempt
-      for attempt in $(seq 1 5); do
-        # eww can occasionally return a transient IPC error even when the
-        # window opens successfully; verify using active-windows before failing.
-        $TIMEOUT 2s $EWW --no-daemonize --config "$CONFIG" open --id "$PANEL_WINDOW_ID" "$target_window" >/dev/null 2>&1 || true
+      # Ensure daemon has the latest config and a clean window state before opening.
+      $TIMEOUT 2s $EWW --no-daemonize --config "$CONFIG" reload >/dev/null 2>&1 || true
+      $TIMEOUT 2s $EWW --no-daemonize --config "$CONFIG" close monitoring-panel-overlay monitoring-panel-docked >/dev/null 2>&1 || true
+      # Open once; if IPC returns a transient error, verify through active-windows.
+      $TIMEOUT 2s $EWW --no-daemonize --config "$CONFIG" open --id "$PANEL_WINDOW_ID" "$target_window" >/dev/null 2>&1 || true
+      for attempt in $(seq 1 10); do
         if $TIMEOUT 1s $EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null | $GREP -q "^$PANEL_WINDOW_ID:"; then
           return 0
         fi
@@ -420,13 +423,13 @@ EOF
 
   # Wrapper script: Switch monitoring panel tab by index
   # Usage: monitor-panel-tab <index>
-  # Index mapping: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+  # Index mapping: 0=windows, 1=projects, 2=tailscale, 3=health, 4=events, 5=traces, 6=devices
   # This centralizes the variable name so Sway keybindings don't need to know it
   monitorPanelTabScript = pkgs.writeShellScriptBin "monitor-panel-tab" ''
     #!${pkgs.bash}/bin/bash
     # Switch monitoring panel to specified tab index
     # Usage: monitor-panel-tab <index>
-    # Index: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+    # Index: 0=windows, 1=projects, 2=tailscale, 3=health, 4=events, 5=traces, 6=devices
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
@@ -455,12 +458,12 @@ EOF
 
   # Wrapper script: Get current monitoring panel view index
   # Usage: monitor-panel-get-view
-  # Returns: 0-5 (or empty if panel not running)
+  # Returns: 0-6 (or empty if panel not running)
   # Used by Sway keybindings for conditional routing (e.g., projects tab-specific actions)
   monitorPanelGetViewScript = pkgs.writeShellScriptBin "monitor-panel-get-view" ''
     #!${pkgs.bash}/bin/bash
     # Get current monitoring panel view index
-    # Returns: 0=windows, 1=projects, 2=apps, 3=health, 4=events, 5=traces
+    # Returns: 0=windows, 1=projects, 2=tailscale, 3=health, 4=events, 5=traces, 6=devices
 
     ${pkgs.eww}/bin/eww --no-daemonize --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null || echo "-1"
   '';
