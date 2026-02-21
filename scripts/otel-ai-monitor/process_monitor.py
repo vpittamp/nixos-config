@@ -13,10 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from .models import AITool, Session, SessionState
+from .models import AITool, IdentityConfidence, Session, SessionState
 from .sway_helper import (
     find_window_for_session,
-    get_focused_window_info,
+    get_tmux_context_for_pid,
     get_process_i3pm_env,
 )
 
@@ -104,6 +104,11 @@ class ProcessMonitor:
                     # Detect Claude Code CLI
                     if self._is_claude_process(cmdline):
                         current_pids[pid] = AITool.CLAUDE_CODE
+                        continue
+
+                    # Detect Gemini CLI
+                    if self._is_gemini_process(cmdline):
+                        current_pids[pid] = AITool.GEMINI_CLI
 
                 except (PermissionError, FileNotFoundError, ProcessLookupError):
                     # Process may have exited
@@ -141,12 +146,17 @@ class ProcessMonitor:
             return False
         return True
 
+    def _is_gemini_process(self, cmdline: str) -> bool:
+        """Check if command line is a Gemini CLI process."""
+        return "/bin/gemini" in cmdline and "gemini-otel-interceptor" not in cmdline
+
     async def _resolve_process_context(
         self, pid: int
-    ) -> tuple[Optional[int], Optional[str]]:
+    ) -> tuple[Optional[int], Optional[str], dict]:
         """Resolve window/project for a detected process."""
         project: Optional[str] = None
         window_id: Optional[int] = None
+        terminal_context = get_tmux_context_for_pid(pid)
 
         try:
             i3pm_env = get_process_i3pm_env(pid)
@@ -159,14 +169,7 @@ class ProcessMonitor:
         except Exception as e:
             logger.debug(f"Process monitor: window correlation failed for pid {pid}: {e}")
 
-        # Fallback only when deterministic correlation fails.
-        if window_id is None:
-            focused_window_id, focused_project = get_focused_window_info()
-            window_id = focused_window_id
-            if not project:
-                project = focused_project
-
-        return window_id, project
+        return window_id, project, terminal_context
 
     async def _update_sessions(self, current_pids: dict[int, AITool]) -> None:
         """Update session tracker based on detected processes.
@@ -180,11 +183,11 @@ class ProcessMonitor:
         for pid, tool in current_pids.items():
             if pid not in self._process_sessions:
                 # New process detected - create session
-                session_id = f"proc-{tool.value}-{pid}"
+                session_id = f"{tool.value}:pid:{pid}"
                 self._process_sessions[pid] = session_id
 
                 # Get window/project context for this specific process.
-                window_id, window_project = await self._resolve_process_context(pid)
+                window_id, window_project, terminal_context = await self._resolve_process_context(pid)
 
                 # Create session in tracker
                 await self._create_process_session(
@@ -193,6 +196,7 @@ class ProcessMonitor:
                     pid=pid,
                     window_id=window_id,
                     project=window_project,
+                    terminal_context=terminal_context,
                 )
 
             else:
@@ -213,6 +217,7 @@ class ProcessMonitor:
         pid: int,
         window_id: Optional[int],
         project: Optional[str],
+        terminal_context: dict,
     ) -> None:
         """Create a new session for a detected process.
 
@@ -229,12 +234,43 @@ class ProcessMonitor:
             # Check if session already exists (from telemetry)
             if session_id in self.tracker._sessions:
                 return
+            for existing in self.tracker._sessions.values():
+                if existing.tool == tool and existing.pid == pid and existing.state != SessionState.EXPIRED:
+                    self._process_sessions[pid] = existing.session_id
+                    logger.debug(
+                        "Process monitor: reusing existing session %s for pid %s",
+                        existing.session_id,
+                        pid,
+                    )
+                    return
+                # Some native sessions don't carry process.pid. If we already have
+                # a native session in the same pane/project, reuse it instead of
+                # creating a duplicate pid session.
+                if (
+                    existing.tool == tool
+                    and existing.native_session_id
+                    and existing.state != SessionState.EXPIRED
+                    and terminal_context.get("tmux_pane")
+                    and existing.terminal_context.tmux_pane == terminal_context.get("tmux_pane")
+                    and (not project or existing.project == project)
+                ):
+                    self._process_sessions[pid] = existing.session_id
+                    logger.debug(
+                        "Process monitor: reusing native session %s for pid %s via pane %s",
+                        existing.session_id,
+                        pid,
+                        terminal_context.get("tmux_pane"),
+                    )
+                    return
 
             session = Session(
                 session_id=session_id,
+                native_session_id=None,
+                identity_confidence=IdentityConfidence.PID,
                 tool=tool,
                 state=SessionState.WORKING,
                 project=project,
+                project_path=None,
                 window_id=window_id,
                 pid=pid,
                 created_at=now,
@@ -243,6 +279,11 @@ class ProcessMonitor:
                 state_seq=1,
                 status_reason="process_detected",
             )
+            session.terminal_context.window_id = window_id
+            session.terminal_context.tmux_session = terminal_context.get("tmux_session")
+            session.terminal_context.tmux_window = terminal_context.get("tmux_window")
+            session.terminal_context.tmux_pane = terminal_context.get("tmux_pane")
+            session.terminal_context.pty = terminal_context.get("pty")
             self.tracker._sessions[session_id] = session
             logger.info(f"Process monitor: created session {session_id} for pid {pid}")
             self.tracker._mark_dirty_unlocked()

@@ -19,6 +19,7 @@
 
 const http = require('node:http');
 const os = require('node:os');
+const fs = require('node:fs');
 const {
   anyValueToJs,
   attrGet,
@@ -42,7 +43,7 @@ const {
 // Config
 // =============================================================================
 
-const INTERCEPTOR_VERSION = '0.1.2';  // Feature 137: Fix PID fallback to avoid incorrect window correlation
+const INTERCEPTOR_VERSION = '0.1.3';  // Native session + pane-aware correlation metadata
 
 const LISTEN_HOST = process.env.GEMINI_OTEL_INTERCEPTOR_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.GEMINI_OTEL_INTERCEPTOR_PORT || '4322', 10);
@@ -108,6 +109,23 @@ function logDebug(...args) {
   if (!DEBUG) return;
   // eslint-disable-next-line no-console
   console.error('[gemini-otel-interceptor]', ...args);
+}
+
+function readProcessEnvByPid(pid) {
+  if (!pid || !Number.isFinite(pid)) return {};
+  try {
+    const raw = fs.readFileSync(`/proc/${pid}/environ`);
+    const out = {};
+    for (const entry of raw.toString('utf8').split('\u0000')) {
+      if (!entry) continue;
+      const idx = entry.indexOf('=');
+      if (idx <= 0) continue;
+      out[entry.slice(0, idx)] = entry.slice(idx + 1);
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 function extractGeminiTextsFromResponseChunk(chunk) {
@@ -236,6 +254,12 @@ function newSession(sessionId, meta) {
     sandboxEnabled: meta.sandboxEnabled ?? null,
     mcpServers: meta.mcpServers || null,
     cwd: meta.cwd || null,
+    projectName: meta.projectName || null,
+    projectPath: meta.projectPath || null,
+    tmuxSession: meta.tmuxSession || null,
+    tmuxWindow: meta.tmuxWindow || null,
+    tmuxPane: meta.tmuxPane || null,
+    pty: meta.pty || null,
     // Feature 135: Store client PID for window correlation
     clientPid: meta.clientPid || null,
 
@@ -319,6 +343,25 @@ function makeSpanRecord(session, span) {
   }
 
   if (session.cwd) resourceAttrs.push({ key: 'working_directory', value: { stringValue: session.cwd } });
+  if (session.projectPath) {
+    resourceAttrs.push({ key: 'project_path', value: { stringValue: session.projectPath } });
+    resourceAttrs.push({ key: 'i3pm.project_path', value: { stringValue: session.projectPath } });
+  }
+  if (session.projectName) {
+    resourceAttrs.push({ key: 'i3pm.project_name', value: { stringValue: session.projectName } });
+  }
+  if (session.tmuxSession) {
+    resourceAttrs.push({ key: 'terminal.tmux.session', value: { stringValue: session.tmuxSession } });
+  }
+  if (session.tmuxWindow) {
+    resourceAttrs.push({ key: 'terminal.tmux.window', value: { stringValue: session.tmuxWindow } });
+  }
+  if (session.tmuxPane) {
+    resourceAttrs.push({ key: 'terminal.tmux.pane', value: { stringValue: session.tmuxPane } });
+  }
+  if (session.pty) {
+    resourceAttrs.push({ key: 'terminal.pty', value: { stringValue: session.pty } });
+  }
 
   return {
     resourceSpans: [
@@ -471,6 +514,13 @@ function handleGeminiLogEvent(meta, attrsObj) {
 
   const session = getOrCreateSession(sessionId, meta);
   session.lastEventTimeMs = timestampMs;
+  if (meta.cwd) session.cwd = meta.cwd;
+  if (meta.projectName) session.projectName = meta.projectName;
+  if (meta.projectPath) session.projectPath = meta.projectPath;
+  if (meta.tmuxSession) session.tmuxSession = meta.tmuxSession;
+  if (meta.tmuxWindow) session.tmuxWindow = meta.tmuxWindow;
+  if (meta.tmuxPane) session.tmuxPane = meta.tmuxPane;
+  if (meta.pty) session.pty = meta.pty;
 
   scheduleSessionIdleFlush(session);
   scheduleTurnIdleFallback(session);
@@ -784,8 +834,18 @@ async function handleGeminiOtlpEnvelope(req, res) {
       const serviceName = attrGetString(resourceAttrs, 'service.name') || 'gemini-cli';
       const serviceVersion = attrGetString(resourceAttrs, 'service.version') || 'unknown';
       const env = attrGetString(resourceAttrs, 'env') || 'dev';
+      const resourceProjectName = attrGetString(resourceAttrs, 'i3pm.project_name');
+      const resourceProjectPath =
+        attrGetString(resourceAttrs, 'project_path')
+        || attrGetString(resourceAttrs, 'i3pm.project_path')
+        || attrGetString(resourceAttrs, 'working_directory');
+      const resourceTmuxSession = attrGetString(resourceAttrs, 'terminal.tmux.session');
+      const resourceTmuxWindow = attrGetString(resourceAttrs, 'terminal.tmux.window');
+      const resourceTmuxPane = attrGetString(resourceAttrs, 'terminal.tmux.pane');
+      const resourcePty = attrGetString(resourceAttrs, 'terminal.pty');
       // Feature 135: Extract client PID for window correlation
       const clientPid = attrGetInt(resourceAttrs, 'process.pid');
+      const pidEnv = readProcessEnvByPid(clientPid);
 
       const scopeLogs = Array.isArray(rl?.scopeLogs) ? rl.scopeLogs : [];
       for (const sl of scopeLogs) {
@@ -815,6 +875,24 @@ async function handleGeminiOtlpEnvelope(req, res) {
             timestampMs: parseIsoToMs(attrsObj['event.timestamp']),
             interactive: typeof attrsObj.interactive === 'boolean' ? attrsObj.interactive : null,
             providerName: 'Google',
+            cwd: attrsObj.cwd || attrsObj.working_directory || null,
+            projectPath:
+              attrsObj.project_path
+              || attrsObj['i3pm.project_path']
+              || attrsObj.cwd
+              || attrsObj.working_directory
+              || resourceProjectPath
+              || pidEnv.I3PM_PROJECT_PATH
+              || null,
+            tmuxSession: attrsObj['terminal.tmux.session'] || resourceTmuxSession || pidEnv.TMUX_SESSION || null,
+            tmuxWindow: attrsObj['terminal.tmux.window'] || resourceTmuxWindow || pidEnv.TMUX_WINDOW || null,
+            tmuxPane: attrsObj['terminal.tmux.pane'] || resourceTmuxPane || pidEnv.TMUX_PANE || null,
+            pty: attrsObj['terminal.pty'] || resourcePty || pidEnv.TTY || null,
+            projectName:
+              attrsObj['i3pm.project_name']
+              || resourceProjectName
+              || pidEnv.I3PM_PROJECT_NAME
+              || null,
             // Feature 135: Pass client PID for window correlation
             clientPid,
           };

@@ -145,21 +145,21 @@ def load_otel_sessions() -> Dict[str, Any]:
     Feature 123: Reads session data written by otel-ai-monitor service.
     This is used by EWW monitoring panel for window badge rendering.
 
-    Feature 136: Also returns sessions_by_window for efficient lookup and
-    global_ai_sessions for orphaned sessions (window_id=-1).
+    Feature 136: Also returns sessions_by_window for efficient lookup.
+    Global/orphaned sessions are intentionally suppressed to enforce
+    project-scoped session visibility.
 
     Returns:
-        Dict with 'sessions' list, 'has_working' boolean, 'sessions_by_window' dict,
-        and 'global_ai_sessions' list for orphaned sessions
+        Dict with 'sessions' list, 'has_working' boolean, and
+        'sessions_by_window' dict.
     """
     default_result = {
-        "schema_version": "2",
+        "schema_version": "3",
         "sessions": [],
         "has_working": False,
         "timestamp": 0,
         "updated_at": "",
         "sessions_by_window": {},
-        "global_ai_sessions": [],
     }
 
     if not OTEL_SESSIONS_FILE.exists():
@@ -176,22 +176,6 @@ def load_otel_sessions() -> Dict[str, Any]:
             schema_version = str(data.get("schema_version", "1"))
             sessions_by_window = data.get("sessions_by_window", {})
 
-            # Feature 136: Extract global AI sessions (window_id=-1 from session_tracker)
-            # Convert string key "-1" to int for consistent handling.
-            #
-            # Only surface actionable orphan sessions in UI to avoid noisy
-            # "Global AI Sessions" from idle trace-only records that have no
-            # PID/window correlation.
-            global_ai_sessions_raw = sessions_by_window.get("-1", sessions_by_window.get(-1, []))
-            global_ai_sessions = [
-                session for session in global_ai_sessions_raw
-                if (
-                    session.get("state") in ("working", "attention")
-                    or bool(session.get("is_streaming", False))
-                    or int(session.get("pending_tools", 0) or 0) > 0
-                )
-            ]
-
             return {
                 "sessions": sessions,
                 "has_working": has_working,
@@ -199,7 +183,6 @@ def load_otel_sessions() -> Dict[str, Any]:
                 "updated_at": updated_at,
                 "schema_version": schema_version,
                 "sessions_by_window": sessions_by_window,
-                "global_ai_sessions": global_ai_sessions,
             }
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 123: Failed to read OTEL sessions file: {e}")
@@ -2377,8 +2360,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": ai_sessions,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions,
-            # Feature 136: Global AI sessions (orphaned, no window correlation)
-            "global_ai_sessions": otel_sessions.get("global_ai_sessions", []),
         }
 
     except DaemonError as e:
@@ -2398,7 +2379,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
             "otel_sessions": otel_sessions,
-            "global_ai_sessions": otel_sessions.get("global_ai_sessions", []),
         }
 
     except Exception as e:
@@ -2418,7 +2398,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
             "otel_sessions": otel_sessions,
-            "global_ai_sessions": otel_sessions.get("global_ai_sessions", []),
         }
 
 

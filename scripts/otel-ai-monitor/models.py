@@ -38,6 +38,35 @@ class Provider(str, Enum):
     GOOGLE = "google"
 
 
+class IdentityConfidence(str, Enum):
+    """Confidence level for how a session identity was established."""
+
+    NATIVE = "native"
+    PID = "pid"
+    PANE = "pane"
+    HEURISTIC = "heuristic"
+
+
+class TerminalContext(BaseModel):
+    """Terminal/tmux context used for session correlation."""
+
+    window_id: Optional[int] = Field(
+        default=None, description="Sway container ID of originating terminal window"
+    )
+    tmux_session: Optional[str] = Field(
+        default=None, description="Tmux session name if process is running under tmux"
+    )
+    tmux_window: Optional[str] = Field(
+        default=None, description="Tmux window identifier/name"
+    )
+    tmux_pane: Optional[str] = Field(
+        default=None, description="Tmux pane identifier"
+    )
+    pty: Optional[str] = Field(
+        default=None, description="Controlling terminal PTY path (e.g. /dev/pts/3)"
+    )
+
+
 # Provider pricing tables (USD per 1M tokens)
 # Source: research.md from feature 125-tracing-parity-codex
 PROVIDER_PRICING: dict[str, dict[str, tuple[float, float]]] = {
@@ -104,6 +133,14 @@ class Session(BaseModel):
     session_id: str = Field(
         description="Unique identifier from telemetry (thread_id or conversation.id)"
     )
+    native_session_id: Optional[str] = Field(
+        default=None,
+        description="Native AI CLI session identifier (session.id/conversation.id) when available",
+    )
+    identity_confidence: IdentityConfidence = Field(
+        default=IdentityConfidence.HEURISTIC,
+        description="How strongly session identity was established",
+    )
     tool: AITool = Field(description="Which AI tool this session belongs to")
     provider: Provider = Field(
         default=Provider.ANTHROPIC,
@@ -115,8 +152,15 @@ class Session(BaseModel):
     project: Optional[str] = Field(
         default=None, description="Project context if available from telemetry"
     )
+    project_path: Optional[str] = Field(
+        default=None, description="Canonical full project path when available"
+    )
     window_id: Optional[int] = Field(
         default=None, description="Sway container ID of originating terminal window"
+    )
+    terminal_context: TerminalContext = Field(
+        default_factory=TerminalContext,
+        description="Terminal/tmux context used for process/session correlation",
     )
     pid: Optional[int] = Field(
         default=None, description="Process PID from telemetry for session correlation"
@@ -222,10 +266,21 @@ class SessionListItem(BaseModel):
     """Session summary for list output."""
 
     session_id: str = Field(description="Session identifier")
+    native_session_id: Optional[str] = Field(
+        default=None, description="Native AI CLI session identifier"
+    )
+    identity_confidence: IdentityConfidence = Field(
+        default=IdentityConfidence.HEURISTIC,
+        description="How strongly session identity was established",
+    )
     tool: str = Field(description="AI tool type")
     state: str = Field(description="Current session state")
     project: Optional[str] = Field(default=None, description="Project context")
+    project_path: Optional[str] = Field(default=None, description="Canonical project path")
     window_id: Optional[int] = Field(default=None, description="Sway container ID for focus")
+    terminal_context: TerminalContext = Field(
+        default_factory=TerminalContext, description="Terminal/tmux correlation context"
+    )
     pid: Optional[int] = Field(default=None, description="Process ID for debugging/correlation")
     trace_id: Optional[str] = Field(default=None, description="OTLP trace ID for Langfuse link")
     # Feature 136: Additional fields for multi-indicator support
@@ -245,7 +300,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="2", description="Session payload schema version")
+    schema_version: str = Field(default="3", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

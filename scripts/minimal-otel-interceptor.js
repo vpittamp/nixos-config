@@ -1,5 +1,5 @@
 /**
- * minimal-otel-interceptor.js (v3.10.0)
+ * minimal-otel-interceptor.js (v3.11.0)
  *
  * Multi-span trace hierarchy for Claude Code sessions.
  * Creates proper hierarchical trace structure: Session -> Turns -> LLM/Tool spans
@@ -90,17 +90,28 @@
 // telemetry includes PID for window correlation in otel-ai-monitor.
 // =============================================================================
 (function injectPidResource() {
+  const escapeAttr = (value) => String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/,/g, '\\,')
+    .replace(/=/g, '\\=');
   const originalEnv = process.env.OTEL_RESOURCE_ATTRIBUTES || '';
-  const pidAttr = `process.pid=${process.pid}`;
+  const attrs = [`process.pid=${process.pid}`];
+  const projectName = process.env.I3PM_PROJECT_NAME;
+  const projectPath = process.env.I3PM_PROJECT_PATH || process.cwd();
+  const tmuxPane = process.env.TMUX_PANE;
+  if (projectName) attrs.push(`i3pm.project_name=${escapeAttr(projectName)}`);
+  if (projectPath) attrs.push(`i3pm.project_path=${escapeAttr(projectPath)}`);
+  if (tmuxPane) attrs.push(`terminal.tmux.pane=${escapeAttr(tmuxPane)}`);
   process.env.OTEL_RESOURCE_ATTRIBUTES = originalEnv
-    ? `${originalEnv},${pidAttr}`
-    : pidAttr;
+    ? `${originalEnv},${attrs.join(',')}`
+    : attrs.join(',');
 })();
 
 const http = require('node:http');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { Buffer } = require('node:buffer');
 
 // =============================================================================
@@ -112,8 +123,10 @@ const TRACE_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/traces'
     : 'http://127.0.0.1:4318/v1/traces');
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'claude-code';
-const INTERCEPTOR_VERSION = '3.10.0';
+const INTERCEPTOR_VERSION = '3.11.0';
 const WORKING_DIRECTORY = process.cwd();
+const I3PM_PROJECT_NAME = process.env.I3PM_PROJECT_NAME || null;
+const I3PM_PROJECT_PATH = process.env.I3PM_PROJECT_PATH || WORKING_DIRECTORY;
 const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR || os.tmpdir();
 const SESSION_META_FILE = path.join(RUNTIME_DIR, `claude-session-${process.pid}.json`);
 const PROMPT_META_FILE = path.join(RUNTIME_DIR, `claude-user-prompt-${process.pid}.json`);
@@ -227,6 +240,41 @@ const MODEL_PRICING = (() => {
   }
   return DEFAULT_MODEL_PRICING;
 })();
+
+function detectTmuxContext() {
+  const context = {
+    session: null,
+    window: null,
+    pane: process.env.TMUX_PANE || null,
+    pty: process.env.TTY || null,
+  };
+
+  if (!process.env.TMUX) return context;
+
+  try {
+    const result = spawnSync(
+      'tmux',
+      ['display-message', '-p', '#{session_name}\t#{window_index}:#{window_name}\t#{pane_id}\t#{pane_tty}'],
+      {
+        encoding: 'utf8',
+        timeout: 200,
+      }
+    );
+    if (result.status === 0 && result.stdout) {
+      const [sessionName, windowName, paneId, paneTty] = result.stdout.trim().split('\t');
+      if (sessionName) context.session = sessionName;
+      if (windowName) context.window = windowName;
+      if (paneId) context.pane = paneId;
+      if (paneTty) context.pty = paneTty;
+    }
+  } catch {
+    // Best effort only.
+  }
+
+  return context;
+}
+
+const TMUX_CONTEXT = detectTmuxContext();
 
 /**
  * Calculate USD cost for an LLM API call based on token usage.
@@ -811,6 +859,7 @@ function maybeHydrateSessionIdFromHistory() {
     const lines = readLastLines(HISTORY_FILE, 20);
 
     // Search from newest to oldest
+    const candidateSessionIds = new Set();
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const entry = JSON.parse(lines[i]);
@@ -837,16 +886,21 @@ function maybeHydrateSessionIdFromHistory() {
         // Validate sessionId format (UUID)
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) continue;
 
-        // Found a matching session!
-        state.session.sessionId = sessionId;
-        state.session.sessionIdSource = 'history';
-        historyDiscoveryState.sessionDiscovered = true;
-        flushSpanBuffer();
-        return;
+        candidateSessionIds.add(sessionId);
       } catch {
         // Invalid JSON line, skip
         continue;
       }
+    }
+
+    // Avoid cross-pane/session collisions: only adopt history if a unique
+    // session UUID matches the project+time window.
+    if (candidateSessionIds.size === 1) {
+      const [sessionId] = Array.from(candidateSessionIds);
+      state.session.sessionId = sessionId;
+      state.session.sessionIdSource = 'history';
+      historyDiscoveryState.sessionDiscovered = true;
+      flushSpanBuffer();
     }
   } catch (e) {
     // Silent failure to avoid disrupting Claude Code
@@ -2159,6 +2213,37 @@ function createOTLPSpan(spanData) {
     { key: 'process.pid', value: { intValue: process.pid.toString() } },
     { key: 'working_directory', value: { stringValue: WORKING_DIRECTORY } }
   ];
+  if (I3PM_PROJECT_NAME) {
+    resourceAttrs.push({ key: 'i3pm.project_name', value: { stringValue: I3PM_PROJECT_NAME } });
+  }
+  if (I3PM_PROJECT_PATH) {
+    resourceAttrs.push({ key: 'project_path', value: { stringValue: I3PM_PROJECT_PATH } });
+    resourceAttrs.push({ key: 'i3pm.project_path', value: { stringValue: I3PM_PROJECT_PATH } });
+  }
+  if (TMUX_CONTEXT.session) {
+    resourceAttrs.push({
+      key: 'terminal.tmux.session',
+      value: { stringValue: TMUX_CONTEXT.session },
+    });
+  }
+  if (TMUX_CONTEXT.window) {
+    resourceAttrs.push({
+      key: 'terminal.tmux.window',
+      value: { stringValue: TMUX_CONTEXT.window },
+    });
+  }
+  if (TMUX_CONTEXT.pane) {
+    resourceAttrs.push({
+      key: 'terminal.tmux.pane',
+      value: { stringValue: TMUX_CONTEXT.pane },
+    });
+  }
+  if (TMUX_CONTEXT.pty) {
+    resourceAttrs.push({
+      key: 'terminal.pty',
+      value: { stringValue: TMUX_CONTEXT.pty },
+    });
+  }
 
   // Add parent trace context as resource attribute for debugging (subagents)
   if (state.session.parentContext) {

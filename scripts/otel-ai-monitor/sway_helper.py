@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import socket
+import subprocess
 from glob import glob
 from pathlib import Path
 from typing import Optional
@@ -406,6 +407,85 @@ def _get_ppid(pid: int) -> Optional[int]:
     except (OSError, ValueError, IndexError):
         pass
     return None
+
+
+def get_process_tty_path(pid: int) -> Optional[str]:
+    """Return controlling PTY path for a process when available."""
+    try:
+        proc_stat = Path(f"/proc/{pid}/stat").read_text()
+        last_paren = proc_stat.rfind(")")
+        if last_paren == -1:
+            return None
+        stat_fields = proc_stat[last_paren + 2:].split()
+        if len(stat_fields) < 5:
+            return None
+
+        tty_nr = int(stat_fields[4])
+        if tty_nr == 0:
+            return None
+
+        major = (tty_nr >> 8) & 0xFFF
+        minor = tty_nr & 0xFF
+        if major == 136:
+            return f"/dev/pts/{minor}"
+    except Exception as e:
+        logger.debug(f"get_process_tty_path failed for PID {pid}: {e}")
+    return None
+
+
+def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
+    """Return tmux session/window/pane metadata for a process when available."""
+    tty_path = get_process_tty_path(pid)
+    context = {
+        "tmux_session": None,
+        "tmux_window": None,
+        "tmux_pane": None,
+        "pty": tty_path,
+    }
+    if not tty_path:
+        return context
+
+    try:
+        result = subprocess.run(
+            [
+                "tmux",
+                "list-panes",
+                "-a",
+                "-F",
+                "#{pane_tty}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_id}\t#{pane_index}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode != 0:
+            return context
+
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) != 6:
+                continue
+            pane_tty, session_name, window_index, window_name, pane_id, pane_index = parts
+            if pane_tty != tty_path:
+                continue
+
+            context["tmux_session"] = session_name or None
+            if window_index or window_name:
+                context["tmux_window"] = (
+                    f"{window_index}:{window_name}" if window_name else window_index
+                )
+            context["tmux_pane"] = pane_id or pane_index or None
+            return context
+    except subprocess.TimeoutExpired:
+        logger.debug("get_tmux_context_for_pid: tmux list-panes timed out")
+    except FileNotFoundError:
+        return context
+    except Exception as e:
+        logger.debug(f"get_tmux_context_for_pid failed: {e}")
+
+    return context
 
 
 def _get_all_sway_pids(tree: dict) -> dict[int, int]:
@@ -858,48 +938,14 @@ def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
     Returns:
         Sway window container ID, or None if not running in tmux or not found
     """
-    import subprocess
-
     try:
-        # Step 1: Get the TTY of the target process
-        proc_stat = Path(f"/proc/{target_pid}/stat").read_text()
-        # Format: pid (comm) state ppid pgrp session tty_nr ...
-        # The comm field can contain spaces (e.g., "tmux: client"), so we find the last ')'
-        last_paren = proc_stat.rfind(")")
-        if last_paren == -1:
+        tmux_ctx = get_tmux_context_for_pid(target_pid)
+        target_pts = tmux_ctx.get("pty")
+        if not target_pts:
             return None
-        # Fields after comm: state(0) ppid(1) pgrp(2) session(3) tty_nr(4)
-        stat_fields = proc_stat[last_paren + 2:].split()
-        if len(stat_fields) < 5:
-            return None
-        tty_nr = int(stat_fields[4])
-        if tty_nr == 0:
-            # No TTY
-            return None
-
-        # Convert tty_nr to pts/X - major 136 = pts
-        major = (tty_nr >> 8) & 0xff
-        minor = tty_nr & 0xff
-        if major != 136:  # Not a pts device
-            return None
-        target_pts = f"/dev/pts/{minor}"
 
         # Step 2: Find which tmux session owns this PTY
-        result = subprocess.run(
-            ["tmux", "list-panes", "-a", "-F", "#{pane_tty} #{session_name}"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        if result.returncode != 0:
-            return None
-
-        session_name = None
-        for line in result.stdout.strip().split("\n"):
-            parts = line.split(" ", 1)
-            if len(parts) == 2 and parts[0] == target_pts:
-                session_name = parts[1]
-                break
+        session_name = tmux_ctx.get("tmux_session")
 
         if not session_name:
             logger.debug(f"No tmux session found for PTY {target_pts}")

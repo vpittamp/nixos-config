@@ -103,73 +103,7 @@
                       :image-height 18)))))
             ;; Projects list
             (for project in {monitoring_data.projects ?: []}
-              (project-widget :project project))
-            ;; Feature 136: Global AI Sessions section for orphaned sessions
-            ;; Shows AI sessions that couldn't be correlated to a specific window
-            (box
-              :class "global-ai-sessions"
-              :visible {arraylength(monitoring_data.global_ai_sessions ?: []) > 0}
-              :orientation "v"
-              :space-evenly false
-              (box
-                :class "global-ai-header"
-                :orientation "h"
-                :space-evenly false
-                (label :class "global-ai-icon" :text "󰚩")
-                (label :class "global-ai-title" :text "Global AI Sessions")
-                (label :class "global-ai-count" :text {"(" + arraylength(monitoring_data.global_ai_sessions ?: []) + ")"}))
-              (box
-                :class "global-ai-sessions-container"
-                :orientation "h"
-                :space-evenly false
-                :spacing 8
-                (for session in {monitoring_data.global_ai_sessions ?: []}
-                  (eventbox
-                    :class "ai-badge-hover ai-session-chip-wrapper"
-                    :cursor {(session.trace_id ?: "") != "" ? "pointer" : "default"}
-                    :onclick {(session.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + session.trace_id + " &" : ""}
-                    :tooltip {((session.tool ?: "unknown") == "claude-code" ? "Claude Code" : ((session.tool ?: "unknown") == "codex" ? "Codex CLI" : ((session.tool ?: "unknown") == "gemini" ? "Gemini CLI" : (session.tool ?: "Unknown")))) + " · " + ((session.state ?: "idle") == "working" ? "⏳ Working" : ((session.state ?: "idle") == "completed" ? "✓ Ready" : ((session.state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((session.project ?: "") != "" ? " · " + session.project : "") + ((session.pid ?: "") != "" ? " · PID " + session.pid : "") + ((session.trace_id ?: "") != "" ? " · Click for trace" : "")}
-                    (box
-                      :class {"ai-session-chip" +
-                        ((session.state ?: "idle") == "working" ? " working" :
-                         ((session.state ?: "idle") == "completed" ? " completed" :
-                          ((session.state ?: "idle") == "attention" ? " attention" : " idle")))}
-                      :orientation "h"
-                      :space-evenly false
-                      :spacing 4
-                      (image
-                        :class {"ai-badge-icon" +
-                          ((session.state ?: "idle") == "working"
-                            ? " working"
-                            : ((session.state ?: "idle") == "completed"
-                              ? " completed"
-                              : ((session.state ?: "idle") == "attention"
-                                ? " attention"
-                                : " idle")))}
-                        :path {(session.tool ?: "unknown") == "claude-code"
-                          ? "${iconPaths.claude}"
-                          : ((session.tool ?: "unknown") == "codex"
-                            ? "${iconPaths.codex}"
-                            : ((session.tool ?: "unknown") == "gemini"
-                              ? "${iconPaths.gemini}"
-                              : "${iconPaths.anthropic}"))}
-                        :image-width 18
-                        :image-height 18)
-                      ;; Status icon next to LLM icon (restored from b658b3dc)
-                      (label
-                        :class {"ai-session-status-icon" +
-                          ((session.state ?: "idle") == "working" ? " working"
-                            : ((session.state ?: "idle") == "completed" ? " completed"
-                              : ((session.state ?: "idle") == "attention" ? " attention" : "")))}
-                        :visible {(session.state ?: "idle") != "idle"}
-                        :text {(session.state ?: "idle") == "working" ? "●"
-                          : ((session.state ?: "idle") == "completed" ? "✓"
-                            : ((session.state ?: "idle") == "attention" ? "!" : ""))})
-                      (label
-                        :class "ai-session-label"
-                        :text {session.project != "" ? session.project : (session.tool ?: "AI")}
-                        :limit-width 15
-                        :truncate true)))))))))))
+              (project-widget :project project))))
 
   (defwidget project-widget [project]
     (box

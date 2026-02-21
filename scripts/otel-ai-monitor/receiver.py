@@ -44,6 +44,42 @@ LANGFUSE_USER_ID = os.environ.get("LANGFUSE_USER_ID")
 LANGFUSE_DEFAULT_TAGS = os.environ.get("LANGFUSE_TAGS")
 
 
+def _any_value_to_python(av: Any) -> Any:
+    """Convert protobuf AnyValue into Python primitive."""
+    if av is None:
+        return None
+
+    if hasattr(av, "HasField"):
+        if av.HasField("string_value"):
+            return av.string_value
+        if av.HasField("int_value"):
+            return av.int_value
+        if av.HasField("bool_value"):
+            return av.bool_value
+        if av.HasField("double_value"):
+            return av.double_value
+        return None
+
+    # Fallback for loose objects without HasField support.
+    if hasattr(av, "string_value"):
+        value = av.string_value
+        if value is not None:
+            return value
+    if hasattr(av, "int_value"):
+        value = av.int_value
+        if value is not None:
+            return value
+    if hasattr(av, "bool_value"):
+        value = av.bool_value
+        if value is not None:
+            return value
+    if hasattr(av, "double_value"):
+        value = av.double_value
+        if value is not None:
+            return value
+    return None
+
+
 def enrich_span_for_langfuse(
     attributes: dict,
     event_name: str,
@@ -293,14 +329,11 @@ class OTLPReceiver:
                 # Look for service.name and process.pid in resource attributes
                 for resource_metrics in otlp_request.resource_metrics:
                     for attr in resource_metrics.resource.attributes:
+                        value = _any_value_to_python(attr.value)
+                        if value is None:
+                            continue
                         if attr.key == "service.name":
-                            # Handle string value
-                            if hasattr(attr.value, 'string_value') and attr.value.string_value:
-                                service_name = attr.value.string_value
-                            elif hasattr(attr.value, 'HasField') and attr.value.HasField("string_value"):
-                                service_name = attr.value.string_value
-                            else:
-                                continue
+                            service_name = str(value)
                             if "claude" in service_name.lower():
                                 tool = AITool.CLAUDE_CODE
                             elif "codex" in service_name.lower():
@@ -308,11 +341,10 @@ class OTLPReceiver:
                             elif "gemini" in service_name.lower():
                                 tool = AITool.GEMINI_CLI
                         elif attr.key == "process.pid":
-                            # Handle int value
-                            if hasattr(attr.value, 'int_value') and attr.value.int_value:
-                                pid = attr.value.int_value
-                            elif hasattr(attr.value, 'HasField') and attr.value.HasField("int_value"):
-                                pid = attr.value.int_value
+                            try:
+                                pid = int(value)
+                            except (TypeError, ValueError):
+                                pass
                     # Found what we need from this resource
                     if tool:
                         break
@@ -333,8 +365,10 @@ class OTLPReceiver:
                             elif "gemini" in service_name.lower():
                                 tool = AITool.GEMINI_CLI
                         elif key == "process.pid":
-                            pid_val = value.get("intValue") or value.get("int_value")
-                            if pid_val:
+                            pid_val = value.get("intValue")
+                            if pid_val is None:
+                                pid_val = value.get("int_value")
+                            if pid_val is not None:
                                 pid = int(pid_val)
                     # Found what we need from this resource
                     if tool:
@@ -342,7 +376,7 @@ class OTLPReceiver:
         except Exception as e:
             logger.debug(f"Could not extract tool/pid from metrics: {e}")
 
-        if pid:
+        if pid is not None:
             logger.debug(f"Metrics heartbeat: tool={tool}, pid={pid}")
 
         return tool, pid
@@ -529,26 +563,7 @@ class OTLPReceiver:
         try:
             for attr in span.attributes:
                 key = attr.key
-                value = None
-
-                av = attr.value
-                if hasattr(av, 'string_value') and av.string_value:
-                    value = av.string_value
-                elif hasattr(av, 'int_value') and av.int_value:
-                    value = av.int_value
-                elif hasattr(av, 'bool_value'):
-                    value = av.bool_value
-                elif hasattr(av, 'double_value') and av.double_value:
-                    value = av.double_value
-                elif hasattr(av, 'HasField'):
-                    if av.HasField("string_value"):
-                        value = av.string_value
-                    elif av.HasField("int_value"):
-                        value = av.int_value
-                    elif av.HasField("bool_value"):
-                        value = av.bool_value
-                    elif av.HasField("double_value"):
-                        value = av.double_value
+                value = _any_value_to_python(attr.value)
 
                 if value is None:
                     continue
@@ -870,11 +885,9 @@ class OTLPReceiver:
         try:
             for attr in resource.attributes:
                 if attr.key == "service.name":
-                    # Handle AnyValue - check for string_value field
-                    if hasattr(attr.value, 'string_value'):
-                        return attr.value.string_value
-                    elif hasattr(attr.value, 'HasField') and attr.value.HasField("string_value"):
-                        return attr.value.string_value
+                    value = _any_value_to_python(attr.value)
+                    if value is not None:
+                        return str(value)
         except Exception as e:
             logger.debug(f"Error extracting service name: {e}")
         return None
@@ -884,7 +897,7 @@ class OTLPReceiver:
         for attr in resource.get("attributes", []):
             if attr.get("key") == "service.name":
                 value = attr.get("value", {})
-                return value.get("stringValue")
+                return value.get("stringValue") or value.get("string_value")
         return None
 
     def _extract_resource_attributes(self, resource: Any) -> dict:
@@ -906,19 +919,24 @@ class OTLPReceiver:
             if not resource or not hasattr(resource, 'attributes'):
                 return attrs
 
+            tracked_keys = {
+                "process.pid",
+                "working_directory",
+                "project_path",
+                "i3pm.project_name",
+                "i3pm.project_path",
+                "terminal.tmux.session",
+                "terminal.tmux.window",
+                "terminal.tmux.pane",
+                "terminal.pty",
+                "host.name",
+            }
             for attr in resource.attributes:
-                if attr.key in ("process.pid", "working_directory", "host.name"):
-                    av = attr.value
-                    # Handle intValue (process.pid is emitted as int)
-                    if hasattr(av, 'int_value') and av.int_value:
-                        attrs[attr.key] = av.int_value
-                    elif hasattr(av, 'HasField') and av.HasField("int_value"):
-                        attrs[attr.key] = av.int_value
-                    # Handle stringValue
-                    elif hasattr(av, 'string_value') and av.string_value:
-                        attrs[attr.key] = av.string_value
-                    elif hasattr(av, 'HasField') and av.HasField("string_value"):
-                        attrs[attr.key] = av.string_value
+                if attr.key not in tracked_keys:
+                    continue
+                value = _any_value_to_python(attr.value)
+                if value is not None:
+                    attrs[attr.key] = value
         except Exception as e:
             logger.warning(f"Error extracting resource attributes: {e}")
         if attrs:
@@ -940,12 +958,31 @@ class OTLPReceiver:
         attrs = {}
         for attr in resource.get("attributes", []):
             key = attr.get("key")
-            if key in ("process.pid", "working_directory", "host.name"):
+            if key in (
+                "process.pid",
+                "working_directory",
+                "project_path",
+                "i3pm.project_name",
+                "i3pm.project_path",
+                "terminal.tmux.session",
+                "terminal.tmux.window",
+                "terminal.tmux.pane",
+                "terminal.pty",
+                "host.name",
+            ):
                 value_obj = attr.get("value", {})
                 if "intValue" in value_obj:
                     attrs[key] = int(value_obj["intValue"])
+                elif "int_value" in value_obj:
+                    attrs[key] = int(value_obj["int_value"])
                 elif "stringValue" in value_obj:
                     attrs[key] = value_obj["stringValue"]
+                elif "string_value" in value_obj:
+                    attrs[key] = value_obj["string_value"]
+                elif "boolValue" in value_obj:
+                    attrs[key] = bool(value_obj["boolValue"])
+                elif "bool_value" in value_obj:
+                    attrs[key] = bool(value_obj["bool_value"])
         return attrs
 
     def _parse_log_record(
@@ -990,28 +1027,7 @@ class OTLPReceiver:
         try:
             for attr in log_record.attributes:
                 key = attr.key
-                value = None
-
-                # Handle AnyValue - try different accessor patterns
-                av = attr.value
-                if hasattr(av, 'string_value') and av.string_value:
-                    value = av.string_value
-                elif hasattr(av, 'int_value') and av.int_value:
-                    value = av.int_value
-                elif hasattr(av, 'bool_value'):
-                    value = av.bool_value
-                elif hasattr(av, 'double_value') and av.double_value:
-                    value = av.double_value
-                elif hasattr(av, 'HasField'):
-                    # Try HasField for proper protobuf messages
-                    if av.HasField("string_value"):
-                        value = av.string_value
-                    elif av.HasField("int_value"):
-                        value = av.int_value
-                    elif av.HasField("bool_value"):
-                        value = av.bool_value
-                    elif av.HasField("double_value"):
-                        value = av.double_value
+                value = _any_value_to_python(attr.value)
 
                 if value is None:
                     continue
