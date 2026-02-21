@@ -177,8 +177,20 @@ def load_otel_sessions() -> Dict[str, Any]:
             sessions_by_window = data.get("sessions_by_window", {})
 
             # Feature 136: Extract global AI sessions (window_id=-1 from session_tracker)
-            # Convert string key "-1" to int for consistent handling
-            global_ai_sessions = sessions_by_window.get("-1", sessions_by_window.get(-1, []))
+            # Convert string key "-1" to int for consistent handling.
+            #
+            # Only surface actionable orphan sessions in UI to avoid noisy
+            # "Global AI Sessions" from idle trace-only records that have no
+            # PID/window correlation.
+            global_ai_sessions_raw = sessions_by_window.get("-1", sessions_by_window.get(-1, []))
+            global_ai_sessions = [
+                session for session in global_ai_sessions_raw
+                if (
+                    session.get("state") in ("working", "attention")
+                    or bool(session.get("is_streaming", False))
+                    or int(session.get("pending_tools", 0) or 0) > 0
+                )
+            ]
 
             return {
                 "sessions": sessions,
