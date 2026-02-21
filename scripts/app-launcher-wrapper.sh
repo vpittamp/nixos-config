@@ -377,6 +377,31 @@ else
     log "DEBUG" "No active worktree context (global mode)"
 fi
 
+# Optional execution-mode override from click-action wrappers.
+# This keeps launch behavior deterministic even if active-worktree.json is briefly stale.
+CONTEXT_VARIANT_OVERRIDE="${I3PM_CONTEXT_VARIANT_OVERRIDE:-}"
+case "$CONTEXT_VARIANT_OVERRIDE" in
+    local)
+        REMOTE_ENABLED="false"
+        REMOTE_HOST=""
+        REMOTE_USER=""
+        REMOTE_WORKING_DIR=""
+        REMOTE_PORT="22"
+        ;;
+    ssh)
+        REMOTE_ENABLED="true"
+        if [[ -z "$REMOTE_HOST" ]]; then
+            REMOTE_HOST="ryzen"
+        fi
+        if [[ -z "$REMOTE_USER" ]]; then
+            REMOTE_USER="${USER:-vpittamp}"
+        fi
+        if [[ -z "$REMOTE_WORKING_DIR" ]]; then
+            REMOTE_WORKING_DIR="$PROJECT_DIR"
+        fi
+        ;;
+esac
+
 # Git metadata from worktree (simplified - can be extended if needed)
 GIT_BRANCH="$WORKTREE_BRANCH"
 GIT_COMMIT=""

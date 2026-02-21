@@ -8,7 +8,10 @@ let
     get_current_variant() {
       local variant
       variant=$(${pkgs.jq}/bin/jq -r '
-        if (.remote != null and (.remote.enabled // false)) then "ssh" else "local" end
+        if ((.execution_mode // "") == "local") or ((.execution_mode // "") == "ssh") then (.execution_mode // "")
+        elif (.remote != null and (.remote.enabled // false)) then "ssh"
+        else "local"
+        end
       ' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "local")
 
       case "$variant" in
@@ -31,6 +34,32 @@ let
       fi
       switch_cmd+=("$project_name")
       "''${switch_cmd[@]}"
+    }
+
+    wait_for_project_variant() {
+      local expected_project="$1"
+      local expected_variant="''${2:-}"
+      local timeout_seconds="''${3:-4}"
+      local start_ts now_ts current_project current_variant
+
+      start_ts=$(date +%s)
+      while true; do
+        current_project=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
+        current_variant=$(get_current_variant)
+
+        if [[ "$current_project" == "$expected_project" ]]; then
+          if [[ -z "$expected_variant" || "$current_variant" == "$expected_variant" ]]; then
+            return 0
+          fi
+        fi
+
+        now_ts=$(date +%s)
+        if [[ $((now_ts - start_ts)) -ge "$timeout_seconds" ]]; then
+          return 1
+        fi
+
+        sleep 0.1
+      done
     }
   '';
 
@@ -80,15 +109,15 @@ let
     # Get current project (T012) - Read from active-worktree.json (Feature 101 single source of truth)
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
-    # Conditional project switch (T013) with optional variant alignment
+    # Conditional project switch (T013) with deterministic variant alignment.
+    # For variant-targeted actions (local/ssh), always run switch to re-apply
+    # context-aware filtering and prevent mixed local+SSH windows on one workspace.
     NEEDS_SWITCH=false
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
         NEEDS_SWITCH=true
-    elif [[ -n "$TARGET_VARIANT" ]]; then
-        CURRENT_VARIANT=$(get_current_variant)
-        if [[ "$CURRENT_VARIANT" != "$TARGET_VARIANT" ]]; then
-            NEEDS_SWITCH=true
-        fi
+    fi
+    if [[ -n "$TARGET_VARIANT" ]]; then
+        NEEDS_SWITCH=true
     fi
 
     if [[ "$NEEDS_SWITCH" == "true" ]]; then
@@ -98,10 +127,17 @@ let
                 "Failed to switch to project $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)} (exit code: $EXIT_CODE)"
             exit 1
         fi
+        if ! wait_for_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" 4; then
+            ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Timeout" \
+                "Context did not converge to $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)}"
+            exit 1
+        fi
     fi
 
     # Focus window (T014)
-    if ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus"; then
+    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
+    FOCUS_RESULT=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
+    if printf '%s\n' "$FOCUS_RESULT" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1; then
         # Success path (T015) - Visual feedback only, no notification
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=$WINDOW_ID
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0) &
@@ -139,11 +175,9 @@ let
     NEEDS_SWITCH=false
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
       NEEDS_SWITCH=true
-    else
-      CURRENT_VARIANT=$(get_current_variant)
-      if [[ "$CURRENT_VARIANT" != "$TARGET_VARIANT" ]]; then
-        NEEDS_SWITCH=true
-      fi
+    fi
+    if [[ -n "$TARGET_VARIANT" ]]; then
+      NEEDS_SWITCH=true
     fi
 
     if [[ "$NEEDS_SWITCH" == "true" ]]; then
@@ -151,14 +185,21 @@ let
         ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" "Failed to switch to $PROJECT_NAME"
         exit 1
       fi
+      if ! wait_for_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" 4; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Timeout" \
+          "Context did not converge to $PROJECT_NAME ($TARGET_VARIANT)"
+        exit 1
+      fi
     fi
 
     if [[ -x "$HOME/.local/bin/app-launcher-wrapper.sh" ]]; then
       if [[ -n "$REMOTE_SESSION_NAME" ]]; then
+        I3PM_CONTEXT_VARIANT_OVERRIDE="$TARGET_VARIANT" \
         I3PM_REMOTE_SESSION_NAME_OVERRIDE="$REMOTE_SESSION_NAME" \
           "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
       else
-        "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
+        I3PM_CONTEXT_VARIANT_OVERRIDE="$TARGET_VARIANT" \
+          "$HOME/.local/bin/app-launcher-wrapper.sh" terminal >/dev/null 2>&1 &
       fi
       exit 0
     fi
