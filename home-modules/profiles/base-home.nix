@@ -37,7 +37,6 @@ in
 
     # Desktop configurations
     ../desktop/dunst.nix       # Notification daemon for i3
-    ../desktop/i3-window-rules.nix  # Auto-generate i3 window rules from app-registry (Feature 035)
     # Event-driven daemon now managed by system service (Feature 037) - see configurations/thinkpad.nix
     ../tools/i3-project-monitor.nix  # Terminal monitoring tool for i3 project system (Feature 017)
     ../tools/i3-project-test.nix     # Test framework for i3 project system (Feature 018)

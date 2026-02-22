@@ -689,16 +689,6 @@ in
         # Apply desired active outputs (reads ~/.config/sway/active-outputs)
       ] ++ lib.optionals isHeadless [
         { command = "~/.local/bin/active-monitors-auto"; }
-      ] ++ lib.optionals (!(isHeadless && headlessSingleOutputMode)) [
-
-        # i3pm daemon (socket-activated system service)
-        # Socket activation happens automatically on first IPC request
-        # The 2-second delay in reassign-workspaces allows daemon to fully initialize
-        # before any IPC connections, avoiding deadlock during startup
-
-        # Monitor workspace distribution (wait for daemon to initialize)
-        { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
-
       ] ++ [
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }

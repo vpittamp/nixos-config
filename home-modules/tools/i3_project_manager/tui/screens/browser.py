@@ -367,15 +367,20 @@ class ProjectBrowserScreen(Screen):
         order = "descending" if self.sort_reverse else "ascending"
         self.notify(f"Sort order: {order}", severity="information")
 
-    def action_clear_project(self) -> None:
+    async def action_clear_project(self) -> None:
         """Clear active project (return to global mode)."""
-        # Send tick event to daemon to clear project
-        import subprocess
-        try:
-            subprocess.run(["i3-msg", "-t", "send_tick", "clear"], check=True, capture_output=True)
-            self.notify("Cleared active project - now in global mode", severity="information")
-            self.active_project = None
-        except subprocess.CalledProcessError as e:
-            self.notify(f"Failed to clear project: {e}", severity="error")
-        except FileNotFoundError:
-            self.notify("i3-msg not found - cannot clear project", severity="error")
+        if hasattr(self.app, "daemon_client") and self.app.daemon_client:
+            try:
+                from i3_project_manager.core.project import ProjectManager
+                pm = ProjectManager(self.app.daemon_client)
+                success, _elapsed_ms, error_msg = await pm.clear_project()
+                if success:
+                    self.notify("Cleared active project - now in global mode", severity="information")
+                    self.active_project = None
+                    self.app.active_project = None
+                else:
+                    self.notify(f"Failed to clear project: {error_msg or 'unknown error'}", severity="error")
+            except Exception as e:
+                self.notify(f"Failed to clear project: {e}", severity="error")
+        else:
+            self.notify("Daemon not connected", severity="error")

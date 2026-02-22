@@ -24,12 +24,6 @@ from .window_filter import (
     WindowEnvironment,
 )
 from .registry_loader import RegistryLoader, RegistryApp
-from .workspace_assigner import (
-    WorkspaceAssigner,
-    WorkspaceAssignment,
-    WindowIdentifier,
-    get_workspace_assigner,
-)
 from .run_raise_manager import RunRaiseManager
 
 __all__ = [
@@ -39,10 +33,6 @@ __all__ = [
     "WindowEnvironment",
     "RegistryLoader",
     "RegistryApp",
-    "WorkspaceAssigner",
-    "WorkspaceAssignment",
-    "WindowIdentifier",
-    "get_workspace_assigner",
     "RunRaiseManager",
     # Feature 091: Performance optimization
     "CommandBatchService",

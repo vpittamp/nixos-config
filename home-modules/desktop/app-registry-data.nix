@@ -5,8 +5,7 @@
 # Feature 057: Environment Variable-Based Window Matching
 #
 # This file contains the validated application definitions that can be imported
-# by multiple modules (app-registry.nix for generating files, i3-window-rules.nix
-# for generating window rules, etc.)
+# by multiple modules (for example app-registry.nix and i3-project-event-daemon).
 #
 # IMPORTANT - Feature 057 Changes:
 #

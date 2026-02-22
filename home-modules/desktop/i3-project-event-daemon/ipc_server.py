@@ -284,10 +284,6 @@ class IPCServer:
                 # Return hierarchical tree structure (outputs array)
                 tree_result = await self._get_window_tree(params)
                 result = tree_result.get("outputs", [])
-            elif method == "switch_project":
-                result = await self._switch_project(params)
-            elif method == "clear_project":
-                result = await self._clear_project(params)
             elif method == "get_events":
                 # Return events array (not dict with stats) for CLI
                 # Unified event system: Return full event data with source field
@@ -1041,321 +1037,6 @@ class IPCServer:
                 event_type="query::windows",
                 params={"project": params.get("project")} if params.get("project") else None,
                 result_count=len(windows) if 'windows' in locals() else 0,
-                duration_ms=duration_ms,
-                error=error_msg,
-            )
-
-    async def _switch_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Switch to a project and return results.
-
-        Feature 101: Uses repos.json as single source of truth.
-        Project names are qualified: account/repo:branch
-
-        Feature 102 (T034): Creates correlation chain for causality tracking.
-
-        Args:
-            params: Switch parameters with project_name (qualified name)
-
-        Returns:
-            Dictionary with previous_project, new_project, windows_hidden, windows_shown
-        """
-        from pathlib import Path
-        from .models.discovery import parse_branch_metadata
-        from .services.correlation_service import new_correlation, end_correlation, get_correlation_context
-
-        start_time = time.perf_counter()
-        project_name = params.get("project_name")
-        error_msg = None
-
-        # Feature 102 (T034): Start a new causality chain for project switch
-        correlation_id = new_correlation("project::switch")
-
-        try:
-            if not project_name:
-                raise ValueError("project_name parameter is required")
-
-            # Feature 101: Load from repos.json
-            repos_file = ConfigPaths.REPOS_FILE
-            if not repos_file.exists():
-                raise ValueError("repos.json not found. Run 'i3pm discover' first.")
-
-            with open(repos_file) as f:
-                repos_data = json.load(f)
-
-            # Parse qualified name: account/repo:branch - DETERMINISTIC, branch required
-            # Feature 101: No implicit main/fallback selection
-            if ":" not in project_name:
-                raise ValueError(
-                    f"Branch is required in project name. "
-                    f"Use 'account/repo:branch' format (e.g., '{project_name}:main')"
-                )
-
-            repo_name, branch = project_name.rsplit(":", 1)
-
-            # Find the repository - exact match only, no fallbacks
-            worktree_data = None
-            for repo in repos_data.get("repositories", []):
-                r_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
-                if r_qualified == repo_name:
-                    # Found the repository - now find exact branch
-                    for wt in repo.get("worktrees", []):
-                        if wt.get("branch") == branch:
-                            worktree_data = {"repo": repo, "worktree": wt}
-                            break
-                    break
-
-            if not worktree_data:
-                # Provide helpful error message
-                repo_found = None
-                for repo in repos_data.get("repositories", []):
-                    r_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
-                    if r_qualified == repo_name:
-                        repo_found = repo
-                        break
-
-                if not repo_found:
-                    raise ValueError(f"Repository not found: {repo_name}")
-                else:
-                    available_branches = [wt.get("branch") for wt in repo_found.get("worktrees", [])]
-                    raise ValueError(
-                        f"Worktree '{branch}' not found in {repo_name}. "
-                        f"Available branches: {', '.join(available_branches)}"
-                    )
-
-            wt = worktree_data["worktree"]
-            repo = worktree_data["repo"]
-            wt_path = wt.get("path", "")
-            repo_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
-
-            # Feature 098 (T029-T030): Validate project status before switching
-            if wt_path and not Path(wt_path).exists():
-                raise RuntimeError(json.dumps({
-                    "code": -32001,
-                    "message": f"Cannot switch to project '{project_name}': directory does not exist at {wt_path}",
-                    "data": {
-                        "reason": "project_missing",
-                        "project_name": project_name,
-                        "directory": wt_path,
-                        "suggestion": "Run 'i3pm discover' to update project state"
-                    }
-                }))
-
-            # Get current project before switch
-            previous_project = self.state_manager.state.active_project
-
-            # Count current windows
-            all_windows = list(self.state_manager.state.window_map.values())
-            scoped_windows = [w for w in all_windows if w.window_class in self.state_manager.state.scoped_classes]
-
-            # Calculate windows that will be hidden (scoped windows from other projects)
-            windows_to_hide = len([w for w in scoped_windows if w.project != project_name and w.project is not None])
-
-            # Calculate windows that will be shown (scoped windows from new project)
-            windows_to_show = len([w for w in scoped_windows if w.project == project_name])
-
-            # Directly switch the project by updating state
-            # Import needed for project switching
-            from datetime import datetime
-            from .config import save_active_project
-            from .models import ActiveProjectState
-
-            await self.state_manager.set_active_project(project_name)
-
-            # Save active project state to disk
-            active_state = ActiveProjectState(
-                project_name=project_name
-            )
-            config_dir = Path.home() / ".config" / "i3"
-            config_file = config_dir / "active-project.json"
-            save_active_project(active_state, config_file)
-
-            # Feature 101: Also save active-worktree.json for app launcher context
-            # Feature 137: Use atomic write to prevent corruption
-            worktree_context_file = config_dir / "active-worktree.json"
-            worktree_context = self._build_active_worktree_context(
-                project_name, repo_qualified, repo, wt
-            )
-            atomic_write_json(worktree_context_file, worktree_context)
-
-            logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
-
-            # Update window visibility based on new project using mark-based filtering
-            logger.debug(f"IPC: Checking i3 connection: i3_connection={self.i3_connection}, conn={self.i3_connection.conn if self.i3_connection else None}")
-            if self.i3_connection and self.i3_connection.conn:
-                logger.info(f"IPC: Applying mark-based window filtering for project '{project_name}'")
-                # Feature 137: Wrap in try/except for graceful degradation
-                try:
-                    from .services.window_filter import filter_windows_by_project
-                    filter_result = await filter_windows_by_project(
-                        self.i3_connection.conn,
-                        project_name,
-                        self.workspace_tracker,  # Feature 038: Pass workspace_tracker for state persistence
-                        active_context_key=worktree_context.get("context_key"),
-                    )
-                    windows_to_hide = filter_result.get("hidden", 0)
-                    windows_to_show = filter_result.get("visible", 0)
-                    logger.info(
-                        f"IPC: Window filtering applied: {windows_to_show} visible, {windows_to_hide} hidden "
-                        f"(via mark-based filtering)"
-                    )
-                except Exception as e:
-                    logger.error(f"IPC: Window filtering failed for '{project_name}': {e}")
-                    # Notify clients of partial failure - project switched but windows not filtered
-                    await self.broadcast_event({
-                        "type": "error",
-                        "action": "window_filter_failed",
-                        "project": project_name,
-                        "error": str(e)
-                    })
-            else:
-                logger.warning(f"IPC: Cannot apply filtering - i3 connection not available")
-
-            # Broadcast project change event for immediate status bar update
-            await self.broadcast_event({
-                "type": "project",
-                "action": "switch",
-                "project": project_name
-            })
-
-            # Feature 101: Build project response from repos.json data (already loaded as wt, repo, repo_qualified)
-            branch = wt.get("branch", "unknown")
-
-            # Parse branch metadata
-            branch_metadata = parse_branch_metadata(branch)
-
-            project_response = {
-                "name": project_name,
-                "directory": wt_path,
-                "display_name": branch,
-                # Feature 101: All projects are worktrees
-                "source_type": "worktree",
-                "status": "active" if Path(wt_path).exists() else "missing",
-                "parent_project": repo_qualified,
-            }
-
-            # branch_metadata (nullable object)
-            if branch_metadata:
-                project_response["branch_metadata"] = {
-                    "number": branch_metadata.number,
-                    "type": branch_metadata.type,
-                    "full_name": branch_metadata.full_name,
-                }
-
-            # git_metadata from worktree entry
-            project_response["git_metadata"] = {
-                "branch": branch,
-                "commit": wt.get("commit", ""),
-                "is_clean": wt.get("is_clean", True),
-                "ahead": wt.get("ahead", 0),
-                "behind": wt.get("behind", 0),
-            }
-
-            return {
-                "success": True,
-                "previous_project": previous_project,
-                "new_project": project_name,
-                "project": project_response,
-                "windows_hidden": windows_to_hide,
-                "windows_shown": windows_to_show,
-            }
-
-        except Exception as e:
-            error_msg = str(e)
-            raise
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            # Feature 102 (T034): Log with correlation_id
-            corr_id, depth = get_correlation_context()
-            await self._log_ipc_event(
-                event_type="project::switch",
-                old_project=previous_project if 'previous_project' in locals() else None,
-                new_project=project_name,
-                windows_affected=windows_to_hide + windows_to_show if 'windows_to_hide' in locals() else None,
-                duration_ms=duration_ms,
-                error=error_msg,
-            )
-            # Feature 102 (T034): End the causality chain
-            end_correlation()
-
-    async def _clear_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Clear active project (enter global mode).
-
-        Args:
-            params: Clear parameters (currently unused)
-
-        Returns:
-            Dictionary with previous_project and windows_shown
-        """
-        start_time = time.perf_counter()
-        error_msg = None
-
-        try:
-            # Get current project before clearing
-            previous_project = self.state_manager.state.active_project
-
-            if previous_project is None:
-                # Already in global mode
-                # Broadcast event even if no-op for consistency
-                await self.broadcast_event({
-                    "type": "project",
-                    "action": "clear",
-                    "project": None
-                })
-                return {
-                    "previous_project": None,
-                    "windows_shown": 0,
-                }
-
-            # Count scoped windows that will be shown when clearing project
-            all_windows = list(self.state_manager.state.window_map.values())
-            scoped_windows = [w for w in all_windows if w.window_class in self.state_manager.state.scoped_classes]
-            windows_to_show = len([w for w in scoped_windows if w.project != previous_project])
-
-            # Directly clear the project by updating state
-            from datetime import datetime
-            from .config import save_active_project
-            from .models import ActiveProjectState
-
-            await self.state_manager.set_active_project(None)
-
-            # Save cleared state to disk
-            from pathlib import Path
-            active_state = ActiveProjectState(
-                project_name=None
-            )
-            config_dir = Path.home() / ".config" / "i3"
-            config_file = config_dir / "active-project.json"
-            save_active_project(active_state, config_file)
-
-            # Show all scoped windows when clearing project
-            if self.i3_connection and self.i3_connection.conn:
-                for window in scoped_windows:
-                    if window.project != previous_project:
-                        # Move hidden windows back from scratchpad
-                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad; move workspace current')
-
-            # Broadcast project clear event for immediate status bar update
-            await self.broadcast_event({
-                "type": "project",
-                "action": "clear",
-                "project": None
-            })
-
-            return {
-                "previous_project": previous_project,
-                "windows_shown": windows_to_show,
-            }
-
-        except Exception as e:
-            error_msg = str(e)
-            raise
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="project::clear",
-                old_project=previous_project if 'previous_project' in locals() else None,
-                new_project=None,
-                windows_affected=windows_to_show if 'windows_to_show' in locals() else None,
                 duration_ms=duration_ms,
                 error=error_msg,
             )
@@ -3252,19 +2933,24 @@ class IPCServer:
             if not project_name:
                 raise ValueError("project_name parameter is required")
 
-            # Create LayoutEngine instance
-            from .services.layout_engine import LayoutEngine
-            layout_engine = LayoutEngine(self.i3_connection)
+            from .layout.persistence import list_layouts
 
-            # List layouts
-            all_layouts = layout_engine.list_layouts(project_name)
+            # Persisted layout metadata lives on disk and does not require i3 IPC.
+            all_layouts = list_layouts(project_name)
+            layouts = [
+                {
+                    "layout_name": layout.get("name", ""),
+                    "timestamp": layout.get("created_at"),
+                    "windows_count": layout.get("total_windows", 0),
+                    "file_path": layout.get("file_path", ""),
+                }
+                for layout in all_layouts
+            ]
 
             # Feature 074: T084 - Filter auto-saves if requested
             if not include_auto_saves:
-                layouts = [layout for layout in all_layouts
+                layouts = [layout for layout in layouts
                           if not layout.get("layout_name", "").startswith("auto-")]
-            else:
-                layouts = all_layouts
 
             # Add is_auto_save flag to each layout (Feature 074: T084)
             for layout in layouts:
@@ -3325,12 +3011,8 @@ class IPCServer:
             if not project_name or not layout_name:
                 raise ValueError("project_name and layout_name parameters are required")
 
-            # Create LayoutEngine instance
-            from .services.layout_engine import LayoutEngine
-            layout_engine = LayoutEngine(self.i3_connection)
-
-            # Delete layout
-            deleted = layout_engine.delete_layout(project_name, layout_name)
+            from .layout.persistence import delete_layout
+            deleted = delete_layout(layout_name, project_name)
 
             if not deleted:
                 raise RuntimeError(
@@ -3350,7 +3032,7 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="layout::delete",
-                project_name=params.get("project"),
+                project_name=params.get("project_name"),
                 params=params,
                 duration_ms=duration_ms,
             )

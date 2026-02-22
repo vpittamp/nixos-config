@@ -876,16 +876,6 @@ class I3ProjectDaemon:
         # This must happen AFTER event subscription to ensure mark commands work properly
         await self.connection.perform_startup_scan()
 
-        # Feature 037 T016: Initialize project switch request queue for sequential processing
-        from .handlers import initialize_project_switch_queue
-        initialize_project_switch_queue(
-            self.connection.conn,
-            self.state_manager,
-            self.config_dir,
-            self.workspace_tracker
-        )
-        logger.info("Project switch request queue initialized")
-
         # Feature 074: Session Management - Load persisted focus state (T025, US1)
         await self.state_manager.load_focus_state()
 
@@ -1003,16 +993,6 @@ class I3ProjectDaemon:
 
         # Wrap all shutdown operations in overall timeout (10s total)
         try:
-            # Feature 037 T016: Shutdown project switch queue (2s timeout)
-            try:
-                from .handlers import shutdown_project_switch_queue
-                await asyncio.wait_for(shutdown_project_switch_queue(), timeout=2.0)
-                logger.info("Project switch queue shutdown complete")
-            except asyncio.TimeoutError:
-                logger.warning("Project switch queue shutdown timed out after 2s (continuing)")
-            except Exception as e:
-                logger.error(f"Error shutting down project switch queue: {e}")
-
             # Stop file watchers - synchronous, fast
             if self.rules_watcher:
                 try:

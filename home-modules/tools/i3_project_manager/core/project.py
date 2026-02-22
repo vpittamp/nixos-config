@@ -201,12 +201,7 @@ class ProjectManager:
     ) -> Tuple[bool, float, Optional[str]]:
         """Switch to a project.
 
-        This sends a tick event to the daemon which triggers:
-        1. Daemon processes tick event
-        2. Daemon sets active project
-        3. Daemon hides old project windows
-        4. Daemon shows new project windows
-        5. Daemon marks new windows with project mark
+        Uses daemon JSON-RPC `worktree.switch` as the single source of truth.
 
         Args:
             name: Project name to switch to
@@ -224,14 +219,13 @@ class ProjectManager:
         project = await self.get_project(name)
 
         try:
-            # Get i3 client
+            daemon = await self._get_daemon()
             i3 = await self._get_i3()
 
-            # Send tick event to daemon
-            await i3.send_tick(f"project:{name}")
+            # Canonical switch path (tick-based switching removed from daemon).
+            await daemon.call("worktree.switch", {"qualified_name": name})
 
             # Wait for daemon to process (query status until active_project changes)
-            daemon = await self._get_daemon()
             max_wait = 2.0  # 2 seconds max wait (increased from 500ms)
             poll_interval = 0.1  # 100ms polling (increased from 50ms for less CPU usage)
             elapsed = 0.0
@@ -274,14 +268,12 @@ class ProjectManager:
         start_time = time.time()
 
         try:
-            # Get i3 client
-            i3 = await self._get_i3()
+            daemon = await self._get_daemon()
 
-            # Send tick event to daemon (use "project:none" consistent with daemon handler)
-            await i3.send_tick("project:none")
+            # Canonical clear path (tick-based clearing removed from daemon).
+            await daemon.call("worktree.clear", {})
 
             # Wait for daemon to process
-            daemon = await self._get_daemon()
             max_wait = 2.0  # 2 seconds max wait (increased from 500ms)
             poll_interval = 0.1  # 100ms polling
             elapsed = 0.0

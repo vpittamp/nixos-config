@@ -15,7 +15,6 @@ from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent, OutputEvent
 
 from .state import StateManager
 from .models import WindowInfo, WorkspaceInfo, ApplicationClassification, EventEntry
-from .config import save_active_project, load_active_project
 from .pattern_resolver import classify_window, Classification
 from .window_rules import WindowRule
 from .action_executor import apply_rule_actions  # Feature 024
@@ -140,21 +139,6 @@ async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
     except Exception as e:
         # Never let cache management break normal event handling
         logger.debug(f"[Feature 123] Error invalidating cache: {e}")
-
-
-def _active_context_key_for_project(project_name: str) -> Optional[str]:
-    """Read active context key from active-worktree.json when it matches the project."""
-    context_file = Path.home() / ".config" / "i3" / "active-worktree.json"
-    try:
-        if not context_file.exists():
-            return None
-        data = json.loads(context_file.read_text())
-        if str(data.get("qualified_name", "")).strip() != project_name:
-            return None
-        context_key = str(data.get("context_key", "")).strip()
-        return context_key or None
-    except Exception:
-        return None
 
 
 # ============================================================================
@@ -372,105 +356,6 @@ async def _delayed_property_recheck(
 _output_change_task: Optional[asyncio.Task] = None
 _last_output_event_time: float = 0.0
 
-# Feature 037 T016: Request queue for sequential project switch processing
-_project_switch_queue: Optional[asyncio.Queue] = None
-_project_switch_worker_task: Optional[asyncio.Task] = None
-
-
-async def _project_switch_worker(
-    conn: aio.Connection,
-    state_manager: StateManager,
-    config_dir: Path,
-    workspace_tracker,
-) -> None:
-    """Background worker that processes project switch requests sequentially.
-
-    This ensures rapid project switches are handled one at a time, preventing
-    race conditions and overlapping window filtering operations.
-
-    Args:
-        conn: i3 async connection
-        state_manager: State manager instance
-        config_dir: Config directory
-        workspace_tracker: WorkspaceTracker for window filtering
-    """
-    global _project_switch_queue
-
-    logger.info("Project switch worker started")
-
-    while True:
-        try:
-            # Wait for next switch request
-            project_name = await _project_switch_queue.get()
-
-            logger.debug(f"Processing queued switch request: {project_name}")
-
-            # Process the switch
-            await _switch_project(project_name, state_manager, conn, config_dir, workspace_tracker)
-
-            # Mark task as done
-            _project_switch_queue.task_done()
-
-        except asyncio.CancelledError:
-            logger.info("Project switch worker cancelled")
-            break
-        except Exception as e:
-            logger.error(f"Error in project switch worker: {e}", exc_info=True)
-            # Continue processing even if one switch fails
-
-
-def initialize_project_switch_queue(
-    conn: aio.Connection,
-    state_manager: StateManager,
-    config_dir: Path,
-    workspace_tracker,
-) -> None:
-    """Initialize the project switch request queue and worker task.
-
-    Args:
-        conn: i3 async connection
-        state_manager: State manager instance
-        config_dir: Config directory
-        workspace_tracker: WorkspaceTracker for window filtering
-    """
-    global _project_switch_queue, _project_switch_worker_task
-
-    if _project_switch_queue is None:
-        _project_switch_queue = asyncio.Queue(maxsize=10)  # Limit to 10 pending switches
-        logger.info("Project switch queue initialized (max size: 10)")
-
-    if _project_switch_worker_task is None or _project_switch_worker_task.done():
-        _project_switch_worker_task = asyncio.create_task(
-            _project_switch_worker(conn, state_manager, config_dir, workspace_tracker)
-        )
-        logger.info("Project switch worker task created")
-
-
-async def shutdown_project_switch_queue() -> None:
-    """Shutdown the project switch queue and worker task gracefully."""
-    global _project_switch_worker_task, _project_switch_queue
-
-    if _project_switch_worker_task and not _project_switch_worker_task.done():
-        # Cancel worker task
-        _project_switch_worker_task.cancel()
-
-        try:
-            await _project_switch_worker_task
-        except asyncio.CancelledError:
-            pass
-
-        logger.info("Project switch worker task stopped")
-
-    # Clear queue
-    if _project_switch_queue:
-        while not _project_switch_queue.empty():
-            try:
-                _project_switch_queue.get_nowait()
-                _project_switch_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
-
-
 # ============================================================================
 # USER STORY 1 (P1): Real-time Project State Updates
 # ============================================================================
@@ -482,17 +367,12 @@ async def on_tick(
     state_manager: StateManager,
     config_dir: Path,
     event_buffer: Optional["EventBuffer"] = None,
-    workspace_tracker=None,  # Feature 037: Window filtering
+    workspace_tracker=None,  # Deprecated legacy parameter kept for call-site stability
 ) -> None:
-    """Handle tick events for project switch notifications (T007).
+    """Handle daemon tick events.
 
-    Args:
-        conn: i3 async IPC connection
-        event: Tick event containing payload
-        state_manager: State manager instance
-        config_dir: Configuration directory path
-        event_buffer: Event buffer for recording events (Feature 017)
-        workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
+    Project switching via tick payloads is deprecated. The canonical switching path
+    is the IPC `worktree.switch` / `worktree.clear` methods.
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -508,44 +388,17 @@ async def on_tick(
                 "payload": payload,
                 "active_project": active_project or "none",
             },
-            level="INFO" if payload.startswith("project:") else "DEBUG"
+            level="INFO" if payload.startswith("project:") else "DEBUG",
         )
 
-        logger.info(f"✓ TICK EVENT RECEIVED: {payload}")  # Changed to INFO to ensure visibility
+        logger.info(f"✓ TICK EVENT RECEIVED: {payload}")
         logger.debug(f"Received tick event: {payload}")
 
         if payload.startswith("project:"):
-            # Parse payload: "project:switch:nixos" or "project:clear" or "project:none"
-            parts = payload.split(":", 2)
-
-            if len(parts) == 3 and parts[1] == "switch":
-                # Format: project:switch:<name>
-                project_name = parts[2]
-                # Feature 037 T016: Queue switch request for sequential processing
-                if _project_switch_queue is not None:
-                    try:
-                        # Try to add to queue without blocking
-                        _project_switch_queue.put_nowait(project_name)
-                        logger.debug(f"Queued project switch request: {project_name} (queue size: {_project_switch_queue.qsize()})")
-                    except asyncio.QueueFull:
-                        logger.warning(f"Project switch queue is full, dropping request for {project_name}")
-                else:
-                    # Fallback to direct call if queue not initialized
-                    logger.debug("Project switch queue not initialized, processing directly")
-                    await _switch_project(project_name, state_manager, conn, config_dir, workspace_tracker)
-            elif len(parts) == 2:
-                # Format: project:clear or project:none or project:reload
-                action = parts[1]
-                if action in ("clear", "none"):
-                    await _clear_project(state_manager, conn, config_dir)
-                elif action == "reload":
-                    logger.info("Reloading project configurations...")
-                    # TODO: Implement config reload
-                else:
-                    logger.warning(f"Unknown project action: {action}")
-            else:
-                logger.warning(f"Invalid project tick payload format: {payload}")
-
+            logger.warning(
+                "Ignoring deprecated project tick payload '%s'; use IPC worktree.switch/worktree.clear",
+                payload,
+            )
         elif payload == "i3pm:reload-config":
             # Reload app classification config (T030 - Pattern-based classification)
             logger.info("Reloading app classification configuration...")
@@ -554,7 +407,11 @@ async def on_tick(
                 config_file = config_dir / "app-classes.json"
                 new_classification = load_app_classification(config_file)
                 await state_manager.update_app_classification(new_classification)
-                logger.info(f"✓ App classification reloaded: {len(new_classification.scoped_classes)} scoped, {len(new_classification.global_classes)} global")
+                logger.info(
+                    "✓ App classification reloaded: %s scoped, %s global",
+                    len(new_classification.scoped_classes),
+                    len(new_classification.global_classes),
+                )
             except Exception as e:
                 logger.error(f"Failed to reload app classification: {e}")
                 raise
@@ -579,233 +436,6 @@ async def on_tick(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
-
-
-async def _switch_project(
-    project_name: str,
-    state_manager: StateManager,
-    conn: aio.Connection,
-    config_dir: Path,
-    workspace_tracker=None,  # Feature 037: Window filtering
-) -> None:
-    """Switch to a new project (hide old, show new).
-
-    Args:
-        project_name: Name of project to switch to
-        state_manager: State manager instance
-        conn: i3 async connection
-        config_dir: Config directory
-        workspace_tracker: WorkspaceTracker for window filtering (Feature 037)
-    """
-    # Get current active project
-    old_project = await state_manager.get_active_project()
-
-    if old_project == project_name:
-        logger.info(f"Already on project {project_name}")
-        return
-
-    # Feature 053 Phase 6: Comprehensive project switch logging
-    log_event_entry(
-        "project::switch",
-        {
-            "old_project": old_project or "none",
-            "new_project": project_name,
-        },
-        level="INFO"
-    )
-
-    logger.info(f"TICK: Switching project: {old_project} → {project_name}")
-
-    # Feature 074: Session Management - Auto-save layout before switching (T078-T080, US5)
-    if old_project and hasattr(state_manager, 'auto_save_manager') and state_manager.auto_save_manager:
-        try:
-            # T079: Auto-save in background to avoid blocking (<200ms target)
-            auto_save_task = asyncio.create_task(
-                state_manager.auto_save_manager.auto_save_on_switch(old_project)
-            )
-            logger.debug(f"Started auto-save background task for {old_project}")
-            # Note: Task runs in background, doesn't block project switch
-        except Exception as e:
-            logger.error(f"Failed to start auto-save for {old_project}: {e}")
-            # Don't fail the project switch if auto-save fails
-
-    # Feature 037: Use mark-based window filtering (rebuild trigger: 2025-10-25-18:55)
-    logger.info(f"TICK: Importing and calling mark-based filter_windows_by_project")
-    from .services.window_filter import filter_windows_by_project
-    start_time = time.perf_counter()
-
-    logger.info(f"TICK: Calling filter_windows_by_project for '{project_name}'")
-    active_context_key = _active_context_key_for_project(project_name)
-    filter_result = await filter_windows_by_project(
-        conn,
-        project_name,
-        workspace_tracker,
-        active_context_key=active_context_key,
-    )
-
-    duration_ms = (time.perf_counter() - start_time) * 1000
-    logger.info(
-        f"TICK: Window filtering complete: {filter_result['visible']} visible, {filter_result['hidden']} hidden "
-        f"({duration_ms:.1f}ms)"
-    )
-
-    if filter_result.get('errors', 0) > 0:
-        logger.warning(f"TICK: Errors during filtering: {filter_result['errors']}")
-
-    # Update active project
-    await state_manager.set_active_project(project_name)
-
-    # Feature 074: Session Management - Restore workspace focus (T027-T029, US1)
-    # Restore the previously focused workspace for this project
-    if hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
-        try:
-            # T027: Get previously focused workspace for this project
-            focused_workspace = await state_manager.focus_tracker.get_project_focused_workspace(project_name)
-
-            if focused_workspace:
-                # Check if workspace exists (has windows) by querying Sway tree
-                tree = await conn.get_tree()
-                workspace_exists = any(ws.num == focused_workspace for ws in tree.workspaces())
-
-                if workspace_exists:
-                    # T027: Restore focus to previously focused workspace
-                    await conn.command(f"workspace number {focused_workspace}")
-                    logger.info(f"Restored workspace focus for project {project_name} → workspace {focused_workspace}")
-                else:
-                    # T029: Fallback - focus first workspace with project windows
-                    project_windows = await state_manager.get_windows_by_project(project_name)
-                    if project_windows:
-                        # Find first workspace with visible windows
-                        workspaces_with_windows = sorted(set(w.workspace_num for w in project_windows if hasattr(w, 'workspace_num') and w.workspace_num))
-                        if workspaces_with_windows:
-                            fallback_ws = workspaces_with_windows[0]
-                            await conn.command(f"workspace number {fallback_ws}")
-                            logger.info(f"Previously focused workspace {focused_workspace} doesn't exist, focused first workspace with project windows: {fallback_ws}")
-                        else:
-                            # T028: Fallback - focus workspace 1 if no project windows found
-                            await conn.command("workspace number 1")
-                            logger.debug(f"No project windows found, focused workspace 1 as fallback")
-                    else:
-                        # T028: Fallback - focus workspace 1 if no project windows
-                        await conn.command("workspace number 1")
-                        logger.debug(f"No project windows found, focused workspace 1 as fallback")
-            else:
-                # T028: No focus history - focus workspace 1
-                await conn.command("workspace number 1")
-                logger.debug(f"No focus history for project {project_name}, focused workspace 1 as fallback")
-        except Exception as e:
-            logger.error(f"Error restoring workspace focus for project {project_name}: {e}")
-            # Don't fail the project switch if focus restoration fails
-    else:
-        logger.debug("FocusTracker not initialized, skipping workspace focus restoration")
-
-    # Feature 074: Session Management - Auto-restore layout after activation (T092-T093, US6)
-    # Auto-restore happens AFTER workspace focus restoration to maintain correct workspace context
-    if hasattr(state_manager, 'auto_restore_manager') and state_manager.auto_restore_manager:
-        try:
-            # T092-T093: Restore layout automatically if enabled for this project
-            await state_manager.auto_restore_manager.auto_restore_on_activate(project_name)
-            logger.debug(f"Auto-restore check completed for project {project_name}")
-        except Exception as e:
-            logger.error(f"Error during auto-restore for project {project_name}: {e}")
-            # Don't fail the project switch if auto-restore fails
-    else:
-        logger.debug("AutoRestoreManager not initialized, skipping auto-restore")
-
-    # Save to config file
-    from .models import ActiveProjectState
-
-    state = ActiveProjectState(
-        project_name=project_name,
-    )
-    save_active_project(state, config_dir / "active-project.json")
-
-
-async def _clear_project(
-    state_manager: StateManager, conn: aio.Connection, config_dir: Path
-) -> None:
-    """Clear active project (global mode).
-
-    Args:
-        state_manager: State manager instance
-        conn: i3 async connection
-        config_dir: Config directory
-    """
-    old_project = await state_manager.get_active_project()
-
-    if not old_project:
-        logger.info("Already in global mode")
-        return
-
-    logger.info(f"Clearing project {old_project} (entering global mode)")
-
-    # Show all windows from old project
-    old_windows = await state_manager.get_windows_by_project(old_project)
-    await show_project_windows(conn, old_windows)
-
-    # Update state
-    await state_manager.set_active_project(None)
-
-    # Save to config
-    from .models import ActiveProjectState
-
-    state = ActiveProjectState(
-        project_name=None
-    )
-    save_active_project(state, config_dir / "active-project.json")
-
-
-async def hide_window(conn: aio.Connection, window_id: int) -> None:
-    """Hide a window by moving it to scratchpad (T008).
-
-    Args:
-        conn: i3 async connection
-        window_id: Window ID to hide
-    """
-    try:
-        # Feature 046: Use con_id for Sway compatibility
-        await conn.command(f"[con_id={window_id}] move scratchpad")
-        logger.debug(f"Hid window {window_id}")
-    except Exception as e:
-        logger.error(f"Failed to hide window {window_id}: {e}")
-
-
-async def show_window(conn: aio.Connection, window_id: int, workspace: str) -> None:
-    """Show a window by moving it to a workspace (T008).
-
-    Args:
-        conn: i3 async connection
-        window_id: Window ID to show
-        workspace: Workspace to move window to
-    """
-    try:
-        # Feature 046: Use con_id for Sway compatibility
-        await conn.command(f"[con_id={window_id}] move container to workspace {workspace}")
-        logger.debug(f"Showed window {window_id} on workspace {workspace}")
-    except Exception as e:
-        logger.error(f"Failed to show window {window_id}: {e}")
-
-
-async def hide_project_windows(conn: aio.Connection, windows: list[WindowInfo]) -> None:
-    """Batch hide windows belonging to a project (T008).
-
-    Args:
-        conn: i3 async connection
-        windows: List of WindowInfo objects to hide
-    """
-    for window_info in windows:
-        await hide_window(conn, window_info.window_id)
-
-
-async def show_project_windows(conn: aio.Connection, windows: list[WindowInfo]) -> None:
-    """Batch show windows belonging to a project (T008).
-
-    Args:
-        conn: i3 async connection
-        windows: List of WindowInfo objects to show
-    """
-    for window_info in windows:
-        await show_window(conn, window_info.window_id, window_info.workspace)
 
 
 # ============================================================================
