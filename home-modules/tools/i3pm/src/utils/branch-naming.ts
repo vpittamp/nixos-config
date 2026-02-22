@@ -5,7 +5,29 @@
  * Mirrors legacy create-new-feature logic for consistent branch naming
  */
 
-import { execGit } from "./git.ts";
+interface GitCommandResult {
+  stdout: string;
+  stderr: string;
+}
+
+async function execGit(args: string[], cwd: string): Promise<GitCommandResult> {
+  const command = new Deno.Command("git", {
+    args,
+    cwd,
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const output = await command.output();
+  const stdout = new TextDecoder().decode(output.stdout).trim();
+  const stderr = new TextDecoder().decode(output.stderr).trim();
+
+  if (!output.success) {
+    throw new Error(stderr || `git ${args.join(" ")} failed`);
+  }
+
+  return { stdout, stderr };
+}
 
 // Common stop words to filter out (matches legacy branch naming behavior)
 const STOP_WORDS = new Set([

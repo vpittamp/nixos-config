@@ -3,7 +3,6 @@
 
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
-import { expandGlob } from "https://deno.land/std@0.208.0/fs/expand_glob.ts";
 import { AccountConfigSchema, AccountsStorageSchema, type AccountConfig, type AccountsStorage } from "../../../models/account.ts";
 
 const ACCOUNTS_FILE = `${Deno.env.get("HOME")}/.config/i3/accounts.json`;

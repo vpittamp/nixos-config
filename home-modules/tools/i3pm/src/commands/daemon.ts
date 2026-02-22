@@ -3,22 +3,45 @@
  * Feature 035: User Story 5 - CLI Monitoring Commands
  */
 
+import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../services/daemon-client.ts";
 import { bold, cyan, green, yellow, red, gray, magenta, blue, dim } from "jsr:@std/fmt/colors";
 
 export async function daemonCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
-  const [subcommand] = args;
+  const parsed = parseArgs(args, {
+    boolean: ["help", "json", "follow", "verbose", "debug"],
+    string: ["limit", "type", "scope", "workspace"],
+    alias: { h: "help" },
+    stopEarly: false,
+  });
+  const mergedFlags = { ...flags, ...parsed };
+  const subcommand = String(parsed._[0] || "");
+  const subArgs = parsed._.slice(1).map(String);
 
   try {
+    if (mergedFlags.help || !subcommand) {
+      console.error("Usage: i3pm daemon <status|events|ping|apps> [options]");
+      console.error("");
+      console.error("Common options:");
+      console.error("  --json            Output JSON");
+      console.error("  --verbose         Verbose output");
+      console.error("");
+      console.error("Events options:");
+      console.error("  --follow          Stream events continuously");
+      console.error("  --limit <n>       Number of events (default: 20)");
+      console.error("  --type <event>    Filter by event type");
+      return 0;
+    }
+
     switch (subcommand) {
       case "status":
-        return await daemonStatus(flags);
+        return await daemonStatus(mergedFlags);
       case "events":
-        return await daemonEvents(flags);
+        return await daemonEvents(mergedFlags);
       case "ping":
-        return await daemonPing(flags);
+        return await daemonPing(mergedFlags);
       case "apps":
-        return await daemonApps(args.slice(1), flags);
+        return await daemonApps(subArgs, mergedFlags);
       default:
         console.error("Usage: i3pm daemon <status|events|ping|apps>");
         return 1;
@@ -311,20 +334,17 @@ async function daemonStatus(flags: Record<string, unknown>): Promise<number> {
   }
 
   if (flags.json) {
-    const output = { ...status };
-    if (launchStats) {
-      output.launch_stats = launchStats;
-    }
+    const output = launchStats ? { ...status, launch_stats: launchStats } : status;
     console.log(JSON.stringify(output, null, 2));
   } else {
     console.log("\nDaemon Status:");
     console.log("─".repeat(60));
     console.log(`Status:          ${status.status}`);
-    console.log(`PID:             ${status.pid}`);
+    console.log(`Connected:       ${status.connected ? "yes" : "no"}`);
     console.log(`Uptime:          ${Math.floor(status.uptime / 60)}m ${status.uptime % 60}s`);
     console.log(`Active Project:  ${status.active_project || "none"}`);
-    console.log(`Events Processed: ${status.events_processed}`);
-    console.log(`Tracked Windows: ${status.tracked_windows}`);
+    console.log(`Events Processed: ${status.event_count}`);
+    console.log(`Tracked Windows: ${status.window_count}`);
 
     if (launchStats) {
       console.log();

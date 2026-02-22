@@ -19,6 +19,103 @@ from i3ipc.aio import Connection
 logger = logging.getLogger(__name__)
 
 
+class AutoRestoreManager:
+    """Automatic layout restore manager.
+
+    Restores the latest auto-saved layout for a project when auto-restore is
+    enabled in project config.
+    """
+
+    def __init__(
+        self,
+        layout_capture,
+        layout_restore,
+        layout_persistence,
+        project_config_loader,
+        ipc_server=None,
+    ) -> None:
+        self.layout_capture = layout_capture
+        self.layout_restore = layout_restore
+        self.layout_persistence = layout_persistence
+        self.project_config_loader = project_config_loader
+        self.ipc_server = ipc_server
+
+    def should_auto_restore(self, project: str) -> bool:
+        """Return whether auto-restore is enabled for a project."""
+        try:
+            project_config = self.project_config_loader(project)
+            if project_config and hasattr(project_config, "auto_restore"):
+                return bool(project_config.auto_restore)
+        except Exception as exc:
+            logger.debug("Could not load project config for %s: %s", project, exc)
+        return False
+
+    def _latest_auto_save_name(self, project: str) -> Optional[str]:
+        """Get most recent auto-save layout name for a project."""
+        try:
+            layouts = self.layout_persistence.list_layouts(project)
+            auto_saves = [layout for layout in layouts if str(layout.get("name", "")).startswith("auto-")]
+            if not auto_saves:
+                return None
+
+            auto_saves.sort(
+                key=lambda layout: str(layout.get("created_at") or layout.get("name") or ""),
+                reverse=True,
+            )
+            return str(auto_saves[0].get("name"))
+        except Exception as exc:
+            logger.warning("Failed to locate auto-saves for %s: %s", project, exc)
+            return None
+
+    async def auto_restore_on_switch(self, project: str) -> Optional[str]:
+        """Restore the newest auto-save for a project if configured."""
+        if not self.should_auto_restore(project):
+            return None
+
+        layout_name = self._latest_auto_save_name(project)
+        if not layout_name:
+            logger.debug("No auto-save layout available for %s", project)
+            return None
+
+        snapshot = self.layout_persistence.load_layout(layout_name, project)
+        if snapshot is None:
+            logger.warning("Auto-restore skipped: could not load layout %s for %s", layout_name, project)
+            return None
+
+        # Keep restore idempotent by checking currently running app names.
+        running_apps = await detect_running_apps()
+        logger.info(
+            "Auto-restoring layout %s for %s (running apps=%s)",
+            layout_name,
+            project,
+            sorted(running_apps),
+        )
+
+        result = await self.layout_restore.restore_layout(snapshot)
+        if not result.get("success", False):
+            logger.warning(
+                "Auto-restore failed for %s using %s: %s",
+                project,
+                layout_name,
+                result.get("errors", []),
+            )
+            return None
+
+        if self.ipc_server:
+            try:
+                asyncio.create_task(self.ipc_server.broadcast_event({
+                    "type": "layout.auto_restored",
+                    "project": project,
+                    "layout_name": layout_name,
+                    "windows_restored": result.get("windows_swallowed", 0),
+                }))
+            except Exception as exc:
+                logger.debug("Failed to emit auto-restore event: %s", exc)
+
+        logger.info("Auto-restored layout %s for %s", layout_name, project)
+        return layout_name
+
+
 async def detect_running_apps() -> set[str]:
     """Detect running apps by reading I3PM_APP_NAME from window environments.
 

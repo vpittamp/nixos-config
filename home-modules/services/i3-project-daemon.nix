@@ -46,10 +46,6 @@ let
     installPhase = ''
       mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon
       cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon/
-
-      # Feature 085: Copy i3_project_manager module for monitoring panel publisher
-      mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager
-      cp -r ${../tools/i3_project_manager}/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager/
     '';
   };
 

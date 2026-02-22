@@ -2,7 +2,7 @@
 // T020: Create `i3pm clone <url>` CLI command
 
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
-import { CloneRequestSchema, CloneResponseSchema, type CloneRequest } from "../../../models/repository.ts";
+import { CloneRequestSchema, type CloneRequest } from "../../../models/repository.ts";
 
 /**
  * Execute clone via the daemon shell script.

@@ -43,7 +43,7 @@ EXAMPLE:
 
 export async function monitorCommand(
   args: (string | number)[],
-  options: MonitorCommandOptions,
+  _options: MonitorCommandOptions,
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
     boolean: ["help"],

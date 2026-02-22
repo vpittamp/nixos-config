@@ -46,6 +46,27 @@ class ScratchpadTerminal(BaseModel):
         description="Initial working directory (project root)",
     )
 
+    context_key: str = Field(
+        ...,
+        description="Canonical context key (<qualified_name>::<variant>::<connection_key>)",
+        min_length=1,
+    )
+
+    execution_mode: str = Field(
+        default="local",
+        description="Execution mode for this scratchpad terminal (local or ssh)",
+    )
+
+    connection_key: Optional[str] = Field(
+        default=None,
+        description="Normalized connection identity key",
+    )
+
+    tmux_session_name: Optional[str] = Field(
+        default=None,
+        description="Resolved tmux session name for this terminal",
+    )
+
     created_at: float = Field(
         default_factory=time.time,
         description="Unix timestamp of terminal creation",
@@ -92,6 +113,14 @@ class ScratchpadTerminal(BaseModel):
             raise ValueError("Working directory must be absolute path")
         return v
 
+    @field_validator("execution_mode")
+    @classmethod
+    def validate_execution_mode(cls, v: str) -> str:
+        mode = (v or "").strip().lower()
+        if mode not in {"local", "ssh"}:
+            raise ValueError("execution_mode must be 'local' or 'ssh'")
+        return mode
+
     def is_process_running(self) -> bool:
         """Check if the terminal process is still running."""
         return psutil.pid_exists(self.pid)
@@ -118,6 +147,10 @@ class ScratchpadTerminal(BaseModel):
             "window_id": self.window_id,
             "mark": self.mark,
             "working_dir": str(self.working_dir),
+            "context_key": self.context_key,
+            "execution_mode": self.execution_mode,
+            "connection_key": self.connection_key,
+            "tmux_session_name": self.tmux_session_name,
             "created_at": self.created_at,
             "last_shown_at": self.last_shown_at,
         }

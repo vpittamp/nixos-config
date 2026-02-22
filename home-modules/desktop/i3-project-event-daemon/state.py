@@ -290,7 +290,6 @@ class StateManager:
             from .layout.restore import LayoutRestore
             from .layout.persistence import LayoutPersistence
             from .layout.auto_save import AutoSaveManager
-            from .layout.auto_restore import AutoRestoreManager
             from .models.config import ProjectConfiguration
 
             # Feature 076 T017-T018, T021-T022: Get mark_manager from ipc_server if available
@@ -323,14 +322,23 @@ class StateManager:
             logger.info("Initialized AutoSaveManager for session management")
 
             # Initialize auto-restore manager (Feature 074: T099, US6)
-            self.auto_restore_manager = AutoRestoreManager(
-                layout_capture,
-                layout_restore,
-                layout_persistence,
-                load_project_config,
-                ipc_server=ipc_server
-            )
-            logger.info("Initialized AutoRestoreManager for session management")
+            # AutoRestoreManager may not be available in some deployments.
+            try:
+                from .layout.auto_restore import AutoRestoreManager
+
+                self.auto_restore_manager = AutoRestoreManager(
+                    layout_capture,
+                    layout_restore,
+                    layout_persistence,
+                    load_project_config,
+                    ipc_server=ipc_server
+                )
+                logger.info("Initialized AutoRestoreManager for session management")
+            except ImportError:
+                self.auto_restore_manager = None
+                logger.warning(
+                    "AutoRestoreManager unavailable; auto-restore is disabled for this daemon build"
+                )
 
         except Exception as e:
             logger.error(f"Failed to initialize Auto-Save/Auto-Restore managers: {e}")

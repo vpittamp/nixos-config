@@ -30,11 +30,14 @@ export interface WindowState {
   /** Process ID of the window */
   pid?: number;
 
+  /** Application identifier (Wayland app_id / I3PM_APP_ID), nullable when unavailable */
+  app_id?: string | null;
+
   /** Window class (application identifier) */
   class: string;
 
   /** Window instance (optional sub-identifier) */
-  instance?: string;
+  instance?: string | null;
 
   /** Current window title */
   title: string;
@@ -646,6 +649,15 @@ export interface ScratchpadTerminal {
   /** Project identifier or "global" */
   project_name: string;
 
+  /** Canonical worktree execution context key */
+  context_key: string;
+
+  /** Execution mode for this terminal */
+  execution_mode: "local" | "ssh";
+
+  /** Normalized connection identity key */
+  connection_key?: string | null;
+
   /** Alacritty process ID */
   pid: number;
 
@@ -657,6 +669,9 @@ export interface ScratchpadTerminal {
 
   /** Initial working directory (project root) */
   working_dir: string;
+
+  /** Tmux session name attached/launched by scratchpad terminal */
+  tmux_session_name?: string | null;
 
   /** Unix timestamp of terminal creation */
   created_at: number;
@@ -672,11 +687,11 @@ export interface ScratchpadTerminalStatus extends ScratchpadTerminal {
   /** Visibility state: "visible", "hidden", or "unknown" */
   state: "visible" | "hidden" | "unknown";
 
-  /** Whether terminal is valid (process running, window exists) */
-  valid: boolean;
+  /** Whether terminal process is still running */
+  process_running: boolean;
 
-  /** Validation error message if invalid */
-  validation_error?: string;
+  /** Whether terminal window currently exists in Sway tree */
+  window_exists: boolean;
 }
 
 /**
@@ -686,14 +701,26 @@ export interface ScratchpadToggleResult {
   /** Project name */
   project_name: string;
 
-  /** Action taken: "launched", "shown", "hidden" */
-  action: "launched" | "shown" | "hidden";
+  /** Context identity key */
+  context_key: string;
 
-  /** Resulting state: "visible" or "hidden" */
-  state: "visible" | "hidden";
+  /** Execution mode */
+  execution_mode: "local" | "ssh";
 
-  /** Terminal instance */
-  terminal: ScratchpadTerminal;
+  /** Connection identity key */
+  connection_key: string;
+
+  /** Status result from daemon */
+  status: "launched" | "relaunched" | "shown" | "hidden";
+
+  /** PID for launched/relaunched responses */
+  pid?: number;
+
+  /** Window ID */
+  window_id: number;
+
+  /** Human-readable status message */
+  message: string;
 }
 
 /**
@@ -703,8 +730,32 @@ export interface ScratchpadLaunchResult {
   /** Project name */
   project_name: string;
 
-  /** Launched terminal instance */
-  terminal: ScratchpadTerminal;
+  /** Context identity key */
+  context_key: string;
+
+  /** Execution mode */
+  execution_mode: "local" | "ssh";
+
+  /** Connection identity key */
+  connection_key?: string | null;
+
+  /** Terminal PID */
+  pid: number;
+
+  /** Window ID */
+  window_id: number;
+
+  /** Window mark */
+  mark: string;
+
+  /** Terminal working directory */
+  working_dir: string;
+
+  /** Tmux session name */
+  tmux_session_name?: string | null;
+
+  /** Human-readable status message */
+  message: string;
 }
 
 /**
@@ -713,6 +764,9 @@ export interface ScratchpadLaunchResult {
 export interface ScratchpadStatusResult {
   /** List of terminals with status */
   terminals: ScratchpadTerminalStatus[];
+
+  /** Number of terminals in response */
+  count: number;
 }
 
 /**
@@ -722,8 +776,11 @@ export interface ScratchpadCloseResult {
   /** Project name */
   project_name: string;
 
-  /** Success status */
-  success: boolean;
+  /** Context identity key */
+  context_key: string;
+
+  /** Human-readable status message */
+  message: string;
 }
 
 /**
@@ -733,8 +790,14 @@ export interface ScratchpadCleanupResult {
   /** Number of terminals cleaned up */
   cleaned_count: number;
 
-  /** List of project names that were cleaned up */
-  cleaned_projects: string[];
+  /** Remaining tracked terminal count */
+  remaining: number;
+
+  /** List of context keys cleaned up */
+  contexts_cleaned: string[];
+
+  /** Human-readable status message */
+  message: string;
 }
 
 /**
@@ -743,6 +806,9 @@ export interface ScratchpadCleanupResult {
 export interface ScratchpadToggleParams {
   /** Project name (omit for current project) */
   project_name?: string;
+
+  /** Explicit context key (overrides inferred context) */
+  context_key?: string;
 }
 
 /**
@@ -751,6 +817,9 @@ export interface ScratchpadToggleParams {
 export interface ScratchpadLaunchParams {
   /** Project name (omit for current project) */
   project_name?: string;
+
+  /** Explicit context key (overrides inferred context) */
+  context_key?: string;
 
   /** Working directory (omit for project root) */
   working_dir?: string;
@@ -762,6 +831,9 @@ export interface ScratchpadLaunchParams {
 export interface ScratchpadStatusParams {
   /** Project name (omit for all terminals) */
   project_name?: string;
+
+  /** Explicit context key */
+  context_key?: string;
 }
 
 /**
@@ -770,4 +842,7 @@ export interface ScratchpadStatusParams {
 export interface ScratchpadCloseParams {
   /** Project name (omit for current project) */
   project_name?: string;
+
+  /** Explicit context key */
+  context_key?: string;
 }

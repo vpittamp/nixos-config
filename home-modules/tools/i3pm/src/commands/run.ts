@@ -7,11 +7,18 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { createClient } from "../client.ts";
-import { bold, cyan, dim, gray, green, red, yellow } from "../ui/ansi.ts";
+import { cyan, dim, gray, green, red, yellow } from "../ui/ansi.ts";
 
 interface RunCommandOptions {
   verbose?: boolean;
   debug?: boolean;
+}
+
+interface RunAppResponse {
+  action: "launched" | "focused" | "summoned" | "moved" | "hidden" | "shown" | "none" | string;
+  window_id?: number;
+  focused?: boolean;
+  message?: string;
 }
 
 /**
@@ -115,7 +122,7 @@ async function runApp(
   const client = createClient();
 
   try {
-    const result = await client.request("app.run", {
+    const result = await client.request<RunAppResponse>("app.run", {
       app_name: appName,
       mode: mode,
       force_launch: forceLaunch,
@@ -127,7 +134,6 @@ async function runApp(
       // Human-readable output based on action
       const action = result.action;
       const windowId = result.window_id;
-      const focused = result.focused;
       const message = result.message;
 
       switch (action) {
@@ -179,12 +185,12 @@ async function runApp(
           console.log(`${gray("●")} ${message}`);
       }
     }
-  } catch (error) {
+  } catch (error: unknown) {
     if (parsed.json) {
       console.error(JSON.stringify({ error: String(error) }, null, 2));
     } else {
       // Enhanced error messages
-      const errorMsg = error.message || String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
 
       if (errorMsg.includes("not found") || errorMsg.includes("NOT_FOUND")) {
         console.error(`${red("✗")} Application '${appName}' not found in registry`);

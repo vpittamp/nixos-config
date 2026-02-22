@@ -9,7 +9,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../client.ts";
 import { OutputSchema } from "../validation.ts";
 import type { Output } from "../models.ts";
-import { renderTree, renderTreeByProject, renderLegend as renderTreeLegend } from "../ui/tree.ts";
+import { renderTreeByProject, renderLegend as renderTreeLegend } from "../ui/tree.ts";
 import { renderTable, renderLegend as renderTableLegend } from "../ui/table.ts";
 import { z } from "zod";
 import { setup, Spinner } from "@cli-ux";
@@ -681,7 +681,7 @@ export async function windowsCommand(
   flags = { ...flags, ...parsed };
 
   // Remaining positional arguments after flag parsing
-  args = parsed._;
+  args = parsed._.map(String);
 
   // Check if first arg is a subcommand
   const firstArg = String(args[0] || "");

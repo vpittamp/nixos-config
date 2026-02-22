@@ -2,7 +2,7 @@
 // T033: Create `i3pm repo get <account>/<repo>` CLI command
 
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
-import { RepositoriesStorageSchema, type RepositoriesStorage, type BareRepository } from "../../../models/repository.ts";
+import { RepositoriesStorageSchema, type RepositoriesStorage } from "../../../models/repository.ts";
 
 const REPOS_FILE = `${Deno.env.get("HOME")}/.config/i3/repos.json`;
 

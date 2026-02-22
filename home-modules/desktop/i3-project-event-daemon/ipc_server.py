@@ -6868,267 +6868,332 @@ class IPCServer:
             "duration_ms": duration_ms
         }
 
+    def _read_active_worktree_context(self) -> Optional[Dict[str, Any]]:
+        """Read active-worktree context from disk."""
+        path = ConfigPaths.ACTIVE_WORKTREE_FILE
+        if not path.exists():
+            return None
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
+            logger.debug(f"Failed to read active-worktree context: {e}")
+        return None
+
+    def _parse_context_key(self, context_key: str) -> Dict[str, str]:
+        """Parse context key into project/variant/connection tuple."""
+        raw = str(context_key or "").strip()
+        parts = raw.split("::", 2)
+        if len(parts) == 3:
+            return {
+                "project_name": parts[0],
+                "execution_mode": parts[1],
+                "connection_key": parts[2],
+            }
+        return {
+            "project_name": "",
+            "execution_mode": "local",
+            "connection_key": "",
+        }
+
+    async def _resolve_scratchpad_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve project/context metadata for scratchpad operations."""
+        from pathlib import Path
+
+        project_name = str(params.get("project_name") or "").strip()
+        context_key = str(params.get("context_key") or "").strip()
+        working_dir_override = params.get("working_dir")
+        parsed_context = self._parse_context_key(context_key) if context_key else {
+            "project_name": "",
+            "execution_mode": "local",
+            "connection_key": "",
+        }
+
+        active_context = self._read_active_worktree_context()
+        active_project = await self.state_manager.get_active_project()
+
+        if not project_name:
+            if parsed_context.get("project_name"):
+                project_name = str(parsed_context["project_name"])
+            elif isinstance(active_context, dict) and active_context.get("qualified_name"):
+                project_name = str(active_context.get("qualified_name"))
+            elif active_project:
+                project_name = active_project
+            else:
+                project_name = "global"
+
+        if project_name == "global":
+            if not context_key:
+                host_alias = self._local_host_alias()
+                connection_key = self._normalize_connection_key(f"local@{host_alias}")
+                context_key = f"global::local::{connection_key}"
+                parsed_context = self._parse_context_key(context_key)
+            execution_mode = str(parsed_context.get("execution_mode") or "local").strip().lower()
+            if execution_mode not in {"local", "ssh"}:
+                execution_mode = "local"
+            connection_key = parsed_context.get("connection_key") or self._normalize_connection_key(
+                f"local@{self._local_host_alias()}"
+            )
+            connection_key = self._normalize_connection_key(connection_key)
+            context_key = f"global::{execution_mode}::{connection_key}"
+            working_dir = Path(str(working_dir_override)) if working_dir_override else Path.home()
+            return {
+                "project_name": "global",
+                "context_key": context_key,
+                "execution_mode": execution_mode,
+                "connection_key": connection_key,
+                "remote_profile": None,
+                "working_dir": working_dir,
+            }
+
+        if context_key:
+            parsed_project = parsed_context.get("project_name")
+            if parsed_project and parsed_project != project_name:
+                raise ValueError(
+                    f"context_key project '{parsed_project}' does not match requested project '{project_name}'"
+                )
+            execution_mode = str(parsed_context.get("execution_mode") or "local").strip().lower()
+            if execution_mode not in {"local", "ssh"}:
+                execution_mode = "local"
+            connection_key = parsed_context.get("connection_key") or ""
+        elif (
+            isinstance(active_context, dict)
+            and active_context.get("qualified_name") == project_name
+            and active_context.get("context_key")
+        ):
+            context_key = str(active_context.get("context_key"))
+            execution_mode = str(active_context.get("execution_mode") or "local")
+            connection_key = str(active_context.get("connection_key") or "")
+        else:
+            remote_profile_hint = self._get_project_remote_profile(project_name)
+            identity = self._build_worktree_context_identity(project_name, remote_profile_hint)
+            context_key = identity["context_key"]
+            execution_mode = identity["execution_mode"]
+            connection_key = identity["connection_key"]
+
+        connection_key = self._normalize_connection_key(connection_key)
+        context_key = f"{project_name}::{execution_mode}::{connection_key}"
+        remote_profile = self._get_project_remote_profile(project_name) if execution_mode == "ssh" else None
+
+        if working_dir_override:
+            working_dir = Path(str(working_dir_override))
+        elif remote_profile:
+            working_dir = Path(str(remote_profile.get("remote_dir", "")))
+        else:
+            working_dir = await self._get_project_working_dir(project_name)
+
+        return {
+            "project_name": project_name,
+            "context_key": context_key,
+            "execution_mode": execution_mode,
+            "connection_key": connection_key,
+            "remote_profile": remote_profile,
+            "working_dir": working_dir,
+        }
+
     # Feature 062: Scratchpad terminal management methods
     async def _scratchpad_toggle(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Toggle scratchpad terminal visibility.
-        
-        Args:
-            params: {"project_name": str | null}  # null = current project
-            
-        Returns:
-            {"status": "launched"|"relaunched"|"shown"|"hidden", "project_name": str, "message": str}
-        """
+        """Toggle scratchpad terminal visibility."""
         if not self.scratchpad_manager:
             raise RuntimeError("Scratchpad manager not initialized")
-            
-        from pathlib import Path
-        
-        # Get project name (use current if not specified)
-        project_name = params.get("project_name")
-        if not project_name:
-            project_name = await self.state_manager.get_active_project() or "global"
-            
-        # Check if terminal exists
-        terminal = self.scratchpad_manager.get_terminal(project_name)
-        
+
+        resolved = await self._resolve_scratchpad_request(params)
+        project_name = resolved["project_name"]
+        context_key = resolved["context_key"]
+        remote_profile = resolved["remote_profile"]
+        working_dir = resolved["working_dir"]
+        execution_mode = resolved["execution_mode"]
+        connection_key = resolved["connection_key"]
+
+        terminal = self.scratchpad_manager.get_terminal(context_key)
+
         if not terminal:
-            # Launch new terminal (starts hidden in scratchpad)
-            remote_profile = self._get_project_remote_profile(project_name)
-            if remote_profile:
-                working_dir = Path(remote_profile["remote_dir"])
-            else:
-                working_dir = await self._get_project_working_dir(project_name)
             terminal = await self.scratchpad_manager.launch_terminal(
                 project_name,
                 working_dir,
                 remote_profile=remote_profile,
+                context_key=context_key,
+                execution_mode=execution_mode,
+                connection_key=connection_key,
             )
-            # Show the newly launched terminal immediately
-            await self.scratchpad_manager.toggle_terminal(project_name)
+            await self.scratchpad_manager.toggle_terminal(context_key)
             return {
                 "status": "launched",
                 "project_name": project_name,
+                "context_key": context_key,
+                "execution_mode": execution_mode,
+                "connection_key": connection_key,
                 "pid": terminal.pid,
                 "window_id": terminal.window_id,
-                "message": f"Scratchpad terminal launched for project '{project_name}'"
+                "message": f"Scratchpad terminal launched for context '{context_key}'",
             }
-        
-        # Validate existing terminal
-        if not await self.scratchpad_manager.validate_terminal(project_name):
-            # Terminal invalid, relaunch (starts hidden in scratchpad)
-            remote_profile = self._get_project_remote_profile(project_name)
-            if remote_profile:
-                working_dir = Path(remote_profile["remote_dir"])
-            else:
-                working_dir = await self._get_project_working_dir(project_name)
+
+        if not await self.scratchpad_manager.validate_terminal(context_key):
             terminal = await self.scratchpad_manager.launch_terminal(
                 project_name,
                 working_dir,
                 remote_profile=remote_profile,
+                context_key=context_key,
+                execution_mode=execution_mode,
+                connection_key=connection_key,
             )
-            # Show the relaunched terminal immediately
-            await self.scratchpad_manager.toggle_terminal(project_name)
+            await self.scratchpad_manager.toggle_terminal(context_key)
             return {
                 "status": "relaunched",
                 "project_name": project_name,
+                "context_key": context_key,
+                "execution_mode": execution_mode,
+                "connection_key": connection_key,
                 "pid": terminal.pid,
                 "window_id": terminal.window_id,
-                "message": f"Scratchpad terminal relaunched for project '{project_name}'"
+                "message": f"Scratchpad terminal relaunched for context '{context_key}'",
             }
-        
-        # Toggle existing terminal
-        result_state = await self.scratchpad_manager.toggle_terminal(project_name)
+
+        result_state = await self.scratchpad_manager.toggle_terminal(context_key)
         return {
             "status": result_state,
             "project_name": project_name,
+            "context_key": context_key,
+            "execution_mode": execution_mode,
+            "connection_key": connection_key,
             "window_id": terminal.window_id,
-            "message": f"Scratchpad terminal {result_state} for project '{project_name}'"
+            "message": f"Scratchpad terminal {result_state} for context '{context_key}'",
         }
-    
+
     async def _scratchpad_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Launch new scratchpad terminal (fails if exists).
-        
-        Args:
-            params: {"project_name": str | null, "working_dir": str | null}
-            
-        Returns:
-            {"project_name": str, "pid": int, "window_id": int, "mark": str, "working_dir": str, "message": str}
-        """
+        """Launch new scratchpad terminal (fails if exists)."""
         if not self.scratchpad_manager:
             raise RuntimeError("Scratchpad manager not initialized")
-            
-        from pathlib import Path
-        
-        # Get project name
-        project_name = params.get("project_name")
-        if not project_name:
-            project_name = await self.state_manager.get_active_project() or "global"
-            
-        # Get working directory
-        working_dir_str = params.get("working_dir")
-        remote_profile = self._get_project_remote_profile(project_name)
-        if working_dir_str:
-            working_dir = Path(working_dir_str)
-        elif remote_profile:
-            working_dir = Path(remote_profile["remote_dir"])
-        else:
-            working_dir = await self._get_project_working_dir(project_name)
-            
-        # Launch terminal
+
+        resolved = await self._resolve_scratchpad_request(params)
         terminal = await self.scratchpad_manager.launch_terminal(
-            project_name,
-            working_dir,
-            remote_profile=remote_profile,
+            resolved["project_name"],
+            resolved["working_dir"],
+            remote_profile=resolved["remote_profile"],
+            context_key=resolved["context_key"],
+            execution_mode=resolved["execution_mode"],
+            connection_key=resolved["connection_key"],
         )
-        
+
         return {
             "project_name": terminal.project_name,
+            "context_key": terminal.context_key,
+            "execution_mode": terminal.execution_mode,
+            "connection_key": terminal.connection_key,
             "pid": terminal.pid,
             "window_id": terminal.window_id,
             "mark": terminal.mark,
             "working_dir": str(terminal.working_dir),
-            "message": f"Scratchpad terminal launched for project '{project_name}'"
+            "tmux_session_name": terminal.tmux_session_name,
+            "message": f"Scratchpad terminal launched for context '{terminal.context_key}'",
         }
-    
+
     async def _scratchpad_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get status of scratchpad terminals.
-        
-        Args:
-            params: {"project_name": str | null}  # null = all terminals
-            
-        Returns:
-            {"terminals": [...], "count": int}
-        """
+        """Get status of scratchpad terminals."""
         if not self.scratchpad_manager:
             raise RuntimeError("Scratchpad manager not initialized")
-            
+
         project_name = params.get("project_name")
-        
-        if project_name:
-            # Single terminal status
-            terminal = self.scratchpad_manager.get_terminal(project_name)
+        context_key = params.get("context_key")
+
+        tree = await self.scratchpad_manager.sway.get_tree()
+
+        if project_name or context_key:
+            resolved = await self._resolve_scratchpad_request(params)
+            key = resolved["context_key"]
+            terminal = self.scratchpad_manager.get_terminal(key)
             if not terminal:
                 return {"terminals": [], "count": 0}
-                
-            # Get terminal state
-            state = await self.scratchpad_manager.get_terminal_state(project_name)
-            process_running = terminal.is_process_running()
-            
-            # Check window exists
-            tree = await self.scratchpad_manager.sway.get_tree()
-            window = tree.find_by_id(terminal.window_id)
-            window_exists = window is not None
-            
+
+            state = await self.scratchpad_manager.get_terminal_state(key)
+            window_exists = tree.find_by_id(terminal.window_id) is not None
+
             return {
                 "terminals": [{
                     "project_name": terminal.project_name,
+                    "context_key": terminal.context_key,
+                    "execution_mode": terminal.execution_mode,
+                    "connection_key": terminal.connection_key,
                     "pid": terminal.pid,
                     "window_id": terminal.window_id,
                     "mark": terminal.mark,
                     "working_dir": str(terminal.working_dir),
+                    "tmux_session_name": terminal.tmux_session_name,
                     "state": state or "unknown",
-                    "process_running": process_running,
+                    "process_running": terminal.is_process_running(),
                     "window_exists": window_exists,
                     "created_at": terminal.created_at,
                     "last_shown_at": terminal.last_shown_at,
                 }],
-                "count": 1
+                "count": 1,
             }
-        else:
-            # All terminals status
-            terminals = await self.scratchpad_manager.list_terminals()
-            result_terminals = []
-            
-            for terminal in terminals:
-                state = await self.scratchpad_manager.get_terminal_state(terminal.project_name)
-                process_running = terminal.is_process_running()
-                
-                tree = await self.scratchpad_manager.sway.get_tree()
-                window = tree.find_by_id(terminal.window_id)
-                window_exists = window is not None
-                
-                result_terminals.append({
-                    "project_name": terminal.project_name,
-                    "pid": terminal.pid,
-                    "window_id": terminal.window_id,
-                    "mark": terminal.mark,
-                    "working_dir": str(terminal.working_dir),
-                    "state": state or "unknown",
-                    "process_running": process_running,
-                    "window_exists": window_exists,
-                    "created_at": terminal.created_at,
-                    "last_shown_at": terminal.last_shown_at,
-                })
-            
-            return {
-                "terminals": result_terminals,
-                "count": len(result_terminals)
-            }
-    
-    async def _scratchpad_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Close scratchpad terminal.
-        
-        Args:
-            params: {"project_name": str | null}
-            
-        Returns:
-            {"project_name": str, "message": str}
-        """
-        if not self.scratchpad_manager:
-            raise RuntimeError("Scratchpad manager not initialized")
-            
-        # Get project name
-        project_name = params.get("project_name")
-        if not project_name:
-            project_name = await self.state_manager.get_active_project() or "global"
-            
-        # Get terminal
-        terminal = self.scratchpad_manager.get_terminal(project_name)
-        if not terminal:
-            raise ValueError(f"No scratchpad terminal found for project: {project_name}")
-            
-        # Close window via Sway IPC
-        await self.scratchpad_manager.sway.command(f'[con_id={terminal.window_id}] kill')
-        
-        # Remove from state (window close event will also remove it, but we do it immediately)
-        del self.scratchpad_manager.terminals[project_name]
-        
+
+        terminals = await self.scratchpad_manager.list_terminals()
+        result_terminals = []
+
+        for terminal in terminals:
+            state = await self.scratchpad_manager.get_terminal_state(terminal.context_key)
+            window_exists = tree.find_by_id(terminal.window_id) is not None
+            result_terminals.append({
+                "project_name": terminal.project_name,
+                "context_key": terminal.context_key,
+                "execution_mode": terminal.execution_mode,
+                "connection_key": terminal.connection_key,
+                "pid": terminal.pid,
+                "window_id": terminal.window_id,
+                "mark": terminal.mark,
+                "working_dir": str(terminal.working_dir),
+                "tmux_session_name": terminal.tmux_session_name,
+                "state": state or "unknown",
+                "process_running": terminal.is_process_running(),
+                "window_exists": window_exists,
+                "created_at": terminal.created_at,
+                "last_shown_at": terminal.last_shown_at,
+            })
+
         return {
-            "project_name": project_name,
-            "message": f"Scratchpad terminal closed for project '{project_name}'"
+            "terminals": result_terminals,
+            "count": len(result_terminals),
         }
-    
-    async def _scratchpad_cleanup(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Clean up invalid scratchpad terminals.
-        
-        Args:
-            params: {}
-            
-        Returns:
-            {"cleaned_up": int, "remaining": int, "projects_cleaned": [str], "message": str}
-        """
+
+    async def _scratchpad_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Close scratchpad terminal."""
         if not self.scratchpad_manager:
             raise RuntimeError("Scratchpad manager not initialized")
-            
-        # Track projects before cleanup
-        projects_before = list(self.scratchpad_manager.terminals.keys())
-        
-        # Run cleanup
+
+        resolved = await self._resolve_scratchpad_request(params)
+        context_key = resolved["context_key"]
+        terminal = self.scratchpad_manager.get_terminal(context_key)
+        if not terminal:
+            raise ValueError(f"No scratchpad terminal found for context: {context_key}")
+
+        await self.scratchpad_manager.sway.command(f'[con_id={terminal.window_id}] kill')
+        del self.scratchpad_manager.terminals[context_key]
+
+        return {
+            "project_name": terminal.project_name,
+            "context_key": context_key,
+            "message": f"Scratchpad terminal closed for context '{context_key}'",
+        }
+
+    async def _scratchpad_cleanup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clean up invalid scratchpad terminals."""
+        if not self.scratchpad_manager:
+            raise RuntimeError("Scratchpad manager not initialized")
+
+        keys_before = list(self.scratchpad_manager.terminals.keys())
         cleaned_count = await self.scratchpad_manager.cleanup_invalid_terminals()
-        
-        # Track projects after cleanup
-        projects_after = list(self.scratchpad_manager.terminals.keys())
-        
-        # Find removed projects
-        projects_cleaned = [p for p in projects_before if p not in projects_after]
-        
-        remaining = len(projects_after)
-        
+        keys_after = list(self.scratchpad_manager.terminals.keys())
+        keys_cleaned = [k for k in keys_before if k not in keys_after]
+        remaining = len(keys_after)
+
         return {
             "cleaned_up": cleaned_count,
             "remaining": remaining,
-            "projects_cleaned": projects_cleaned,
-            "message": f"Cleaned up {cleaned_count} invalid terminal(s), {remaining} terminal(s) remaining"
+            "contexts_cleaned": keys_cleaned,
+            "message": f"Cleaned up {cleaned_count} invalid terminal(s), {remaining} terminal(s) remaining",
         }
 
     # Feature 001: Declarative workspace-to-monitor assignment

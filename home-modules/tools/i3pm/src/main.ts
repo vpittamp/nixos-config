@@ -127,7 +127,7 @@ async function main(): Promise<void> {
 
   // Get command
   const command = String(args._[0]);
-  const commandArgs = args._.slice(1);
+  const commandArgs = args._.slice(1).map(String);
 
   // Route to command handler
   switch (command) {
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     case "worktree":
       {
         const { worktreeCommand } = await import("./commands/worktree.ts");
-        await worktreeCommand(commandArgs.map(String));
+        await worktreeCommand(commandArgs);
       }
       break;
 
@@ -169,7 +169,8 @@ async function main(): Promise<void> {
     case "daemon":
       {
         const { daemonCommand } = await import("./commands/daemon.ts");
-        await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
       }
       break;
 
@@ -254,7 +255,7 @@ async function main(): Promise<void> {
     case "clone":
       {
         const { clone } = await import("./commands/clone/index.ts");
-        const exitCode = await clone(commandArgs.map(String));
+        const exitCode = await clone(commandArgs);
         Deno.exit(exitCode);
       }
       break;
@@ -262,7 +263,7 @@ async function main(): Promise<void> {
     case "discover":
       {
         const { discover } = await import("./commands/discover/index.ts");
-        const exitCode = await discover(commandArgs.map(String));
+        const exitCode = await discover(commandArgs);
         Deno.exit(exitCode);
       }
       break;

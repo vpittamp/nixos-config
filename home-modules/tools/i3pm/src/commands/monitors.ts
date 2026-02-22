@@ -5,6 +5,37 @@
 
 import { DaemonClient } from "../services/daemon-client.ts";
 
+interface ActiveMonitorStatus {
+  name: string;
+  role: string;
+  workspaces?: number[];
+}
+
+interface MonitorsStatusResponse {
+  monitor_count: number;
+  active_monitors?: ActiveMonitorStatus[];
+  last_reassignment?: string;
+  reassignment_count?: number;
+}
+
+interface MonitorsReassignResponse {
+  workspaces_moved?: number;
+  duration_ms?: number;
+  monitor_assignments?: Record<string, string>;
+}
+
+interface WorkspaceAssignment {
+  preferred_workspace: number;
+  app_name?: string;
+  preferred_monitor_role?: string;
+  source?: string;
+}
+
+interface MonitorsConfigResponse {
+  output_preferences?: Record<string, string[]>;
+  workspace_assignments?: WorkspaceAssignment[];
+}
+
 export async function monitorsCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const [subcommand] = args;
 
@@ -36,7 +67,7 @@ async function monitorsStatus(flags: Record<string, unknown>): Promise<number> {
   await client.connect();
 
   try {
-    const status = await client.sendRequest("monitors.status", {});
+    const status = await client.sendRequest<MonitorsStatusResponse>("monitors.status", {});
 
     if (flags.json) {
       console.log(JSON.stringify(status, null, 2));
@@ -90,7 +121,7 @@ async function monitorsReassign(flags: Record<string, unknown>): Promise<number>
 
   try {
     console.log("Triggering workspace reassignment...");
-    const result = await client.sendRequest("monitors.reassign", {});
+    const result = await client.sendRequest<MonitorsReassignResponse>("monitors.reassign", {});
 
     if (flags.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -123,7 +154,7 @@ async function monitorsConfig(flags: Record<string, unknown>): Promise<number> {
   await client.connect();
 
   try {
-    const config = await client.sendRequest("monitors.config", {});
+    const config = await client.sendRequest<MonitorsConfigResponse>("monitors.config", {});
 
     if (flags.json) {
       console.log(JSON.stringify(config, null, 2));

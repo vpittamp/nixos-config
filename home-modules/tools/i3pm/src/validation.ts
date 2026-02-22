@@ -6,21 +6,6 @@
  */
 
 import { z } from "zod";
-import type {
-  ApplicationClass,
-  ClassifyWindowResult,
-  ClearProjectResult,
-  DaemonStatus,
-  EventNotification,
-  Output,
-  OutputGeometry,
-  Project,
-  SwitchProjectResult,
-  WindowGeometry,
-  WindowRule,
-  WindowState,
-  Workspace,
-} from "./models.ts";
 
 // ============================================================================
 // Core Window Management Schemas

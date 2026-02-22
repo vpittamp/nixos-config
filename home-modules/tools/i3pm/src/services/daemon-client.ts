@@ -101,6 +101,13 @@ export class DaemonClient {
   }
 
   /**
+   * Compatibility alias for callers that expect an async close method.
+   */
+  async close(): Promise<void> {
+    this.disconnect();
+  }
+
+  /**
    * Send JSON-RPC request and wait for response
    */
   async request<T = unknown>(method: string, params?: unknown): Promise<T> {
@@ -129,9 +136,13 @@ export class DaemonClient {
     const TIMEOUT_MS = 30000; // 30 second timeout
 
     const readPromise = this.conn.read(buffer);
-    const timeoutPromise = new Promise<null>((_, reject) =>
-      setTimeout(() => reject(new DaemonError(`Daemon response timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
-    );
+    let timeoutHandle: number | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(
+        () => reject(new DaemonError(`Daemon response timeout after ${TIMEOUT_MS}ms`)),
+        TIMEOUT_MS,
+      );
+    });
 
     let bytesRead: number | null;
     try {
@@ -140,6 +151,10 @@ export class DaemonClient {
       // On timeout, close connection to prevent stale state
       await this.close();
       throw e;
+    } finally {
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle);
+      }
     }
 
     if (bytesRead === null) {
@@ -169,11 +184,15 @@ export class DaemonClient {
    */
   async getStatus(): Promise<{
     status: string;
-    pid: number;
+    connected: boolean;
     uptime: number;
     active_project: string | null;
-    events_processed: number;
-    tracked_windows: number;
+    window_count: number;
+    workspace_count: number;
+    event_count: number;
+    error_count: number;
+    version: string;
+    socket_path: string;
   }> {
     return await this.request("get_status");
   }
@@ -296,8 +315,8 @@ export class DaemonClient {
    */
   async ping(): Promise<boolean> {
     try {
-      await this.request("ping");
-      return true;
+      const status = await this.getStatus();
+      return status.status === "running";
     } catch {
       return false;
     }

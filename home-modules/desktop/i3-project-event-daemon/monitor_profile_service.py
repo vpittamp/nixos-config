@@ -94,6 +94,12 @@ class MonitorProfileService:
             try:
                 with open(profile_path) as f:
                     data = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError("Profile content must be a JSON object")
+                # Backfill missing profile name from filename for profile files that
+                # only define outputs/commands.
+                if not data.get("name"):
+                    data["name"] = profile_path.stem
                 profile = MonitorProfile(**data)
                 self._profiles[profile.name] = profile
                 logger.debug(f"Loaded profile: {profile.name}")
@@ -114,8 +120,12 @@ class MonitorProfileService:
             try:
                 with open(profile_path) as f:
                     data = json.load(f)
+                if not isinstance(data, dict):
+                    continue
                 # Check if this is a hybrid profile (has nested output objects)
                 if data.get("outputs") and isinstance(data["outputs"][0], dict) and "type" in data["outputs"][0]:
+                    if not data.get("name"):
+                        data["name"] = profile_path.stem
                     profile = HybridMonitorProfile(**data)
                     self._hybrid_profiles[profile.name] = profile
                     logger.debug(f"Loaded hybrid profile: {profile.name}")

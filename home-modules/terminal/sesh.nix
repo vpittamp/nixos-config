@@ -4,6 +4,47 @@
   # Sesh session manager configuration
   # Smart tmux session manager with predefined sessions and directory navigation
 
+  # Override sesh to latest release (nixpkgs lags behind: 2.20.0 → 2.24.1)
+  programs.sesh.package = let
+    version = "2.24.1";
+  in pkgs.buildGoModule {
+    pname = "sesh";
+    inherit version;
+
+    src = pkgs.fetchFromGitHub {
+      owner = "joshmedeski";
+      repo = "sesh";
+      rev = "v${version}";
+      hash = "sha256-VU3LAxujXOynvYpRubssi24tq5LtUU0Exz0WK6trGc8=";
+    };
+
+    vendorHash = "sha256-Jm0JNrJpnKns2pokbBwHps4Q3EYPyzAVCKbyNj6tcnA=";
+    proxyVendor = true;
+
+    nativeBuildInputs = [ pkgs.go-mockery ];
+
+    # Upstream vendor dir is stale; delete it so go mod vendor regenerates cleanly
+    prePatch = ''
+      rm -rf vendor
+    '';
+
+    preBuild = ''
+      mockery
+    '';
+
+    ldflags = [ "-s" "-w" "-X main.version=${version}" ];
+
+    nativeInstallCheckInputs = [ pkgs.versionCheckHook ];
+    doInstallCheck = true;
+
+    meta = with lib; {
+      description = "Smart session manager for the terminal";
+      homepage = "https://github.com/joshmedeski/sesh";
+      license = licenses.mit;
+      mainProgram = "sesh";
+    };
+  };
+
   # Enable sesh through home-manager
   programs.sesh = {
     enable = true;

@@ -7,10 +7,12 @@ Version: 1.0.0 (2025-11-20)
 Feature: 085-sway-monitoring-widget
 """
 
+import asyncio
 import json
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +23,54 @@ EWW_MONITORING_PANEL_DIR = Path.home() / ".config" / "eww-monitoring-panel"
 
 # Eww variable name for panel state
 PANEL_STATE_VAR = "panel_state"
+
+
+async def _rpc_request(method: str, params: Optional[dict] = None, timeout: float = 2.0) -> dict:
+    """Send a JSON-RPC request to the daemon user socket."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    socket_path = os.environ.get("I3PM_DAEMON_SOCKET", f"{runtime_dir}/i3-project-daemon/ipc.sock")
+    request_id = int(time.time() * 1000)
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params or {},
+        "id": request_id,
+    }
+
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_unix_connection(path=socket_path),
+        timeout=timeout,
+    )
+
+    try:
+        writer.write((json.dumps(payload) + "\n").encode("utf-8"))
+        await asyncio.wait_for(writer.drain(), timeout=timeout)
+        raw = await asyncio.wait_for(reader.readline(), timeout=timeout)
+        if not raw:
+            raise RuntimeError(f"Empty response from daemon for method '{method}'")
+
+        response = json.loads(raw.decode("utf-8", errors="ignore"))
+        if not isinstance(response, dict):
+            raise RuntimeError(f"Malformed daemon response for method '{method}'")
+
+        error = response.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or "unknown error"
+            raise RuntimeError(f"RPC {method} failed: {message}")
+
+        result = response.get("result")
+        if isinstance(result, dict):
+            return result
+        raise RuntimeError(f"Unexpected RPC result type for method '{method}'")
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
 
 
 def update_panel_state(state_json: str, config_dir: Optional[Path] = None) -> bool:
@@ -76,9 +126,7 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
         True if published successfully
     """
     try:
-        import time
         from typing import Any, Dict, List
-        from i3_project_manager.core.daemon_client import DaemonClient
 
         # Helper functions (same as monitoring_data.py)
         def transform_window(window: Dict[str, Any], badge_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -147,17 +195,14 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
             }
 
         # Query daemon for window tree (returns dict structures, not Con objects)
-        socket_path_str = os.environ.get("I3PM_DAEMON_SOCKET")
-        socket_path = Path(socket_path_str) if socket_path_str else None
-        client = DaemonClient(socket_path=socket_path, timeout=2.0)
-        await client.connect()
-        tree_data = await client.get_window_tree()
+        tree_data = await _rpc_request("get_window_tree", {}, timeout=2.0)
 
         # Feature 095: Query badge state for visual notification badges
-        badge_state = await client.get_badge_state()
+        badge_response = await _rpc_request("get_badge_state", {}, timeout=2.0)
+        badge_state = badge_response.get("badges", {}) if isinstance(badge_response, dict) else {}
+        if not isinstance(badge_state, dict):
+            badge_state = {}
         logger.debug(f"[Feature 095] Retrieved badge state: {len(badge_state)} badges")
-
-        await client.close()
 
         # Extract outputs from tree and transform with badge state
         outputs = tree_data.get("outputs", [])

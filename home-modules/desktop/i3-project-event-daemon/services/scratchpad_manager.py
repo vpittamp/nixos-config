@@ -5,8 +5,10 @@ Manages lifecycle and state of project-scoped scratchpad terminals.
 """
 
 import asyncio
+import hashlib
 import logging
 import os
+import re
 import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -18,6 +20,32 @@ from ..models.scratchpad import ScratchpadTerminal
 
 
 logger = logging.getLogger(__name__)
+
+
+def build_tmux_session_name(project_name: str, context_key: str) -> str:
+    """Build a tmux-safe, deterministic session name.
+
+    Qualified project names contain characters such as '/' and ':', which are not
+    stable session delimiters in tmux workflows. We normalize to a conservative
+    slug and append a short hash suffix to preserve uniqueness across contexts.
+    """
+    seed = f"{project_name}::{context_key}"
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", seed).strip("-").lower()
+    if not slug:
+        slug = "scratchpad"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8]
+    base = slug[:32]
+    return f"sp-{base}-{digest}"
+
+
+def build_i3pm_env_exports(env: Dict[str, str]) -> str:
+    """Build shell-safe export statements for I3PM_* variables only."""
+    exports: List[str] = []
+    for key, value in env.items():
+        if key.startswith("I3PM_"):
+            safe_value = value.replace("'", "'\\''")
+            exports.append(f"export {key}='{safe_value}'")
+    return "; ".join(exports)
 
 
 def read_process_environ(pid: int) -> Dict[str, str]:
@@ -61,6 +89,7 @@ class ScratchpadManager:
         Args:
             sway: Async Sway IPC connection
         """
+        # Keyed by canonical context_key (project::variant::connection_key).
         self.terminals: Dict[str, ScratchpadTerminal] = {}
         self.sway = sway
         self.logger = logging.getLogger(__name__)
@@ -71,6 +100,10 @@ class ScratchpadManager:
         project_name: str,
         working_dir: Path,
         remote_profile: Optional[Dict[str, Any]] = None,
+        *,
+        context_key: Optional[str] = None,
+        execution_mode: str = "local",
+        connection_key: Optional[str] = None,
     ) -> ScratchpadTerminal:
         """
         Launch new scratchpad terminal for project.
@@ -86,19 +119,33 @@ class ScratchpadManager:
             RuntimeError: If terminal launch fails
             ValueError: If project already has scratchpad terminal
         """
+        terminal_key = context_key or project_name
+
         async with self._toggle_lock:
             # First, check for orphaned windows (from daemon restart)
-            orphan = await self._find_orphaned_terminal(project_name)
+            orphan = await self._find_orphaned_terminal(project_name, terminal_key)
             if orphan:
-                self.logger.info(f"Reclaiming orphaned scratchpad for {project_name}")
-                self.terminals[project_name] = orphan
+                self.logger.info(f"Reclaiming orphaned scratchpad for {terminal_key}")
+                self.terminals[terminal_key] = orphan
                 return orphan
 
             # Validate project doesn't already have a terminal
-            if project_name in self.terminals:
-                raise ValueError(f"Scratchpad terminal already exists for project: {project_name}")
+            if terminal_key in self.terminals:
+                raise ValueError(f"Scratchpad terminal already exists for context: {terminal_key}")
 
             remote_enabled = bool(remote_profile and remote_profile.get("enabled"))
+            requested_execution_mode = (execution_mode or "local").strip().lower()
+            if requested_execution_mode not in {"local", "ssh"}:
+                requested_execution_mode = "local"
+
+            if requested_execution_mode == "ssh" and not remote_enabled:
+                raise ValueError(
+                    "SSH scratchpad requested but no enabled remote profile is configured "
+                    f"for project '{project_name}'"
+                )
+
+            normalized_execution_mode = "ssh" if remote_enabled else requested_execution_mode
+            normalized_connection_key = (connection_key or "").strip() or None
 
             # Validate working directory exists for local mode only.
             if not remote_enabled and (not working_dir.exists() or not working_dir.is_dir()):
@@ -119,6 +166,9 @@ class ScratchpadManager:
                 "I3PM_APP_ID": f"scratchpad-{project_name}-{int(asyncio.get_event_loop().time())}",
                 "I3PM_APP_NAME": "scratchpad-terminal",
                 "I3PM_SCOPE": "scoped",
+                "I3PM_CONTEXT_KEY": terminal_key,
+                "I3PM_CONTEXT_VARIANT": normalized_execution_mode,
+                "I3PM_CONNECTION_KEY": normalized_connection_key or "",
                 "I3PM_NO_SESH": "1",  # Signal to skip sesh/tmux auto-start in bashrc
                 # Force software rendering for headless/VNC environments
                 "LIBGL_ALWAYS_SOFTWARE": "1",
@@ -141,18 +191,10 @@ class ScratchpadManager:
 
             # Build shell command with environment variables and Ghostty launch
             # Export I3PM_* variables so daemon can identify the window
-            env_exports = []
-            for key, value in env.items():
-                if key.startswith('I3PM_'):
-                    # Escape single quotes in values
-                    safe_value = value.replace("'", "'\\''")
-                    env_exports.append(f"export {key}='{safe_value}'")
-
-            env_string = '; '.join(env_exports)
-
             # Build Ghostty command with tmux session
-            # Session name format: scratchpad-{project_name}
-            tmux_session_name = f"scratchpad-{project_name}"
+            tmux_session_name = build_tmux_session_name(project_name, terminal_key)
+            env["I3PM_TMUX_SESSION_NAME"] = tmux_session_name
+            env_string = build_i3pm_env_exports(env)
 
             # Scratchpad uses simple tmux session (not devenv)
             # Devenv integration is handled by regular terminal via app-launcher-wrapper.sh
@@ -174,11 +216,13 @@ class ScratchpadManager:
                 ssh_parts.append(remote_cmd)
 
                 ssh_cmd = " ".join(shlex.quote(part) for part in ssh_parts)
-                ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -lc {shlex.quote(ssh_cmd)}"
+                ghostty_cmd = f"ghostty --title {shlex.quote('Scratchpad Terminal')} -e bash -lc {shlex.quote(ssh_cmd)}"
             else:
-                tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
-                # Wrap tmux in bash to ensure proper execution and environment.
-                ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
+                tmux_cmd = (
+                    f"tmux new-session -A -s {shlex.quote(tmux_session_name)} "
+                    f"-c {shlex.quote(str(working_dir))}"
+                )
+                ghostty_cmd = f"ghostty --title {shlex.quote('Scratchpad Terminal')} -e bash -lc {shlex.quote(tmux_cmd)}"
 
             # Complete shell command with environment setup
             full_cmd = f"{env_string}; {ghostty_cmd}"
@@ -187,7 +231,7 @@ class ScratchpadManager:
 
             # Execute via Sway IPC - this runs in the compositor's context
             try:
-                result = await self.sway.command(f'exec bash -c "{full_cmd}"')
+                result = await self.sway.command(f"exec bash -lc {shlex.quote(full_cmd)}")
                 self.logger.info(f"Sway exec result: {result}")
             except Exception as e:
                 raise RuntimeError(f"Failed to execute Sway command: {e}")
@@ -197,6 +241,7 @@ class ScratchpadManager:
             window_id = await self._wait_for_terminal_window_by_appid(
                 app_id="com.mitchellh.ghostty",
                 project_name=project_name,
+                context_key=terminal_key,
                 timeout=5.0
             )
 
@@ -221,12 +266,19 @@ class ScratchpadManager:
                 window_id=window_id,
                 mark=mark,
                 working_dir=working_dir,
+                context_key=terminal_key,
+                execution_mode=normalized_execution_mode,
+                connection_key=normalized_connection_key,
+                tmux_session_name=tmux_session_name,
             )
 
             # Track in state
-            self.terminals[project_name] = terminal
+            self.terminals[terminal_key] = terminal
 
-            self.logger.info(f"Scratchpad terminal launched: PID={terminal_pid}, WindowID={window_id}, Project={project_name}")
+            self.logger.info(
+                f"Scratchpad terminal launched: PID={terminal_pid}, WindowID={window_id}, "
+                f"Project={project_name}, Context={terminal_key}"
+            )
 
             return terminal
 
@@ -234,6 +286,7 @@ class ScratchpadManager:
         self,
         app_id: str,
         project_name: str,
+        context_key: Optional[str] = None,
         timeout: float = 5.0,
     ) -> Optional[int]:
         """
@@ -287,6 +340,7 @@ class ScratchpadManager:
                     is_scratchpad = env.get("I3PM_SCRATCHPAD") == "true"
                     app_name = env.get("I3PM_APP_NAME", "")
                     env_project = env.get("I3PM_PROJECT_NAME", "")
+                    env_context = env.get("I3PM_CONTEXT_KEY", "")
 
                     if not is_scratchpad or app_name != "scratchpad-terminal":
                         self.logger.debug(
@@ -302,6 +356,14 @@ class ScratchpadManager:
                         self.logger.debug(
                             f"Skipping window with different project: ID={window.id}, "
                             f"I3PM_PROJECT_NAME={env_project} (expected {project_name})"
+                        )
+                        seen_windows.add(window.id)
+                        continue
+
+                    if context_key and env_context != context_key:
+                        self.logger.debug(
+                            f"Skipping window with different context: ID={window.id}, "
+                            f"I3PM_CONTEXT_KEY={env_context} (expected {context_key})"
                         )
                         seen_windows.add(window.id)
                         continue
@@ -322,6 +384,8 @@ class ScratchpadManager:
 
                 # Mark the window (floating, size, and centering handled by window rule)
                 await self.sway.command(f'[con_id={window.id}] mark {mark}')
+                if context_key:
+                    await self.sway.command(f'[con_id={window.id}] mark "ctx:{context_key}"')
                 # Move to scratchpad immediately (window rule already made it floating + centered)
                 await self.sway.command(f'[con_id={window.id}] move scratchpad')
                 # Note: Do NOT show from scratchpad immediately after launch
@@ -336,12 +400,12 @@ class ScratchpadManager:
         )
         return None
 
-    async def validate_terminal(self, project_name: str) -> bool:
+    async def validate_terminal(self, context_key: str) -> bool:
         """
         Validate scratchpad terminal exists and is still running.
 
         Args:
-            project_name: Project identifier
+            context_key: Scratchpad context key
 
         Returns:
             True if terminal is valid, False otherwise
@@ -349,22 +413,22 @@ class ScratchpadManager:
         Side Effects:
             Removes terminal from state if invalid (process dead or window missing)
         """
-        terminal = self.terminals.get(project_name)
+        terminal = self.terminals.get(context_key)
         if not terminal:
             return False
 
         # Check 1: Process still running
         if not terminal.is_process_running():
-            self.logger.warning(f"Terminal process {terminal.pid} not running for project {project_name}")
-            del self.terminals[project_name]
+            self.logger.warning(f"Terminal process {terminal.pid} not running for context {context_key}")
+            del self.terminals[context_key]
             return False
 
         # Check 2: Window exists in Sway tree
         tree = await self.sway.get_tree()
         window = tree.find_by_id(terminal.window_id)
         if not window:
-            self.logger.warning(f"Terminal window {terminal.window_id} not found in Sway tree for project {project_name}")
-            del self.terminals[project_name]
+            self.logger.warning(f"Terminal window {terminal.window_id} not found in Sway tree for context {context_key}")
+            del self.terminals[context_key]
             return False
 
         # Check 3: Window has correct mark (repair if missing)
@@ -374,22 +438,22 @@ class ScratchpadManager:
 
         return True
 
-    async def get_terminal_state(self, project_name: str) -> Optional[str]:
+    async def get_terminal_state(self, context_key: str) -> Optional[str]:
         """
         Get current visibility state of scratchpad terminal.
 
         Args:
-            project_name: Project identifier
+            context_key: Scratchpad context key
 
         Returns:
             "visible", "hidden", or None if terminal doesn't exist
         """
-        terminal = self.terminals.get(project_name)
+        terminal = self.terminals.get(context_key)
         if not terminal:
             return None
 
         # Validate terminal first
-        if not await self.validate_terminal(project_name):
+        if not await self.validate_terminal(context_key):
             return None
 
         # Query Sway tree for window state
@@ -405,12 +469,12 @@ class ScratchpadManager:
         else:
             return "visible"
 
-    async def toggle_terminal(self, project_name: str) -> str:
+    async def toggle_terminal(self, context_key: str) -> str:
         """
         Toggle scratchpad terminal visibility (show if hidden, hide if visible).
 
         Args:
-            project_name: Project identifier
+            context_key: Scratchpad context key
 
         Returns:
             "shown" or "hidden" indicating resulting state
@@ -418,29 +482,29 @@ class ScratchpadManager:
         Raises:
             ValueError: If terminal doesn't exist or is invalid
         """
-        terminal = self.terminals.get(project_name)
+        terminal = self.terminals.get(context_key)
         if not terminal:
-            raise ValueError(f"No scratchpad terminal found for project: {project_name}")
+            raise ValueError(f"No scratchpad terminal found for context: {context_key}")
 
         # Validate terminal
-        if not await self.validate_terminal(project_name):
-            raise ValueError(f"Scratchpad terminal invalid for project: {project_name}")
+        if not await self.validate_terminal(context_key):
+            raise ValueError(f"Scratchpad terminal invalid for context: {context_key}")
 
         # Get current state
-        state = await self.get_terminal_state(project_name)
+        state = await self.get_terminal_state(context_key)
 
         # Feature 102 Fix: Record scratchpad toggle trace events
         await self._record_scratchpad_trace_event(
             terminal.window_id,
             f"scratchpad::{'hide' if state == 'visible' else 'show'}",
-            f"Scratchpad toggle: {'hiding' if state == 'visible' else 'showing'} for project {project_name}",
-            {"project_name": project_name, "prev_state": state}
+            f"Scratchpad toggle: {'hiding' if state == 'visible' else 'showing'} for context {context_key}",
+            {"project_name": terminal.project_name, "context_key": context_key, "prev_state": state}
         )
 
         if state == "visible":
             # Hide to scratchpad
             await self.sway.command(f'[con_mark="{terminal.mark}"] move scratchpad')
-            self.logger.debug(f"Hid terminal for project '{project_name}'")
+            self.logger.debug(f"Hid terminal for context '{context_key}'")
             return "hidden"
         else:
             # Show from scratchpad
@@ -450,7 +514,7 @@ class ScratchpadManager:
             # Feature 125: Resize and position based on dock mode
             await self._position_scratchpad_for_dock_mode(terminal.mark)
 
-            self.logger.debug(f"Showed terminal for project '{project_name}'")
+            self.logger.debug(f"Showed terminal for context '{context_key}'")
             return "shown"
 
     async def _record_scratchpad_trace_event(
@@ -560,17 +624,17 @@ class ScratchpadManager:
         except Exception as e:
             self.logger.warning(f"[Feature 125] Error positioning scratchpad: {e}")
 
-    def get_terminal(self, project_name: str) -> Optional[ScratchpadTerminal]:
+    def get_terminal(self, context_key: str) -> Optional[ScratchpadTerminal]:
         """
         Retrieve scratchpad terminal for project.
 
         Args:
-            project_name: Project identifier
+            context_key: Scratchpad context key
 
         Returns:
             ScratchpadTerminal instance or None if not found
         """
-        return self.terminals.get(project_name)
+        return self.terminals.get(context_key)
 
     async def cleanup_invalid_terminals(self) -> int:
         """
@@ -579,15 +643,15 @@ class ScratchpadManager:
         Returns:
             Count of terminals cleaned up
         """
-        projects_to_remove = []
+        keys_to_remove = []
 
-        for project_name in list(self.terminals.keys()):
-            if not await self.validate_terminal(project_name):
-                projects_to_remove.append(project_name)
+        for context_key in list(self.terminals.keys()):
+            if not await self.validate_terminal(context_key):
+                keys_to_remove.append(context_key)
 
-        self.logger.info(f"Cleaned up {len(projects_to_remove)} invalid terminal(s): {projects_to_remove}")
+        self.logger.info(f"Cleaned up {len(keys_to_remove)} invalid terminal(s): {keys_to_remove}")
 
-        return len(projects_to_remove)
+        return len(keys_to_remove)
 
     async def list_terminals(self) -> List[ScratchpadTerminal]:
         """
@@ -623,8 +687,10 @@ class ScratchpadManager:
                     last_colon = suffix.rfind(":")
                     if last_colon > 0:
                         project_name = suffix[:last_colon]
+                        context_mark = next((m for m in window.marks if m.startswith("ctx:")), "")
+                        context_key = context_mark[len("ctx:"):] if context_mark.startswith("ctx:") else project_name
                         # Skip if already tracked
-                        if project_name in self.terminals:
+                        if context_key in self.terminals:
                             continue
 
                         # Verify process environment
@@ -634,16 +700,25 @@ class ScratchpadManager:
                                 if env.get("I3PM_SCRATCHPAD") == "true":
                                     # Rebuild terminal state
                                     working_dir = Path(env.get("I3PM_WORKING_DIR", str(Path.home())))
+                                    execution_mode = env.get("I3PM_CONTEXT_VARIANT", "local")
+                                    connection_key = env.get("I3PM_CONNECTION_KEY") or None
+                                    env_context_key = env.get("I3PM_CONTEXT_KEY", context_key)
                                     terminal = ScratchpadTerminal(
                                         project_name=project_name,
                                         pid=window.pid,
                                         window_id=window.id,
                                         mark=mark,
                                         working_dir=working_dir,
+                                        context_key=env_context_key,
+                                        execution_mode=execution_mode,
+                                        connection_key=connection_key,
+                                        tmux_session_name=env.get("I3PM_TMUX_SESSION_NAME"),
                                     )
-                                    self.terminals[project_name] = terminal
+                                    self.terminals[env_context_key] = terminal
                                     rediscovered += 1
-                                    self.logger.info(f"Rediscovered scratchpad terminal: {project_name}")
+                                    self.logger.info(
+                                        f"Rediscovered scratchpad terminal: project={project_name}, context={env_context_key}"
+                                    )
                             except (ProcessLookupError, PermissionError) as e:
                                 self.logger.debug(f"Could not verify terminal for rediscovery: {e}")
 
@@ -652,7 +727,7 @@ class ScratchpadManager:
 
         return rediscovered
 
-    async def _find_orphaned_terminal(self, project_name: str) -> Optional[ScratchpadTerminal]:
+    async def _find_orphaned_terminal(self, project_name: str, context_key: str) -> Optional[ScratchpadTerminal]:
         """
         Find an orphaned scratchpad terminal window for a project.
 
@@ -661,6 +736,7 @@ class ScratchpadManager:
 
         Args:
             project_name: Project identifier to search for
+            context_key: Expected context key
 
         Returns:
             ScratchpadTerminal if orphan found, None otherwise
@@ -670,11 +746,19 @@ class ScratchpadManager:
         for window in tree.descendants():
             for mark in window.marks:
                 if mark.startswith(f"scoped:scratchpad-terminal:{project_name}:"):
+                    context_mark = next((m for m in window.marks if m.startswith("ctx:")), "")
+                    window_context_key = context_mark[len("ctx:"):] if context_mark else ""
+                    if window_context_key and window_context_key != context_key:
+                        continue
+
                     # Found orphaned window with matching project
                     if window.pid:
                         try:
                             env = read_process_environ(window.pid)
                             if env.get("I3PM_SCRATCHPAD") == "true":
+                                env_context_key = env.get("I3PM_CONTEXT_KEY", window_context_key or context_key)
+                                if env_context_key != context_key:
+                                    continue
                                 working_dir = Path(env.get("I3PM_WORKING_DIR", str(Path.home())))
                                 terminal = ScratchpadTerminal(
                                     project_name=project_name,
@@ -682,8 +766,14 @@ class ScratchpadManager:
                                     window_id=window.id,
                                     mark=mark,
                                     working_dir=working_dir,
+                                    context_key=env_context_key,
+                                    execution_mode=env.get("I3PM_CONTEXT_VARIANT", "local"),
+                                    connection_key=env.get("I3PM_CONNECTION_KEY") or None,
+                                    tmux_session_name=env.get("I3PM_TMUX_SESSION_NAME"),
                                 )
-                                self.logger.info(f"Found orphaned scratchpad terminal for {project_name}")
+                                self.logger.info(
+                                    f"Found orphaned scratchpad terminal for {project_name} ({env_context_key})"
+                                )
                                 return terminal
                         except (ProcessLookupError, PermissionError):
                             pass

@@ -4,9 +4,6 @@
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
 import { AccountsStorageSchema, type AccountsStorage } from "../../../models/account.ts";
 import {
-  BareRepositorySchema,
-  RepositoriesStorageSchema,
-  WorktreeSchema,
   type BareRepository,
   type RepositoriesStorage,
   type Worktree,
@@ -106,7 +103,7 @@ export async function discover(args: string[]): Promise<number> {
         const defaultBranch = await getDefaultBranch(barePath);
 
         // Get worktrees
-        const worktrees = await getWorktrees(barePath, repoPath, defaultBranch);
+        const worktrees = await getWorktrees(barePath, defaultBranch);
         totalWorktrees += worktrees.length;
 
         const repo: BareRepository = {
@@ -204,7 +201,7 @@ async function getDefaultBranch(barePath: string): Promise<string> {
   return "main";
 }
 
-async function getWorktrees(barePath: string, repoPath: string, defaultBranch: string): Promise<Worktree[]> {
+async function getWorktrees(barePath: string, defaultBranch: string): Promise<Worktree[]> {
   const cmd = new Deno.Command("git", {
     args: ["-C", barePath, "worktree", "list", "--porcelain"],
     stdout: "piped",

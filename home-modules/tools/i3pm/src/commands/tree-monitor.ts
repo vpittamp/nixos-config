@@ -213,9 +213,9 @@ EXAMPLES:
  */
 export async function treeMonitorCommand(
   cmdArgs: (string | number)[],
-  options: CommandOptions = {},
+  _options: CommandOptions = {},
 ): Promise<void> {
-  const args = parseArgs(cmdArgs as string[], {
+  const args = parseArgs(cmdArgs.map(String), {
     boolean: ["help", "json", "watch"],
     string: ["socket-path", "filter", "since", "until"],
     alias: {
