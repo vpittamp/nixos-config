@@ -384,118 +384,99 @@ let
       routing_domains = [ "vscode.dev" "insiders.vscode.dev" ];
     }
 
-    # Keycloak (CNOE local)
+    # Keycloak (Ryzen K8s via Tailscale)
     {
       name = "Keycloak";
-      url = "https://keycloak.cnoe.localtest.me:8443";
-      domain = "keycloak.cnoe.localtest.me";
+      url = "https://keycloak-ryzen.tail286401.ts.net";
+      domain = "keycloak-ryzen.tail286401.ts.net";
       icon = iconPath "keycloak.svg";
       description = "Keycloak identity and access management";
       categories = "Security;Network;";
       keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;";
-      scope = "https://keycloak.cnoe.localtest.me:8443/";
+      scope = "https://keycloak-ryzen.tail286401.ts.net/";
       ulid = "01MD4CZ7H4KJ4TR0C2Q3C8ZQ9V";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 68;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "keycloak.cnoe.localtest.me" ];
+      routing_domains = [ "keycloak-ryzen.tail286401.ts.net" ];
     }
 
-    # Backstage (CNOE local)
+    # Backstage (Ryzen K8s via Tailscale)
     {
       name = "Backstage";
-      url = "https://backstage.cnoe.localtest.me:8443";
-      domain = "backstage.cnoe.localtest.me";
+      url = "https://backstage-ryzen.tail286401.ts.net";
+      domain = "backstage-ryzen.tail286401.ts.net";
       icon = iconPath "backstage.svg";
       description = "Backstage developer portal";
       categories = "Development;Network;";
       keywords = "backstage;developer-portal;sdp;platform;kubernetes;";
-      scope = "https://backstage.cnoe.localtest.me:8443/";
+      scope = "https://backstage-ryzen.tail286401.ts.net/";
       ulid = "01MD4D0A6S2CVXKNNY4EJ5PQ1G";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 69;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "backstage.cnoe.localtest.me" ];
+      routing_domains = [ "backstage-ryzen.tail286401.ts.net" ];
     }
 
-    # ArgoCD (CNOE local)
+    # ArgoCD (Ryzen K8s via Tailscale)
     {
       name = "ArgoCD";
-      url = "https://argocd.cnoe.localtest.me:8443";
-      domain = "argocd.cnoe.localtest.me";
+      url = "https://argocd-ryzen.tail286401.ts.net";
+      domain = "argocd-ryzen.tail286401.ts.net";
       icon = iconPath "argocd.svg";
       description = "ArgoCD GitOps controller";
       categories = "Development;Network;System;";
       keywords = "argocd;gitops;cd;kubernetes;devops;";
-      scope = "https://argocd.cnoe.localtest.me:8443/";
+      scope = "https://argocd-ryzen.tail286401.ts.net/";
       ulid = "01MD4D0N7A8F9P6QS0R1TV2WX3";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 70;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "argocd.cnoe.localtest.me" ];
+      routing_domains = [ "argocd-ryzen.tail286401.ts.net" ];
     }
 
-    # Argo Workflows (CNOE local)
+    # Argo Workflows (Ryzen K8s via Tailscale)
     {
       name = "Argo Workflows";
-      url = "https://argo-workflows.cnoe.localtest.me:8443";
-      domain = "argo-workflows.cnoe.localtest.me";
+      url = "https://argo-workflows-ryzen.tail286401.ts.net";
+      domain = "argo-workflows-ryzen.tail286401.ts.net";
       icon = iconPath "argo-workflows.png";
       description = "Argo Workflows - Kubernetes-native workflow engine";
       categories = "Development;Network;System;";
       keywords = "argo;workflows;kubernetes;pipelines;ci;automation;";
-      scope = "https://argo-workflows.cnoe.localtest.me:8443/";
+      scope = "https://argo-workflows-ryzen.tail286401.ts.net/";
       ulid = "56RN5CMB8EJQ8KEVPWDR2GB7PX";  # Generated 2025-01-29
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 107;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "argo-workflows.cnoe.localtest.me" ];
+      routing_domains = [ "argo-workflows-ryzen.tail286401.ts.net" ];
     }
 
-    # ArgoCD (Talos/ai401kchat)
-    {
-      name = "ArgoCD Talos";
-      url = "https://argocd.ai401kchat.com";
-      domain = "argocd.ai401kchat.com";
-      icon = iconPath "argocd-talos.svg";
-      description = "ArgoCD GitOps controller for Talos Kubernetes cluster";
-      categories = "Development;Network;System;";
-      keywords = "argocd;gitops;cd;kubernetes;devops;talos;ai401kchat;";
-      scope = "https://argocd.ai401kchat.com/";
-      ulid = "3YBB66K55HEZRW2GC25M8W53NJ";  # Generated 2025-12-09
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 77;
-      preferred_monitor_role = "secondary";
-      # Feature 113: URL routing domains
-      routing_domains = [ "argocd.ai401kchat.com" ];
-    }
-
-    # Gitea (CNOE local)
+    # Gitea (Ryzen K8s via Tailscale)
     {
       name = "Gitea";
-      url = "https://gitea.cnoe.localtest.me:8443";
-      domain = "gitea.cnoe.localtest.me";
+      url = "https://gitea-ryzen.tail286401.ts.net";
+      domain = "gitea-ryzen.tail286401.ts.net";
       icon = iconPath "gitea.svg";
       description = "Gitea self-hosted git service";
       categories = "Development;Network;";
       keywords = "gitea;git;scm;code;devops;kubernetes;";
-      scope = "https://gitea.cnoe.localtest.me:8443/";
+      scope = "https://gitea-ryzen.tail286401.ts.net/";
       ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 71;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "gitea.cnoe.localtest.me" ];
+      routing_domains = [ "gitea-ryzen.tail286401.ts.net" ];
     }
 
     # CVS Pharmacy
@@ -517,401 +498,198 @@ let
       routing_domains = [ "cvs.com" "www.cvs.com" ];
     }
 
-    # Kargo (CNOE local)
+    # Kargo (Ryzen K8s via Tailscale)
     {
       name = "Kargo";
-      url = "https://kargo.cnoe.localtest.me:8443";
-      domain = "kargo.cnoe.localtest.me";
+      url = "https://kargo-ryzen.tail286401.ts.net";
+      domain = "kargo-ryzen.tail286401.ts.net";
       icon = iconPath "kargo.png";
       description = "Kargo continuous delivery and promotion engine for Kubernetes";
       categories = "Development;Network;System;";
       keywords = "kargo;kubernetes;cd;gitops;promotion;delivery;";
-      scope = "https://kargo.cnoe.localtest.me:8443/";
+      scope = "https://kargo-ryzen.tail286401.ts.net/";
       ulid = "01MEQFV8K4N3R7S2T5W9X0Y1Z6";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 73;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "kargo.cnoe.localtest.me" ];
+      routing_domains = [ "kargo-ryzen.tail286401.ts.net" ];
     }
 
-    # Headlamp (CNOE local)
+    # Headlamp (Ryzen K8s via Tailscale)
     {
       name = "Headlamp";
-      url = "https://headlamp.cnoe.localtest.me:8443";
-      domain = "headlamp.cnoe.localtest.me";
+      url = "https://headlamp-ryzen.tail286401.ts.net";
+      domain = "headlamp-ryzen.tail286401.ts.net";
       icon = iconPath "headlamp.svg";
       description = "Headlamp Kubernetes dashboard";
       categories = "Development;Network;System;";
       keywords = "headlamp;kubernetes;dashboard;k8s;cluster;";
-      scope = "https://headlamp.cnoe.localtest.me:8443/";
+      scope = "https://headlamp-ryzen.tail286401.ts.net/";
       ulid = "01MEQFVCK5P4S8T3V6X0Y2Z7A1";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 74;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "headlamp.cnoe.localtest.me" ];
+      routing_domains = [ "headlamp-ryzen.tail286401.ts.net" ];
     }
 
-    # Kagent (CNOE local)
+    # Kagent (Ryzen K8s via Tailscale)
     {
       name = "Kagent";
-      url = "https://kagent.cnoe.localtest.me:8443";
-      domain = "kagent.cnoe.localtest.me";
+      url = "https://kagent-ryzen.tail286401.ts.net";
+      domain = "kagent-ryzen.tail286401.ts.net";
       icon = iconPath "kagent.svg";
       description = "Kagent Kubernetes AI agent framework";
       categories = "Development;Network;System;";
       keywords = "kagent;kubernetes;ai;agent;llm;automation;";
-      scope = "https://kagent.cnoe.localtest.me:8443/";
+      scope = "https://kagent-ryzen.tail286401.ts.net/";
       ulid = "01MEQFVGM6Q5T9V4W7Y1Z3A2B8";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 75;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "kagent.cnoe.localtest.me" ];
+      routing_domains = [ "kagent-ryzen.tail286401.ts.net" ];
     }
 
-    # Agent Gateway (CNOE local)
+    # Agent Gateway (Ryzen K8s via Tailscale)
     {
       name = "Agent Gateway";
-      url = "https://agentgateway.cnoe.localtest.me:8443";
-      domain = "agentgateway.cnoe.localtest.me";
+      url = "https://agentgateway-ryzen.tail286401.ts.net";
+      domain = "agentgateway-ryzen.tail286401.ts.net";
       icon = iconPath "agent-gateway.svg";
       description = "Agent Gateway API gateway for AI agents";
       categories = "Development;Network;System;";
       keywords = "agent;gateway;api;kubernetes;ai;routing;";
-      scope = "https://agentgateway.cnoe.localtest.me:8443/";
+      scope = "https://agentgateway-ryzen.tail286401.ts.net/";
       ulid = "01MEQFVKN7R6V0W5X8Z2A4B3C9";  # Generated 2025-11-18
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 76;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "agentgateway.cnoe.localtest.me" ];
+      routing_domains = [ "agentgateway-ryzen.tail286401.ts.net" ];
     }
 
     # ============================================
-    # Talos Cluster PWAs (ai401kchat.com)
-    # Purple-themed icons to distinguish from Tailscale variants
+    # Kubernetes PWAs (Ryzen via Tailscale)
     # ============================================
 
-    # Kargo (Talos/ai401kchat)
-    {
-      name = "Kargo Talos";
-      url = "https://kargo.ai401kchat.com";
-      domain = "kargo.ai401kchat.com";
-      icon = iconPath "kargo.png";  # Using same PNG (no SVG available)
-      description = "Kargo continuous delivery and promotion engine for Talos cluster";
-      categories = "Development;Network;System;";
-      keywords = "kargo;kubernetes;cd;gitops;promotion;delivery;talos;ai401kchat;";
-      scope = "https://kargo.ai401kchat.com/";
-      ulid = "45XFC05KF4YM4GK9SMKW8S4EPZ";  # Generated 2025-12-09
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 79;
-      preferred_monitor_role = "secondary";
-      # Feature 113: URL routing domains
-      routing_domains = [ "kargo.ai401kchat.com" ];
-    }
-
-    # Headlamp (Talos/ai401kchat)
-    {
-      name = "Headlamp Talos";
-      url = "https://headlamp.ai401kchat.com";
-      domain = "headlamp.ai401kchat.com";
-      icon = iconPath "headlamp-talos.svg";
-      description = "Headlamp Kubernetes dashboard for Talos cluster";
-      categories = "Development;Network;System;";
-      keywords = "headlamp;kubernetes;dashboard;k8s;cluster;talos;ai401kchat;";
-      scope = "https://headlamp.ai401kchat.com/";
-      ulid = "7Q27F97E9F496X7ZQ47ANH88CP";  # Generated 2025-12-09
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 80;
-      preferred_monitor_role = "secondary";
-      # Feature 113: URL routing domains
-      routing_domains = [ "headlamp.ai401kchat.com" ];
-    }
-
-    # Gitea (Talos/ai401kchat)
-    {
-      name = "Gitea Talos";
-      url = "https://gitea.ai401kchat.com";
-      domain = "gitea.ai401kchat.com";
-      icon = iconPath "gitea-talos.svg";
-      description = "Gitea self-hosted git service for Talos cluster";
-      categories = "Development;Network;";
-      keywords = "gitea;git;scm;code;devops;kubernetes;talos;ai401kchat;";
-      scope = "https://gitea.ai401kchat.com/";
-      ulid = "72TGWGVAMBGEA9T1M4MS75S8PG";  # Generated 2025-12-09
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 81;
-      preferred_monitor_role = "secondary";
-      # Feature 113: URL routing domains
-      routing_domains = [ "gitea.ai401kchat.com" ];
-    }
-
-    # Keycloak (Talos/ai401kchat)
-    {
-      name = "Keycloak Talos";
-      url = "https://keycloak.ai401kchat.com";
-      domain = "keycloak.ai401kchat.com";
-      icon = iconPath "keycloak-talos.svg";
-      description = "Keycloak identity and access management for Talos cluster";
-      categories = "Security;Network;";
-      keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;talos;ai401kchat;";
-      scope = "https://keycloak.ai401kchat.com/";
-      ulid = "514S283M0EGKNVDMYKAR3635H6";  # Generated 2025-12-09
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 82;
-      preferred_monitor_role = "secondary";
-      # Feature 113: URL routing domains
-      routing_domains = [ "keycloak.ai401kchat.com" ];
-    }
-
-    # ============================================
-    # Observability Stack PWAs (Hub Cluster)
-    # ============================================
-
-    # Grafana Hub
-    {
-      name = "Grafana Hub";
-      host = "hub";
-      url = "https://grafana-hub.tail286401.ts.net";
-      domain = "grafana-hub.tail286401.ts.net";
-      icon = iconPath "grafana.svg";
-      description = "Grafana dashboard for Hub cluster";
-      categories = "Network;Development;";
-      keywords = "grafana;observability;metrics;logs;hub;";
-      scope = "https://grafana-hub.tail286401.ts.net/";
-      ulid = "6F5SBQ6RZQPTASDHNFNERW976H";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 83;
-      preferred_monitor_role = "secondary";
-    }
-
-    # Grafana (CNOE local)
+    # Grafana (Ryzen K8s via Tailscale)
     {
       name = "Grafana Local";
-      url = "https://grafana.cnoe.localtest.me:8443";
-      domain = "grafana.cnoe.localtest.me";
+      url = "https://grafana-ryzen.tail286401.ts.net";
+      domain = "grafana-ryzen.tail286401.ts.net";
       icon = iconPath "grafana.svg";
       description = "Grafana observability dashboard for CNOE local";
       categories = "Network;Development;";
       keywords = "grafana;observability;metrics;logs;kubernetes;cnoe;";
-      scope = "https://grafana.cnoe.localtest.me:8443/";
+      scope = "https://grafana-ryzen.tail286401.ts.net/";
       ulid = "01JGNK2P3Q4R5S6T7V8W9X0Y1Z";  # Generated 2026-01-01
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 95;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "grafana.cnoe.localtest.me" ];
+      routing_domains = [ "grafana-ryzen.tail286401.ts.net" ];
     }
 
-    # Langfuse (CNOE local)
+    # Langfuse (Ryzen K8s via Tailscale)
     {
       name = "Langfuse";
-      url = "https://langfuse.cnoe.localtest.me:8443";
-      domain = "langfuse.cnoe.localtest.me";
+      url = "https://langfuse-ryzen.tail286401.ts.net";
+      domain = "langfuse-ryzen.tail286401.ts.net";
       icon = iconPath "langfuse.svg";
       description = "Langfuse AI observability platform";
       categories = "Network;Development;";
       keywords = "langfuse;ai;observability;tracing;kubernetes;";
-      scope = "https://langfuse.cnoe.localtest.me:8443/";
+      scope = "https://langfuse-ryzen.tail286401.ts.net/";
       ulid = "4NAWESCFFZM8CHZJBCMXVWF4TK";  # Generated 2025-12-24
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 84;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "langfuse.cnoe.localtest.me" ];
+      routing_domains = [ "langfuse-ryzen.tail286401.ts.net" ];
     }
 
-    # Jaeger (CNOE local)
+    # Jaeger (Ryzen K8s via Tailscale)
     {
       name = "Jaeger";
-      url = "https://jaeger.cnoe.localtest.me:8443";
-      domain = "jaeger.cnoe.localtest.me";
+      url = "https://jaeger-ryzen.tail286401.ts.net";
+      domain = "jaeger-ryzen.tail286401.ts.net";
       icon = iconPath "jaeger.svg";
       description = "Jaeger distributed tracing platform";
       categories = "Network;Development;";
       keywords = "jaeger;tracing;observability;distributed;kubernetes;";
-      scope = "https://jaeger.cnoe.localtest.me:8443/";
+      scope = "https://jaeger-ryzen.tail286401.ts.net/";
       ulid = "01JGNH8K2M3P4Q5R6S7T8V9W0X";  # Generated 2025-12-30
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 93;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "jaeger.cnoe.localtest.me" ];
+      routing_domains = [ "jaeger-ryzen.tail286401.ts.net" ];
     }
 
-    # Alloy Hub
-    {
-      name = "Alloy Hub";
-      host = "hub";
-      url = "https://alloy-hub.tail286401.ts.net";
-      domain = "alloy-hub.tail286401.ts.net";
-      icon = iconPath "alloy.svg";
-      description = "Grafana Alloy debug UI for Hub cluster";
-      categories = "Network;Development;";
-      keywords = "alloy;grafana;collector;telemetry;hub;";
-      scope = "https://alloy-hub.tail286401.ts.net/";
-      ulid = "0YF8REBN1HG7BF9W7N2TJGC4JA";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 85;
-      preferred_monitor_role = "secondary";
-    }
-
-    # ============================================
-    # Observability Stack PWAs (ThinkPad Cluster)
-    # ============================================
-
-    # Grafana ThinkPad
-    {
-      name = "Grafana ThinkPad";
-      host = "thinkpad";
-      url = "https://grafana-thinkpad.tail286401.ts.net";
-      domain = "grafana-thinkpad.tail286401.ts.net";
-      icon = iconPath "grafana.svg";
-      description = "Grafana dashboard for ThinkPad cluster";
-      categories = "Network;Development;";
-      keywords = "grafana;observability;metrics;logs;thinkpad;";
-      scope = "https://grafana-thinkpad.tail286401.ts.net/";
-      ulid = "7P1BD85PQGTZA9QHS5RAK2T1N6";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 86;
-      preferred_monitor_role = "secondary";
-    }
-
-
-    # Alloy ThinkPad
-    {
-      name = "Alloy ThinkPad";
-      host = "thinkpad";
-      url = "http://localhost:12345";
-      domain = "localhost";
-      icon = iconPath "alloy.svg";
-      description = "Grafana Alloy debug UI for ThinkPad cluster";
-      categories = "Network;Development;";
-      keywords = "alloy;grafana;collector;telemetry;thinkpad;";
-      scope = "http://localhost:12345/";
-      ulid = "3Q6FKYJZE0584G3Q2HW6SCRS5G";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 88;
-      preferred_monitor_role = "secondary";
-    }
-
-    # ============================================
-    # Observability Stack PWAs (Ryzen Cluster)
-    # ============================================
-
-    # Grafana Ryzen
-    {
-      name = "Grafana Ryzen";
-      host = "ryzen";
-      url = "https://grafana-ryzen.tail286401.ts.net";
-      domain = "grafana-ryzen.tail286401.ts.net";
-      icon = iconPath "grafana.svg";
-      description = "Grafana dashboard for Ryzen cluster";
-      categories = "Network;Development;";
-      keywords = "grafana;observability;metrics;logs;ryzen;";
-      scope = "https://grafana-ryzen.tail286401.ts.net/";
-      ulid = "4GYTVH57ZRH7ZTBZQZZ5G6XAJX";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 89;
-      preferred_monitor_role = "secondary";
-    }
-
-
-    # Alloy Ryzen
-    {
-      name = "Alloy Ryzen";
-      host = "ryzen";
-      url = "http://localhost:12345";
-      domain = "localhost";
-      icon = iconPath "alloy.svg";
-      description = "Grafana Alloy debug UI for Ryzen cluster";
-      categories = "Network;Development;";
-      keywords = "alloy;grafana;collector;telemetry;ryzen;";
-      scope = "http://localhost:12345/";
-      ulid = "4ZY96QS21XXYC2MY9PMPECBE7M";  # Generated 2025-12-24
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 91;
-      preferred_monitor_role = "secondary";
-    }
-
-    # ============================================
-    # CNOE/CAIPE PWAs (localtest.me)
-    # ============================================
-
-    # Flipt (CNOE local)
+    # Flipt (Ryzen K8s via Tailscale)
     {
       name = "Flipt";
-      url = "https://flipt.cnoe.localtest.me:8443";
-      domain = "flipt.cnoe.localtest.me";
+      url = "https://flipt-ryzen.tail286401.ts.net";
+      domain = "flipt-ryzen.tail286401.ts.net";
       icon = iconPath "flipt.svg";
       description = "Flipt feature flag management platform";
       categories = "Development;Network;";
       keywords = "flipt;feature-flags;toggles;experimentation;kubernetes;";
-      scope = "https://flipt.cnoe.localtest.me:8443/";
+      scope = "https://flipt-ryzen.tail286401.ts.net/";
       ulid = "01KDPH3T12J6EQ2N6SZRGW1VPD";  # Generated 2025-12-29
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 92;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "flipt.cnoe.localtest.me" ];
+      routing_domains = [ "flipt-ryzen.tail286401.ts.net" ];
     }
 
-    # RAG WebUI (CNOE/CAIPE local)
+    # RAG WebUI (Ryzen K8s via Tailscale)
     {
       name = "RAG WebUI";
-      url = "https://rag-webui.cnoe.localtest.me:8443";
-      domain = "rag-webui.cnoe.localtest.me";
+      url = "https://rag-webui-ryzen.tail286401.ts.net";
+      domain = "rag-webui-ryzen.tail286401.ts.net";
       icon = iconPath "rag-webui.svg";
       description = "CAIPE RAG WebUI - AI-powered knowledge retrieval interface";
       categories = "Development;Network;";
       keywords = "rag;webui;caipe;ai;llm;retrieval;knowledge;cnoe;";
-      scope = "https://rag-webui.cnoe.localtest.me:8443/";
+      scope = "https://rag-webui-ryzen.tail286401.ts.net/";
       ulid = "01KDPH3T1CD7ECNDJPQ01VFH40";  # Generated 2025-12-29
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 94;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "rag-webui.cnoe.localtest.me" ];
+      routing_domains = [ "rag-webui-ryzen.tail286401.ts.net" ];
     }
 
-    # NocoDB (CNOE local)
+    # NocoDB (Ryzen K8s via Tailscale)
     {
       name = "NocoDB";
-      url = "https://nocodb.cnoe.localtest.me:8443";
-      domain = "nocodb.cnoe.localtest.me";
+      url = "https://nocodb-ryzen.tail286401.ts.net";
+      domain = "nocodb-ryzen.tail286401.ts.net";
       icon = iconPath "nocodb.svg";
       description = "NocoDB - Open source Airtable alternative";
       categories = "Development;Network;Office;";
       keywords = "nocodb;database;airtable;spreadsheet;no-code;kubernetes;";
-      scope = "https://nocodb.cnoe.localtest.me:8443/";
+      scope = "https://nocodb-ryzen.tail286401.ts.net/";
       ulid = "7WK88MM2SQ3M161Q045W2R50HK";  # Generated 2026-01-04
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 96;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "nocodb.cnoe.localtest.me" ];
+      routing_domains = [ "nocodb-ryzen.tail286401.ts.net" ];
     }
 
     # Oracle Cloud Console
@@ -973,270 +751,270 @@ let
       routing_domains = [ "hercules-ci.com" "www.hercules-ci.com" ];
     }
 
-    # Dapr Dashboard
+    # Dapr Dashboard (Ryzen K8s via Tailscale)
     {
       name = "Dapr Dashboard";
-      url = "https://dapr.cnoe.localtest.me:8443";
-      domain = "dapr.cnoe.localtest.me";
+      url = "https://dapr-ryzen.tail286401.ts.net";
+      domain = "dapr-ryzen.tail286401.ts.net";
       icon = iconPath "dapr.svg";
       description = "Dapr - Distributed application runtime dashboard";
       categories = "Development;Network;";
       keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;";
-      scope = "https://dapr.cnoe.localtest.me:8443/";
+      scope = "https://dapr-ryzen.tail286401.ts.net/";
       ulid = "01KEAAZKYV8GMQGH5YX6ZV4GS5";  # Generated 2026-01-06
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 100;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "dapr.cnoe.localtest.me" ];
+      routing_domains = [ "dapr-ryzen.tail286401.ts.net" ];
     }
 
-    # Attu (Milvus vector database UI)
+    # Attu (Ryzen K8s via Tailscale)
     {
       name = "Attu";
-      url = "https://attu.cnoe.localtest.me:8443";
-      domain = "attu.cnoe.localtest.me";
+      url = "https://attu-ryzen.tail286401.ts.net";
+      domain = "attu-ryzen.tail286401.ts.net";
       icon = iconPath "milvus.svg";
       description = "Attu - Milvus vector database administration UI";
       categories = "Development;Network;";
       keywords = "attu;milvus;vector;database;admin;kubernetes;";
-      scope = "https://attu.cnoe.localtest.me:8443/";
+      scope = "https://attu-ryzen.tail286401.ts.net/";
       ulid = "03AYXQ8S24G2ZFWBJ54G83A4F7";  # Generated 2026-01-12
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 101;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "attu.cnoe.localtest.me" ];
+      routing_domains = [ "attu-ryzen.tail286401.ts.net" ];
     }
 
-    # Crawl4AI (CNOE local)
+    # Crawl4AI (Ryzen K8s via Tailscale)
     {
       name = "Crawl4AI";
-      url = "https://crawl4ai.cnoe.localtest.me:8443";
-      domain = "crawl4ai.cnoe.localtest.me";
+      url = "https://crawl4ai-ryzen.tail286401.ts.net";
+      domain = "crawl4ai-ryzen.tail286401.ts.net";
       icon = iconPath "crawl4ai.svg";
       description = "Crawl4AI - Open-source LLM-friendly web crawler";
       categories = "Development;Network;";
       keywords = "crawl4ai;crawler;scraper;llm;ai;web;kubernetes;";
-      scope = "https://crawl4ai.cnoe.localtest.me:8443/";
+      scope = "https://crawl4ai-ryzen.tail286401.ts.net/";
       ulid = "61ZKKF8QQHC7XYGFCWGMWY85CV";  # Generated 2026-01-12
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 102;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "crawl4ai.cnoe.localtest.me" ];
+      routing_domains = [ "crawl4ai-ryzen.tail286401.ts.net" ];
     }
 
-    # AI Chatbot (Vercel AI SDK template - CNOE local)
+    # AI Chatbot (Ryzen K8s via Tailscale)
     {
       name = "AI Chatbot";
-      url = "https://ai-chatbot.cnoe.localtest.me:8443";
-      domain = "ai-chatbot.cnoe.localtest.me";
+      url = "https://ai-chatbot-ryzen.tail286401.ts.net";
+      domain = "ai-chatbot-ryzen.tail286401.ts.net";
       icon = iconPath "nextjs.svg";
       description = "Vercel AI SDK Chatbot - Next.js AI chat template";
       categories = "Development;Network;";
       keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;";
-      scope = "https://ai-chatbot.cnoe.localtest.me:8443/";
+      scope = "https://ai-chatbot-ryzen.tail286401.ts.net/";
       ulid = "6EBKR8NA2A8TMS02SJ7NSR77RG";  # Generated 2026-01-12
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 103;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "ai-chatbot.cnoe.localtest.me" ];
+      routing_domains = [ "ai-chatbot-ryzen.tail286401.ts.net" ];
     }
 
-    # Open SWE (LangChain-based agent UI - CNOE local)
+    # Open SWE (Ryzen K8s via Tailscale)
     {
       name = "Open SWE";
-      url = "https://open-swe-ui.cnoe.localtest.me:8443";
-      domain = "open-swe-ui.cnoe.localtest.me";
+      url = "https://open-swe-ui-ryzen.tail286401.ts.net";
+      domain = "open-swe-ui-ryzen.tail286401.ts.net";
       icon = iconPath "open-swe.png";
       description = "Open SWE - LangChain-based asynchronous coding agent";
       categories = "Development;Network;";
       keywords = "open-swe;langchain;langgraph;agent;ai;coding;kubernetes;";
-      scope = "https://open-swe-ui.cnoe.localtest.me:8443/";
+      scope = "https://open-swe-ui-ryzen.tail286401.ts.net/";
       ulid = "5PCVTAVZTD0F050E23VXNXP7TK";  # Generated 2026-01-13
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 104;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "open-swe-ui.cnoe.localtest.me" ];
+      routing_domains = [ "open-swe-ui-ryzen.tail286401.ts.net" ];
     }
 
-    # Open WebUI (LLM interface - CNOE local)
+    # Open WebUI (Ryzen K8s via Tailscale)
     {
       name = "Open WebUI";
-      url = "https://openwebui.cnoe.localtest.me:8443";
-      domain = "openwebui.cnoe.localtest.me";
+      url = "https://openwebui-ryzen.tail286401.ts.net";
+      domain = "openwebui-ryzen.tail286401.ts.net";
       icon = iconPath "openwebui.svg";
       description = "Open WebUI - Open source LLM user interface";
       categories = "Development;Network;";
       keywords = "openwebui;llm;ollama;chat;ai;interface;kubernetes;";
-      scope = "https://openwebui.cnoe.localtest.me:8443/";
+      scope = "https://openwebui-ryzen.tail286401.ts.net/";
       ulid = "6M403VYCD36S0E6R0PTD2ZYA5M";  # Generated 2026-01-13
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 105;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "openwebui.cnoe.localtest.me" ];
+      routing_domains = [ "openwebui-ryzen.tail286401.ts.net" ];
     }
 
-    # Phoenix Azire (CNOE local)
+    # Phoenix Azire (Ryzen K8s via Tailscale)
     {
       name = "Phoenix Azire";
-      url = "https://phoenix.cnoe.localtest.me:8443";
-      domain = "phoenix.cnoe.localtest.me";
+      url = "https://phoenix-ryzen.tail286401.ts.net";
+      domain = "phoenix-ryzen.tail286401.ts.net";
       icon = iconPath "phoenix-azire.svg";
       description = "Phoenix Azire - AI observability and LLM tracing platform";
       categories = "Development;Network;";
       keywords = "phoenix;azire;ai;observability;tracing;llm;kubernetes;";
-      scope = "https://phoenix.cnoe.localtest.me:8443/";
+      scope = "https://phoenix-ryzen.tail286401.ts.net/";
       ulid = "5A70F22AX1NP456PSAFESPEZ5E";  # Generated 2026-01-26
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 106;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "phoenix.cnoe.localtest.me" ];
+      routing_domains = [ "phoenix-ryzen.tail286401.ts.net" ];
     }
 
-    # AI Workflow Builder (CNOE local)
+    # AI Workflow Builder (Ryzen K8s via Tailscale)
     {
       name = "AI Workflow Builder";
-      url = "https://workflow-builder.cnoe.localtest.me:8443";
-      domain = "workflow-builder.cnoe.localtest.me";
+      url = "https://workflow-builder-ryzen.tail286401.ts.net";
+      domain = "workflow-builder-ryzen.tail286401.ts.net";
       icon = iconPath "ai-workflow-builder.svg";
       description = "AI Workflow Builder - Visual node-based workflow automation editor";
       categories = "Development;Network;";
       keywords = "workflow;builder;visual;editor;automation;ai;nodes;react-flow;nextjs;";
-      scope = "https://workflow-builder.cnoe.localtest.me:8443/";
+      scope = "https://workflow-builder-ryzen.tail286401.ts.net/";
       ulid = "31EYAA8SZG1WY6TCVYB2PJDNBM";  # Generated 2026-01-29
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 108;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "workflow-builder.cnoe.localtest.me" ];
+      routing_domains = [ "workflow-builder-ryzen.tail286401.ts.net" ];
     }
 
-    # Redis Insights (CNOE local)
+    # Redis Insights (Ryzen K8s via Tailscale)
     {
       name = "Redis Insights";
-      url = "https://redisinsight.cnoe.localtest.me:8443";
-      domain = "redisinsight.cnoe.localtest.me";
+      url = "https://redisinsight-ryzen.tail286401.ts.net";
+      domain = "redisinsight-ryzen.tail286401.ts.net";
       icon = iconPath "redis-insights.svg";
       description = "Redis Insights - Redis database management and visualization tool";
       categories = "Development;Network;";
       keywords = "redis;insights;database;cache;visualization;kubernetes;cnoe;";
-      scope = "https://redisinsight.cnoe.localtest.me:8443/";
+      scope = "https://redisinsight-ryzen.tail286401.ts.net/";
       ulid = "348E7WKJSMP0YRHTHEY3ETR5J6";  # Generated 2026-02-02
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 109;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "redisinsight.cnoe.localtest.me" ];
+      routing_domains = [ "redisinsight-ryzen.tail286401.ts.net" ];
     }
 
-    # Dify (CNOE local)
+    # Dify (Ryzen K8s via Tailscale)
     {
       name = "Dify";
-      url = "https://dify.cnoe.localtest.me:8443";
-      domain = "dify.cnoe.localtest.me";
+      url = "https://dify-ryzen.tail286401.ts.net";
+      domain = "dify-ryzen.tail286401.ts.net";
       icon = iconPath "dify.svg";
       description = "Dify - Open-source LLM app development platform and AI workflow builder";
       categories = "Development;Network;";
       keywords = "dify;ai;llm;workflow;builder;chatbot;agent;kubernetes;cnoe;";
-      scope = "https://dify.cnoe.localtest.me:8443/";
+      scope = "https://dify-ryzen.tail286401.ts.net/";
       ulid = "53SPYVASDFAZCB0X58DZZS29Y4";  # Generated 2026-02-03
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 110;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "dify.cnoe.localtest.me" ];
+      routing_domains = [ "dify-ryzen.tail286401.ts.net" ];
     }
 
-    # JupyterHub (CNOE local)
+    # JupyterHub (Ryzen K8s via Tailscale)
     {
       name = "JupyterHub";
-      url = "https://jupyterhub.cnoe.localtest.me:8443";
-      domain = "jupyterhub.cnoe.localtest.me";
+      url = "https://jupyterhub-ryzen.tail286401.ts.net";
+      domain = "jupyterhub-ryzen.tail286401.ts.net";
       icon = iconPath "jupyterhub.svg";
       description = "JupyterHub - Multi-user Jupyter notebook server";
       categories = "Development;Network;Education;";
       keywords = "jupyter;jupyterhub;notebook;python;data-science;kubernetes;cnoe;";
-      scope = "https://jupyterhub.cnoe.localtest.me:8443/";
+      scope = "https://jupyterhub-ryzen.tail286401.ts.net/";
       ulid = "1JJBSGAS1QBR1875WQ1NARB1YK";  # Generated 2026-02-03
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 111;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "jupyterhub.cnoe.localtest.me" ];
+      routing_domains = [ "jupyterhub-ryzen.tail286401.ts.net" ];
     }
 
-    # KubeVela
+    # KubeVela (Ryzen K8s via Tailscale)
     {
       name = "KubeVela";
-      url = "https://velaux.cnoe.localtest.me:8443";
-      domain = "velaux.cnoe.localtest.me";
+      url = "https://velaux-ryzen.tail286401.ts.net";
+      domain = "velaux-ryzen.tail286401.ts.net";
       icon = iconPath "kubevela.svg";
       description = "KubeVela - Modern application delivery platform";
       categories = "Development;Network;Utility;";
       keywords = "kubevela;vela;velaux;kubernetes;k8s;deployment;oam;application;cnoe;";
-      scope = "https://velaux.cnoe.localtest.me:8443/";
+      scope = "https://velaux-ryzen.tail286401.ts.net/";
       ulid = "3037TSQ2W3RH3M7PRDBXFCT2K0";  # Generated 2026-02-04
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 112;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "velaux.cnoe.localtest.me" ];
+      routing_domains = [ "velaux-ryzen.tail286401.ts.net" ];
     }
 
-    # Activepieces (CNOE local)
+    # Activepieces (Ryzen K8s via Tailscale)
     {
       name = "Activepieces";
-      url = "https://activepieces.cnoe.localtest.me:8443";
-      domain = "activepieces.cnoe.localtest.me";
+      url = "https://activepieces-ryzen.tail286401.ts.net";
+      domain = "activepieces-ryzen.tail286401.ts.net";
       icon = iconPath "activepieces.svg";
       description = "Activepieces - Open source workflow automation platform";
       categories = "Development;Network;";
       keywords = "activepieces;automation;workflow;zapier;n8n;integrations;kubernetes;cnoe;";
-      scope = "https://activepieces.cnoe.localtest.me:8443/";
+      scope = "https://activepieces-ryzen.tail286401.ts.net/";
       ulid = "7BW50E7SR9479J379C01JDP0Y6";  # Generated 2026-02-04
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 113;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "activepieces.cnoe.localtest.me" ];
+      routing_domains = [ "activepieces-ryzen.tail286401.ts.net" ];
     }
 
-    # MCP Inspector (CNOE local)
+    # MCP Inspector (Ryzen K8s via Tailscale)
     {
       name = "MCP Inspector";
-      url = "https://mcp-inspector.cnoe.localtest.me:8443/?MCP_PROXY_PORT=8443";
-      domain = "mcp-inspector.cnoe.localtest.me";
+      url = "https://mcp-inspector-ryzen.tail286401.ts.net/?MCP_PROXY_PORT=8443";
+      domain = "mcp-inspector-ryzen.tail286401.ts.net";
       icon = iconPath "mcp-inspector.svg";
       description = "MCP Inspector - Visual testing and debugging tool for MCP servers";
       categories = "Development;Network;";
       keywords = "mcp;inspector;model;context;protocol;debug;test;server;ai;";
-      scope = "https://mcp-inspector.cnoe.localtest.me:8443/";
+      scope = "https://mcp-inspector-ryzen.tail286401.ts.net/";
       ulid = "39ADZC4WY3Y4AKR1YVSZDR1NKQ";  # Generated 2026-02-11
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 114;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "mcp-inspector.cnoe.localtest.me" ];
+      routing_domains = [ "mcp-inspector-ryzen.tail286401.ts.net" ];
     }
 
     # LibreChat (local)
@@ -1258,42 +1036,42 @@ let
       routing_domains = [ ];  # Disabled - localhost:3080 would conflict with other local services
     }
 
-    # Flowise
+    # Flowise (Ryzen K8s via Tailscale)
     {
       name = "Flowise";
-      url = "https://flowise.cnoe.localtest.me:8443";
-      domain = "flowise.cnoe.localtest.me";
+      url = "https://flowise-ryzen.tail286401.ts.net";
+      domain = "flowise-ryzen.tail286401.ts.net";
       icon = "/etc/nixos/assets/icons/flowise.svg";
       description = "Flowise - Build AI Agents, Visually";
       categories = "Development;Network;";
       keywords = "flowise;ai;agent;flow;langchain;llm;chatbot;workflow;";
-      scope = "https://flowise.cnoe.localtest.me:8443/";
+      scope = "https://flowise-ryzen.tail286401.ts.net/";
       ulid = "36G226WSWG11H0T2ACVZ6FZXCN";  # Generated 2026-02-12
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 115;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "flowise.cnoe.localtest.me" ];
+      routing_domains = [ "flowise-ryzen.tail286401.ts.net" ];
     }
 
-    # Mastra Playground
+    # Mastra Playground (Ryzen K8s via Tailscale)
     {
       name = "Mastra Playground";
-      url = "https://mastra-playground.cnoe.localtest.me/";
-      domain = "mastra-playground.cnoe.localtest.me";
+      url = "https://mastra-playground-ryzen.tail286401.ts.net/";
+      domain = "mastra-playground-ryzen.tail286401.ts.net";
       icon = "/etc/nixos/assets/icons/mastra-playground.svg";
       description = "Mastra Playground - AI agent framework testing environment";
       categories = "Development;Network;";
       keywords = "mastra;ai;agent;playground;typescript;framework;llm;";
-      scope = "https://mastra-playground.cnoe.localtest.me/";
+      scope = "https://mastra-playground-ryzen.tail286401.ts.net/";
       ulid = "34C8ASD2334ZVN4KP7JX1TJHPH";  # Generated 2026-02-14
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 78;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "mastra-playground.cnoe.localtest.me" ];
+      routing_domains = [ "mastra-playground-ryzen.tail286401.ts.net" ];
     }
   ];
 
