@@ -25,7 +25,7 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-02-20, using v0.30.0-preview.3 (pre-release).
+  # As of 2026-02-22, using v0.30.0-preview.3 (pre-release).
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
@@ -237,6 +237,10 @@ let
       enableAutoUpdate = false;
       enableAutoUpdateNotification = false;
     };
+    experimental = {
+      # Enable Gemini CLI Plan Mode (preview feature).
+      plan = true;
+    };
     ui.theme = "Default";
     model.name = "gemini-3.1-pro";
     # Feature 123: OpenTelemetry configuration for OTLP export
@@ -303,7 +307,7 @@ EOF
       $DRY_RUN_CMD chmod 600 "$GEMINI_DIR/settings.json"
     else
       # Ensure settings are compatible with modern gemini-cli schema and enforce
-      # a few critical defaults (telemetry endpoint + default model).
+      # a few critical defaults (plan mode + telemetry endpoint + default model).
       #
       # We also migrate the legacy flat keys our older config used:
       # - autoAccept -> tools.autoAccept
@@ -330,6 +334,10 @@ EOF
          then (.ui = (.ui // {}) | .ui.theme = .theme)
          else . end) |
         del(.autoAccept, .preferredEditor, .previewFeatures, .vimMode, .theme) |
+
+        # Enable Plan Mode (preview feature).
+        .experimental = (.experimental // {}) |
+        .experimental.plan = true |
 
         # Enforce telemetry routing to our local interceptor.
         .telemetry = (.telemetry // {}) |

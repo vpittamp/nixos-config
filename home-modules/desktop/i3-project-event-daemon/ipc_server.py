@@ -199,9 +199,12 @@ class IPCServer:
             await self.server.wait_closed()
 
         # Close all client connections
-        for writer in self.clients:
-            writer.close()
-            await writer.wait_closed()
+        for writer in list(self.clients):
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception as e:
+                logger.debug(f"Error closing client connection during shutdown: {e}")
 
         logger.info("IPC server stopped")
 
@@ -1851,6 +1854,8 @@ class IPCServer:
             "floating": node.floating,
             "window_class": getattr(node, 'window_class', None),
             "window_instance": getattr(node, 'window_instance', None),
+            "app_id": getattr(node, 'app_id', None),
+            "pid": getattr(node, 'pid', None),
             "window_title": getattr(node.window_properties, 'title', None) if hasattr(node, 'window_properties') and node.window_properties else None
         }
 

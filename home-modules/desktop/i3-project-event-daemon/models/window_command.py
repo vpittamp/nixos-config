@@ -20,6 +20,8 @@ class CommandType(str, Enum):
     SCRATCHPAD_SHOW = "scratchpad_show"  # Feature 101: Show window from scratchpad
     FLOATING_ENABLE = "floating_enable"
     FLOATING_DISABLE = "floating_disable"
+    FULLSCREEN_ENABLE = "fullscreen_enable"
+    FULLSCREEN_DISABLE = "fullscreen_disable"
     RESIZE = "resize"
     MOVE_POSITION = "move_position"
     FOCUS = "focus"
@@ -84,6 +86,12 @@ class WindowCommand(BaseModel):
 
             case CommandType.FLOATING_DISABLE:
                 return f"{selector} floating disable"
+
+            case CommandType.FULLSCREEN_ENABLE:
+                return f"{selector} fullscreen enable"
+
+            case CommandType.FULLSCREEN_DISABLE:
+                return f"{selector} fullscreen disable"
 
             case CommandType.RESIZE:
                 if "width" not in self.params or "height" not in self.params:
@@ -178,6 +186,7 @@ class CommandBatch(BaseModel):
         workspace_num: int,
         is_floating: bool,
         geometry: Optional[dict[str, int]] = None,
+        fullscreen_mode: int = 0,
     ) -> CommandBatch:
         """Create command batch for restoring a window.
 
@@ -280,5 +289,14 @@ class CommandBatch(BaseModel):
                         params={},
                     )
                 )
+
+        if fullscreen_mode > 0:
+            commands.append(
+                WindowCommand(
+                    window_id=window_id,
+                    command_type=CommandType.FULLSCREEN_ENABLE,
+                    params={},
+                )
+            )
 
         return cls(window_id=window_id, commands=commands, can_batch=True)

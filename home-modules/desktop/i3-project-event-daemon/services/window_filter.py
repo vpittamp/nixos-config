@@ -852,6 +852,7 @@ async def filter_windows_by_project(
                             continue
 
                         geometry = saved_state.get("geometry") if is_floating else None
+                        fullscreen_mode = saved_state.get("fullscreen_mode", 0)
 
                         # Feature 091: Use CommandBatch factory for restoration
                         batch = CommandBatch.from_window_state(
@@ -859,6 +860,7 @@ async def filter_windows_by_project(
                             workspace_num=workspace_num,
                             is_floating=is_floating,
                             geometry=geometry,
+                            fullscreen_mode=fullscreen_mode,
                         )
                         restore_batches.append(batch)
                         logger.debug(
@@ -997,8 +999,10 @@ async def filter_windows_by_project(
                     if saved_state and not is_original_scratchpad:
                         is_floating = saved_state.get("floating", False)
                         geometry = saved_state.get("geometry", None)
+                        fullscreen_mode = saved_state.get("fullscreen_mode", 0)
                     else:
                         is_floating = window.floating in ["user_on", "auto_on"]
+                        fullscreen_mode = window.fullscreen_mode
                         geometry = None
                         if is_floating and window.rect:
                             geometry = {
@@ -1021,6 +1025,7 @@ async def filter_windows_by_project(
                         window_project_name,
                         window_class,
                         is_original_scratchpad,
+                        fullscreen_mode,
                     ))
 
                 # Feature 091: Queue hide command for parallel execution
@@ -1058,7 +1063,7 @@ async def filter_windows_by_project(
     if workspace_tracker and windows_to_track:
         for window_data in windows_to_track:
             (window_id, workspace_num, is_floating, geometry,
-             window_project_name, window_class, is_original_scratchpad) = window_data
+             window_project_name, window_class, is_original_scratchpad, fullscreen_mode) = window_data
             await workspace_tracker.track_window(
                 window_id=window_id,
                 workspace_number=workspace_num,
@@ -1068,6 +1073,7 @@ async def filter_windows_by_project(
                 window_class=window_class,
                 geometry=geometry,
                 original_scratchpad=is_original_scratchpad,
+                fullscreen_mode=fullscreen_mode,
             )
 
     # Feature 091: Initialize command batch service

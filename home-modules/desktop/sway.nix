@@ -476,13 +476,20 @@ in
         in
           # Convert all workspace assignments to Sway output assignments
           map assignmentToOutput workspaceAssignments.assignments
-      else [
-        # Standard laptop: Single display (eDP-1) for all workspaces
-        # All workspace assignments use primary role → eDP-1
-        { workspace = "1"; output = "eDP-1"; }
-        { workspace = "2"; output = "eDP-1"; }
-        { workspace = "3"; output = "eDP-1"; }
-      ];
+      else
+        let
+          # Laptop default mapping: eDP-1 primary, HDMI-A-1 secondary
+          laptopRoleToOutput = role:
+            if role == "secondary" then "HDMI-A-1" else "eDP-1";
+
+          # Generate workspace assignment from app/PWA data
+          assignmentToOutput = assignment: {
+            workspace = toString assignment.workspace_number;
+            output = laptopRoleToOutput assignment.monitor_role;
+          };
+        in
+          # Convert all workspace assignments to Sway output assignments
+          map assignmentToOutput workspaceAssignments.assignments;
 
       # ═══════════════════════════════════════════════════════════════════════════
       # KEYBINDINGS (Static Nix Configuration)

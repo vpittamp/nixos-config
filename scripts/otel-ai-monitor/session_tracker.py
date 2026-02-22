@@ -493,6 +493,7 @@ class SessionTracker:
             "tmux_window": attrs.get("terminal.tmux.window") or attrs.get("tmux.window"),
             "tmux_pane": attrs.get("terminal.tmux.pane") or attrs.get("tmux.pane"),
             "pty": attrs.get("terminal.pty") or attrs.get("pty"),
+            "host_name": attrs.get("host.name") or attrs.get("service.instance.id"),
         }
 
     @staticmethod
@@ -735,6 +736,7 @@ class SessionTracker:
                     "tmux_pane"
                 )
                 session.terminal_context.pty = event_terminal_context.get("pty")
+                session.terminal_context.host_name = event_terminal_context.get("host_name")
 
                 if len(self._sessions) >= MAX_SESSIONS:
                     self._evict_oldest_idle_session()
@@ -778,7 +780,7 @@ class SessionTracker:
             if session.project is None and session.project_path:
                 session.project = session.project_path
 
-            for key in ("tmux_session", "tmux_window", "tmux_pane", "pty"):
+            for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
                 value = event_terminal_context.get(key)
                 if value:
                     setattr(session.terminal_context, key, value)
@@ -812,7 +814,7 @@ class SessionTracker:
                         session.pid = fallback_pid
                     if fallback_confidence != IdentityConfidence.HEURISTIC:
                         session.identity_confidence = fallback_confidence
-                    for key in ("tmux_session", "tmux_window", "tmux_pane", "pty"):
+                    for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
                         value = fallback_terminal_ctx.get(key)
                         if value and not getattr(session.terminal_context, key):
                             setattr(session.terminal_context, key, value)
@@ -962,6 +964,7 @@ class SessionTracker:
                         "tmux_pane"
                     )
                     session.terminal_context.pty = resolved_terminal_context.get("pty")
+                    session.terminal_context.host_name = resolved_terminal_context.get("host_name")
                     # Feature 137: Evict oldest IDLE session if at capacity
                     if len(self._sessions) >= MAX_SESSIONS:
                         self._evict_oldest_idle_session()

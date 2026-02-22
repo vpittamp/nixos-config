@@ -140,6 +140,7 @@ class WorkspaceTracker:
         window_class: str,
         geometry: Optional[Dict] = None,
         original_scratchpad: bool = False,
+        fullscreen_mode: int = 0,
     ) -> None:
         """Track window workspace assignment.
 
@@ -163,6 +164,7 @@ class WorkspaceTracker:
                 "last_seen": time.time(),
                 "geometry": geometry,  # Feature 038: Window geometry for floating windows
                 "original_scratchpad": original_scratchpad,  # Feature 038: Scratchpad origin flag
+                "fullscreen_mode": fullscreen_mode,
             }
 
         # Save asynchronously (don't block)
@@ -195,6 +197,7 @@ class WorkspaceTracker:
                     "last_seen": entry.get("last_seen", time.time()),
                     "geometry": entry.get("geometry", None),  # Backward compatible default
                     "original_scratchpad": entry.get("original_scratchpad", False),  # Backward compatible default
+                    "fullscreen_mode": entry.get("fullscreen_mode", 0),  # Backward compatible default
                 }
             return None
 

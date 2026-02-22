@@ -65,6 +65,9 @@ class TerminalContext(BaseModel):
     pty: Optional[str] = Field(
         default=None, description="Controlling terminal PTY path (e.g. /dev/pts/3)"
     )
+    host_name: Optional[str] = Field(
+        default=None, description="Host name where the terminal process is running"
+    )
 
 
 # Provider pricing tables (USD per 1M tokens)

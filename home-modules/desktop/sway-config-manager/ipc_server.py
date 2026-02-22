@@ -61,6 +61,14 @@ class IPCServer:
             self.server.close()
             await self.server.wait_closed()
 
+        # Close all client connections safely
+        for writer in list(self.clients):
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception as e:
+                logger.debug(f"Error closing client connection during shutdown: {e}")
+
         if self.socket_path.exists():
             self.socket_path.unlink()
 
@@ -247,21 +255,16 @@ class IPCServer:
         config_dir = self.daemon.loader.config_dir
 
         # Load configurations
-        keybindings = self.daemon.loader.load_keybindings_toml()
-        files_validated.append(str(config_dir / "keybindings.toml"))
-
+        # Keybindings and workspace assignments are managed by Nix and i3-project-event-daemon respectively
         window_rules = self.daemon.loader.load_window_rules_json()
         files_validated.append(str(config_dir / "window-rules.json"))
-
-        workspace_assignments = self.daemon.loader.load_workspace_assignments_json()
-        files_validated.append(str(config_dir / "workspace-assignments.json"))
 
         appearance_config = self.daemon.loader.load_appearance_json()
         files_validated.append(str(config_dir / "appearance.json"))
 
         # Validate
         errors = self.daemon.validator.validate_semantics(
-            keybindings, window_rules, workspace_assignments, appearance_config
+            [], window_rules, [], appearance_config
         )
 
         # Calculate duration
@@ -368,21 +371,20 @@ class IPCServer:
         project = params.get("project")
 
         # Load current configuration
-        keybindings = self.daemon.loader.load_keybindings_toml()
+        # Keybindings and workspace assignments are managed externally
         window_rules = self.daemon.loader.load_window_rules_json()
-        workspace_assignments = self.daemon.loader.load_workspace_assignments_json()
         appearance_config = self.daemon.loader.load_appearance_json()
 
         result = {}
 
         if category in ["all", "keybindings"]:
-            result["keybindings"] = [kb.dict() for kb in keybindings]
+            result["keybindings"] = []
 
         if category in ["all", "window-rules"]:
             result["window_rules"] = [wr.dict() for wr in window_rules]
 
         if category in ["all", "workspaces"]:
-            result["workspace_assignments"] = [wa.dict() for wa in workspace_assignments]
+            result["workspace_assignments"] = []
 
         if category in ["all", "appearance"] and appearance_config is not None:
             result["appearance"] = appearance_config.model_dump()

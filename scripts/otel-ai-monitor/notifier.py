@@ -18,116 +18,122 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def _handle_notification_response(session: "Session", cmd: list[str]) -> None:
+    """Run notify-send and handle its action response in the background."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await process.communicate()
+        action = stdout.decode().strip()
+
+        if action == "focus":
+            await focus_terminal_action(session)
+    except Exception as e:
+        logger.error(f"Error handling notification response: {e}")
+
 async def send_completion_notification(session: "Session") -> None:
     """Send desktop notification for completed AI session.
 
-    Uses notify-send with SwayNC-compatible options:
-    - App name for grouping
-    - Normal urgency
-
-    Note: We don't use --action flag as it blocks waiting for user interaction.
+    Uses notify-send with SwayNC-compatible options and action buttons.
+    Runs asynchronously so it doesn't block the telemetry receiver loop.
 
     Args:
         session: Completed session to notify about
     """
-    # Check if notify-send is available
     notify_send = shutil.which("notify-send")
     if not notify_send:
         logger.warning("notify-send not found, skipping notification")
         return
 
-    # Build notification title based on tool
-    if session.tool == "claude-code":
-        title = "Claude Code Ready"
-    elif session.tool == "codex":
-        title = "Codex Ready"
-    elif session.tool == "gemini":
-        title = "Gemini CLI Ready"
-    else:
-        title = "AI Assistant Ready"
+    # Build notification title
+    tool_names = {
+        "claude-code": "Claude Code",
+        "codex": "Codex",
+        "gemini": "Gemini CLI"
+    }
+    tool_name = tool_names.get(session.tool, "AI Assistant")
+    title = f"{tool_name} Ready"
 
     # Build notification body
+    body_parts = []
     if session.project:
-        body = f"Task completed in {session.project}"
+        body_parts.append(f"📁 {session.project}")
     else:
-        body = "Task completed"
+        body_parts.append("Task completed")
+        
+    if session.cost_usd > 0:
+        cost = f"${session.cost_usd:.4f}"
+        if session.cost_estimated:
+            cost += " (est)"
+        body_parts.append(f"💰 {cost}")
+        
+    body_parts.append("Click 'Return to Window' to resume")
+    body = "\n\n".join(body_parts)
 
-    # Build notify-send command (no --action flag - it blocks waiting for interaction)
+    # Build notify-send command with -w to wait and -A for actions
     cmd = [
         notify_send,
-        "--app-name=AI Monitor",
-        "--urgency=normal",
+        "-u", "normal",
+        "-a", "AI Monitor",
+        "-w",
+        "--transient",
+        "-A", "focus=🖥️ Return to Window",
         title,
         body,
     ]
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await process.wait()
-        logger.debug(f"Sent notification: {title}")
-    except Exception as e:
-        logger.error(f"Error sending notification: {e}")
+    # Run in background task to avoid blocking the OTEL receiver loop
+    asyncio.create_task(_handle_notification_response(session, cmd))
 
-
-async def _send_simple_notification(notify_send: str, title: str, body: str) -> None:
-    """Send simple notification without actions.
-
-    Fallback for systems that don't support --action.
+async def focus_terminal_action(session: "Session") -> None:
+    """Focus the terminal window and tmux pane associated with the session.
 
     Args:
-        notify_send: Path to notify-send binary
-        title: Notification title
-        body: Notification body
-    """
-    cmd = [
-        notify_send,
-        "--app-name=AI Monitor",
-        "--urgency=normal",
-        title,
-        body,
-    ]
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await process.wait()
-        logger.debug(f"Sent simple notification: {title}")
-    except Exception as e:
-        logger.error(f"Error sending simple notification: {e}")
-
-
-async def focus_terminal_action() -> None:
-    """Focus the terminal window (callback for notification action).
-
-    This function is called when user clicks "Focus Terminal" action.
-    Uses swaymsg to focus the most recent terminal window.
+        session: The session to focus
     """
     swaymsg = shutil.which("swaymsg")
-    if not swaymsg:
-        logger.warning("swaymsg not found, cannot focus terminal")
-        return
+    if swaymsg and session.window_id:
+        try:
+            # Switch project if needed using i3pm
+            i3pm = shutil.which("i3pm")
+            if i3pm and session.project:
+                await asyncio.create_subprocess_exec(
+                    i3pm, "worktree", "switch", session.project,
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+                )
 
-    # Focus the terminal - adjust criteria as needed
-    # This focuses windows with app_id containing "ghostty" or "foot" or "alacritty"
-    cmd = [
-        swaymsg,
-        "[app_id=ghostty] focus",
-    ]
+            # Focus Sway window
+            process = await asyncio.create_subprocess_exec(
+                swaymsg, f"[con_id={session.window_id}] focus",
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+            )
+            await process.wait()
+            logger.debug(f"Focused Sway window {session.window_id}")
+        except Exception as e:
+            logger.error(f"Error focusing Sway window: {e}")
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await process.wait()
-        logger.debug("Focused terminal window")
-    except Exception as e:
-        logger.error(f"Error focusing terminal: {e}")
+    tmux = shutil.which("tmux")
+    tc = session.terminal_context
+    if tmux and tc and tc.tmux_session and tc.tmux_window:
+        try:
+            # Select tmux window
+            cmd = [tmux, "select-window", "-t", f"{tc.tmux_session}:{tc.tmux_window}"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+            )
+            await process.wait()
+            
+            # Select tmux pane if available
+            if tc.tmux_pane:
+                cmd = [tmux, "select-pane", "-t", tc.tmux_pane]
+                process = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+                )
+                await process.wait()
+            
+            logger.debug(f"Selected tmux pane {tc.tmux_session}:{tc.tmux_window}.{tc.tmux_pane}")
+        except Exception as e:
+            logger.error(f"Error selecting tmux pane: {e}")

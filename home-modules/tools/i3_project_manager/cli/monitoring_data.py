@@ -95,6 +95,9 @@ BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid(
 # Written by otel-ai-monitor service, read here to include in monitoring_data output
 OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
 
+# Feature 101: Active worktree configuration file
+ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
+
 # Feature 107: inotify watcher for immediate badge detection (<15ms latency)
 # Uses subprocess inotifywait to avoid adding Python dependencies
 INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
@@ -219,6 +222,11 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     # inotify events on the directory, not the file being replaced.
     if OTEL_SESSIONS_FILE.parent.exists():
         watch_paths.append(str(OTEL_SESSIONS_FILE.parent))
+    
+    # Watch the active-worktree.json directory for immediate project switch detection
+    if ACTIVE_WORKTREE_FILE.parent.exists():
+        if str(ACTIVE_WORKTREE_FILE.parent) not in watch_paths:
+            watch_paths.append(str(ACTIVE_WORKTREE_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -262,6 +270,8 @@ async def read_inotify_events(
     # Get paths for filtering
     otel_filename = OTEL_SESSIONS_FILE.name  # "otel-ai-sessions.json"
     otel_tmp_filename = otel_filename.replace(".json", ".tmp")  # "otel-ai-sessions.tmp"
+    active_worktree_filename = ACTIVE_WORKTREE_FILE.name
+    active_worktree_tmp_filename = active_worktree_filename.replace(".json", ".tmp")
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -289,8 +299,9 @@ async def read_inotify_events(
             # Events from XDG_RUNTIME_DIR (OTEL sessions parent) must match specific files
             is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
             is_otel_file = filename in (otel_filename, otel_tmp_filename)
+            is_active_worktree_file = filename in (active_worktree_filename, active_worktree_tmp_filename)
 
-            if is_badge_dir or is_otel_file:
+            if is_badge_dir or is_otel_file or is_active_worktree_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -1671,6 +1682,7 @@ def _build_remote_session_window(
     remote_target: str,
     remote_dir: str,
     session: Dict[str, Any],
+    otel_sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Create synthetic window payload for a remote tmux/sesh session."""
     seed = f"{project_name}|{remote_target}|{session.get('name', '')}"
@@ -1716,7 +1728,7 @@ def _build_remote_session_window(
         "geometry_width": 0,
         "geometry_height": 0,
         "badge": {},
-        "otel_badges": [],
+        "otel_badges": _build_otel_badges(otel_sessions),
         "project_remote_enabled": True,
         "project_remote_target": remote_target,
         "project_remote_dir": remote_dir,
@@ -1908,6 +1920,7 @@ def _refresh_variant_flags(projects: List[Dict[str, Any]]) -> None:
 def _augment_projects_with_remote_sessions(
     projects_dict: Dict[str, Dict[str, Any]],
     remote_profiles: Optional[Dict[str, Dict[str, Any]]],
+    otel_sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
     Add synthetic window items for remote SSH tmux/sesh sessions.
@@ -1969,6 +1982,7 @@ def _augment_projects_with_remote_sessions(
                 remote_target,
                 remote_dir,
                 session,
+                otel_sessions,
             )
             synthetic_id = int(synthetic_window["id"])
             synthetic_session_name = _normalize_session_name_key(
@@ -1989,6 +2003,7 @@ def _augment_projects_with_remote_sessions(
 def transform_to_project_view(
     monitors: List[Dict[str, Any]],
     remote_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
+    otel_sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Transform monitor-based hierarchy to project-based view.
@@ -2122,7 +2137,7 @@ def transform_to_project_view(
             global_windows.append(window)
 
     # Augment project windows with remote tmux/sesh sessions for SSH projects.
-    _augment_projects_with_remote_sessions(projects_dict, remote_profiles)
+    _augment_projects_with_remote_sessions(projects_dict, remote_profiles, otel_sessions)
 
     # Convert dict to sorted list:
     # 1) project name alphabetical
@@ -2283,7 +2298,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Transform to project-based view (default view).
         # Overlay SSH remote metadata so window view can surface remote worktree context.
         remote_profiles = load_worktree_remote_profiles()
-        projects = transform_to_project_view(monitors, remote_profiles)
+        projects = transform_to_project_view(monitors, remote_profiles, otel_sessions.get("sessions", []))
         active_identity = load_active_worktree_identity()
 
         # UX Enhancement: Add is_active flag to each project
@@ -2664,7 +2679,6 @@ def load_worktree_remote_profiles() -> Dict[str, Dict[str, Any]]:
 
 def load_active_worktree_identity() -> Dict[str, Any]:
     """Return canonical active worktree identity fields for card activation."""
-    active_file = Path.home() / ".config" / "i3" / "active-worktree.json"
     default_identity = {
         "qualified_name": "",
         "execution_mode": "global",
@@ -2675,11 +2689,11 @@ def load_active_worktree_identity() -> Dict[str, Any]:
         "remote_enabled": False,
     }
 
-    if not active_file.exists():
+    if not ACTIVE_WORKTREE_FILE.exists():
         return default_identity
 
     try:
-        with open(active_file, "r") as f:
+        with open(ACTIVE_WORKTREE_FILE, "r") as f:
             data = json.load(f)
 
         qualified_name = str(data.get("qualified_name", "")).strip()
@@ -4240,9 +4254,19 @@ async def stream_monitoring_data():
                     last_update = current_time
 
                 # Feature 123: Sleep duration - daemon subscription handles real-time events
-                # Spinner animation is handled by EWW defpoll (spinner_frame/spinner_opacity)
-                # so we don't need fast updates here. Use longer sleep to reduce CPU.
-                await asyncio.sleep(1.0)  # 1s - daemon events set flag for next check
+                # Use asyncio.wait to wake up instantly when an event is set, 
+                # falling back to 1.0s timeout to maintain loop consistency.
+                wait_tasks = [asyncio.create_task(daemon_state_change_event.wait())]
+                if use_inotify:
+                    wait_tasks.append(asyncio.create_task(badge_change_event.wait()))
+                
+                done, pending = await asyncio.wait(
+                    wait_tasks, 
+                    timeout=1.0, 
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    task.cancel()
 
             # Cleanup subscription task
             subscription_task.cancel()

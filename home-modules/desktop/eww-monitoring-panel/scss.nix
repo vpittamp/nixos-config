@@ -630,6 +630,12 @@
     border-radius: 8px;
   }
 
+  @keyframes ai-working-pulse {
+    0% { opacity: 1.0; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1.0; }
+  }
+
   .ai-badge-icon {
     margin-left: 2px;
     margin-right: 1px;
@@ -639,12 +645,7 @@
   }
 
   .ai-badge-icon.working {
-    opacity: 1.0;
-    transition: opacity 500ms ease-in-out;
-  }
-
-  .ai-badge-icon.working.rotate-phase {
-    opacity: 0.4;
+    animation: ai-working-pulse 1.5s infinite ease-in-out;
   }
 
   .ai-badge-icon.attention {
@@ -771,24 +772,38 @@
     background: rgba(69, 71, 90, 0.7);
   }
 
+  @keyframes ai-chip-pulse {
+    0% { background-color: rgba(243, 139, 168, 0.12); border-color: rgba(243, 139, 168, 0.0); box-shadow: 0 0 0 rgba(243, 139, 168, 0.0); }
+    50% { background-color: rgba(243, 139, 168, 0.25); border-color: rgba(243, 139, 168, 0.3); box-shadow: 0 0 8px rgba(243, 139, 168, 0.2); }
+    100% { background-color: rgba(243, 139, 168, 0.12); border-color: rgba(243, 139, 168, 0.0); box-shadow: 0 0 0 rgba(243, 139, 168, 0.0); }
+  }
+
   .ai-session-chip.working {
-    background: rgba(243, 139, 168, 0.12);
+    animation: ai-chip-pulse 2s infinite ease-in-out;
+    border: 1px solid transparent;
   }
 
   .ai-session-chip.working:hover {
-    background: rgba(243, 139, 168, 0.2);
+    background-color: rgba(243, 139, 168, 0.3);
   }
 
   .ai-session-chip.working .ai-session-indicator {
     color: ${mocha.red};
   }
 
+  @keyframes ai-attention-pulse {
+    0% { background-color: rgba(250, 179, 135, 0.15); box-shadow: 0 0 0 rgba(250, 179, 135, 0.0); }
+    50% { background-color: rgba(250, 179, 135, 0.30); box-shadow: 0 0 6px rgba(250, 179, 135, 0.3); }
+    100% { background-color: rgba(250, 179, 135, 0.15); box-shadow: 0 0 0 rgba(250, 179, 135, 0.0); }
+  }
+
   .ai-session-chip.attention {
-    background: linear-gradient(135deg, rgba(250, 179, 135, 0.15), rgba(249, 226, 175, 0.1));
+    animation: ai-attention-pulse 3s infinite ease-in-out;
+    border: 1px solid transparent;
   }
 
   .ai-session-chip.attention:hover {
-    background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(249, 226, 175, 0.15));
+    background-color: rgba(250, 179, 135, 0.25);
   }
 
   .ai-session-chip.attention .ai-session-indicator {

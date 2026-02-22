@@ -38,6 +38,7 @@ let
       { name = "DP-1"; showTray = true; }
       { name = "HDMI-A-1"; showTray = false; }
       { name = "DP-2"; showTray = false; }
+      { name = "DP-3"; showTray = false; }
     ] else [
       { name = "eDP-1"; showTray = true; }
     ];
