@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import socket
 import time
 from datetime import datetime
@@ -1171,10 +1172,10 @@ class IPCServer:
             # Feature 101: Also save active-worktree.json for app launcher context
             # Feature 137: Use atomic write to prevent corruption
             worktree_context_file = config_dir / "active-worktree.json"
-            atomic_write_json(
-                worktree_context_file,
-                self._build_active_worktree_context(project_name, repo_qualified, repo, wt),
+            worktree_context = self._build_active_worktree_context(
+                project_name, repo_qualified, repo, wt
             )
+            atomic_write_json(worktree_context_file, worktree_context)
 
             logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
 
@@ -1188,7 +1189,8 @@ class IPCServer:
                     filter_result = await filter_windows_by_project(
                         self.i3_connection.conn,
                         project_name,
-                        self.workspace_tracker  # Feature 038: Pass workspace_tracker for state persistence
+                        self.workspace_tracker,  # Feature 038: Pass workspace_tracker for state persistence
+                        active_context_key=worktree_context.get("context_key"),
                     )
                     windows_to_hide = filter_result.get("hidden", 0)
                     windows_to_show = filter_result.get("visible", 0)
@@ -8758,6 +8760,60 @@ class IPCServer:
             return None
         return normalized
 
+    def _normalize_connection_key(self, value: str) -> str:
+        """Normalize connection identity for stable context keys."""
+        raw = str(value or "").strip().lower()
+        if not raw:
+            return "unknown"
+        return re.sub(r"[^a-z0-9@._:-]+", "-", raw)
+
+    def _local_host_alias(self) -> str:
+        """Resolve local host alias used in local execution mode."""
+        host = (
+            os.environ.get("I3PM_LOCAL_HOST_ALIAS")
+            or os.environ.get("HOSTNAME")
+            or socket.gethostname()
+        )
+        return str(host).strip().lower() or "localhost"
+
+    def _build_worktree_context_identity(
+        self,
+        full_qualified_name: str,
+        remote_profile: Optional[Dict[str, Any]],
+    ) -> Dict[str, str]:
+        """Build canonical context identity for active-worktree consumers."""
+        if isinstance(remote_profile, dict):
+            host = str(remote_profile.get("host") or "").strip()
+            user = str(remote_profile.get("user") or "").strip()
+            port_raw = remote_profile.get("port", 22)
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError):
+                port = 22
+
+            execution_mode = "ssh"
+            host_alias = f"{user}@{host}" if user and host else host or "unknown"
+            if host:
+                raw_connection_key = f"{user}@{host}:{port}" if user else f"{host}:{port}"
+            else:
+                raw_connection_key = host_alias
+        else:
+            execution_mode = "local"
+            host_alias = self._local_host_alias()
+            raw_connection_key = f"local@{host_alias}"
+
+        connection_key = self._normalize_connection_key(raw_connection_key)
+        identity_key = f"{execution_mode}:{connection_key}"
+        context_key = f"{full_qualified_name}::{execution_mode}::{connection_key}"
+
+        return {
+            "execution_mode": execution_mode,
+            "host_alias": host_alias,
+            "connection_key": connection_key,
+            "identity_key": identity_key,
+            "context_key": context_key,
+        }
+
     def _build_active_worktree_context(
         self,
         full_qualified_name: str,
@@ -8770,8 +8826,9 @@ class IPCServer:
         local_directory = worktree.get("path", "")
         remote_profile = None if prefer_local else self._get_worktree_remote_profile(full_qualified_name)
         effective_directory = remote_profile["remote_dir"] if remote_profile else local_directory
+        identity = self._build_worktree_context_identity(full_qualified_name, remote_profile)
 
-        return {
+        context: Dict[str, Any] = {
             "qualified_name": full_qualified_name,
             "repo_qualified_name": repo_name,
             "branch": worktree.get("branch", ""),
@@ -8781,6 +8838,8 @@ class IPCServer:
             "repo_name": repo.get("name", ""),
             "remote": remote_profile if remote_profile else None,
         }
+        context.update(identity)
+        return context
 
     def _record_project_usage(self, qualified_name: str) -> None:
         """Record project usage for ranking in ':' project list.
@@ -8916,7 +8975,8 @@ class IPCServer:
                     filter_result = await filter_windows_by_project(
                         self.i3_connection.conn,
                         full_qualified_name,
-                        self.workspace_tracker
+                        self.workspace_tracker,
+                        active_context_key=worktree_context.get("context_key"),
                     )
                     logger.info(
                         f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
@@ -9022,7 +9082,8 @@ class IPCServer:
                 filter_result = await filter_windows_by_project(
                     self.i3_connection.conn,
                     None,  # None = global mode
-                    self.workspace_tracker
+                    self.workspace_tracker,
+                    active_context_key=None,
                 )
                 logger.info(
                     f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "

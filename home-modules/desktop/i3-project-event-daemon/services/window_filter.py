@@ -562,6 +562,7 @@ async def filter_windows_by_project(
     conn,  # i3ipc.aio.Connection
     active_project: Optional[str],
     workspace_tracker=None,  # Optional WorkspaceTracker for Feature 038
+    active_context_key: Optional[str] = None,
 ) -> Dict[str, int]:
     """
     Filter windows based on project association via i3 window marks
@@ -576,6 +577,8 @@ async def filter_windows_by_project(
         conn: i3ipc async connection
         active_project: Active project name or None for global mode
         workspace_tracker: WorkspaceTracker instance for state persistence (Feature 038)
+        active_context_key: Optional context identity key
+            (<project>::<variant>::<connection_key>) for strict host-aware filtering.
 
     Returns:
         Dictionary with "visible", "hidden", "errors" counts
@@ -591,7 +594,7 @@ async def filter_windows_by_project(
             await tracer.broadcast_event(
                 TraceEventType.PROJECT_SWITCH,
                 f"Project switch to '{active_project or 'global mode'}'",
-                {"target_project": active_project}
+                {"target_project": active_project, "target_context_key": active_context_key}
             )
     except Exception as e:
         logger.debug(f"[Trace] Error broadcasting project switch: {e}")
@@ -637,7 +640,8 @@ async def filter_windows_by_project(
         f"[Feature 091] Filtering {len(windows)} windows "
         f"({len(windows) - len(scratchpad_windows) - len(floating_windows)} tiled + "
         f"{len(floating_windows)} floating + {len(scratchpad_windows)} scratchpad) "
-        f"for project '{active_project or 'none'}'"
+        f"for project '{active_project or 'none'}' "
+        f"(context='{active_context_key or 'none'}')"
     )
 
     # Feature 091: Build command lists for parallel execution
@@ -661,6 +665,12 @@ async def filter_windows_by_project(
         window_project = None
         window_scope = None
         window_app_name = None
+        window_context_key = ""
+        for mark in window.marks:
+            if mark.startswith("ctx:"):
+                window_context_key = mark[len("ctx:"):].strip()
+                break
+
         for mark in window.marks:
             if mark.startswith("scoped:") or mark.startswith("global:"):
                 # Feature 103: Use centralized mark parser for unified format
@@ -692,17 +702,43 @@ async def filter_windows_by_project(
             should_show = False
             filter_reason = "no active project (global mode)"
             logger.debug(f"Window {window_id} ({window.window_class}): hide (no active project)")
-        elif window_project == active_project:
-            should_show = True
-            filter_reason = f"project match ({window_project})"
-            logger.debug(f"Window {window_id} ({window.window_class}): show (project match: {window_project})")
-        else:
+        elif window_project != active_project:
             should_show = False
             filter_reason = f"project mismatch ({window_project} != {active_project})"
             logger.debug(
                 f"Window {window_id} ({window.window_class}): hide "
                 f"(project mismatch: {window_project} != {active_project})"
             )
+        elif active_context_key:
+            if window_context_key == active_context_key:
+                should_show = True
+                filter_reason = f"project+context match ({window_project}, {active_context_key})"
+                logger.debug(
+                    f"Window {window_id} ({window.window_class}): show "
+                    f"(project+context match)"
+                )
+            elif window_context_key:
+                should_show = False
+                filter_reason = (
+                    f"context mismatch ({window_context_key} != {active_context_key})"
+                )
+                logger.debug(
+                    f"Window {window_id} ({window.window_class}): hide "
+                    f"(context mismatch: {window_context_key} != {active_context_key})"
+                )
+            else:
+                # Strict isolation policy: scoped windows without context marks are
+                # hidden during variant-aware switches to avoid host mixing.
+                should_show = False
+                filter_reason = "missing context mark under strict context filtering"
+                logger.debug(
+                    f"Window {window_id} ({window.window_class}): hide "
+                    f"(missing ctx mark while filtering by {active_context_key})"
+                )
+        else:
+            should_show = True
+            filter_reason = f"project match ({window_project})"
+            logger.debug(f"Window {window_id} ({window.window_class}): show (project match: {window_project})")
 
         # Feature 103: Record filter decision for debugging
         await _record_filter_decision(

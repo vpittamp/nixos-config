@@ -4821,9 +4821,94 @@
     margin-top: 6px;
   }
 
+  /* Search/filter row */
+  .tailscale-filter-row {
+    margin-bottom: 6px;
+  }
+
+  .tailscale-filter-input {
+    background-color: transparent;
+    color: ${mocha.text};
+    font-size: 12px;
+    border: none;
+    outline: none;
+    min-width: 120px;
+  }
+
+  .tailscale-filter-count {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+  }
+
+  /* Quick filter pills */
+  .tailscale-quick-filters {
+    margin-bottom: 6px;
+  }
+
+  .tailscale-quick-pill {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    background-color: rgba(108, 112, 134, 0.15);
+    color: ${mocha.subtext0};
+    border: none;
+  }
+
+  .tailscale-quick-pill:hover {
+    background-color: rgba(108, 112, 134, 0.25);
+  }
+
+  .tailscale-quick-pill.active {
+    background-color: rgba(137, 180, 250, 0.24);
+    color: ${mocha.blue};
+  }
+
+  /* Status dots */
+  .tailscale-dot-online {
+    color: ${mocha.teal};
+    font-size: 8px;
+    margin-right: 6px;
+  }
+
+  .tailscale-dot-offline {
+    color: ${mocha.overlay0};
+    font-size: 8px;
+    margin-right: 6px;
+  }
+
+  /* Connection type */
+  .tailscale-conn-direct {
+    font-size: 9px;
+    color: ${mocha.green};
+    margin-right: 4px;
+  }
+
+  .tailscale-conn-relay {
+    font-size: 9px;
+    color: ${mocha.yellow};
+    margin-right: 4px;
+  }
+
+  /* Copy buttons */
+  .tailscale-copy-btn {
+    font-size: 10px;
+    color: ${mocha.blue};
+    padding: 0 3px;
+    min-width: 16px;
+  }
+
+  .tailscale-copy-btn:hover {
+    color: ${mocha.teal};
+  }
+
+  /* Peer row (clickable) */
   .tailscale-peer-row {
     padding: 4px 0;
     border-bottom: 1px solid rgba(108, 112, 134, 0.2);
+  }
+
+  .tailscale-peer-row:hover {
+    background-color: rgba(108, 112, 134, 0.08);
   }
 
   .tailscale-peer-host {
@@ -4833,16 +4918,26 @@
     margin-right: 8px;
   }
 
-  .tailscale-peer-online {
+  /* Expanded detail */
+  .tailscale-peer-detail {
+    padding: 4px 0 4px 18px;
+    background-color: rgba(30, 30, 46, 0.3);
     font-size: 10px;
-    font-weight: 700;
-    color: ${mocha.green};
   }
 
-  .tailscale-peer-offline {
-    font-size: 10px;
-    font-weight: 700;
+  .tailscale-detail-label {
     color: ${mocha.overlay0};
+    min-width: 32px;
+  }
+
+  .tailscale-detail-value {
+    color: ${mocha.subtext0};
+  }
+
+  /* Self card copyable values */
+  .tailscale-copyable-row:hover {
+    background-color: rgba(137, 180, 250, 0.08);
+    border-radius: 4px;
   }
 
   .tailscale-confirm-banner {

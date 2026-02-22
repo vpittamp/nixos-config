@@ -2284,19 +2284,50 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Overlay SSH remote metadata so window view can surface remote worktree context.
         remote_profiles = load_worktree_remote_profiles()
         projects = transform_to_project_view(monitors, remote_profiles)
-        active_remote_mode = load_active_worktree_remote_mode()
+        active_identity = load_active_worktree_identity()
 
         # UX Enhancement: Add is_active flag to each project
+        active_qualified_name = str(active_identity.get("qualified_name", "")).strip()
+        active_identity_key = str(active_identity.get("identity_key", "")).strip()
+        active_mode = str(active_identity.get("execution_mode", "")).strip()
+
         for project in projects:
-            if project.get("name") != active_project:
+            project_name = str(project.get("name", "")).strip()
+            variant = str(project.get("variant", "")).strip()
+            project_identity = str(project.get("identity_key", "")).strip()
+
+            if variant == "global":
+                project["is_active"] = not active_qualified_name and (active_project in {None, "", "global"})
+                continue
+
+            # Prefer active-worktree identity as the source of truth for variant cards.
+            if active_qualified_name:
+                if project_name != active_qualified_name:
+                    project["is_active"] = False
+                    continue
+
+                if project_identity and active_identity_key:
+                    project["is_active"] = project_identity == active_identity_key
+                    continue
+
+                # Backward-compatibility fallback for older active-worktree payloads.
+                if variant in {"local", "ssh"} and active_mode in {"local", "ssh"}:
+                    project["is_active"] = variant == active_mode
+                else:
+                    project["is_active"] = True
+                continue
+
+            # Legacy fallback path when active-worktree context is unavailable.
+            if project_name != active_project:
                 project["is_active"] = False
                 continue
 
-            variant = str(project.get("variant", ""))
-            if variant == "ssh":
-                project["is_active"] = active_remote_mode
-            elif variant == "local":
-                project["is_active"] = not active_remote_mode
+            if project_identity and active_identity_key:
+                project["is_active"] = project_identity == active_identity_key
+                continue
+
+            if variant in {"local", "ssh"} and active_mode in {"local", "ssh"}:
+                project["is_active"] = variant == active_mode
             else:
                 project["is_active"] = True
 
@@ -2631,22 +2662,95 @@ def load_worktree_remote_profiles() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
-def load_active_worktree_remote_mode() -> bool:
-    """Return True when the active worktree context is currently in SSH mode."""
+def load_active_worktree_identity() -> Dict[str, Any]:
+    """Return canonical active worktree identity fields for card activation."""
     active_file = Path.home() / ".config" / "i3" / "active-worktree.json"
+    default_identity = {
+        "qualified_name": "",
+        "execution_mode": "global",
+        "host_alias": "global",
+        "connection_key": "global",
+        "identity_key": "global:global",
+        "context_key": "",
+        "remote_enabled": False,
+    }
+
     if not active_file.exists():
-        return False
+        return default_identity
 
     try:
         with open(active_file, "r") as f:
             data = json.load(f)
-        remote = data.get("remote")
-        if isinstance(remote, dict):
-            return bool(remote.get("enabled", False))
-    except (json.JSONDecodeError, IOError) as e:
-        logger.debug(f"Feature 087: Failed to read active-worktree remote mode: {e}")
 
-    return False
+        qualified_name = str(data.get("qualified_name", "")).strip()
+        remote = data.get("remote")
+        remote_enabled = isinstance(remote, dict) and bool(remote.get("enabled", False))
+        execution_mode = str(data.get("execution_mode", "")).strip()
+        host_alias = str(data.get("host_alias", "")).strip()
+        connection_key = str(data.get("connection_key", "")).strip()
+        identity_key = str(data.get("identity_key", "")).strip()
+        context_key = str(data.get("context_key", "")).strip()
+
+        if execution_mode not in {"local", "ssh"}:
+            if qualified_name:
+                execution_mode = "ssh" if remote_enabled else "local"
+            else:
+                execution_mode = "global"
+
+        if not host_alias:
+            if execution_mode == "ssh" and isinstance(remote, dict):
+                host = str(remote.get("host") or "").strip()
+                user = str(remote.get("user") or "").strip()
+                host_alias = f"{user}@{host}" if user and host else host or "unknown"
+            elif execution_mode == "local":
+                host_alias = (
+                    str(
+                        os.environ.get("I3PM_LOCAL_HOST_ALIAS")
+                        or os.environ.get("HOSTNAME")
+                        or socket.gethostname()
+                    )
+                    .strip()
+                    .lower()
+                    or "localhost"
+                )
+            else:
+                host_alias = "global"
+
+        if not connection_key:
+            if execution_mode == "ssh" and isinstance(remote, dict):
+                host = str(remote.get("host") or "").strip()
+                user = str(remote.get("user") or "").strip()
+                port_raw = remote.get("port", 22)
+                try:
+                    port = int(port_raw)
+                except (TypeError, ValueError):
+                    port = 22
+                raw_connection_key = f"{user}@{host}:{port}" if user else f"{host}:{port}"
+                connection_key = _normalize_connection_key(raw_connection_key)
+            elif execution_mode == "local":
+                connection_key = _local_connection_key()
+            else:
+                connection_key = "global"
+
+        if not identity_key:
+            identity_key = f"{execution_mode}:{connection_key}"
+
+        if not context_key and qualified_name and execution_mode in {"local", "ssh"}:
+            context_key = f"{qualified_name}::{execution_mode}::{connection_key}"
+
+        return {
+            "qualified_name": qualified_name,
+            "execution_mode": execution_mode,
+            "host_alias": host_alias,
+            "connection_key": connection_key,
+            "identity_key": identity_key,
+            "context_key": context_key,
+            "remote_enabled": remote_enabled,
+        }
+    except (json.JSONDecodeError, IOError) as e:
+        logger.debug(f"Feature 087: Failed to read active-worktree identity: {e}")
+
+    return default_identity
 
 
 async def query_projects_data() -> Dict[str, Any]:
@@ -3726,7 +3830,9 @@ async def query_tailscale_data() -> Dict[str, Any]:
         "total": 0,
         "online": 0,
         "offline": 0,
-        "sample": [],
+        "tagged": 0,
+        "direct": 0,
+        "all": [],
     }
 
     if tailscale_status_ok:
@@ -3735,11 +3841,17 @@ async def query_tailscale_data() -> Dict[str, Any]:
         peer_map = tailscale_json.get("Peer") or {}
         health_messages = tailscale_json.get("Health") or []
 
+        self_ips = self_node.get("TailscaleIPs", []) if isinstance(self_node.get("TailscaleIPs"), list) else []
+        self_ip = ""
+        for addr in self_ips:
+            if "." in str(addr) and not self_ip:
+                self_ip = str(addr)
         self_data = {
             "hostname": str(self_node.get("HostName", "")),
             "dns_name": str(self_node.get("DNSName", "")).rstrip("."),
             "online": bool(self_node.get("Online", False)),
-            "tailscale_ips": self_node.get("TailscaleIPs", []) if isinstance(self_node.get("TailscaleIPs"), list) else [],
+            "tailscale_ips": self_ips,
+            "ip": self_ip,
             "tailnet": str(current_tailnet.get("Name", "")),
             "exit_node": bool(self_node.get("ExitNode", False)),
             "backend_state": str(tailscale_json.get("BackendState", "")),
@@ -3747,6 +3859,26 @@ async def query_tailscale_data() -> Dict[str, Any]:
         }
 
         if isinstance(peer_map, dict):
+            from datetime import datetime, timezone
+
+            def _relative_expiry(expiry_str: str) -> str:
+                """Compute relative key expiry like 'in 109d' or 'expired 3d ago'."""
+                if not expiry_str:
+                    return ""
+                try:
+                    exp = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                    now = datetime.now(timezone.utc)
+                    delta = exp - now
+                    days = delta.days
+                    if days > 0:
+                        return f"in {days}d"
+                    elif days == 0:
+                        return "today"
+                    else:
+                        return f"expired {abs(days)}d ago"
+                except (ValueError, TypeError):
+                    return ""
+
             peer_list = []
             for peer in peer_map.values():
                 if not isinstance(peer, dict):
@@ -3755,24 +3887,51 @@ async def query_tailscale_data() -> Dict[str, Any]:
                 dns_name = str(peer.get("DNSName", "")).rstrip(".")
                 ips = peer.get("TailscaleIPs", [])
                 ip = ""
-                if isinstance(ips, list) and ips:
-                    ip = str(ips[0])
+                ip6 = ""
+                if isinstance(ips, list):
+                    for addr in ips:
+                        addr_str = str(addr)
+                        if ":" in addr_str and not ip6:
+                            ip6 = addr_str
+                        elif "." in addr_str and not ip:
+                            ip = addr_str
+                tags = peer.get("Tags") or []
+                if not isinstance(tags, list):
+                    tags = []
+                tags = [str(t) for t in tags]
+                cur_addr = str(peer.get("CurAddr", "") or "")
+                relay = str(peer.get("Relay", "") or "")
                 peer_list.append({
                     "hostname": hostname or dns_name or "unknown",
                     "dns_name": dns_name,
                     "online": bool(peer.get("Online", False)),
                     "ip": ip,
+                    "ip6": ip6,
+                    "os": str(peer.get("OS", "") or ""),
+                    "tags": tags,
+                    "tags_str": ",".join(tags),
+                    "is_tagged": len(tags) > 0,
+                    "connection": "direct" if cur_addr else "relay",
+                    "cur_addr": cur_addr,
+                    "relay": relay,
+                    "key_expiry": _relative_expiry(peer.get("KeyExpiry", "")),
+                    "exit_node": bool(peer.get("ExitNode", False)),
+                    "active": bool(peer.get("Active", False)),
                 })
 
-            online_count = sum(1 for peer in peer_list if peer["online"])
+            online_count = sum(1 for p in peer_list if p["online"])
+            tagged_count = sum(1 for p in peer_list if p["is_tagged"])
+            direct_count = sum(1 for p in peer_list if p["connection"] == "direct")
             peers = {
                 "total": len(peer_list),
                 "online": online_count,
                 "offline": len(peer_list) - online_count,
-                "sample": sorted(
+                "tagged": tagged_count,
+                "direct": direct_count,
+                "all": sorted(
                     peer_list,
-                    key=lambda peer: (not peer["online"], peer["hostname"].lower()),
-                )[:5],
+                    key=lambda p: (not p["online"], p["hostname"].lower()),
+                ),
             }
         else:
             issues.append("tailscale peer map missing")
@@ -4501,7 +4660,9 @@ async def main():
         print(json.dumps(data, separators=(",", ":")))
 
         # Exit with appropriate code
-        sys.exit(0 if data["status"] == "ok" else 1)
+        # "partial" = valid data with degraded subsystems → exit 0 so EWW gets clean JSON
+        # Only "error" (no usable data at all) exits non-zero to trigger the shell fallback
+        sys.exit(0 if data.get("status") != "error" else 1)
 
     except Exception as e:
         # Catastrophic failure - output error JSON and exit with error code

@@ -23,8 +23,8 @@
   (defpoll tailscale_data
     :interval "${tailscalePollInterval}"
     :run-while {tailscale_tab_enabled && current_view_index == 2}
-    :initial "{\"status\":\"loading\",\"timestamp\":0,\"timestamp_friendly\":\"Loading...\",\"self\":{},\"service\":{},\"peers\":{\"total\":0,\"online\":0,\"offline\":0,\"sample\":[]},\"kubernetes\":{\"available\":false},\"actions\":{},\"error\":null}"
-    `${monitoringDataScript}/bin/monitoring-data-backend --mode tailscale 2>/dev/null || echo '{"status":"error","timestamp":0,"timestamp_friendly":"Error","self":{},"service":{},"peers":{"total":0,"online":0,"offline":0,"sample":[]},"kubernetes":{"available":false},"actions":{},"error":"tailscale query failed"}'`)
+    :initial "{\"status\":\"loading\",\"timestamp\":0,\"timestamp_friendly\":\"Loading...\",\"self\":{},\"service\":{},\"peers\":{\"total\":0,\"online\":0,\"offline\":0,\"tagged\":0,\"direct\":0,\"all\":[]},\"kubernetes\":{\"available\":false},\"actions\":{},\"error\":null}"
+    `${monitoringDataScript}/bin/monitoring-data-backend --mode tailscale 2>/dev/null || echo '{"status":"error","timestamp":0,"timestamp_friendly":"Error","self":{},"service":{},"peers":{"total":0,"online":0,"offline":0,"tagged":0,"direct":0,"all":[]},"kubernetes":{"available":false},"actions":{},"error":"tailscale query failed"}'`)
 
   ;; Defpoll: Apps view data - DISABLED for CPU savings
   ;; Tab 2 now serves Tailscale mode.
@@ -80,6 +80,11 @@
   (defvar tailscale_action_namespace "default")
   (defvar tailscale_action_target "")
   (defvar tailscale_action_in_progress false)
+
+  ;; Tailscale peer filter/search state
+  (defvar tailscale_peer_filter "")
+  (defvar tailscale_quick_filter "all")
+  (defvar tailscale_expanded_peer "")
 
   ;; NOTE: current_view_index is defined at the TOP of this file (before defpolls)
   ;; This is required for :run-while conditions to work correctly

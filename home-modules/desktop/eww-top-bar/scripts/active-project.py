@@ -456,23 +456,53 @@ class ActiveProjectMonitor:
                 self.remote_directory = ""
                 self.remote_directory_display = ""
 
-            # Prefer focused window runtime context for mode labeling when available.
-            # This keeps the top bar aligned with the active window's local/SSH state.
-            focused_ctx = self._focused_project_runtime_context()
-            if (
-                focused_ctx
-                and focused_ctx.get("project") == self.project
-                and bool(focused_ctx.get("explicit_remote"))
-            ):
-                self.remote_enabled = bool(focused_ctx.get("remote_enabled", False))
-                self.remote_target = str(focused_ctx.get("remote_target", ""))
-                self.remote_target_short = str(focused_ctx.get("remote_target_short", ""))
-                self.remote_directory = str(focused_ctx.get("remote_directory", ""))
-                self.remote_directory_display = str(
-                    focused_ctx.get("remote_directory_display", "")
-                )
+            file_execution_mode = str(worktree_data.get("execution_mode", "")).strip()
+            file_host_alias = str(worktree_data.get("host_alias", "")).strip()
+            file_connection_key = str(worktree_data.get("connection_key", "")).strip()
+            file_identity_key = str(worktree_data.get("identity_key", "")).strip()
+            file_context_key = str(worktree_data.get("context_key", "")).strip()
+            has_file_identity = file_execution_mode in {"local", "ssh"} and bool(file_connection_key)
 
-            self._update_context_identity()
+            if has_file_identity:
+                # Prefer canonical context identity from active-worktree.json to avoid
+                # out-of-sync mode labels during same-project local/SSH host switching.
+                self.execution_mode = file_execution_mode
+                if file_execution_mode == "ssh":
+                    self.remote_enabled = True
+                    self.host_alias = file_host_alias or self.remote_target_short or self.remote_target or "unknown"
+                    if not self.remote_target_short and self.host_alias not in {"", "unknown"}:
+                        self.remote_target_short = self.host_alias
+                    if not self.remote_target:
+                        self.remote_target = self.remote_target_short
+                else:
+                    self.remote_enabled = False
+                    self.remote_target = ""
+                    self.remote_target_short = ""
+                    self.remote_directory = ""
+                    self.remote_directory_display = ""
+                    self.host_alias = file_host_alias or self._local_host_alias()
+
+                self.connection_key = file_connection_key
+                self.identity_key = file_identity_key or f"{self.execution_mode}:{self.connection_key}"
+                self.context_key = file_context_key or f"{self.project}::{self.execution_mode}::{self.connection_key}"
+            else:
+                # Backward-compatibility fallback for older active-worktree payloads.
+                # Prefer focused window runtime context when explicit remote metadata exists.
+                focused_ctx = self._focused_project_runtime_context()
+                if (
+                    focused_ctx
+                    and focused_ctx.get("project") == self.project
+                    and bool(focused_ctx.get("explicit_remote"))
+                ):
+                    self.remote_enabled = bool(focused_ctx.get("remote_enabled", False))
+                    self.remote_target = str(focused_ctx.get("remote_target", ""))
+                    self.remote_target_short = str(focused_ctx.get("remote_target_short", ""))
+                    self.remote_directory = str(focused_ctx.get("remote_directory", ""))
+                    self.remote_directory_display = str(
+                        focused_ctx.get("remote_directory_display", "")
+                    )
+
+                self._update_context_identity()
         else:
             # No active project - global mode
             self.project = "Global"

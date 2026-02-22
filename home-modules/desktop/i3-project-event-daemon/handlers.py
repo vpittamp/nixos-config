@@ -6,6 +6,7 @@ Feature 101: Window tracing integration.
 """
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime
@@ -139,6 +140,21 @@ async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
     except Exception as e:
         # Never let cache management break normal event handling
         logger.debug(f"[Feature 123] Error invalidating cache: {e}")
+
+
+def _active_context_key_for_project(project_name: str) -> Optional[str]:
+    """Read active context key from active-worktree.json when it matches the project."""
+    context_file = Path.home() / ".config" / "i3" / "active-worktree.json"
+    try:
+        if not context_file.exists():
+            return None
+        data = json.loads(context_file.read_text())
+        if str(data.get("qualified_name", "")).strip() != project_name:
+            return None
+        context_key = str(data.get("context_key", "")).strip()
+        return context_key or None
+    except Exception:
+        return None
 
 
 # ============================================================================
@@ -619,7 +635,13 @@ async def _switch_project(
     start_time = time.perf_counter()
 
     logger.info(f"TICK: Calling filter_windows_by_project for '{project_name}'")
-    filter_result = await filter_windows_by_project(conn, project_name, workspace_tracker)
+    active_context_key = _active_context_key_for_project(project_name)
+    filter_result = await filter_windows_by_project(
+        conn,
+        project_name,
+        workspace_tracker,
+        active_context_key=active_context_key,
+    )
 
     duration_ms = (time.perf_counter() - start_time) * 1000
     logger.info(
