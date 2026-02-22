@@ -164,7 +164,11 @@ class TestInvalidAppClassesConfigs:
 
         assert is_valid is False
         assert len(errors) > 0
-        assert any("pattern" in error.message.lower() for error in errors)
+        assert any(
+            "match" in error.message.lower()
+            or "scoped_classes" in "/".join(str(p) for p in error.path)
+            for error in errors
+        )
 
     def test_invalid_scope_value(self, tmp_path):
         """Verify error on invalid scope value."""

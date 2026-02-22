@@ -560,13 +560,13 @@ class AppClassification:
         Returns:
             True if window class should be scoped to projects
         """
-        # Check global classes first (always False)
-        if window_class in self.global_classes:
-            return False
-
         # Check project-specific scoped classes
         if project and window_class in project.scoped_classes:
             return True
+
+        # Check global classes
+        if window_class in self.global_classes:
+            return False
 
         # Check default scoped classes
         if window_class in self.scoped_classes:

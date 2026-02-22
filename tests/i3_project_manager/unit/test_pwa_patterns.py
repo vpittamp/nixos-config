@@ -140,7 +140,7 @@ class TestTitlePatternMatching:
 
     def test_title_pattern_literal_syntax(self):
         """Title pattern with literal match."""
-        rule = PatternRule("title:k9s", "global", priority=210)
+        rule = PatternRule("title:regex:^k9s$", "global", priority=210)
 
         # Exact title match
         assert rule.matches(

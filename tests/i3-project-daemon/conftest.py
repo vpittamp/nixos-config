@@ -13,5 +13,3 @@ def event_loop():
     yield loop
     loop.close()
 
-
-pytest_plugins = ["tests.i3-project-daemon.fixtures.mock_i3_connection"]

@@ -101,7 +101,7 @@ class OutputFormatter:
             from .commands import print_warning
             print_warning(message)
 
-    def output(self, data: Optional[Dict[str, Any]] = None, file=sys.stdout) -> None:
+    def output(self, data: Optional[Dict[str, Any]] = None, file=None) -> None:
         """Output final result.
 
         In JSON mode, outputs accumulated JSON result.
@@ -112,6 +112,8 @@ class OutputFormatter:
             file: Output file (default: stdout)
         """
         if self.json_mode:
+            if file is None:
+                file = sys.stdout
             if data:
                 self._json_result.update(data)
             print(json.dumps(self._json_result, indent=2, cls=ProjectJSONEncoder), file=file)

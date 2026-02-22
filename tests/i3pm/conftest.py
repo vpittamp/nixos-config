@@ -17,6 +17,13 @@ import json
 from tests.i3pm.mocks.daemon_client import MockDaemonClient
 from tests.i3pm.mocks.i3_connection import MockI3Connection, MockWindow, MockWorkspace
 
+_REQUIRED_INTEGRATION_BINARIES = ("Xvfb", "i3", "xterm", "xdotool")
+
+
+def _missing_integration_binaries() -> list[str]:
+    """Return missing binaries required by real integration tests."""
+    return [binary for binary in _REQUIRED_INTEGRATION_BINARIES if shutil.which(binary) is None]
+
 
 @pytest.fixture
 def temp_config_dir(tmp_path):
@@ -256,3 +263,21 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "tui: marks tests as TUI tests requiring Pilot"
     )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip real integration tests when required system binaries are missing."""
+    missing = _missing_integration_binaries()
+    if not missing:
+        return
+
+    reason = (
+        "Skipping i3pm integration tests: missing required binaries "
+        + ", ".join(missing)
+    )
+    skip_marker = pytest.mark.skip(reason=reason)
+
+    for item in items:
+        path = str(item.fspath).replace("\\", "/")
+        if "/tests/i3pm/integration/" in path:
+            item.add_marker(skip_marker)
