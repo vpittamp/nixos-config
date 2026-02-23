@@ -1021,6 +1021,31 @@
     color: ${mocha.overlay0};
   }
 
+  .active-ai-timeline {
+    margin-top: 4px;
+    padding: 5px 7px;
+    border-radius: 7px;
+    border: 1px solid rgba(108, 112, 134, 0.28);
+    background: rgba(24, 24, 37, 0.7);
+  }
+
+  .active-ai-timeline-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: ${mocha.subtext0};
+    margin-bottom: 2px;
+  }
+
+  .active-ai-timeline-line {
+    font-size: 9px;
+    color: ${mocha.overlay0};
+  }
+
+  .active-ai-timeline-line.subtle {
+    color: ${mocha.overlay0};
+    opacity: 0.8;
+  }
+
   .active-ai-chip-strip {
     min-width: 0;
   }

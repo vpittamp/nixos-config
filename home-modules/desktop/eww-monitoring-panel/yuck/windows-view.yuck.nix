@@ -145,6 +145,39 @@
                         (label
                           :class {"active-ai-pin-btn" + ((session.pinned ?: false) ? " pinned" : "")}
                           :text {(session.pinned ?: false) ? "󰐃" : "󰓎"}))))))))))))
+        (revealer
+          :reveal {ai_sessions_selected_key != ""}
+          :transition "slidedown"
+          :duration "120ms"
+          (box
+            :class "active-ai-timeline"
+            :orientation "v"
+            :space-evenly false
+            (for session in {(monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])}
+              (box
+                :visible {ai_sessions_selected_key == (session.session_key ?: "")}
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "active-ai-timeline-title"
+                  :text {(session.display_tool ?: session.tool ?: "AI") + " · " + (session.display_project ?: session.project ?: "unknown")}
+                  :truncate true)
+                (label
+                  :class "active-ai-timeline-line"
+                  :text {"Now: " + (session.otel_state ?: "idle") + ((session.pending_tools ?: 0) > 0 ? (" · tools " + (session.pending_tools ?: 0)) : "")})
+                (label
+                  :class "active-ai-timeline-line"
+                  :text {"Target: " + ((session.display_target ?: "") != "" ? (session.display_target ?: "") : ("win " + (session.window_id ?: 0)))}
+                  :truncate true)
+                (label
+                  :class "active-ai-timeline-line"
+                  :text {((session.native_session_id ?: "") != "" ? ("SID " + (session.native_session_id ?: "")) : ((session.session_id ?: "") != "" ? ("SID " + (session.session_id ?: "")) : "SID n/a")) + ((session.updated_at ?: "") != "" ? (" · " + (session.updated_at ?: "")) : "")}
+                  :truncate true)
+                (label
+                  :class "active-ai-timeline-line subtle"
+                  :visible {(session.trace_id ?: "") != ""}
+                  :text {"Trace: " + (session.trace_id ?: "")}
+                  :truncate true)))))
 
   ;; Windows View - Project-based hierarchy with real-time updates
   ;; Shows detail view when a window is selected, otherwise shows list
