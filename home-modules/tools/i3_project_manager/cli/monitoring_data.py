@@ -39,6 +39,7 @@ import subprocess
 import sys
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
 
@@ -1139,12 +1140,36 @@ _OTEL_STATE_PRIORITY = {
 }
 _OTEL_VISIBLE_BADGE_STATES = {"working", "attention", "completed", "idle"}
 _OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
+_AI_SESSION_STALE_THRESHOLD_SECONDS = 15 * 60
 
 _OTEL_TOOL_LABELS = {
     "claude-code": "Claude Code",
     "codex": "Codex CLI",
     "gemini": "Gemini CLI",
 }
+
+
+def _parse_timestamp_to_epoch(timestamp: str) -> Optional[float]:
+    """Best-effort parse for OTEL ISO timestamps."""
+    raw = str(timestamp or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        return datetime.fromisoformat(raw).timestamp()
+    except ValueError:
+        return None
+
+
+def _identity_confidence_level(value: str) -> str:
+    """Map raw identity confidence values into coarse UX levels."""
+    raw = str(value or "").strip().lower()
+    if raw in {"native", "high"}:
+        return "high"
+    if raw in {"contextual", "medium", "derived"}:
+        return "medium"
+    return "low"
 
 
 def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
@@ -1294,18 +1319,25 @@ def _build_otel_badges(
         return []
 
     badges = []
+    now_epoch = time.time()
     for session in _coalesce_otel_badge_sessions(otel_sessions):
         state = str(session.get("state", "idle") or "idle").strip().lower()
         if state not in _OTEL_VISIBLE_BADGE_STATES:
             continue
 
         terminal_context = session.get("terminal_context", {}) or {}
+        identity_raw = str(session.get("identity_confidence") or "")
+        confidence_level = _identity_confidence_level(identity_raw)
+        updated_epoch = _parse_timestamp_to_epoch(str(session.get("updated_at") or ""))
+        stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
+        stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
         badge = {
             "session_id": session.get("session_id", ""),
             "native_session_id": session.get("native_session_id", ""),
             "context_fingerprint": session.get("context_fingerprint", ""),
             "collision_group_id": session.get("collision_group_id", ""),
-            "identity_confidence": session.get("identity_confidence", ""),
+            "identity_confidence": identity_raw,
+            "confidence_level": confidence_level,
             "otel_state": state,
             "otel_tool": session.get("tool", "unknown"),
             "project": session.get("project"),
@@ -1313,6 +1345,8 @@ def _build_otel_badges(
             "trace_id": session.get("trace_id"),
             "pending_tools": session.get("pending_tools", 0),
             "is_streaming": session.get("is_streaming", False),
+            "stale": stale,
+            "stale_age_seconds": stale_age_seconds,
             # Feature: AI badge click-to-focus context (window + tmux pane/session)
             "window_id": session.get("window_id", terminal_context.get("window_id")),
             "tmux_session": terminal_context.get("tmux_session", ""),
@@ -1350,6 +1384,7 @@ def _build_active_ai_sessions(
 
     window_lookup = window_lookup or {}
     merged_by_key: Dict[str, tuple[Dict[str, Any], Dict[str, Any]]] = {}
+    now_epoch = time.time()
 
     for raw_session in _coalesce_otel_badge_sessions(otel_sessions):
         state = str(raw_session.get("state", "idle") or "idle").strip().lower()
@@ -1382,6 +1417,12 @@ def _build_active_ai_sessions(
         native_session_id = str(raw_session.get("native_session_id") or "")
         session_id = str(raw_session.get("session_id") or "")
         context_fingerprint = str(raw_session.get("context_fingerprint") or "")
+        identity_raw = str(raw_session.get("identity_confidence") or "")
+        confidence_level = _identity_confidence_level(identity_raw)
+        updated_at = str(raw_session.get("updated_at") or "")
+        updated_epoch = _parse_timestamp_to_epoch(updated_at)
+        stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
+        stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
 
         # Key on concrete terminal context first to avoid one chip per historical run.
         key_parts = [
@@ -1441,11 +1482,14 @@ def _build_active_ai_sessions(
             "native_session_id": native_session_id,
             "session_id": session_id,
             "context_fingerprint": context_fingerprint,
-            "identity_confidence": str(raw_session.get("identity_confidence") or ""),
+            "identity_confidence": identity_raw,
+            "confidence_level": confidence_level,
             "trace_id": str(raw_session.get("trace_id") or ""),
             "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
             "is_streaming": bool(raw_session.get("is_streaming", False)),
-            "updated_at": str(raw_session.get("updated_at") or ""),
+            "updated_at": updated_at,
+            "stale": stale,
+            "stale_age_seconds": stale_age_seconds,
             "priority_score": _OTEL_STATE_PRIORITY.get(state, 0),
             "tool": tool,
         }

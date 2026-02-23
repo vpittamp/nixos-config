@@ -68,12 +68,16 @@
                 :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
                   + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
                   + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
+                  + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
+                  + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
                   + " · Click to focus"}
                 (box
                   :class {"active-ai-chip " +
                     ((session.otel_state ?: "idle") == "working"
                       ? "working"
                       : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                    ((session.stale ?: false) ? " stale" : "") +
+                    (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
                     ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
                   :orientation "h"
                   :space-evenly false
@@ -119,12 +123,16 @@
             (eventbox
               :cursor "pointer"
               :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
-              :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")}
+              :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
+                + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")}
               (box
                 :class {"active-ai-chip overflow " +
                   ((session.otel_state ?: "idle") == "working"
                     ? "working"
                     : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                  ((session.stale ?: false) ? " stale" : "") +
+                  (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
                   ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
                 :orientation "h"
                 :space-evenly false
@@ -389,13 +397,15 @@
                         ? "attention"
                         : ((badge.otel_state ?: "idle") == "completed"
                           ? "completed"
-                          : "idle")))}
+                          : "idle")) +
+                    ((badge.stale ?: false) ? " stale" : "") +
+                    (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
                   :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}
                   :onclick {(badge.window_id ?: 0) != 0
                     ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                     : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
                   }
-                  :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                  :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
                   (box
                     :orientation "h"
                     :space-evenly false

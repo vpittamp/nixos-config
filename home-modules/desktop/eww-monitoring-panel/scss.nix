@@ -846,6 +846,20 @@
     background: transparent;
   }
 
+  .ai-badge-hover.stale {
+    opacity: 0.58;
+  }
+
+  .ai-badge-hover.confidence-low {
+    border: 1px dashed rgba(250, 179, 135, 0.34);
+    border-radius: 5px;
+  }
+
+  .ai-badge-hover.confidence-medium {
+    border: 1px solid rgba(137, 220, 235, 0.22);
+    border-radius: 5px;
+  }
+
   .ai-badge-hover:hover {
     background: rgba(137, 180, 250, 0.10);
   }
@@ -1020,6 +1034,19 @@
 
   .active-ai-chip.completed {
     border-color: rgba(137, 180, 250, 0.34);
+  }
+
+  .active-ai-chip.stale {
+    opacity: 0.62;
+    border-style: dashed;
+  }
+
+  .active-ai-chip.confidence-low {
+    border-color: rgba(250, 179, 135, 0.6);
+  }
+
+  .active-ai-chip.confidence-medium {
+    border-color: rgba(137, 220, 235, 0.58);
   }
 
   .active-ai-overflow-chip {
