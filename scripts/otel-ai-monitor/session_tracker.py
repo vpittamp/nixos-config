@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
 from .models import (
@@ -137,8 +137,11 @@ class SessionTracker:
             int, tuple[float, Optional[int], Optional[str], dict]
         ] = {}
 
-        # Native-session mapping: native_session_id -> canonical session_id
-        self._native_session_map: dict[str, str] = {}
+        # Native-session mapping:
+        #   collision_group_id(tool:native_id) -> set(canonical session IDs)
+        # Supports concurrent sessions that share the same native session ID.
+        self._native_session_map: dict[str, set[str]] = {}
+        self._native_preferred_session: dict[str, str] = {}
 
         # Monotonic counter for fallback session keys when native session_id is absent.
         self._fallback_counter = 0
@@ -147,6 +150,10 @@ class SessionTracker:
         # These files are written by Claude Code hooks on session start
         self._metadata_file_cache: dict[str, int] = {}
         self._metadata_cache_mtime: float = 0.0
+        self._display_filter_stats = {
+            "suppressed_missing_project": 0,
+            "suppressed_non_native": 0,
+        }
 
     def _load_session_metadata_pid(self, session_id: str) -> Optional[int]:
         """Look up PID for a session ID from hook-written metadata files.
@@ -260,17 +267,13 @@ class SessionTracker:
         oldest_session = self._sessions.pop(oldest_id)
 
         # Clean up associated data
-        self._session_pids.pop(oldest_id, None)
-        if oldest_session.native_session_id:
-            self._session_pids.pop(oldest_session.native_session_id, None)
-            self._native_session_map.pop(oldest_session.native_session_id, None)
+        self._remove_session_indexes_unlocked(oldest_id, oldest_session)
         if oldest_id in self._quiet_timers:
             self._quiet_timers[oldest_id].cancel()
             del self._quiet_timers[oldest_id]
         if oldest_id in self._completed_timers:
             self._completed_timers[oldest_id].cancel()
             del self._completed_timers[oldest_id]
-        self._last_notification.pop(oldest_id, None)
 
         logger.info(
             f"Evicted oldest IDLE session {oldest_id} (tool={oldest_session.tool}, "
@@ -317,6 +320,15 @@ class SessionTracker:
                     "quiet_timers": len(self._quiet_timers),
                     "completed_timers": len(self._completed_timers),
                 },
+                "native_identity": {
+                    "groups": len(self._native_session_map),
+                    "collisions": sum(
+                        1
+                        for group in self._native_session_map.values()
+                        if len([sid for sid in group if sid in self._sessions]) > 1
+                    ),
+                },
+                "display_filter": dict(self._display_filter_stats),
                 "config": {
                     "quiet_period_sec": self.quiet_period_sec,
                     "session_timeout_sec": self.session_timeout_sec,
@@ -345,19 +357,238 @@ class SessionTracker:
                 return session_id
         return None
 
+    @staticmethod
+    def _tool_name(tool: Optional[AITool]) -> str:
+        if isinstance(tool, AITool):
+            return tool.value
+        if isinstance(tool, str) and tool.strip():
+            return tool.strip()
+        return "unknown"
+
+    @classmethod
+    def _build_native_group_id(
+        cls,
+        tool: Optional[AITool],
+        native_session_id: Optional[str],
+    ) -> Optional[str]:
+        if not native_session_id:
+            return None
+        return f"{cls._tool_name(tool)}:{native_session_id}"
+
+    @staticmethod
+    def _compose_native_session_key(
+        native_group_id: str,
+        context_fingerprint: Optional[str],
+    ) -> str:
+        if context_fingerprint:
+            return f"{native_group_id}:{context_fingerprint}"
+        return native_group_id
+
+    @staticmethod
+    def _build_context_fingerprint(
+        client_pid: Optional[int],
+        window_id: Optional[int],
+        terminal_context: dict,
+        project: Optional[str],
+        project_path: Optional[str],
+    ) -> Optional[str]:
+        parts: list[str] = []
+
+        def add_part(name: str, value: Optional[object]) -> None:
+            if value is None:
+                return
+            text = str(value).strip()
+            if not text:
+                return
+            parts.append(f"{name}={text}")
+
+        # Highest-signal terminal identity first.
+        add_part("pane", terminal_context.get("tmux_pane"))
+        add_part("pty", terminal_context.get("pty"))
+        add_part("window", window_id)
+        add_part("tmux_session", terminal_context.get("tmux_session"))
+        add_part("tmux_window", terminal_context.get("tmux_window"))
+        add_part("host", terminal_context.get("host_name"))
+        # PID is useful when pane metadata is absent but multiple local sessions exist.
+        add_part("pid", client_pid)
+        add_part("project_path", project_path)
+        add_part("project", project)
+
+        if not parts:
+            return None
+
+        raw = "|".join(parts)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+    def _register_native_session_unlocked(self, group_id: str, session_id: str) -> None:
+        bucket = self._native_session_map.setdefault(group_id, set())
+        bucket.add(session_id)
+        self._native_preferred_session[group_id] = session_id
+
+    def _select_preferred_native_session_unlocked(
+        self, group_id: str
+    ) -> Optional[str]:
+        bucket = self._native_session_map.get(group_id)
+        if not bucket:
+            return None
+        live_ids = [sid for sid in bucket if sid in self._sessions]
+        if not live_ids:
+            self._native_session_map.pop(group_id, None)
+            self._native_preferred_session.pop(group_id, None)
+            return None
+
+        preferred = max(
+            live_ids,
+            key=lambda sid: (
+                state_priority(SessionState(self._sessions[sid].state)),
+                self._sessions[sid].last_event_at.timestamp(),
+                sid,
+            ),
+        )
+        self._native_preferred_session[group_id] = preferred
+        return preferred
+
+    def _unregister_native_session_unlocked(self, group_id: str, session_id: str) -> None:
+        bucket = self._native_session_map.get(group_id)
+        if not bucket:
+            return
+        bucket.discard(session_id)
+        if not bucket:
+            self._native_session_map.pop(group_id, None)
+            self._native_preferred_session.pop(group_id, None)
+            return
+        if self._native_preferred_session.get(group_id) == session_id:
+            self._select_preferred_native_session_unlocked(group_id)
+
+    def _resolve_native_session_key_unlocked(
+        self,
+        native_group_id: str,
+        context_fingerprint: Optional[str],
+        client_pid: Optional[int],
+        terminal_context: dict,
+        window_id: Optional[int],
+        preferred_project: Optional[str],
+    ) -> Optional[str]:
+        bucket = self._native_session_map.get(native_group_id)
+        if not bucket:
+            return None
+        live_ids = [sid for sid in bucket if sid in self._sessions]
+        if not live_ids:
+            self._native_session_map.pop(native_group_id, None)
+            self._native_preferred_session.pop(native_group_id, None)
+            return None
+
+        if context_fingerprint:
+            exact_id = self._compose_native_session_key(
+                native_group_id, context_fingerprint
+            )
+            if exact_id in live_ids:
+                self._native_preferred_session[native_group_id] = exact_id
+                return exact_id
+
+        if client_pid is not None:
+            for sid in live_ids:
+                session = self._sessions[sid]
+                if session.pid == client_pid:
+                    self._native_preferred_session[native_group_id] = sid
+                    return sid
+
+        pane = terminal_context.get("tmux_pane")
+        if pane:
+            for sid in live_ids:
+                session = self._sessions[sid]
+                if session.terminal_context.tmux_pane == pane:
+                    self._native_preferred_session[native_group_id] = sid
+                    return sid
+
+        pty = terminal_context.get("pty")
+        if pty:
+            for sid in live_ids:
+                session = self._sessions[sid]
+                if session.terminal_context.pty == pty:
+                    self._native_preferred_session[native_group_id] = sid
+                    return sid
+
+        if window_id is not None:
+            for sid in live_ids:
+                session = self._sessions[sid]
+                if session.window_id == window_id:
+                    self._native_preferred_session[native_group_id] = sid
+                    return sid
+
+        if preferred_project:
+            for sid in live_ids:
+                session = self._sessions[sid]
+                if self._project_names_match(preferred_project, session.project):
+                    self._native_preferred_session[native_group_id] = sid
+                    return sid
+
+        if len(live_ids) == 1:
+            chosen = live_ids[0]
+            self._native_preferred_session[native_group_id] = chosen
+            return chosen
+
+        # When context fingerprint is present but no match across multiple
+        # existing sessions, caller should create a distinct collision key.
+        if context_fingerprint:
+            return None
+
+        preferred = self._native_preferred_session.get(native_group_id)
+        if preferred in live_ids:
+            return preferred
+
+        return self._select_preferred_native_session_unlocked(native_group_id)
+
+    def _lookup_native_session_from_raw_id_unlocked(
+        self, raw_native_session_id: str
+    ) -> Optional[str]:
+        # Direct canonical or group lookup.
+        if raw_native_session_id in self._sessions:
+            return raw_native_session_id
+        if raw_native_session_id in self._native_session_map:
+            return self._select_preferred_native_session_unlocked(raw_native_session_id)
+
+        matched_groups = []
+        for group_id in self._native_session_map.keys():
+            _, _, native_id = group_id.partition(":")
+            if native_id == raw_native_session_id:
+                matched_groups.append(group_id)
+
+        if not matched_groups:
+            return None
+        if len(matched_groups) == 1:
+            return self._select_preferred_native_session_unlocked(matched_groups[0])
+
+        candidate_ids = []
+        for group_id in matched_groups:
+            resolved = self._select_preferred_native_session_unlocked(group_id)
+            if resolved and resolved in self._sessions:
+                candidate_ids.append(resolved)
+        if not candidate_ids:
+            return None
+        return max(
+            candidate_ids,
+            key=lambda sid: (
+                state_priority(SessionState(self._sessions[sid].state)),
+                self._sessions[sid].last_event_at.timestamp(),
+                sid,
+            ),
+        )
+
     def _build_session_id(
         self,
         event: TelemetryEvent,
         native_session_id: Optional[str],
+        context_fingerprint: Optional[str] = None,
     ) -> str:
         """Build canonical session key with native IDs taking priority."""
-        tool_name = (
-            event.tool.value
-            if isinstance(event.tool, AITool)
-            else str(event.tool) if event.tool else "unknown"
-        )
+        tool_name = self._tool_name(event.tool)
         if native_session_id:
-            return f"{tool_name}:{native_session_id}"
+            native_group_id = self._build_native_group_id(event.tool, native_session_id)
+            if native_group_id:
+                return self._compose_native_session_key(
+                    native_group_id, context_fingerprint
+                )
 
         pid = event.attributes.get("process.pid") or event.attributes.get("pid")
         if pid is not None:
@@ -370,16 +601,15 @@ class SessionTracker:
         self,
         session_id: str,
         native_session_id: Optional[str],
+        native_group_id: Optional[str],
         event: TelemetryEvent,
     ) -> Optional[int]:
         """Extract and normalize PID from event/session metadata."""
+        _ = native_group_id
         client_pid = event.attributes.get("process.pid") or event.attributes.get("pid")
 
         if client_pid is None:
-            if native_session_id:
-                client_pid = self._session_pids.get(native_session_id)
-            if client_pid is None:
-                client_pid = self._session_pids.get(session_id)
+            client_pid = self._session_pids.get(session_id)
 
         if client_pid is None and native_session_id:
             client_pid = self._load_session_metadata_pid(native_session_id)
@@ -391,6 +621,22 @@ class SessionTracker:
             return int(client_pid)
         except (ValueError, TypeError):
             return None
+
+    def _remove_session_indexes_unlocked(self, session_id: str, session: Session) -> None:
+        self._session_pids.pop(session_id, None)
+        if session.native_session_id:
+            self._session_pids.pop(session.native_session_id, None)
+
+        native_group_id = session.collision_group_id
+        if not native_group_id and session.native_session_id:
+            native_group_id = self._build_native_group_id(
+                self._normalize_tool(session.tool), session.native_session_id
+            )
+        if native_group_id:
+            self._session_pids.pop(native_group_id, None)
+            self._unregister_native_session_unlocked(native_group_id, session_id)
+
+        self._last_notification.pop(session_id, None)
 
     async def _resolve_window_context(
         self, pid: int
@@ -577,7 +823,7 @@ class SessionTracker:
                 focused_candidates = [
                     s for s in candidates if s.window_id == focused_window_id
                 ]
-                if focused_candidates:
+                if len(focused_candidates) == 1:
                     chosen = max(
                         focused_candidates, key=lambda s: s.last_event_at.timestamp()
                     )
@@ -588,6 +834,10 @@ class SessionTracker:
                         chosen.terminal_context.model_dump(),
                         IdentityConfidence.HEURISTIC,
                     )
+                if len(focused_candidates) > 1:
+                    # Ambiguous in the focused window; let caller apply
+                    # stronger native-to-process candidate binding logic.
+                    return None, None, None, {}, IdentityConfidence.HEURISTIC
             return None, None, None, {}, IdentityConfidence.HEURISTIC
 
         chosen = max(candidates, key=lambda s: s.last_event_at.timestamp())
@@ -601,6 +851,102 @@ class SessionTracker:
             chosen.terminal_context.model_dump(),
             confidence,
         )
+
+    def _bind_native_to_process_candidate_unlocked(
+        self,
+        session: Session,
+        tool: AITool,
+    ) -> bool:
+        """Bind unresolved native session to an unclaimed process-backed session.
+
+        Native OTEL events may omit process.pid/tmux fields. When several tool
+        processes are active, pick an unclaimed process-backed session so each
+        native session can map to a distinct terminal pane/window.
+        Caller must hold self._lock.
+        """
+        if (
+            session.window_id is not None
+            or session.terminal_context.tmux_pane
+            or session.terminal_context.pty
+        ):
+            return False
+
+        candidates = [
+            s
+            for s in self._sessions.values()
+            if s.tool == tool
+            and s.pid is not None
+            and s.native_session_id is None
+            and s.state != SessionState.EXPIRED
+        ]
+        if not candidates:
+            return False
+
+        used_pids = {
+            s.pid
+            for s in self._sessions.values()
+            if s.tool == tool and s.native_session_id and s.pid is not None
+        }
+        unclaimed = [s for s in candidates if s.pid not in used_pids]
+        pool = unclaimed if unclaimed else candidates
+
+        if session.project:
+            project_matched = [
+                s
+                for s in pool
+                if not s.project or self._project_names_match(session.project, s.project)
+            ]
+            if project_matched:
+                pool = project_matched
+
+        # Prefer freshly-created process sessions to avoid binding new native
+        # events to long-lived unrelated Codex processes.
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=45)
+        recent_pool = [s for s in pool if s.created_at >= recent_cutoff]
+        if recent_pool:
+            pool = recent_pool
+
+        chosen = max(
+            pool,
+            key=lambda s: (
+                s.created_at.timestamp(),
+                s.last_event_at.timestamp(),
+                int(s.pid or 0),
+            ),
+        )
+
+        if chosen.window_id is not None and session.window_id is None:
+            session.window_id = chosen.window_id
+            session.terminal_context.window_id = chosen.window_id
+        if chosen.project and not session.project:
+            session.project = chosen.project
+        if chosen.project_path and not session.project_path:
+            session.project_path = chosen.project_path
+
+        if chosen.pid is not None and session.pid is None:
+            session.pid = chosen.pid
+            self._session_pids[session.session_id] = chosen.pid
+            if session.collision_group_id:
+                self._session_pids[session.collision_group_id] = chosen.pid
+
+        for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
+            if not getattr(session.terminal_context, key):
+                value = getattr(chosen.terminal_context, key)
+                if value:
+                    setattr(session.terminal_context, key, value)
+
+        if session.window_id is None and session.project is None and session.pid is None:
+            return False
+
+        session.status_reason = "window_correlated_process_candidate"
+        logger.info(
+            "Process candidate correlation: %s -> pid=%s pane=%s window=%s",
+            session.session_id,
+            session.pid,
+            session.terminal_context.tmux_pane,
+            session.window_id,
+        )
+        return True
 
     def _mark_dirty_unlocked(self) -> None:
         """Mark output as dirty and signal broadcast worker.
@@ -633,10 +979,13 @@ class SessionTracker:
             self._last_notification[new_id] = self._last_notification.pop(old_id)
         if old_id in self._session_pids:
             self._session_pids[new_id] = self._session_pids.pop(old_id)
-
-        for native_id, mapped in list(self._native_session_map.items()):
-            if mapped == old_id:
-                self._native_session_map[native_id] = new_id
+        if session.collision_group_id:
+            bucket = self._native_session_map.get(session.collision_group_id)
+            if bucket and old_id in bucket:
+                bucket.discard(old_id)
+                bucket.add(new_id)
+            if self._native_preferred_session.get(session.collision_group_id) == old_id:
+                self._native_preferred_session[session.collision_group_id] = new_id
 
         return session
 
@@ -644,7 +993,16 @@ class SessionTracker:
     def _session_is_resolved_for_display(session: Session, now_ts: float) -> bool:
         """Whether a session should be visible in project-scoped UI output."""
         _ = now_ts
-        return bool(session.project)
+        confidence_raw = session.identity_confidence
+        if isinstance(confidence_raw, IdentityConfidence):
+            confidence = confidence_raw.value
+        else:
+            confidence = str(confidence_raw or "").strip().lower()
+        return bool(
+            session.project
+            and session.native_session_id
+            and confidence == IdentityConfidence.NATIVE.value
+        )
 
     async def process_event(self, event: TelemetryEvent) -> None:
         """Process a telemetry event and update session state.
@@ -653,8 +1011,28 @@ class SessionTracker:
             event: Parsed telemetry event from OTLP receiver
         """
         native_session_id = self._extract_native_session_id(event)
-        session_id = self._build_session_id(event, native_session_id)
-        client_pid = self._extract_client_pid(session_id, native_session_id, event)
+        native_group_id = self._build_native_group_id(event.tool, native_session_id)
+
+        provisional_session_id = self._build_session_id(
+            event, native_session_id, None
+        )
+        explicit_pid_raw = (
+            event.attributes.get("process.pid")
+            if event.attributes.get("process.pid") is not None
+            else event.attributes.get("pid")
+        )
+        explicit_client_pid: Optional[int] = None
+        if explicit_pid_raw is not None:
+            try:
+                explicit_client_pid = int(explicit_pid_raw)
+            except (TypeError, ValueError):
+                explicit_client_pid = None
+        client_pid = self._extract_client_pid(
+            provisional_session_id,
+            native_session_id,
+            native_group_id,
+            event,
+        )
 
         resolved_window_id: Optional[int] = None
         resolved_project: Optional[str] = None
@@ -667,18 +1045,50 @@ class SessionTracker:
             ) = await self._resolve_window_context(client_pid)
 
         event_project, event_project_path = self._extract_project_context(event)
-        event_terminal_context = self._extract_terminal_context_from_event(event)
+        event_terminal_context_raw = self._extract_terminal_context_from_event(event)
+        event_terminal_context = dict(event_terminal_context_raw)
         for key, value in resolved_terminal_context.items():
             if value and not event_terminal_context.get(key):
                 event_terminal_context[key] = value
+
+        project_for_identity = resolved_project or event_project
+        has_explicit_terminal_identity = bool(
+            event_terminal_context_raw.get("tmux_session")
+            or event_terminal_context_raw.get("tmux_window")
+            or event_terminal_context_raw.get("tmux_pane")
+            or event_terminal_context_raw.get("pty")
+        )
+        allow_native_context_override = bool(
+            explicit_client_pid is not None or has_explicit_terminal_identity
+        )
+        context_fingerprint = self._build_context_fingerprint(
+            client_pid,
+            resolved_window_id,
+            event_terminal_context,
+            project_for_identity,
+            event_project_path,
+        )
+        desired_session_id = self._build_session_id(
+            event, native_session_id, context_fingerprint
+        )
 
         async with self._lock:
             now = datetime.now(timezone.utc)
             tool = self._normalize_tool(event.tool)
             provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
 
-            if native_session_id and native_session_id in self._native_session_map:
-                session_id = self._native_session_map[native_session_id]
+            session_id = desired_session_id
+            if native_group_id:
+                resolved_native_key = self._resolve_native_session_key_unlocked(
+                    native_group_id=native_group_id,
+                    context_fingerprint=context_fingerprint,
+                    client_pid=client_pid,
+                    terminal_context=event_terminal_context,
+                    window_id=resolved_window_id,
+                    preferred_project=project_for_identity,
+                )
+                if resolved_native_key:
+                    session_id = resolved_native_key
 
             session = self._sessions.get(session_id)
 
@@ -687,14 +1097,15 @@ class SessionTracker:
             if session is None and native_session_id and client_pid is not None:
                 pid_key = f"{tool.value}:pid:{client_pid}"
                 if pid_key in self._sessions:
-                    upgraded = self._rekey_session_unlocked(pid_key, session_id)
-                    if upgraded:
-                        session = upgraded
-                        logger.info(
-                            "Upgraded process session %s -> native session %s",
-                            pid_key,
-                            session_id,
-                        )
+                    if session_id not in self._sessions or session_id == pid_key:
+                        upgraded = self._rekey_session_unlocked(pid_key, session_id)
+                        if upgraded:
+                            session = upgraded
+                            logger.info(
+                                "Upgraded process session %s -> native session %s",
+                                pid_key,
+                                session_id,
+                            )
 
             if session is None:
                 if native_session_id:
@@ -710,6 +1121,8 @@ class SessionTracker:
                 session = Session(
                     session_id=session_id,
                     native_session_id=native_session_id,
+                    context_fingerprint=context_fingerprint if native_session_id else None,
+                    collision_group_id=native_group_id if native_session_id else None,
                     identity_confidence=identity_confidence,
                     tool=tool,
                     provider=provider,
@@ -753,25 +1166,66 @@ class SessionTracker:
 
             canonical_session_id = session.session_id
 
-            if native_session_id:
-                session.native_session_id = native_session_id
-                session.identity_confidence = IdentityConfidence.NATIVE
-                self._native_session_map[native_session_id] = canonical_session_id
+            if native_session_id and native_group_id:
+                previous_group_id = session.collision_group_id
+                if (
+                    previous_group_id
+                    and previous_group_id != native_group_id
+                    and canonical_session_id in self._sessions
+                ):
+                    self._unregister_native_session_unlocked(
+                        previous_group_id, canonical_session_id
+                    )
 
-            # Cache PID for this session and native alias to preserve correlation.
+                desired_native_session_id = self._build_session_id(
+                    event, native_session_id, context_fingerprint
+                )
+                if (
+                    desired_native_session_id != canonical_session_id
+                    and desired_native_session_id not in self._sessions
+                ):
+                    rekeyed = self._rekey_session_unlocked(
+                        canonical_session_id, desired_native_session_id
+                    )
+                    if rekeyed:
+                        session = rekeyed
+                        canonical_session_id = session.session_id
+
+                session.native_session_id = native_session_id
+                if context_fingerprint:
+                    session.context_fingerprint = context_fingerprint
+                session.collision_group_id = native_group_id
+                session.identity_confidence = IdentityConfidence.NATIVE
+                self._register_native_session_unlocked(
+                    native_group_id, canonical_session_id
+                )
+
+            # Cache PID for this session and native group alias to preserve correlation.
             if client_pid is not None:
-                self._session_pids[canonical_session_id] = client_pid
-                session.pid = client_pid
-                if native_session_id:
-                    self._session_pids[native_session_id] = client_pid
+                if session.pid is None or explicit_client_pid is not None:
+                    self._session_pids[canonical_session_id] = client_pid
+                    session.pid = client_pid
+                if native_group_id and explicit_client_pid is not None:
+                    self._session_pids[native_group_id] = client_pid
                 if session.identity_confidence != IdentityConfidence.NATIVE:
                     session.identity_confidence = IdentityConfidence.PID
 
-            if resolved_window_id is not None:
+            if (
+                resolved_window_id is not None
+                and (
+                    session.window_id is None
+                    or not session.native_session_id
+                    or allow_native_context_override
+                )
+            ):
                 session.window_id = resolved_window_id
                 session.terminal_context.window_id = resolved_window_id
 
-            if resolved_project:
+            if resolved_project and (
+                not session.project
+                or not session.native_session_id
+                or allow_native_context_override
+            ):
                 session.project = resolved_project
             if event_project and not session.project:
                 session.project = event_project
@@ -782,6 +1236,15 @@ class SessionTracker:
 
             for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
                 value = event_terminal_context.get(key)
+                if not value:
+                    continue
+                has_explicit_key = bool(event_terminal_context_raw.get(key))
+                if (
+                    session.native_session_id
+                    and getattr(session.terminal_context, key)
+                    and not has_explicit_key
+                ):
+                    continue
                 if value:
                     setattr(session.terminal_context, key, value)
 
@@ -821,7 +1284,7 @@ class SessionTracker:
                     session.status_reason = "window_correlated_fallback"
                     logger.info(
                         "Fallback correlation: %s -> window %s via active %s process session",
-                        canonical_session_id,
+                        session.session_id,
                         fallback_window_id,
                         tool,
                     )
@@ -830,6 +1293,12 @@ class SessionTracker:
                     IdentityConfidence.PID,
                 ):
                     session.identity_confidence = IdentityConfidence.PANE
+                elif (
+                    session.native_session_id
+                    and not session.terminal_context.tmux_pane
+                    and not session.terminal_context.pty
+                ):
+                    self._bind_native_to_process_candidate_unlocked(session, tool)
 
             self._update_metrics(session, event)
             await self._handle_tool_lifecycle(session, event)
@@ -844,14 +1313,14 @@ class SessionTracker:
                 session.status_reason = f"event:{event.event_name}"
                 logger.info(
                     "Session %s: %s -> %s",
-                    canonical_session_id,
+                    session.session_id,
                     old_state,
                     new_state,
                 )
                 await self._handle_state_change(session, old_state, new_state)
 
             if session.state == SessionState.WORKING:
-                self._reset_quiet_timer(canonical_session_id)
+                self._reset_quiet_timer(session.session_id)
 
             self._mark_dirty_unlocked()
 
@@ -866,7 +1335,9 @@ class SessionTracker:
             session_id: Session ID from metrics resource attributes
         """
         async with self._lock:
-            lookup_id = self._native_session_map.get(session_id, session_id)
+            lookup_id = self._lookup_native_session_from_raw_id_unlocked(session_id)
+            if lookup_id is None:
+                lookup_id = session_id
             session = self._sessions.get(lookup_id)
             if session is None:
                 # No session found - don't create one from metrics alone
@@ -1647,11 +2118,24 @@ class SessionTracker:
         Caller must hold _lock.
         """
         now_ts = datetime.now(timezone.utc).timestamp()
-        active_sessions = [
-            s for s in self._sessions.values()
-            if s.state != SessionState.EXPIRED
-            and self._session_is_resolved_for_display(s, now_ts)
-        ]
+        suppressed_missing_project = 0
+        suppressed_non_native = 0
+        active_sessions = []
+        for session in self._sessions.values():
+            if session.state == SessionState.EXPIRED:
+                continue
+            if self._session_is_resolved_for_display(session, now_ts):
+                active_sessions.append(session)
+                continue
+            if not session.project:
+                suppressed_missing_project += 1
+            else:
+                suppressed_non_native += 1
+
+        self._display_filter_stats = {
+            "suppressed_missing_project": suppressed_missing_project,
+            "suppressed_non_native": suppressed_non_native,
+        }
         active_sessions.sort(key=lambda s: s.session_id)
 
         updated_at = datetime.now(timezone.utc).isoformat()
@@ -1660,6 +2144,8 @@ class SessionTracker:
             SessionListItem(
                 session_id=s.session_id,
                 native_session_id=s.native_session_id,
+                context_fingerprint=s.context_fingerprint,
+                collision_group_id=s.collision_group_id,
                 identity_confidence=s.identity_confidence,
                 tool=s.tool,
                 state=s.state,
@@ -1698,6 +2184,9 @@ class SessionTracker:
         fingerprint_source = [
             (
                 s.session_id,
+                s.native_session_id,
+                s.context_fingerprint,
+                s.collision_group_id,
                 str(s.tool),
                 str(s.state),
                 s.project,
@@ -1793,13 +2282,7 @@ class SessionTracker:
                     self._quiet_timers.pop(session_id).cancel()
                 if session_id in self._completed_timers:
                     self._completed_timers.pop(session_id).cancel()
-                # Feature 135: Clean up PID cache
-                self._session_pids.pop(session_id, None)
-                if session.native_session_id:
-                    self._session_pids.pop(session.native_session_id, None)
-                    self._native_session_map.pop(session.native_session_id, None)
-                # Clean up notification debounce cache
-                self._last_notification.pop(session_id, None)
+                self._remove_session_indexes_unlocked(session_id, session)
 
                 # Emit expiry update
                 update = SessionUpdate(
@@ -1865,13 +2348,7 @@ class SessionTracker:
                     self._quiet_timers.pop(session_id).cancel()
                 if session_id in self._completed_timers:
                     self._completed_timers.pop(session_id).cancel()
-                # Feature 135: Clean up PID cache
-                self._session_pids.pop(session_id, None)
-                if session.native_session_id:
-                    self._session_pids.pop(session.native_session_id, None)
-                    self._native_session_map.pop(session.native_session_id, None)
-                # Clean up notification debounce cache
-                self._last_notification.pop(session_id, None)
+                self._remove_session_indexes_unlocked(session_id, session)
 
             # Broadcast updated list if any were removed
             if orphaned:

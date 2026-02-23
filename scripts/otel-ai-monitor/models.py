@@ -140,6 +140,14 @@ class Session(BaseModel):
         default=None,
         description="Native AI CLI session identifier (session.id/conversation.id) when available",
     )
+    context_fingerprint: Optional[str] = Field(
+        default=None,
+        description="Deterministic context key suffix for disambiguating same native session IDs",
+    )
+    collision_group_id: Optional[str] = Field(
+        default=None,
+        description="Native collision group identifier in format tool:native_session_id",
+    )
     identity_confidence: IdentityConfidence = Field(
         default=IdentityConfidence.HEURISTIC,
         description="How strongly session identity was established",
@@ -272,6 +280,12 @@ class SessionListItem(BaseModel):
     native_session_id: Optional[str] = Field(
         default=None, description="Native AI CLI session identifier"
     )
+    context_fingerprint: Optional[str] = Field(
+        default=None, description="Deterministic context key suffix for collision handling"
+    )
+    collision_group_id: Optional[str] = Field(
+        default=None, description="Native collision group ID (tool:native_session_id)"
+    )
     identity_confidence: IdentityConfidence = Field(
         default=IdentityConfidence.HEURISTIC,
         description="How strongly session identity was established",
@@ -303,7 +317,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="3", description="Session payload schema version")
+    schema_version: str = Field(default="4", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

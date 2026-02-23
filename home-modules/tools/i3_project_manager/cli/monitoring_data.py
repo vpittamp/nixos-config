@@ -159,7 +159,7 @@ def load_otel_sessions() -> Dict[str, Any]:
         'sessions_by_window' dict.
     """
     default_result = {
-        "schema_version": "3",
+        "schema_version": "4",
         "sessions": [],
         "has_working": False,
         "timestamp": 0,
@@ -1116,6 +1116,134 @@ _OTEL_STATE_PRIORITY = {
     "completed": 2,
     "idle": 1,
 }
+_OTEL_VISIBLE_BADGE_STATES = {"working", "attention"}
+
+
+def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
+    """
+    Build a stable dedupe key for badge sessions.
+
+    OTEL monitor can emit multiple native session records for the same real
+    terminal pane over time (for example, repeated `codex exec` runs). For the
+    window badge UX we want one indicator per terminal context, not one per
+    historical native session id.
+    """
+    terminal_context = session.get("terminal_context", {}) or {}
+    tool = str(session.get("tool", "unknown") or "unknown")
+
+    native_session_id = str(session.get("native_session_id") or "")
+    collision_group_id = str(session.get("collision_group_id") or "")
+    context_fingerprint = str(session.get("context_fingerprint") or "")
+    window_id = session.get("window_id", terminal_context.get("window_id"))
+    pane = str(terminal_context.get("tmux_pane") or "")
+    pty = str(terminal_context.get("pty") or "")
+
+    # Highest-priority dedupe scope: tool + concrete terminal context.
+    # This keeps one badge per pane/pty even when many native session ids exist.
+    if pane:
+        return f"tool={tool}|pane={pane}"
+    if pty:
+        return f"tool={tool}|pty={pty}"
+    if window_id is not None:
+        return f"tool={tool}|window={window_id}"
+
+    # If no terminal context is known, fall back to native grouping.
+    if collision_group_id or native_session_id:
+        native_key = (
+            f"tool={tool}|group={collision_group_id}"
+            if collision_group_id
+            else f"tool={tool}|native={native_session_id}"
+        )
+        if context_fingerprint:
+            return f"{native_key}|context={context_fingerprint}"
+        return native_key
+
+    session_id = str(session.get("session_id") or "")
+    if session_id:
+        return f"tool={tool}|session={session_id}"
+
+    pid = session.get("pid")
+
+    if pid is not None and window_id is not None:
+        return f"tool={tool}|pid={pid}|window={window_id}"
+    if pid is not None and pane:
+        return f"tool={tool}|pid={pid}|pane={pane}"
+    if pid is not None and pty:
+        return f"tool={tool}|pid={pid}|pty={pty}"
+
+    return f"tool={tool}|fallback={json.dumps(session, sort_keys=True, default=str)}"
+
+
+def _otel_badge_score(session: Dict[str, Any]) -> tuple[int, int, int, str]:
+    """
+    Score which duplicate candidate is the best canonical badge.
+
+    Preference order:
+      1) native-identified records
+      2) records with trace_id
+      3) higher urgency state
+      4) most recent updated_at (ISO string compare)
+    """
+    identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
+    is_native = int(identity_confidence == "native" or bool(session.get("native_session_id")))
+    has_trace = int(bool(session.get("trace_id")))
+    state_rank = _OTEL_STATE_PRIORITY.get(str(session.get("state", "idle")), 0)
+    updated_at = str(session.get("updated_at") or "")
+    return (is_native, has_trace, state_rank, updated_at)
+
+
+def _coalesce_otel_badge_sessions(
+    otel_sessions: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Collapse duplicate OTEL sessions for badge rendering."""
+    if not otel_sessions:
+        return []
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    for session in otel_sessions:
+        key = _otel_badge_merge_key(session)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = dict(session)
+            continue
+
+        # Keep the stronger base record.
+        if _otel_badge_score(session) > _otel_badge_score(existing):
+            base = dict(session)
+            other = existing
+        else:
+            base = existing
+            other = session
+
+        # Merge fields that are useful even if only present in one variant.
+        if not base.get("trace_id") and other.get("trace_id"):
+            base["trace_id"] = other.get("trace_id")
+        if not base.get("session_id") and other.get("session_id"):
+            base["session_id"] = other.get("session_id")
+        if not base.get("native_session_id") and other.get("native_session_id"):
+            base["native_session_id"] = other.get("native_session_id")
+        if not base.get("context_fingerprint") and other.get("context_fingerprint"):
+            base["context_fingerprint"] = other.get("context_fingerprint")
+        if not base.get("collision_group_id") and other.get("collision_group_id"):
+            base["collision_group_id"] = other.get("collision_group_id")
+        if not base.get("window_id") and other.get("window_id"):
+            base["window_id"] = other.get("window_id")
+
+        base_context = base.get("terminal_context", {}) or {}
+        other_context = other.get("terminal_context", {}) or {}
+        for ctx_key in ("window_id", "tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
+            if not base_context.get(ctx_key) and other_context.get(ctx_key):
+                base_context[ctx_key] = other_context.get(ctx_key)
+        base["terminal_context"] = base_context
+
+        base["pending_tools"] = max(
+            int(base.get("pending_tools", 0) or 0),
+            int(other.get("pending_tools", 0) or 0),
+        )
+        base["is_streaming"] = bool(base.get("is_streaming", False) or other.get("is_streaming", False))
+        merged[key] = base
+
+    return list(merged.values())
 
 
 def _build_otel_badges(
@@ -1132,22 +1260,37 @@ def _build_otel_badges(
 
     Returns:
         List of badge dicts with otel_state, otel_tool, session_id, etc.
-        Sorted by state priority (ATTENTION > WORKING > COMPLETED > IDLE)
+        Sorted by state priority, limited to active states (ATTENTION/WORKING).
     """
     if not otel_sessions:
         return []
 
     badges = []
-    for session in otel_sessions:
+    for session in _coalesce_otel_badge_sessions(otel_sessions):
+        state = str(session.get("state", "idle") or "idle").strip().lower()
+        if state not in _OTEL_VISIBLE_BADGE_STATES:
+            continue
+
+        terminal_context = session.get("terminal_context", {}) or {}
         badge = {
             "session_id": session.get("session_id", ""),
-            "otel_state": session.get("state", "idle"),
+            "native_session_id": session.get("native_session_id", ""),
+            "context_fingerprint": session.get("context_fingerprint", ""),
+            "collision_group_id": session.get("collision_group_id", ""),
+            "identity_confidence": session.get("identity_confidence", ""),
+            "otel_state": state,
             "otel_tool": session.get("tool", "unknown"),
             "project": session.get("project"),
             "pid": session.get("pid"),
             "trace_id": session.get("trace_id"),
             "pending_tools": session.get("pending_tools", 0),
             "is_streaming": session.get("is_streaming", False),
+            # Feature: AI badge click-to-focus context (window + tmux pane/session)
+            "window_id": session.get("window_id", terminal_context.get("window_id")),
+            "tmux_session": terminal_context.get("tmux_session", ""),
+            "tmux_window": terminal_context.get("tmux_window", ""),
+            "tmux_pane": terminal_context.get("tmux_pane", ""),
+            "pty": terminal_context.get("pty", ""),
         }
         badges.append(badge)
 
@@ -1982,7 +2125,7 @@ def _augment_projects_with_remote_sessions(
                 remote_target,
                 remote_dir,
                 session,
-                otel_sessions,
+                None,
             )
             synthetic_id = int(synthetic_window["id"])
             synthetic_session_name = _normalize_session_name_key(
@@ -2281,12 +2424,29 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Feature 136: Changed to List to support multiple AI sessions per window
         otel_sessions = load_otel_sessions()
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
+        per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
         for session in otel_sessions.get("sessions", []):
+            identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
+            native_session_id = str(session.get("native_session_id") or "").strip()
+            if not native_session_id or identity_confidence != "native":
+                continue
+
             window_id = session.get("window_id")
-            if window_id is not None:
-                if window_id not in otel_sessions_by_window:
-                    otel_sessions_by_window[window_id] = []
-                otel_sessions_by_window[window_id].append(session)
+            if window_id is None:
+                continue
+            try:
+                window_id_int = int(window_id)
+            except (TypeError, ValueError):
+                continue
+
+            window_seen = per_window_seen.setdefault(window_id_int, {})
+            dedupe_key = _otel_badge_merge_key(session)
+            existing = window_seen.get(dedupe_key)
+            if existing is None or _otel_badge_score(session) > _otel_badge_score(existing):
+                window_seen[dedupe_key] = session
+
+        for window_id, seen in per_window_seen.items():
+            otel_sessions_by_window[window_id] = list(seen.values())
 
         # Transform daemon response to Eww schema
         outputs = tree_data.get("outputs", [])

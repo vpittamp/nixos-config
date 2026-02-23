@@ -150,6 +150,69 @@ let
     fi
   '';
 
+  # Focus AI session indicator target:
+  # - Focuses the owning terminal window/project context
+  # - If tmux pane/session metadata is available, selects that pane
+  focusAiSessionScript = pkgs.writeShellScriptBin "focus-ai-session-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+    WINDOW_ID="''${2:-}"
+    TARGET_VARIANT="''${3:-local}"
+    TMUX_PANE="''${4:-}"
+    TMUX_SESSION="''${5:-}"
+    TMUX_WINDOW="''${6:-}"
+    TMUX_PTY="''${7:-}"
+
+    if [[ -z "$PROJECT_NAME" ]]; then
+      exit 1
+    fi
+    if [[ -z "$WINDOW_ID" ]] || [[ ! "$WINDOW_ID" =~ ^-?[0-9]+$ ]]; then
+      exit 1
+    fi
+    if [[ "$TARGET_VARIANT" != "local" && "$TARGET_VARIANT" != "ssh" ]]; then
+      TARGET_VARIANT="local"
+    fi
+
+    # Reuse existing project-aware window focus flow.
+    ${focusWindowScript}/bin/focus-window-action "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+
+    # Extra direct focus attempt to maximize reliability.
+    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
+    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
+
+    # If this AI session reports tmux context, jump to that pane/window.
+    if command -v tmux >/dev/null 2>&1; then
+      if [[ -n "$TMUX_SESSION" ]]; then
+        tmux has-session -t "$TMUX_SESSION" >/dev/null 2>&1 || TMUX_SESSION=""
+      fi
+
+      if [[ -n "$TMUX_WINDOW" ]]; then
+        WINDOW_SELECTOR="$TMUX_WINDOW"
+        if [[ "$WINDOW_SELECTOR" == *:* ]]; then
+          WINDOW_SELECTOR="''${WINDOW_SELECTOR%%:*}"
+        fi
+        if [[ -n "$WINDOW_SELECTOR" ]]; then
+          TARGET_WINDOW="$WINDOW_SELECTOR"
+          if [[ -n "$TMUX_SESSION" ]]; then
+            TARGET_WINDOW="''${TMUX_SESSION}:''${WINDOW_SELECTOR}"
+          fi
+          tmux select-window -t "$TARGET_WINDOW" >/dev/null 2>&1 || true
+        fi
+      fi
+
+      TARGET_PANE="$TMUX_PANE"
+      if [[ -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
+        TARGET_PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null | awk -v tty="$TMUX_PTY" '$2 == tty {print $1; exit}')
+      fi
+
+      if [[ -n "$TARGET_PANE" ]]; then
+        tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || true
+      fi
+    fi
+  '';
+
   # Open remote session item action:
   # - Ensures project context is active
   # - Launches project terminal (app-launcher-wrapper handles SSH sesh attach)
@@ -287,6 +350,8 @@ let
   '';
 
   # Close worktree action script - closes all windows for a specific project/worktree
+  # Supports optional context scoping (execution_mode + connection_key) so a
+  # local/SSH project card only closes windows from that specific context.
   # Feature 119: Improved close worktree script with rate limiting and error handling
   closeWorktreeScript = pkgs.writeShellScriptBin "close-worktree-action" ''
     #!${pkgs.bash}/bin/bash
@@ -295,6 +360,17 @@ let
     set -euo pipefail
 
     PROJECT_NAME="''${1:-}"
+    TARGET_VARIANT="''${2:-}"
+    TARGET_CONNECTION_KEY="''${3:-}"
+
+    if [[ "$TARGET_VARIANT" != "local" && "$TARGET_VARIANT" != "ssh" ]]; then
+        TARGET_VARIANT=""
+    fi
+
+    TARGET_CONTEXT_KEY=""
+    if [[ -n "$TARGET_VARIANT" && -n "$TARGET_CONNECTION_KEY" ]]; then
+        TARGET_CONTEXT_KEY="''${PROJECT_NAME}::''${TARGET_VARIANT}::''${TARGET_CONNECTION_KEY}"
+    fi
 
     # Validate input
     if [[ -z "$PROJECT_NAME" ]]; then
@@ -303,7 +379,12 @@ let
     fi
 
     # Feature 119: Rate limiting instead of lock file (1 second debounce for batch operations)
-    LOCK_FILE="/tmp/eww-close-worktree-''${PROJECT_NAME//\//_}.lock"
+    LOCK_KEY="$PROJECT_NAME"
+    if [[ -n "$TARGET_CONTEXT_KEY" ]]; then
+        LOCK_KEY="''${LOCK_KEY}::''${TARGET_CONTEXT_KEY}"
+    fi
+    LOCK_SAFE=$(printf '%s' "$LOCK_KEY" | ${pkgs.coreutils}/bin/tr '/:@' '___' | ${pkgs.coreutils}/bin/tr -cd '[:alnum:]_.-')
+    LOCK_FILE="/tmp/eww-close-worktree-''${LOCK_SAFE}.lock"
     CURRENT_TIME=$(date +%s%N)
 
     if [[ -f "$LOCK_FILE" ]]; then
@@ -319,13 +400,27 @@ let
     echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
-    # Get all window IDs with marks matching this project
-    # Feature 119: Marks are in format: scoped:<app_name>:<project_name>:<window_id>
-    # The regex must skip the app name component between scoped: and project name
-    WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" '
-      .. | objects | select(.marks? != null) |
-      select(.marks | map(test("^scoped:[^:]+:" + $proj + ":")) | any) |
-      .id
+    # Get all window IDs with marks matching this project.
+    # Mark format: <scope>:<app>:<project>:<window_id>, where project may contain ':'.
+    # Optional ctx filtering keeps local/SSH cards isolated.
+    WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" --arg ctx "$TARGET_CONTEXT_KEY" '
+      def is_project_mark:
+        (startswith("scoped:") or startswith("global:")) and ((split(":") | length) >= 4);
+      def project_from_mark:
+        (split(":")) as $parts | ($parts[2:($parts | length - 1)] | join(":"));
+      def has_ctx_mark:
+        any(.marks[]?; startswith("ctx:"));
+      def matches_ctx:
+        ($ctx == "")
+        or any(.marks[]?; . == ("ctx:" + $ctx))
+        or (has_ctx_mark | not);
+
+      .. | objects | select(.marks? != null)
+      | select(
+          (any(.marks[]?; (is_project_mark and (project_from_mark == $proj))))
+          and matches_ctx
+        )
+      | .id
     ' 2>/dev/null || echo "")
 
     if [[ -z "$WINDOW_IDS" ]]; then
@@ -351,10 +446,24 @@ let
 
     # Feature 119: Re-query sway tree to confirm close
     sleep 0.2  # Brief wait for window close to propagate
-    REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" '
-      .. | objects | select(.marks? != null) |
-      select(.marks | map(test("^scoped:[^:]+:" + $proj + ":")) | any) |
-      .id
+    REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" --arg ctx "$TARGET_CONTEXT_KEY" '
+      def is_project_mark:
+        (startswith("scoped:") or startswith("global:")) and ((split(":") | length) >= 4);
+      def project_from_mark:
+        (split(":")) as $parts | ($parts[2:($parts | length - 1)] | join(":"));
+      def has_ctx_mark:
+        any(.marks[]?; startswith("ctx:"));
+      def matches_ctx:
+        ($ctx == "")
+        or any(.marks[]?; . == ("ctx:" + $ctx))
+        or (has_ctx_mark | not);
+
+      .. | objects | select(.marks? != null)
+      | select(
+          (any(.marks[]?; (is_project_mark and (project_from_mark == $proj))))
+          and matches_ctx
+        )
+      | .id
     ' 2>/dev/null | wc -l || echo "0")
 
     # Feature 119: Send notification with actual close count
@@ -524,36 +633,44 @@ let
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
     # Get current state
-    CURRENT=$($EWW get windows_expanded_projects 2>/dev/null || echo "all")
+    CURRENT_RAW=$($EWW get windows_expanded_projects 2>/dev/null || echo "all")
+    CURRENT=$(printf '%s' "$CURRENT_RAW" | ${pkgs.coreutils}/bin/tr -d '\r\n')
+    [[ -z "$CURRENT" ]] && CURRENT="all"
 
     if [[ "$CURRENT" == "all" ]]; then
         # Currently all expanded - clicking collapses this one only
         # Use card_id for uniqueness; fall back to name for older payloads.
-        ALL_PROJECTS=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -r '[.projects[] | (.card_id // .name)]')
-        NEW_LIST=$(echo "$ALL_PROJECTS" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '[.[] | select(. != $key)]')
+        ALL_PROJECTS=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -c '
+          if type == "object" then
+            [.projects[]? | (.card_id // .name)]
+          elif type == "string" then
+            (try (fromjson | [.projects[]? | (.card_id // .name)]) catch [])
+          else
+            []
+          end
+        ' 2>/dev/null || echo "[]")
+        NEW_LIST=$(echo "$ALL_PROJECTS" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '[.[] | select(. != $key)]' 2>/dev/null || echo "[]")
         $EWW update "windows_expanded_projects=$NEW_LIST" "windows_all_expanded=false"
     else
         # Array mode - toggle this project in/out
-        IS_EXPANDED=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -e --arg key "$PROJECT_KEY" '. | index($key) != null' 2>/dev/null || echo "false")
+        CURRENT_ARRAY=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c '
+          if type == "array" then .
+          elif type == "string" then (try fromjson catch [])
+          else []
+          end
+        ' 2>/dev/null || echo "[]")
+        IS_EXPANDED=$(echo "$CURRENT_ARRAY" | ${pkgs.jq}/bin/jq -r --arg key "$PROJECT_KEY" 'index($key) != null' 2>/dev/null || echo "false")
 
         if [[ "$IS_EXPANDED" == "true" ]]; then
             # Remove from array
-            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '[.[] | select(. != $key)]')
+            NEW_LIST=$(echo "$CURRENT_ARRAY" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '[.[] | select(. != $key)]' 2>/dev/null || echo "[]")
         else
             # Add to array
-            NEW_LIST=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '. + [$key]')
+            NEW_LIST=$(echo "$CURRENT_ARRAY" | ${pkgs.jq}/bin/jq -c --arg key "$PROJECT_KEY" '. + [$key]' 2>/dev/null || ${pkgs.jq}/bin/jq -nc --arg key "$PROJECT_KEY" '[$key]')
         fi
 
-        # Check if all projects are now expanded
-        PROJECT_COUNT=$($EWW get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq '.projects | length')
-        EXPANDED_COUNT=$(echo "$NEW_LIST" | ${pkgs.jq}/bin/jq 'length')
-
-        if [[ "$EXPANDED_COUNT" -ge "$PROJECT_COUNT" ]]; then
-            # All expanded - switch to "all" mode
-            $EWW update "windows_expanded_projects=all" "windows_all_expanded=true"
-        else
-            $EWW update "windows_expanded_projects=$NEW_LIST" "windows_all_expanded=false"
-        fi
+        # Keep array mode for reliable per-project expansion behavior.
+        $EWW update "windows_expanded_projects=$NEW_LIST" "windows_all_expanded=false"
     fi
   '';
 
@@ -889,9 +1006,10 @@ let
 
 in
 {
-  inherit focusWindowScript switchProjectScript closeWorktreeScript
+  inherit focusWindowScript focusAiSessionScript switchProjectScript closeWorktreeScript
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
-          toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
+          toggleWindowsProjectExpandScript
+          copyWindowJsonScript copyTraceDataScript
           fetchWindowEnvScript startWindowTraceScript fetchTraceEventsScript
           navigateToTraceScript navigateToEventScript startTraceFromTemplateScript
           openRemoteSessionWindowScript

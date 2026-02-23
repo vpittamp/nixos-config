@@ -66,9 +66,10 @@ let
     appCreateCancelScript appDeleteOpenScript appDeleteConfirmScript
     appDeleteCancelScript showSuccessNotificationScript startWindowTraceScript
     fetchTraceEventsScript navigateToTraceScript navigateToEventScript
-    startTraceFromTemplateScript focusWindowScript switchProjectScript closeWorktreeScript
+    startTraceFromTemplateScript focusWindowScript focusAiSessionScript switchProjectScript closeWorktreeScript
     closeAllWindowsScript closeWindowScript toggleProjectContextScript
-    toggleWindowsProjectExpandScript copyWindowJsonScript copyTraceDataScript
+    toggleWindowsProjectExpandScript
+    copyWindowJsonScript copyTraceDataScript
     fetchWindowEnvScript openLangfuseTraceScript handleKeyScript pulsePhaseScript
     tailscaleTabActionScript;
 
@@ -191,6 +192,7 @@ in
       swayNCToggleScript
       restartServiceScript
       focusWindowScript
+      focusAiSessionScript
       switchProjectScript
       closeWorktreeScript
       closeAllWindowsScript

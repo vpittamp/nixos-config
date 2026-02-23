@@ -130,12 +130,14 @@ class ProcessMonitor:
         Returns:
             True if this is a Codex CLI process
         """
-        # Match /nix/store/.../codex or just "codex" binary
-        # Exclude our wrapper script
-        if "/bin/codex" in cmdline and "exec" not in cmdline:
-            # Ensure it's actually running (not just the wrapper)
-            return True
-        return False
+        # Match /nix/store/.../codex or just "codex" binary.
+        # Include `codex exec ...` sessions (these are real Codex runs).
+        # Exclude our telemetry interceptor wrapper process itself.
+        if "/bin/codex" not in cmdline:
+            return False
+        if "codex-otel-interceptor" in cmdline:
+            return False
+        return True
 
     def _is_claude_process(self, cmdline: str) -> bool:
         """Check if command line is a Claude Code process."""

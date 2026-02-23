@@ -354,6 +354,12 @@
     color: ${mocha.red};
   }
 
+  .action-close-project.armed {
+    color: ${mocha.red};
+    background-color: rgba(243, 139, 168, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(243, 139, 168, 0.45);
+  }
+
   .action-dismiss {
     color: ${mocha.subtext0};
   }
@@ -394,13 +400,23 @@
     transition: background-color 0.15s ease;
   }
 
+  .close-all-btn.icon-only {
+    padding: 4px 7px;
+  }
+
   .close-all-btn:hover {
-    background-color: rgba(243, 139, 168, 0.3);
+    background-color: rgba(243, 139, 168, 0.36);
+    border-color: rgba(243, 139, 168, 0.95);
+    box-shadow: 0 0 12px rgba(243, 139, 168, 0.42);
   }
 
   .close-all-icon {
     color: ${mocha.red};
     font-size: 12px;
+  }
+
+  .close-all-btn:hover .close-all-icon {
+    color: ${mocha.red};
   }
 
   .close-all-text {
@@ -423,6 +439,39 @@
     padding: 1px 5px;
     border-radius: 3px;
     min-width: 18px;
+  }
+
+  .project-action-rail {
+    opacity: 0;
+    margin-left: 4px;
+    border-radius: 6px;
+    padding: 1px 2px;
+    background: rgba(30, 30, 46, 0.55);
+    border: 1px solid rgba(108, 112, 134, 0.35);
+    transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .project-action-rail.visible {
+    opacity: 1;
+  }
+
+  .project-action-btn {
+    font-size: 12px;
+    color: ${mocha.subtext0};
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .project-action-btn:hover {
+    color: ${mocha.text};
+    background-color: rgba(108, 112, 134, 0.35);
+  }
+
+  .project-action-close:hover {
+    color: ${mocha.red};
+    background-color: rgba(243, 139, 168, 0.34);
+    box-shadow: 0 0 8px rgba(243, 139, 168, 0.4);
   }
 
   .windows-container {
@@ -566,6 +615,64 @@
     margin-left: 0;
     margin-right: 1px;
     min-width: 0;
+  }
+
+  .window-row-meta {
+    margin-left: 4px;
+    min-width: 0;
+  }
+
+  .window-action-rail {
+    opacity: 0;
+    margin-left: 4px;
+    border-radius: 6px;
+    padding: 1px 2px;
+    background: rgba(30, 30, 46, 0.55);
+    border: 1px solid rgba(108, 112, 134, 0.35);
+    transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .window-action-rail.visible {
+    opacity: 1;
+  }
+
+  .window-action-btn {
+    font-size: 12px;
+    color: ${mocha.subtext0};
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .window-action-btn:hover {
+    color: ${mocha.text};
+    background-color: rgba(108, 112, 134, 0.35);
+  }
+
+  .window-action-focus:hover {
+    color: ${mocha.blue};
+    background-color: rgba(137, 180, 250, 0.22);
+  }
+
+  .window-action-float:hover {
+    color: ${mocha.yellow};
+    background-color: rgba(249, 226, 175, 0.2);
+  }
+
+  .window-action-fullscreen:hover {
+    color: ${mocha.green};
+    background-color: rgba(166, 227, 161, 0.2);
+  }
+
+  .window-action-scratchpad:hover {
+    color: ${mocha.mauve};
+    background-color: rgba(203, 166, 247, 0.2);
+  }
+
+  .window-action-close:hover {
+    color: ${mocha.red};
+    background-color: rgba(243, 139, 168, 0.36);
+    box-shadow: 0 0 10px rgba(243, 139, 168, 0.46);
   }
 
   .badge {
@@ -2812,12 +2919,14 @@
     transition: color 150ms ease-in-out;
   }
 
-  .window-row:hover .hover-close-btn {
+  .project-header:hover .hover-close-btn {
     opacity: 1;
   }
 
-  .project-header:hover .hover-close-btn {
+  .hover-close-btn.armed {
     opacity: 1;
+    background-color: rgba(243, 139, 168, 0.26);
+    box-shadow: inset 0 0 0 1px rgba(243, 139, 168, 0.55);
   }
 
   .hover-close-btn:hover {

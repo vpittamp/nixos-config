@@ -357,13 +357,39 @@ PY
 
     CACHE_DIR="$HOME/.cache/i3pm"
     CACHE_FILE="$CACHE_DIR/remote-''${REMOTE_HOST}-repos.json"
+    LOCK_FILE="''${CACHE_FILE}.refresh.lock"
     CACHE_TTL_SECONDS=180
+    LOCK_STALE_SECONDS=300
     REMOTE_REPOS_FILE="~/.config/i3/repos.json"
 
     LOCAL_REPOS_FILE="$HOME/.config/i3/repos.json"
     ACTIVE_WORKTREE_FILE="$HOME/.config/i3/active-worktree.json"
 
     mkdir -p "$CACHE_DIR"
+
+    cleanup_stale_refresh_lock() {
+      if [[ ! -e "$LOCK_FILE" ]]; then
+        return 0
+      fi
+
+      local now mtime age
+      now=$(date +%s)
+      mtime=$(${pkgs.coreutils}/bin/stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)
+      if ! [[ "$mtime" =~ ^[0-9]+$ ]]; then
+        mtime=0
+      fi
+
+      age=$((now - mtime))
+      if (( age < 0 )); then
+        age=0
+      fi
+
+      # If a previous refresh crashed and left a lock behind, clear it so
+      # remote index updates can resume automatically.
+      if (( age >= LOCK_STALE_SECONDS )); then
+        rm -f "$LOCK_FILE" || true
+      fi
+    }
 
     emit_error_entry() {
       local msg="$1"
@@ -400,13 +426,13 @@ PY
     }
 
     refresh_remote_repos_async() {
+      cleanup_stale_refresh_lock
       (
-        local lock_file="''${CACHE_FILE}.refresh.lock"
-        if [[ -e "$lock_file" ]]; then
+        if [[ -e "$LOCK_FILE" ]]; then
           exit 0
         fi
-        : >"$lock_file" || exit 0
-        trap 'rm -f "$lock_file"' EXIT
+        : >"$LOCK_FILE" || exit 0
+        trap 'rm -f "$LOCK_FILE"' EXIT
         fetch_remote_repos >/dev/null 2>&1 || true
       ) >/dev/null 2>&1 &
     }

@@ -122,8 +122,16 @@
   ;; When true, debug features are visible
   (defvar debug_mode false)
 
-  ;; UX Enhancement: Inline action bar state - tracks which window has action bar visible
+  ;; Legacy compatibility state for scripts that still clear this variable
   (defvar context_menu_window_id 0)
+
+  ;; Hover state for inline close action rails
+  ;; hovered_window_id: row currently hovered (0 = none)
+  ;; hovered_project_key: project/worktree card currently hovered ("" = none)
+  ;; hovered_close_all: top-level close-all button hover state
+  (defvar hovered_window_id 0)
+  (defvar hovered_project_key "")
+  (defvar hovered_close_all false)
 
   ;; Project context menu state - Project name for action bar ("" = none)
   (defvar context_menu_project "")

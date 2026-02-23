@@ -1,4 +1,4 @@
-{ pkgs, focusWindowScript, closeWorktreeScript, closeAllWindowsScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
+{ pkgs, focusWindowScript, focusAiSessionScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
 
 ''
   ;; Windows View - Project-based hierarchy with real-time updates
@@ -59,15 +59,17 @@
               ;; Close All button
               (eventbox
                 :cursor "pointer"
+                :onhover "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=true"
+                :onhoverlost "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=false"
                 :onclick "${closeAllWindowsScript}/bin/close-all-windows-action &"
                 :tooltip "Close all scoped windows"
                 (box
-                  :class "close-all-btn"
+                  :class {"close-all-btn" + (!hovered_close_all ? " icon-only" : "")}
                   :orientation "h"
                   :space-evenly false
                   :spacing 4
                   (label :class "close-all-icon" :text "󰅖")
-                  (label :class "close-all-text" :text "Close All"))))
+                  (label :class "close-all-text" :visible {hovered_close_all} :text "Close All"))))
             ;; Feature 117: Active AI Sessions bar - DISABLED
             (box
               :class "ai-sessions-bar"
@@ -113,7 +115,8 @@
       :space-evenly false
       (eventbox
         :onclick "${toggleWindowsProjectExpandScript}/bin/toggle-windows-project-expand ''${project.card_id ?: project.name} &"
-        :onrightclick "${toggleProjectContextScript}/bin/toggle-project-context ''${project.card_id ?: project.name} &"
+        :onhover {"eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_project_key='" + (project.card_id ?: project.name) + "'"}
+        :onhoverlost {hovered_project_key == (project.card_id ?: project.name) ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_project_key=" : ""}
         :cursor "pointer"
         :tooltip {(windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + (project.card_id ?: project.name) + "\") != null")) ? "Click to collapse" : "Click to expand"}
         (box
@@ -156,51 +159,18 @@
             (label
               :class "window-count-badge"
               :text "''${project.window_count}")
-            (eventbox
-              :cursor "pointer"
-              :class "hover-close-btn project-hover-close"
-              :onclick "${closeWorktreeScript}/bin/close-worktree-action ''${project.name} &"
-              :tooltip "Close all windows in this project"
-              (label
-                :class "hover-close-icon"
-                :text "󰅖")))))
-      (revealer
-        :reveal {context_menu_project == (project.card_id ?: project.name)}
-        :transition "slidedown"
-        :duration "100ms"
-        (box
-          :class "project-action-bar"
-          :orientation "h"
-          :space-evenly false
-          :halign "end"
-          (eventbox
-            :visible {project.scope == "scoped" && (project.variant ?: "") == "local"}
-            :cursor "pointer"
-            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name} local; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
-            :tooltip "Switch to this local worktree"
-            (label :class "action-btn action-switch" :text "󰌑"))
-          (eventbox
-            :visible {project.scope == "scoped" && (project.variant ?: "") == "ssh"}
-            :cursor "pointer"
-            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name} ssh; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
-            :tooltip "Switch to this SSH worktree"
-            (label :class "action-btn action-switch" :text "󰌑"))
-          (eventbox
-            :visible {project.scope == "scoped" && (project.variant ?: "") != "local" && (project.variant ?: "") != "ssh"}
-            :cursor "pointer"
-            :onclick "(${switchProjectScript}/bin/switch-project-action ''${project.name}; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
-            :tooltip "Switch to this worktree"
-            (label :class "action-btn action-switch" :text "󰌑"))
-          (eventbox
-            :cursor "pointer"
-            :onclick "(${closeWorktreeScript}/bin/close-worktree-action ''${project.name}; eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project=) &"
-            :tooltip "Close all windows for this project"
-            (label :class "action-btn action-close-project" :text "󰅖"))
-          (eventbox
-            :cursor "pointer"
-            :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_project="
-            :tooltip "Close menu"
-            (label :class "action-btn action-dismiss" :text "󰅙"))))
+            (box
+              :class {"project-action-rail" + (hovered_project_key == (project.card_id ?: project.name) ? " visible" : "")}
+              :orientation "h"
+              :space-evenly false
+              :spacing 2
+              (eventbox
+                :cursor "pointer"
+                :onclick "${closeWorktreeScript}/bin/close-worktree-action ''${project.scope == 'global' ? 'global' : project.name} ''${project.execution_mode} ''${project.connection_key} &"
+                :tooltip "Close all windows in this project"
+                (label
+                  :class "project-action-btn project-action-close"
+                  :text "󰅖"))))))
       (revealer
         :reveal {windows_expanded_projects == "all" || jq(windows_expanded_projects, ". | index(\"" + (project.card_id ?: project.name) + "\") != null")}
         :transition "slidedown"
@@ -213,11 +183,15 @@
             (window-widget :window window))))))
 
   (defwidget window-widget [window]
-    (box
-      :class "window-container"
-      :orientation "v"
-      :hexpand true
-      :space-evenly false
+    (eventbox
+      :cursor "default"
+      :onhover "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_window_id=''${window.id}"
+      :onhoverlost {hovered_window_id == window.id ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_window_id=0" : ""}
+      (box
+        :class "window-container"
+        :orientation "v"
+        :hexpand true
+        :space-evenly false
         (box
           :class "window-row ''${window.state_classes}"
           :orientation "h"
@@ -233,9 +207,6 @@
               :onclick {(window.is_remote_session ?: false)
                 ? "${openRemoteSessionWindowScript}/bin/open-remote-session-window-action ''${window.project} ''${window.remote_session_name} ''${window.execution_mode} &"
                 : "${focusWindowScript}/bin/focus-window-action ''${window.project} ''${window.id} ''${window.execution_mode} &"}
-              :onrightclick {(window.is_remote_session ?: false)
-                ? ""
-                : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"}
               :cursor "pointer"
               :hexpand true
               :halign "fill"
@@ -278,78 +249,80 @@
                     :truncate true
                     :text {(window.project_remote_target ?: "") != "" ? ("☁ • " + (window.project_remote_target ?: "")) : "☁ session"}))))
           )
-        ;; Feature 136: Multi-indicator support - AI badges OUTSIDE focus eventbox for independent click handling
-        (box
-          :class "window-badges"
-          :orientation "h"
-          :space-evenly false
-          :halign "end"
-          (label
-            :class "badge badge-pwa"
-            :text "PWA"
-            :visible {window.is_pwa ?: false})
-          ;; Feature 136: Iterate over otel_badges array (max 3 visible) with status icons
-          (for badge in {arraylength(window.otel_badges ?: []) <= 3 ? (window.otel_badges ?: []) : jq(window.otel_badges ?: [], ".[:3]")}
-            (eventbox
-              :class "ai-badge-hover"
-              :cursor {(badge.trace_id ?: "") != "" ? "pointer" : "default"}
-              :onclick {(badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : ""}
-              :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.trace_id ?: "") != "" ? " · Click for trace" : "")}
-              (box
-                :orientation "h"
-                :space-evenly false
-                :spacing 1
-                (image
-                  :class {"ai-badge-icon" +
-                    ((badge.otel_state ?: "idle") == "working"
-                      ? " working"
-                      : ((badge.otel_state ?: "idle") == "completed"
-                        ? " completed"
-                        : ((badge.otel_state ?: "idle") == "attention"
-                          ? " attention"
-                          : " idle")))}
-                  :path {(badge.otel_tool ?: "unknown") == "claude-code"
-                    ? "${iconPaths.claude}"
-                    : ((badge.otel_tool ?: "unknown") == "codex"
-                      ? "${iconPaths.codex}"
-                      : ((badge.otel_tool ?: "unknown") == "gemini"
-                        ? "${iconPaths.gemini}"
-                        : "${iconPaths.anthropic}"))}
-                  :image-width 16
-                  :image-height 16)
-                ;; Status icon next to each badge (restored from b658b3dc)
+          (box
+            :class "window-row-meta"
+            :orientation "h"
+            :space-evenly false
+            :hexpand false
+            :halign "end"
+            ;; Feature 136: Multi-indicator support - AI badges OUTSIDE focus eventbox for independent click handling
+            (box
+              :class "window-badges"
+              :orientation "h"
+              :space-evenly false
+              :halign "end"
+              (label
+                :class "badge badge-pwa"
+                :text "PWA"
+                :visible {window.is_pwa ?: false})
+              ;; Feature 136: Iterate over otel_badges array (max 3 visible) with status icons
+              (for badge in {arraylength(window.otel_badges ?: []) <= 3 ? (window.otel_badges ?: []) : jq(window.otel_badges ?: [], ".[:3]")}
+                (eventbox
+                  :class "ai-badge-hover"
+                  :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}
+                  :onclick {(badge.window_id ?: 0) != 0
+                    ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
+                    : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
+                  }
+                  :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                  (box
+                    :orientation "h"
+                    :space-evenly false
+                    :spacing 1
+                    (image
+                      :class {"ai-badge-icon" +
+                        ((badge.otel_state ?: "idle") == "working"
+                          ? " working"
+                          : ((badge.otel_state ?: "idle") == "completed"
+                            ? " completed"
+                            : ((badge.otel_state ?: "idle") == "attention"
+                              ? " attention"
+                              : " idle")))}
+                      :path {(badge.otel_tool ?: "unknown") == "claude-code"
+                        ? "${iconPaths.claude}"
+                        : ((badge.otel_tool ?: "unknown") == "codex"
+                          ? "${iconPaths.codex}"
+                          : ((badge.otel_tool ?: "unknown") == "gemini"
+                            ? "${iconPaths.gemini}"
+                            : "${iconPaths.anthropic}"))}
+                      :image-width 16
+                      :image-height 16)
+                    ;; Status icon next to each badge (restored from b658b3dc)
+                    (label
+                      :class {"ai-session-status-icon" +
+                        ((badge.otel_state ?: "idle") == "working" ? " working"
+                          : ((badge.otel_state ?: "idle") == "completed" ? " completed"
+                            : ((badge.otel_state ?: "idle") == "attention" ? " attention" : "")))}
+                      :visible {(badge.otel_state ?: "idle") != "idle"}
+                      :text {(badge.otel_state ?: "idle") == "working" ? "●"
+                        : ((badge.otel_state ?: "idle") == "completed" ? "✓"
+                          : ((badge.otel_state ?: "idle") == "attention" ? "!" : ""))}))))
+              ;; Feature 136: Overflow badge when more than 3 sessions
+              (label
+                :class "badge badge-overflow"
+                :text {"+''${arraylength(window.otel_badges ?: []) - 3}"}
+                :visible {arraylength(window.otel_badges ?: []) > 3}
+                :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")}))
+            (box
+              :class {"window-action-rail" + ((hovered_window_id == window.id) && !(window.is_remote_session ?: false) ? " visible" : "")}
+              :orientation "h"
+              :space-evenly false
+              :spacing 2
+              (eventbox
+                :cursor "pointer"
+                :onclick "${closeWindowScript}/bin/close-window-action ''${window.id} &"
+                :tooltip "Close window"
                 (label
-                  :class {"ai-session-status-icon" +
-                    ((badge.otel_state ?: "idle") == "working" ? " working"
-                      : ((badge.otel_state ?: "idle") == "completed" ? " completed"
-                        : ((badge.otel_state ?: "idle") == "attention" ? " attention" : "")))}
-                  :visible {(badge.otel_state ?: "idle") != "idle"}
-                  :text {(badge.otel_state ?: "idle") == "working" ? "●"
-                    : ((badge.otel_state ?: "idle") == "completed" ? "✓"
-                      : ((badge.otel_state ?: "idle") == "attention" ? "!" : ""))}))))
-          ;; Feature 136: Overflow badge when more than 3 sessions
-          (label
-            :class "badge badge-overflow"
-            :text {"+''${arraylength(window.otel_badges ?: []) - 3}"}
-            :visible {arraylength(window.otel_badges ?: []) > 3}
-            :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")}))
-        (eventbox
-          :cursor "pointer"
-          :class "hover-close-btn window-hover-close"
-          :visible {!(window.is_remote_session ?: false)}
-          :onclick "swaymsg [con_id=''${window.id}] kill"
-          :tooltip "Close window"
-          (label :class "hover-close-icon" :text "󰅖")))
-      (revealer
-        :reveal {!(window.is_remote_session ?: false) && context_menu_window_id == window.id}
-        :transition "slidedown"
-        :duration "100ms"
-        (box
-          :class "window-action-bar"
-          :orientation "h"
-          :space-evenly true
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] focus && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Focus" (label :class "action-btn" :text "󰌑"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] floating toggle && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Float" (label :class "action-btn" :text "󰊓"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] fullscreen toggle && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Full" (label :class "action-btn" :text "󰊓"))
-          (eventbox :cursor "pointer" :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0" :tooltip "Hide" (label :class "action-btn" :text "󰅙"))))))
+                  :class "window-action-btn window-action-close"
+                  :text "󰅖"))))))))
 ''
