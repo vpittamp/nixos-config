@@ -317,5 +317,14 @@ in
         WantedBy = [ "timers.target" ];
       };
     };
+
+    # Ensure the panel listener reloads the newest monitoring backend path after
+    # each Home Manager activation. Without this, a long-lived eww deflisten
+    # process can keep running an older /nix/store/monitoring_data.py binary.
+    home.activation.restartEwwMonitoringPanel = hm.dag.entryAfter [ "writeBoundary" ] ''
+      if ${pkgs.systemd}/bin/systemctl --user is-active --quiet eww-monitoring-panel.service; then
+        ${pkgs.systemd}/bin/systemctl --user restart eww-monitoring-panel.service || true
+      fi
+    '';
   };
 }
