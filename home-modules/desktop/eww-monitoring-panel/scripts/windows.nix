@@ -83,8 +83,8 @@ let
         exit 1
     fi
 
-    if [[ -z "$WINDOW_ID" ]]; then
-        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "No window ID provided"
+    if [[ -z "$WINDOW_ID" ]] || [[ ! "$WINDOW_ID" =~ ^-?[0-9]+$ ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "Invalid window ID"
         exit 1
     fi
 
@@ -105,6 +105,61 @@ let
 
     echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT INT TERM
+
+    log_stage() {
+      local stage="$1"
+      printf 'focus-window-action stage=%s project=%s window=%s variant=%s\n' \
+        "$stage" "$PROJECT_NAME" "$WINDOW_ID" "''${TARGET_VARIANT:-auto}" >&2
+    }
+
+    sway_success() {
+      local payload="$1"
+      printf '%s\n' "$payload" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1
+    }
+
+    is_regular_window_state() {
+      local state fullscreen_mode floating_state
+      state=$(
+        ${pkgs.sway}/bin/swaymsg -t get_tree 2>/dev/null \
+          | ${pkgs.jq}/bin/jq -r --argjson id "$WINDOW_ID" '
+              first(.. | objects | select(.id? == $id) | [(.fullscreen_mode // -1), (.floating // "unknown")] | @tsv) // empty
+            ' 2>/dev/null || true
+      )
+      [[ -n "$state" ]] || return 1
+      IFS=$'\t' read -r fullscreen_mode floating_state <<< "$state"
+      [[ "$fullscreen_mode" == "0" && "$floating_state" == "auto_off" ]]
+    }
+
+    ensure_focus_tiled() {
+      local attempts="''${1:-3}"
+      local delay="''${2:-0.12}"
+      local try focus_result
+
+      for try in $(seq 1 "$attempts"); do
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
+        focus_result=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
+        if ! sway_success "$focus_result"; then
+          sleep "$delay"
+          continue
+        fi
+
+        # Use both criteria-targeted and focused-container commands to handle
+        # timing races during project switches and floating container transitions.
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] floating disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "floating disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] fullscreen disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "fullscreen disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
+
+        if is_regular_window_state; then
+          return 0
+        fi
+
+        sleep "$delay"
+      done
+
+      return 1
+    }
 
     # Get current project (T012) - Read from active-worktree.json (Feature 101 single source of truth)
     CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
@@ -132,19 +187,20 @@ let
                 "Context did not converge to $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)}"
             exit 1
         fi
+        log_stage "switch_ok"
     fi
 
-    # Focus window (T014)
-    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
-    FOCUS_RESULT=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
-    if printf '%s\n' "$FOCUS_RESULT" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1; then
+    # Focus + tiled/non-floating protocol (idempotent + retried).
+    if ensure_focus_tiled 3 0.12; then
+        log_stage "focus_tiled_ok"
         # Success path (T015) - Visual feedback only, no notification
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=$WINDOW_ID
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0) &
         exit 0
     else
+        log_stage "focus_tiled_fail"
         # Failure path - Keep critical notification for actual errors
-        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Failed" "Window no longer available"
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Failed" "Window unavailable or failed to restore tiled state"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0
         exit 1
     fi
@@ -177,16 +233,69 @@ let
 
     RECORD_FOCUS_METRIC="${recordAiFocusMetricScript}/bin/record-ai-focus-metric-action"
 
-    # Reuse existing project-aware window focus flow.
-    ${focusWindowScript}/bin/focus-window-action "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+    log_stage() {
+      local stage="$1"
+      printf 'focus-ai-session-action stage=%s project=%s window=%s variant=%s session=%s pane=%s\n' \
+        "$stage" "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" "''${TMUX_SESSION:-none}" "''${TMUX_PANE:-none}" >&2
+    }
 
-    # Extra direct focus attempt to maximize reliability.
-    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
-    FOCUS_RESULT=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
-    if printf '%s\n' "$FOCUS_RESULT" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1; then
-      "$RECORD_FOCUS_METRIC" success "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+    sway_success() {
+      local payload="$1"
+      printf '%s\n' "$payload" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1
+    }
+
+    is_regular_window_state() {
+      local state fullscreen_mode floating_state
+      state=$(
+        ${pkgs.sway}/bin/swaymsg -t get_tree 2>/dev/null \
+          | ${pkgs.jq}/bin/jq -r --argjson id "$WINDOW_ID" '
+              first(.. | objects | select(.id? == $id) | [(.fullscreen_mode // -1), (.floating // "unknown")] | @tsv) // empty
+            ' 2>/dev/null || true
+      )
+      [[ -n "$state" ]] || return 1
+      IFS=$'\t' read -r fullscreen_mode floating_state <<< "$state"
+      [[ "$fullscreen_mode" == "0" && "$floating_state" == "auto_off" ]]
+    }
+
+    ensure_window_focus_tiled() {
+      local attempts="''${1:-3}"
+      local delay="''${2:-0.12}"
+      local try focus_result
+
+      for try in $(seq 1 "$attempts"); do
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
+        focus_result=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
+        if ! sway_success "$focus_result"; then
+          sleep "$delay"
+          continue
+        fi
+
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] floating disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "floating disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] fullscreen disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "fullscreen disable" >/dev/null 2>&1 || true
+        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
+
+        if is_regular_window_state; then
+          return 0
+        fi
+
+        sleep "$delay"
+      done
+
+      return 1
+    }
+
+    FOCUS_OK=true
+
+    # Reuse shared project-aware focus protocol first (switch -> focus -> tiled state).
+    if ${focusWindowScript}/bin/focus-window-action "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1; then
+      log_stage "focus_protocol_ok"
     else
-      "$RECORD_FOCUS_METRIC" fail "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+      log_stage "focus_protocol_retry"
+      if ! ensure_window_focus_tiled 3 0.12; then
+        FOCUS_OK=false
+      fi
     fi
 
     # If this AI session reports tmux context, jump to that pane/window.
@@ -217,9 +326,26 @@ let
       if [[ -n "$TARGET_PANE" ]]; then
         tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || true
       fi
+      log_stage "tmux_target_ok"
+    else
+      log_stage "tmux_missing"
     fi
 
-    exit 0
+    # Final safeguard: tmux targeting can alter focus context; enforce tiled state again.
+    if ! ensure_window_focus_tiled 3 0.1; then
+      FOCUS_OK=false
+      log_stage "post_tmux_focus_tiled_fail"
+    else
+      log_stage "post_tmux_focus_tiled_ok"
+    fi
+
+    if [[ "$FOCUS_OK" == "true" ]]; then
+      "$RECORD_FOCUS_METRIC" success "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+      exit 0
+    fi
+
+    "$RECORD_FOCUS_METRIC" fail "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+    exit 1
   '';
 
   # Feature 143: Persist focus metrics for AI diagnostics view.
