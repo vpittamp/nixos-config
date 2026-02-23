@@ -97,6 +97,7 @@ BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid(
 OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
+AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
@@ -223,6 +224,77 @@ def load_ai_session_pins() -> List[str]:
     except (json.JSONDecodeError, IOError):
         return []
     return []
+
+
+def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]) -> None:
+    """Notify on meaningful transitions with debounce."""
+    try:
+        now_ts = time.time()
+        if AI_SESSION_NOTIFY_FILE.exists():
+            with open(AI_SESSION_NOTIFY_FILE, "r") as f:
+                cache = json.load(f)
+                if not isinstance(cache, dict):
+                    cache = {}
+        else:
+            cache = {}
+
+        sessions_cache = cache.get("sessions", {})
+        if not isinstance(sessions_cache, dict):
+            sessions_cache = {}
+        last_global_notification = float(cache.get("last_global_notification", 0.0) or 0.0)
+
+        current_keys = {str(s.get("session_key") or "") for s in active_sessions if str(s.get("session_key") or "")}
+        # Drop stale cache entries to keep file bounded.
+        sessions_cache = {k: v for k, v in sessions_cache.items() if k in current_keys}
+
+        debounce_seconds = 12.0
+        for session in active_sessions:
+            key = str(session.get("session_key") or "")
+            if not key:
+                continue
+            current_state = str(session.get("otel_state") or "idle")
+            previous_entry = sessions_cache.get(key, {}) if isinstance(sessions_cache.get(key), dict) else {}
+            previous_state = str(previous_entry.get("state") or "")
+            last_notified = float(previous_entry.get("last_notified", 0.0) or 0.0)
+
+            should_notify = (
+                previous_state == "working"
+                and current_state in {"attention", "completed"}
+                and (now_ts - max(last_notified, last_global_notification)) >= debounce_seconds
+            )
+            if should_notify:
+                tool = str(session.get("display_tool") or session.get("tool") or "AI")
+                project = str(session.get("display_project") or session.get("project") or "unknown")
+                target = str(session.get("display_target") or "")
+                summary = "Needs attention" if current_state == "attention" else "Run completed"
+                details = project + (f" · {target}" if target else "")
+                subprocess.run(
+                    ["notify-send", "-u", "normal", f"{tool}: {summary}", details],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                last_notified = now_ts
+                last_global_notification = now_ts
+
+            sessions_cache[key] = {
+                "state": current_state,
+                "last_seen": now_ts,
+                "last_notified": last_notified,
+            }
+
+        cache = {
+            "sessions": sessions_cache,
+            "last_global_notification": last_global_notification,
+            "updated_at": now_ts,
+        }
+        AI_SESSION_NOTIFY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file = AI_SESSION_NOTIFY_FILE.with_suffix(".tmp")
+        with open(tmp_file, "w") as f:
+            json.dump(cache, f, separators=(",", ":"))
+        tmp_file.replace(AI_SESSION_NOTIFY_FILE)
+    except Exception as exc:
+        logger.debug(f"AI transition notification update failed: {exc}")
 
 
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
@@ -2831,6 +2903,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             load_ai_session_mru(),
         )
         active_ai_sessions_mru = _apply_pinned_session_order(active_ai_sessions_mru, pinned_session_keys)
+        emit_ai_state_transition_notifications(active_ai_sessions)
 
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 
