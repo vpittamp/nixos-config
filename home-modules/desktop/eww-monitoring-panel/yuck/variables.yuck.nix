@@ -132,6 +132,7 @@
   (defvar hovered_window_id 0)
   (defvar hovered_project_key "")
   (defvar hovered_close_all false)
+  (defvar hovered_ai_badge_key "")
 
   ;; Project context menu state - Project name for action bar ("" = none)
   (defvar context_menu_project "")

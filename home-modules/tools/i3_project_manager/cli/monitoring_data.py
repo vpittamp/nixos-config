@@ -1425,6 +1425,7 @@ def _build_otel_badges(
         stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
         stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
         badge = {
+            "badge_key": _otel_badge_merge_key(session),
             "session_id": session.get("session_id", ""),
             "native_session_id": session.get("native_session_id", ""),
             "context_fingerprint": session.get("context_fingerprint", ""),

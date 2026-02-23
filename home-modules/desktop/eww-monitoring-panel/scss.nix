@@ -891,6 +891,28 @@
     background: rgba(137, 180, 250, 0.2);
   }
 
+  .ai-badge-inline-group {
+    min-width: 0;
+  }
+
+  .ai-badge-quick-actions {
+    margin-left: 1px;
+    margin-right: 1px;
+  }
+
+  .ai-badge-quick-btn {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+    padding: 1px 2px;
+    border-radius: 3px;
+    background: rgba(24, 24, 37, 0.7);
+  }
+
+  .ai-badge-quick-btn:hover {
+    color: ${mocha.text};
+    background: rgba(69, 71, 90, 0.9);
+  }
+
   /* Feature 136: Overflow badge for multiple AI indicators */
   .badge-overflow {
     color: ${mocha.text};

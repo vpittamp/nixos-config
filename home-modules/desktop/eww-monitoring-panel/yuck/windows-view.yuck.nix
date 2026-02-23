@@ -381,45 +381,76 @@
                 :visible {window.is_pwa ?: false})
               ;; Feature 136: Iterate over otel_badges array (max 3 visible)
               (for badge in {arraylength(window.otel_badges ?: []) <= 3 ? (window.otel_badges ?: []) : jq(window.otel_badges ?: [], ".[:3]")}
-                (eventbox
-                  :class {"ai-badge-hover " +
-                    ((badge.otel_state ?: "idle") == "working"
-                      ? "working"
-                      : ((badge.otel_state ?: "idle") == "attention"
-                        ? "attention"
-                        : ((badge.otel_state ?: "idle") == "completed"
-                          ? "completed"
-                          : "idle"))) +
-                    ((badge.stale ?: false) ? " stale" : "") +
-                    (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
-                  :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}
-                  :onclick {(badge.window_id ?: 0) != 0
-                    ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
-                    : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
-                  }
-                  :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                (box
+                  :class "ai-badge-inline-group"
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 2
+                  (eventbox
+                    :class {"ai-badge-hover " +
+                      ((badge.otel_state ?: "idle") == "working"
+                        ? "working"
+                        : ((badge.otel_state ?: "idle") == "attention"
+                          ? "attention"
+                          : ((badge.otel_state ?: "idle") == "completed"
+                            ? "completed"
+                            : "idle"))) +
+                      ((badge.stale ?: false) ? " stale" : "") +
+                      (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
+                    :onhover {"eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_ai_badge_key='" + (badge.badge_key ?: "") + "'"}
+                    :onhoverlost {hovered_ai_badge_key == (badge.badge_key ?: "") ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_ai_badge_key=" : ""}
+                    :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}
+                    :onclick {(badge.window_id ?: 0) != 0
+                      ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
+                      : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
+                    }
+                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                    (box
+                      :orientation "h"
+                      :space-evenly false
+                      :spacing 1
+                      (image
+                        :class {"ai-badge-icon" +
+                          ((badge.otel_state ?: "idle") == "working"
+                            ? " working"
+                            : ((badge.otel_state ?: "idle") == "completed"
+                              ? " completed"
+                              : ((badge.otel_state ?: "idle") == "attention"
+                                ? " attention"
+                                : " idle")))}
+                        :path {(badge.otel_tool ?: "unknown") == "claude-code"
+                          ? "${iconPaths.claude}"
+                          : ((badge.otel_tool ?: "unknown") == "codex"
+                            ? "${iconPaths.codex}"
+                            : ((badge.otel_tool ?: "unknown") == "gemini"
+                              ? "${iconPaths.gemini}"
+                              : "${iconPaths.anthropic}"))}
+                        :image-width {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}
+                        :image-height {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)})))
                   (box
+                    :class "ai-badge-quick-actions"
                     :orientation "h"
                     :space-evenly false
                     :spacing 1
-                    (image
-                      :class {"ai-badge-icon" +
-                        ((badge.otel_state ?: "idle") == "working"
-                          ? " working"
-                          : ((badge.otel_state ?: "idle") == "completed"
-                            ? " completed"
-                            : ((badge.otel_state ?: "idle") == "attention"
-                              ? " attention"
-                              : " idle")))}
-                      :path {(badge.otel_tool ?: "unknown") == "claude-code"
-                        ? "${iconPaths.claude}"
-                        : ((badge.otel_tool ?: "unknown") == "codex"
-                          ? "${iconPaths.codex}"
-                          : ((badge.otel_tool ?: "unknown") == "gemini"
-                            ? "${iconPaths.gemini}"
-                            : "${iconPaths.anthropic}"))}
-                      :image-width {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}
-                      :image-height {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}))))
+                    :visible {hovered_ai_badge_key == (badge.badge_key ?: "")}
+                    (eventbox
+                      :cursor "pointer"
+                      :visible {(badge.window_id ?: 0) != 0}
+                      :onclick "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
+                      :tooltip "Focus session"
+                      (label :class "ai-badge-quick-btn" :text "󰌑"))
+                    (eventbox
+                      :cursor "pointer"
+                      :visible {(badge.native_session_id ?: "") != "" || (badge.session_id ?: "") != ""}
+                      :onclick {((badge.native_session_id ?: "") != "" ? "printf %s '" + (badge.native_session_id ?: "") + "' | ${pkgs.wl-clipboard}/bin/wl-copy" : "printf %s '" + (badge.session_id ?: "") + "' | ${pkgs.wl-clipboard}/bin/wl-copy") + " &"}
+                      :tooltip "Copy session id"
+                      (label :class "ai-badge-quick-btn" :text "󰆏"))
+                    (eventbox
+                      :cursor "pointer"
+                      :visible {(badge.trace_id ?: "") != ""}
+                      :onclick {"${openLangfuseTraceScript}/bin/open-langfuse-trace " + (badge.trace_id ?: "") + " &"}
+                      :tooltip "Open trace"
+                      (label :class "ai-badge-quick-btn" :text "󱂬")))))
               ;; Feature 136: Overflow badge when more than 3 sessions
               (label
                 :class "badge badge-overflow"
