@@ -178,6 +178,11 @@ let
     }
 
     /* Notification Popup Styling */
+    .floating-notifications {
+      margin-top: 16px;
+      margin-right: 16px;
+    }
+
     .notification-row {
       outline: none;
     }
@@ -194,41 +199,43 @@ let
     }
 
     .notification-content {
-      background-color: rgba(30, 30, 46, 0.90);
+      background-color: rgba(30, 30, 46, 0.75);
       color: ${mocha.text};
-      padding: 6px 8px;
+      padding: 6px;
       margin: 4px;
-      border-radius: 8px;
-      border: 1px solid rgba(137, 180, 250, 0.3);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      border-radius: 6px;
+      border: 1px solid rgba(88, 91, 112, 0.48);
+      box-shadow: inset 0 1px 0 rgba(205, 214, 244, 0.04), 0 4px 12px rgba(0, 0, 0, 0.3);
       transition: all 200ms ease;
     }
 
     .notification-content:hover {
-      background-color: rgba(30, 30, 46, 0.95);
-      border-color: rgba(137, 180, 250, 0.5);
-      box-shadow: 0 6px 20px rgba(137, 180, 250, 0.3);
+      background-color: rgba(30, 30, 46, 0.85);
+      border-color: rgba(137, 180, 250, 0.42);
+      box-shadow: inset 0 1px 0 rgba(205, 214, 244, 0.04), 0 4px 16px rgba(0, 0, 0, 0.4);
     }
 
     .close-button {
-      background-color: ${mocha.red};
-      color: ${mocha.base};
-      border-radius: 50%;
-      padding: 2px;
+      background-color: rgba(243, 139, 168, 0.2);
+      color: ${mocha.red};
+      border: 1px solid rgba(243, 139, 168, 0.3);
+      border-radius: 4px;
+      padding: 1px;
       margin: 2px;
-      min-width: 18px;
-      min-height: 18px;
+      min-width: 14px;
+      min-height: 14px;
       transition: all 200ms ease;
     }
 
     .close-button:hover {
-      background-color: #e64553;
-      box-shadow: 0 0 10px rgba(243, 139, 168, 0.6);
-      transform: scale(1.1);
+      background-color: rgba(243, 139, 168, 0.4);
+      box-shadow: 0 0 8px rgba(243, 139, 168, 0.4);
+      transform: none;
     }
 
     .close-button:active {
-      background-color: #ff6b7a;
+      background-color: ${mocha.red};
+      color: ${mocha.base};
     }
 
     /* Critical Notification Styling */
@@ -239,7 +246,7 @@ let
 
     /* Notification Text Elements */
     .summary {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
       color: ${mocha.text};
       margin-bottom: 2px;
@@ -248,11 +255,11 @@ let
     .time {
       font-size: 9px;
       color: ${mocha.subtext0};
-      margin-top: 2px;
+      margin-top: 1px;
     }
 
     .body {
-      font-size: 11px;
+      font-size: 10px;
       color: ${mocha.subtext0};
       margin-top: 3px;
     }
@@ -260,45 +267,46 @@ let
     /* Notification Image Styling */
     .notification-content image {
       margin-right: 8px;
-      border-radius: 8px;
+      border-radius: 4px;
     }
 
     /* Action Buttons - Enhanced for Feature 090 Callback */
     .notification-action,
     .notification-default-action {
-      background-color: rgba(137, 180, 250, 0.15);
-      color: ${mocha.blue};
-      border: 1px solid ${mocha.blue};
-      border-radius: 6px;
-      padding: 4px 10px;
-      margin: 2px;
-      font-size: 10px;
-      font-weight: 600;
-      transition: all 200ms ease;
+      background-color: rgba(49, 50, 68, 0.5);
+      color: ${mocha.text};
+      border: 1px solid rgba(108, 112, 134, 0.35);
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin: 2px 2px 0 2px;
+      font-size: 9px;
+      font-weight: 500;
+      transition: all 150ms ease;
     }
 
     .notification-action:hover,
     .notification-default-action:hover {
-      background-color: ${mocha.blue};
-      color: ${mocha.base};
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5);
-      transform: translateY(-1px);
+      background-color: rgba(137, 180, 250, 0.2);
+      border-color: rgba(137, 180, 250, 0.45);
+      color: ${mocha.blue};
+      box-shadow: none;
+      transform: none;
     }
 
     .notification-action:active,
     .notification-default-action:active {
-      background-color: ${mocha.sapphire};
-      transform: translateY(0);
+      background-color: ${mocha.blue};
+      color: ${mocha.base};
     }
 
     /* Control Center Panel - Feature 090: Match eww monitoring panel styling */
     .control-center {
-      background-color: rgba(30, 30, 46, 0.50);
-      border: 1px solid rgba(137, 180, 250, 0.2);
+      background-color: rgba(24, 24, 37, 0.85);
+      border: 2px solid rgba(137, 180, 250, 0.2);
       border-radius: 12px;
-      padding: 8px;
-      margin: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      padding: 6px;
+      margin: 4px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
     }
 
     .control-center-list {
@@ -314,24 +322,28 @@ let
 
     /* Widget Titles */
     .widget-title {
+      background-color: rgba(24, 24, 37, 0.4);
+      border-bottom: 1px solid ${mocha.overlay0};
+      border-radius: 8px;
       color: ${mocha.text};
       font-weight: bold;
-      font-size: 15px;
-      padding: 10px;
-      margin-top: 8px;
+      font-size: 14px;
+      padding: 8px 12px;
+      margin: 4px 4px 8px 4px;
     }
 
     .widget-title > button {
       background-color: transparent;
-      color: ${mocha.text};
-      border-radius: 8px;
-      padding: 6px;
-      transition: all 200ms ease;
+      color: ${mocha.subtext0};
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+      transition: all 150ms ease;
     }
 
     .widget-title > button:hover {
-      background-color: rgba(137, 180, 250, 0.2);
-      color: ${mocha.blue};
+      background-color: rgba(108, 112, 134, 0.35);
+      color: ${mocha.text};
     }
 
     /* Do Not Disturb Widget */
@@ -339,19 +351,18 @@ let
       background-color: rgba(49, 50, 68, 0.5);
       color: ${mocha.text};
       padding: 10px 14px;
-      margin: 8px;
-      border-radius: 10px;
-      border: 1px solid ${mocha.overlay0};
+      margin: 4px;
+      border-radius: 8px;
+      border: 1px solid rgba(88, 91, 112, 0.48);
       transition: all 200ms ease;
     }
 
     .widget-dnd:hover {
       background-color: rgba(69, 71, 90, 0.6);
-      border-color: ${mocha.mauve};
     }
 
     .widget-dnd > switch {
-      background-color: ${mocha.surface0};
+      background-color: rgba(24, 24, 37, 0.8);
       border-radius: 12px;
       border: 1px solid ${mocha.overlay0};
       transition: all 200ms ease;
@@ -359,6 +370,7 @@ let
 
     .widget-dnd > switch:checked {
       background-color: ${mocha.blue};
+      border-color: ${mocha.blue};
     }
 
     .widget-dnd > switch slider {
@@ -368,119 +380,117 @@ let
 
     /* Media Player (MPRIS) Widget */
     .widget-mpris {
-      background-color: rgba(49, 50, 68, 0.5);
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
       padding: 12px;
-      margin: 8px;
-      border-radius: 10px;
-      border: 1px solid ${mocha.overlay0};
+      margin: 8px 4px;
+      border-radius: 8px;
+      border: 1px solid rgba(88, 91, 112, 0.48);
       transition: all 200ms ease;
     }
 
     .widget-mpris:hover {
-      background-color: rgba(69, 71, 90, 0.6);
-      border-color: ${mocha.mauve};
+      background-color: rgba(69, 71, 90, 0.5);
     }
 
     .widget-mpris-player {
-      background-color: rgba(49, 50, 68, 0.6);
-      border-radius: 10px;
-      padding: 10px;
+      background-color: transparent;
+      border-radius: 8px;
+      padding: 4px;
     }
 
     .widget-mpris-album-art {
-      border-radius: 8px;
+      border-radius: 6px;
     }
 
     .widget-mpris-title {
       font-weight: bold;
-      font-size: 14px;
+      font-size: 13px;
       color: ${mocha.text};
     }
 
     .widget-mpris-subtitle {
-      font-size: 12px;
+      font-size: 11px;
       color: ${mocha.subtext0};
     }
 
     /* Button Grid Widget */
     .widget-buttons-grid {
-      padding: 4px;
-      margin: 8px;
+      padding: 0;
+      margin: 4px;
     }
 
     .widget-buttons-grid flowboxchild {
       min-width: 52px;
       padding: 0;
-      margin: 2px;
+      margin: 4px;
     }
 
     .widget-buttons-grid flowboxchild > button {
-      background-color: rgba(49, 50, 68, 0.5);
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
-      border-radius: 10px;
-      border: 1px solid ${mocha.overlay0};
+      border-radius: 8px;
+      border: 1px solid rgba(88, 91, 112, 0.48);
       padding: 8px;
       margin: 0;
       min-width: 48px;
       min-height: 48px;
       font-weight: 600;
       font-size: 1.2em;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      transition: all 200ms ease;
+      transition: all 150ms ease;
     }
 
     .widget-buttons-grid flowboxchild > button:hover {
-      background-color: rgba(137, 180, 250, 0.5);
-      border-color: ${mocha.blue};
-      color: ${mocha.base};
-      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5);
-      transform: scale(1.08);
+      background-color: rgba(137, 180, 250, 0.2);
+      border-color: rgba(137, 180, 250, 0.45);
+      color: ${mocha.blue};
     }
 
     .widget-buttons-grid flowboxchild > button:active {
       background-color: ${mocha.blue};
-      transform: scale(1.0);
+      color: ${mocha.base};
     }
 
     /* Backlight/Volume Sliders - Compact for Feature 090 */
     .widget-backlight,
     .widget-volume {
-      margin: 2px 4px;
-      padding: 4px 8px;
+      margin: 4px;
+      padding: 6px 10px;
+      background-color: rgba(49, 50, 68, 0.4);
+      border-radius: 8px;
+      border: 1px solid rgba(88, 91, 112, 0.48);
     }
 
     .widget-backlight slider,
     .widget-backlight scale,
     .widget-volume slider,
     .widget-volume scale {
-      min-height: 20px;
+      min-height: 16px;
     }
 
     .widget-backlight scale trough,
     .widget-volume scale trough {
-      background-color: rgba(49, 50, 68, 0.8);
+      background-color: rgba(24, 24, 37, 0.6);
       border-radius: 8px;
       min-height: 8px;
     }
 
     .widget-backlight scale highlight {
-      background: linear-gradient(90deg, ${mocha.yellow}, #fab387);
-      border-radius: 10px;
+      background: ${mocha.yellow};
+      border-radius: 8px;
     }
 
     .widget-volume scale highlight {
-      background: linear-gradient(90deg, ${mocha.blue}, ${mocha.sapphire});
-      border-radius: 10px;
+      background: ${mocha.blue};
+      border-radius: 8px;
     }
 
     .widget-backlight scale slider,
     .widget-volume scale slider {
       background-color: ${mocha.text};
       border-radius: 50%;
-      min-height: 14px;
-      min-width: 14px;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      min-height: 16px;
+      min-width: 16px;
     }
 
     /* Scrollbar Styling */
@@ -557,30 +567,32 @@ in {
   # Notification center shows transient info (CPU, memory, network, disk) when toggled open
   xdg.configFile."swaync/config.json".text = builtins.toJSON {
     # Core notification settings
-    # Position to the left of monitoring panel (450px + 8px gap = 458px from right edge)
-    # Match monitoring panel positioning exactly (right center, 90% height, no top/bottom margins)
+    # Notifications pop up at the top right, while control center overlays the Eww panel
     positionX = "right";
-    positionY = "center";
+    positionY = "top";
+    "control-center-positionX" = "right";
+    "control-center-positionY" = "center";
     layer = "overlay";
     control-center-layer = "overlay";
     layer-shell = true;
     cssPriority = "user";
-    control-center-margin-top = 0;  # Match monitoring panel (no vertical margins)
-    control-center-margin-bottom = 0;  # Match monitoring panel (no vertical margins)
-    control-center-margin-right = 458;  # 450px (monitoring panel) + 8px gap
+    control-center-margin-top = 0;
+    control-center-margin-bottom = 0;
+    control-center-margin-right = 8;  # Match Eww panel's 8px right gap
     control-center-margin-left = 0;
     notification-2fa-action = false;
     notification-inline-replies = false;
-    notification-icon-size = 48;
-    notification-body-image-height = 100;
-    notification-body-image-width = 200;
+    notification-icon-size = 32;
+    notification-body-image-height = 80;
+    notification-body-image-width = 160;
+    notification-grouping = false;  # Disable grouping to see a flat history instead of stacks
     timeout = 10;
     timeout-low = 5;
     timeout-critical = 0;  # Never timeout critical notifications
     control-center-width = controlCenterWidth;
     control-center-height = controlCenterHeight;
-    notification-window-width = 400;
-    fit-to-screen = true;
+    notification-window-width = 300;
+    fit-to-screen = false;
     image-visibility = "when-available";
     transition-time = 200;
     hide-on-clear = false;

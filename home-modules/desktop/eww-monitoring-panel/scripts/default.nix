@@ -7,5 +7,6 @@ let
   apps = import ./apps.nix { inherit pkgs pythonForBackend; };
   tailscale = import ./tailscale.nix { inherit pkgs config; };
   misc = import ./misc.nix { inherit pkgs; };
+  aiTmuxView = import ./ai-tmux-view.nix { inherit pkgs; };
 in
-core // projects // windows // apps // tailscale // misc
+core // projects // windows // apps // tailscale // misc // aiTmuxView

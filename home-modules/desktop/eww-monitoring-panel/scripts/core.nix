@@ -484,9 +484,11 @@ EOF
   # Feature 094: Project CRUD handler wrapper (T037)
   swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
     #!${pkgs.bash}/bin/bash
-    # DISABLED: Notification center is being removed
-    # This is now a no-op to prevent any interaction
-    exit 0
+    # Toggle SwayNC panel and ensure mutual exclusivity with Eww monitoring panel
+    
+    
+    # Toggle swaync
+    exec ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw
   '';
 
   # Feature 088 US3: Service restart script with sudo handling (T025)

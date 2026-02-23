@@ -231,34 +231,57 @@
                 :class "windows-actions-row"
                 :orientation "h"
                 :space-evenly false
+                :hexpand true
                 :halign "end"
-                :spacing 8
-                ;; Expand/Collapse All button
+                :spacing 0
+                (box :hexpand true)
                 (eventbox
-                  :cursor "pointer"
-                  :onclick {windows_all_expanded ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true"}
-                  :tooltip {windows_all_expanded ? "Collapse all worktrees" : "Expand all worktrees"}
+                  :onhoverlost {windows_bulk_actions_open ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_bulk_actions_open=false" : ""}
                   (box
-                    :class "expand-all-btn"
-                    :orientation "h"
+                    :class "windows-actions-menu-wrap"
+                    :orientation "v"
                     :space-evenly false
-                    :spacing 4
-                    (label :class "expand-all-icon" :text {windows_all_expanded ? "󰅀" : "󰅂"})
-                    (label :class "expand-all-text" :text {windows_all_expanded ? "Collapse" : "Expand"})))
-                ;; Close All button
-                (eventbox
-                  :cursor "pointer"
-                  :onhover "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=true"
-                  :onhoverlost "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=false"
-                  :onclick "${closeAllWindowsScript}/bin/close-all-windows-action &"
-                  :tooltip "Close all scoped windows"
-                  (box
-                    :class {"close-all-btn" + (!hovered_close_all ? " icon-only" : "")}
-                    :orientation "h"
-                    :space-evenly false
-                    :spacing 4
-                    (label :class "close-all-icon" :text "󰅖")
-                    (label :class "close-all-text" :visible {hovered_close_all} :text "Close All"))))
+                    :halign "end"
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick {windows_bulk_actions_open ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_bulk_actions_open=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_bulk_actions_open=true"}
+                      :tooltip "Window actions"
+                      (box
+                        :class {"windows-actions-trigger" + (windows_bulk_actions_open ? " open" : "")}
+                        :orientation "h"
+                        :space-evenly false
+                        :spacing 0
+                        (label :class "windows-actions-trigger-icon" :text "󰇙")))
+                    (revealer
+                      :reveal {windows_bulk_actions_open}
+                      :transition "slidedown"
+                      :duration "100ms"
+                      (box
+                        :class "windows-actions-menu"
+                        :orientation "v"
+                        :space-evenly false
+                        (eventbox
+                          :cursor "pointer"
+                          :onclick {windows_all_expanded ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false windows_bulk_actions_open=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true windows_bulk_actions_open=false"}
+                          :tooltip {windows_all_expanded ? "Collapse all worktrees" : "Expand all worktrees"}
+                          (box
+                            :class "windows-actions-menu-item"
+                            :orientation "h"
+                            :space-evenly false
+                            :spacing 6
+                            (label :class "windows-actions-menu-item-icon" :text {windows_all_expanded ? "󰅀" : "󰅂"})
+                            (label :class "windows-actions-menu-item-text" :text {windows_all_expanded ? "Collapse All" : "Expand All"})))
+                        (eventbox
+                          :cursor "pointer"
+                          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_bulk_actions_open=false; ${closeAllWindowsScript}/bin/close-all-windows-action &"
+                          :tooltip "Close all scoped windows"
+                          (box
+                            :class "windows-actions-menu-item danger"
+                            :orientation "h"
+                            :space-evenly false
+                            :spacing 6
+                            (label :class "windows-actions-menu-item-icon" :text "󰅖")
+                            (label :class "windows-actions-menu-item-text" :text "Close All"))))))))
               ;; Projects list
               (for project in {monitoring_data.projects ?: []}
                 (project-widget :project project))))))))

@@ -300,6 +300,10 @@ in
       # Using UPPERCASE to avoid conflicts
       # Tips: Use 'less' for scrollable output, mouse selection works in most popups
 
+      # Active AI sessions overview popup (working/attention sessions only).
+      # Builds a dynamic tiled mirror of source panes without mutating user layouts.
+      bind-key A run-shell "ai-tmux-view-action"
+
       # Terminal popup (backtick + P) - Simple bash shell with proper quoting
       bind-key P display-popup -E -h 70% -w 80% -d "#{pane_current_path}" 'bash --rcfile <(cat ~/.bashrc; echo "PS1=\"[popup] \\w $ \"")'
 

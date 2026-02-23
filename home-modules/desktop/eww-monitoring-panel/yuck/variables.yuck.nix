@@ -128,11 +128,11 @@
   ;; Hover state for inline close action rails
   ;; hovered_window_id: row currently hovered (0 = none)
   ;; hovered_project_key: project/worktree card currently hovered ("" = none)
-  ;; hovered_close_all: top-level close-all button hover state
   (defvar hovered_window_id 0)
   (defvar hovered_project_key "")
-  (defvar hovered_close_all false)
   (defvar hovered_ai_badge_key "")
+  ;; Compact overflow menu state for less-prominent global window actions
+  (defvar windows_bulk_actions_open false)
 
   ;; Project context menu state - Project name for action bar ("" = none)
   (defvar context_menu_project "")

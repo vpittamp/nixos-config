@@ -416,63 +416,75 @@
   }
 
   .windows-actions-row {
-    padding: 4px 8px;
-    margin-bottom: 8px;
+    padding: 2px 8px 4px 8px;
+    margin-bottom: 4px;
   }
 
-  .expand-all-btn {
-    padding: 4px 10px;
-    background-color: rgba(137, 180, 250, 0.15);
-    border: 1px solid ${mocha.blue};
-    border-radius: 4px;
-    transition: background-color 0.15s ease;
+  .windows-actions-menu-wrap {
+    margin-right: 2px;
   }
 
-  .expand-all-btn:hover {
-    background-color: rgba(137, 180, 250, 0.3);
+  .windows-actions-trigger {
+    min-width: 18px;
+    min-height: 18px;
+    padding: 1px 4px;
+    border-radius: 5px;
+    border: 1px solid rgba(108, 112, 134, 0.35);
+    background-color: rgba(30, 30, 46, 0.45);
+    transition: background-color 120ms ease, border-color 120ms ease;
   }
 
-  .expand-all-icon {
-    color: ${mocha.blue};
+  .windows-actions-trigger:hover,
+  .windows-actions-trigger.open {
+    background-color: rgba(49, 50, 68, 0.72);
+    border-color: rgba(137, 180, 250, 0.42);
+  }
+
+  .windows-actions-trigger-icon {
+    color: ${mocha.subtext0};
     font-size: 12px;
+    font-weight: 600;
   }
 
-  .expand-all-text {
+  .windows-actions-trigger:hover .windows-actions-trigger-icon,
+  .windows-actions-trigger.open .windows-actions-trigger-icon {
     color: ${mocha.text};
+  }
+
+  .windows-actions-menu {
+    margin-top: 4px;
+    border-radius: 7px;
+    border: 1px solid rgba(108, 112, 134, 0.36);
+    background-color: rgba(24, 24, 37, 0.96);
+    padding: 4px;
+  }
+
+  .windows-actions-menu-item {
+    padding: 5px 7px;
+    border-radius: 5px;
+    transition: background-color 120ms ease;
+  }
+
+  .windows-actions-menu-item:hover {
+    background-color: rgba(108, 112, 134, 0.25);
+  }
+
+  .windows-actions-menu-item.danger:hover {
+    background-color: rgba(243, 139, 168, 0.18);
+  }
+
+  .windows-actions-menu-item-icon {
+    color: ${mocha.subtext0};
     font-size: 11px;
-    font-weight: 500;
   }
 
-  .close-all-btn {
-    padding: 4px 10px;
-    background-color: rgba(243, 139, 168, 0.15);
-    border: 1px solid ${mocha.red};
-    border-radius: 4px;
-    transition: background-color 0.15s ease;
-  }
-
-  .close-all-btn.icon-only {
-    padding: 4px 7px;
-  }
-
-  .close-all-btn:hover {
-    background-color: rgba(243, 139, 168, 0.36);
-    border-color: rgba(243, 139, 168, 0.95);
-    box-shadow: 0 0 12px rgba(243, 139, 168, 0.42);
-  }
-
-  .close-all-icon {
-    color: ${mocha.red};
-    font-size: 12px;
-  }
-
-  .close-all-btn:hover .close-all-icon {
+  .windows-actions-menu-item.danger .windows-actions-menu-item-icon {
     color: ${mocha.red};
   }
 
-  .close-all-text {
+  .windows-actions-menu-item-text {
     color: ${mocha.text};
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
   }
 

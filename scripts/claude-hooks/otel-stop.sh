@@ -24,6 +24,9 @@ TIMESTAMP_MS="$(date +%s%3N)"
 
 STOP_FILE="${RUNTIME_DIR}/claude-stop-${PARENT_PID}.json"
 
+# Trigger the notification hook in the background (pass input via stdin)
+echo "$INPUT" | "${BASH_SOURCE%/*}/stop-notification.sh" &
+
 # Always write the file (even if session_id is missing) so the interceptor can end turns.
 jq -n \
   --arg sessionId "$SESSION_ID" \

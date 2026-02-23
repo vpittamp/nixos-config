@@ -8,8 +8,8 @@ let
   extApps = pkgs.fetchFromGitHub {
     owner = "modelcontextprotocol";
     repo = "ext-apps";
-    rev = "0bbbfee8c25e1217011c81b4bbd13c965ec6cb13";
-    hash = "sha256-RLdCfASQlf/Am96kYSaTFxpIJvIjItKypnvYDprKTGk=";
+    rev = "b4ea8c53a28c2950f10dcecd672edd43835dc379";
+    hash = "sha256-Un+L8DjowfGyEDOwccIJkUDbApjSidDY5HhV9ZeXAnE=";
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
@@ -242,7 +242,7 @@ let
       plan = true;
     };
     ui.theme = "Default";
-    model.name = "gemini-3.1-pro";
+    model.name = "gemini-3.1-pro-preview";
     # Feature 123: OpenTelemetry configuration for OTLP export
     # Sends telemetry to otel-ai-monitor (via our local interceptor).
     telemetry = {
@@ -314,7 +314,7 @@ EOF
       # - preferredEditor/previewFeatures/vimMode -> general.*
       # - theme -> ui.theme
       WANT_ENDPOINT="http://127.0.0.1:4322"
-      WANT_MODEL="gemini-3.1-pro"
+      WANT_MODEL="gemini-3.1-pro-preview"
 
       $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" --arg model "$WANT_MODEL" '
         # Migrate legacy top-level keys to the current schema.
@@ -423,7 +423,7 @@ EOF
     # - gemini-3.1-pro (Gemini 3.1 Pro - latest, most capable)
     # - gemini-3-flash-preview (Gemini 3 Flash - fast, 78% SWE-bench)
     # - gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-    defaultModel = "gemini-3.1-pro";
+    defaultModel = "gemini-3.1-pro-preview";
 
     # NOTE: settings are NOT managed here to allow credential persistence
     # Settings are written via home.activation.setupGeminiConfig as a real file

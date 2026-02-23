@@ -75,6 +75,7 @@ let
     toggleWindowsProjectExpandScript
     copyWindowJsonScript copyTraceDataScript
     fetchWindowEnvScript openLangfuseTraceScript handleKeyScript pulsePhaseScript
+    aiTmuxViewTargetsScript aiTmuxViewPaneScript aiTmuxViewSyncScript aiTmuxViewActionScript
     tailscaleTabActionScript;
 
   mainYuck = import ./yuck/main.yuck.nix {
@@ -243,6 +244,10 @@ in
       appDeleteCancelScript
       showSuccessNotificationScript
       pulsePhaseScript
+      aiTmuxViewTargetsScript
+      aiTmuxViewPaneScript
+      aiTmuxViewSyncScript
+      aiTmuxViewActionScript
       tailscaleTabActionScript
     ];
 
