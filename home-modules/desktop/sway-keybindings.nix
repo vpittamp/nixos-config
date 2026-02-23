@@ -164,6 +164,7 @@ in
     "Alt+Tab" = "exec show-ai-mru-switcher-action next";
     "Alt+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
     "Alt+grave" = "exec toggle-last-ai-session-action";
+    "Alt+Shift+grave" = "exec toggle-selected-ai-session-pin-action";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";

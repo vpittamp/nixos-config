@@ -96,6 +96,7 @@ BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid(
 # Written by otel-ai-monitor service, read here to include in monitoring_data output
 OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
+AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
@@ -210,6 +211,20 @@ def load_ai_session_mru() -> List[str]:
     return []
 
 
+def load_ai_session_pins() -> List[str]:
+    """Load pinned AI session keys from runtime state file."""
+    if not AI_SESSION_PIN_FILE.exists():
+        return []
+    try:
+        with open(AI_SESSION_PIN_FILE, "r") as f:
+            payload = json.load(f)
+            if isinstance(payload, list):
+                return [str(item) for item in payload if isinstance(item, str) and item.strip()]
+    except (json.JSONDecodeError, IOError):
+        return []
+    return []
+
+
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     """Create inotify watcher subprocess for badge directory and OTEL sessions file.
 
@@ -246,6 +261,9 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if AI_SESSION_MRU_FILE.parent.exists():
         if str(AI_SESSION_MRU_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_MRU_FILE.parent))
+    if AI_SESSION_PIN_FILE.parent.exists():
+        if str(AI_SESSION_PIN_FILE.parent) not in watch_paths:
+            watch_paths.append(str(AI_SESSION_PIN_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -293,6 +311,8 @@ async def read_inotify_events(
     active_worktree_tmp_filename = active_worktree_filename.replace(".json", ".tmp")
     mru_filename = AI_SESSION_MRU_FILE.name
     mru_tmp_filename = mru_filename + ".tmp"
+    pin_filename = AI_SESSION_PIN_FILE.name
+    pin_tmp_filename = pin_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -322,8 +342,9 @@ async def read_inotify_events(
             is_otel_file = filename in (otel_filename, otel_tmp_filename)
             is_active_worktree_file = filename in (active_worktree_filename, active_worktree_tmp_filename)
             is_mru_file = filename in (mru_filename, mru_tmp_filename)
+            is_pin_file = filename in (pin_filename, pin_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file:
+            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -1490,6 +1511,7 @@ def _build_active_ai_sessions(
             "updated_at": updated_at,
             "stale": stale,
             "stale_age_seconds": stale_age_seconds,
+            "pinned": False,
             "priority_score": _OTEL_STATE_PRIORITY.get(state, 0),
             "tool": tool,
         }
@@ -1550,6 +1572,26 @@ def _apply_ai_session_mru_order(
         ordered.append(session)
 
     return ordered
+
+
+def _apply_pinned_session_order(
+    active_sessions: List[Dict[str, Any]],
+    pinned_keys: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Keep pinned sessions first while preserving relative order."""
+    if not active_sessions:
+        return []
+    pinned_set = {str(key) for key in (pinned_keys or []) if str(key)}
+
+    pinned_items: List[Dict[str, Any]] = []
+    unpinned_items: List[Dict[str, Any]] = []
+    for session in active_sessions:
+        key = str(session.get("session_key") or "")
+        if key and key in pinned_set:
+            pinned_items.append(session)
+        else:
+            unpinned_items.append(session)
+    return pinned_items + unpinned_items
 
 
 def transform_window(
@@ -2778,10 +2820,17 @@ async def query_monitoring_data() -> Dict[str, Any]:
             active_project_name=active_qualified_name,
             focused_window_id=focused_window_id,
         )
+        pinned_session_keys = load_ai_session_pins()
+        pinned_session_set = {str(key) for key in pinned_session_keys if str(key)}
+        for session in active_ai_sessions:
+            key = str(session.get("session_key") or "")
+            session["pinned"] = key in pinned_session_set
+        active_ai_sessions = _apply_pinned_session_order(active_ai_sessions, pinned_session_keys)
         active_ai_sessions_mru = _apply_ai_session_mru_order(
             active_ai_sessions,
             load_ai_session_mru(),
         )
+        active_ai_sessions_mru = _apply_pinned_session_order(active_ai_sessions_mru, pinned_session_keys)
 
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 

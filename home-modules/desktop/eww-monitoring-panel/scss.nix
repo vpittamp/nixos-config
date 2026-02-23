@@ -1024,6 +1024,21 @@
     transition: background-color 120ms ease, border-color 120ms ease;
   }
 
+  .active-ai-chip-wrap {
+    min-width: 0;
+  }
+
+  .active-ai-pin-btn {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+    margin-top: 2px;
+    padding: 1px 2px;
+  }
+
+  .active-ai-pin-btn.pinned {
+    color: ${mocha.yellow};
+  }
+
   .active-ai-chip:hover {
     background: rgba(69, 71, 90, 0.85);
     border-color: rgba(137, 180, 250, 0.45);

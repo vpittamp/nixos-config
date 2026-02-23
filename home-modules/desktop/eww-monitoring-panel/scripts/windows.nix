@@ -494,6 +494,50 @@ let
     ${focusActiveAiSessionScript}/bin/focus-active-ai-session-action "$TARGET_KEY" >/dev/null 2>&1 || true
   '';
 
+  # Feature 142: Toggle pinned state for a specific AI session key.
+  toggleAiSessionPinScript = pkgs.writeShellScriptBin "toggle-ai-session-pin-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    SESSION_KEY="''${1:-}"
+    [[ -n "$SESSION_KEY" ]] || exit 1
+
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    STATE_DIR="$RUNTIME_DIR/eww-monitoring-panel"
+    PIN_FILE="$STATE_DIR/ai-session-pins.json"
+    TMP_FILE="$PIN_FILE.tmp"
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+    [[ -f "$PIN_FILE" ]] || printf '[]\n' > "$PIN_FILE"
+
+    ${pkgs.jq}/bin/jq -c --arg key "$SESSION_KEY" '
+      (if type == "array" then . else [] end) as $pins
+      | if ($pins | index($key)) != null
+        then [$pins[] | select(. != $key)]
+        else ($pins + [$key])
+        end
+    ' "$PIN_FILE" > "$TMP_FILE"
+    ${pkgs.coreutils}/bin/mv "$TMP_FILE" "$PIN_FILE"
+  '';
+
+  # Feature 142: Toggle pin on currently selected AI session.
+  toggleSelectedAiSessionPinScript = pkgs.writeShellScriptBin "toggle-selected-ai-session-pin-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    CURRENT_KEY_RAW=$($EWW_CMD get ai_sessions_selected_key 2>/dev/null || echo "")
+    CURRENT_KEY=""
+    if [[ -n "$CURRENT_KEY_RAW" ]]; then
+      CURRENT_KEY=$(
+        printf '%s' "$CURRENT_KEY_RAW" \
+          | ${pkgs.jq}/bin/jq -r 'if type == "string" then . else tostring end' 2>/dev/null \
+          || printf '%s' "$CURRENT_KEY_RAW"
+      )
+    fi
+    [[ -n "$CURRENT_KEY" ]] || exit 0
+    ${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action "$CURRENT_KEY"
+  '';
+
   # Open remote session item action:
   # - Ensures project context is active
   # - Launches project terminal (app-launcher-wrapper handles SSH sesh attach)
@@ -1289,7 +1333,8 @@ in
 {
   inherit focusWindowScript focusAiSessionScript recordAiSessionMruScript
           focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
-          toggleLastAiSessionScript toggleAiGroupCollapseScript
+          toggleLastAiSessionScript toggleAiSessionPinScript
+          toggleSelectedAiSessionPinScript toggleAiGroupCollapseScript
           switchProjectScript closeWorktreeScript
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
           toggleWindowsProjectExpandScript
