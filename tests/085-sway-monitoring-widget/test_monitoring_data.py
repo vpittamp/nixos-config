@@ -1349,6 +1349,71 @@ class TestAiReviewLifecycle:
         assert changed_second is False
         assert entry_again["updated_at"] == first_updated_at
 
+    def test_idle_session_without_prior_activity_does_not_create_review_marker(self):
+        session_idle = {
+            "session_key": "tool=codex|project=proj|window=10|pane=%1",
+            "otel_state": "idle",
+            "project": "proj",
+            "display_project": "proj",
+            "window_id": 10,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "pty": "/dev/pts/1",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %1",
+            "updated_at": "2026-02-23T16:30:00+00:00",
+            "state_seq": 1,
+            "status_reason": "window_correlated_process_candidate",
+        }
+
+        entry, _ = monitoring_data._update_review_entry_from_session({}, session_idle, 1000)
+        assert str(entry.get("finish_marker") or "") == ""
+        assert int(entry.get("finished_at") or 0) == 0
+
+    def test_idle_after_completed_does_not_rotate_finish_marker(self):
+        base = {
+            "session_key": "tool=codex|project=proj|window=10|pane=%1",
+            "project": "proj",
+            "display_project": "proj",
+            "window_id": 10,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "pty": "/dev/pts/1",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %1",
+        }
+        completed = {
+            **base,
+            "otel_state": "completed",
+            "updated_at": "2026-02-23T16:31:00+00:00",
+            "state_seq": 5,
+            "status_reason": "quiet_period_expired",
+        }
+        idle = {
+            **base,
+            "otel_state": "idle",
+            "updated_at": "2026-02-23T16:31:31+00:00",
+            "state_seq": 6,
+            "status_reason": "completed_timeout",
+        }
+
+        entry, _ = monitoring_data._update_review_entry_from_session({}, completed, 1000)
+        marker = str(entry.get("finish_marker") or "")
+        assert marker
+
+        entry["seen_marker"] = marker
+        entry["seen_at"] = 1001
+        entry_after_idle, _ = monitoring_data._update_review_entry_from_session(dict(entry), idle, 1031)
+
+        assert str(entry_after_idle.get("finish_marker") or "") == marker
+        assert str(entry_after_idle.get("seen_marker") or "") == marker
+
 
 class TestAiNotificationState:
     """Test AI notification cache robustness."""

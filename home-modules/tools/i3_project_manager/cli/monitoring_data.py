@@ -2813,14 +2813,24 @@ def _update_review_entry_from_session(
     _assign("tool", str(session.get("tool") or "unknown"))
     _assign("display_tool", str(session.get("display_tool") or _OTEL_TOOL_LABELS.get(str(session.get("tool") or "unknown"), str(session.get("tool") or "unknown"))))
     _assign("display_target", str(session.get("display_target") or ""))
+    previous_state = str(entry.get("last_state") or "").strip().lower()
     _assign("last_state", state)
-    if state in {"completed", "idle"} and marker:
+    if state == "completed" and marker:
         if str(entry.get("finish_marker") or "") != marker:
             _assign("finish_marker", marker)
             _assign("finished_at", finished_at)
             # New completion cycle should require fresh acknowledgement.
             if str(entry.get("seen_marker") or "") == marker:
                 _assign("seen_at", finished_at)
+            _assign("expires_at", finished_at + _AI_SESSION_REVIEW_TTL_SECONDS)
+    elif state == "idle" and marker:
+        # Idle-only sessions (for example, process-heartbeat placeholders) should
+        # not create review work. Initialize finish markers on idle only when this
+        # session was previously active/completing and we do not already have a
+        # completion marker.
+        if not str(entry.get("finish_marker") or "") and previous_state in {"working", "attention", "completed"}:
+            _assign("finish_marker", marker)
+            _assign("finished_at", finished_at)
             _assign("expires_at", finished_at + _AI_SESSION_REVIEW_TTL_SECONDS)
     elif state in {"working", "attention"}:
         finish_marker = str(entry.get("finish_marker") or "")
