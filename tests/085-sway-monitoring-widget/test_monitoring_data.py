@@ -1174,6 +1174,64 @@ class TestAiReviewLifecycle:
         assert out == []
         assert state["tool=claude-code|project=proj|window=22"]["seen_marker"] == "marker-1"
 
+    def test_disappeared_working_session_transitions_to_finished_unseen(self, tmp_path, monkeypatch):
+        review_file = tmp_path / "ai-session-review.json"
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_REVIEW_FILE", review_file)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+
+        now_epoch = 2_000_000
+        monkeypatch.setattr(monitoring_data.time, "time", lambda: float(now_epoch))
+
+        session_key = "tool=codex|project=proj|window=42|pane=%7"
+        payload = {
+            "schema_version": "1",
+            "sessions": {
+                session_key: {
+                    "project": "proj",
+                    "display_project": "proj",
+                    "window_id": 42,
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "identity_key": "ssh:vpittamp@ryzen:22",
+                    "context_key": "proj::ssh::vpittamp@ryzen:22",
+                    "host_alias": "vpittamp@ryzen:22",
+                    "tmux_session": "proj/main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%7",
+                    "pty": "/dev/pts/7",
+                    "tool": "codex",
+                    "display_tool": "Codex CLI",
+                    "display_target": "pane %7",
+                    "last_state": "working",
+                    "updated_at": now_epoch - 120,
+                    "finish_marker": "",
+                    "seen_marker": "",
+                    "finished_at": None,
+                    "seen_at": None,
+                    "expires_at": None,
+                }
+            },
+            "updated_at": now_epoch - 120,
+        }
+        review_file.parent.mkdir(parents=True, exist_ok=True)
+        review_file.write_text(json.dumps(payload))
+
+        sessions, state = monitoring_data._apply_review_lifecycle([], {42: {"id": 42, "project": "proj"}}, None)
+
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session["synthetic"] is True
+        assert session["review_pending"] is True
+        assert session["review_state"] == "finished_unseen"
+        assert session["otel_state"] == "idle"
+        assert session["window_id"] == 42
+
+        entry = state[session_key]
+        assert str(entry.get("finish_marker") or "") != ""
+        assert int(entry.get("finished_at") or 0) == now_epoch - 120
+        assert int(entry.get("expires_at") or 0) == (now_epoch - 120) + monitoring_data._AI_SESSION_REVIEW_TTL_SECONDS
+
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{
             "id": 42,

@@ -1625,6 +1625,7 @@ _OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
 _AI_SESSION_STALE_THRESHOLD_SECONDS = 15 * 60
 _AI_SESSION_REVIEW_TTL_SECONDS = 24 * 60 * 60
 _AI_SESSION_REVIEW_MAX_ENTRIES = 512
+_AI_SESSION_REVIEW_DISAPPEAR_GRACE_SECONDS = 45
 
 _OTEL_TOOL_LABELS = {
     "claude-code": "Claude Code",
@@ -2909,6 +2910,44 @@ def _apply_review_lifecycle(
                 entry["seen_at"] = now_epoch
                 entry["updated_at"] = now_epoch
                 changed = True
+
+    # If a session disappears without a terminal completion event, preserve it
+    # as finished-unseen after a short grace period.
+    for key, entry in review_sessions.items():
+        if key in live_keys:
+            continue
+        if _safe_int(entry.get("finished_at"), 0) > 0:
+            continue
+
+        last_state = str(entry.get("last_state") or "").strip().lower()
+        if last_state not in _OTEL_ACTIVE_SESSION_STATES:
+            continue
+
+        last_update = _safe_int(entry.get("updated_at"), 0)
+        if last_update <= 0:
+            continue
+        if now_epoch - last_update < _AI_SESSION_REVIEW_DISAPPEAR_GRACE_SECONDS:
+            continue
+
+        finish_marker = str(entry.get("finish_marker") or "")
+        if not finish_marker:
+            marker_basis = "|".join([
+                key,
+                str(_safe_int(entry.get("window_id"), 0)),
+                str(entry.get("tmux_pane") or ""),
+                str(last_update),
+            ])
+            finish_marker = hashlib.sha1(marker_basis.encode("utf-8")).hexdigest()
+            entry["finish_marker"] = finish_marker
+
+        entry["finished_at"] = last_update
+        entry["expires_at"] = last_update + _AI_SESSION_REVIEW_TTL_SECONDS
+        if last_state in {"working", "attention"}:
+            entry["last_state"] = "idle"
+        if str(entry.get("seen_marker") or "") == finish_marker:
+            entry["seen_at"] = last_update
+        entry["updated_at"] = now_epoch
+        changed = True
 
     # Prune expired or non-actionable entries, then synthesize unseen sessions
     # for contexts where OTEL session already disappeared.
