@@ -265,7 +265,7 @@ let
         hooks = [{
           type = "command";
           command = "${repoRoot}/scripts/gemini-hooks/finished.sh";
-          timeout = 10;
+          timeout = 10000;
           name = "finished-notification";
         }];
       }];
@@ -385,7 +385,7 @@ EOF
 
         # Enforce AfterAgent hook for unified "finished" notification.
         .hooks = (.hooks // {}) |
-        .hooks.AfterAgent = [{"hooks": [{"type": "command", "command": "${repoRoot}/scripts/gemini-hooks/finished.sh", "timeout": 10, "name": "finished-notification"}]}]
+        .hooks.AfterAgent = [{"hooks": [{"type": "command", "command": "${repoRoot}/scripts/gemini-hooks/finished.sh", "timeout": 10000, "name": "finished-notification"}]}]
       ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
 
       if ! ${pkgs.diffutils}/bin/cmp -s "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"; then
