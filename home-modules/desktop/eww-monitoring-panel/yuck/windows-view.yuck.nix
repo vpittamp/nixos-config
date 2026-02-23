@@ -106,6 +106,8 @@
                         :cursor "pointer"
                         :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
                         :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                          + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
+                          + ((session.host_name ?: "") != "" ? ("@" + (session.host_name ?: "")) : "")
                           + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
                           + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
                           + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
@@ -137,7 +139,10 @@
                             :class "active-ai-chip-text"
                             :text {session.display_tool ?: session.tool ?: "AI"}
                             :limit-width 16
-                            :truncate true)))
+                            :truncate true)
+                          (label
+                            :class {"active-ai-chip-mode " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")}
+                            :text {(session.execution_mode ?: "local") == "ssh" ? "R" : "L"})))
                       (eventbox
                         :cursor "pointer"
                         :onclick "${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action \"''${session.session_key ?: ""}\" &"
@@ -437,7 +442,7 @@
                       ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                       : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
                     }
-                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + " · " + ((badge.execution_mode ?: "local") == "ssh" ? "remote" : "local") + ((badge.host_name ?: "") != "" ? ("@" + (badge.host_name ?: "")) : "") + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
                     (box
                       :orientation "h"
                       :space-evenly false

@@ -1441,6 +1441,16 @@ def _build_otel_badges(
             "is_streaming": session.get("is_streaming", False),
             "stale": stale,
             "stale_age_seconds": stale_age_seconds,
+            "execution_mode": str(
+                session.get("execution_mode")
+                or terminal_context.get("execution_mode")
+                or "local"
+            ).strip().lower(),
+            "host_name": str(
+                terminal_context.get("host_name")
+                or session.get("host_name")
+                or ""
+            ),
             # Feature: AI badge click-to-focus context (window + tmux pane/session)
             "window_id": session.get("window_id", terminal_context.get("window_id")),
             "tmux_session": terminal_context.get("tmux_session", ""),
@@ -1507,6 +1517,7 @@ def _build_active_ai_sessions(
         tmux_window = str(terminal_context.get("tmux_window") or "")
         tmux_pane = str(terminal_context.get("tmux_pane") or "")
         pty = str(terminal_context.get("pty") or "")
+        host_name = str(terminal_context.get("host_name") or raw_session.get("host_name") or "")
 
         native_session_id = str(raw_session.get("native_session_id") or "")
         session_id = str(raw_session.get("session_id") or "")
@@ -1573,6 +1584,7 @@ def _build_active_ai_sessions(
             "tmux_window": tmux_window,
             "tmux_pane": tmux_pane,
             "pty": pty,
+            "host_name": host_name,
             "native_session_id": native_session_id,
             "session_id": session_id,
             "context_fingerprint": context_fingerprint,

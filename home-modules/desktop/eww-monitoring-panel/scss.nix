@@ -1111,6 +1111,24 @@
     min-width: 0;
   }
 
+  .active-ai-chip-mode {
+    font-size: 8px;
+    font-weight: 700;
+    border-radius: 8px;
+    padding: 1px 4px;
+    margin-top: 1px;
+  }
+
+  .active-ai-chip-mode.local {
+    color: ${mocha.overlay0};
+    background: rgba(108, 112, 134, 0.2);
+  }
+
+  .active-ai-chip-mode.remote {
+    color: ${mocha.blue};
+    background: rgba(137, 180, 250, 0.16);
+  }
+
   @keyframes active-ai-working-pulse {
     0% { border-color: rgba(243, 139, 168, 0.36); background-color: rgba(69, 71, 90, 0.75); }
     50% { border-color: rgba(243, 139, 168, 0.85); background-color: rgba(243, 139, 168, 0.14); }
