@@ -260,6 +260,15 @@ let
     fi
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    eww_update_retry() {
+      local -a kv=("$@")
+      local i
+      for i in 1 2 3; do
+        $EWW_CMD update "''${kv[@]}" >/dev/null 2>&1 && return 0
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
     MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
 
     SESSION_TSV=$(${pkgs.jq}/bin/jq -r --arg key "$SESSION_KEY" '
@@ -298,7 +307,7 @@ let
     fi
 
     SELECTED_KEY_JSON=$(${pkgs.jq}/bin/jq -Rn --arg key "$SESSION_KEY" '$key')
-    $EWW_CMD update "ai_sessions_selected_key=$SELECTED_KEY_JSON"
+    eww_update_retry "ai_sessions_selected_key=$SELECTED_KEY_JSON" || true
     ${focusAiSessionScript}/bin/focus-ai-session-action \
       "$PROJECT_NAME" \
       "$WINDOW_ID" \
@@ -325,6 +334,27 @@ let
     fi
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    eww_update_retry() {
+      local -a kv=("$@")
+      local i
+      for i in 1 2 3; do
+        $EWW_CMD update "''${kv[@]}" >/dev/null 2>&1 && return 0
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
+    eww_get_retry() {
+      local key="$1"
+      local i out=""
+      for i in 1 2 3; do
+        out=$($EWW_CMD get "$key" 2>/dev/null) && {
+          printf '%s' "$out"
+          return 0
+        }
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
     MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
     if [[ "$ORDER_MODE" == "mru" ]]; then
       mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '(.active_ai_sessions_mru // .active_ai_sessions // []) | .[].session_key // empty' <<< "$MONITORING_DATA")
@@ -334,11 +364,11 @@ let
 
     SESSION_COUNT=''${#SESSION_KEYS[@]}
     if (( SESSION_COUNT == 0 )); then
-      $EWW_CMD update 'ai_sessions_selected_key=""' 'ai_mru_switcher_visible=false'
+      eww_update_retry 'ai_sessions_selected_key=""' 'ai_mru_switcher_visible=false' || true
       exit 0
     fi
 
-    CURRENT_KEY_RAW=$($EWW_CMD get ai_sessions_selected_key 2>/dev/null || echo "")
+    CURRENT_KEY_RAW=$(eww_get_retry ai_sessions_selected_key || echo "")
     CURRENT_KEY=""
     if [[ -n "$CURRENT_KEY_RAW" ]]; then
       CURRENT_KEY=$(
@@ -421,13 +451,22 @@ let
     fi
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
-    $EWW_CMD update 'ai_mru_switcher_visible=true' >/dev/null 2>&1 || true
+    eww_update_retry() {
+      local -a kv=("$@")
+      local i
+      for i in 1 2 3; do
+        $EWW_CMD update "''${kv[@]}" >/dev/null 2>&1 && return 0
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
+    eww_update_retry 'ai_mru_switcher_visible=true' || true
 
     ${cycleActiveAiSessionScript}/bin/cycle-active-ai-session-action "$DIRECTION" mru >/dev/null 2>&1 || true
 
     (
       ${pkgs.coreutils}/bin/sleep 1.25
-      $EWW_CMD update 'ai_mru_switcher_visible=false' >/dev/null 2>&1 || true
+      eww_update_retry 'ai_mru_switcher_visible=false' || true
     ) &
   '';
 
@@ -442,6 +481,15 @@ let
     fi
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    eww_update_retry() {
+      local -a kv=("$@")
+      local i
+      for i in 1 2 3; do
+        $EWW_CMD update "''${kv[@]}" >/dev/null 2>&1 && return 0
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
     CURRENT_RAW=$($EWW_CMD get ai_group_collapsed_projects 2>/dev/null || echo "[]")
     CURRENT_JSON=$(
       printf '%s' "$CURRENT_RAW" \
@@ -458,7 +506,7 @@ let
           end
       ' <<< "$CURRENT_JSON"
     )
-    $EWW_CMD update "ai_group_collapsed_projects=$UPDATED_JSON" >/dev/null 2>&1 || true
+    eww_update_retry "ai_group_collapsed_projects=$UPDATED_JSON" || true
   '';
 
   # Feature 140: Jump back to previous AI session (toggles between last two MRU entries).
@@ -467,6 +515,18 @@ let
     set -euo pipefail
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    eww_get_retry() {
+      local key="$1"
+      local i out=""
+      for i in 1 2 3; do
+        out=$($EWW_CMD get "$key" 2>/dev/null) && {
+          printf '%s' "$out"
+          return 0
+        }
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
     MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
 
     mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '(.active_ai_sessions_mru // .active_ai_sessions // []) | .[].session_key // empty' <<< "$MONITORING_DATA")
@@ -475,7 +535,7 @@ let
       exit 0
     fi
 
-    CURRENT_KEY_RAW=$($EWW_CMD get ai_sessions_selected_key 2>/dev/null || echo "")
+    CURRENT_KEY_RAW=$(eww_get_retry ai_sessions_selected_key || echo "")
     CURRENT_KEY=""
     if [[ -n "$CURRENT_KEY_RAW" ]]; then
       CURRENT_KEY=$(
@@ -525,7 +585,19 @@ let
     set -euo pipefail
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
-    CURRENT_KEY_RAW=$($EWW_CMD get ai_sessions_selected_key 2>/dev/null || echo "")
+    eww_get_retry() {
+      local key="$1"
+      local i out=""
+      for i in 1 2 3; do
+        out=$($EWW_CMD get "$key" 2>/dev/null) && {
+          printf '%s' "$out"
+          return 0
+        }
+        ${pkgs.coreutils}/bin/sleep 0.08
+      done
+      return 1
+    }
+    CURRENT_KEY_RAW=$(eww_get_retry ai_sessions_selected_key || echo "")
     CURRENT_KEY=""
     if [[ -n "$CURRENT_KEY_RAW" ]]; then
       CURRENT_KEY=$(
