@@ -72,7 +72,7 @@ USAGE
     declare -A PANE_TO_SESSION=()
     declare -A PANE_TO_WINDOW=()
 
-    while IFS=$'\t' read -r pane_tty pane_id pane_session pane_window; do
+    while IFS='|' read -r pane_tty pane_id pane_session pane_window; do
       [[ -n "$pane_id" ]] || continue
       if [[ -n "$pane_tty" ]]; then
         TTY_TO_PANE["$pane_tty"]="$pane_id"
@@ -80,7 +80,7 @@ USAGE
       PANE_TO_SESSION["$pane_id"]="$pane_session"
       PANE_TO_WINDOW["$pane_id"]="$pane_window"
     done < <(
-      tmux list-panes -a -F '#{pane_tty}\t#{pane_id}\t#{session_name}\t#{window_index}:#{window_name}' 2>/dev/null || true
+      tmux list-panes -a -F '#{pane_tty}|#{pane_id}|#{session_name}|#{window_index}:#{window_name}' 2>/dev/null || true
     )
 
     mapfile -t SESSION_ROWS < <(
