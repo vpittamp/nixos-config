@@ -113,6 +113,9 @@ INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 # Remote sesh/tmux session discovery cache (for SSH project window augmentation)
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
 REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
+REMOTE_OTEL_CACHE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-cache"
+REMOTE_OTEL_CACHE_TTL_SECONDS = 8.0
+REMOTE_OTEL_FETCH_TIMEOUT_SECONDS = 1.2
 
 
 def _normalize_session_name_key(value: str) -> str:
@@ -200,6 +203,221 @@ def load_otel_sessions() -> Dict[str, Any]:
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 123: Failed to read OTEL sessions file: {e}")
         return default_result
+
+
+def _remote_otel_merge_enabled() -> bool:
+    """Whether remote SSH OTEL session merge is enabled."""
+    raw = str(os.environ.get("I3PM_MONITORING_REMOTE_OTEL", "auto") or "auto").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    # Auto mode: disable during pytest to keep unit tests deterministic/fast.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return False
+    return True
+
+
+def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
+    """Parse normalized ssh connection key into ssh target fields."""
+    raw = str(connection_key or "").strip()
+    if not raw or raw.startswith("local@") or raw in {"unknown", "global"}:
+        return None
+
+    m = re.match(r"^(?:(?P<user>[^@:\s]+)@)?(?P<host>[^:\s]+)(?::(?P<port>\d+))?$", raw)
+    if not m:
+        return None
+
+    host = str(m.group("host") or "").strip()
+    if not host:
+        return None
+
+    user = str(m.group("user") or "").strip()
+    port_raw = str(m.group("port") or "").strip()
+    try:
+        port = int(port_raw) if port_raw else 22
+    except ValueError:
+        port = 22
+
+    target = f"{user}@{host}" if user else host
+    return {
+        "target": target,
+        "host": host,
+        "user": user,
+        "port": port,
+        "connection_key": _normalize_connection_key(raw),
+    }
+
+
+def _remote_otel_cache_file(connection_key: str) -> Path:
+    """Return per-connection cache file path for remote OTEL snapshots."""
+    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(connection_key or "").strip()) or "unknown"
+    return REMOTE_OTEL_CACHE_DIR / f"{safe}.json"
+
+
+def _load_remote_otel_cache(connection_key: str) -> Dict[str, Any]:
+    """Load cached remote OTEL payload for a connection key."""
+    cache_file = _remote_otel_cache_file(connection_key)
+    if not cache_file.exists():
+        return {}
+    try:
+        with open(cache_file, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (json.JSONDecodeError, IOError):
+        return {}
+    return {}
+
+
+def _save_remote_otel_cache(connection_key: str, payload: Dict[str, Any]) -> None:
+    """Persist remote OTEL payload cache atomically."""
+    try:
+        REMOTE_OTEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file = _remote_otel_cache_file(connection_key)
+        _atomic_write_json(cache_file, payload)
+    except Exception:
+        return
+
+
+def _normalize_remote_otel_session(
+    session: Dict[str, Any],
+    connection_key: str,
+    host: str,
+    remote_target: str,
+) -> Dict[str, Any]:
+    """Ensure remote OTEL session has canonical SSH identity metadata."""
+    normalized = dict(session)
+    terminal_context = normalized.get("terminal_context", {}) or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+
+    normalized["execution_mode"] = "ssh"
+    normalized["connection_key"] = connection_key
+    terminal_context["execution_mode"] = terminal_context.get("execution_mode") or "ssh"
+    terminal_context["connection_key"] = terminal_context.get("connection_key") or connection_key
+    terminal_context["remote_target"] = terminal_context.get("remote_target") or remote_target
+    terminal_context["host_name"] = terminal_context.get("host_name") or host
+    normalized["terminal_context"] = terminal_context
+    return normalized
+
+
+def _load_remote_otel_sessions_for_connection(connection_key: str) -> List[Dict[str, Any]]:
+    """Fetch remote OTEL sessions via SSH with short-lived cache."""
+    parsed = _parse_ssh_connection_key(connection_key)
+    if not parsed:
+        return []
+
+    normalized_key = str(parsed["connection_key"])
+    now_ts = time.time()
+    cached = _load_remote_otel_cache(normalized_key)
+    cache_ts = float(cached.get("fetched_at", 0.0) or 0.0) if isinstance(cached, dict) else 0.0
+    if now_ts - cache_ts <= REMOTE_OTEL_CACHE_TTL_SECONDS:
+        sessions = cached.get("sessions", []) if isinstance(cached, dict) else []
+        return [dict(s) for s in sessions if isinstance(s, dict)]
+
+    ssh_cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        f"ConnectTimeout={int(max(1, REMOTE_OTEL_FETCH_TIMEOUT_SECONDS))}",
+        "-p",
+        str(parsed["port"]),
+        str(parsed["target"]),
+        "cat /run/user/$(id -u)/otel-ai-sessions.json 2>/dev/null || echo '{\"sessions\":[]}'",
+    ]
+
+    fetched_sessions: List[Dict[str, Any]] = []
+    fetch_error = ""
+    try:
+        result = subprocess.run(
+            ssh_cmd,
+            capture_output=True,
+            text=True,
+            timeout=REMOTE_OTEL_FETCH_TIMEOUT_SECONDS,
+            check=False,
+        )
+        if result.returncode == 0:
+            payload_raw = (result.stdout or "").strip()
+            if payload_raw:
+                payload = json.loads(payload_raw)
+                if isinstance(payload, dict):
+                    for item in payload.get("sessions", []):
+                        if isinstance(item, dict):
+                            fetched_sessions.append(
+                                _normalize_remote_otel_session(
+                                    item,
+                                    connection_key=normalized_key,
+                                    host=str(parsed["host"]),
+                                    remote_target=f"{parsed['target']}:{parsed['port']}",
+                                )
+                            )
+        else:
+            fetch_error = (result.stderr or "").strip()
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
+        fetch_error = str(exc)
+
+    _save_remote_otel_cache(
+        normalized_key,
+        {
+            "fetched_at": now_ts,
+            "sessions": fetched_sessions,
+            "error": fetch_error,
+        },
+    )
+    return fetched_sessions
+
+
+def _load_remote_otel_sessions_for_windows(
+    window_candidates: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Fetch and merge remote OTEL sessions for active SSH window identities."""
+    if not _remote_otel_merge_enabled():
+        return []
+    if not window_candidates:
+        return []
+
+    connection_keys: List[str] = []
+    seen: set[str] = set()
+    for candidate in window_candidates:
+        if str(candidate.get("execution_mode") or "").strip().lower() != "ssh":
+            continue
+        raw_connection = str(candidate.get("connection_key") or "").strip()
+        if not raw_connection:
+            continue
+        normalized_connection = _normalize_connection_key(raw_connection)
+        if normalized_connection in {"unknown", "global"} or normalized_connection.startswith("local@"):
+            continue
+        if normalized_connection in seen:
+            continue
+        seen.add(normalized_connection)
+        connection_keys.append(normalized_connection)
+
+    merged: List[Dict[str, Any]] = []
+    for connection_key in connection_keys:
+        merged.extend(_load_remote_otel_sessions_for_connection(connection_key))
+
+    # Best-effort dedupe by native session identity and terminal location.
+    deduped: Dict[str, Dict[str, Any]] = {}
+    for session in merged:
+        terminal_context = session.get("terminal_context", {}) or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        key_parts = [
+            str(session.get("tool") or ""),
+            str(session.get("native_session_id") or ""),
+            str(session.get("connection_key") or ""),
+            str(terminal_context.get("tmux_pane") or ""),
+            str(terminal_context.get("pty") or ""),
+            str(session.get("session_id") or ""),
+        ]
+        dedupe_key = "|".join(key_parts)
+        existing = deduped.get(dedupe_key)
+        if existing is None or str(session.get("updated_at") or "") >= str(existing.get("updated_at") or ""):
+            deduped[dedupe_key] = session
+
+    return list(deduped.values())
 
 
 def load_ai_session_mru() -> List[str]:
@@ -1978,6 +2196,39 @@ def _session_project_candidates(raw_project: Any) -> tuple[set[str], set[str]]:
             break
 
     return exact, prefixes
+
+
+def _normalize_session_project_from_path(session: Dict[str, Any]) -> Dict[str, Any]:
+    """Prefer project identifier derived from project_path when mismatched/stale."""
+    normalized = dict(session)
+    project_raw = str(normalized.get("project") or "").strip()
+    project_path_raw = str(normalized.get("project_path") or "").strip()
+    if not project_path_raw:
+        return normalized
+
+    path_exact, path_prefixes = _session_project_candidates(project_path_raw)
+    if not path_exact and not path_prefixes:
+        return normalized
+
+    current_exact, current_prefixes = _session_project_candidates(project_raw)
+    # If current project is absent or doesn't align with path-derived identity,
+    # replace it with a deterministic exact candidate from project_path.
+    aligned = bool(
+        (path_exact and current_exact and len(path_exact.intersection(current_exact)) > 0)
+        or (
+            path_prefixes
+            and current_prefixes
+            and len(path_prefixes.intersection(current_prefixes)) > 0
+        )
+    )
+    if aligned:
+        return normalized
+
+    if path_exact:
+        normalized["project"] = sorted(path_exact)[0]
+    elif path_prefixes:
+        normalized["project"] = sorted(path_prefixes)[0]
+    return normalized
 
 
 def _resolve_otel_session_window_id(
@@ -4051,11 +4302,15 @@ async def query_monitoring_data() -> Dict[str, Any]:
         otel_sessions = load_otel_sessions()
         outputs = tree_data.get("outputs", [])
         window_candidates = _collect_output_window_candidates(outputs)
-        resolved_otel_sessions: List[Dict[str, Any]] = []
+        remote_otel_sessions = _load_remote_otel_sessions_for_windows(window_candidates)
+        merged_otel_raw_sessions: List[Dict[str, Any]] = []
         for raw_session in otel_sessions.get("sessions", []):
-            if not isinstance(raw_session, dict):
-                continue
-            session = dict(raw_session)
+            if isinstance(raw_session, dict):
+                merged_otel_raw_sessions.append(dict(raw_session))
+        merged_otel_raw_sessions.extend(remote_otel_sessions)
+        resolved_otel_sessions: List[Dict[str, Any]] = []
+        for raw_session in merged_otel_raw_sessions:
+            session = _normalize_session_project_from_path(raw_session)
             terminal_context = session.get("terminal_context", {}) or {}
             if not isinstance(terminal_context, dict):
                 terminal_context = {}
@@ -4087,6 +4342,10 @@ async def query_monitoring_data() -> Dict[str, Any]:
 
         otel_sessions_runtime = dict(otel_sessions)
         otel_sessions_runtime["sessions"] = resolved_otel_sessions
+        otel_sessions_runtime["has_working"] = any(
+            str(session.get("state") or "").strip().lower() == "working"
+            for session in resolved_otel_sessions
+        )
 
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
         per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}

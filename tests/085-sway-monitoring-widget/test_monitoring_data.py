@@ -782,6 +782,137 @@ class TestQueryMonitoringData:
         assert top_session["connection_key"] == "vpittamp@ryzen:22"
 
     @pytest.mark.asyncio
+    async def test_remote_otel_merge_maps_workflow_builder_session(self, monkeypatch, tmp_path):
+        """Remote host OTEL sessions should surface in local SSH project cards."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_CACHE_DIR",
+            tmp_path / "remote-otel-cache",
+        )
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_CACHE_TTL_SECONDS",
+            30.0,
+        )
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_FETCH_TIMEOUT_SECONDS",
+            0.2,
+        )
+
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 3,
+                            "name": "3",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 100,
+                                    "pid": 9201,
+                                    "class": "Ghostty",
+                                    "title": "workflow-builder",
+                                    "project": "PittampalliOrg/workflow-builder:main",
+                                    "workspace": 3,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [
+                                        "scoped:terminal:PittampalliOrg/workflow-builder:main:100",
+                                        "ctx:PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+        local_otel_payload = {
+            "schema_version": "4",
+            "sessions": [],
+            "has_working": False,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        remote_otel_payload = {
+            "schema_version": "4",
+            "sessions": [
+                {
+                    "tool": "codex",
+                    "state": "working",
+                    # Stale project name from remote env; should be corrected by project_path.
+                    "project": "vpittamp/nixos-config:main",
+                    "project_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                    "identity_confidence": "native",
+                    "native_session_id": "sid-remote-workflow",
+                    "session_id": "codex:sid-remote-workflow",
+                    "window_id": None,
+                    "terminal_context": {
+                        "tmux_session": "workflow-builder/main",
+                        "tmux_window": "1:bash",
+                        "tmux_pane": "%37",
+                        "host_name": "ryzen",
+                    },
+                    "updated_at": "2026-02-23T18:40:00+00:00",
+                }
+            ],
+            "has_working": True,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        def run_side_effect(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "ssh":
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(remote_otel_payload), "")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.run", side_effect=run_side_effect):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert result["active_ai_sessions"]
+        top_session = result["active_ai_sessions"][0]
+        assert top_session["window_id"] == 100
+        assert top_session["execution_mode"] == "ssh"
+        assert top_session["connection_key"] == "vpittamp@ryzen:22"
+        assert top_session["project"] == "PittampalliOrg/workflow-builder:main"
+
+        workflow_project = next(
+            project
+            for project in result["projects"]
+            if str(project.get("name") or "").endswith("/workflow-builder:main")
+            and project.get("variant") == "ssh"
+        )
+        assert workflow_project["windows"][0]["id"] == 100
+        assert len(workflow_project["windows"][0]["otel_badges"]) == 1
+
+    @pytest.mark.asyncio
     async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
         """Daemon-provided identity metadata should avoid /proc fallback reads."""
         mock_daemon_response = {
