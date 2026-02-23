@@ -535,6 +535,53 @@ let
       done
       return 1
     }
+
+    infer_current_session_key() {
+      local focused_window_id candidates_tsv candidate_count
+      focused_window_id=$(${pkgs.jq}/bin/jq -r '
+        first(.projects[]?.windows[]? | select((.focused // false) == true) | ((.id // 0) | tostring)) // ""
+      ' <<< "$MONITORING_DATA")
+      [[ -n "$focused_window_id" && "$focused_window_id" != "0" ]] || return 1
+
+      candidates_tsv=$(${pkgs.jq}/bin/jq -r --arg wid "$focused_window_id" '
+        (.active_ai_sessions // [])
+        | map(select((.window_id // 0 | tostring) == $wid))
+        | map([(.session_key // ""), (.tmux_session // ""), (.tmux_pane // ""), (.updated_at // "")] | @tsv)
+        | .[]
+      ' <<< "$MONITORING_DATA")
+      [[ -n "$candidates_tsv" ]] || return 1
+
+      candidate_count=$(printf '%s\n' "$candidates_tsv" | ${pkgs.coreutils}/bin/wc -l)
+      if (( candidate_count == 1 )); then
+        printf '%s\n' "$candidates_tsv" | ${pkgs.coreutils}/bin/cut -f1
+        return 0
+      fi
+
+      if command -v tmux >/dev/null 2>&1; then
+        while IFS=$'\t' read -r candidate_key candidate_session candidate_pane _; do
+          local client_pane
+          [[ -n "$candidate_key" ]] || continue
+          [[ -n "$candidate_session" ]] || continue
+          [[ -n "$candidate_pane" ]] || continue
+
+          client_pane=$(
+            tmux list-clients -t "$candidate_session" -F '#{client_activity} #{pane_id}' 2>/dev/null \
+              | ${pkgs.coreutils}/bin/sort -nr -k1,1 \
+              | ${pkgs.coreutils}/bin/head -n 1 \
+              | ${pkgs.gawk}/bin/awk '{print $2}'
+          )
+          if [[ -n "$client_pane" && "$candidate_pane" == "$client_pane" ]]; then
+            printf '%s\n' "$candidate_key"
+            return 0
+          fi
+        done <<< "$candidates_tsv"
+      fi
+
+      # Conservative fallback: assume the first focused-window candidate is current.
+      printf '%s\n' "$candidates_tsv" | ${pkgs.coreutils}/bin/head -n 1 | ${pkgs.coreutils}/bin/cut -f1
+      return 0
+    }
+
     MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
     if [[ "$ORDER_MODE" == "mru" ]]; then
       mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '(.active_ai_sessions_mru // .active_ai_sessions // []) | .[].session_key // empty' <<< "$MONITORING_DATA")
@@ -564,6 +611,19 @@ let
         break
       fi
     done
+
+    if (( CURRENT_IDX < 0 )); then
+      INFERRED_KEY=$(infer_current_session_key || true)
+      if [[ -n "$INFERRED_KEY" ]]; then
+        CURRENT_KEY="$INFERRED_KEY"
+        for i in "''${!SESSION_KEYS[@]}"; do
+          if [[ "''${SESSION_KEYS[$i]}" == "$CURRENT_KEY" ]]; then
+            CURRENT_IDX=$i
+            break
+          fi
+        done
+      fi
+    fi
 
     BASE_IDX=$CURRENT_IDX
     if (( BASE_IDX < 0 )); then
