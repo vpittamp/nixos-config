@@ -1,4 +1,4 @@
-{ pkgs, focusWindowScript, focusAiSessionScript, focusActiveAiSessionScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
+{ pkgs, focusWindowScript, focusAiSessionScript, focusActiveAiSessionScript, toggleAiGroupCollapseScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
 
 ''
   ;; Feature 138: Pinned active AI rail for quick session switching.
@@ -43,116 +43,96 @@
                 :truncate true)))))
       (box
         :class "active-ai-rail"
-        :orientation "h"
+        :orientation "v"
         :space-evenly false
-        :spacing 8
-        (label :class "active-ai-rail-title" :text "Active AI")
+        :spacing 5
         (box
-          :class "active-ai-chip-strip"
+          :class "active-ai-group-header"
           :orientation "h"
           :space-evenly false
+          :spacing 8
+          (label :class "active-ai-rail-title" :text "Active AI")
+          (label
+            :class "active-ai-rail-total"
+            :text {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) + " sessions"}))
+        (box
+          :class "active-ai-group-list"
+          :orientation "v"
+          :space-evenly false
           :spacing 4
-          :hexpand true
-          :halign "fill"
-          (box
-            :class "active-ai-chip-list"
-            :orientation "h"
-            :space-evenly false
-            :spacing 4
-            :hexpand true
-            :halign "start"
-            (for session in {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) <= 8 ? (monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []) : jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[:8]")}
+          (for group in {jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), "group_by(.display_project // .project // \"unknown\") | map({project:(.[0].display_project // .[0].project // \"unknown\"), sessions:.})")}
+            (box
+              :class "active-ai-group"
+              :orientation "v"
+              :space-evenly false
+              :spacing 2
               (eventbox
                 :cursor "pointer"
-                :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
-                :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
-                  + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
-                  + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
-                  + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
-                  + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
-                  + " · Click to focus"}
+                :onclick "${toggleAiGroupCollapseScript}/bin/toggle-ai-group-collapse-action \"''${group.project ?: "unknown"}\" &"
+                :tooltip "Collapse/expand project AI sessions"
                 (box
-                  :class {"active-ai-chip " +
-                    ((session.otel_state ?: "idle") == "working"
-                      ? "working"
-                      : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
-                    ((session.stale ?: false) ? " stale" : "") +
-                    (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
-                    ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
+                  :class "active-ai-group-row"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "active-ai-group-chevron"
+                    :text {jq(ai_group_collapsed_projects, ". | index(\"" + (group.project ?: "unknown") + "\") != null") ? "󰅂" : "󰅀"})
+                  (label
+                    :class "active-ai-group-project"
+                    :text {group.project ?: "unknown"}
+                    :limit-width 24
+                    :truncate true)
+                  (label
+                    :class "active-ai-group-count"
+                    :text {arraylength(group.sessions ?: [])})))
+              (revealer
+                :reveal {!jq(ai_group_collapsed_projects, ". | index(\"" + (group.project ?: "unknown") + "\") != null")}
+                :transition "slidedown"
+                :duration "120ms"
+                (box
+                  :class "active-ai-chip-list"
                   :orientation "h"
                   :space-evenly false
                   :spacing 4
-                  (image
-                    :class "active-ai-chip-icon"
-                    :path {(session.tool ?: "unknown") == "claude-code"
-                      ? "${iconPaths.claude}"
-                      : ((session.tool ?: "unknown") == "codex"
-                        ? "${iconPaths.codex}"
-                        : ((session.tool ?: "unknown") == "gemini"
-                          ? "${iconPaths.gemini}"
-                          : "${iconPaths.anthropic}"))}
-                    :image-width 15
-                    :image-height 15)
-                  (label
-                    :class "active-ai-chip-text"
-                    :text {session.display_project ?: session.project ?: "unknown"}
-                    :limit-width 18
-                    :truncate true))))
-            (eventbox
-              :visible {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 8}
-              :cursor "pointer"
-              :onclick {ai_sessions_expand_overflow ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update ai_sessions_expand_overflow=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update ai_sessions_expand_overflow=true"}
-              :tooltip {ai_sessions_expand_overflow ? "Hide additional sessions" : "Show all active sessions"}
-              (box
-                :class {"active-ai-overflow-chip" + (ai_sessions_expand_overflow ? " expanded" : "")}
-                :orientation "h"
-                :space-evenly false
-                :spacing 2
-                (label :class "active-ai-overflow-text" :text {"+''${arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) - 8}"})
-                (label :class "active-ai-overflow-icon" :text {ai_sessions_expand_overflow ? "󰅀" : "󰅂"}))))))
-      (revealer
-        :reveal {ai_sessions_expand_overflow && arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 8}
-        :transition "slidedown"
-        :duration "120ms"
-        (box
-          :class "active-ai-overflow-row"
-          :orientation "h"
-          :space-evenly false
-          :spacing 4
-          (for session in {jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[8:]")}
-            (eventbox
-              :cursor "pointer"
-              :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
-              :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
-                + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
-                + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")}
-              (box
-                :class {"active-ai-chip overflow " +
-                  ((session.otel_state ?: "idle") == "working"
-                    ? "working"
-                    : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
-                  ((session.stale ?: false) ? " stale" : "") +
-                  (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
-                  ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
-                :orientation "h"
-                :space-evenly false
-                :spacing 4
-                (image
-                  :class "active-ai-chip-icon"
-                  :path {(session.tool ?: "unknown") == "claude-code"
-                    ? "${iconPaths.claude}"
-                    : ((session.tool ?: "unknown") == "codex"
-                      ? "${iconPaths.codex}"
-                      : ((session.tool ?: "unknown") == "gemini"
-                        ? "${iconPaths.gemini}"
-                        : "${iconPaths.anthropic}"))}
-                  :image-width 14
-                  :image-height 14)
-                (label
-                  :class "active-ai-chip-text"
-                  :text {session.display_project ?: session.project ?: "unknown"}
-                  :limit-width 16
-                  :truncate true))))))))
+                  :hexpand true
+                  :halign "start"
+                  (for session in {group.sessions ?: []}
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
+                      :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                        + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
+                        + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
+                        + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
+                        + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
+                        + " · Click to focus"}
+                      (box
+                        :class {"active-ai-chip " +
+                          ((session.otel_state ?: "idle") == "working"
+                            ? "working"
+                            : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                          ((session.stale ?: false) ? " stale" : "") +
+                          (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
+                          ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
+                        :orientation "h"
+                        :space-evenly false
+                        :spacing 4
+                        (image
+                          :class "active-ai-chip-icon"
+                          :path {(session.tool ?: "unknown") == "claude-code"
+                            ? "${iconPaths.claude}"
+                            : ((session.tool ?: "unknown") == "codex"
+                              ? "${iconPaths.codex}"
+                              : ((session.tool ?: "unknown") == "gemini"
+                                ? "${iconPaths.gemini}"
+                                : "${iconPaths.anthropic}"))}
+                          :image-width 15
+                          :image-height 15)
+                        (label
+                          :class "active-ai-chip-text"
+                          :text {session.display_tool ?: session.tool ?: "AI"}
+                          :limit-width 16
+                          :truncate true)))))))))))
 
   ;; Windows View - Project-based hierarchy with real-time updates
   ;; Shows detail view when a window is selected, otherwise shows list
@@ -397,7 +377,7 @@
                         ? "attention"
                         : ((badge.otel_state ?: "idle") == "completed"
                           ? "completed"
-                          : "idle")) +
+                          : "idle"))) +
                     ((badge.stale ?: false) ? " stale" : "") +
                     (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
                   :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}

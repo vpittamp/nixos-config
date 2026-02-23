@@ -431,6 +431,36 @@ let
     ) &
   '';
 
+  # Feature 141: Toggle collapsed state for grouped Active AI rail sections.
+  toggleAiGroupCollapseScript = pkgs.writeShellScriptBin "toggle-ai-group-collapse-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    GROUP_KEY="''${1:-}"
+    if [[ -z "$GROUP_KEY" ]]; then
+      exit 1
+    fi
+
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    CURRENT_RAW=$($EWW_CMD get ai_group_collapsed_projects 2>/dev/null || echo "[]")
+    CURRENT_JSON=$(
+      printf '%s' "$CURRENT_RAW" \
+        | ${pkgs.jq}/bin/jq -c 'if type == "array" then . else [] end' 2>/dev/null \
+        || echo "[]"
+    )
+
+    UPDATED_JSON=$(
+      ${pkgs.jq}/bin/jq -c --arg key "$GROUP_KEY" '
+        (if type == "array" then . else [] end) as $arr
+        | if ($arr | index($key)) != null
+          then [$arr[] | select(. != $key)]
+          else ($arr + [$key])
+          end
+      ' <<< "$CURRENT_JSON"
+    )
+    $EWW_CMD update "ai_group_collapsed_projects=$UPDATED_JSON" >/dev/null 2>&1 || true
+  '';
+
   # Feature 140: Jump back to previous AI session (toggles between last two MRU entries).
   toggleLastAiSessionScript = pkgs.writeShellScriptBin "toggle-last-ai-session-action" ''
     #!${pkgs.bash}/bin/bash
@@ -1259,7 +1289,7 @@ in
 {
   inherit focusWindowScript focusAiSessionScript recordAiSessionMruScript
           focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
-          toggleLastAiSessionScript
+          toggleLastAiSessionScript toggleAiGroupCollapseScript
           switchProjectScript closeWorktreeScript
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
           toggleWindowsProjectExpandScript

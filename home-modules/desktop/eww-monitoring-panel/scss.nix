@@ -962,6 +962,43 @@
     min-width: 60px;
   }
 
+  .active-ai-rail-total {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+  }
+
+  .active-ai-group-list {
+    min-width: 0;
+  }
+
+  .active-ai-group {
+    border-top: 1px solid rgba(108, 112, 134, 0.18);
+    padding-top: 3px;
+  }
+
+  .active-ai-group-row {
+    padding: 0 2px;
+  }
+
+  .active-ai-group-chevron {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+    margin-right: 3px;
+  }
+
+  .active-ai-group-project {
+    font-size: 10px;
+    font-weight: 700;
+    color: ${mocha.subtext0};
+    min-width: 0;
+  }
+
+  .active-ai-group-count {
+    margin-left: 6px;
+    font-size: 9px;
+    color: ${mocha.overlay0};
+  }
+
   .active-ai-chip-strip {
     min-width: 0;
   }
