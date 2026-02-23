@@ -161,6 +161,8 @@ in
     "Alt+6" = "exec monitor-panel-tab 5";
     "Alt+bracketright" = "exec cycle-active-ai-session-action next";
     "Alt+bracketleft" = "exec cycle-active-ai-session-action prev";
+    "Alt+Tab" = "exec show-ai-mru-switcher-action next";
+    "Alt+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";

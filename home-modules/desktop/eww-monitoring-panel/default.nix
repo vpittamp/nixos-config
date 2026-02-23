@@ -66,8 +66,9 @@ let
     appCreateCancelScript appDeleteOpenScript appDeleteConfirmScript
     appDeleteCancelScript showSuccessNotificationScript startWindowTraceScript
     fetchTraceEventsScript navigateToTraceScript navigateToEventScript
-    startTraceFromTemplateScript focusWindowScript focusAiSessionScript switchProjectScript closeWorktreeScript
-    focusActiveAiSessionScript cycleActiveAiSessionScript
+    startTraceFromTemplateScript focusWindowScript focusAiSessionScript recordAiSessionMruScript
+    switchProjectScript closeWorktreeScript
+    focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
     closeAllWindowsScript closeWindowScript toggleProjectContextScript
     toggleWindowsProjectExpandScript
     copyWindowJsonScript copyTraceDataScript
@@ -194,8 +195,10 @@ in
       restartServiceScript
       focusWindowScript
       focusAiSessionScript
+      recordAiSessionMruScript
       focusActiveAiSessionScript
       cycleActiveAiSessionScript
+      showAiMruSwitcherScript
       switchProjectScript
       closeWorktreeScript
       closeAllWindowsScript

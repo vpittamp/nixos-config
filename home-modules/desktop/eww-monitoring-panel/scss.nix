@@ -899,6 +899,40 @@
     margin-bottom: 2px;
   }
 
+  .active-ai-mru-switcher {
+    background: rgba(24, 24, 37, 0.84);
+    border: 1px solid rgba(108, 112, 134, 0.24);
+    border-radius: 7px;
+    padding: 4px 7px;
+    margin-bottom: 4px;
+  }
+
+  .active-ai-mru-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: ${mocha.overlay0};
+    min-width: 44px;
+    margin-top: 1px;
+  }
+
+  .active-ai-mru-chip {
+    background: rgba(49, 50, 68, 0.58);
+    border: 1px solid rgba(108, 112, 134, 0.26);
+    border-radius: 6px;
+    padding: 2px 5px;
+  }
+
+  .active-ai-mru-chip.selected {
+    border-color: rgba(137, 180, 250, 0.66);
+    background: rgba(69, 71, 90, 0.84);
+  }
+
+  .active-ai-mru-chip-text {
+    font-size: 9px;
+    color: ${mocha.subtext0};
+    min-width: 0;
+  }
+
   .active-ai-rail {
     background: rgba(30, 30, 46, 0.62);
     border: 1px solid rgba(108, 112, 134, 0.3);

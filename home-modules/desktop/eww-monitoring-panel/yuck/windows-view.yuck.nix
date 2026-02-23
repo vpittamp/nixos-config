@@ -6,9 +6,41 @@
   (defwidget active-ai-rail []
     (box
       :class "active-ai-rail-container"
-      :visible {current_view_index == 0 && selected_window_id == 0 && arraylength(monitoring_data.active_ai_sessions ?: []) > 0}
+      :visible {current_view_index == 0 && selected_window_id == 0 && arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 0}
       :orientation "v"
       :space-evenly false
+      (revealer
+        :reveal {ai_mru_switcher_visible && arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 0}
+        :transition "slidedown"
+        :duration "80ms"
+        (box
+          :class "active-ai-mru-switcher"
+          :orientation "h"
+          :space-evenly false
+          :spacing 4
+          (label :class "active-ai-mru-title" :text "Recent")
+          (for session in {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) <= 6 ? (monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []) : jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[:6]")}
+            (box
+              :class {"active-ai-mru-chip " + ((ai_sessions_selected_key == (session.session_key ?: "")) ? "selected" : "")}
+              :orientation "h"
+              :space-evenly false
+              :spacing 3
+              (image
+                :class "active-ai-chip-icon"
+                :path {(session.tool ?: "unknown") == "claude-code"
+                  ? "${iconPaths.claude}"
+                  : ((session.tool ?: "unknown") == "codex"
+                    ? "${iconPaths.codex}"
+                    : ((session.tool ?: "unknown") == "gemini"
+                      ? "${iconPaths.gemini}"
+                      : "${iconPaths.anthropic}"))}
+                :image-width 13
+                :image-height 13)
+              (label
+                :class "active-ai-mru-chip-text"
+                :text {session.display_project ?: session.project ?: "unknown"}
+                :limit-width 14
+                :truncate true)))))
       (box
         :class "active-ai-rail"
         :orientation "h"
@@ -29,7 +61,7 @@
             :spacing 4
             :hexpand true
             :halign "start"
-            (for session in {arraylength(monitoring_data.active_ai_sessions ?: []) <= 8 ? (monitoring_data.active_ai_sessions ?: []) : jq(monitoring_data.active_ai_sessions ?: [], ".[:8]")}
+            (for session in {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) <= 8 ? (monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []) : jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[:8]")}
               (eventbox
                 :cursor "pointer"
                 :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
@@ -63,7 +95,7 @@
                     :limit-width 18
                     :truncate true))))
             (eventbox
-              :visible {arraylength(monitoring_data.active_ai_sessions ?: []) > 8}
+              :visible {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 8}
               :cursor "pointer"
               :onclick {ai_sessions_expand_overflow ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update ai_sessions_expand_overflow=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update ai_sessions_expand_overflow=true"}
               :tooltip {ai_sessions_expand_overflow ? "Hide additional sessions" : "Show all active sessions"}
@@ -72,10 +104,10 @@
                 :orientation "h"
                 :space-evenly false
                 :spacing 2
-                (label :class "active-ai-overflow-text" :text {"+''${arraylength(monitoring_data.active_ai_sessions ?: []) - 8}"})
+                (label :class "active-ai-overflow-text" :text {"+''${arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) - 8}"})
                 (label :class "active-ai-overflow-icon" :text {ai_sessions_expand_overflow ? "󰅀" : "󰅂"}))))))
       (revealer
-        :reveal {ai_sessions_expand_overflow && arraylength(monitoring_data.active_ai_sessions ?: []) > 8}
+        :reveal {ai_sessions_expand_overflow && arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 8}
         :transition "slidedown"
         :duration "120ms"
         (box
@@ -83,7 +115,7 @@
           :orientation "h"
           :space-evenly false
           :spacing 4
-          (for session in {jq(monitoring_data.active_ai_sessions ?: [], ".[8:]")}
+          (for session in {jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[8:]")}
             (eventbox
               :cursor "pointer"
               :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"

@@ -146,6 +146,7 @@
   (defvar ai_sessions_expand_overflow false)
   (defvar ai_sessions_selected_key "")
   (defvar ai_sessions_max_visible 8)
+  (defvar ai_mru_switcher_visible false)
 
   ;; Copy state - Window ID that was just copied (0 = none)
   ;; Set when copy button clicked, auto-resets after 2 seconds

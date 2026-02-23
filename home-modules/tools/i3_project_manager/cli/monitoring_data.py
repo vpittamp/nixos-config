@@ -94,6 +94,7 @@ BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid(
 # Feature 123: OTEL AI sessions file path
 # Written by otel-ai-monitor service, read here to include in monitoring_data output
 OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
+AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
@@ -194,6 +195,20 @@ def load_otel_sessions() -> Dict[str, Any]:
         return default_result
 
 
+def load_ai_session_mru() -> List[str]:
+    """Load AI session MRU order from runtime state file."""
+    if not AI_SESSION_MRU_FILE.exists():
+        return []
+    try:
+        with open(AI_SESSION_MRU_FILE, "r") as f:
+            payload = json.load(f)
+            if isinstance(payload, list):
+                return [str(item) for item in payload if isinstance(item, str) and item.strip()]
+    except (json.JSONDecodeError, IOError):
+        return []
+    return []
+
+
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     """Create inotify watcher subprocess for badge directory and OTEL sessions file.
 
@@ -227,6 +242,9 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if ACTIVE_WORKTREE_FILE.parent.exists():
         if str(ACTIVE_WORKTREE_FILE.parent) not in watch_paths:
             watch_paths.append(str(ACTIVE_WORKTREE_FILE.parent))
+    if AI_SESSION_MRU_FILE.parent.exists():
+        if str(AI_SESSION_MRU_FILE.parent) not in watch_paths:
+            watch_paths.append(str(AI_SESSION_MRU_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -272,6 +290,8 @@ async def read_inotify_events(
     otel_tmp_filename = otel_filename.replace(".json", ".tmp")  # "otel-ai-sessions.tmp"
     active_worktree_filename = ACTIVE_WORKTREE_FILE.name
     active_worktree_tmp_filename = active_worktree_filename.replace(".json", ".tmp")
+    mru_filename = AI_SESSION_MRU_FILE.name
+    mru_tmp_filename = mru_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -300,8 +320,9 @@ async def read_inotify_events(
             is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
             is_otel_file = filename in (otel_filename, otel_tmp_filename)
             is_active_worktree_file = filename in (active_worktree_filename, active_worktree_tmp_filename)
+            is_mru_file = filename in (mru_filename, mru_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_active_worktree_file:
+            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -1450,6 +1471,41 @@ def _build_active_ai_sessions(
         reverse=True,
     )
     return active_sessions
+
+
+def _apply_ai_session_mru_order(
+    active_sessions: List[Dict[str, Any]],
+    mru_keys: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Return active sessions reordered by MRU key list."""
+    if not active_sessions:
+        return []
+    mru_keys = mru_keys or []
+    if not mru_keys:
+        return list(active_sessions)
+
+    by_key = {
+        str(session.get("session_key") or ""): session
+        for session in active_sessions
+        if str(session.get("session_key") or "")
+    }
+    ordered: List[Dict[str, Any]] = []
+    used: set[str] = set()
+
+    for key in mru_keys:
+        session = by_key.get(str(key))
+        if session is None:
+            continue
+        ordered.append(session)
+        used.add(str(key))
+
+    for session in active_sessions:
+        key = str(session.get("session_key") or "")
+        if not key or key in used:
+            continue
+        ordered.append(session)
+
+    return ordered
 
 
 def transform_window(
@@ -2678,6 +2734,10 @@ async def query_monitoring_data() -> Dict[str, Any]:
             active_project_name=active_qualified_name,
             focused_window_id=focused_window_id,
         )
+        active_ai_sessions_mru = _apply_ai_session_mru_order(
+            active_ai_sessions,
+            load_ai_session_mru(),
+        )
 
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 
@@ -2736,6 +2796,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": ai_sessions,
             # Feature 138: Canonical active AI sessions rail + keyboard switching
             "active_ai_sessions": active_ai_sessions,
+            # Feature 139: MRU-ordered list for rapid Alt+Tab-style switching.
+            "active_ai_sessions_mru": active_ai_sessions_mru,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions,
         }
@@ -2757,6 +2819,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
             "active_ai_sessions": [],
+            "active_ai_sessions_mru": [],
             "otel_sessions": otel_sessions,
         }
 
@@ -2777,6 +2840,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
             "active_ai_sessions": [],
+            "active_ai_sessions_mru": [],
             "otel_sessions": otel_sessions,
         }
 

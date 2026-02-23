@@ -215,6 +215,32 @@ let
     exit 0
   '';
 
+  # Feature 139: Maintain MRU ordering for fast AI session switching.
+  recordAiSessionMruScript = pkgs.writeShellScriptBin "record-ai-session-mru-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    SESSION_KEY="''${1:-}"
+    if [[ -z "$SESSION_KEY" ]]; then
+      exit 1
+    fi
+
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    STATE_DIR="$RUNTIME_DIR/eww-monitoring-panel"
+    MRU_FILE="$STATE_DIR/ai-session-mru.json"
+    TMP_FILE="$MRU_FILE.tmp"
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+
+    if [[ ! -f "$MRU_FILE" ]]; then
+      printf '[]\n' > "$MRU_FILE"
+    fi
+
+    ${pkgs.jq}/bin/jq -c --arg key "$SESSION_KEY" '
+      ([ $key ] + (. // [] | map(select(. != $key))))[:64]
+    ' "$MRU_FILE" > "$TMP_FILE" 2>/dev/null || printf '[%s]\n' "$(${pkgs.jq}/bin/jq -Rn --arg key "$SESSION_KEY" '$key')" > "$TMP_FILE"
+    ${pkgs.coreutils}/bin/mv "$TMP_FILE" "$MRU_FILE"
+  '';
+
   # Feature 138: Focus active AI session by collision-safe session key.
   # Resolves from monitoring_data.active_ai_sessions and delegates to focus-ai-session-action.
   focusActiveAiSessionScript = pkgs.writeShellScriptBin "focus-active-ai-session-action" ''
@@ -281,6 +307,7 @@ let
       "$TMUX_SESSION" \
       "$TMUX_WINDOW" \
       "$TMUX_PTY"
+    ${recordAiSessionMruScript}/bin/record-ai-session-mru-action "$SESSION_KEY" >/dev/null 2>&1 || true
   '';
 
   # Feature 138: Cycle through active AI sessions in deterministic order.
@@ -289,17 +316,25 @@ let
     set -euo pipefail
 
     DIRECTION="''${1:-next}"
+    ORDER_MODE="''${2:-priority}"
     if [[ "$DIRECTION" != "next" && "$DIRECTION" != "prev" ]]; then
       DIRECTION="next"
+    fi
+    if [[ "$ORDER_MODE" != "priority" && "$ORDER_MODE" != "mru" ]]; then
+      ORDER_MODE="priority"
     fi
 
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
     MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
-    mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '.active_ai_sessions // [] | .[].session_key // empty' <<< "$MONITORING_DATA")
+    if [[ "$ORDER_MODE" == "mru" ]]; then
+      mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '(.active_ai_sessions_mru // .active_ai_sessions // []) | .[].session_key // empty' <<< "$MONITORING_DATA")
+    else
+      mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '.active_ai_sessions // [] | .[].session_key // empty' <<< "$MONITORING_DATA")
+    fi
 
     SESSION_COUNT=''${#SESSION_KEYS[@]}
     if (( SESSION_COUNT == 0 )); then
-      $EWW_CMD update 'ai_sessions_selected_key=""'
+      $EWW_CMD update 'ai_sessions_selected_key=""' 'ai_mru_switcher_visible=false'
       exit 0
     fi
 
@@ -373,6 +408,27 @@ let
     done
 
     exit 1
+  '';
+
+  # Feature 139: One-shot MRU switcher popover + cycle action (Alt+Tab style).
+  showAiMruSwitcherScript = pkgs.writeShellScriptBin "show-ai-mru-switcher-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    DIRECTION="''${1:-next}"
+    if [[ "$DIRECTION" != "next" && "$DIRECTION" != "prev" ]]; then
+      DIRECTION="next"
+    fi
+
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    $EWW_CMD update 'ai_mru_switcher_visible=true' >/dev/null 2>&1 || true
+
+    ${cycleActiveAiSessionScript}/bin/cycle-active-ai-session-action "$DIRECTION" mru >/dev/null 2>&1 || true
+
+    (
+      ${pkgs.coreutils}/bin/sleep 1.25
+      $EWW_CMD update 'ai_mru_switcher_visible=false' >/dev/null 2>&1 || true
+    ) &
   '';
 
   # Open remote session item action:
@@ -1168,8 +1224,8 @@ let
 
 in
 {
-  inherit focusWindowScript focusAiSessionScript focusActiveAiSessionScript
-          cycleActiveAiSessionScript
+  inherit focusWindowScript focusAiSessionScript recordAiSessionMruScript
+          focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
           switchProjectScript closeWorktreeScript
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
           toggleWindowsProjectExpandScript
