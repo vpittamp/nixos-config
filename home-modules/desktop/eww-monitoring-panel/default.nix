@@ -98,6 +98,7 @@ let
   notificationsYuck = import ./yuck/notifications.yuck.nix {};
 
   tailscaleViewYuck = import ./yuck/tailscale-view.yuck.nix (scripts // { inherit pkgs; });
+  aiDiagnosticsViewYuck = import ./yuck/ai-diagnostics-view.yuck.nix {};
 
   disabledStubsYuck = import ./yuck/disabled-stubs.yuck.nix {};
 
@@ -250,6 +251,7 @@ in
     xdg.configFile."eww-monitoring-panel/windows-view.yuck".text = windowsViewYuck;
     xdg.configFile."eww-monitoring-panel/projects-view.yuck".text = projectsViewYuck;
     xdg.configFile."eww-monitoring-panel/tailscale-view.yuck".text = tailscaleViewYuck;
+    xdg.configFile."eww-monitoring-panel/ai-diagnostics-view.yuck".text = aiDiagnosticsViewYuck;
     xdg.configFile."eww-monitoring-panel/forms.yuck".text = formsYuck;
     xdg.configFile."eww-monitoring-panel/dialogs.yuck".text = dialogsYuck;
     xdg.configFile."eww-monitoring-panel/notifications.yuck".text = notificationsYuck;

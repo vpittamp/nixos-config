@@ -150,7 +150,7 @@
                         :tooltip {(session.pinned ?: false) ? "Unpin session" : "Pin session"}
                         (label
                           :class {"active-ai-pin-btn" + ((session.pinned ?: false) ? " pinned" : "")}
-                          :text {(session.pinned ?: false) ? "󰐃" : "󰓎"}))))))))))))
+                          :text {(session.pinned ?: false) ? "󰐃" : "󰓎"}))))))))))
         (revealer
           :reveal {ai_sessions_selected_key != ""}
           :transition "slidedown"
@@ -183,7 +183,7 @@
                   :class "active-ai-timeline-line subtle"
                   :visible {(session.trace_id ?: "") != ""}
                   :text {"Trace: " + (session.trace_id ?: "")}
-                  :truncate true)))))
+                  :truncate true)))))))
 
   ;; Windows View - Project-based hierarchy with real-time updates
   ;; Shows detail view when a window is selected, otherwise shows list
@@ -457,7 +457,7 @@
                               ? " completed"
                               : ((badge.otel_state ?: "idle") == "attention"
                                 ? " attention"
-                                : " idle")) +
+                                : " idle"))) +
                           ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown")))}
                         :path {(badge.otel_tool ?: "unknown") == "claude-code"
                           ? "${iconPaths.claude}"

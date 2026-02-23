@@ -98,6 +98,7 @@ OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getu
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
 AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"
+AI_MONITOR_METRICS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-monitor-metrics.json"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
@@ -297,6 +298,35 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
         logger.debug(f"AI transition notification update failed: {exc}")
 
 
+def load_ai_monitor_metrics() -> Dict[str, Any]:
+    """Load persisted AI focus metrics."""
+    default_metrics = {
+        "focus_attempts": 0,
+        "focus_success": 0,
+        "focus_fail": 0,
+        "focus_success_rate": 0.0,
+        "last_focus": {},
+    }
+    if not AI_MONITOR_METRICS_FILE.exists():
+        return default_metrics
+    try:
+        with open(AI_MONITOR_METRICS_FILE, "r") as f:
+            data = json.load(f)
+            attempts = int(data.get("focus_attempts", 0) or 0)
+            success = int(data.get("focus_success", 0) or 0)
+            fail = int(data.get("focus_fail", 0) or 0)
+            rate = (success / attempts) if attempts > 0 else 0.0
+            return {
+                "focus_attempts": attempts,
+                "focus_success": success,
+                "focus_fail": fail,
+                "focus_success_rate": round(rate, 3),
+                "last_focus": data.get("last_focus", {}) if isinstance(data.get("last_focus", {}), dict) else {},
+            }
+    except (json.JSONDecodeError, IOError, ValueError, TypeError):
+        return default_metrics
+
+
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     """Create inotify watcher subprocess for badge directory and OTEL sessions file.
 
@@ -336,6 +366,9 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if AI_SESSION_PIN_FILE.parent.exists():
         if str(AI_SESSION_PIN_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_PIN_FILE.parent))
+    if AI_MONITOR_METRICS_FILE.parent.exists():
+        if str(AI_MONITOR_METRICS_FILE.parent) not in watch_paths:
+            watch_paths.append(str(AI_MONITOR_METRICS_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -385,6 +418,8 @@ async def read_inotify_events(
     mru_tmp_filename = mru_filename + ".tmp"
     pin_filename = AI_SESSION_PIN_FILE.name
     pin_tmp_filename = pin_filename + ".tmp"
+    metrics_filename = AI_MONITOR_METRICS_FILE.name
+    metrics_tmp_filename = metrics_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -415,8 +450,9 @@ async def read_inotify_events(
             is_active_worktree_file = filename in (active_worktree_filename, active_worktree_tmp_filename)
             is_mru_file = filename in (mru_filename, mru_tmp_filename)
             is_pin_file = filename in (pin_filename, pin_tmp_filename)
+            is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file:
+            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file or is_metrics_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -2917,6 +2953,14 @@ async def query_monitoring_data() -> Dict[str, Any]:
         )
         active_ai_sessions_mru = _apply_pinned_session_order(active_ai_sessions_mru, pinned_session_keys)
         emit_ai_state_transition_notifications(active_ai_sessions)
+        ai_metrics = load_ai_monitor_metrics()
+        ai_metrics.update({
+            "active_sessions": len(active_ai_sessions),
+            "working_sessions": sum(1 for s in active_ai_sessions if str(s.get("otel_state")) == "working"),
+            "attention_sessions": sum(1 for s in active_ai_sessions if str(s.get("otel_state")) == "attention"),
+            "stale_sessions": sum(1 for s in active_ai_sessions if bool(s.get("stale"))),
+            "pinned_sessions": sum(1 for s in active_ai_sessions if bool(s.get("pinned"))),
+        })
 
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 
@@ -2977,6 +3021,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "active_ai_sessions": active_ai_sessions,
             # Feature 139: MRU-ordered list for rapid Alt+Tab-style switching.
             "active_ai_sessions_mru": active_ai_sessions_mru,
+            "ai_monitor_metrics": ai_metrics,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions,
         }
@@ -2999,6 +3044,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": [],
             "active_ai_sessions": [],
             "active_ai_sessions_mru": [],
+            "ai_monitor_metrics": load_ai_monitor_metrics(),
             "otel_sessions": otel_sessions,
         }
 
@@ -3020,6 +3066,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": [],
             "active_ai_sessions": [],
             "active_ai_sessions_mru": [],
+            "ai_monitor_metrics": load_ai_monitor_metrics(),
             "otel_sessions": otel_sessions,
         }
 

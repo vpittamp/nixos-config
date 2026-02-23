@@ -96,6 +96,13 @@ ${if tailscaleTabEnabled then ''
             "TS"))'' else ""}
         (eventbox
           :cursor "pointer"
+          :onclick "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update current_view_index=3"
+          (button
+            :class "tab ''${current_view_index == 3 ? 'active' : ""}"
+            :tooltip "AI Diagnostics (Alt+4)"
+            "AI"))
+        (eventbox
+          :cursor "pointer"
           :onclick "${toggleDockModeScript}/bin/toggle-panel-dock-mode &"
           (button
             :class "tab mode-toggle"
@@ -114,7 +121,7 @@ ${if tailscaleTabEnabled then ''
 ${if tailscaleTabEnabled
   then ''      (box :class "view-container" :vexpand true (tailscale-view))''
   else ''      (box :class "view-container" :vexpand true (label :text "Tailscale view disabled"))''}
-      (box :class "view-container" :vexpand true (label :text "Health view disabled"))
+      (box :class "view-container" :vexpand true (ai-diagnostics-view))
       (box :class "view-container" :vexpand true (label :text "Events view disabled"))
       (box :class "view-container" :vexpand true (label :text "Traces view disabled"))
       (box :class "view-container" :vexpand true (label :text "Devices view disabled"))))
@@ -123,6 +130,7 @@ ${if tailscaleTabEnabled
   (include "./windows-view.yuck")
   (include "./projects-view.yuck")
   (include "./tailscale-view.yuck")
+  (include "./ai-diagnostics-view.yuck")
   (include "./forms.yuck")
   (include "./dialogs.yuck")
   (include "./notifications.yuck")

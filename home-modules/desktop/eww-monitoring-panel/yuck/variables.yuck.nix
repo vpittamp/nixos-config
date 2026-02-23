@@ -10,7 +10,7 @@
   ;; Uses --listen mode for instant updates on Sway events + inotify for badges
   ;; Much lower CPU than defpoll (no Python startup overhead every poll)
   (deflisten monitoring_data
-    :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
+    :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null,\"ai_monitor_metrics\":{\"focus_attempts\":0,\"focus_success\":0,\"focus_fail\":0,\"focus_success_rate\":0.0,\"last_focus\":{},\"active_sessions\":0,\"working_sessions\":0,\"attention_sessions\":0,\"stale_sessions\":0,\"pinned_sessions\":0}}"
     `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
   ;; Projects view data is refreshed on-demand when entering the Projects tab.

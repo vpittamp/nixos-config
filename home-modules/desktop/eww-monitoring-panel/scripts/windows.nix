@@ -175,12 +175,19 @@ let
       TARGET_VARIANT="local"
     fi
 
+    RECORD_FOCUS_METRIC="${recordAiFocusMetricScript}/bin/record-ai-focus-metric-action"
+
     # Reuse existing project-aware window focus flow.
     ${focusWindowScript}/bin/focus-window-action "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
 
     # Extra direct focus attempt to maximize reliability.
     ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
-    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
+    FOCUS_RESULT=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
+    if printf '%s\n' "$FOCUS_RESULT" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1; then
+      "$RECORD_FOCUS_METRIC" success "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+    else
+      "$RECORD_FOCUS_METRIC" fail "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+    fi
 
     # If this AI session reports tmux context, jump to that pane/window.
     if command -v tmux >/dev/null 2>&1; then
@@ -213,6 +220,53 @@ let
     fi
 
     exit 0
+  '';
+
+  # Feature 143: Persist focus metrics for AI diagnostics view.
+  recordAiFocusMetricScript = pkgs.writeShellScriptBin "record-ai-focus-metric-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    STATUS="''${1:-}"
+    PROJECT_NAME="''${2:-}"
+    WINDOW_ID="''${3:-}"
+    EXECUTION_MODE="''${4:-local}"
+    if [[ "$STATUS" != "success" && "$STATUS" != "fail" ]]; then
+      exit 1
+    fi
+
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    STATE_DIR="$RUNTIME_DIR/eww-monitoring-panel"
+    METRICS_FILE="$STATE_DIR/ai-monitor-metrics.json"
+    TMP_FILE="$METRICS_FILE.tmp"
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+
+    if [[ ! -f "$METRICS_FILE" ]]; then
+      printf '{"focus_attempts":0,"focus_success":0,"focus_fail":0,"last_focus":{}}\n' > "$METRICS_FILE"
+    fi
+
+    NOW=$(${pkgs.coreutils}/bin/date +%s)
+    ${pkgs.jq}/bin/jq -c \
+      --arg status "$STATUS" \
+      --arg project "$PROJECT_NAME" \
+      --arg window "$WINDOW_ID" \
+      --arg mode "$EXECUTION_MODE" \
+      --argjson ts "$NOW" '
+      .focus_attempts = ((.focus_attempts // 0) + 1)
+      | if $status == "success"
+        then .focus_success = ((.focus_success // 0) + 1)
+        else .focus_fail = ((.focus_fail // 0) + 1)
+        end
+      | .last_focus = {
+          status: $status,
+          project: $project,
+          window_id: $window,
+          execution_mode: $mode,
+          timestamp: $ts
+        }
+      | .updated_at = $ts
+      ' "$METRICS_FILE" > "$TMP_FILE"
+    ${pkgs.coreutils}/bin/mv "$TMP_FILE" "$METRICS_FILE"
   '';
 
   # Feature 139: Maintain MRU ordering for fast AI session switching.
@@ -1404,6 +1458,7 @@ let
 in
 {
   inherit focusWindowScript focusAiSessionScript recordAiSessionMruScript
+          recordAiFocusMetricScript
           focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
           toggleLastAiSessionScript toggleAiSessionPinScript
           toggleSelectedAiSessionPinScript toggleAiGroupCollapseScript

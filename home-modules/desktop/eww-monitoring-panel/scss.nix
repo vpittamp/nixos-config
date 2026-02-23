@@ -820,18 +820,6 @@
     opacity: 0.5;
   }
 
-  .ai-badge-icon.tool-claude-code {
-    filter: drop-shadow(0 0 2px rgba(148, 226, 213, 0.28));
-  }
-
-  .ai-badge-icon.tool-codex {
-    filter: drop-shadow(0 0 2px rgba(137, 180, 250, 0.24));
-  }
-
-  .ai-badge-icon.tool-gemini {
-    filter: drop-shadow(0 0 2px rgba(250, 179, 135, 0.28));
-  }
-
   /* AI badge hover effect with PID tooltip */
   .ai-badge-hover {
     padding: 0 1px;
@@ -870,6 +858,21 @@
   .ai-badge-hover.confidence-medium {
     border: 1px solid rgba(137, 220, 235, 0.22);
     border-radius: 5px;
+  }
+
+  .ai-badge-hover.tool-claude-code {
+    border: 1px solid rgba(148, 226, 213, 0.22);
+    background: rgba(148, 226, 213, 0.08);
+  }
+
+  .ai-badge-hover.tool-codex {
+    border: 1px solid rgba(137, 180, 250, 0.2);
+    background: rgba(137, 180, 250, 0.08);
+  }
+
+  .ai-badge-hover.tool-gemini {
+    border: 1px solid rgba(250, 179, 135, 0.22);
+    background: rgba(250, 179, 135, 0.08);
   }
 
   .ai-badge-hover:hover {
@@ -1292,6 +1295,61 @@
 
   .ai-session-chip.working:hover {
     background-color: rgba(243, 139, 168, 0.3);
+  }
+
+  .ai-diagnostics-container {
+    padding: 10px 12px;
+    background: rgba(30, 30, 46, 0.62);
+    border-radius: 8px;
+    border: 1px solid rgba(108, 112, 134, 0.3);
+    margin: 8px;
+  }
+
+  .ai-diagnostics-header {
+    margin-bottom: 8px;
+  }
+
+  .ai-diagnostics-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: ${mocha.text};
+  }
+
+  .ai-diagnostics-updated {
+    margin-left: 8px;
+    font-size: 10px;
+    color: ${mocha.overlay0};
+  }
+
+  .ai-diagnostics-grid {
+    margin-bottom: 10px;
+  }
+
+  .ai-diagnostics-row {
+    font-size: 11px;
+    color: ${mocha.subtext0};
+    margin-bottom: 2px;
+  }
+
+  .ai-diagnostics-last-focus {
+    padding-top: 6px;
+    border-top: 1px solid rgba(108, 112, 134, 0.2);
+  }
+
+  .ai-diagnostics-subtitle {
+    font-size: 11px;
+    font-weight: 700;
+    color: ${mocha.subtext0};
+    margin-bottom: 3px;
+  }
+
+  .ai-diagnostics-line {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+  }
+
+  .ai-diagnostics-line.subtle {
+    opacity: 0.8;
   }
 
   .ai-session-chip.working .ai-session-indicator {
