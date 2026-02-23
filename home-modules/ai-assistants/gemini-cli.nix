@@ -241,7 +241,13 @@ let
       # Enable Gemini CLI Plan Mode (preview feature).
       plan = true;
     };
-    ui.theme = "Default";
+    ui = {
+      theme = "Default";
+      statusline = {
+        enabled = true;
+        items = ["project" "tmux_pane" "model" "tokens" "context" "mode"];
+      };
+    };
     model.name = "gemini-3.1-pro-preview";
     # Feature 123: OpenTelemetry configuration for OTLP export
     # Sends telemetry to otel-ai-monitor (via our local interceptor).
@@ -373,6 +379,9 @@ EOF
         .tools.autoAccept = (.tools.autoAccept // true) |
         .ui = (.ui // {}) |
         .ui.theme = (.ui.theme // "Default") |
+        .ui.statusline = (.ui.statusline // {}) |
+        .ui.statusline.enabled = true |
+        .ui.statusline.items = ["project", "tmux_pane", "model", "tokens", "context", "mode"] |
 
         # Enforce AfterAgent hook for unified "finished" notification.
         .hooks = (.hooks // {}) |

@@ -1625,7 +1625,9 @@ _OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
 _AI_SESSION_STALE_THRESHOLD_SECONDS = 15 * 60
 _AI_SESSION_REVIEW_TTL_SECONDS = 24 * 60 * 60
 _AI_SESSION_REVIEW_MAX_ENTRIES = 512
-_AI_SESSION_REVIEW_DISAPPEAR_GRACE_SECONDS = 45
+# Grace before treating a disappeared active session as finished-unseen.
+# Keep short so users quickly see completed work even when terminal traces end abruptly.
+_AI_SESSION_REVIEW_DISAPPEAR_GRACE_SECONDS = 8
 
 _OTEL_TOOL_LABELS = {
     "claude-code": "Claude Code",
@@ -2621,6 +2623,8 @@ def _build_active_ai_sessions(
         confidence_level = _identity_confidence_level(identity_raw)
         updated_at = str(raw_session.get("updated_at") or "")
         updated_epoch = _parse_timestamp_to_epoch(updated_at)
+        pending_tools = int(raw_session.get("pending_tools", 0) or 0)
+        is_streaming = bool(raw_session.get("is_streaming", False))
         stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
         stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
 
@@ -2676,8 +2680,8 @@ def _build_active_ai_sessions(
             "identity_confidence": identity_raw,
             "confidence_level": confidence_level,
             "trace_id": str(raw_session.get("trace_id") or ""),
-            "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
-            "is_streaming": bool(raw_session.get("is_streaming", False)),
+            "pending_tools": pending_tools,
+            "is_streaming": is_streaming,
             "state_seq": _safe_int(raw_session.get("state_seq"), 0),
             "status_reason": str(raw_session.get("status_reason") or ""),
             "updated_at": updated_at,
@@ -3184,7 +3188,7 @@ def _merge_review_state_into_window_badges(
             ),
             reverse=True,
         )
-        window["otel_badges"] = badges
+        window["otel_badges"] = [badge for badge in badges if _should_render_otel_badge(badge)]
 
 
 def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
@@ -3199,6 +3203,26 @@ def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
     if state == "completed":
         return 1
     return 0
+
+
+def _should_render_ai_session(session: Dict[str, Any]) -> bool:
+    """Visible rail sessions: active work, pending review, or pinned."""
+    state = str(session.get("otel_state") or "idle").strip().lower()
+    if state in {"working", "attention"}:
+        return True
+    if bool(session.get("review_pending", False)):
+        return True
+    if bool(session.get("pinned", False)):
+        return True
+    return False
+
+
+def _should_render_otel_badge(badge: Dict[str, Any]) -> bool:
+    """Visible window badges: active work or pending review."""
+    state = str(badge.get("otel_state") or "idle").strip().lower()
+    if state in {"working", "attention"}:
+        return True
+    return bool(badge.get("review_pending", False))
 
 
 def transform_window(
@@ -4513,6 +4537,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
         for session in active_ai_sessions:
             key = str(session.get("session_key") or "")
             session["pinned"] = key in pinned_session_set
+        active_ai_sessions = [
+            session for session in active_ai_sessions if _should_render_ai_session(session)
+        ]
         active_ai_sessions = _apply_pinned_session_order(active_ai_sessions, pinned_session_keys)
         active_ai_sessions_mru = _apply_ai_session_mru_order(
             active_ai_sessions,

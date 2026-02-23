@@ -518,6 +518,7 @@ class TestQueryMonitoringData:
                     "session_id": "codex:sid-123",
                     "window_id": None,
                     "terminal_context": {},
+                    "is_streaming": True,
                     "updated_at": "2026-02-23T16:00:00+00:00",
                 }
             ],
@@ -1270,6 +1271,23 @@ class TestAiReviewLifecycle:
         completed_seen = {"otel_state": "completed", "review_pending": False}
         assert monitoring_data._active_ai_session_sort_rank(working) > monitoring_data._active_ai_session_sort_rank(finished_unseen)
         assert monitoring_data._active_ai_session_sort_rank(finished_unseen) > monitoring_data._active_ai_session_sort_rank(completed_seen)
+
+    def test_should_render_ai_session_hides_seen_idle_and_completed(self):
+        assert monitoring_data._should_render_ai_session({"otel_state": "working", "review_pending": False}) is True
+        assert monitoring_data._should_render_ai_session({"otel_state": "attention", "review_pending": False}) is True
+        assert monitoring_data._should_render_ai_session({"otel_state": "idle", "review_pending": True}) is True
+        assert monitoring_data._should_render_ai_session({"otel_state": "completed", "review_pending": True}) is True
+        assert monitoring_data._should_render_ai_session({"otel_state": "idle", "review_pending": False}) is False
+        assert monitoring_data._should_render_ai_session({"otel_state": "completed", "review_pending": False}) is False
+        assert monitoring_data._should_render_ai_session({"otel_state": "idle", "review_pending": False, "pinned": True}) is True
+
+    def test_should_render_otel_badge_hides_seen_idle_and_completed(self):
+        assert monitoring_data._should_render_otel_badge({"otel_state": "working", "review_pending": False}) is True
+        assert monitoring_data._should_render_otel_badge({"otel_state": "attention", "review_pending": False}) is True
+        assert monitoring_data._should_render_otel_badge({"otel_state": "idle", "review_pending": True}) is True
+        assert monitoring_data._should_render_otel_badge({"otel_state": "completed", "review_pending": True}) is True
+        assert monitoring_data._should_render_otel_badge({"otel_state": "idle", "review_pending": False}) is False
+        assert monitoring_data._should_render_otel_badge({"otel_state": "completed", "review_pending": False}) is False
 
     def test_consume_seen_events_empty_file_does_not_rewrite(self, tmp_path, monkeypatch):
         seen_events_file = tmp_path / "ai-session-seen-events.jsonl"

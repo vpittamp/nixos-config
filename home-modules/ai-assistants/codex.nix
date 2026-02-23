@@ -239,6 +239,17 @@ EOF
         rmcp_client = true;  # Required for MCP servers to work
       };
 
+      # Status line configuration for project context and monitoring
+      tui = {
+        status_line = [
+          "project_root"
+          "tmux_pane"
+          "model"
+          "git_branch"
+          "context_stats"
+        ];
+      };
+
       # Experimental features
       experimental = {
         shell_snapshotting = true;   # Snapshot shell env to avoid re-running login scripts

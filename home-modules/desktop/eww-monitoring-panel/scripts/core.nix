@@ -147,8 +147,8 @@ let
         # Defensive: close canonical id as well, in case an old mapping survived.
         $TIMEOUT 1s $EWW --config "$CONFIG" close "$PANEL_WINDOW_ID" >/dev/null 2>&1 || true
       }
-      # Ensure daemon has the latest config and a clean window state before opening.
-      $TIMEOUT 2s $EWW --config "$CONFIG" reload >/dev/null 2>&1 || true
+      # Cold-start path: daemon has just loaded current config, so avoid `reload`
+      # here. Reloading during startup can leave duplicate deflisten processes.
       cleanup_panel_windows
       ${pkgs.coreutils}/bin/sleep 0.15
       # Open once; if IPC returns a transient error, verify through active-windows.

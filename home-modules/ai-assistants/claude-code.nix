@@ -185,6 +185,21 @@ lib.mkIf enableClaudeCode {
       # Modes: "auto" (tmux if available, else in-process), "in-process", "tmux"
       teammateMode = "auto";
 
+      # Status line configuration for project context and monitoring
+      statusLine = {
+        type = "command";
+        # Use a Nix-managed script that reads stdin (JSON) and environment variables
+        command = "${pkgs.writeShellScript "claude-statusline.sh" ''
+          input=$(cat)
+          MODEL=$(${pkgs.jq}/bin/jq -r '.model.display_name' <<< \"$input\")
+          PERCENT=$(${pkgs.jq}/bin/jq -r '.context_window.usage_percentage' <<< \"$input\")
+          COST=$(${pkgs.jq}/bin/jq -r '.session_cost.total_cost' <<< \"$input\")
+          PROJECT=\"''${I3PM_PROJECT_NAME:-''${PWD##*/}}\"
+          TMUX_STR=\"''${TMUX_PANE:+ | Tmux: ''$TMUX_PANE}\"
+          echo -e \"\\e[34m[Proj: $PROJECT$TMUX_STR]\\e[0m | \\e[32m$MODEL\\e[0m | Ctx: $PERCENT% | \\$$COST\"
+        ''}";
+      };
+
       # Model selection removed - will use default or user's choice
       theme = "dark";
       editorMode = "vim";

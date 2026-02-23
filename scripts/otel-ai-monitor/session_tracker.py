@@ -51,6 +51,20 @@ logger = logging.getLogger(__name__)
 # Feature 137: Maximum session count to prevent memory exhaustion
 MAX_SESSIONS = 100
 UNRESOLVED_SESSION_TTL_SEC = 60.0
+_HEARTBEAT_ACTIVE_STATUS_REASONS = {
+    f"event:{EventNames.CLAUDE_API_REQUEST}",
+    f"event:{EventNames.CLAUDE_LLM_CALL}",
+    f"event:{EventNames.CLAUDE_STREAM_START}",
+    f"event:{EventNames.CLAUDE_STREAM_TOKEN}",
+    f"event:{EventNames.CODEX_API_REQUEST}",
+    f"event:{EventNames.CODEX_SSE_EVENT}",
+    f"event:{EventNames.CODEX_TOOL_DECISION}",
+    f"event:{EventNames.CODEX_TOOL_RESULT}",
+    f"event:{EventNames.GEMINI_API_REQUEST}",
+    f"event:{EventNames.GEMINI_API_REQUEST_DOT}",
+    f"event:{EventNames.GEMINI_API_RESPONSE}",
+    f"event:{EventNames.GEMINI_API_RESPONSE_DOT}",
+}
 
 
 def state_priority(state: SessionState) -> int:
@@ -1448,6 +1462,16 @@ class SessionTracker:
 
             self._mark_dirty_unlocked()
 
+    @staticmethod
+    def _heartbeat_should_extend_working(session: Session) -> bool:
+        """Deterministically decide whether metrics heartbeat implies active work."""
+        if session.pending_tools > 0:
+            return True
+        if session.is_streaming:
+            return True
+        status_reason = str(session.status_reason or "").strip().lower()
+        return status_reason in _HEARTBEAT_ACTIVE_STATUS_REASONS
+
     async def process_heartbeat(self, session_id: str) -> None:
         """Process a heartbeat signal (from metrics) for a session.
 
@@ -1468,7 +1492,7 @@ class SessionTracker:
                 return
 
             # Only extend quiet period for WORKING sessions
-            if session.state == SessionState.WORKING:
+            if session.state == SessionState.WORKING and self._heartbeat_should_extend_working(session):
                 now = datetime.now(timezone.utc)
                 session.last_event_at = now
                 self._reset_quiet_timer(session.session_id)
@@ -1515,14 +1539,14 @@ class SessionTracker:
             if pid:
                 for session_id, session in self._sessions.items():
                     if session.tool == tool and session.pid == pid:
-                        session.last_event_at = now
-                        if session.state == SessionState.WORKING:
+                        if session.state == SessionState.WORKING and self._heartbeat_should_extend_working(session):
+                            session.last_event_at = now
                             self._reset_quiet_timer(session_id)
-                        logger.debug(
-                            f"Session {session_id}: heartbeat extended by metrics (pid={pid})"
-                        )
+                            logger.debug(
+                                f"Session {session_id}: heartbeat extended by metrics (pid={pid})"
+                            )
+                            changed = True
                         found_session = True
-                        changed = True
                         break
 
                 # Feature 136: Create session from metrics heartbeat if none exists
@@ -1580,6 +1604,8 @@ class SessionTracker:
             if not found_session:
                 for session_id, session in self._sessions.items():
                     if session.tool == tool and session.state == SessionState.WORKING:
+                        if not self._heartbeat_should_extend_working(session):
+                            continue
                         session.last_event_at = now
                         self._reset_quiet_timer(session_id)
                         logger.debug(f"Session {session_id}: heartbeat extended by metrics")
