@@ -35,6 +35,7 @@ echo "Delegating to ai-finished-notification.sh" >> "$LOG_FILE"
 # Call shared notification script in background (non-blocking)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 nohup "${SCRIPT_DIR}/../ai-finished-notification.sh" "Gemini" "$MESSAGE" \
-    >/dev/null 2>&1 &
+    </dev/null >/dev/null 2>&1 &
 
+echo "{}"
 exit 0
