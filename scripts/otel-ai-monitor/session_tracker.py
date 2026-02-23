@@ -739,12 +739,35 @@ class SessionTracker:
         except Exception:
             return value
 
+    @staticmethod
+    def _project_from_path(path_value: Optional[str]) -> Optional[str]:
+        """Best-effort derive <account>/<repo>:<branch> from a repos path."""
+        normalized = SessionTracker._normalize_project_path(path_value)
+        if not normalized:
+            return None
+        try:
+            parts = [segment for segment in normalized.split(os.sep) if segment]
+            for idx, segment in enumerate(parts):
+                if segment != "repos":
+                    continue
+                if idx + 3 >= len(parts):
+                    continue
+                account = parts[idx + 1].strip()
+                repo = parts[idx + 2].strip()
+                branch = parts[idx + 3].strip()
+                if not account or not repo or not branch:
+                    continue
+                return f"{account}/{repo}:{branch}"
+        except Exception:
+            return None
+        return None
+
     def _extract_project_context(
         self, event: TelemetryEvent
     ) -> tuple[Optional[str], Optional[str]]:
         """Extract project display name and canonical path from event attributes."""
         attrs = event.attributes
-        project = None
+        project: Optional[str] = None
         project_path = None
 
         for key in ("project", "project_name", "i3pm.project_name"):
@@ -759,7 +782,21 @@ class SessionTracker:
                 project_path = self._normalize_project_path(value)
                 break
 
-        if not project and project_path:
+        project_from_path = self._project_from_path(project_path)
+        if project_from_path:
+            if not project:
+                project = project_from_path
+            elif not self._project_names_match(project, project_from_path):
+                # Resource/env project names can become stale after context
+                # switches; path-derived identity is more reliable.
+                logger.debug(
+                    "Project mismatch detected; preferring path-derived project: raw=%s path=%s derived=%s",
+                    project,
+                    project_path,
+                    project_from_path,
+                )
+                project = project_from_path
+        elif not project and project_path:
             project = project_path
 
         return project, project_path
@@ -1045,10 +1082,22 @@ class SessionTracker:
             confidence = confidence_raw.value
         else:
             confidence = str(confidence_raw or "").strip().lower()
+        if not session.native_session_id or confidence != IdentityConfidence.NATIVE.value:
+            return False
+        if session.project:
+            return True
+
+        terminal_context = session.terminal_context
+        terminal_window_id = getattr(terminal_context, "window_id", None)
+        context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
+        tmux_pane = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+        pty = str(getattr(terminal_context, "pty", "") or "").strip()
         return bool(
-            session.project
-            and session.native_session_id
-            and confidence == IdentityConfidence.NATIVE.value
+            session.window_id is not None
+            or terminal_window_id is not None
+            or context_key
+            or tmux_pane
+            or pty
         )
 
     async def process_event(self, event: TelemetryEvent) -> None:

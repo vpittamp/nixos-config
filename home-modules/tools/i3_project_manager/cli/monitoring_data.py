@@ -1986,6 +1986,13 @@ def _resolve_otel_session_window_id(
     window_candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[int]:
     """Best-effort mapping when OTEL session lacks explicit window_id."""
+    terminal_context = session.get("terminal_context", {}) or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+    parsed_context = _parse_context_key(
+        session.get("context_key") or terminal_context.get("context_key") or ""
+    )
+
     exact_candidates: set[str] = set()
     prefix_candidates: set[str] = set()
     for source in (session.get("project"), session.get("project_path")):
@@ -1993,21 +2000,32 @@ def _resolve_otel_session_window_id(
         exact_candidates.update(exact)
         prefix_candidates.update(prefixes)
 
-    if not exact_candidates and not prefix_candidates:
-        return None
+    context_qualified = str(parsed_context.get("qualified_name") or "").strip()
+    if context_qualified:
+        if ":" in context_qualified:
+            exact_candidates.add(context_qualified)
+            prefix_candidates.add(context_qualified.split(":", 1)[0])
+        else:
+            prefix_candidates.add(context_qualified)
 
     candidates = window_candidates if window_candidates is not None else _collect_output_window_candidates(outputs)
-    terminal_context = session.get("terminal_context", {}) or {}
-    if not isinstance(terminal_context, dict):
-        terminal_context = {}
+
+    raw_session_connection = str(
+        session.get("connection_key")
+        or terminal_context.get("connection_key")
+        or parsed_context.get("connection_key")
+        or ""
+    ).strip()
+    raw_session_context = str(
+        session.get("context_key") or terminal_context.get("context_key") or ""
+    ).strip()
+    has_explicit_identity = bool(raw_session_context or raw_session_connection)
+
     session_mode = _normalize_execution_mode(
         session.get("execution_mode") or terminal_context.get("execution_mode"),
         default="",
     )
     if not session_mode:
-        parsed_context = _parse_context_key(
-            session.get("context_key") or terminal_context.get("context_key") or ""
-        )
         session_mode = str(parsed_context.get("execution_mode") or "").strip()
     session_identity = _resolve_session_execution_identity(session, default_mode="local")
     session_connection = str(session_identity.get("connection_key") or "").strip()
@@ -2028,8 +2046,6 @@ def _resolve_otel_session_window_id(
             for prefix in prefix_candidates
         ):
             match_rank = 1
-        if match_rank == 0:
-            continue
 
         window_mode = str(candidate.get("execution_mode") or "").strip()
         window_connection = str(candidate.get("connection_key") or "").strip()
@@ -2042,6 +2058,24 @@ def _resolve_otel_session_window_id(
             continue
         if session_connection and window_connection and session_connection != window_connection:
             continue
+
+        if match_rank == 0:
+            if not has_explicit_identity:
+                continue
+            identity_fallback_match = bool(
+                (session_context and window_context and session_context == window_context)
+                or (
+                    session_mode
+                    and window_mode
+                    and session_mode == window_mode
+                    and session_connection
+                    and window_connection
+                    and session_connection == window_connection
+                )
+            )
+            if not identity_fallback_match:
+                continue
+            match_rank = 1
 
         identity_rank = 0
         if session_context and window_context and session_context == window_context:

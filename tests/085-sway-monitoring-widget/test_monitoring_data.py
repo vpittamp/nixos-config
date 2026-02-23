@@ -675,6 +675,113 @@ class TestQueryMonitoringData:
         assert ssh_badges[0]["execution_mode"] == "ssh"
 
     @pytest.mark.asyncio
+    async def test_otel_session_without_project_uses_context_identity_mapping(self):
+        """Context-key identity should recover SSH sessions with non-canonical project paths."""
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 2,
+                            "name": "2",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 211,
+                                    "pid": 4101,
+                                    "class": "Ghostty",
+                                    "title": "Local Workflow Builder",
+                                    "project": "vpittamp/workflow-builder:main",
+                                    "workspace": 2,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": False,
+                                    "marks": [
+                                        "ctx:vpittamp/workflow-builder:main::local::local@thinkpad",
+                                    ],
+                                    "execution_mode": "local",
+                                    "connection_key": "local@thinkpad",
+                                    "context_key": "vpittamp/workflow-builder:main::local::local@thinkpad",
+                                },
+                                {
+                                    "id": 778,
+                                    "pid": 5102,
+                                    "class": "Ghostty",
+                                    "title": "Remote Workflow Builder",
+                                    "project": "vpittamp/workflow-builder:main",
+                                    "workspace": 2,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [
+                                        "ctx:vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        otel_payload = {
+            "schema_version": "4",
+            "sessions": [
+                {
+                    "tool": "codex",
+                    "state": "working",
+                    # Remote worktree path does not match ~/repos/<account>/<repo>/<branch>.
+                    "project": "/srv/worktrees/workflow-builder",
+                    "project_path": "/srv/worktrees/workflow-builder",
+                    "identity_confidence": "native",
+                    "native_session_id": "sid-workflow-ssh",
+                    "session_id": "codex:sid-workflow-ssh",
+                    "window_id": None,
+                    "terminal_context": {
+                        "execution_mode": "ssh",
+                        "connection_key": "vpittamp@ryzen:22",
+                        "context_key": "vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                        "tmux_session": "workflow-builder",
+                        "tmux_window": "1:main",
+                        "tmux_pane": "%17",
+                        "host_name": "ryzen",
+                    },
+                    "updated_at": "2026-02-23T16:22:00+00:00",
+                }
+            ],
+            "has_working": True,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "vpittamp/workflow-builder:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert result["active_ai_sessions"]
+        top_session = result["active_ai_sessions"][0]
+        assert top_session["window_id"] == 778
+        assert top_session["execution_mode"] == "ssh"
+        assert top_session["connection_key"] == "vpittamp@ryzen:22"
+
+    @pytest.mark.asyncio
     async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
         """Daemon-provided identity metadata should avoid /proc fallback reads."""
         mock_daemon_response = {

@@ -43,7 +43,7 @@ const {
 // Config
 // =============================================================================
 
-const INTERCEPTOR_VERSION = '0.1.3';  // Native session + pane-aware correlation metadata
+const INTERCEPTOR_VERSION = '0.1.4';  // Enrich forwarded log attrs with i3pm/SSH correlation metadata
 
 const LISTEN_HOST = process.env.CODEX_OTEL_INTERCEPTOR_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.CODEX_OTEL_INTERCEPTOR_PORT || '4319', 10);
@@ -129,6 +129,66 @@ function readProcessEnvByPid(pid) {
     return out;
   } catch {
     return {};
+  }
+}
+
+function upsertStringAttr(attrs, key, value) {
+  const raw = value == null ? '' : String(value).trim();
+  if (!raw) return;
+  attrUpsert(attrs, key, { stringValue: raw });
+}
+
+function upsertIntAttr(attrs, key, value) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed)) return;
+  attrUpsert(attrs, key, { intValue: String(parsed) });
+}
+
+function buildRemoteTarget(remoteUser, remoteHost, remotePort) {
+  const host = String(remoteHost || '').trim();
+  if (!host) return '';
+  const user = String(remoteUser || '').trim();
+  const port = String(remotePort || '').trim() || '22';
+  if (user) return `${user}@${host}:${port}`;
+  return `${host}:${port}`;
+}
+
+function enrichLogAttrsForCorrelation(attrs, meta, pidEnv) {
+  if (!Array.isArray(attrs) || !meta || typeof meta !== 'object') return;
+  const env = pidEnv && typeof pidEnv === 'object' ? pidEnv : {};
+
+  const executionMode =
+    String(env.I3PM_EXECUTION_MODE || env.I3PM_CONTEXT_VARIANT || '').trim().toLowerCase() || null;
+  const connectionKey = String(env.I3PM_CONNECTION_KEY || '').trim() || null;
+  const contextKey = String(env.I3PM_CONTEXT_KEY || '').trim() || null;
+  const remoteTarget = buildRemoteTarget(env.I3PM_REMOTE_USER, env.I3PM_REMOTE_HOST, env.I3PM_REMOTE_PORT);
+
+  upsertIntAttr(attrs, 'process.pid', meta.clientPid);
+  upsertStringAttr(attrs, 'working_directory', meta.cwd || meta.projectPath);
+  upsertStringAttr(attrs, 'project_path', meta.projectPath);
+  upsertStringAttr(attrs, 'i3pm.project_path', meta.projectPath);
+  upsertStringAttr(attrs, 'i3pm.project_name', meta.projectName);
+  upsertStringAttr(attrs, 'terminal.tmux.session', meta.tmuxSession);
+  upsertStringAttr(attrs, 'terminal.tmux.window', meta.tmuxWindow);
+  upsertStringAttr(attrs, 'terminal.tmux.pane', meta.tmuxPane);
+  upsertStringAttr(attrs, 'terminal.pty', meta.pty);
+  upsertStringAttr(attrs, 'host.name', os.hostname());
+
+  if (executionMode) {
+    upsertStringAttr(attrs, 'terminal.execution_mode', executionMode);
+    upsertStringAttr(attrs, 'i3pm.execution_mode', executionMode);
+  }
+  if (connectionKey) {
+    upsertStringAttr(attrs, 'terminal.connection_key', connectionKey);
+    upsertStringAttr(attrs, 'i3pm.connection_key', connectionKey);
+  }
+  if (contextKey) {
+    upsertStringAttr(attrs, 'terminal.context_key', contextKey);
+    upsertStringAttr(attrs, 'i3pm.context_key', contextKey);
+  }
+  if (remoteTarget) {
+    upsertStringAttr(attrs, 'terminal.remote_target', remoteTarget);
+    upsertStringAttr(attrs, 'i3pm.remote_target', remoteTarget);
   }
 }
 
@@ -973,6 +1033,11 @@ async function handleLogsRequest(req, res) {
           // Feature 135: Pass client PID for window correlation
           clientPid,
         };
+
+        // Ensure forwarded OTEL logs carry deterministic project/terminal identity.
+        // This keeps otel-ai-monitor correlation reliable even when Codex omits
+        // resource attrs in native log records.
+        enrichLogAttrsForCorrelation(attrs, meta, pidEnv);
 
         events.push({ meta, attrsObj });
       }
