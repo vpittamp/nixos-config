@@ -300,7 +300,7 @@ in
       # Using UPPERCASE to avoid conflicts
       # Tips: Use 'less' for scrollable output, mouse selection works in most popups
 
-      # Active AI sessions overview popup (working/attention sessions only).
+      # Active AI sessions overview popup (working/attention + finished-unseen sessions).
       # Builds a dynamic tiled mirror of source panes without mutating user layouts.
       bind-key A run-shell "ai-tmux-view-action"
 

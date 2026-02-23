@@ -67,6 +67,7 @@ let
     appDeleteCancelScript showSuccessNotificationScript startWindowTraceScript
     fetchTraceEventsScript navigateToTraceScript navigateToEventScript
     startTraceFromTemplateScript focusWindowScript focusAiSessionScript recordAiSessionMruScript
+    ackAiSessionSeenScript
     switchProjectScript closeWorktreeScript
     focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
     toggleLastAiSessionScript toggleAiSessionPinScript
@@ -200,6 +201,7 @@ in
       focusWindowScript
       focusAiSessionScript
       recordAiSessionMruScript
+      ackAiSessionSeenScript
       focusActiveAiSessionScript
       cycleActiveAiSessionScript
       showAiMruSwitcherScript

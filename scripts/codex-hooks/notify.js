@@ -15,7 +15,9 @@
 
 'use strict';
 
+const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
@@ -53,6 +55,38 @@ try {
 // Send desktop notification on agent-turn-complete
 try {
   const event = JSON.parse(payload);
+
+  // Persist session metadata for deterministic PID/window correlation in otel-ai-monitor.
+  // Codex native OTEL events may omit process.pid; this sidecar bridges thread-id -> PID.
+  try {
+    const threadId = typeof event['thread-id'] === 'string' ? event['thread-id'].trim() : '';
+    const parentPid = Number.isInteger(process.ppid) ? process.ppid : 0;
+    if (threadId && parentPid > 1) {
+      const runtimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid ? process.getuid() : ''}` || '/tmp';
+      const metadataPath = path.join(runtimeDir, `codex-session-${parentPid}.json`);
+      const tempPath = `${metadataPath}.tmp-${process.pid}`;
+      const metadata = {
+        version: 1,
+        tool: 'codex',
+        sessionId: threadId,
+        pid: parentPid,
+        projectName: process.env.I3PM_PROJECT_NAME || null,
+        projectPath: process.env.I3PM_PROJECT_PATH || process.cwd(),
+        tmuxSession: process.env.TMUX_SESSION || null,
+        tmuxWindow: process.env.TMUX_WINDOW || null,
+        tmuxPane: process.env.TMUX_PANE || null,
+        pty: process.env.TTY || null,
+        hostName: os.hostname(),
+        updatedAt: new Date().toISOString(),
+      };
+      fs.mkdirSync(runtimeDir, { recursive: true });
+      fs.writeFileSync(tempPath, `${JSON.stringify(metadata)}\n`, { encoding: 'utf8', mode: 0o600 });
+      fs.renameSync(tempPath, metadataPath);
+    }
+  } catch {
+    // best-effort only
+  }
+
   if (event.type === 'agent-turn-complete') {
     // Extract a useful message from the payload
     let message = 'Task complete';

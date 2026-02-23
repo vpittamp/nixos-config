@@ -37,6 +37,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from collections import deque
 from datetime import datetime
@@ -99,6 +100,8 @@ AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.get
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
 AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"
 AI_MONITOR_METRICS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-monitor-metrics.json"
+AI_SESSION_REVIEW_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-review.json"
+AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-seen-events.jsonl"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
@@ -231,13 +234,15 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
     """Notify on meaningful transitions with debounce."""
     try:
         now_ts = time.time()
+        cache: Dict[str, Any] = {}
         if AI_SESSION_NOTIFY_FILE.exists():
-            with open(AI_SESSION_NOTIFY_FILE, "r") as f:
-                cache = json.load(f)
-                if not isinstance(cache, dict):
-                    cache = {}
-        else:
-            cache = {}
+            try:
+                with open(AI_SESSION_NOTIFY_FILE, "r") as f:
+                    loaded_cache = json.load(f)
+                    if isinstance(loaded_cache, dict):
+                        cache = loaded_cache
+            except (json.JSONDecodeError, IOError, ValueError, TypeError):
+                cache = {}
 
         sessions_cache = cache.get("sessions", {})
         if not isinstance(sessions_cache, dict):
@@ -289,11 +294,7 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
             "last_global_notification": last_global_notification,
             "updated_at": now_ts,
         }
-        AI_SESSION_NOTIFY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp_file = AI_SESSION_NOTIFY_FILE.with_suffix(".tmp")
-        with open(tmp_file, "w") as f:
-            json.dump(cache, f, separators=(",", ":"))
-        tmp_file.replace(AI_SESSION_NOTIFY_FILE)
+        _atomic_write_json(AI_SESSION_NOTIFY_FILE, cache)
     except Exception as exc:
         logger.debug(f"AI transition notification update failed: {exc}")
 
@@ -306,6 +307,7 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
         "focus_fail": 0,
         "focus_success_rate": 0.0,
         "last_focus": {},
+        "review_pending_sessions": 0,
     }
     if not AI_MONITOR_METRICS_FILE.exists():
         return default_metrics
@@ -322,9 +324,133 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
                 "focus_fail": fail,
                 "focus_success_rate": round(rate, 3),
                 "last_focus": data.get("last_focus", {}) if isinstance(data.get("last_focus", {}), dict) else {},
+                "review_pending_sessions": int(data.get("review_pending_sessions", 0) or 0),
             }
     except (json.JSONDecodeError, IOError, ValueError, TypeError):
         return default_metrics
+
+
+def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
+    """Atomically write JSON payload to disk with per-write temp files."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Optional[Path] = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=str(path.parent),
+        )
+        temp_path = Path(tmp_name)
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, separators=(",", ":"))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def load_ai_session_review_state() -> Dict[str, Any]:
+    """Load finished/unseen AI session ledger."""
+    default_state: Dict[str, Any] = {
+        "schema_version": "1",
+        "sessions": {},
+        "updated_at": int(time.time()),
+    }
+    if not AI_SESSION_REVIEW_FILE.exists():
+        return default_state
+    try:
+        with open(AI_SESSION_REVIEW_FILE, "r") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            return default_state
+        sessions = payload.get("sessions", {})
+        if not isinstance(sessions, dict):
+            sessions = {}
+        # Keep only dict entries with non-empty keys to bound damage from
+        # malformed runtime files.
+        sessions = {
+            str(key): value
+            for key, value in sessions.items()
+            if str(key).strip() and isinstance(value, dict)
+        }
+        return {
+            "schema_version": str(payload.get("schema_version", "1")),
+            "sessions": sessions,
+            "updated_at": int(payload.get("updated_at", int(time.time())) or int(time.time())),
+        }
+    except (json.JSONDecodeError, IOError, ValueError, TypeError):
+        return default_state
+
+
+def save_ai_session_review_state(state: Dict[str, Any]) -> None:
+    """Persist finished/unseen AI session ledger."""
+    sessions_raw = state.get("sessions", {}) if isinstance(state, dict) else {}
+    sessions = sessions_raw if isinstance(sessions_raw, dict) else {}
+    payload = {
+        "schema_version": "1",
+        "sessions": sessions,
+        "updated_at": int(time.time()),
+    }
+    _atomic_write_json(AI_SESSION_REVIEW_FILE, payload)
+
+
+def consume_ai_session_seen_events() -> List[Dict[str, Any]]:
+    """Read and clear AI session seen acknowledgements (JSONL)."""
+    if not AI_SESSION_SEEN_EVENTS_FILE.exists():
+        return []
+
+    events: List[Dict[str, Any]] = []
+    try:
+        with open(AI_SESSION_SEEN_EVENTS_FILE, "r") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                session_key = str(item.get("session_key") or "").strip()
+                if not session_key:
+                    continue
+                events.append({
+                    "session_key": session_key,
+                    "timestamp": int(item.get("timestamp", int(time.time())) or int(time.time())),
+                    "finish_marker": str(item.get("finish_marker") or "").strip(),
+                })
+    except IOError:
+        return []
+
+    # IMPORTANT: Don't rewrite an empty file every refresh. In listen mode the
+    # file path is watched by inotify; unconditional truncation creates a
+    # self-triggering event loop that floods Eww updates.
+    if events:
+        try:
+            AI_SESSION_SEEN_EVENTS_FILE.unlink(missing_ok=True)
+        except TypeError:
+            # Python < 3.8 compatibility fallback (defensive).
+            try:
+                if AI_SESSION_SEEN_EVENTS_FILE.exists():
+                    AI_SESSION_SEEN_EVENTS_FILE.unlink()
+            except OSError:
+                pass
+        except OSError:
+            # Best-effort fallback if unlink fails on a busy filesystem.
+            try:
+                with open(AI_SESSION_SEEN_EVENTS_FILE, "w") as f:
+                    f.write("")
+            except IOError:
+                pass
+
+    return events
 
 
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
@@ -369,6 +495,9 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if AI_MONITOR_METRICS_FILE.parent.exists():
         if str(AI_MONITOR_METRICS_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_MONITOR_METRICS_FILE.parent))
+    if AI_SESSION_REVIEW_FILE.parent.exists():
+        if str(AI_SESSION_REVIEW_FILE.parent) not in watch_paths:
+            watch_paths.append(str(AI_SESSION_REVIEW_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -420,6 +549,10 @@ async def read_inotify_events(
     pin_tmp_filename = pin_filename + ".tmp"
     metrics_filename = AI_MONITOR_METRICS_FILE.name
     metrics_tmp_filename = metrics_filename + ".tmp"
+    review_filename = AI_SESSION_REVIEW_FILE.name
+    review_tmp_filename = review_filename + ".tmp"
+    seen_events_filename = AI_SESSION_SEEN_EVENTS_FILE.name
+    seen_events_tmp_filename = seen_events_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -451,8 +584,10 @@ async def read_inotify_events(
             is_mru_file = filename in (mru_filename, mru_tmp_filename)
             is_pin_file = filename in (pin_filename, pin_tmp_filename)
             is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
+            is_review_file = filename in (review_filename, review_tmp_filename)
+            is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file or is_metrics_file:
+            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -1270,6 +1405,8 @@ _OTEL_STATE_PRIORITY = {
 _OTEL_VISIBLE_BADGE_STATES = {"working", "attention", "completed", "idle"}
 _OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
 _AI_SESSION_STALE_THRESHOLD_SECONDS = 15 * 60
+_AI_SESSION_REVIEW_TTL_SECONDS = 24 * 60 * 60
+_AI_SESSION_REVIEW_MAX_ENTRIES = 512
 
 _OTEL_TOOL_LABELS = {
     "claude-code": "Claude Code",
@@ -1410,10 +1547,27 @@ def _coalesce_otel_badge_sessions(
             base["collision_group_id"] = other.get("collision_group_id")
         if not base.get("window_id") and other.get("window_id"):
             base["window_id"] = other.get("window_id")
+        if not base.get("execution_mode") and other.get("execution_mode"):
+            base["execution_mode"] = other.get("execution_mode")
+        if not base.get("connection_key") and other.get("connection_key"):
+            base["connection_key"] = other.get("connection_key")
+        if not base.get("context_key") and other.get("context_key"):
+            base["context_key"] = other.get("context_key")
 
         base_context = base.get("terminal_context", {}) or {}
         other_context = other.get("terminal_context", {}) or {}
-        for ctx_key in ("window_id", "tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
+        for ctx_key in (
+            "window_id",
+            "tmux_session",
+            "tmux_window",
+            "tmux_pane",
+            "pty",
+            "host_name",
+            "execution_mode",
+            "connection_key",
+            "context_key",
+            "remote_target",
+        ):
             if not base_context.get(ctx_key) and other_context.get(ctx_key):
                 base_context[ctx_key] = other_context.get(ctx_key)
         base["terminal_context"] = base_context
@@ -1426,6 +1580,595 @@ def _coalesce_otel_badge_sessions(
         merged[key] = base
 
     return list(merged.values())
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    """Best-effort integer conversion."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_execution_mode(value: Any, default: str = "local") -> str:
+    """Normalize execution mode to local/ssh/global with configurable fallback."""
+    mode = str(value or "").strip().lower()
+    if mode in {"local", "ssh", "global"}:
+        return mode
+    return default
+
+
+def _extract_context_key_from_marks(marks: Any) -> str:
+    """Extract ctx:<context_key> mark value when present."""
+    if not isinstance(marks, list):
+        return ""
+    for mark in marks:
+        raw = str(mark or "").strip()
+        if raw.startswith("ctx:") and len(raw) > 4:
+            return raw[4:]
+    return ""
+
+
+def _parse_context_key(value: Any) -> Dict[str, str]:
+    """Parse context key format '<qualified>::<mode>::<connection>'."""
+    raw = str(value or "").strip()
+    parsed = {
+        "context_key": raw,
+        "qualified_name": "",
+        "execution_mode": "",
+        "connection_key": "",
+    }
+    if not raw:
+        return parsed
+
+    parts = raw.split("::")
+    if len(parts) < 3:
+        return parsed
+
+    connection_key = str(parts[-1]).strip()
+    execution_mode = _normalize_execution_mode(parts[-2], default="")
+    qualified_name = "::".join(parts[:-2]).strip()
+    if not execution_mode:
+        return parsed
+
+    parsed["qualified_name"] = qualified_name
+    parsed["execution_mode"] = execution_mode
+    parsed["connection_key"] = connection_key
+    return parsed
+
+
+def _identity_from_mode_connection(
+    execution_mode: Any,
+    connection_key: Any = "",
+    host_alias: str = "",
+) -> Dict[str, str]:
+    """
+    Build canonical identity fields from mode + connection key.
+
+    This is the normalized counterpart to _connection_identity(remote_enabled,...)
+    when execution metadata is already known.
+    """
+    mode = _normalize_execution_mode(execution_mode, default="local")
+    if mode not in {"local", "ssh"}:
+        mode = "local"
+
+    raw_connection = str(connection_key or "").strip()
+    if raw_connection in {"unknown", "global"}:
+        raw_connection = ""
+    if mode == "local":
+        normalized_connection = (
+            _normalize_connection_key(raw_connection)
+            if raw_connection
+            else _local_connection_key()
+        )
+        alias = (
+            str(
+                os.environ.get("I3PM_LOCAL_HOST_ALIAS")
+                or os.environ.get("HOSTNAME")
+                or socket.gethostname()
+            ).strip().lower()
+            or "localhost"
+        )
+    else:
+        normalized_connection = (
+            _normalize_connection_key(raw_connection)
+            if raw_connection
+            else _normalize_connection_key(host_alias or "unknown")
+        )
+        alias = str(host_alias or "").strip() or normalized_connection or "unknown"
+
+    return {
+        "execution_mode": mode,
+        "connection_key": normalized_connection,
+        "host_alias": alias,
+        "identity_key": f"{mode}:{normalized_connection}",
+    }
+
+
+def _resolve_window_execution_identity(
+    window: Dict[str, Any],
+    *,
+    remote_profile: Optional[Dict[str, Any]] = None,
+    remote_env_cache: Optional[Dict[int, Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    """
+    Resolve canonical execution identity for a daemon window payload.
+
+    Priority:
+      1) Explicit daemon metadata (execution_mode/connection_key/context_key/remote_*)
+      2) ctx:<context_key> sway mark
+      3) Compatibility fallback via /proc I3PM_REMOTE_* (cached)
+    """
+    remote_profile = remote_profile or {}
+
+    mode = _normalize_execution_mode(
+        window.get("execution_mode") or window.get("i3pm_execution_mode"),
+        default="",
+    )
+    connection_key = str(
+        window.get("connection_key") or window.get("i3pm_connection_key") or ""
+    ).strip()
+    context_key = str(window.get("context_key") or window.get("i3pm_context_key") or "").strip()
+    if not context_key:
+        context_key = _extract_context_key_from_marks(window.get("marks", []))
+    parsed_context = _parse_context_key(context_key)
+    if not mode:
+        mode = parsed_context.get("execution_mode", "")
+    if not connection_key:
+        connection_key = parsed_context.get("connection_key", "")
+
+    remote_enabled_raw = window.get("remote_enabled")
+    if remote_enabled_raw is None:
+        remote_enabled_raw = window.get("i3pm_remote_enabled")
+    if remote_enabled_raw is None:
+        remote_enabled_raw = window.get("project_remote_enabled")
+
+    remote_target = str(
+        window.get("remote_target")
+        or window.get("i3pm_remote_target")
+        or window.get("project_remote_target")
+        or ""
+    ).strip()
+    remote_user = str(window.get("remote_user") or window.get("i3pm_remote_user") or "").strip()
+    remote_host = str(window.get("remote_host") or window.get("i3pm_remote_host") or "").strip()
+    remote_port = window.get("remote_port")
+    if remote_port in (None, ""):
+        remote_port = window.get("i3pm_remote_port")
+    remote_dir = str(
+        window.get("remote_dir")
+        or window.get("i3pm_remote_dir")
+        or window.get("project_remote_dir")
+        or ""
+    ).strip()
+    remote_session_name = str(
+        window.get("remote_session_name") or window.get("i3pm_remote_session_name") or ""
+    ).strip()
+
+    has_direct_identity_hint = bool(
+        mode
+        or connection_key
+        or context_key
+        or remote_enabled_raw is not None
+        or remote_target
+        or remote_host
+        or remote_user
+        or remote_port
+    )
+
+    if not has_direct_identity_hint and remote_env_cache is not None:
+        pid_int = _safe_int(window.get("pid"), 0)
+        if pid_int > 0:
+            env = remote_env_cache.get(pid_int)
+            if env is None:
+                env = _read_window_remote_env(pid_int)
+                remote_env_cache[pid_int] = env
+            if env:
+                if remote_enabled_raw is None:
+                    remote_enabled_raw = env.get("I3PM_REMOTE_ENABLED")
+                if not remote_user:
+                    remote_user = str(env.get("I3PM_REMOTE_USER") or "").strip()
+                if not remote_host:
+                    remote_host = str(env.get("I3PM_REMOTE_HOST") or "").strip()
+                if not remote_port:
+                    remote_port = env.get("I3PM_REMOTE_PORT")
+                if not remote_dir:
+                    remote_dir = str(env.get("I3PM_REMOTE_DIR") or "").strip()
+                if not remote_session_name:
+                    remote_session_name = str(env.get("I3PM_REMOTE_SESSION_NAME") or "").strip()
+
+    profile_target = _format_remote_target(
+        remote_profile.get("user", ""),
+        remote_profile.get("host", ""),
+        remote_profile.get("port", 22),
+    )
+    if not remote_target:
+        remote_target = _format_remote_target(remote_user, remote_host, remote_port or 22)
+    if not remote_target:
+        remote_target = profile_target
+    if not remote_dir:
+        remote_dir = str(remote_profile.get("remote_dir", "")).strip()
+
+    remote_enabled = _is_truthy(remote_enabled_raw)
+    if mode == "ssh":
+        remote_enabled = True
+    elif mode == "local":
+        remote_enabled = False
+    elif remote_enabled:
+        mode = "ssh"
+    elif connection_key:
+        mode = "local" if connection_key.startswith("local@") else "ssh"
+    else:
+        mode = "local"
+
+    if mode == "ssh" and not connection_key:
+        connection_key = _normalize_connection_key(remote_target or remote_host or "unknown")
+    if mode == "local" and not connection_key:
+        connection_key = _local_connection_key()
+
+    identity = _identity_from_mode_connection(
+        mode,
+        connection_key,
+        host_alias=remote_target if mode == "ssh" else "",
+    )
+
+    if mode == "ssh" and not remote_target:
+        remote_target = str(identity.get("host_alias", "")).strip()
+
+    return {
+        "execution_mode": identity["execution_mode"],
+        "connection_key": identity["connection_key"],
+        "identity_key": identity["identity_key"],
+        "host_alias": identity["host_alias"],
+        "context_key": context_key,
+        "remote_enabled": mode == "ssh",
+        "remote_target": remote_target,
+        "remote_dir": remote_dir,
+        "remote_session_name": remote_session_name,
+    }
+
+
+def _resolve_session_execution_identity(
+    session: Dict[str, Any],
+    *,
+    window_data: Optional[Dict[str, Any]] = None,
+    default_mode: str = "local",
+) -> Dict[str, str]:
+    """Resolve canonical execution identity for an OTEL session payload."""
+    terminal_context = session.get("terminal_context", {}) or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+    window_data = window_data or {}
+
+    mode = _normalize_execution_mode(
+        session.get("execution_mode")
+        or terminal_context.get("execution_mode")
+        or window_data.get("execution_mode"),
+        default="",
+    )
+    connection_key = str(
+        session.get("connection_key")
+        or terminal_context.get("connection_key")
+        or window_data.get("connection_key")
+        or ""
+    ).strip()
+    context_key = str(
+        session.get("context_key")
+        or terminal_context.get("context_key")
+        or window_data.get("context_key")
+        or ""
+    ).strip()
+    parsed_context = _parse_context_key(context_key)
+    if not mode:
+        mode = parsed_context.get("execution_mode", "")
+    if not connection_key:
+        connection_key = parsed_context.get("connection_key", "")
+
+    remote_enabled = _is_truthy(
+        session.get("remote_enabled") or terminal_context.get("remote_enabled")
+    )
+    host_name = str(
+        terminal_context.get("host_name")
+        or session.get("host_name")
+        or window_data.get("host_alias")
+        or ""
+    ).strip()
+    remote_target = str(
+        session.get("remote_target")
+        or terminal_context.get("remote_target")
+        or window_data.get("project_remote_target")
+        or ""
+    ).strip()
+
+    if not mode:
+        if remote_enabled:
+            mode = "ssh"
+        elif connection_key:
+            mode = "local" if connection_key.startswith("local@") else "ssh"
+        else:
+            mode = _normalize_execution_mode(default_mode, default="local")
+
+    if mode not in {"local", "ssh"}:
+        mode = _normalize_execution_mode(default_mode, default="local")
+
+    if not connection_key:
+        if mode == "ssh":
+            connection_key = _normalize_connection_key(remote_target or host_name or "unknown")
+        else:
+            connection_key = _local_connection_key()
+
+    identity = _identity_from_mode_connection(
+        mode,
+        connection_key,
+        host_alias=remote_target or host_name,
+    )
+    identity["context_key"] = context_key
+    return identity
+
+
+def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collect normalized window candidates for OTEL session window-id resolution."""
+    candidates: List[Dict[str, Any]] = []
+    remote_env_cache: Dict[int, Dict[str, str]] = {}
+
+    for output in outputs:
+        for workspace in output.get("workspaces", []):
+            for window in workspace.get("windows", []):
+                window_id = _safe_int(window.get("id"), 0)
+                if window_id == 0:
+                    continue
+                project_name = str(window.get("project") or "").strip()
+                if not project_name:
+                    continue
+
+                identity = _resolve_window_execution_identity(
+                    window,
+                    remote_env_cache=remote_env_cache,
+                )
+                candidates.append(
+                    {
+                        "id": window_id,
+                        "project": project_name,
+                        "focused": bool(window.get("focused", False)),
+                        "hidden": bool(window.get("hidden", False)),
+                        "floating": bool(window.get("floating", False)),
+                        "class": str(window.get("class") or ""),
+                        "execution_mode": str(identity.get("execution_mode") or ""),
+                        "connection_key": str(identity.get("connection_key") or ""),
+                        "identity_key": str(identity.get("identity_key") or ""),
+                        "context_key": str(identity.get("context_key") or ""),
+                    }
+                )
+
+    return candidates
+
+
+def _session_project_candidates(raw_project: Any) -> tuple[set[str], set[str]]:
+    """Return exact/prefix project candidates from OTEL project identifiers."""
+    exact: set[str] = set()
+    prefixes: set[str] = set()
+
+    project_value = str(raw_project or "").strip()
+    if not project_value:
+        return exact, prefixes
+
+    # Already normalized worktree/project identifiers.
+    if "/" in project_value:
+        if ":" in project_value:
+            exact.add(project_value)
+            prefixes.add(project_value.split(":", 1)[0])
+        else:
+            prefixes.add(project_value)
+
+    # Absolute/tilde path format: ~/repos/<account>/<repo>/<branch>...
+    if project_value.startswith("/") or project_value.startswith("~"):
+        path_parts = Path(project_value).expanduser().parts
+        for idx, part in enumerate(path_parts):
+            if part != "repos":
+                continue
+            if idx + 3 >= len(path_parts):
+                continue
+            account = str(path_parts[idx + 1]).strip()
+            repo = str(path_parts[idx + 2]).strip()
+            branch = str(path_parts[idx + 3]).strip()
+            if not account or not repo:
+                continue
+            prefixes.add(f"{account}/{repo}")
+            if branch:
+                exact.add(f"{account}/{repo}:{branch}")
+            break
+
+    return exact, prefixes
+
+
+def _resolve_otel_session_window_id(
+    session: Dict[str, Any],
+    outputs: List[Dict[str, Any]],
+    window_candidates: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[int]:
+    """Best-effort mapping when OTEL session lacks explicit window_id."""
+    exact_candidates: set[str] = set()
+    prefix_candidates: set[str] = set()
+    for source in (session.get("project"), session.get("project_path")):
+        exact, prefixes = _session_project_candidates(source)
+        exact_candidates.update(exact)
+        prefix_candidates.update(prefixes)
+
+    if not exact_candidates and not prefix_candidates:
+        return None
+
+    candidates = window_candidates if window_candidates is not None else _collect_output_window_candidates(outputs)
+    terminal_context = session.get("terminal_context", {}) or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+    session_mode = _normalize_execution_mode(
+        session.get("execution_mode") or terminal_context.get("execution_mode"),
+        default="",
+    )
+    if not session_mode:
+        parsed_context = _parse_context_key(
+            session.get("context_key") or terminal_context.get("context_key") or ""
+        )
+        session_mode = str(parsed_context.get("execution_mode") or "").strip()
+    session_identity = _resolve_session_execution_identity(session, default_mode="local")
+    session_connection = str(session_identity.get("connection_key") or "").strip()
+    session_context = str(session_identity.get("context_key") or "").strip()
+
+    best_window_id: Optional[int] = None
+    best_score: Optional[tuple[int, int, int, int, int, int, int]] = None
+    for candidate in candidates:
+        window_project = str(candidate.get("project") or "").strip()
+        if not window_project:
+            continue
+
+        match_rank = 0
+        if window_project in exact_candidates:
+            match_rank = 2
+        elif any(
+            window_project == prefix or window_project.startswith(prefix + ":")
+            for prefix in prefix_candidates
+        ):
+            match_rank = 1
+        if match_rank == 0:
+            continue
+
+        window_mode = str(candidate.get("execution_mode") or "").strip()
+        window_connection = str(candidate.get("connection_key") or "").strip()
+        window_context = str(candidate.get("context_key") or "").strip()
+
+        # Hard filters when session identity is explicit.
+        if session_context and window_context and session_context != window_context:
+            continue
+        if session_mode and window_mode and session_mode != window_mode:
+            continue
+        if session_connection and window_connection and session_connection != window_connection:
+            continue
+
+        identity_rank = 0
+        if session_context and window_context and session_context == window_context:
+            identity_rank = 3
+        elif session_mode and window_mode and session_mode == window_mode:
+            if session_connection and window_connection and session_connection == window_connection:
+                identity_rank = 2
+            else:
+                identity_rank = 1
+
+        window_id = _safe_int(candidate.get("id"), 0)
+        if window_id == 0:
+            continue
+
+        score = (
+            match_rank,
+            identity_rank,
+            int(bool(candidate.get("focused", False))),
+            int(not bool(candidate.get("hidden", False))),
+            int(str(candidate.get("class") or "") != "remote-sesh"),
+            int(not bool(candidate.get("floating", False))),
+            int(window_id > 0),
+        )
+        if best_score is None or score > best_score:
+            best_score = score
+            best_window_id = window_id
+
+    return best_window_id
+
+
+def _build_active_session_key(
+    *,
+    tool: str,
+    project: str,
+    window_id: int,
+    tmux_pane: str = "",
+    pty: str = "",
+    tmux_window: str = "",
+    native_session_id: str = "",
+    session_id: str = "",
+    context_fingerprint: str = "",
+) -> str:
+    """Build canonical active-session key across badges/rail/review state."""
+    key_parts = [
+        f"tool={tool or 'unknown'}",
+        f"project={project or '-'}",
+        f"window={window_id}",
+    ]
+    if tmux_pane:
+        key_parts.append(f"pane={tmux_pane}")
+    elif pty:
+        key_parts.append(f"pty={pty}")
+    elif tmux_window:
+        key_parts.append(f"tmux_window={tmux_window}")
+    else:
+        if native_session_id:
+            key_parts.append(f"native={native_session_id}")
+        elif session_id:
+            key_parts.append(f"session={session_id}")
+        if context_fingerprint:
+            key_parts.append(f"context={context_fingerprint}")
+    return "|".join(key_parts)
+
+
+def _session_updated_epoch(session: Dict[str, Any], now_epoch: Optional[int] = None) -> int:
+    """Resolve session updated-at timestamp as epoch seconds."""
+    now_epoch = int(time.time()) if now_epoch is None else int(now_epoch)
+    updated_at = str(session.get("updated_at") or "").strip()
+    parsed = _parse_timestamp_to_epoch(updated_at)
+    if parsed is None:
+        return now_epoch
+    return int(parsed)
+
+
+def _build_review_finish_marker(session: Dict[str, Any]) -> str:
+    """Build deterministic marker for a single completion cycle."""
+    key = str(session.get("session_key") or "").strip()
+    state_seq = _safe_int(session.get("state_seq"), 0)
+    updated_at = str(session.get("updated_at") or "").strip()
+    status_reason = str(session.get("status_reason") or "").strip()
+    marker_src = f"{key}|{state_seq}|{updated_at}|{status_reason}"
+    if not key:
+        return ""
+    return hashlib.sha1(marker_src.encode("utf-8")).hexdigest()
+
+
+def _list_tmux_active_panes_by_session() -> Dict[str, str]:
+    """
+    Return most-recent active pane per tmux session.
+
+    Uses client activity timestamps to approximate what pane the user most
+    recently inspected manually.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "tmux",
+                "list-clients",
+                "-F",
+                "#{session_name}|#{pane_id}|#{client_activity}",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=0.25,
+        )
+    except Exception:
+        return {}
+
+    if result.returncode != 0:
+        return {}
+
+    by_session: Dict[str, tuple[int, str]] = {}
+    for raw in result.stdout.splitlines():
+        parts = raw.strip().split("|")
+        if len(parts) < 3:
+            continue
+        session_name, pane_id, activity_raw = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        if not session_name or not pane_id:
+            continue
+        activity = _safe_int(activity_raw, 0)
+        existing = by_session.get(session_name)
+        if existing is None or activity >= existing[0]:
+            by_session[session_name] = (activity, pane_id)
+
+    return {session_name: pane for session_name, (_, pane) in by_session.items()}
 
 
 def _build_otel_badges(
@@ -1455,44 +2198,74 @@ def _build_otel_badges(
             continue
 
         terminal_context = session.get("terminal_context", {}) or {}
+        window_id_raw = session.get("window_id", terminal_context.get("window_id"))
+        window_id_int = _safe_int(window_id_raw, 0)
         identity_raw = str(session.get("identity_confidence") or "")
         confidence_level = _identity_confidence_level(identity_raw)
         updated_epoch = _parse_timestamp_to_epoch(str(session.get("updated_at") or ""))
         stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
         stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
+        tool = str(session.get("tool", "unknown") or "unknown")
+        project = str(session.get("project") or "").strip()
+        tmux_session = str(terminal_context.get("tmux_session") or "")
+        tmux_window = str(terminal_context.get("tmux_window") or "")
+        tmux_pane = str(terminal_context.get("tmux_pane") or "")
+        pty = str(terminal_context.get("pty") or "")
+        native_session_id = str(session.get("native_session_id") or "")
+        session_id = str(session.get("session_id") or "")
+        context_fingerprint = str(session.get("context_fingerprint") or "")
+        identity = _resolve_session_execution_identity(session)
         badge = {
             "badge_key": _otel_badge_merge_key(session),
-            "session_id": session.get("session_id", ""),
-            "native_session_id": session.get("native_session_id", ""),
-            "context_fingerprint": session.get("context_fingerprint", ""),
-            "collision_group_id": session.get("collision_group_id", ""),
+            "session_key": _build_active_session_key(
+                tool=tool,
+                project=project,
+                window_id=window_id_int,
+                tmux_pane=tmux_pane,
+                pty=pty,
+                tmux_window=tmux_window,
+                native_session_id=native_session_id,
+                session_id=session_id,
+                context_fingerprint=context_fingerprint,
+            ),
+            "session_id": session_id,
+            "native_session_id": native_session_id,
+            "context_fingerprint": context_fingerprint,
+            "collision_group_id": str(session.get("collision_group_id") or ""),
             "identity_confidence": identity_raw,
             "confidence_level": confidence_level,
             "otel_state": state,
-            "otel_tool": session.get("tool", "unknown"),
-            "project": session.get("project"),
+            "otel_tool": tool,
+            "project": project,
             "pid": session.get("pid"),
             "trace_id": session.get("trace_id"),
             "pending_tools": session.get("pending_tools", 0),
             "is_streaming": session.get("is_streaming", False),
+            "state_seq": _safe_int(session.get("state_seq"), 0),
+            "status_reason": str(session.get("status_reason") or ""),
             "stale": stale,
             "stale_age_seconds": stale_age_seconds,
-            "execution_mode": str(
-                session.get("execution_mode")
-                or terminal_context.get("execution_mode")
-                or "local"
-            ).strip().lower(),
+            "execution_mode": str(identity.get("execution_mode") or "local"),
+            "connection_key": str(identity.get("connection_key") or ""),
+            "identity_key": str(identity.get("identity_key") or ""),
+            "context_key": str(identity.get("context_key") or ""),
+            "host_alias": str(identity.get("host_alias") or ""),
             "host_name": str(
                 terminal_context.get("host_name")
                 or session.get("host_name")
                 or ""
             ),
             # Feature: AI badge click-to-focus context (window + tmux pane/session)
-            "window_id": session.get("window_id", terminal_context.get("window_id")),
-            "tmux_session": terminal_context.get("tmux_session", ""),
-            "tmux_window": terminal_context.get("tmux_window", ""),
-            "tmux_pane": terminal_context.get("tmux_pane", ""),
-            "pty": terminal_context.get("pty", ""),
+            "window_id": window_id_int if window_id_int != 0 else window_id_raw,
+            "tmux_session": tmux_session,
+            "tmux_window": tmux_window,
+            "tmux_pane": tmux_pane,
+            "pty": pty,
+            "review_pending": False,
+            "review_state": "normal",
+            "finished_at": None,
+            "seen_at": None,
+            "synthetic": False,
         }
         badges.append(badge)
 
@@ -1565,28 +2338,17 @@ def _build_active_ai_sessions(
         stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
         stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
 
-        # Key on concrete terminal context first to avoid one chip per historical run.
-        key_parts = [
-            f"tool={tool}",
-            f"project={project or '-'}",
-            f"window={window_id_int}",
-        ]
-        if tmux_pane:
-            key_parts.append(f"pane={tmux_pane}")
-        elif pty:
-            key_parts.append(f"pty={pty}")
-        elif tmux_window:
-            key_parts.append(f"tmux_window={tmux_window}")
-        else:
-            # If no terminal context exists, include native/session identifiers.
-            if native_session_id:
-                key_parts.append(f"native={native_session_id}")
-            elif session_id:
-                key_parts.append(f"session={session_id}")
-            if context_fingerprint:
-                key_parts.append(f"context={context_fingerprint}")
-
-        session_key = "|".join(key_parts)
+        session_key = _build_active_session_key(
+            tool=tool,
+            project=project,
+            window_id=window_id_int,
+            tmux_pane=tmux_pane,
+            pty=pty,
+            tmux_window=tmux_window,
+            native_session_id=native_session_id,
+            session_id=session_id,
+            context_fingerprint=context_fingerprint,
+        )
 
         display_target = f"win {window_id_int}"
         if tmux_pane:
@@ -1596,14 +2358,11 @@ def _build_active_ai_sessions(
         elif pty:
             display_target = pty
 
-        execution_mode = str(
-            raw_session.get("execution_mode")
-            or terminal_context.get("execution_mode")
-            or window_data.get("execution_mode")
-            or "local"
-        ).strip().lower()
-        if execution_mode not in {"local", "ssh"}:
-            execution_mode = "local"
+        identity = _resolve_session_execution_identity(
+            raw_session,
+            window_data=window_data,
+        )
+        execution_mode = str(identity.get("execution_mode") or "local")
 
         display_project = project or str(window_data.get("project") or "unknown")
 
@@ -1616,6 +2375,10 @@ def _build_active_ai_sessions(
             "project": display_project,
             "window_id": window_id_int,
             "execution_mode": execution_mode,
+            "connection_key": str(identity.get("connection_key") or ""),
+            "identity_key": str(identity.get("identity_key") or ""),
+            "context_key": str(identity.get("context_key") or ""),
+            "host_alias": str(identity.get("host_alias") or ""),
             "tmux_session": tmux_session,
             "tmux_window": tmux_window,
             "tmux_pane": tmux_pane,
@@ -1629,12 +2392,19 @@ def _build_active_ai_sessions(
             "trace_id": str(raw_session.get("trace_id") or ""),
             "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
             "is_streaming": bool(raw_session.get("is_streaming", False)),
+            "state_seq": _safe_int(raw_session.get("state_seq"), 0),
+            "status_reason": str(raw_session.get("status_reason") or ""),
             "updated_at": updated_at,
             "stale": stale,
             "stale_age_seconds": stale_age_seconds,
             "pinned": False,
             "priority_score": _OTEL_STATE_PRIORITY.get(state, 0),
             "tool": tool,
+            "review_pending": False,
+            "review_state": "normal",
+            "finished_at": None,
+            "seen_at": None,
+            "synthetic": False,
         }
 
         existing = merged_by_key.get(session_key)
@@ -1715,6 +2485,398 @@ def _apply_pinned_session_order(
     return pinned_items + unpinned_items
 
 
+def _review_entry_is_pending(entry: Dict[str, Any]) -> bool:
+    finish_marker = str(entry.get("finish_marker") or "")
+    seen_marker = str(entry.get("seen_marker") or "")
+    return bool(finish_marker and seen_marker != finish_marker)
+
+
+def _update_review_entry_from_session(
+    entry: Dict[str, Any],
+    session: Dict[str, Any],
+    now_epoch: int,
+) -> tuple[Dict[str, Any], bool]:
+    """Apply current session metadata to review ledger entry."""
+    changed = False
+    state = str(session.get("otel_state") or "idle")
+    marker = _build_review_finish_marker(session)
+    finished_at = _session_updated_epoch(session, now_epoch)
+
+    def _assign(key: str, value: Any) -> None:
+        nonlocal changed
+        if entry.get(key) != value:
+            entry[key] = value
+            changed = True
+
+    _assign("project", str(session.get("project") or ""))
+    _assign("display_project", str(session.get("display_project") or session.get("project") or ""))
+    _assign("window_id", _safe_int(session.get("window_id"), 0))
+    _assign("execution_mode", str(session.get("execution_mode") or "local"))
+    _assign("connection_key", str(session.get("connection_key") or ""))
+    _assign("identity_key", str(session.get("identity_key") or ""))
+    _assign("context_key", str(session.get("context_key") or ""))
+    _assign("host_alias", str(session.get("host_alias") or ""))
+    _assign("tmux_session", str(session.get("tmux_session") or ""))
+    _assign("tmux_window", str(session.get("tmux_window") or ""))
+    _assign("tmux_pane", str(session.get("tmux_pane") or ""))
+    _assign("pty", str(session.get("pty") or ""))
+    _assign("tool", str(session.get("tool") or "unknown"))
+    _assign("display_tool", str(session.get("display_tool") or _OTEL_TOOL_LABELS.get(str(session.get("tool") or "unknown"), str(session.get("tool") or "unknown"))))
+    _assign("display_target", str(session.get("display_target") or ""))
+    _assign("last_state", state)
+    if state in {"completed", "idle"} and marker:
+        if str(entry.get("finish_marker") or "") != marker:
+            _assign("finish_marker", marker)
+            _assign("finished_at", finished_at)
+            # New completion cycle should require fresh acknowledgement.
+            if str(entry.get("seen_marker") or "") == marker:
+                _assign("seen_at", finished_at)
+            _assign("expires_at", finished_at + _AI_SESSION_REVIEW_TTL_SECONDS)
+    elif state in {"working", "attention"}:
+        finish_marker = str(entry.get("finish_marker") or "")
+        seen_marker = str(entry.get("seen_marker") or "")
+        if finish_marker and seen_marker != finish_marker:
+            _assign("seen_marker", finish_marker)
+            _assign("seen_at", now_epoch)
+
+    # Keep a write timestamp only when meaningful review-state fields changed.
+    if changed:
+        entry["updated_at"] = now_epoch
+
+    return entry, changed
+
+
+def _apply_review_lifecycle(
+    active_sessions: List[Dict[str, Any]],
+    window_lookup: Dict[int, Dict[str, Any]],
+    focused_window_id: Optional[int],
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Enrich sessions with finished/unseen review lifecycle + synthetic retention.
+    """
+    review_state = load_ai_session_review_state()
+    review_sessions_raw = review_state.get("sessions", {})
+    review_sessions: Dict[str, Dict[str, Any]] = (
+        {str(k): v for k, v in review_sessions_raw.items() if str(k).strip() and isinstance(v, dict)}
+        if isinstance(review_sessions_raw, dict)
+        else {}
+    )
+    now_epoch = int(time.time())
+    changed = False
+
+    # Apply explicit "seen" events emitted by focus actions.
+    for event in consume_ai_session_seen_events():
+        key = str(event.get("session_key") or "").strip()
+        if not key:
+            continue
+        entry = review_sessions.get(key)
+        if not isinstance(entry, dict):
+            continue
+        finish_marker = str(entry.get("finish_marker") or "")
+        requested_marker = str(event.get("finish_marker") or "")
+        if not finish_marker:
+            continue
+        if requested_marker and requested_marker != finish_marker:
+            continue
+        ts = _safe_int(event.get("timestamp"), now_epoch)
+        if str(entry.get("seen_marker") or "") != finish_marker:
+            entry["seen_marker"] = finish_marker
+            entry["seen_at"] = ts
+            entry["updated_at"] = ts
+            changed = True
+
+    live_keys: set[str] = set()
+    for session in active_sessions:
+        key = str(session.get("session_key") or "").strip()
+        if not key:
+            continue
+        live_keys.add(key)
+        state = str(session.get("otel_state") or "idle")
+        if state not in _OTEL_ACTIVE_SESSION_STATES:
+            continue
+        entry = dict(review_sessions.get(key, {}))
+        entry, entry_changed = _update_review_entry_from_session(entry, session, now_epoch)
+        review_sessions[key] = entry
+        changed = changed or entry_changed
+
+    # Passive "seen" detection for manual focus navigation.
+    if focused_window_id is not None:
+        focused_candidates = [
+            (key, entry)
+            for key, entry in review_sessions.items()
+            if _review_entry_is_pending(entry) and _safe_int(entry.get("window_id"), 0) == focused_window_id
+        ]
+        if focused_candidates:
+            requires_tmux = any(str(entry.get("tmux_pane") or "") for _, entry in focused_candidates)
+            tmux_active_by_session = _list_tmux_active_panes_by_session() if requires_tmux else {}
+            for _, entry in focused_candidates:
+                finish_marker = str(entry.get("finish_marker") or "")
+                if not finish_marker:
+                    continue
+                target_pane = str(entry.get("tmux_pane") or "")
+                if target_pane:
+                    session_name = str(entry.get("tmux_session") or "")
+                    if not session_name:
+                        continue
+                    if tmux_active_by_session.get(session_name) != target_pane:
+                        continue
+                entry["seen_marker"] = finish_marker
+                entry["seen_at"] = now_epoch
+                entry["updated_at"] = now_epoch
+                changed = True
+
+    # Prune expired or non-actionable entries, then synthesize unseen sessions
+    # for contexts where OTEL session already disappeared.
+    synthetic_sessions: List[Dict[str, Any]] = []
+    delete_keys: List[str] = []
+    for key, entry in review_sessions.items():
+        finished_at = _safe_int(entry.get("finished_at"), 0)
+        if finished_at <= 0:
+            continue
+        expires_at = _safe_int(entry.get("expires_at"), finished_at + _AI_SESSION_REVIEW_TTL_SECONDS)
+        if expires_at <= now_epoch:
+            delete_keys.append(key)
+            changed = True
+            continue
+
+        if not _review_entry_is_pending(entry):
+            continue
+
+        window_id = _safe_int(entry.get("window_id"), 0)
+        if window_id <= 0 or window_id not in window_lookup:
+            # Unactionable orphan: drop instead of retaining forever.
+            delete_keys.append(key)
+            changed = True
+            continue
+        if key in live_keys:
+            continue
+
+        state = str(entry.get("last_state") or "completed").strip().lower()
+        if state not in {"completed", "idle"}:
+            state = "completed"
+        tool = str(entry.get("tool") or "unknown").strip() or "unknown"
+        project = str(entry.get("project") or window_lookup[window_id].get("project") or "unknown")
+        tmux_session = str(entry.get("tmux_session") or "")
+        tmux_window = str(entry.get("tmux_window") or "")
+        tmux_pane = str(entry.get("tmux_pane") or "")
+        pty = str(entry.get("pty") or "")
+        execution_mode = str(entry.get("execution_mode") or "local").strip().lower()
+        if execution_mode not in {"local", "ssh"}:
+            execution_mode = "local"
+        connection_key = str(entry.get("connection_key") or "")
+        identity_key = str(entry.get("identity_key") or "")
+        context_key = str(entry.get("context_key") or "")
+        host_alias = str(entry.get("host_alias") or "")
+        display_target = str(entry.get("display_target") or "")
+        if not display_target:
+            if tmux_pane:
+                display_target = f"pane {tmux_pane}"
+            elif tmux_window:
+                display_target = f"tmux {tmux_window}"
+            elif pty:
+                display_target = pty
+            else:
+                display_target = f"win {window_id}"
+
+        stale_age_seconds = max(0, now_epoch - finished_at)
+        synthetic_sessions.append({
+            "session_key": key,
+            "display_tool": str(entry.get("display_tool") or _OTEL_TOOL_LABELS.get(tool, tool)),
+            "display_project": str(entry.get("display_project") or project),
+            "display_target": display_target,
+            "otel_state": state,
+            "project": project,
+            "window_id": window_id,
+            "execution_mode": execution_mode,
+            "connection_key": connection_key,
+            "identity_key": identity_key,
+            "context_key": context_key,
+            "host_alias": host_alias,
+            "tmux_session": tmux_session,
+            "tmux_window": tmux_window,
+            "tmux_pane": tmux_pane,
+            "pty": pty,
+            "host_name": "",
+            "native_session_id": "",
+            "session_id": "",
+            "context_fingerprint": "",
+            "identity_confidence": "review",
+            "confidence_level": "low",
+            "trace_id": "",
+            "pending_tools": 0,
+            "is_streaming": False,
+            "state_seq": 0,
+            "status_reason": "finished_unseen_retained",
+            "updated_at": datetime.fromtimestamp(finished_at).isoformat(),
+            "stale": state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS,
+            "stale_age_seconds": stale_age_seconds,
+            "pinned": False,
+            "priority_score": _OTEL_STATE_PRIORITY.get(state, 0),
+            "tool": tool,
+            "review_pending": True,
+            "review_state": "finished_unseen",
+            "finished_at": finished_at,
+            "seen_at": None,
+            "synthetic": True,
+        })
+
+    for key in delete_keys:
+        review_sessions.pop(key, None)
+
+    sessions_out = list(active_sessions) + synthetic_sessions
+    for session in sessions_out:
+        key = str(session.get("session_key") or "").strip()
+        entry = review_sessions.get(key, {})
+        pending = _review_entry_is_pending(entry) if isinstance(entry, dict) else False
+        finish_marker = str(entry.get("finish_marker") or "") if isinstance(entry, dict) else ""
+        session["review_pending"] = pending
+        session["review_state"] = "finished_unseen" if pending else "normal"
+        session["finish_marker"] = finish_marker
+        finished_at = _safe_int(entry.get("finished_at"), 0) if isinstance(entry, dict) else 0
+        session["finished_at"] = finished_at if finished_at > 0 else None
+        seen_at = _safe_int(entry.get("seen_at"), 0) if isinstance(entry, dict) else 0
+        session["seen_at"] = seen_at if seen_at > 0 else None
+
+    # Keep bounded review file size while preserving actionable pending items.
+    if len(review_sessions) > _AI_SESSION_REVIEW_MAX_ENTRIES:
+        ranked = sorted(
+            review_sessions.items(),
+            key=lambda item: (
+                int(_review_entry_is_pending(item[1])),
+                _safe_int(item[1].get("finished_at"), 0),
+                _safe_int(item[1].get("updated_at"), 0),
+            ),
+            reverse=True,
+        )
+        keep_keys = {key for key, _ in ranked[:_AI_SESSION_REVIEW_MAX_ENTRIES]}
+        review_sessions = {key: value for key, value in review_sessions.items() if key in keep_keys}
+        changed = True
+
+    if changed:
+        save_ai_session_review_state({
+            "schema_version": "1",
+            "sessions": review_sessions,
+            "updated_at": now_epoch,
+        })
+
+    return sessions_out, review_sessions
+
+
+def _merge_review_state_into_window_badges(
+    all_windows: List[Dict[str, Any]],
+    sessions: List[Dict[str, Any]],
+) -> None:
+    """Annotate per-window OTEL badges with review lifecycle flags."""
+    by_session_key = {
+        str(session.get("session_key") or ""): session
+        for session in sessions
+        if str(session.get("session_key") or "")
+    }
+    synthetic_by_window: Dict[int, List[Dict[str, Any]]] = {}
+    for session in sessions:
+        if not bool(session.get("synthetic")):
+            continue
+        window_id = _safe_int(session.get("window_id"), 0)
+        if window_id <= 0:
+            continue
+        synthetic_by_window.setdefault(window_id, []).append(session)
+
+    for window in all_windows:
+        window_id = _safe_int(window.get("id"), 0)
+        badges = window.get("otel_badges", [])
+        if not isinstance(badges, list):
+            badges = []
+
+        badge_keys: set[str] = set()
+        for badge in badges:
+            if not isinstance(badge, dict):
+                continue
+            key = str(badge.get("session_key") or "").strip()
+            if key:
+                badge_keys.add(key)
+            session = by_session_key.get(key)
+            if session is None:
+                badge.setdefault("review_pending", False)
+                badge.setdefault("review_state", "normal")
+                badge.setdefault("finished_at", None)
+                badge.setdefault("seen_at", None)
+                badge.setdefault("synthetic", False)
+                continue
+            badge["review_pending"] = bool(session.get("review_pending", False))
+            badge["review_state"] = str(session.get("review_state") or "normal")
+            badge["finished_at"] = session.get("finished_at")
+            badge["seen_at"] = session.get("seen_at")
+            badge["synthetic"] = bool(session.get("synthetic", False))
+
+        for session in synthetic_by_window.get(window_id, []):
+            key = str(session.get("session_key") or "")
+            if not key or key in badge_keys:
+                continue
+            tool = str(session.get("tool") or "unknown")
+            state = str(session.get("otel_state") or "completed")
+            badges.append({
+                "badge_key": f"review:{key}",
+                "session_key": key,
+                "session_id": "",
+                "native_session_id": "",
+                "context_fingerprint": "",
+                "collision_group_id": "",
+                "identity_confidence": "review",
+                "confidence_level": "low",
+                "otel_state": state,
+                "otel_tool": tool,
+                "project": str(session.get("project") or window.get("project") or ""),
+                "pid": None,
+                "trace_id": "",
+                "pending_tools": 0,
+                "is_streaming": False,
+                "state_seq": 0,
+                "status_reason": "finished_unseen_retained",
+                "stale": bool(session.get("stale", False)),
+                "stale_age_seconds": _safe_int(session.get("stale_age_seconds"), 0),
+                "execution_mode": str(session.get("execution_mode") or "local"),
+                "connection_key": str(session.get("connection_key") or ""),
+                "identity_key": str(session.get("identity_key") or ""),
+                "context_key": str(session.get("context_key") or ""),
+                "host_alias": str(session.get("host_alias") or ""),
+                "host_name": "",
+                "window_id": window_id,
+                "tmux_session": str(session.get("tmux_session") or ""),
+                "tmux_window": str(session.get("tmux_window") or ""),
+                "tmux_pane": str(session.get("tmux_pane") or ""),
+                "pty": str(session.get("pty") or ""),
+                "review_pending": True,
+                "review_state": "finished_unseen",
+                "finished_at": session.get("finished_at"),
+                "seen_at": None,
+                "synthetic": True,
+            })
+
+        badges.sort(
+            key=lambda b: (
+                int(bool(b.get("review_pending", False))),
+                _OTEL_STATE_PRIORITY.get(str(b.get("otel_state") or "idle"), 0),
+                _safe_int(b.get("finished_at"), 0),
+            ),
+            reverse=True,
+        )
+        window["otel_badges"] = badges
+
+
+def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
+    """Sort rank for active AI rail with finished-unseen support."""
+    state = str(session.get("otel_state") or "idle")
+    if state == "attention":
+        return 4
+    if state == "working":
+        return 3
+    if bool(session.get("review_pending", False)):
+        return 2
+    if state == "completed":
+        return 1
+    return 0
+
+
 def transform_window(
     window: Dict[str, Any],
     badge_state: Optional[Dict[str, Any]] = None,
@@ -1785,6 +2947,17 @@ def transform_window(
         "workspace_number": workspace_num,  # Numeric workspace for badges
         "output": window.get("output", ""),
         "marks": window.get("marks", []),
+        # Preserve daemon-provided execution metadata for identity-safe grouping.
+        "i3pm_execution_mode": str(window.get("execution_mode") or ""),
+        "i3pm_connection_key": str(window.get("connection_key") or ""),
+        "i3pm_context_key": str(window.get("context_key") or ""),
+        "i3pm_remote_enabled": window.get("remote_enabled"),
+        "i3pm_remote_target": str(window.get("remote_target") or ""),
+        "i3pm_remote_user": str(window.get("remote_user") or ""),
+        "i3pm_remote_host": str(window.get("remote_host") or ""),
+        "i3pm_remote_port": window.get("remote_port"),
+        "i3pm_remote_dir": str(window.get("remote_dir") or ""),
+        "i3pm_remote_session_name": str(window.get("remote_session_name") or ""),
         "floating": window.get("floating", False),
         "hidden": window.get("hidden", False),
         "focused": window.get("focused", False),
@@ -2405,8 +3578,20 @@ def _connection_identity(remote_enabled: bool, remote_target: str = "") -> Dict[
 def _project_card_key(project_name: str, remote_enabled: bool, remote_target: str = "") -> str:
     """Build a stable project-card identifier for local/SSH split cards."""
     identity = _connection_identity(remote_enabled, remote_target)
-    variant = "ssh" if remote_enabled else "local"
+    variant = "ssh" if identity.get("execution_mode") == "ssh" else "local"
     return f"{project_name}::{variant}::{identity['connection_key']}"
+
+
+def _project_card_key_for_identity(project_name: str, identity: Dict[str, str]) -> str:
+    """Build a stable project-card identifier from canonical identity payload."""
+    mode = _normalize_execution_mode(identity.get("execution_mode"), default="local")
+    if mode not in {"local", "ssh"}:
+        mode = "local"
+    variant = "ssh" if mode == "ssh" else "local"
+    connection_key = str(identity.get("connection_key") or "").strip()
+    if not connection_key:
+        connection_key = _local_connection_key() if variant == "local" else "unknown"
+    return f"{project_name}::{variant}::{connection_key}"
 
 
 def _create_project_entry(
@@ -2418,18 +3603,20 @@ def _create_project_entry(
     remote_profile_enabled: bool = False,
     remote_profile_target: str = "",
     remote_profile_directory: str = "",
+    identity: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Create a project card entry for the windows overview."""
     home_str = str(Path.home())
-    variant = "ssh" if remote_enabled else "local"
+    identity = identity or _connection_identity(remote_enabled, remote_target)
+    variant = "ssh" if str(identity.get("execution_mode") or "") == "ssh" else "local"
+    remote_enabled = variant == "ssh"
     remote_directory_display = remote_directory.replace(home_str, "~") if remote_directory else ""
     remote_profile_directory_display = (
         remote_profile_directory.replace(home_str, "~") if remote_profile_directory else ""
     )
-    identity = _connection_identity(remote_enabled, remote_target)
 
     return {
-        "card_id": _project_card_key(project_name, remote_enabled, remote_target),
+        "card_id": _project_card_key_for_identity(project_name, identity),
         "name": project_name,
         "scope": "scoped",
         "variant": variant,
@@ -2601,6 +3788,7 @@ def transform_to_project_view(
     # Group windows by project
     projects_dict: Dict[str, Dict[str, Any]] = {}
     global_windows = []
+    remote_env_cache: Dict[int, Dict[str, str]] = {}
 
     for window in all_windows:
         if window["scope"] == "scoped" and window["project"]:
@@ -2617,38 +3805,28 @@ def transform_to_project_view(
                 )
                 profile_directory = str(remote_profile.get("remote_dir", ""))
 
-            # Mark a window as remote only when its process environment confirms it.
-            # This avoids false SSH badges for local windows in projects that merely
-            # have a configured SSH profile.
-            remote_env = _read_window_remote_env(window.get("pid", 0))
-            window_remote_enabled = _is_truthy(remote_env.get("I3PM_REMOTE_ENABLED"))
-            window_remote_target = ""
-            window_remote_directory = ""
-            window_remote_session_name = ""
-            if window_remote_enabled:
-                window_remote_target = _format_remote_target(
-                    remote_env.get("I3PM_REMOTE_USER") or (remote_profile or {}).get("user", ""),
-                    remote_env.get("I3PM_REMOTE_HOST") or (remote_profile or {}).get("host", ""),
-                    remote_env.get("I3PM_REMOTE_PORT") or (remote_profile or {}).get("port", 22),
-                )
-                window_remote_directory = str(
-                    remote_env.get("I3PM_REMOTE_DIR")
-                    or (remote_profile or {}).get("remote_dir", "")
-                )
-                window_remote_session_name = str(remote_env.get("I3PM_REMOTE_SESSION_NAME", "")).strip()
+            identity = _resolve_window_execution_identity(
+                window,
+                remote_profile=remote_profile if isinstance(remote_profile, dict) else None,
+                remote_env_cache=remote_env_cache,
+            )
+            window_remote_enabled = bool(identity.get("remote_enabled", False))
+            window_remote_target = str(identity.get("remote_target") or "")
+            window_remote_directory = str(identity.get("remote_dir") or "")
+            window_remote_session_name = str(identity.get("remote_session_name") or "")
 
             window["project_remote_enabled"] = window_remote_enabled
             window["project_remote_target"] = window_remote_target
             window["project_remote_dir"] = window_remote_directory
             if window_remote_session_name:
                 window["remote_session_name"] = window_remote_session_name
-            identity = _connection_identity(window_remote_enabled, window_remote_target)
             window["execution_mode"] = identity["execution_mode"]
             window["host_alias"] = identity["host_alias"]
             window["connection_key"] = identity["connection_key"]
             window["identity_key"] = identity["identity_key"]
+            window["context_key"] = str(identity.get("context_key") or "")
 
-            project_key = _project_card_key(project_name, window_remote_enabled, window_remote_target)
+            project_key = _project_card_key_for_identity(project_name, identity)
             if project_key not in projects_dict:
                 projects_dict[project_key] = _create_project_entry(
                     project_name=project_name,
@@ -2658,6 +3836,7 @@ def transform_to_project_view(
                     remote_profile_enabled=profile_enabled,
                     remote_profile_target=profile_target,
                     remote_profile_directory=profile_directory,
+                    identity=identity,
                 )
 
             project_entry = projects_dict[project_key]
@@ -2666,12 +3845,12 @@ def transform_to_project_view(
                 # confirmed remote window arrives later.
                 project_entry["remote_enabled"] = True
                 project_entry["remote_target"] = window_remote_target
-                project_identity = _connection_identity(True, window_remote_target)
+                project_identity = identity
                 project_entry["execution_mode"] = project_identity["execution_mode"]
                 project_entry["host_alias"] = project_identity["host_alias"]
                 project_entry["connection_key"] = project_identity["connection_key"]
                 project_entry["identity_key"] = project_identity["identity_key"]
-                project_entry["card_id"] = _project_card_key(project_name, True, window_remote_target)
+                project_entry["card_id"] = _project_card_key_for_identity(project_name, project_identity)
                 project_entry["remote_directory"] = window_remote_directory
                 project_entry["remote_directory_display"] = (
                     window_remote_directory.replace(str(Path.home()), "~")
@@ -2689,6 +3868,7 @@ def transform_to_project_view(
             window["host_alias"] = global_identity["host_alias"]
             window["connection_key"] = global_identity["connection_key"]
             window["identity_key"] = global_identity["identity_key"]
+            window["context_key"] = ""
             global_windows.append(window)
 
     # Augment project windows with remote tmux/sesh sessions for SSH projects.
@@ -2835,15 +4015,55 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Feature 123/136: Load OTEL sessions BEFORE transforms to build lookup dict
         # Feature 136: Changed to List to support multiple AI sessions per window
         otel_sessions = load_otel_sessions()
+        outputs = tree_data.get("outputs", [])
+        window_candidates = _collect_output_window_candidates(outputs)
+        resolved_otel_sessions: List[Dict[str, Any]] = []
+        for raw_session in otel_sessions.get("sessions", []):
+            if not isinstance(raw_session, dict):
+                continue
+            session = dict(raw_session)
+            terminal_context = session.get("terminal_context", {}) or {}
+            if not isinstance(terminal_context, dict):
+                terminal_context = {}
+
+            window_id_raw = session.get("window_id", terminal_context.get("window_id"))
+            window_id_int = _safe_int(window_id_raw, 0)
+            if window_id_int != 0:
+                session["window_id"] = window_id_int
+                terminal_context["window_id"] = window_id_int
+                session["terminal_context"] = terminal_context
+                resolved_otel_sessions.append(session)
+                continue
+
+            resolved_window_id = _resolve_otel_session_window_id(
+                session,
+                outputs,
+                window_candidates=window_candidates,
+            )
+            if resolved_window_id is not None:
+                session["window_id"] = resolved_window_id
+                terminal_context["window_id"] = resolved_window_id
+                session["terminal_context"] = terminal_context
+                logger.debug(
+                    "Feature 139: resolved missing OTEL window_id via project mapping: session=%s window=%s",
+                    str(session.get("native_session_id") or session.get("session_id") or ""),
+                    resolved_window_id,
+                )
+            resolved_otel_sessions.append(session)
+
+        otel_sessions_runtime = dict(otel_sessions)
+        otel_sessions_runtime["sessions"] = resolved_otel_sessions
+
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
         per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
-        for session in otel_sessions.get("sessions", []):
+        for session in resolved_otel_sessions:
             identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
             native_session_id = str(session.get("native_session_id") or "").strip()
             if not native_session_id or identity_confidence != "native":
                 continue
 
-            window_id = session.get("window_id")
+            terminal_context = session.get("terminal_context", {}) or {}
+            window_id = session.get("window_id", terminal_context.get("window_id"))
             if window_id is None:
                 continue
             try:
@@ -2861,7 +4081,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             otel_sessions_by_window[window_id] = list(seen.values())
 
         # Transform daemon response to Eww schema
-        outputs = tree_data.get("outputs", [])
         monitors = [transform_monitor(output, badge_state, otel_sessions_by_window) for output in outputs]
 
         # Validate and compute summary counts
@@ -2870,7 +4089,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Transform to project-based view (default view).
         # Overlay SSH remote metadata so window view can surface remote worktree context.
         remote_profiles = load_worktree_remote_profiles()
-        projects = transform_to_project_view(monitors, remote_profiles, otel_sessions.get("sessions", []))
+        projects = transform_to_project_view(monitors, remote_profiles, resolved_otel_sessions)
         active_identity = load_active_worktree_identity()
 
         # UX Enhancement: Add is_active flag to each project
@@ -2936,11 +4155,27 @@ async def query_monitoring_data() -> Dict[str, Any]:
                 focused_window_id = window_id_int
 
         active_ai_sessions = _build_active_ai_sessions(
-            otel_sessions.get("sessions", []),
+            resolved_otel_sessions,
             window_lookup=window_lookup,
             active_project_name=active_qualified_name,
             focused_window_id=focused_window_id,
         )
+        active_ai_sessions, _review_sessions = _apply_review_lifecycle(
+            active_ai_sessions,
+            window_lookup=window_lookup,
+            focused_window_id=focused_window_id,
+        )
+        active_ai_sessions.sort(
+            key=lambda session: (
+                int(focused_window_id is not None and session.get("window_id") == focused_window_id),
+                int(bool(active_qualified_name) and str(session.get("project", "")).strip() == active_qualified_name),
+                _active_ai_session_sort_rank(session),
+                str(session.get("updated_at") or ""),
+                str(session.get("session_key") or ""),
+            ),
+            reverse=True,
+        )
+        _merge_review_state_into_window_badges(all_windows, active_ai_sessions)
         pinned_session_keys = load_ai_session_pins()
         pinned_session_set = {str(key) for key in pinned_session_keys if str(key)}
         for session in active_ai_sessions:
@@ -2958,6 +4193,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "active_sessions": len(active_ai_sessions),
             "working_sessions": sum(1 for s in active_ai_sessions if str(s.get("otel_state")) == "working"),
             "attention_sessions": sum(1 for s in active_ai_sessions if str(s.get("otel_state")) == "attention"),
+            "review_pending_sessions": sum(1 for s in active_ai_sessions if bool(s.get("review_pending"))),
             "stale_sessions": sum(1 for s in active_ai_sessions if bool(s.get("stale"))),
             "pinned_sessions": sum(1 for s in active_ai_sessions if bool(s.get("pinned"))),
         })
@@ -3014,7 +4250,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": None,
             # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": has_working_badge or otel_sessions.get("has_working", False),
+            "has_working_badge": has_working_badge or otel_sessions_runtime.get("has_working", False),
             # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
             "ai_sessions": ai_sessions,
             # Feature 138: Canonical active AI sessions rail + keyboard switching
@@ -3023,7 +4259,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "active_ai_sessions_mru": active_ai_sessions_mru,
             "ai_monitor_metrics": ai_metrics,
             # Feature 123: OTEL AI sessions for window badge rendering
-            "otel_sessions": otel_sessions,
+            "otel_sessions": otel_sessions_runtime,
         }
 
     except DaemonError as e:
@@ -4924,9 +6160,13 @@ async def stream_monitoring_data():
         except asyncio.CancelledError:
             pass
     if badge_watcher_process:
-        badge_watcher_process.terminate()
-        await badge_watcher_process.wait()
-        logger.info("Feature 107: inotify watcher stopped")
+        try:
+            if badge_watcher_process.returncode is None:
+                badge_watcher_process.terminate()
+            await badge_watcher_process.wait()
+            logger.info("Feature 107: inotify watcher stopped")
+        except ProcessLookupError:
+            logger.debug("Feature 107: inotify watcher already exited")
 
     logger.info("Shutdown complete")
     sys.exit(0)

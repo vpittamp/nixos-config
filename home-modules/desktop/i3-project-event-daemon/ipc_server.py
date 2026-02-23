@@ -2251,6 +2251,17 @@ class IPCServer:
                         },
                         "classification": classification,
                         "project": project or "",
+                        # Canonical execution identity metadata for monitor-side
+                        # local/ssh split grouping without extra /proc scans.
+                        "execution_mode": i3pm_env.get("I3PM_EXECUTION_MODE", ""),
+                        "connection_key": i3pm_env.get("I3PM_CONNECTION_KEY", ""),
+                        "context_key": i3pm_env.get("I3PM_CONTEXT_KEY", ""),
+                        "remote_enabled": i3pm_env.get("I3PM_REMOTE_ENABLED", ""),
+                        "remote_user": i3pm_env.get("I3PM_REMOTE_USER", ""),
+                        "remote_host": i3pm_env.get("I3PM_REMOTE_HOST", ""),
+                        "remote_port": i3pm_env.get("I3PM_REMOTE_PORT", ""),
+                        "remote_dir": i3pm_env.get("I3PM_REMOTE_DIR", ""),
+                        "remote_session_name": i3pm_env.get("I3PM_REMOTE_SESSION_NAME", ""),
                     }
                     scratchpad_windows.append(window_data)
                     total_windows += 1
@@ -2405,6 +2416,17 @@ class IPCServer:
                         "width": node.rect.width,
                         "height": node.rect.height,
                     },
+                    # Canonical execution identity metadata for monitor-side
+                    # local/ssh split grouping without extra /proc scans.
+                    "execution_mode": env.get("I3PM_EXECUTION_MODE", ""),
+                    "connection_key": env.get("I3PM_CONNECTION_KEY", ""),
+                    "context_key": env.get("I3PM_CONTEXT_KEY", ""),
+                    "remote_enabled": env.get("I3PM_REMOTE_ENABLED", ""),
+                    "remote_user": env.get("I3PM_REMOTE_USER", ""),
+                    "remote_host": env.get("I3PM_REMOTE_HOST", ""),
+                    "remote_port": env.get("I3PM_REMOTE_PORT", ""),
+                    "remote_dir": env.get("I3PM_REMOTE_DIR", ""),
+                    "remote_session_name": env.get("I3PM_REMOTE_SESSION_NAME", ""),
                 }
                 windows.append(window_data)
 

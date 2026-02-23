@@ -68,6 +68,18 @@ class TerminalContext(BaseModel):
     host_name: Optional[str] = Field(
         default=None, description="Host name where the terminal process is running"
     )
+    execution_mode: Optional[str] = Field(
+        default=None, description="Execution context mode (local or ssh)"
+    )
+    connection_key: Optional[str] = Field(
+        default=None, description="Normalized connection identity for context-aware matching"
+    )
+    context_key: Optional[str] = Field(
+        default=None, description="Canonical context identity key (<project>::<mode>::<connection>)"
+    )
+    remote_target: Optional[str] = Field(
+        default=None, description="Human-readable SSH target user@host:port when available"
+    )
 
 
 # Provider pricing tables (USD per 1M tokens)

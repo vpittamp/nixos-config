@@ -6,7 +6,9 @@ let
     set -euo pipefail
 
     ALL_STATES=false
+    INCLUDE_UNSEEN_FINISHED=true
     OTEL_FILE=""
+    REVIEW_FILE=""
     MAX_TARGETS=0
 
     usage() {
@@ -16,8 +18,10 @@ Usage: ai-tmux-view-targets [options]
 Build a normalized JSON list of tmux targets from otel-ai-monitor sessions.
 
 Options:
-  --all-states            Include idle/completed sessions (default: working+attention only)
+  --all-states            Include idle/completed OTEL sessions in addition to running ones
+  --no-unseen-finished    Exclude finished-unseen retained sessions from review ledger
   --otel-file PATH        Read sessions from PATH instead of $XDG_RUNTIME_DIR/otel-ai-sessions.json
+  --review-file PATH      Read review ledger from PATH instead of $XDG_RUNTIME_DIR/eww-monitoring-panel/ai-session-review.json
   --max-targets N         Limit output to N records after dedupe/sort (0 = unlimited)
   -h, --help              Show this help message
 USAGE
@@ -29,8 +33,16 @@ USAGE
           ALL_STATES=true
           shift
           ;;
+        --no-unseen-finished)
+          INCLUDE_UNSEEN_FINISHED=false
+          shift
+          ;;
         --otel-file)
           OTEL_FILE="''${2:-}"
+          shift 2
+          ;;
+        --review-file)
+          REVIEW_FILE="''${2:-}"
           shift 2
           ;;
         --max-targets)
@@ -57,13 +69,16 @@ USAGE
     if [[ -z "$OTEL_FILE" ]]; then
       OTEL_FILE="$RUNTIME_DIR/otel-ai-sessions.json"
     fi
+    if [[ -z "$REVIEW_FILE" ]]; then
+      REVIEW_FILE="$RUNTIME_DIR/eww-monitoring-panel/ai-session-review.json"
+    fi
 
     if ! command -v tmux >/dev/null 2>&1; then
       printf '[]\n'
       exit 0
     fi
 
-    if [[ ! -f "$OTEL_FILE" ]]; then
+    if [[ ! -f "$OTEL_FILE" && ! -f "$REVIEW_FILE" ]]; then
       printf '[]\n'
       exit 0
     fi
@@ -83,13 +98,71 @@ USAGE
       tmux list-panes -a -F '#{pane_tty}|#{pane_id}|#{session_name}|#{window_index}:#{window_name}' 2>/dev/null || true
     )
 
-    mapfile -t SESSION_ROWS < <(
-      ${pkgs.jq}/bin/jq -c --argjson all_states "$ALL_STATES" '
-        (.sessions // [])
-        | map(select($all_states or ((.state // "") == "working" or (.state // "") == "attention")))
-        | .[]
-      ' "$OTEL_FILE" 2>/dev/null || true
-    )
+    OTEL_JSON='{}'
+    REVIEW_JSON='{}'
+    if [[ -f "$OTEL_FILE" ]]; then
+      OTEL_JSON=$(${pkgs.jq}/bin/jq -c '.' "$OTEL_FILE" 2>/dev/null || printf '{}')
+    fi
+    if [[ -f "$REVIEW_FILE" ]]; then
+      REVIEW_JSON=$(${pkgs.jq}/bin/jq -c '.' "$REVIEW_FILE" 2>/dev/null || printf '{}')
+    fi
+
+    mapfile -t SESSION_ROWS < <(${pkgs.jq}/bin/jq -cn \
+      --argjson otel "$OTEL_JSON" \
+      --argjson review "$REVIEW_JSON" \
+      --argjson all_states "$ALL_STATES" \
+      --argjson include_unseen "$INCLUDE_UNSEEN_FINISHED" '
+      ($otel.sessions // []) as $otel_sessions
+      | ($review.sessions // {}) as $review_sessions
+      | (
+          $otel_sessions
+          | map(. + {review_pending: false, synthetic: false, finish_marker: ""})
+          | map(
+              if $all_states
+              then .
+              else select(
+                ((.state // "") | ascii_downcase) == "working"
+                or ((.state // "") | ascii_downcase) == "attention"
+              )
+              end
+            )
+        ) as $otel_rows
+      | (
+          if $include_unseen and ($review_sessions | type == "object")
+          then (
+            $review_sessions
+            | to_entries
+            | map(.value)
+            | map(
+                select((.finish_marker // "") != "" and (.seen_marker // "") != (.finish_marker // ""))
+                | select((.expires_at // 0) > now)
+                | {
+                    session_id: "",
+                    native_session_id: "",
+                    context_fingerprint: "",
+                    tool: (.tool // "unknown"),
+                    state: (.last_state // "completed"),
+                    project: (.project // "unknown"),
+                    window_id: (.window_id // null),
+                    updated_at: (if (.finished_at // 0) > 0 then ((.finished_at // 0) | todateiso8601) else "" end),
+                    review_pending: true,
+                    synthetic: true,
+                    finish_marker: (.finish_marker // ""),
+                    terminal_context: {
+                      tmux_session: (.tmux_session // ""),
+                      tmux_window: (.tmux_window // ""),
+                      tmux_pane: (.tmux_pane // ""),
+                      pty: (.pty // "")
+                    }
+                  }
+              )
+          )
+          else []
+          end
+        ) as $review_rows
+      | ($otel_rows + $review_rows)
+      | .[]
+      ' 2>/dev/null || true)
 
     if [[ ''${#SESSION_ROWS[@]} -eq 0 ]]; then
       printf '[]\n'
@@ -106,6 +179,8 @@ USAGE
       native_session_id=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -r '.native_session_id // ""')
       context_fingerprint=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -r '.context_fingerprint // ""')
       window_id_json=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -c '.window_id // (.terminal_context.window_id // null)')
+      review_pending=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -r '.review_pending // false')
+      finish_marker=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -r '.finish_marker // ""')
 
       target_pane=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -r '.terminal_context.tmux_pane // ""')
       pty=$(printf '%s' "$row" | ${pkgs.jq}/bin/jq -r '.terminal_context.pty // ""')
@@ -129,20 +204,26 @@ USAGE
         tmux_window="''${PANE_TO_WINDOW[$target_pane]:-}"
       fi
 
-      case "$state" in
-        attention)
-          priority=3
-          ;;
-        working)
-          priority=2
-          ;;
-        completed)
-          priority=1
-          ;;
-        *)
-          priority=0
-          ;;
-      esac
+      if [[ "$review_pending" == "true" ]]; then
+        display_state="finished"
+        priority=1
+      else
+        display_state="$state"
+        case "$state" in
+          attention)
+            priority=3
+            ;;
+          working)
+            priority=2
+            ;;
+          completed)
+            priority=1
+            ;;
+          *)
+            priority=0
+            ;;
+        esac
+      fi
 
       case "$tool" in
         claude-code)
@@ -160,12 +241,13 @@ USAGE
       esac
 
       session_key="$tool|$project|$target_pane"
-      label="$tool_label · $state · $project · $target_pane"
+      label="$tool_label · $display_state · $project · $target_pane"
 
       record=$( ${pkgs.jq}/bin/jq -nc \
         --arg session_key "$session_key" \
         --arg tool "$tool" \
         --arg state "$state" \
+        --arg display_state "$display_state" \
         --arg project "$project" \
         --arg target_pane "$target_pane" \
         --arg tmux_session "$tmux_session" \
@@ -175,13 +257,16 @@ USAGE
         --arg session_id "$session_id" \
         --arg native_session_id "$native_session_id" \
         --arg context_fingerprint "$context_fingerprint" \
+        --arg finish_marker "$finish_marker" \
         --arg label "$label" \
         --argjson priority "$priority" \
         --argjson window_id "$window_id_json" \
+        --argjson review_pending "$review_pending" \
         '{
           session_key: $session_key,
           tool: $tool,
           state: $state,
+          display_state: $display_state,
           project: $project,
           window_id: $window_id,
           target_pane: $target_pane,
@@ -193,6 +278,8 @@ USAGE
           session_id: $session_id,
           native_session_id: $native_session_id,
           context_fingerprint: $context_fingerprint,
+          finish_marker: $finish_marker,
+          review_pending: $review_pending,
           label: $label
         }'
       )
@@ -303,6 +390,7 @@ USAGE
 
     WATCH_MODE=false
     ALL_STATES=false
+    NO_UNSEEN_FINISHED=false
     SESSION_NAME="''${AI_TMUX_VIEW_SESSION:-ai-monitor}"
     WINDOW_NAME="''${AI_TMUX_VIEW_WINDOW:-overview}"
     WATCH_INTERVAL="''${AI_TMUX_VIEW_WATCH_INTERVAL:-1.5}"
@@ -321,6 +409,7 @@ Options:
   --once                  Run one reconciliation pass (default)
   --watch                 Keep reconciling in a loop
   --all-states            Include idle/completed sessions
+  --no-unseen-finished    Exclude finished-unseen retained sessions
   --session NAME          Target tmux session name (default: ai-monitor)
   --window NAME           Target tmux window name (default: overview)
   --watch-interval SEC    Loop interval when --watch is enabled (default: 1.5)
@@ -344,6 +433,10 @@ USAGE
           ;;
         --all-states)
           ALL_STATES=true
+          shift
+          ;;
+        --no-unseen-finished)
+          NO_UNSEEN_FINISHED=true
           shift
           ;;
         --session)
@@ -417,6 +510,9 @@ USAGE
       if [[ "$ALL_STATES" == "true" ]]; then
         cmd+=("--all-states")
       fi
+      if [[ "$NO_UNSEEN_FINISHED" == "true" ]]; then
+        cmd+=("--no-unseen-finished")
+      fi
       if [[ -n "$OTEL_FILE" ]]; then
         cmd+=("--otel-file" "$OTEL_FILE")
       fi
@@ -463,7 +559,7 @@ USAGE
       mapfile -t panes < <(tmux list-panes -t "$target_window" -F '#{pane_id}')
 
       if [[ "$target_count" -eq 0 ]]; then
-        empty_cmd="${pkgs.bash}/bin/bash -lc 'while true; do printf \"\\033[2J\\033[HAI Session Overview\\n\\nNo working or attention sessions right now.\\n\"; ${pkgs.coreutils}/bin/sleep 2; done'"
+        empty_cmd="${pkgs.bash}/bin/bash -lc 'while true; do printf \"\\033[2J\\033[HAI Session Overview\\n\\nNo active or unread sessions right now.\\n\"; ${pkgs.coreutils}/bin/sleep 2; done'"
         tmux respawn-pane -k -t "''${panes[0]}" "$empty_cmd" >/dev/null
         tmux select-pane -t "''${panes[0]}" -T "idle" >/dev/null 2>&1 || true
         tmux set-option -w -t "$target_window" @ai_tmux_view_fingerprint "$fingerprint" >/dev/null
@@ -510,6 +606,7 @@ USAGE
     WATCH_INTERVAL="''${AI_TMUX_VIEW_WATCH_INTERVAL:-1.5}"
     MAX_PANES="''${AI_TMUX_VIEW_MAX_PANES:-9}"
     ALL_STATES=false
+    NO_UNSEEN_FINISHED=false
     OTEL_FILE=""
 
     usage() {
@@ -520,6 +617,7 @@ Open a tmux popup that mirrors all active AI sessions in one view.
 
 Options:
   --all-states            Include idle/completed sessions
+  --no-unseen-finished    Exclude finished-unseen retained sessions
   --session NAME          Dashboard tmux session name (default: ai-monitor)
   --window NAME           Dashboard tmux window name (default: overview)
   --watch-interval SEC    Sync loop interval while popup is open (default: 1.5)
@@ -533,6 +631,10 @@ USAGE
       case "$1" in
         --all-states)
           ALL_STATES=true
+          shift
+          ;;
+        --no-unseen-finished)
+          NO_UNSEEN_FINISHED=true
           shift
           ;;
         --session)
@@ -575,6 +677,9 @@ USAGE
     if [[ "$ALL_STATES" == "true" ]]; then
       sync_args+=(--all-states)
     fi
+    if [[ "$NO_UNSEEN_FINISHED" == "true" ]]; then
+      sync_args+=(--no-unseen-finished)
+    fi
     if [[ -n "$OTEL_FILE" ]]; then
       sync_args+=(--otel-file "$OTEL_FILE")
     fi
@@ -594,6 +699,9 @@ USAGE
     )
     if [[ "$ALL_STATES" == "true" ]]; then
       watch_args+=(--all-states)
+    fi
+    if [[ "$NO_UNSEEN_FINISHED" == "true" ]]; then
+      watch_args+=(--no-unseen-finished)
     fi
     if [[ -n "$OTEL_FILE" ]]; then
       watch_args+=(--otel-file "$OTEL_FILE")

@@ -8,7 +8,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from services.scratchpad_manager import ScratchpadManager
+from services.scratchpad_manager import ScratchpadManager, build_ghostty_bash_lc_command
 from models.scratchpad import ScratchpadTerminal
 
 
@@ -47,6 +47,24 @@ class TestScratchpadManagerInit:
         manager = ScratchpadManager(mock_sway_connection)
 
         assert manager.sway is mock_sway_connection
+
+
+class TestGhosttyCommandBuilder:
+    """Test Ghostty command builder syntax."""
+
+    def test_uses_key_value_syntax_for_title(self):
+        """Ghostty expects --<key>=<value> for config options."""
+        cmd = build_ghostty_bash_lc_command("Scratchpad Terminal", "tmux attach")
+
+        assert "ghostty --title='Scratchpad Terminal'" in cmd
+        assert "--title " not in cmd
+
+    def test_quotes_inner_command_for_bash_lc(self):
+        """Inner command is shell-quoted before passing to bash -lc."""
+        cmd = build_ghostty_bash_lc_command("Scratchpad Terminal", "echo 'hello world'")
+
+        assert "bash -lc " in cmd
+        assert "echo 'hello world'" not in cmd
 
 
 class TestTerminalStorage:

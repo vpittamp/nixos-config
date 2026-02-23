@@ -421,6 +421,31 @@ let
     ${pkgs.coreutils}/bin/mv "$TMP_FILE" "$MRU_FILE"
   '';
 
+  # Persist explicit "seen" acknowledgement for the currently focused AI session.
+  ackAiSessionSeenScript = pkgs.writeShellScriptBin "ack-ai-session-seen-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    SESSION_KEY="''${1:-}"
+    FINISH_MARKER="''${2:-}"
+    [[ -n "$SESSION_KEY" ]] || exit 1
+
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    STATE_DIR="$RUNTIME_DIR/eww-monitoring-panel"
+    EVENTS_FILE="$STATE_DIR/ai-session-seen-events.jsonl"
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+
+    NOW=$(${pkgs.coreutils}/bin/date +%s)
+    EVENT_JSON=$(
+      ${pkgs.jq}/bin/jq -cn \
+        --arg session_key "$SESSION_KEY" \
+        --arg finish_marker "$FINISH_MARKER" \
+        --argjson timestamp "$NOW" \
+        '{session_key:$session_key, finish_marker:$finish_marker, timestamp:$timestamp}'
+    )
+    printf '%s\n' "$EVENT_JSON" >> "$EVENTS_FILE"
+  '';
+
   # Feature 138: Focus active AI session by collision-safe session key.
   # Resolves from monitoring_data.active_ai_sessions and delegates to focus-ai-session-action.
   focusActiveAiSessionScript = pkgs.writeShellScriptBin "focus-active-ai-session-action" ''
@@ -435,6 +460,7 @@ let
     FALLBACK_TMUX_SESSION="''${6:-}"
     FALLBACK_TMUX_WINDOW="''${7:-}"
     FALLBACK_TMUX_PTY="''${8:-}"
+    FALLBACK_FINISH_MARKER="''${9:-}"
     if [[ -z "$SESSION_KEY" ]]; then
       exit 1
     fi
@@ -461,13 +487,14 @@ let
             ($s.tmux_pane // ""),
             ($s.tmux_session // ""),
             ($s.tmux_window // ""),
-            ($s.pty // "")
+            ($s.pty // ""),
+            ($s.finish_marker // "")
           ] | @tsv
         end
     ' <<< "$MONITORING_DATA")
 
     if [[ -n "$SESSION_TSV" ]]; then
-      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY <<< "$SESSION_TSV"
+      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
     else
       PROJECT_NAME="$FALLBACK_PROJECT"
       WINDOW_ID="$FALLBACK_WINDOW_ID"
@@ -476,6 +503,7 @@ let
       TMUX_SESSION="$FALLBACK_TMUX_SESSION"
       TMUX_WINDOW="$FALLBACK_TMUX_WINDOW"
       TMUX_PTY="$FALLBACK_TMUX_PTY"
+      FINISH_MARKER="$FALLBACK_FINISH_MARKER"
     fi
 
     if [[ "$EXECUTION_MODE" != "local" && "$EXECUTION_MODE" != "ssh" ]]; then
@@ -496,6 +524,7 @@ let
       "$TMUX_SESSION" \
       "$TMUX_WINDOW" \
       "$TMUX_PTY"
+    ${ackAiSessionSeenScript}/bin/ack-ai-session-seen-action "$SESSION_KEY" "$FINISH_MARKER" >/dev/null 2>&1 || true
     ${recordAiSessionMruScript}/bin/record-ai-session-mru-action "$SESSION_KEY" >/dev/null 2>&1 || true
   '';
 
@@ -651,18 +680,19 @@ let
             [
               ($s.project // ""),
               (($s.window_id // 0) | tostring),
-              ($s.execution_mode // "local"),
-              ($s.tmux_pane // ""),
-              ($s.tmux_session // ""),
-              ($s.tmux_window // ""),
-              ($s.pty // "")
-            ] | @tsv
-          end
+            ($s.execution_mode // "local"),
+            ($s.tmux_pane // ""),
+            ($s.tmux_session // ""),
+            ($s.tmux_window // ""),
+            ($s.pty // ""),
+            ($s.finish_marker // "")
+          ] | @tsv
+        end
       ' <<< "$MONITORING_DATA")
       if [[ -z "$SESSION_TSV" ]]; then
         continue
       fi
-      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY <<< "$SESSION_TSV"
+      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
 
       if ${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \
         "$TARGET_KEY" \
@@ -672,7 +702,8 @@ let
         "$TMUX_PANE" \
         "$TMUX_SESSION" \
         "$TMUX_WINDOW" \
-        "$TMUX_PTY" >/dev/null 2>&1; then
+        "$TMUX_PTY" \
+        "$FINISH_MARKER" >/dev/null 2>&1; then
         exit 0
       fi
     done
@@ -1644,6 +1675,7 @@ let
 in
 {
   inherit focusWindowScript focusAiSessionScript recordAiSessionMruScript
+          ackAiSessionSeenScript
           recordAiFocusMetricScript
           focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
           toggleLastAiSessionScript toggleAiSessionPinScript

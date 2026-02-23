@@ -6,7 +6,7 @@
   (defwidget active-ai-rail []
     (box
       :class "active-ai-rail-container"
-      :visible {current_view_index == 0 && selected_window_id == 0 && arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 0}
+      :visible {current_view_index == 0}
       :orientation "v"
       :space-evenly false
       (revealer
@@ -104,13 +104,14 @@
                       :spacing 3
                       (eventbox
                         :cursor "pointer"
-                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
+                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" \"''${session.finish_marker ?: ""}\" &"
                         :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
                           + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
                           + ((session.host_name ?: "") != "" ? ("@" + (session.host_name ?: "")) : "")
                           + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
                           + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
                           + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
+                          + ((session.review_pending ?: false) ? " · Unseen output" : "")
                           + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
                           + " · Click to focus"}
                         (box
@@ -118,6 +119,7 @@
                             ((session.otel_state ?: "idle") == "working"
                               ? "working"
                               : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                            ((session.review_pending ?: false) ? " review-pending" : "") +
                             ((session.tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((session.tool ?: "unknown") == "codex" ? " tool-codex" : ((session.tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                             ((session.stale ?: false) ? " stale" : "") +
                             (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
@@ -143,7 +145,11 @@
                             :truncate true)
                           (label
                             :class {"active-ai-chip-mode " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")}
-                            :text {(session.execution_mode ?: "local") == "ssh" ? "R" : "L"})))
+                            :text {(session.execution_mode ?: "local") == "ssh" ? "R" : "L"})
+                          (label
+                            :class "active-ai-chip-unread-dot"
+                            :visible {session.review_pending ?: false}
+                            :text "●")))
                       (eventbox
                         :cursor "pointer"
                         :onclick "${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action \"''${session.session_key ?: ""}\" &"
@@ -151,6 +157,10 @@
                         (label
                           :class {"active-ai-pin-btn" + ((session.pinned ?: false) ? " pinned" : "")}
                           :text {(session.pinned ?: false) ? "󰐃" : "󰓎"}))))))))))
+        (label
+          :class "active-ai-empty-state"
+          :visible {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) == 0}
+          :text "No active or unread sessions")
         (revealer
           :reveal {ai_sessions_selected_key != ""}
           :transition "slidedown"
@@ -457,6 +467,7 @@
                           : ((badge.otel_state ?: "idle") == "completed"
                             ? "completed"
                             : "idle"))) +
+                      ((badge.review_pending ?: false) ? " review-pending" : "") +
                       ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                       ((badge.stale ?: false) ? " stale" : "") +
                       (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
@@ -467,7 +478,7 @@
                       ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                       : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
                     }
-                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + " · " + ((badge.execution_mode ?: "local") == "ssh" ? "remote" : "local") + ((badge.host_name ?: "") != "" ? ("@" + (badge.host_name ?: "")) : "") + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.review_pending ?: false) ? " · Unseen output" : "") + " · " + ((badge.execution_mode ?: "local") == "ssh" ? "remote" : "local") + ((badge.host_name ?: "") != "" ? ("@" + (badge.host_name ?: "")) : "") + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
                     (box
                       :orientation "h"
                       :space-evenly false
@@ -490,7 +501,11 @@
                               ? "${iconPaths.gemini}"
                               : "${iconPaths.anthropic}"))}
                         :image-width {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}
-                        :image-height {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)})))
+                        :image-height {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)})
+                      (label
+                        :class "ai-badge-unread-dot"
+                        :visible {badge.review_pending ?: false}
+                        :text "●")))
                   (box
                     :class "ai-badge-quick-actions"
                     :orientation "h"

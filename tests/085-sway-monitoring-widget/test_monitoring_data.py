@@ -14,6 +14,7 @@ import sys
 
 # Add the i3_project_manager module to the path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "home-modules" / "tools"))
+import i3_project_manager.cli.monitoring_data as monitoring_data
 
 from i3_project_manager.cli.monitoring_data import (
     get_window_state_classes,
@@ -181,8 +182,8 @@ class TestTransformWindow:
         assert result["workspace"] == "scratchpad"
         assert result["is_pwa"] is False  # scratchpad is not >= 50
 
-    def test_title_truncation(self):
-        """Truncate long titles to 50 characters."""
+    def test_title_preserved_for_runtime_truncation(self):
+        """Preserve full titles; UI handles truncation at render time."""
         long_title = "A" * 100
         daemon_window = {
             "id": 606,
@@ -191,8 +192,9 @@ class TestTransformWindow:
             "workspace": 1,
         }
         result = transform_window(daemon_window)
-        assert len(result["title"]) == 50
-        assert result["title"] == "A" * 50
+        assert len(result["title"]) == 100
+        assert result["title"] == long_title
+        assert result["full_title"] == long_title
 
     def test_state_classes_generation(self):
         """Generate state classes for window states."""
@@ -361,7 +363,7 @@ class TestQueryMonitoringData:
 
     @pytest.mark.asyncio
     async def test_successful_query(self):
-        """Successful daemon query returns valid data."""
+        """Successful daemon query returns current panel payload shape."""
         mock_daemon_response = {
             "outputs": [
                 {
@@ -394,17 +396,19 @@ class TestQueryMonitoringData:
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "proj"
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
 
             assert result["status"] == "ok"
-            assert result["monitor_count"] == 1
-            assert result["workspace_count"] == 1
-            assert result["window_count"] == 1
+            assert "projects" in result
+            assert isinstance(result["projects"], list)
             assert result["error"] is None
             assert "timestamp" in result
-            assert len(result["monitors"]) == 1
+            assert "active_ai_sessions" in result
+            assert "active_ai_sessions_mru" in result
+            assert "ai_monitor_metrics" in result
 
     @pytest.mark.asyncio
     async def test_daemon_error_handling(self):
@@ -419,9 +423,9 @@ class TestQueryMonitoringData:
             result = await query_monitoring_data()
 
             assert result["status"] == "error"
-            assert result["monitor_count"] == 0
-            assert result["workspace_count"] == 0
-            assert result["window_count"] == 0
+            assert result["projects"] == []
+            assert result["active_ai_sessions"] == []
+            assert result["active_ai_sessions_mru"] == []
             assert "Socket not found" in result["error"]
             assert "timestamp" in result
 
@@ -441,28 +445,293 @@ class TestQueryMonitoringData:
 
     @pytest.mark.asyncio
     async def test_json_output_format(self):
-        """Verify output matches contracts/eww-defpoll.md schema."""
+        """Verify output matches the current monitoring panel payload contract."""
         mock_daemon_response = {"outputs": []}
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient:
             mock_instance = AsyncMock()
             mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = None
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
 
             # Verify required fields exist
             assert "status" in result
-            assert "monitors" in result
-            assert "monitor_count" in result
-            assert "workspace_count" in result
-            assert "window_count" in result
+            assert "projects" in result
+            assert "active_project" in result
+            assert "spinner_frame" in result
+            assert "has_working_badge" in result
+            assert "active_ai_sessions" in result
+            assert "active_ai_sessions_mru" in result
+            assert "ai_monitor_metrics" in result
+            assert "otel_sessions" in result
             assert "timestamp" in result
             assert "error" in result
 
             # Verify JSON serializable
             json_str = json.dumps(result)
             assert json_str is not None
+
+    @pytest.mark.asyncio
+    async def test_otel_session_without_window_id_maps_to_project_window(self):
+        """Best-effort project mapping should restore inline OTEL badges."""
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 1,
+                            "name": "1",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 142,
+                                    "class": "Ghostty",
+                                    "title": "Terminal",
+                                    "project": "vpittamp/nixos-config:main",
+                                    "workspace": 1,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        otel_payload = {
+            "schema_version": "4",
+            "sessions": [
+                {
+                    "tool": "codex",
+                    "state": "working",
+                    "project": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                    "project_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                    "identity_confidence": "native",
+                    "native_session_id": "sid-123",
+                    "session_id": "codex:sid-123",
+                    "window_id": None,
+                    "terminal_context": {},
+                    "updated_at": "2026-02-23T16:00:00+00:00",
+                }
+            ],
+            "has_working": True,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "vpittamp/nixos-config:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+            assert result["status"] == "ok"
+            windows = [
+                window
+                for project in result["projects"]
+                for window in project.get("windows", [])
+                if window.get("id") == 142
+            ]
+            assert windows
+            assert len(windows[0]["otel_badges"]) == 1
+            assert windows[0]["otel_badges"][0]["window_id"] == 142
+            assert result["active_ai_sessions"][0]["window_id"] == 142
+
+    @pytest.mark.asyncio
+    async def test_otel_session_without_window_id_respects_ssh_identity(self):
+        """Missing window_id mapping should prefer ssh context over local sibling windows."""
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 1,
+                            "name": "1",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 142,
+                                    "pid": 1201,
+                                    "class": "Ghostty",
+                                    "title": "Local Terminal",
+                                    "project": "vpittamp/nixos-config:main",
+                                    "workspace": 1,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": False,
+                                    "marks": [
+                                        "scoped:terminal:vpittamp/nixos-config:main:142",
+                                        "ctx:vpittamp/nixos-config:main::local::local@thinkpad",
+                                    ],
+                                    "execution_mode": "local",
+                                    "connection_key": "local@thinkpad",
+                                    "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                                },
+                                {
+                                    "id": 314,
+                                    "pid": 2202,
+                                    "class": "Ghostty",
+                                    "title": "Remote Terminal",
+                                    "project": "vpittamp/nixos-config:main",
+                                    "workspace": 1,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [
+                                        "scoped:terminal:vpittamp/nixos-config:main:314",
+                                        "ctx:vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                    "remote_dir": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        otel_payload = {
+            "schema_version": "4",
+            "sessions": [
+                {
+                    "tool": "codex",
+                    "state": "working",
+                    "project": "vpittamp/nixos-config:main",
+                    "project_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                    "identity_confidence": "native",
+                    "native_session_id": "sid-ssh",
+                    "session_id": "codex:sid-ssh",
+                    "window_id": None,
+                    "terminal_context": {
+                        "execution_mode": "ssh",
+                        "connection_key": "vpittamp@ryzen:22",
+                        "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                        "tmux_session": "nixos",
+                        "tmux_window": "1:main",
+                        "tmux_pane": "%9",
+                        "host_name": "ryzen",
+                    },
+                    "updated_at": "2026-02-23T16:10:00+00:00",
+                }
+            ],
+            "has_working": True,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "vpittamp/nixos-config:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert result["active_ai_sessions"]
+        top_session = result["active_ai_sessions"][0]
+        assert top_session["window_id"] == 314
+        assert top_session["execution_mode"] == "ssh"
+        assert top_session["connection_key"] == "vpittamp@ryzen:22"
+        assert top_session["context_key"] == "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22"
+
+        project_variants = {
+            (project.get("name"), project.get("variant")): project
+            for project in result["projects"]
+            if project.get("scope") == "scoped"
+        }
+        assert ("vpittamp/nixos-config:main", "local") in project_variants
+        assert ("vpittamp/nixos-config:main", "ssh") in project_variants
+
+        ssh_windows = project_variants[("vpittamp/nixos-config:main", "ssh")]["windows"]
+        local_windows = project_variants[("vpittamp/nixos-config:main", "local")]["windows"]
+        assert any(w.get("id") == 314 for w in ssh_windows)
+        assert any(w.get("id") == 142 for w in local_windows)
+        ssh_badges = [w for w in ssh_windows if w.get("id") == 314][0]["otel_badges"]
+        assert len(ssh_badges) == 1
+        assert ssh_badges[0]["execution_mode"] == "ssh"
+
+    @pytest.mark.asyncio
+    async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
+        """Daemon-provided identity metadata should avoid /proc fallback reads."""
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 1,
+                            "name": "1",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 314,
+                                    "pid": 2202,
+                                    "class": "Ghostty",
+                                    "title": "Remote Terminal",
+                                    "project": "vpittamp/nixos-config:main",
+                                    "workspace": 1,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [
+                                        "scoped:terminal:vpittamp/nixos-config:main:314",
+                                        "ctx:vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data._read_window_remote_env", side_effect=AssertionError("fallback should not run")):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "vpittamp/nixos-config:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        scoped_projects = [p for p in result["projects"] if p.get("scope") == "scoped"]
+        assert scoped_projects
+        assert scoped_projects[0]["execution_mode"] == "ssh"
 
 
 @pytest.mark.asyncio
@@ -576,6 +845,233 @@ class TestQueryTailscaleData:
 
         mock_query.assert_awaited_once()
         mock_exit.assert_called_with(0)
+
+
+class TestAiReviewLifecycle:
+    """Test finished-unseen session retention and acknowledgement lifecycle."""
+
+    def test_retains_finished_session_until_seen(self, tmp_path, monkeypatch):
+        review_file = tmp_path / "ai-session-review.json"
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_REVIEW_FILE", review_file)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+
+        active_sessions = [{
+            "session_key": "tool=codex|project=proj|window=10|pane=%1",
+            "otel_state": "completed",
+            "project": "proj",
+            "display_project": "proj",
+            "window_id": 10,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "pty": "/dev/pts/1",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %1",
+            "state_seq": 11,
+            "status_reason": "quiet_period_expired",
+            "updated_at": "2026-02-23T10:00:00+00:00",
+            "stale": False,
+            "stale_age_seconds": 0,
+            "synthetic": False,
+        }]
+        window_lookup = {10: {"id": 10, "project": "proj"}}
+
+        first_out, first_review = monitoring_data._apply_review_lifecycle(active_sessions, window_lookup, None)
+        assert len(first_out) == 1
+        assert first_out[0]["review_pending"] is True
+        assert first_out[0]["review_state"] == "finished_unseen"
+        marker = str(first_out[0]["finish_marker"])
+        assert marker != ""
+        assert str(first_review[first_out[0]["session_key"]]["finish_marker"]) == marker
+
+        second_out, _ = monitoring_data._apply_review_lifecycle([], window_lookup, None)
+        assert len(second_out) == 1
+        assert second_out[0]["synthetic"] is True
+        assert second_out[0]["review_pending"] is True
+
+        seen_events_file.parent.mkdir(parents=True, exist_ok=True)
+        seen_events_file.write_text(json.dumps({
+            "session_key": first_out[0]["session_key"],
+            "finish_marker": marker,
+            "timestamp": 123456,
+        }) + "\n")
+        third_out, third_review = monitoring_data._apply_review_lifecycle([], window_lookup, None)
+        assert third_out == []
+        assert str(third_review[first_out[0]["session_key"]]["seen_marker"]) == marker
+
+    def test_passive_focus_marks_seen_without_pane(self, tmp_path, monkeypatch):
+        review_file = tmp_path / "ai-session-review.json"
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_REVIEW_FILE", review_file)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+
+        payload = {
+            "schema_version": "1",
+            "sessions": {
+                "tool=claude-code|project=proj|window=22": {
+                    "finish_marker": "marker-1",
+                    "seen_marker": "",
+                    "finished_at": 1735689600,
+                    "expires_at": 4135689600,
+                    "window_id": 22,
+                    "project": "proj",
+                    "tool": "claude-code",
+                    "display_tool": "Claude Code",
+                    "last_state": "completed",
+                    "tmux_pane": "",
+                    "tmux_session": "",
+                    "tmux_window": "",
+                    "pty": "",
+                }
+            },
+            "updated_at": 0,
+        }
+        review_file.parent.mkdir(parents=True, exist_ok=True)
+        review_file.write_text(json.dumps(payload))
+
+        out, state = monitoring_data._apply_review_lifecycle([], {22: {"id": 22, "project": "proj"}}, 22)
+        assert out == []
+        assert state["tool=claude-code|project=proj|window=22"]["seen_marker"] == "marker-1"
+
+    def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
+        windows = [{
+            "id": 42,
+            "project": "proj",
+            "otel_badges": [],
+        }]
+        sessions = [{
+            "session_key": "tool=codex|project=proj|window=42|pane=%7",
+            "tool": "codex",
+            "otel_state": "completed",
+            "project": "proj",
+            "window_id": 42,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%7",
+            "pty": "",
+            "stale": False,
+            "stale_age_seconds": 0,
+            "review_pending": True,
+            "review_state": "finished_unseen",
+            "finished_at": 1735689600,
+            "synthetic": True,
+        }]
+
+        monitoring_data._merge_review_state_into_window_badges(windows, sessions)
+        assert len(windows[0]["otel_badges"]) == 1
+        badge = windows[0]["otel_badges"][0]
+        assert badge["review_pending"] is True
+        assert badge["synthetic"] is True
+        assert badge["session_key"] == sessions[0]["session_key"]
+
+    def test_active_ai_sort_rank_places_finished_unseen_between_working_and_completed(self):
+        working = {"otel_state": "working", "review_pending": False}
+        finished_unseen = {"otel_state": "idle", "review_pending": True}
+        completed_seen = {"otel_state": "completed", "review_pending": False}
+        assert monitoring_data._active_ai_session_sort_rank(working) > monitoring_data._active_ai_session_sort_rank(finished_unseen)
+        assert monitoring_data._active_ai_session_sort_rank(finished_unseen) > monitoring_data._active_ai_session_sort_rank(completed_seen)
+
+    def test_consume_seen_events_empty_file_does_not_rewrite(self, tmp_path, monkeypatch):
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        seen_events_file.parent.mkdir(parents=True, exist_ok=True)
+        seen_events_file.write_text("")
+        before = seen_events_file.stat().st_mtime_ns
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+        events = monitoring_data.consume_ai_session_seen_events()
+
+        assert events == []
+        assert seen_events_file.exists()
+        assert seen_events_file.stat().st_mtime_ns == before
+
+    def test_consume_seen_events_with_entries_clears_file(self, tmp_path, monkeypatch):
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        seen_events_file.parent.mkdir(parents=True, exist_ok=True)
+        seen_events_file.write_text(
+            json.dumps({
+                "session_key": "tool=codex|project=proj|window=10",
+                "finish_marker": "m1",
+                "timestamp": 123,
+            }) + "\n"
+        )
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+        events = monitoring_data.consume_ai_session_seen_events()
+
+        assert len(events) == 1
+        assert events[0]["session_key"] == "tool=codex|project=proj|window=10"
+        assert events[0]["finish_marker"] == "m1"
+        assert not seen_events_file.exists()
+
+    def test_review_entry_update_is_idempotent_without_state_changes(self):
+        session = {
+            "session_key": "tool=codex|project=proj|window=10|pane=%1",
+            "otel_state": "idle",
+            "project": "proj",
+            "display_project": "proj",
+            "window_id": 10,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "pty": "/dev/pts/1",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %1",
+            "updated_at": "2026-02-23T16:30:00+00:00",
+            "state_seq": 4,
+            "status_reason": "completed_timeout",
+        }
+
+        entry, changed_first = monitoring_data._update_review_entry_from_session({}, session, 1000)
+        assert changed_first is True
+        first_updated_at = entry["updated_at"]
+
+        entry_again, changed_second = monitoring_data._update_review_entry_from_session(dict(entry), session, 1010)
+        assert changed_second is False
+        assert entry_again["updated_at"] == first_updated_at
+
+
+class TestAiNotificationState:
+    """Test AI notification cache robustness."""
+
+    def test_emit_notifications_recovers_from_corrupt_cache(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notify_file.write_text('{"sessions": {"bad": {"state":"working"}}}38944}')
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run:
+            monitoring_data.emit_ai_state_transition_notifications([
+                {
+                    "session_key": "tool=codex|project=proj|window=1|pane=%1",
+                    "otel_state": "idle",
+                    "display_tool": "Codex CLI",
+                    "display_project": "proj",
+                    "display_target": "pane %1",
+                    "tool": "codex",
+                    "project": "proj",
+                }
+            ])
+            mock_run.assert_not_called()
+
+        payload = json.loads(notify_file.read_text())
+        assert isinstance(payload, dict)
+        assert "sessions" in payload
+        assert payload["sessions"]["tool=codex|project=proj|window=1|pane=%1"]["state"] == "idle"
+
+    def test_atomic_write_json_leaves_no_temp_files(self, tmp_path):
+        state_file = tmp_path / "state.json"
+        monitoring_data._atomic_write_json(state_file, {"value": 1})
+        monitoring_data._atomic_write_json(state_file, {"value": 2})
+
+        assert json.loads(state_file.read_text()) == {"value": 2}
+        assert list(tmp_path.glob(".state.json.*.tmp")) == []
 
 
 if __name__ == "__main__":

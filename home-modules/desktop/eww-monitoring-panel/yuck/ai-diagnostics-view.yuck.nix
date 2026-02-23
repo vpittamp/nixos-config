@@ -29,6 +29,8 @@
         (label :class "ai-diagnostics-row"
           :text {"Attention: " + (monitoring_data.ai_monitor_metrics.attention_sessions ?: 0) + " · stale: " + (monitoring_data.ai_monitor_metrics.stale_sessions ?: 0)})
         (label :class "ai-diagnostics-row"
+          :text {"Review pending: " + (monitoring_data.ai_monitor_metrics.review_pending_sessions ?: 0)})
+        (label :class "ai-diagnostics-row"
           :text {"Pinned: " + (monitoring_data.ai_monitor_metrics.pinned_sessions ?: 0)}))
       (box
         :class "ai-diagnostics-last-focus"

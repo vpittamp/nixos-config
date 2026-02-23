@@ -858,6 +858,10 @@
     background: transparent;
   }
 
+  .ai-badge-hover.review-pending {
+    box-shadow: inset 0 0 0 1px rgba(249, 226, 175, 0.42);
+  }
+
   .ai-badge-hover.stale {
     opacity: 0.58;
   }
@@ -920,6 +924,13 @@
 
   .ai-badge-inline-group {
     min-width: 0;
+  }
+
+  .ai-badge-unread-dot {
+    font-size: 8px;
+    color: ${mocha.yellow};
+    margin-top: 1px;
+    margin-left: 1px;
   }
 
   .ai-badge-quick-actions {
@@ -1014,6 +1025,12 @@
   .active-ai-rail-total {
     font-size: 10px;
     color: ${mocha.overlay0};
+  }
+
+  .active-ai-empty-state {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+    padding: 2px 4px 0 4px;
   }
 
   .active-ai-group-list {
@@ -1196,6 +1213,10 @@
     border-color: rgba(137, 180, 250, 0.34);
   }
 
+  .active-ai-chip.review-pending {
+    box-shadow: inset 0 0 0 1px rgba(249, 226, 175, 0.44);
+  }
+
   .active-ai-chip.stale {
     opacity: 0.62;
     border-style: dashed;
@@ -1224,6 +1245,13 @@
   .active-ai-overflow-text {
     font-size: 10px;
     color: ${mocha.subtext0};
+  }
+
+  .active-ai-chip-unread-dot {
+    font-size: 8px;
+    color: ${mocha.yellow};
+    margin-top: 2px;
+    margin-left: 1px;
   }
 
   .active-ai-overflow-icon {

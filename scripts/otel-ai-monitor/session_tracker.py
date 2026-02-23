@@ -159,9 +159,11 @@ class SessionTracker:
         """Look up PID for a session ID from hook-written metadata files.
 
         Feature 138: Claude Code hooks write $XDG_RUNTIME_DIR/claude-session-{PID}.json
-        with {sessionId, pid}. This method scans those files to find the PID
-        for a given UUID session_id, enabling window correlation for native OTEL logs
-        which don't include process.pid.
+        with {sessionId, pid}. Codex notify hook writes
+        $XDG_RUNTIME_DIR/codex-session-{PID}.json with the same sessionId/pid
+        bridge. This method scans those files to find the PID for a given
+        session_id, enabling window correlation for native OTEL logs which may
+        omit process.pid.
 
         Args:
             session_id: The session ID (UUID) to look up
@@ -170,12 +172,17 @@ class SessionTracker:
             PID if found in metadata files, None otherwise
         """
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
-        metadata_pattern = os.path.join(runtime_dir, "claude-session-*.json")
+        metadata_patterns = (
+            os.path.join(runtime_dir, "claude-session-*.json"),
+            os.path.join(runtime_dir, "codex-session-*.json"),
+        )
 
         # Check if we need to refresh the cache (files changed in last 5 seconds)
         try:
             # Get the most recent mtime from metadata files
-            metadata_files = glob.glob(metadata_pattern)
+            metadata_files: list[str] = []
+            for pattern in metadata_patterns:
+                metadata_files.extend(glob.glob(pattern))
             if not metadata_files:
                 return None
 
@@ -189,7 +196,9 @@ class SessionTracker:
                         with open(filepath, "r") as f:
                             data = json.load(f)
                             sid = data.get("sessionId")
-                            pid = data.get("pid")
+                            if not sid:
+                                sid = data.get("threadId") or data.get("conversationId")
+                            pid = data.get("pid") or data.get("processPid")
                             if sid and pid:
                                 self._metadata_file_cache[sid] = int(pid)
                                 logger.debug(f"Loaded session metadata: {sid} -> PID {pid}")
@@ -409,6 +418,9 @@ class SessionTracker:
         add_part("tmux_session", terminal_context.get("tmux_session"))
         add_part("tmux_window", terminal_context.get("tmux_window"))
         add_part("host", terminal_context.get("host_name"))
+        add_part("mode", terminal_context.get("execution_mode"))
+        add_part("connection", terminal_context.get("connection_key"))
+        add_part("context", terminal_context.get("context_key"))
         # PID is useful when pane metadata is absent but multiple local sessions exist.
         add_part("pid", client_pid)
         add_part("project_path", project_path)
@@ -661,12 +673,33 @@ class SessionTracker:
             "tmux_window": None,
             "tmux_pane": None,
             "pty": None,
+            "execution_mode": None,
+            "connection_key": None,
+            "context_key": None,
+            "remote_target": None,
         }
         try:
             i3pm_env = get_process_i3pm_env(pid)
             project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
+            if i3pm_env:
+                remote_user = str(i3pm_env.get("I3PM_REMOTE_USER") or "").strip()
+                remote_host = str(i3pm_env.get("I3PM_REMOTE_HOST") or "").strip()
+                remote_port = str(i3pm_env.get("I3PM_REMOTE_PORT") or "").strip() or "22"
+                remote_target = ""
+                if remote_host:
+                    remote_target = (
+                        f"{remote_user}@{remote_host}:{remote_port}"
+                        if remote_user
+                        else f"{remote_host}:{remote_port}"
+                    )
+                terminal_context["execution_mode"] = i3pm_env.get("I3PM_EXECUTION_MODE")
+                terminal_context["connection_key"] = i3pm_env.get("I3PM_CONNECTION_KEY")
+                terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
+                terminal_context["remote_target"] = remote_target or None
             window_id = await find_window_for_session(pid)
-            terminal_context = get_tmux_context_for_pid(pid)
+            tmux_context = get_tmux_context_for_pid(pid)
+            for key, value in tmux_context.items():
+                terminal_context[key] = value
         except Exception as e:
             logger.debug(f"PID correlation failed for {pid}: {e}")
 
@@ -740,6 +773,10 @@ class SessionTracker:
             "tmux_pane": attrs.get("terminal.tmux.pane") or attrs.get("tmux.pane"),
             "pty": attrs.get("terminal.pty") or attrs.get("pty"),
             "host_name": attrs.get("host.name") or attrs.get("service.instance.id"),
+            "execution_mode": attrs.get("terminal.execution_mode") or attrs.get("i3pm.execution_mode"),
+            "connection_key": attrs.get("terminal.connection_key") or attrs.get("i3pm.connection_key"),
+            "context_key": attrs.get("terminal.context_key") or attrs.get("i3pm.context_key"),
+            "remote_target": attrs.get("terminal.remote_target") or attrs.get("i3pm.remote_target"),
         }
 
     @staticmethod
@@ -929,7 +966,17 @@ class SessionTracker:
             if session.collision_group_id:
                 self._session_pids[session.collision_group_id] = chosen.pid
 
-        for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
+        for key in (
+            "tmux_session",
+            "tmux_window",
+            "tmux_pane",
+            "pty",
+            "host_name",
+            "execution_mode",
+            "connection_key",
+            "context_key",
+            "remote_target",
+        ):
             if not getattr(session.terminal_context, key):
                 value = getattr(chosen.terminal_context, key)
                 if value:
@@ -1057,6 +1104,10 @@ class SessionTracker:
             or event_terminal_context_raw.get("tmux_window")
             or event_terminal_context_raw.get("tmux_pane")
             or event_terminal_context_raw.get("pty")
+            or event_terminal_context_raw.get("execution_mode")
+            or event_terminal_context_raw.get("connection_key")
+            or event_terminal_context_raw.get("context_key")
+            or event_terminal_context_raw.get("remote_target")
         )
         allow_native_context_override = bool(
             explicit_client_pid is not None or has_explicit_terminal_identity
@@ -1150,6 +1201,10 @@ class SessionTracker:
                 )
                 session.terminal_context.pty = event_terminal_context.get("pty")
                 session.terminal_context.host_name = event_terminal_context.get("host_name")
+                session.terminal_context.execution_mode = event_terminal_context.get("execution_mode")
+                session.terminal_context.connection_key = event_terminal_context.get("connection_key")
+                session.terminal_context.context_key = event_terminal_context.get("context_key")
+                session.terminal_context.remote_target = event_terminal_context.get("remote_target")
 
                 if len(self._sessions) >= MAX_SESSIONS:
                     self._evict_oldest_idle_session()
@@ -1234,7 +1289,17 @@ class SessionTracker:
             if session.project is None and session.project_path:
                 session.project = session.project_path
 
-            for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
+            for key in (
+                "tmux_session",
+                "tmux_window",
+                "tmux_pane",
+                "pty",
+                "host_name",
+                "execution_mode",
+                "connection_key",
+                "context_key",
+                "remote_target",
+            ):
                 value = event_terminal_context.get(key)
                 if not value:
                     continue
@@ -1277,7 +1342,17 @@ class SessionTracker:
                         session.pid = fallback_pid
                     if fallback_confidence != IdentityConfidence.HEURISTIC:
                         session.identity_confidence = fallback_confidence
-                    for key in ("tmux_session", "tmux_window", "tmux_pane", "pty", "host_name"):
+                    for key in (
+                        "tmux_session",
+                        "tmux_window",
+                        "tmux_pane",
+                        "pty",
+                        "host_name",
+                        "execution_mode",
+                        "connection_key",
+                        "context_key",
+                        "remote_target",
+                    ):
                         value = fallback_terminal_ctx.get(key)
                         if value and not getattr(session.terminal_context, key):
                             setattr(session.terminal_context, key, value)
@@ -1436,6 +1511,10 @@ class SessionTracker:
                     )
                     session.terminal_context.pty = resolved_terminal_context.get("pty")
                     session.terminal_context.host_name = resolved_terminal_context.get("host_name")
+                    session.terminal_context.execution_mode = resolved_terminal_context.get("execution_mode")
+                    session.terminal_context.connection_key = resolved_terminal_context.get("connection_key")
+                    session.terminal_context.context_key = resolved_terminal_context.get("context_key")
+                    session.terminal_context.remote_target = resolved_terminal_context.get("remote_target")
                     # Feature 137: Evict oldest IDLE session if at capacity
                     if len(self._sessions) >= MAX_SESSIONS:
                         self._evict_oldest_idle_session()
@@ -2195,6 +2274,10 @@ class SessionTracker:
                 s.terminal_context.tmux_session,
                 s.terminal_context.tmux_window,
                 s.terminal_context.tmux_pane,
+                s.terminal_context.execution_mode,
+                s.terminal_context.connection_key,
+                s.terminal_context.context_key,
+                s.terminal_context.remote_target,
                 s.pid,
                 s.trace_id,
                 s.pending_tools,

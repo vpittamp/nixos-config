@@ -48,6 +48,14 @@ def build_i3pm_env_exports(env: Dict[str, str]) -> str:
     return "; ".join(exports)
 
 
+def build_ghostty_bash_lc_command(title: str, inner_command: str) -> str:
+    """Build Ghostty command using required --key=value CLI format."""
+    return (
+        f"ghostty --title={shlex.quote(title)} "
+        f"-e bash -lc {shlex.quote(inner_command)}"
+    )
+
+
 def read_process_environ(pid: int) -> Dict[str, str]:
     """
     Read environment variables from process.
@@ -216,13 +224,19 @@ class ScratchpadManager:
                 ssh_parts.append(remote_cmd)
 
                 ssh_cmd = " ".join(shlex.quote(part) for part in ssh_parts)
-                ghostty_cmd = f"ghostty --title {shlex.quote('Scratchpad Terminal')} -e bash -lc {shlex.quote(ssh_cmd)}"
+                ghostty_cmd = build_ghostty_bash_lc_command(
+                    "Scratchpad Terminal",
+                    ssh_cmd,
+                )
             else:
                 tmux_cmd = (
                     f"tmux new-session -A -s {shlex.quote(tmux_session_name)} "
                     f"-c {shlex.quote(str(working_dir))}"
                 )
-                ghostty_cmd = f"ghostty --title {shlex.quote('Scratchpad Terminal')} -e bash -lc {shlex.quote(tmux_cmd)}"
+                ghostty_cmd = build_ghostty_bash_lc_command(
+                    "Scratchpad Terminal",
+                    tmux_cmd,
+                )
 
             # Complete shell command with environment setup
             full_cmd = f"{env_string}; {ghostty_cmd}"
