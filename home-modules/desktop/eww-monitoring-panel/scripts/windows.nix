@@ -431,6 +431,39 @@ let
     ) &
   '';
 
+  # Feature 140: Jump back to previous AI session (toggles between last two MRU entries).
+  toggleLastAiSessionScript = pkgs.writeShellScriptBin "toggle-last-ai-session-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
+
+    mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '(.active_ai_sessions_mru // .active_ai_sessions // []) | .[].session_key // empty' <<< "$MONITORING_DATA")
+    SESSION_COUNT=''${#SESSION_KEYS[@]}
+    if (( SESSION_COUNT == 0 )); then
+      exit 0
+    fi
+
+    CURRENT_KEY_RAW=$($EWW_CMD get ai_sessions_selected_key 2>/dev/null || echo "")
+    CURRENT_KEY=""
+    if [[ -n "$CURRENT_KEY_RAW" ]]; then
+      CURRENT_KEY=$(
+        printf '%s' "$CURRENT_KEY_RAW" \
+          | ${pkgs.jq}/bin/jq -r 'if type == "string" then . else tostring end' 2>/dev/null \
+          || printf '%s' "$CURRENT_KEY_RAW"
+      )
+    fi
+
+    TARGET_KEY="''${SESSION_KEYS[0]}"
+    if (( SESSION_COUNT > 1 )) && [[ "$CURRENT_KEY" == "''${SESSION_KEYS[0]}" ]]; then
+      TARGET_KEY="''${SESSION_KEYS[1]}"
+    fi
+
+    [[ -n "$TARGET_KEY" ]] || exit 0
+    ${focusActiveAiSessionScript}/bin/focus-active-ai-session-action "$TARGET_KEY" >/dev/null 2>&1 || true
+  '';
+
   # Open remote session item action:
   # - Ensures project context is active
   # - Launches project terminal (app-launcher-wrapper handles SSH sesh attach)
@@ -1226,6 +1259,7 @@ in
 {
   inherit focusWindowScript focusAiSessionScript recordAiSessionMruScript
           focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
+          toggleLastAiSessionScript
           switchProjectScript closeWorktreeScript
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
           toggleWindowsProjectExpandScript

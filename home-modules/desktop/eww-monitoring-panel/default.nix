@@ -69,6 +69,7 @@ let
     startTraceFromTemplateScript focusWindowScript focusAiSessionScript recordAiSessionMruScript
     switchProjectScript closeWorktreeScript
     focusActiveAiSessionScript cycleActiveAiSessionScript showAiMruSwitcherScript
+    toggleLastAiSessionScript
     closeAllWindowsScript closeWindowScript toggleProjectContextScript
     toggleWindowsProjectExpandScript
     copyWindowJsonScript copyTraceDataScript
@@ -199,6 +200,7 @@ in
       focusActiveAiSessionScript
       cycleActiveAiSessionScript
       showAiMruSwitcherScript
+      toggleLastAiSessionScript
       switchProjectScript
       closeWorktreeScript
       closeAllWindowsScript
