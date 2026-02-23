@@ -1324,6 +1324,127 @@ class TestAiReviewLifecycle:
         assert int(entry.get("finished_at") or 0) == now_epoch - 120
         assert int(entry.get("expires_at") or 0) == (now_epoch - 120) + monitoring_data._AI_SESSION_REVIEW_TTL_SECONDS
 
+    def test_drops_pending_review_entry_when_window_matches_non_terminal_app(self, tmp_path, monkeypatch):
+        review_file = tmp_path / "ai-session-review.json"
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_REVIEW_FILE", review_file)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+
+        session_key = "tool=claude-code|project=global|window=170|pane=%37"
+        payload = {
+            "schema_version": "1",
+            "sessions": {
+                session_key: {
+                    "project": "global",
+                    "display_project": "global",
+                    "window_id": 170,
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "identity_key": "ssh:vpittamp@ryzen:22",
+                    "context_key": "global::ssh::vpittamp@ryzen:22",
+                    "tmux_session": "workflow-builder-main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%37",
+                    "tool": "claude-code",
+                    "display_tool": "Claude Code",
+                    "display_target": "pane %37",
+                    "last_state": "completed",
+                    "finish_marker": "marker-1",
+                    "seen_marker": "",
+                    "finished_at": 1735689600,
+                    "expires_at": 4135689600,
+                    "updated_at": 1735689600,
+                }
+            },
+            "updated_at": 1735689600,
+        }
+        review_file.parent.mkdir(parents=True, exist_ok=True)
+        review_file.write_text(json.dumps(payload))
+
+        # Simulate local non-terminal window ID collision (e.g. Firefox shares same con_id).
+        window_lookup = {
+            170: {
+                "id": 170,
+                "project": "global",
+                "class": "firefox",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "",
+            }
+        }
+
+        out, state = monitoring_data._apply_review_lifecycle([], window_lookup, None)
+        assert out == []
+        assert session_key not in state
+
+    def test_build_active_ai_sessions_requires_terminal_window_and_identity_match(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "claude-code",
+                "project": "global",
+                "window_id": 170,
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "native_session_id": "n-ssh",
+                "session_id": "s-ssh",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 170,
+                    "tmux_session": "workflow-builder-main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%37",
+                },
+                "updated_at": "2026-02-23T10:00:00+00:00",
+            },
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 171,
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "n-local",
+                "session_id": "s-local",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%1",
+                },
+                "updated_at": "2026-02-23T10:00:01+00:00",
+            },
+        ]
+        window_lookup = {
+            170: {
+                "id": 170,
+                "project": "global",
+                "class": "firefox",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "",
+            },
+            171: {
+                "id": 171,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="vpittamp/nixos-config:main",
+            focused_window_id=171,
+        )
+        assert len(sessions) == 1
+        assert sessions[0]["window_id"] == 171
+        assert sessions[0]["project"] == "vpittamp/nixos-config:main"
+
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{
             "id": 42,

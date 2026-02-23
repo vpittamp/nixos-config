@@ -2411,6 +2411,132 @@ def _resolve_otel_session_window_id(
     return best_window_id
 
 
+def _connection_keys_equivalent(left: Any, right: Any) -> bool:
+    """Return True when two connection keys refer to the same endpoint."""
+    left_raw = str(left or "").strip()
+    right_raw = str(right or "").strip()
+    if not left_raw or not right_raw:
+        return False
+
+    left_norm = _normalize_connection_key(left_raw)
+    right_norm = _normalize_connection_key(right_raw)
+    if left_norm == right_norm:
+        return True
+
+    left_aliases = _connection_key_aliases(left_norm)
+    right_aliases = _connection_key_aliases(right_norm)
+    if not left_aliases:
+        left_aliases = {left_norm}
+    if not right_aliases:
+        right_aliases = {right_norm}
+    return bool(left_aliases.intersection(right_aliases))
+
+
+def _window_tracking_identity(window: Dict[str, Any]) -> Dict[str, str]:
+    """Extract normalized execution identity from transformed window payload."""
+    mode = _normalize_execution_mode(
+        window.get("i3pm_execution_mode") or window.get("execution_mode"),
+        default="",
+    )
+    connection_key = str(
+        window.get("i3pm_connection_key") or window.get("connection_key") or ""
+    ).strip()
+    context_key = str(
+        window.get("i3pm_context_key") or window.get("context_key") or ""
+    ).strip()
+
+    parsed_context = _parse_context_key(context_key)
+    if not mode:
+        mode = str(parsed_context.get("execution_mode") or "").strip()
+    if not connection_key:
+        connection_key = str(parsed_context.get("connection_key") or "").strip()
+
+    if connection_key:
+        connection_key = _normalize_connection_key(connection_key)
+
+    return {
+        "execution_mode": mode,
+        "connection_key": connection_key,
+        "context_key": context_key,
+    }
+
+
+def _window_matches_session_identity(
+    window: Dict[str, Any],
+    *,
+    session_identity: Optional[Dict[str, Any]] = None,
+    execution_mode: Any = "",
+    connection_key: Any = "",
+    context_key: Any = "",
+) -> bool:
+    """Require identity-safe matching between a session/review entry and window."""
+    target_mode = _normalize_execution_mode(
+        (
+            (session_identity or {}).get("execution_mode")
+            if isinstance(session_identity, dict)
+            else execution_mode
+        ),
+        default="",
+    )
+    target_connection = str(
+        (
+            (session_identity or {}).get("connection_key")
+            if isinstance(session_identity, dict)
+            else connection_key
+        )
+        or ""
+    ).strip()
+    target_context = str(
+        (
+            (session_identity or {}).get("context_key")
+            if isinstance(session_identity, dict)
+            else context_key
+        )
+        or ""
+    ).strip()
+
+    parsed_target = _parse_context_key(target_context)
+    if not target_mode:
+        target_mode = str(parsed_target.get("execution_mode") or "").strip()
+    if not target_connection:
+        target_connection = str(parsed_target.get("connection_key") or "").strip()
+    if target_connection:
+        target_connection = _normalize_connection_key(target_connection)
+
+    window_identity = _window_tracking_identity(window)
+    window_mode = str(window_identity.get("execution_mode") or "").strip()
+    window_connection = str(window_identity.get("connection_key") or "").strip()
+    window_context = str(window_identity.get("context_key") or "").strip()
+
+    if target_context and window_context and target_context != window_context:
+        return False
+    if target_mode and window_mode and target_mode != window_mode:
+        return False
+    if target_connection and window_connection and not _connection_keys_equivalent(target_connection, window_connection):
+        return False
+    return True
+
+
+def _window_is_ai_terminal_candidate(window: Dict[str, Any]) -> bool:
+    """Only allow AI tracking on terminal-capable windows (Ghostty/tmux proxies)."""
+    class_name = str(window.get("class") or "").strip().lower()
+    app_id = str(window.get("app_id") or "").strip().lower()
+    app_name = str(window.get("app_name") or "").strip().lower()
+    display_name = str(window.get("display_name") or "").strip().lower()
+
+    fields_present = any([class_name, app_id, app_name, display_name])
+    if not fields_present:
+        # Unit-test fixtures may omit app metadata.
+        return True
+
+    values = [class_name, app_id, app_name, display_name]
+    if any("ghostty" in value for value in values if value):
+        return True
+    if any(value == "remote-sesh" for value in values if value):
+        return True
+    return False
+
+
 def _build_active_session_key(
     *,
     tool: str,
@@ -2655,6 +2781,17 @@ def _build_active_ai_sessions(
         if not window_data:
             # Ignore stale OTEL records that point to windows no longer present
             # in the current daemon snapshot.
+            continue
+        if not _window_is_ai_terminal_candidate(window_data):
+            continue
+        session_identity_for_match = _resolve_session_execution_identity(
+            raw_session,
+            default_mode="local",
+        )
+        if not _window_matches_session_identity(
+            window_data,
+            session_identity=session_identity_for_match,
+        ):
             continue
         # Prefer daemon/window project identity (qualified worktree name),
         # fallback to OTEL session project when window metadata is missing.
@@ -2952,10 +3089,20 @@ def _apply_review_lifecycle(
 
     # Passive "seen" detection for manual focus navigation.
     if focused_window_id is not None:
+        focused_window = window_lookup.get(focused_window_id, {})
         focused_candidates = [
             (key, entry)
             for key, entry in review_sessions.items()
-            if _review_entry_is_pending(entry) and _safe_int(entry.get("window_id"), 0) == focused_window_id
+            if _review_entry_is_pending(entry)
+            and _safe_int(entry.get("window_id"), 0) == focused_window_id
+            and isinstance(focused_window, dict)
+            and _window_is_ai_terminal_candidate(focused_window)
+            and _window_matches_session_identity(
+                focused_window,
+                execution_mode=entry.get("execution_mode"),
+                connection_key=entry.get("connection_key"),
+                context_key=entry.get("context_key"),
+            )
         ]
         if focused_candidates:
             requires_tmux = any(str(entry.get("tmux_pane") or "") for _, entry in focused_candidates)
@@ -3032,8 +3179,22 @@ def _apply_review_lifecycle(
             continue
 
         window_id = _safe_int(entry.get("window_id"), 0)
-        if window_id <= 0 or window_id not in window_lookup:
+        window_data = window_lookup.get(window_id)
+        if window_id <= 0 or not isinstance(window_data, dict):
             # Unactionable orphan: drop instead of retaining forever.
+            delete_keys.append(key)
+            changed = True
+            continue
+        if not _window_is_ai_terminal_candidate(window_data):
+            delete_keys.append(key)
+            changed = True
+            continue
+        if not _window_matches_session_identity(
+            window_data,
+            execution_mode=entry.get("execution_mode"),
+            connection_key=entry.get("connection_key"),
+            context_key=entry.get("context_key"),
+        ):
             delete_keys.append(key)
             changed = True
             continue
@@ -3044,7 +3205,7 @@ def _apply_review_lifecycle(
         if state not in {"completed", "idle"}:
             state = "completed"
         tool = str(entry.get("tool") or "unknown").strip() or "unknown"
-        project = str(entry.get("project") or window_lookup[window_id].get("project") or "unknown")
+        project = str(entry.get("project") or window_data.get("project") or "unknown")
         tmux_session = str(entry.get("tmux_session") or "")
         tmux_window = str(entry.get("tmux_window") or "")
         tmux_pane = str(entry.get("tmux_pane") or "")
@@ -4473,6 +4634,11 @@ async def query_monitoring_data() -> Dict[str, Any]:
 
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
         per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
+        window_candidates_by_id: Dict[int, Dict[str, Any]] = {}
+        for candidate in window_candidates:
+            cid = _safe_int(candidate.get("id"), 0)
+            if cid > 0:
+                window_candidates_by_id[cid] = candidate
         for session in resolved_otel_sessions:
             identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
             native_session_id = str(session.get("native_session_id") or "").strip()
@@ -4486,6 +4652,21 @@ async def query_monitoring_data() -> Dict[str, Any]:
             try:
                 window_id_int = int(window_id)
             except (TypeError, ValueError):
+                continue
+
+            window_candidate = window_candidates_by_id.get(window_id_int, {})
+            if not isinstance(window_candidate, dict):
+                continue
+            if not _window_is_ai_terminal_candidate(window_candidate):
+                continue
+            session_identity_for_match = _resolve_session_execution_identity(
+                session,
+                default_mode="local",
+            )
+            if not _window_matches_session_identity(
+                window_candidate,
+                session_identity=session_identity_for_match,
+            ):
                 continue
 
             window_seen = per_window_seen.setdefault(window_id_int, {})
