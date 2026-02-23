@@ -820,6 +820,18 @@
     opacity: 0.5;
   }
 
+  .ai-badge-icon.tool-claude-code {
+    filter: drop-shadow(0 0 2px rgba(148, 226, 213, 0.28));
+  }
+
+  .ai-badge-icon.tool-codex {
+    filter: drop-shadow(0 0 2px rgba(137, 180, 250, 0.24));
+  }
+
+  .ai-badge-icon.tool-gemini {
+    filter: drop-shadow(0 0 2px rgba(250, 179, 135, 0.28));
+  }
+
   /* AI badge hover effect with PID tooltip */
   .ai-badge-hover {
     padding: 0 1px;
@@ -1069,6 +1081,22 @@
     border-radius: 7px;
     padding: 3px 6px;
     transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .active-ai-chip.tool-claude-code {
+    border-radius: 10px;
+    border-color: rgba(148, 226, 213, 0.46);
+  }
+
+  .active-ai-chip.tool-codex {
+    border-radius: 5px;
+    border-color: rgba(137, 180, 250, 0.44);
+  }
+
+  .active-ai-chip.tool-gemini {
+    border-radius: 8px;
+    border-style: solid;
+    border-color: rgba(250, 179, 135, 0.5);
   }
 
   .active-ai-chip-wrap {

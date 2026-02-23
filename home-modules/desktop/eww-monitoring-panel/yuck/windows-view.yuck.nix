@@ -118,6 +118,7 @@
                             ((session.otel_state ?: "idle") == "working"
                               ? "working"
                               : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                            ((session.tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((session.tool ?: "unknown") == "codex" ? " tool-codex" : ((session.tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                             ((session.stale ?: false) ? " stale" : "") +
                             (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
                             ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
@@ -433,6 +434,7 @@
                           : ((badge.otel_state ?: "idle") == "completed"
                             ? "completed"
                             : "idle"))) +
+                      ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                       ((badge.stale ?: false) ? " stale" : "") +
                       (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
                     :onhover {"eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_ai_badge_key='" + (badge.badge_key ?: "") + "'"}
@@ -455,7 +457,8 @@
                               ? " completed"
                               : ((badge.otel_state ?: "idle") == "attention"
                                 ? " attention"
-                                : " idle")))}
+                                : " idle")) +
+                          ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown")))}
                         :path {(badge.otel_tool ?: "unknown") == "claude-code"
                           ? "${iconPaths.claude}"
                           : ((badge.otel_tool ?: "unknown") == "codex"
