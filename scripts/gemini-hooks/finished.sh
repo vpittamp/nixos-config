@@ -9,9 +9,11 @@ set -euo pipefail
 
 LOG_FILE="/tmp/gemini-finished.log"
 echo "--- $(date) ---" >> "$LOG_FILE"
+echo "Starting hook..." >> "$LOG_FILE"
 
-# Read hook input JSON from stdin (Gemini passes hook data via stdin)
-INPUT=$(cat 2>/dev/null || echo "{}")
+# Try to read hook input JSON from stdin, but don't block forever
+echo "Reading stdin..." >> "$LOG_FILE"
+INPUT=$(timeout 1 cat 2>/dev/null || echo "{}")
 echo "INPUT length: ${#INPUT}" >> "$LOG_FILE"
 
 # Try to extract working directory from env or hook input
@@ -37,5 +39,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 nohup "${SCRIPT_DIR}/../ai-finished-notification.sh" "Gemini" "$MESSAGE" \
     </dev/null >/dev/null 2>&1 &
 
-echo "{}"
+echo "Hook finished." >> "$LOG_FILE"
+echo '{"decision": "allow"}'
 exit 0
