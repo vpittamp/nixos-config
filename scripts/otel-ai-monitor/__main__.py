@@ -22,7 +22,9 @@ import asyncio
 import logging
 import os
 import signal
+import socket
 import sys
+from pathlib import Path
 
 from . import __version__
 
@@ -102,6 +104,72 @@ Environment Variables:
         help="Enable verbose logging",
     )
 
+    parser.add_argument(
+        "--remote-sink",
+        action="store_true",
+        default=os.environ.get("OTEL_AI_REMOTE_SINK_ENABLE", "0") in {"1", "true", "yes", "on"},
+        help="Enable remote snapshot sink endpoint (/v1/i3pm/remote-sessions)",
+    )
+
+    default_sink_file = str(
+        Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "eww-monitoring-panel" / "remote-otel-sink.json"
+    )
+    parser.add_argument(
+        "--remote-sink-file",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_SINK_FILE", default_sink_file),
+        help="File path for persisted remote snapshot sink state",
+    )
+
+    parser.add_argument(
+        "--remote-sink-token",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_SINK_TOKEN", ""),
+        help="Optional bearer token required for remote sink writes",
+    )
+
+    parser.add_argument(
+        "--remote-push-url",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_PUSH_URL", ""),
+        help="Remote sink URL to push local session snapshots",
+    )
+
+    parser.add_argument(
+        "--remote-push-connection-key",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_PUSH_CONNECTION_KEY", ""),
+        help="Connection key identity used for pushed snapshots (e.g. user@host:22)",
+    )
+
+    parser.add_argument(
+        "--remote-push-host-name",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_PUSH_HOST_NAME", socket.gethostname()),
+        help="Host label attached to pushed snapshots",
+    )
+
+    parser.add_argument(
+        "--remote-push-token",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_PUSH_TOKEN", ""),
+        help="Optional bearer token used when pushing to remote sink",
+    )
+
+    parser.add_argument(
+        "--remote-push-max-interval",
+        type=float,
+        default=float(os.environ.get("OTEL_AI_REMOTE_PUSH_MAX_INTERVAL", "8")),
+        help="Max seconds between push heartbeats when snapshot is unchanged",
+    )
+
+    parser.add_argument(
+        "--remote-push-timeout",
+        type=float,
+        default=float(os.environ.get("OTEL_AI_REMOTE_PUSH_TIMEOUT", "1.5")),
+        help="HTTP timeout for remote push requests in seconds",
+    )
+
     return parser.parse_args()
 
 
@@ -122,14 +190,29 @@ async def main_async(args: argparse.Namespace) -> int:
     from .output import OutputWriter
     from .process_monitor import ProcessMonitor
     from .receiver import OTLPReceiver
+    from .remote_transport import RemoteSessionPushClient, RemoteSessionSinkStore
     from .session_tracker import SessionTracker
 
     logger = logging.getLogger("otel-ai-monitor")
     logger.info(f"Starting OpenTelemetry AI Monitor v{__version__}")
     logger.info(f"OTLP receiver on port {args.port}")
 
+    remote_push_client = None
+    if args.remote_push_url:
+        if not args.remote_push_connection_key:
+            logger.warning("remote push URL is set but connection key is empty; push transport disabled")
+        else:
+            remote_push_client = RemoteSessionPushClient(
+                endpoint_url=args.remote_push_url,
+                source_connection_key=args.remote_push_connection_key,
+                source_host_name=args.remote_push_host_name,
+                auth_token=args.remote_push_token,
+                max_interval_sec=args.remote_push_max_interval,
+                request_timeout_sec=args.remote_push_timeout,
+            )
+
     # Create output writer
-    output = OutputWriter()
+    output = OutputWriter(remote_push_client=remote_push_client)
 
     # Create session tracker with output writer
     tracker = SessionTracker(
@@ -141,10 +224,18 @@ async def main_async(args: argparse.Namespace) -> int:
         broadcast_interval_sec=args.broadcast_interval,
     )
 
+    remote_sink = None
+    if args.remote_sink:
+        remote_sink = RemoteSessionSinkStore(
+            sink_file_path=Path(args.remote_sink_file),
+            auth_token=args.remote_sink_token,
+        )
+
     # Create OTLP receiver with session tracker
     receiver = OTLPReceiver(
         port=args.port,
         tracker=tracker,
+        remote_sink=remote_sink,
     )
 
     # Create process monitor for fallback detection (Codex batches telemetry)
@@ -165,6 +256,9 @@ async def main_async(args: argparse.Namespace) -> int:
         loop.add_signal_handler(sig, lambda s=sig: handle_signal(s))
 
     try:
+        if remote_sink:
+            await remote_sink.start()
+
         # Start the output writer (creates pipe if needed)
         await output.start()
 
@@ -193,6 +287,8 @@ async def main_async(args: argparse.Namespace) -> int:
         await receiver.stop()
         await tracker.stop()
         await output.stop()
+        if remote_sink:
+            await remote_sink.stop()
 
     return 0
 

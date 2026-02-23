@@ -63,6 +63,13 @@
     port = 4320;  # Non-standard port (collector uses 4318)
     verbose = true;  # Enable debug logging to trace event parsing
     enableNotifications = false;  # Suppress "Claude Code Ready" alerts
+    remoteSink.enable = true;
+    remotePush = {
+      enable = true;
+      url = "http://ryzen:4320/v1/i3pm/remote-sessions";
+      connectionKey = "vpittamp@thinkpad:22";
+      hostName = "thinkpad";
+    };
   };
 
   # Sway Dynamic Configuration Management

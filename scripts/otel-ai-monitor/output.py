@@ -13,19 +13,27 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .models import SessionList, SessionUpdate
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from .remote_transport import RemoteSessionPushClient
+
 
 class OutputWriter:
     """Atomic JSON writer for OTEL AI session state."""
 
-    def __init__(self, json_file_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        json_file_path: Optional[Path] = None,
+        remote_push_client: Optional["RemoteSessionPushClient"] = None,
+    ) -> None:
         runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
         self.json_file_path = json_file_path or (runtime_dir / "otel-ai-sessions.json")
+        self.remote_push_client = remote_push_client
         self._lock = asyncio.Lock()
         self._running = False
         self._last_payload_hash: Optional[str] = None
@@ -34,11 +42,15 @@ class OutputWriter:
         """Start writer and ensure output directory exists."""
         self._running = True
         self.json_file_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.remote_push_client:
+            await self.remote_push_client.start()
         logger.info("Output writer using %s", self.json_file_path)
 
     async def stop(self) -> None:
         """Stop writer."""
         self._running = False
+        if self.remote_push_client:
+            await self.remote_push_client.stop()
         logger.info("Output writer stopped")
 
     async def write_update(self, update: SessionUpdate) -> None:
@@ -61,14 +73,20 @@ class OutputWriter:
         payload_hash = hashlib.sha256(json_content.encode("utf-8")).hexdigest()
 
         async with self._lock:
-            if payload_hash == self._last_payload_hash:
-                return
+            should_write_file = payload_hash != self._last_payload_hash
 
+            if should_write_file:
+                try:
+                    await asyncio.to_thread(self._sync_write_file, json_content)
+                    self._last_payload_hash = payload_hash
+                except Exception as e:
+                    logger.error(f"Error writing JSON file: {e}")
+
+        if self.remote_push_client:
             try:
-                await asyncio.to_thread(self._sync_write_file, json_content)
-                self._last_payload_hash = payload_hash
+                await self.remote_push_client.publish_snapshot(data, payload_hash)
             except Exception as e:
-                logger.error(f"Error writing JSON file: {e}")
+                logger.warning(f"Remote OTEL push publish failed: {e}")
 
     def _sync_write_file(self, content: str) -> None:
         """Write file atomically using temp file + rename."""

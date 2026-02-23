@@ -62,6 +62,13 @@
     enable = true;
     port = 4320;  # Non-standard port (collector uses 4318)
     enableNotifications = false;
+    remoteSink.enable = true;
+    remotePush = {
+      enable = true;
+      url = "http://thinkpad:4320/v1/i3pm/remote-sessions";
+      connectionKey = "vpittamp@ryzen:22";
+      hostName = "ryzen";
+    };
   };
 
   # Sway Dynamic Configuration Management

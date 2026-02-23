@@ -236,5 +236,11 @@ in
     enable = true;
     port = 4320;  # Non-standard port (collector uses 4318)
     enableNotifications = false;
+    remotePush = {
+      enable = true;
+      url = "http://thinkpad:4320/v1/i3pm/remote-sessions";
+      connectionKey = "vpittamp@hetzner:22";
+      hostName = "hetzner";
+    };
   };
 }

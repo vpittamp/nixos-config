@@ -8,6 +8,7 @@ import asyncio
 import json
 import pytest
 import subprocess
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 import sys
@@ -788,18 +789,13 @@ class TestQueryMonitoringData:
         monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
         monkeypatch.setattr(
             monitoring_data,
-            "REMOTE_OTEL_CACHE_DIR",
-            tmp_path / "remote-otel-cache",
+            "REMOTE_OTEL_SINK_FILE",
+            tmp_path / "remote-otel-sink.json",
         )
         monkeypatch.setattr(
             monitoring_data,
-            "REMOTE_OTEL_CACHE_TTL_SECONDS",
+            "REMOTE_OTEL_SOURCE_STALE_SECONDS",
             30.0,
-        )
-        monkeypatch.setattr(
-            monitoring_data,
-            "REMOTE_OTEL_FETCH_TIMEOUT_SECONDS",
-            0.2,
         )
 
         mock_daemon_response = {
@@ -852,43 +848,50 @@ class TestQueryMonitoringData:
             "sessions_by_window": {},
         }
 
-        remote_otel_payload = {
-            "schema_version": "4",
-            "sessions": [
-                {
-                    "tool": "codex",
-                    "state": "working",
-                    # Stale project name from remote env; should be corrected by project_path.
-                    "project": "vpittamp/nixos-config:main",
-                    "project_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
-                    "identity_confidence": "native",
-                    "native_session_id": "sid-remote-workflow",
-                    "session_id": "codex:sid-remote-workflow",
-                    "window_id": None,
-                    "terminal_context": {
-                        "tmux_session": "workflow-builder/main",
-                        "tmux_window": "1:bash",
-                        "tmux_pane": "%37",
-                        "host_name": "ryzen",
-                    },
+        remote_sink_payload = {
+            "schema_version": "1",
+            "updated_at": "2026-02-23T18:40:01+00:00",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "source_boot_id": "boot-1",
+                    "sequence": 12,
+                    "payload_hash": "hash-1",
+                    "session_schema_version": "4",
                     "updated_at": "2026-02-23T18:40:00+00:00",
+                    "sent_at": "2026-02-23T18:40:00+00:00",
+                    "received_at": 1898116800.0,
+                    "timestamp": 0,
+                    "has_working": True,
+                    "sessions": [
+                        {
+                            "tool": "codex",
+                            "state": "working",
+                            # Stale project name from remote env; should be corrected by project_path.
+                            "project": "vpittamp/nixos-config:main",
+                            "project_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                            "identity_confidence": "native",
+                            "native_session_id": "sid-remote-workflow",
+                            "session_id": "codex:sid-remote-workflow",
+                            "window_id": None,
+                            "terminal_context": {
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "1:bash",
+                                "tmux_pane": "%37",
+                                "host_name": "ryzen",
+                            },
+                            "updated_at": "2026-02-23T18:40:00+00:00",
+                        }
+                    ],
                 }
-            ],
-            "has_working": True,
-            "timestamp": 0,
-            "updated_at": "",
-            "sessions_by_window": {},
+            },
         }
-
-        def run_side_effect(cmd, *args, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "ssh":
-                return subprocess.CompletedProcess(cmd, 0, json.dumps(remote_otel_payload), "")
-            return subprocess.CompletedProcess(cmd, 0, "", "")
+        monitoring_data._atomic_write_json(monitoring_data.REMOTE_OTEL_SINK_FILE, remote_sink_payload)
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
-             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.subprocess.run", side_effect=run_side_effect):
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_window_tree.return_value = mock_daemon_response
             mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
@@ -971,6 +974,94 @@ class TestQueryMonitoringData:
         scoped_projects = [p for p in result["projects"] if p.get("scope") == "scoped"]
         assert scoped_projects
         assert scoped_projects[0]["execution_mode"] == "ssh"
+
+    def test_remote_otel_sink_stale_source_is_read_only(self, monkeypatch):
+        """Stale sink sources should never surface as active working sessions."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SOURCE_STALE_SECONDS", 5.0)
+
+        sink_payload = {
+            "schema_version": "1",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "received_at": time.time() - 120.0,
+                    "sessions": [
+                        {
+                            "tool": "codex",
+                            "state": "working",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_id": "codex:sid-stale",
+                            "terminal_context": {"tmux_pane": "%12"},
+                            "updated_at": "2026-02-23T19:00:00+00:00",
+                        }
+                    ],
+                }
+            },
+        }
+
+        sessions = monitoring_data._load_remote_otel_sessions_for_connection(
+            "vpittamp@ryzen:22",
+            sink_payload=sink_payload,
+        )
+        assert sessions
+        assert sessions[0]["remote_source_stale"] is True
+        assert sessions[0]["state"] == "completed"
+        assert sessions[0]["status_reason"] == "remote_source_stale"
+
+    def test_remote_otel_sink_uses_deterministic_source_without_ssh(self, monkeypatch):
+        """Deterministic sink path should not perform SSH fetches."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        sink_payload = {
+            "schema_version": "1",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "received_at": time.time(),
+                    "sessions": [
+                        {
+                            "tool": "codex",
+                            "state": "working",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_id": "codex:sid-fresh",
+                            "terminal_context": {"tmux_pane": "%17"},
+                            "updated_at": "2026-02-23T19:02:00+00:00",
+                        }
+                    ],
+                }
+            },
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.run", side_effect=RuntimeError("ssh should not run")):
+            sessions = monitoring_data._load_remote_otel_sessions_for_connection(
+                "vpittamp@ryzen:22",
+                sink_payload=sink_payload,
+            )
+        assert len(sessions) == 1
+        assert sessions[0]["execution_mode"] == "ssh"
+        assert sessions[0]["connection_key"] == "vpittamp@ryzen:22"
+
+    def test_remote_otel_sink_connection_key_alias_matching(self):
+        """Connection key matching should tolerate FQDN vs short-host variants."""
+        sink_payload = {
+            "schema_version": "1",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "received_at": time.time(),
+                    "sessions": [],
+                }
+            },
+        }
+        source = monitoring_data._match_remote_otel_sink_source(
+            sink_payload,
+            monitoring_data._normalize_connection_key("vpittamp@ryzen.tailnet:22"),
+        )
+        assert source
+        assert source["connection_key"] == "vpittamp@ryzen:22"
 
 
 @pytest.mark.asyncio

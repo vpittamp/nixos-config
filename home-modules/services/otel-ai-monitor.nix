@@ -55,7 +55,7 @@ let
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
-    version = "0.10.12";  # Feature 138: Load session metadata files for PID correlation
+    version = "0.11.0";  # Deterministic remote session push/sink transport
     src = lib.cleanSource (self + "/scripts/otel-ai-monitor");
 
     nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -118,9 +118,80 @@ in
       default = false;
       description = "Enable verbose logging";
     };
+
+    remoteSink = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Enable deterministic remote session sink endpoint";
+      };
+
+      file = mkOption {
+        type = types.str;
+        default = "";
+        description = "Optional sink state file path override";
+      };
+
+      token = mkOption {
+        type = types.str;
+        default = "";
+        description = "Optional bearer token required for remote sink writes";
+      };
+    };
+
+    remotePush = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Enable deterministic remote session push to a peer sink URL";
+      };
+
+      url = mkOption {
+        type = types.str;
+        default = "";
+        description = "Peer sink URL (for example http://thinkpad:4320/v1/i3pm/remote-sessions)";
+      };
+
+      connectionKey = mkOption {
+        type = types.str;
+        default = "";
+        description = "Source connection key identity for pushed snapshots (for example user@host:22)";
+      };
+
+      hostName = mkOption {
+        type = types.str;
+        default = "";
+        description = "Source host label attached to pushed snapshots";
+      };
+
+      token = mkOption {
+        type = types.str;
+        default = "";
+        description = "Optional bearer token used when pushing to peer sink";
+      };
+
+      maxIntervalSec = mkOption {
+        type = types.number;
+        default = 8;
+        description = "Maximum interval between push heartbeats for unchanged snapshots";
+      };
+
+      timeoutSec = mkOption {
+        type = types.number;
+        default = 1.5;
+        description = "HTTP timeout for remote push requests";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = (!cfg.remotePush.enable) || ((cfg.remotePush.url != "") && (cfg.remotePush.connectionKey != ""));
+        message = "services.otel-ai-monitor.remotePush requires both url and connectionKey when enabled.";
+      }
+    ];
+
     # User service for the OTLP monitor
     systemd.user.services.otel-ai-monitor = {
       Unit = {
@@ -145,7 +216,16 @@ in
             "--broadcast-interval" (toString cfg.broadcastIntervalSec)
           ]
           ++ lib.optionals (!cfg.enableNotifications) [ "--no-notifications" ]
-          ++ lib.optionals cfg.verbose [ "--verbose" ];
+          ++ lib.optionals cfg.verbose [ "--verbose" ]
+          ++ lib.optionals cfg.remoteSink.enable [ "--remote-sink" ]
+          ++ lib.optionals (cfg.remoteSink.file != "") [ "--remote-sink-file" cfg.remoteSink.file ]
+          ++ lib.optionals cfg.remotePush.enable [
+            "--remote-push-url" cfg.remotePush.url
+            "--remote-push-connection-key" cfg.remotePush.connectionKey
+            "--remote-push-max-interval" (toString cfg.remotePush.maxIntervalSec)
+            "--remote-push-timeout" (toString cfg.remotePush.timeoutSec)
+          ]
+          ++ lib.optionals (cfg.remotePush.hostName != "") [ "--remote-push-host-name" cfg.remotePush.hostName ];
         in "${monitorPackage}/bin/otel-ai-monitor ${lib.concatStringsSep " " args}";
 
         # Quick restart on failure
@@ -159,7 +239,9 @@ in
         # Environment for notifications and tmux client lookup
         Environment = [
           "PATH=${pkgs.libnotify}/bin:${pkgs.sway}/bin:${pkgs.coreutils}/bin:${pkgs.tmux}/bin"
-        ];
+        ]
+        ++ lib.optionals (cfg.remoteSink.token != "") [ "OTEL_AI_REMOTE_SINK_TOKEN=${cfg.remoteSink.token}" ]
+        ++ lib.optionals (cfg.remotePush.token != "") [ "OTEL_AI_REMOTE_PUSH_TOKEN=${cfg.remotePush.token}" ];
 
         # Logging
         StandardOutput = "journal";

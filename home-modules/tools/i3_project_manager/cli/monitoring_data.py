@@ -113,9 +113,10 @@ INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 # Remote sesh/tmux session discovery cache (for SSH project window augmentation)
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
 REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
-REMOTE_OTEL_CACHE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-cache"
-REMOTE_OTEL_CACHE_TTL_SECONDS = 8.0
-REMOTE_OTEL_FETCH_TIMEOUT_SECONDS = 1.2
+REMOTE_OTEL_SINK_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-sink.json"
+REMOTE_OTEL_SOURCE_STALE_SECONDS = float(
+    os.environ.get("I3PM_MONITORING_REMOTE_OTEL_STALE_SECONDS", "20")
+)
 
 
 def _normalize_session_name_key(value: str) -> str:
@@ -206,7 +207,7 @@ def load_otel_sessions() -> Dict[str, Any]:
 
 
 def _remote_otel_merge_enabled() -> bool:
-    """Whether remote SSH OTEL session merge is enabled."""
+    """Whether deterministic remote OTEL sink merge is enabled."""
     raw = str(os.environ.get("I3PM_MONITORING_REMOTE_OTEL", "auto") or "auto").strip().lower()
     if raw in {"0", "false", "no", "off"}:
         return False
@@ -249,35 +250,81 @@ def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _remote_otel_cache_file(connection_key: str) -> Path:
-    """Return per-connection cache file path for remote OTEL snapshots."""
-    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(connection_key or "").strip()) or "unknown"
-    return REMOTE_OTEL_CACHE_DIR / f"{safe}.json"
-
-
-def _load_remote_otel_cache(connection_key: str) -> Dict[str, Any]:
-    """Load cached remote OTEL payload for a connection key."""
-    cache_file = _remote_otel_cache_file(connection_key)
-    if not cache_file.exists():
+def _load_remote_otel_sink() -> Dict[str, Any]:
+    """Load deterministic remote OTEL sink payload."""
+    if not REMOTE_OTEL_SINK_FILE.exists():
         return {}
     try:
-        with open(cache_file, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return data
+        with open(REMOTE_OTEL_SINK_FILE, "r") as f:
+            payload = json.load(f)
+            if isinstance(payload, dict):
+                return payload
     except (json.JSONDecodeError, IOError):
         return {}
     return {}
 
 
-def _save_remote_otel_cache(connection_key: str, payload: Dict[str, Any]) -> None:
-    """Persist remote OTEL payload cache atomically."""
-    try:
-        REMOTE_OTEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache_file = _remote_otel_cache_file(connection_key)
-        _atomic_write_json(cache_file, payload)
-    except Exception:
-        return
+def _connection_key_aliases(value: str) -> set[str]:
+    """Build equivalent normalized aliases for an SSH connection key."""
+    aliases: set[str] = set()
+    raw = str(value or "").strip()
+    if not raw:
+        return aliases
+
+    normalized = _normalize_connection_key(raw)
+    if normalized and normalized not in {"unknown", "global"}:
+        aliases.add(normalized)
+
+    parsed = _parse_ssh_connection_key(raw)
+    if not parsed:
+        return aliases
+
+    user = str(parsed.get("user") or "").strip()
+    host = str(parsed.get("host") or "").strip().lower()
+    port = int(parsed.get("port") or 22)
+    if not host:
+        return aliases
+
+    host_aliases = {host}
+    if "." in host:
+        host_aliases.add(host.split(".", 1)[0])
+
+    for host_alias in host_aliases:
+        base_target = f"{user}@{host_alias}" if user else host_alias
+        aliases.add(_normalize_connection_key(base_target))
+        aliases.add(_normalize_connection_key(f"{base_target}:{port}"))
+        if port == 22:
+            aliases.add(_normalize_connection_key(f"{base_target}:22"))
+    return {alias for alias in aliases if alias and alias not in {"unknown", "global"}}
+
+
+def _match_remote_otel_sink_source(
+    sink_payload: Dict[str, Any],
+    normalized_connection_key: str,
+) -> Dict[str, Any]:
+    """Resolve remote sink source for the requested normalized connection key."""
+    sources = sink_payload.get("sources", {})
+    if not isinstance(sources, dict):
+        return {}
+
+    direct = sources.get(normalized_connection_key)
+    if isinstance(direct, dict):
+        return direct
+
+    target_aliases = _connection_key_aliases(normalized_connection_key)
+    if normalized_connection_key:
+        target_aliases.add(_normalize_connection_key(normalized_connection_key))
+
+    for key, source in sources.items():
+        if not isinstance(source, dict):
+            continue
+        source_aliases = _connection_key_aliases(str(key or ""))
+        source_aliases.update(
+            _connection_key_aliases(str(source.get("connection_key") or ""))
+        )
+        if target_aliases.intersection(source_aliases):
+            return source
+    return {}
 
 
 def _normalize_remote_otel_session(
@@ -285,6 +332,9 @@ def _normalize_remote_otel_session(
     connection_key: str,
     host: str,
     remote_target: str,
+    *,
+    source_stale: bool = False,
+    source_age_seconds: int = 0,
 ) -> Dict[str, Any]:
     """Ensure remote OTEL session has canonical SSH identity metadata."""
     normalized = dict(session)
@@ -299,74 +349,63 @@ def _normalize_remote_otel_session(
     terminal_context["remote_target"] = terminal_context.get("remote_target") or remote_target
     terminal_context["host_name"] = terminal_context.get("host_name") or host
     normalized["terminal_context"] = terminal_context
+    normalized["remote_source_stale"] = bool(source_stale)
+    normalized["remote_source_age_seconds"] = int(max(0, source_age_seconds))
+    if source_stale:
+        state = str(normalized.get("state") or "idle").strip().lower()
+        if state in {"working", "attention"}:
+            normalized["state"] = "completed"
+            normalized["status_reason"] = "remote_source_stale"
     return normalized
 
 
-def _load_remote_otel_sessions_for_connection(connection_key: str) -> List[Dict[str, Any]]:
-    """Fetch remote OTEL sessions via SSH with short-lived cache."""
+def _load_remote_otel_sessions_for_connection(
+    connection_key: str,
+    *,
+    sink_payload: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Load remote OTEL sessions from deterministic sink state."""
     parsed = _parse_ssh_connection_key(connection_key)
     if not parsed:
         return []
 
     normalized_key = str(parsed["connection_key"])
+    sink_payload = sink_payload if isinstance(sink_payload, dict) else _load_remote_otel_sink()
+    source = _match_remote_otel_sink_source(sink_payload, normalized_key)
+    if not source:
+        return []
+
+    raw_sessions = source.get("sessions", [])
+    if not isinstance(raw_sessions, list):
+        return []
+
     now_ts = time.time()
-    cached = _load_remote_otel_cache(normalized_key)
-    cache_ts = float(cached.get("fetched_at", 0.0) or 0.0) if isinstance(cached, dict) else 0.0
-    if now_ts - cache_ts <= REMOTE_OTEL_CACHE_TTL_SECONDS:
-        sessions = cached.get("sessions", []) if isinstance(cached, dict) else []
-        return [dict(s) for s in sessions if isinstance(s, dict)]
-
-    ssh_cmd = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        f"ConnectTimeout={int(max(1, REMOTE_OTEL_FETCH_TIMEOUT_SECONDS))}",
-        "-p",
-        str(parsed["port"]),
-        str(parsed["target"]),
-        "cat /run/user/$(id -u)/otel-ai-sessions.json 2>/dev/null || echo '{\"sessions\":[]}'",
-    ]
-
-    fetched_sessions: List[Dict[str, Any]] = []
-    fetch_error = ""
-    try:
-        result = subprocess.run(
-            ssh_cmd,
-            capture_output=True,
-            text=True,
-            timeout=REMOTE_OTEL_FETCH_TIMEOUT_SECONDS,
-            check=False,
-        )
-        if result.returncode == 0:
-            payload_raw = (result.stdout or "").strip()
-            if payload_raw:
-                payload = json.loads(payload_raw)
-                if isinstance(payload, dict):
-                    for item in payload.get("sessions", []):
-                        if isinstance(item, dict):
-                            fetched_sessions.append(
-                                _normalize_remote_otel_session(
-                                    item,
-                                    connection_key=normalized_key,
-                                    host=str(parsed["host"]),
-                                    remote_target=f"{parsed['target']}:{parsed['port']}",
-                                )
-                            )
-        else:
-            fetch_error = (result.stderr or "").strip()
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
-        fetch_error = str(exc)
-
-    _save_remote_otel_cache(
-        normalized_key,
-        {
-            "fetched_at": now_ts,
-            "sessions": fetched_sessions,
-            "error": fetch_error,
-        },
+    source_received = float(source.get("received_at", 0.0) or 0.0)
+    source_age = (
+        int(max(0.0, now_ts - source_received))
+        if source_received > 0
+        else int(REMOTE_OTEL_SOURCE_STALE_SECONDS + 1)
     )
-    return fetched_sessions
+    source_stale = source_received <= 0 or source_age > REMOTE_OTEL_SOURCE_STALE_SECONDS
+
+    host_name = str(source.get("host_name") or parsed["host"])
+    remote_target = str(source.get("remote_target") or f"{parsed['target']}:{parsed['port']}")
+
+    merged: List[Dict[str, Any]] = []
+    for item in raw_sessions:
+        if not isinstance(item, dict):
+            continue
+        merged.append(
+            _normalize_remote_otel_session(
+                item,
+                connection_key=normalized_key,
+                host=host_name,
+                remote_target=remote_target,
+                source_stale=source_stale,
+                source_age_seconds=source_age,
+            )
+        )
+    return merged
 
 
 def _load_remote_otel_sessions_for_windows(
@@ -394,9 +433,15 @@ def _load_remote_otel_sessions_for_windows(
         seen.add(normalized_connection)
         connection_keys.append(normalized_connection)
 
+    sink_payload = _load_remote_otel_sink()
     merged: List[Dict[str, Any]] = []
     for connection_key in connection_keys:
-        merged.extend(_load_remote_otel_sessions_for_connection(connection_key))
+        merged.extend(
+            _load_remote_otel_sessions_for_connection(
+                connection_key,
+                sink_payload=sink_payload,
+            )
+        )
 
     # Best-effort dedupe by native session identity and terminal location.
     deduped: Dict[str, Dict[str, Any]] = {}
@@ -716,6 +761,9 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if AI_SESSION_REVIEW_FILE.parent.exists():
         if str(AI_SESSION_REVIEW_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_REVIEW_FILE.parent))
+    if REMOTE_OTEL_SINK_FILE.parent.exists():
+        if str(REMOTE_OTEL_SINK_FILE.parent) not in watch_paths:
+            watch_paths.append(str(REMOTE_OTEL_SINK_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -771,6 +819,8 @@ async def read_inotify_events(
     review_tmp_filename = review_filename + ".tmp"
     seen_events_filename = AI_SESSION_SEEN_EVENTS_FILE.name
     seen_events_tmp_filename = seen_events_filename + ".tmp"
+    remote_otel_sink_filename = REMOTE_OTEL_SINK_FILE.name
+    remote_otel_sink_tmp_filename = remote_otel_sink_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -804,8 +854,9 @@ async def read_inotify_events(
             is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
             is_review_file = filename in (review_filename, review_tmp_filename)
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
+            is_remote_otel_sink_file = filename in (remote_otel_sink_filename, remote_otel_sink_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file:
+            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_sink_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
