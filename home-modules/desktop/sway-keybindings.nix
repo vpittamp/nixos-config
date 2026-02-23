@@ -159,6 +159,8 @@ in
     "Alt+4" = "exec monitor-panel-tab 3";
     "Alt+5" = "exec monitor-panel-tab 4";
     "Alt+6" = "exec monitor-panel-tab 5";
+    "Alt+bracketright" = "exec cycle-active-ai-session-action next";
+    "Alt+bracketleft" = "exec cycle-active-ai-session-action prev";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";

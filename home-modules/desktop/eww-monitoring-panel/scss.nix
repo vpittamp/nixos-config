@@ -244,9 +244,10 @@
   .project {
     margin-bottom: 12px;
     padding: 8px;
-    background-color: rgba(49, 50, 68, 0.15);
+    background-color: rgba(30, 30, 46, 0.42);
     border-radius: 8px;
-    border: 1px solid rgba(108, 112, 134, 0.3);
+    border: 1px solid rgba(88, 91, 112, 0.48);
+    box-shadow: inset 0 1px 0 rgba(205, 214, 244, 0.04);
   }
 
   .scoped-project {
@@ -258,12 +259,14 @@
   }
 
   .project-active {
-    background-color: rgba(137, 180, 250, 0.1);
+    background-color: rgba(30, 30, 46, 0.5);
     border-left-color: ${mocha.blue};
+    border-color: rgba(137, 180, 250, 0.42);
+    box-shadow: inset 0 0 0 1px rgba(137, 180, 250, 0.18);
   }
 
   .project-active .project-header {
-    background-color: rgba(137, 180, 250, 0.15);
+    background-color: rgba(39, 45, 68, 0.84);
   }
 
   .project-active .project-name {
@@ -271,9 +274,10 @@
   }
 
   .project-ssh-active {
-    border-left-color: ${mocha.green};
-    background: linear-gradient(135deg, rgba(166, 227, 161, 0.12), rgba(249, 226, 175, 0.09));
-    box-shadow: inset 0 0 0 1px rgba(166, 227, 161, 0.2);
+    border-left-color: ${mocha.sapphire};
+    background-color: rgba(30, 30, 46, 0.5);
+    border-color: rgba(116, 199, 236, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(116, 199, 236, 0.16);
   }
 
   .project-ssh-profile {
@@ -282,10 +286,12 @@
   }
 
   .project-header-ssh-active {
-    background: rgba(22, 36, 24, 0.72);
-    border: 1px solid rgba(166, 227, 161, 0.54);
+    background: rgba(35, 42, 63, 0.82);
+    border: 1px solid rgba(137, 180, 250, 0.46);
     border-radius: 6px;
     padding: 5px 7px;
+    border-top: 1px solid rgba(137, 180, 250, 0.72);
+    box-shadow: inset 4px 0 0 rgba(137, 180, 250, 0.86);
   }
 
   .project-header-ssh-profile {
@@ -296,8 +302,8 @@
   }
 
   .project-name-ssh-active {
-    color: ${mocha.green};
-    text-shadow: 0 0 6px rgba(166, 227, 161, 0.34);
+    color: ${mocha.blue};
+    text-shadow: none;
   }
 
   .project-name-ssh-profile {
@@ -314,16 +320,61 @@
     margin-left: 6px;
   }
 
+  .project-variant-pill {
+    margin-left: 5px;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    font-size: 14px;
+    font-weight: 700;
+    opacity: 0.72;
+    transition: opacity 120ms ease, color 120ms ease;
+  }
+
+  .project-variant-pill.local {
+    color: ${mocha.subtext0};
+  }
+
+  .project-variant-pill.remote {
+    color: ${mocha.sapphire};
+    font-size: 16px;
+  }
+
+  .project-header:hover .project-variant-pill {
+    opacity: 0.9;
+  }
+
   .project-header {
     padding: 6px 8px;
-    border-bottom: 1px solid ${mocha.overlay0};
+    border-bottom: 1px solid rgba(108, 112, 134, 0.5);
     margin-bottom: 6px;
-    border-radius: 4px 4px 0 0;
-    transition: background-color 0.15s ease;
+    border-radius: 6px;
+    background: rgba(36, 37, 54, 0.78);
+    transition: background-color 0.15s ease, border-color 0.15s ease;
   }
 
   .project-header:hover {
-    background-color: rgba(137, 180, 250, 0.1);
+    background-color: rgba(45, 47, 69, 0.88);
+    border-color: rgba(137, 180, 250, 0.36);
+  }
+
+  .scoped-project .project-header {
+    border-top: 1px solid rgba(148, 226, 213, 0.45);
+    box-shadow: inset 4px 0 0 rgba(148, 226, 213, 0.82);
+  }
+
+  .global-project .project-header {
+    border-top: 1px solid rgba(203, 166, 247, 0.42);
+    box-shadow: inset 4px 0 0 rgba(203, 166, 247, 0.72);
+  }
+
+  .project-active .project-header {
+    border-top: 1px solid rgba(137, 180, 250, 0.72);
+    box-shadow: inset 5px 0 0 rgba(137, 180, 250, 0.98);
   }
 
   .project-action-bar {
@@ -737,26 +788,28 @@
     border-radius: 8px;
   }
 
-  @keyframes ai-working-pulse {
+  @keyframes ai-icon-working-pulse {
     0% { opacity: 1.0; }
-    50% { opacity: 0.6; }
+    35% { opacity: 0.25; }
+    70% { opacity: 1.0; }
     100% { opacity: 1.0; }
   }
 
   .ai-badge-icon {
     margin-left: 2px;
-    margin-right: 1px;
+    margin-right: 2px;
     min-width: 16px;
     min-height: 16px;
-    opacity: 1.0;
+    opacity: 0.92;
   }
 
   .ai-badge-icon.working {
-    animation: ai-working-pulse 1.5s infinite ease-in-out;
+    opacity: 1.0;
+    animation: ai-icon-working-pulse 0.9s infinite cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .ai-badge-icon.attention {
-    opacity: 1.0;
+    opacity: 0.95;
   }
 
   .ai-badge-icon.completed {
@@ -769,15 +822,32 @@
 
   /* AI badge hover effect with PID tooltip */
   .ai-badge-hover {
-    padding: 2px;
+    padding: 0 1px;
     margin: 0 1px;
-    border-radius: 6px;
-    transition: all 200ms ease-out;
+    border-radius: 4px;
+    transition: all 180ms ease-out;
+    background: transparent;
+    border: none;
+  }
+
+  .ai-badge-hover.working {
+    background: transparent;
+  }
+
+  .ai-badge-hover.attention {
+    background: transparent;
+  }
+
+  .ai-badge-hover.completed {
+    background: transparent;
+  }
+
+  .ai-badge-hover.idle {
     background: transparent;
   }
 
   .ai-badge-hover:hover {
-    background: rgba(137, 180, 250, 0.15);
+    background: rgba(137, 180, 250, 0.10);
   }
 
   .ai-badge-hover:hover .ai-badge-icon {
@@ -821,6 +891,130 @@
   .badge-focused-window {
     opacity: 0.4;
     box-shadow: none;
+  }
+
+  .active-ai-rail-container {
+    padding: 4px 10px 8px 10px;
+    border-bottom: 1px solid rgba(108, 112, 134, 0.34);
+    margin-bottom: 2px;
+  }
+
+  .active-ai-rail {
+    background: rgba(30, 30, 46, 0.62);
+    border: 1px solid rgba(108, 112, 134, 0.3);
+    border-radius: 8px;
+    padding: 6px 8px;
+  }
+
+  .active-ai-rail-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: ${mocha.subtext0};
+    margin-top: 1px;
+    min-width: 60px;
+  }
+
+  .active-ai-chip-strip {
+    min-width: 0;
+  }
+
+  .active-ai-empty {
+    min-width: 0;
+  }
+
+  .active-ai-empty-text {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+  }
+
+  .active-ai-chip-list {
+    min-width: 0;
+  }
+
+  .active-ai-chip {
+    background: rgba(49, 50, 68, 0.65);
+    border: 1px solid rgba(108, 112, 134, 0.36);
+    border-radius: 7px;
+    padding: 3px 6px;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .active-ai-chip:hover {
+    background: rgba(69, 71, 90, 0.85);
+    border-color: rgba(137, 180, 250, 0.45);
+  }
+
+  .active-ai-chip.selected {
+    border-color: rgba(137, 180, 250, 0.76);
+    background: rgba(69, 71, 90, 0.92);
+  }
+
+  .active-ai-chip.overflow {
+    padding: 2px 6px;
+  }
+
+  .active-ai-chip-icon {
+    opacity: 0.94;
+    margin-top: 1px;
+  }
+
+  .active-ai-chip-text {
+    font-size: 10px;
+    color: ${mocha.subtext0};
+    min-width: 0;
+  }
+
+  @keyframes active-ai-working-pulse {
+    0% { border-color: rgba(243, 139, 168, 0.36); background-color: rgba(69, 71, 90, 0.75); }
+    50% { border-color: rgba(243, 139, 168, 0.85); background-color: rgba(243, 139, 168, 0.14); }
+    100% { border-color: rgba(243, 139, 168, 0.36); background-color: rgba(69, 71, 90, 0.75); }
+  }
+
+  .active-ai-chip.working {
+    animation: active-ai-working-pulse 1.6s infinite ease-in-out;
+  }
+
+  @keyframes active-ai-attention-pulse {
+    0% { border-color: rgba(250, 179, 135, 0.4); background-color: rgba(69, 71, 90, 0.75); }
+    50% { border-color: rgba(250, 179, 135, 0.88); background-color: rgba(250, 179, 135, 0.14); }
+    100% { border-color: rgba(250, 179, 135, 0.4); background-color: rgba(69, 71, 90, 0.75); }
+  }
+
+  .active-ai-chip.attention {
+    animation: active-ai-attention-pulse 1.9s infinite ease-in-out;
+  }
+
+  .active-ai-chip.completed {
+    border-color: rgba(137, 180, 250, 0.34);
+  }
+
+  .active-ai-overflow-chip {
+    border-radius: 6px;
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    padding: 2px 6px;
+    background: rgba(49, 50, 68, 0.5);
+  }
+
+  .active-ai-overflow-chip.expanded {
+    border-color: rgba(137, 180, 250, 0.55);
+    background: rgba(69, 71, 90, 0.72);
+  }
+
+  .active-ai-overflow-text {
+    font-size: 10px;
+    color: ${mocha.subtext0};
+  }
+
+  .active-ai-overflow-icon {
+    font-size: 10px;
+    color: ${mocha.overlay0};
+    margin-top: 1px;
+  }
+
+  .active-ai-overflow-row {
+    margin-top: 4px;
+    padding-left: 68px;
+    min-width: 0;
   }
 
   .ai-sessions-bar {
@@ -939,24 +1133,6 @@
 
   .ai-session-chip.completed .ai-session-indicator {
     color: ${mocha.overlay0};
-  }
-
-  .ai-session-status-icon {
-    font-size: 8px;
-    margin-left: 2px;
-    opacity: 0.8;
-  }
-
-  .ai-session-status-icon.completed {
-    color: ${mocha.teal};
-  }
-
-  .ai-session-status-icon.working {
-    color: ${mocha.red};
-  }
-
-  .ai-session-status-icon.attention {
-    color: ${mocha.peach};
   }
 
   .ai-session-indicator {
@@ -1402,10 +1578,10 @@
   }
 
   .badge-remote {
-    color: ${mocha.green};
-    background: linear-gradient(135deg, rgba(166, 227, 161, 0.2), rgba(249, 226, 175, 0.18));
-    border: 1px solid rgba(166, 227, 161, 0.58);
-    box-shadow: 0 0 8px rgba(166, 227, 161, 0.24);
+    color: ${mocha.blue};
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.2), rgba(180, 190, 254, 0.14));
+    border: 1px solid rgba(137, 180, 250, 0.6);
+    box-shadow: 0 0 8px rgba(137, 180, 250, 0.2);
     font-size: 12px;
     font-weight: 700;
     padding: 1px 5px;
@@ -1413,10 +1589,10 @@
   }
 
   .badge-local {
-    color: ${mocha.sapphire};
-    background: linear-gradient(135deg, rgba(137, 180, 250, 0.2), rgba(148, 226, 213, 0.15));
-    border: 1px solid rgba(137, 180, 250, 0.62);
-    box-shadow: 0 0 8px rgba(137, 180, 250, 0.2);
+    color: ${mocha.subtext0};
+    background: linear-gradient(135deg, rgba(88, 91, 112, 0.4), rgba(108, 112, 134, 0.24));
+    border: 1px solid rgba(127, 132, 156, 0.54);
+    box-shadow: 0 0 8px rgba(30, 30, 46, 0.24);
     font-size: 12px;
     font-weight: 700;
     padding: 1px 5px;

@@ -142,6 +142,10 @@
   (defvar windows_expanded_projects "all")
   ;; Track if all are expanded (for toggle button state)
   (defvar windows_all_expanded true)
+  ;; Feature 138: Active AI rail state
+  (defvar ai_sessions_expand_overflow false)
+  (defvar ai_sessions_selected_key "")
+  (defvar ai_sessions_max_visible 8)
 
   ;; Copy state - Window ID that was just copied (0 = none)
   ;; Set when copy button clicked, auto-resets after 2 seconds

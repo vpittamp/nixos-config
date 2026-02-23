@@ -1,111 +1,196 @@
-{ pkgs, focusWindowScript, focusAiSessionScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
+{ pkgs, focusWindowScript, focusAiSessionScript, focusActiveAiSessionScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
 
 ''
+  ;; Feature 138: Pinned active AI rail for quick session switching.
+  ;; Rendered from main.yuck outside of windows-view scroll container.
+  (defwidget active-ai-rail []
+    (box
+      :class "active-ai-rail-container"
+      :visible {current_view_index == 0 && selected_window_id == 0 && arraylength(monitoring_data.active_ai_sessions ?: []) > 0}
+      :orientation "v"
+      :space-evenly false
+      (box
+        :class "active-ai-rail"
+        :orientation "h"
+        :space-evenly false
+        :spacing 8
+        (label :class "active-ai-rail-title" :text "Active AI")
+        (box
+          :class "active-ai-chip-strip"
+          :orientation "h"
+          :space-evenly false
+          :spacing 4
+          :hexpand true
+          :halign "fill"
+          (box
+            :class "active-ai-chip-list"
+            :orientation "h"
+            :space-evenly false
+            :spacing 4
+            :hexpand true
+            :halign "start"
+            (for session in {arraylength(monitoring_data.active_ai_sessions ?: []) <= 8 ? (monitoring_data.active_ai_sessions ?: []) : jq(monitoring_data.active_ai_sessions ?: [], ".[:8]")}
+              (eventbox
+                :cursor "pointer"
+                :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
+                :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                  + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
+                  + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
+                  + " · Click to focus"}
+                (box
+                  :class {"active-ai-chip " +
+                    ((session.otel_state ?: "idle") == "working"
+                      ? "working"
+                      : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                    ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 4
+                  (image
+                    :class "active-ai-chip-icon"
+                    :path {(session.tool ?: "unknown") == "claude-code"
+                      ? "${iconPaths.claude}"
+                      : ((session.tool ?: "unknown") == "codex"
+                        ? "${iconPaths.codex}"
+                        : ((session.tool ?: "unknown") == "gemini"
+                          ? "${iconPaths.gemini}"
+                          : "${iconPaths.anthropic}"))}
+                    :image-width 15
+                    :image-height 15)
+                  (label
+                    :class "active-ai-chip-text"
+                    :text {session.display_project ?: session.project ?: "unknown"}
+                    :limit-width 18
+                    :truncate true))))
+            (eventbox
+              :visible {arraylength(monitoring_data.active_ai_sessions ?: []) > 8}
+              :cursor "pointer"
+              :onclick {ai_sessions_expand_overflow ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update ai_sessions_expand_overflow=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update ai_sessions_expand_overflow=true"}
+              :tooltip {ai_sessions_expand_overflow ? "Hide additional sessions" : "Show all active sessions"}
+              (box
+                :class {"active-ai-overflow-chip" + (ai_sessions_expand_overflow ? " expanded" : "")}
+                :orientation "h"
+                :space-evenly false
+                :spacing 2
+                (label :class "active-ai-overflow-text" :text {"+''${arraylength(monitoring_data.active_ai_sessions ?: []) - 8}"})
+                (label :class "active-ai-overflow-icon" :text {ai_sessions_expand_overflow ? "󰅀" : "󰅂"}))))))
+      (revealer
+        :reveal {ai_sessions_expand_overflow && arraylength(monitoring_data.active_ai_sessions ?: []) > 8}
+        :transition "slidedown"
+        :duration "120ms"
+        (box
+          :class "active-ai-overflow-row"
+          :orientation "h"
+          :space-evenly false
+          :spacing 4
+          (for session in {jq(monitoring_data.active_ai_sessions ?: [], ".[8:]")}
+            (eventbox
+              :cursor "pointer"
+              :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" &"
+              :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")}
+              (box
+                :class {"active-ai-chip overflow " +
+                  ((session.otel_state ?: "idle") == "working"
+                    ? "working"
+                    : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
+                  ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
+                :orientation "h"
+                :space-evenly false
+                :spacing 4
+                (image
+                  :class "active-ai-chip-icon"
+                  :path {(session.tool ?: "unknown") == "claude-code"
+                    ? "${iconPaths.claude}"
+                    : ((session.tool ?: "unknown") == "codex"
+                      ? "${iconPaths.codex}"
+                      : ((session.tool ?: "unknown") == "gemini"
+                        ? "${iconPaths.gemini}"
+                        : "${iconPaths.anthropic}"))}
+                  :image-width 14
+                  :image-height 14)
+                (label
+                  :class "active-ai-chip-text"
+                  :text {session.display_project ?: session.project ?: "unknown"}
+                  :limit-width 16
+                  :truncate true))))))))
+
   ;; Windows View - Project-based hierarchy with real-time updates
   ;; Shows detail view when a window is selected, otherwise shows list
   (defwidget windows-view []
-    (scroll
-      :vscroll true
-      :hscroll false
+    (box
+      :orientation "v"
+      :space-evenly false
       :vexpand true
-      (box
-        :class "content-container"
-        :orientation "v"
-        :space-evenly false
+      (active-ai-rail)
+      (scroll
+        :vscroll true
+        :hscroll false
         :vexpand true
-        ;; Show detail view when window is selected
         (box
-          :visible {selected_window_id != 0}
-          :vexpand true
-          (window-detail-view))
-        ;; Show list view when no window is selected
-        (box
-          :visible {selected_window_id == 0}
+          :class "content-container"
           :orientation "v"
           :space-evenly false
           :vexpand true
-          ; Show error state when status is "error"
+          ;; Show detail view when window is selected
           (box
-            :visible {monitoring_data.status == "error"}
-            (error-state))
-          ; Show empty state when no projects and no error
+            :visible {selected_window_id != 0}
+            :vexpand true
+            (window-detail-view))
+          ;; Show list view when no window is selected
           (box
-            :visible {monitoring_data.status != "error" && arraylength(monitoring_data.projects ?: []) == 0}
-            (empty-state))
-          ; Show projects when no error and has projects
-          (box
-            :visible {monitoring_data.status != "error" && arraylength(monitoring_data.projects ?: []) > 0}
+            :visible {selected_window_id == 0}
             :orientation "v"
             :space-evenly false
-            ;; Action button row at top
+            :vexpand true
+            ; Show error state when status is "error"
             (box
-              :class "windows-actions-row"
-              :orientation "h"
-              :space-evenly false
-              :halign "end"
-              :spacing 8
-              ;; Expand/Collapse All button
-              (eventbox
-                :cursor "pointer"
-                :onclick {windows_all_expanded ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true"}
-                :tooltip {windows_all_expanded ? "Collapse all worktrees" : "Expand all worktrees"}
-                (box
-                  :class "expand-all-btn"
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 4
-                  (label :class "expand-all-icon" :text {windows_all_expanded ? "󰅀" : "󰅂"})
-                  (label :class "expand-all-text" :text {windows_all_expanded ? "Collapse" : "Expand"})))
-              ;; Close All button
-              (eventbox
-                :cursor "pointer"
-                :onhover "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=true"
-                :onhoverlost "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=false"
-                :onclick "${closeAllWindowsScript}/bin/close-all-windows-action &"
-                :tooltip "Close all scoped windows"
-                (box
-                  :class {"close-all-btn" + (!hovered_close_all ? " icon-only" : "")}
-                  :orientation "h"
-                  :space-evenly false
-                  :spacing 4
-                  (label :class "close-all-icon" :text "󰅖")
-                  (label :class "close-all-text" :visible {hovered_close_all} :text "Close All"))))
-            ;; Feature 117: Active AI Sessions bar - DISABLED
+              :visible {monitoring_data.status == "error"}
+              (error-state))
+            ; Show empty state when no projects and no error
             (box
-              :class "ai-sessions-bar"
-              :visible false
-              :orientation "h"
+              :visible {monitoring_data.status != "error" && arraylength(monitoring_data.projects ?: []) == 0}
+              (empty-state))
+            ; Show projects when no error and has projects
+            (box
+              :visible {monitoring_data.status != "error" && arraylength(monitoring_data.projects ?: []) > 0}
+              :orientation "v"
               :space-evenly false
-              :spacing 6
-              (for session in {monitoring_data.ai_sessions ?: []}
+              ;; Action button row at top
+              (box
+                :class "windows-actions-row"
+                :orientation "h"
+                :space-evenly false
+                :halign "end"
+                :spacing 8
+                ;; Expand/Collapse All button
                 (eventbox
                   :cursor "pointer"
-                  :onclick "${focusWindowScript}/bin/focus-window-action ''${session.project} ''${session.id} &"
-                  :tooltip {"󱜙 Click to focus\n󰙅 " + (session.project != "" ? session.project : "Unknown") + "\n󰚩 " + (session.source == "claude-code" ? "Claude Code" : (session.source == "codex" ? "Codex" : session.source)) + "\n" + (session.state == "working" ? "⏳ Processing..." : (session.state == "completed" ? "✓ Completed - awaiting input" : (session.needs_attention ? "🔔 Needs attention" : "💤 Ready for input")))}
+                  :onclick {windows_all_expanded ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='[]' windows_all_expanded=false" : "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update windows_expanded_projects='all' windows_all_expanded=true"}
+                  :tooltip {windows_all_expanded ? "Collapse all worktrees" : "Expand all worktrees"}
                   (box
-                    :class {"ai-session-chip" + (session.state == "working" ? " working" : (session.state == "completed" ? " completed" : (session.needs_attention ? " attention" : " idle")))}
+                    :class "expand-all-btn"
                     :orientation "h"
                     :space-evenly false
-                    :spacing 2
-                    (image
-                      :class {"ai-badge-icon" +
-                        (session.state == "working"
-                          ? " working"
-                          : (session.state == "completed"
-                            ? " completed"
-                            : (session.needs_attention ? " attention" : " idle")))}
-                      :path {session.source == "claude-code"
-                        ? "${iconPaths.claude}"
-                        : (session.source == "codex"
-                          ? "${iconPaths.codex}"
-                          : (session.source == "gemini"
-                            ? "${iconPaths.gemini}"
-                            : "${iconPaths.anthropic}"))}
-                      :image-width 18
-                      :image-height 18)))))
-            ;; Projects list
-            (for project in {monitoring_data.projects ?: []}
-              (project-widget :project project)))))))
+                    :spacing 4
+                    (label :class "expand-all-icon" :text {windows_all_expanded ? "󰅀" : "󰅂"})
+                    (label :class "expand-all-text" :text {windows_all_expanded ? "Collapse" : "Expand"})))
+                ;; Close All button
+                (eventbox
+                  :cursor "pointer"
+                  :onhover "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=true"
+                  :onhoverlost "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_close_all=false"
+                  :onclick "${closeAllWindowsScript}/bin/close-all-windows-action &"
+                  :tooltip "Close all scoped windows"
+                  (box
+                    :class {"close-all-btn" + (!hovered_close_all ? " icon-only" : "")}
+                    :orientation "h"
+                    :space-evenly false
+                    :spacing 4
+                    (label :class "close-all-icon" :text "󰅖")
+                    (label :class "close-all-text" :visible {hovered_close_all} :text "Close All"))))
+              ;; Projects list
+              (for project in {monitoring_data.projects ?: []}
+                (project-widget :project project))))))))
 
   (defwidget project-widget [project]
     (box
@@ -142,12 +227,12 @@
             :tooltip "Active project"
             :text "●")
           (label
-            :class "badge badge-local"
+            :class "project-variant-pill local"
             :visible {(project.variant ?: "") == "local" && (project.has_remote_variant ?: false)}
             :text "󰌽"
             :tooltip "Local project card")
           (label
-            :class "badge badge-remote"
+            :class "project-variant-pill remote"
             :visible {(project.variant ?: "") == "ssh" || (project.remote_enabled ?: false)}
             :text "☁"
             :tooltip {"Remote: " + (project.remote_target ?: "") + ((project.remote_directory_display ?: "") != "" ? " • " + (project.remote_directory_display ?: "") : "")})
@@ -156,9 +241,6 @@
             :halign "end"
             :orientation "h"
             :space-evenly false
-            (label
-              :class "window-count-badge"
-              :text "''${project.window_count}")
             (box
               :class {"project-action-rail" + (hovered_project_key == (project.card_id ?: project.name) ? " visible" : "")}
               :orientation "h"
@@ -265,16 +347,23 @@
                 :class "badge badge-pwa"
                 :text "PWA"
                 :visible {window.is_pwa ?: false})
-              ;; Feature 136: Iterate over otel_badges array (max 3 visible) with status icons
+              ;; Feature 136: Iterate over otel_badges array (max 3 visible)
               (for badge in {arraylength(window.otel_badges ?: []) <= 3 ? (window.otel_badges ?: []) : jq(window.otel_badges ?: [], ".[:3]")}
                 (eventbox
-                  :class "ai-badge-hover"
+                  :class {"ai-badge-hover " +
+                    ((badge.otel_state ?: "idle") == "working"
+                      ? "working"
+                      : ((badge.otel_state ?: "idle") == "attention"
+                        ? "attention"
+                        : ((badge.otel_state ?: "idle") == "completed"
+                          ? "completed"
+                          : "idle")))}
                   :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}
                   :onclick {(badge.window_id ?: 0) != 0
                     ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${window.execution_mode ?: "local"} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                     : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
                   }
-                  :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                  :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
                   (box
                     :orientation "h"
                     :space-evenly false
@@ -295,18 +384,8 @@
                           : ((badge.otel_tool ?: "unknown") == "gemini"
                             ? "${iconPaths.gemini}"
                             : "${iconPaths.anthropic}"))}
-                      :image-width 16
-                      :image-height 16)
-                    ;; Status icon next to each badge (restored from b658b3dc)
-                    (label
-                      :class {"ai-session-status-icon" +
-                        ((badge.otel_state ?: "idle") == "working" ? " working"
-                          : ((badge.otel_state ?: "idle") == "completed" ? " completed"
-                            : ((badge.otel_state ?: "idle") == "attention" ? " attention" : "")))}
-                      :visible {(badge.otel_state ?: "idle") != "idle"}
-                      :text {(badge.otel_state ?: "idle") == "working" ? "●"
-                        : ((badge.otel_state ?: "idle") == "completed" ? "✓"
-                          : ((badge.otel_state ?: "idle") == "attention" ? "!" : ""))}))))
+                      :image-width {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}
+                      :image-height {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}))))
               ;; Feature 136: Overflow badge when more than 3 sessions
               (label
                 :class "badge badge-overflow"

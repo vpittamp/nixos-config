@@ -211,6 +211,168 @@ let
         tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || true
       fi
     fi
+
+    exit 0
+  '';
+
+  # Feature 138: Focus active AI session by collision-safe session key.
+  # Resolves from monitoring_data.active_ai_sessions and delegates to focus-ai-session-action.
+  focusActiveAiSessionScript = pkgs.writeShellScriptBin "focus-active-ai-session-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    SESSION_KEY="''${1:-}"
+    FALLBACK_PROJECT="''${2:-}"
+    FALLBACK_WINDOW_ID="''${3:-}"
+    FALLBACK_EXECUTION_MODE="''${4:-local}"
+    FALLBACK_TMUX_PANE="''${5:-}"
+    FALLBACK_TMUX_SESSION="''${6:-}"
+    FALLBACK_TMUX_WINDOW="''${7:-}"
+    FALLBACK_TMUX_PTY="''${8:-}"
+    if [[ -z "$SESSION_KEY" ]]; then
+      exit 1
+    fi
+
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
+
+    SESSION_TSV=$(${pkgs.jq}/bin/jq -r --arg key "$SESSION_KEY" '
+      ((.active_ai_sessions // []) | map(select((.session_key // "") == $key)) | first) as $s
+      | if $s == null then "" else
+          [
+            ($s.project // ""),
+            (($s.window_id // 0) | tostring),
+            ($s.execution_mode // "local"),
+            ($s.tmux_pane // ""),
+            ($s.tmux_session // ""),
+            ($s.tmux_window // ""),
+            ($s.pty // "")
+          ] | @tsv
+        end
+    ' <<< "$MONITORING_DATA")
+
+    if [[ -n "$SESSION_TSV" ]]; then
+      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY <<< "$SESSION_TSV"
+    else
+      PROJECT_NAME="$FALLBACK_PROJECT"
+      WINDOW_ID="$FALLBACK_WINDOW_ID"
+      EXECUTION_MODE="$FALLBACK_EXECUTION_MODE"
+      TMUX_PANE="$FALLBACK_TMUX_PANE"
+      TMUX_SESSION="$FALLBACK_TMUX_SESSION"
+      TMUX_WINDOW="$FALLBACK_TMUX_WINDOW"
+      TMUX_PTY="$FALLBACK_TMUX_PTY"
+    fi
+
+    if [[ "$EXECUTION_MODE" != "local" && "$EXECUTION_MODE" != "ssh" ]]; then
+      EXECUTION_MODE="local"
+    fi
+
+    if [[ -z "$PROJECT_NAME" || -z "$WINDOW_ID" || "$WINDOW_ID" == "0" ]]; then
+      exit 1
+    fi
+
+    SELECTED_KEY_JSON=$(${pkgs.jq}/bin/jq -Rn --arg key "$SESSION_KEY" '$key')
+    $EWW_CMD update "ai_sessions_selected_key=$SELECTED_KEY_JSON"
+    ${focusAiSessionScript}/bin/focus-ai-session-action \
+      "$PROJECT_NAME" \
+      "$WINDOW_ID" \
+      "$EXECUTION_MODE" \
+      "$TMUX_PANE" \
+      "$TMUX_SESSION" \
+      "$TMUX_WINDOW" \
+      "$TMUX_PTY"
+  '';
+
+  # Feature 138: Cycle through active AI sessions in deterministic order.
+  cycleActiveAiSessionScript = pkgs.writeShellScriptBin "cycle-active-ai-session-action" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    DIRECTION="''${1:-next}"
+    if [[ "$DIRECTION" != "next" && "$DIRECTION" != "prev" ]]; then
+      DIRECTION="next"
+    fi
+
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    MONITORING_DATA=$($EWW_CMD get monitoring_data 2>/dev/null || echo "{}")
+    mapfile -t SESSION_KEYS < <(${pkgs.jq}/bin/jq -r '.active_ai_sessions // [] | .[].session_key // empty' <<< "$MONITORING_DATA")
+
+    SESSION_COUNT=''${#SESSION_KEYS[@]}
+    if (( SESSION_COUNT == 0 )); then
+      $EWW_CMD update 'ai_sessions_selected_key=""'
+      exit 0
+    fi
+
+    CURRENT_KEY_RAW=$($EWW_CMD get ai_sessions_selected_key 2>/dev/null || echo "")
+    CURRENT_KEY=""
+    if [[ -n "$CURRENT_KEY_RAW" ]]; then
+      CURRENT_KEY=$(
+        printf '%s' "$CURRENT_KEY_RAW" \
+          | ${pkgs.jq}/bin/jq -r 'if type == "string" then . else tostring end' 2>/dev/null \
+          || printf '%s' "$CURRENT_KEY_RAW"
+      )
+    fi
+    CURRENT_IDX=-1
+    for i in "''${!SESSION_KEYS[@]}"; do
+      if [[ "''${SESSION_KEYS[$i]}" == "$CURRENT_KEY" ]]; then
+        CURRENT_IDX=$i
+        break
+      fi
+    done
+
+    BASE_IDX=$CURRENT_IDX
+    if (( BASE_IDX < 0 )); then
+      if [[ "$DIRECTION" == "prev" ]]; then
+        BASE_IDX=0
+      else
+        BASE_IDX=-1
+      fi
+    fi
+
+    for (( offset=1; offset<=SESSION_COUNT; offset++ )); do
+      if [[ "$DIRECTION" == "prev" ]]; then
+        TARGET_IDX=$(( (BASE_IDX - offset + SESSION_COUNT) % SESSION_COUNT ))
+      else
+        TARGET_IDX=$(( (BASE_IDX + offset + SESSION_COUNT) % SESSION_COUNT ))
+      fi
+      TARGET_KEY="''${SESSION_KEYS[$TARGET_IDX]}"
+      if [[ -z "$TARGET_KEY" ]]; then
+        continue
+      fi
+
+      SESSION_TSV=$(${pkgs.jq}/bin/jq -r --arg key "$TARGET_KEY" '
+        ((.active_ai_sessions // []) | map(select((.session_key // "") == $key)) | first) as $s
+        | if $s == null then "" else
+            [
+              ($s.project // ""),
+              (($s.window_id // 0) | tostring),
+              ($s.execution_mode // "local"),
+              ($s.tmux_pane // ""),
+              ($s.tmux_session // ""),
+              ($s.tmux_window // ""),
+              ($s.pty // "")
+            ] | @tsv
+          end
+      ' <<< "$MONITORING_DATA")
+      if [[ -z "$SESSION_TSV" ]]; then
+        continue
+      fi
+      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY <<< "$SESSION_TSV"
+
+      if ${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \
+        "$TARGET_KEY" \
+        "$PROJECT_NAME" \
+        "$WINDOW_ID" \
+        "$EXECUTION_MODE" \
+        "$TMUX_PANE" \
+        "$TMUX_SESSION" \
+        "$TMUX_WINDOW" \
+        "$TMUX_PTY" >/dev/null 2>&1; then
+        exit 0
+      fi
+    done
+
+    exit 1
   '';
 
   # Open remote session item action:
@@ -1006,7 +1168,9 @@ let
 
 in
 {
-  inherit focusWindowScript focusAiSessionScript switchProjectScript closeWorktreeScript
+  inherit focusWindowScript focusAiSessionScript focusActiveAiSessionScript
+          cycleActiveAiSessionScript
+          switchProjectScript closeWorktreeScript
           closeAllWindowsScript closeWindowScript toggleProjectContextScript
           toggleWindowsProjectExpandScript
           copyWindowJsonScript copyTraceDataScript

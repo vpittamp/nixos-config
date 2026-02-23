@@ -1116,7 +1116,14 @@ _OTEL_STATE_PRIORITY = {
     "completed": 2,
     "idle": 1,
 }
-_OTEL_VISIBLE_BADGE_STATES = {"working", "attention"}
+_OTEL_VISIBLE_BADGE_STATES = {"working", "attention", "completed", "idle"}
+_OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
+
+_OTEL_TOOL_LABELS = {
+    "claude-code": "Claude Code",
+    "codex": "Codex CLI",
+    "gemini": "Gemini CLI",
+}
 
 
 def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
@@ -1301,6 +1308,148 @@ def _build_otel_badges(
     )
 
     return badges
+
+
+def _build_active_ai_sessions(
+    otel_sessions: Optional[List[Dict[str, Any]]],
+    window_lookup: Optional[Dict[int, Dict[str, Any]]] = None,
+    active_project_name: str = "",
+    focused_window_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Build a canonical list of active AI sessions for fast switching.
+
+    This list is separate from per-window badge rendering:
+    - includes completed sessions so users can jump back quickly
+    - emits a collision-safe session_key for duplicate native session IDs
+    - is sorted for keyboard cycling and visual scanning
+    """
+    if not otel_sessions:
+        return []
+
+    window_lookup = window_lookup or {}
+    merged_by_key: Dict[str, tuple[Dict[str, Any], Dict[str, Any]]] = {}
+
+    for raw_session in _coalesce_otel_badge_sessions(otel_sessions):
+        state = str(raw_session.get("state", "idle") or "idle").strip().lower()
+        if state not in _OTEL_ACTIVE_SESSION_STATES:
+            continue
+
+        terminal_context = raw_session.get("terminal_context", {}) or {}
+        window_id = raw_session.get("window_id", terminal_context.get("window_id"))
+        try:
+            window_id_int = int(window_id)
+        except (TypeError, ValueError):
+            # Focus/switch actions require a concrete window target.
+            continue
+
+        window_data = window_lookup.get(window_id_int, {})
+        if not window_data:
+            # Ignore stale OTEL records that point to windows no longer present
+            # in the current daemon snapshot.
+            continue
+        # Prefer daemon/window project identity (qualified worktree name),
+        # fallback to OTEL session project when window metadata is missing.
+        project = str(window_data.get("project") or raw_session.get("project") or "").strip()
+        tool = str(raw_session.get("tool", "unknown") or "unknown").strip() or "unknown"
+
+        tmux_session = str(terminal_context.get("tmux_session") or "")
+        tmux_window = str(terminal_context.get("tmux_window") or "")
+        tmux_pane = str(terminal_context.get("tmux_pane") or "")
+        pty = str(terminal_context.get("pty") or "")
+
+        native_session_id = str(raw_session.get("native_session_id") or "")
+        session_id = str(raw_session.get("session_id") or "")
+        context_fingerprint = str(raw_session.get("context_fingerprint") or "")
+
+        # Key on concrete terminal context first to avoid one chip per historical run.
+        key_parts = [
+            f"tool={tool}",
+            f"project={project or '-'}",
+            f"window={window_id_int}",
+        ]
+        if tmux_pane:
+            key_parts.append(f"pane={tmux_pane}")
+        elif pty:
+            key_parts.append(f"pty={pty}")
+        elif tmux_window:
+            key_parts.append(f"tmux_window={tmux_window}")
+        else:
+            # If no terminal context exists, include native/session identifiers.
+            if native_session_id:
+                key_parts.append(f"native={native_session_id}")
+            elif session_id:
+                key_parts.append(f"session={session_id}")
+            if context_fingerprint:
+                key_parts.append(f"context={context_fingerprint}")
+
+        session_key = "|".join(key_parts)
+
+        display_target = f"win {window_id_int}"
+        if tmux_pane:
+            display_target = f"pane {tmux_pane}"
+        elif tmux_window:
+            display_target = f"tmux {tmux_window}"
+        elif pty:
+            display_target = pty
+
+        execution_mode = str(
+            raw_session.get("execution_mode")
+            or terminal_context.get("execution_mode")
+            or window_data.get("execution_mode")
+            or "local"
+        ).strip().lower()
+        if execution_mode not in {"local", "ssh"}:
+            execution_mode = "local"
+
+        display_project = project or str(window_data.get("project") or "unknown")
+
+        session_payload = {
+            "session_key": session_key,
+            "display_tool": _OTEL_TOOL_LABELS.get(tool, tool if tool else "Unknown"),
+            "display_project": display_project,
+            "display_target": display_target,
+            "otel_state": state,
+            "project": display_project,
+            "window_id": window_id_int,
+            "execution_mode": execution_mode,
+            "tmux_session": tmux_session,
+            "tmux_window": tmux_window,
+            "tmux_pane": tmux_pane,
+            "pty": pty,
+            "native_session_id": native_session_id,
+            "session_id": session_id,
+            "context_fingerprint": context_fingerprint,
+            "identity_confidence": str(raw_session.get("identity_confidence") or ""),
+            "trace_id": str(raw_session.get("trace_id") or ""),
+            "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
+            "is_streaming": bool(raw_session.get("is_streaming", False)),
+            "updated_at": str(raw_session.get("updated_at") or ""),
+            "priority_score": _OTEL_STATE_PRIORITY.get(state, 0),
+            "tool": tool,
+        }
+
+        existing = merged_by_key.get(session_key)
+        if existing is None:
+            merged_by_key[session_key] = (dict(raw_session), session_payload)
+            continue
+
+        existing_raw, _ = existing
+        if _otel_badge_score(raw_session) > _otel_badge_score(existing_raw):
+            merged_by_key[session_key] = (dict(raw_session), session_payload)
+
+    active_sessions = [payload for _, payload in merged_by_key.values()]
+    active_sessions.sort(
+        key=lambda session: (
+            int(focused_window_id is not None and session.get("window_id") == focused_window_id),
+            int(bool(active_project_name) and str(session.get("project", "")).strip() == active_project_name),
+            _OTEL_STATE_PRIORITY.get(str(session.get("otel_state", "idle")), 0),
+            str(session.get("updated_at") or ""),
+            str(session.get("session_key") or ""),
+        ),
+        reverse=True,
+    )
+    return active_sessions
 
 
 def transform_window(
@@ -2511,6 +2660,25 @@ async def query_monitoring_data() -> Dict[str, Any]:
         for project in projects:
             all_windows.extend(project.get("windows", []))
 
+        window_lookup: Dict[int, Dict[str, Any]] = {}
+        focused_window_id: Optional[int] = None
+        for window in all_windows:
+            window_id = window.get("id")
+            try:
+                window_id_int = int(window_id)
+            except (TypeError, ValueError):
+                continue
+            window_lookup[window_id_int] = window
+            if bool(window.get("focused", False)):
+                focused_window_id = window_id_int
+
+        active_ai_sessions = _build_active_ai_sessions(
+            otel_sessions.get("sessions", []),
+            window_lookup=window_lookup,
+            active_project_name=active_qualified_name,
+            focused_window_id=focused_window_id,
+        )
+
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 
         # Get current timestamp for friendly formatting
@@ -2566,6 +2734,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "has_working_badge": has_working_badge or otel_sessions.get("has_working", False),
             # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
             "ai_sessions": ai_sessions,
+            # Feature 138: Canonical active AI sessions rail + keyboard switching
+            "active_ai_sessions": active_ai_sessions,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions,
         }
@@ -2586,6 +2756,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
+            "active_ai_sessions": [],
             "otel_sessions": otel_sessions,
         }
 
@@ -2605,6 +2776,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": otel_sessions.get("has_working", False),
             "ai_sessions": [],
+            "active_ai_sessions": [],
             "otel_sessions": otel_sessions,
         }
 
