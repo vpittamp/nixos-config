@@ -192,10 +192,8 @@ lib.mkIf enableClaudeCode {
       todoFeatureEnabled = true;
       verbose = true;
       autoUpdates = true;
-      preferredNotifChannel = "terminal_bell";
       autoConnectIde = true;
       includeCoAuthoredBy = true;
-      messageIdleNotifThresholdMs = 60000;
       env = {
         # Feature 123: Full OpenTelemetry configuration for OTLP export
         # Enables native telemetry to otel-ai-monitor service
@@ -253,6 +251,16 @@ lib.mkIf enableClaudeCode {
             type = "command";
             command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
             timeout = 5;
+          }];
+        }];
+
+        # Stop: Unified "finished" notification when Claude Code completes a turn
+        # Sends desktop notification with "Return to Terminal" action
+        Stop = [{
+          hooks = [{
+            type = "command";
+            command = "${repoRoot}/scripts/claude-hooks/finished.sh";
+            timeout = 10;
           }];
         }];
       };

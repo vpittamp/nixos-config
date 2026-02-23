@@ -253,6 +253,17 @@ let
       otlpProtocol = "http";
       logPrompts = true;
     };
+    # Hooks: lifecycle callbacks for Gemini CLI events
+    hooks = {
+      AfterAgent = [{
+        hooks = [{
+          type = "command";
+          command = "${repoRoot}/scripts/gemini-hooks/finished.sh";
+          timeout = 10;
+          name = "finished-notification";
+        }];
+      }];
+    };
     mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       chrome-devtools = {
         command = "npx";
@@ -361,7 +372,11 @@ EOF
         .tools = (.tools // {}) |
         .tools.autoAccept = (.tools.autoAccept // true) |
         .ui = (.ui // {}) |
-        .ui.theme = (.ui.theme // "Default")
+        .ui.theme = (.ui.theme // "Default") |
+
+        # Enforce AfterAgent hook for unified "finished" notification.
+        .hooks = (.hooks // {}) |
+        .hooks.AfterAgent = [{"hooks": [{"type": "command", "command": "${repoRoot}/scripts/gemini-hooks/finished.sh", "timeout": 10, "name": "finished-notification"}]}]
       ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
 
       if ! ${pkgs.diffutils}/bin/cmp -s "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"; then
