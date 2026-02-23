@@ -917,6 +917,157 @@ class TestQueryMonitoringData:
         assert len(workflow_project["windows"][0]["otel_badges"]) == 1
 
     @pytest.mark.asyncio
+    async def test_remote_otel_merge_maps_by_tmux_session_when_project_metadata_is_stale(self, monkeypatch, tmp_path):
+        """Resolve remote session by unique tmux session when project/context metadata is stale."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_SINK_FILE",
+            tmp_path / "remote-otel-sink.json",
+        )
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_SOURCE_STALE_SECONDS",
+            30.0,
+        )
+
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 3,
+                            "name": "3",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 100,
+                                    "pid": 9201,
+                                    "class": "Ghostty",
+                                    "title": "workflow-builder",
+                                    "project": "PittampalliOrg/workflow-builder:main",
+                                    "workspace": 3,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [
+                                        "scoped:terminal:PittampalliOrg/workflow-builder:main:100",
+                                        "ctx:PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                    "remote_session_name": "workflow-builder/main",
+                                },
+                                {
+                                    "id": 314,
+                                    "pid": 2202,
+                                    "class": "Ghostty",
+                                    "title": "nixos-config",
+                                    "project": "vpittamp/nixos-config:main",
+                                    "workspace": 3,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": False,
+                                    "marks": [
+                                        "scoped:terminal:vpittamp/nixos-config:main:314",
+                                        "ctx:vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                    "remote_session_name": "nixos-config/main",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+        local_otel_payload = {
+            "schema_version": "4",
+            "sessions": [],
+            "has_working": False,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        remote_sink_payload = {
+            "schema_version": "1",
+            "updated_at": "2026-02-23T19:10:01+00:00",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "source_boot_id": "boot-2",
+                    "sequence": 42,
+                    "payload_hash": "hash-2",
+                    "session_schema_version": "4",
+                    "updated_at": "2026-02-23T19:10:00+00:00",
+                    "sent_at": "2026-02-23T19:10:00+00:00",
+                    "received_at": 1898117400.0,
+                    "timestamp": 0,
+                    "has_working": True,
+                    "sessions": [
+                        {
+                            "tool": "claude-code",
+                            "state": "working",
+                            # Intentionally stale/misleading project metadata.
+                            "project": "vpittamp/nixos-config:main",
+                            "project_path": None,
+                            "identity_confidence": "native",
+                            "native_session_id": "sid-remote-workflow-tmux",
+                            "session_id": "claude-code:sid-remote-workflow-tmux",
+                            "window_id": None,
+                            "terminal_context": {
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "1:.claude-unwrapped",
+                                "tmux_pane": "%37",
+                                "host_name": "ryzen",
+                                "execution_mode": None,
+                                "connection_key": None,
+                                "context_key": None,
+                            },
+                            "updated_at": "2026-02-23T19:10:00+00:00",
+                        }
+                    ],
+                }
+            },
+        }
+        monitoring_data._atomic_write_json(monitoring_data.REMOTE_OTEL_SINK_FILE, remote_sink_payload)
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert result["active_ai_sessions"]
+        top_session = result["active_ai_sessions"][0]
+        assert top_session["window_id"] == 100
+        assert top_session["execution_mode"] == "ssh"
+        assert top_session["connection_key"] == "vpittamp@ryzen:22"
+        assert top_session["project"] == "PittampalliOrg/workflow-builder:main"
+
+    @pytest.mark.asyncio
     async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
         """Daemon-provided identity metadata should avoid /proc fallback reads."""
         mock_daemon_response = {

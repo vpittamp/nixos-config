@@ -2208,6 +2208,7 @@ def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dic
                         "connection_key": str(identity.get("connection_key") or ""),
                         "identity_key": str(identity.get("identity_key") or ""),
                         "context_key": str(identity.get("context_key") or ""),
+                        "remote_session_name": str(identity.get("remote_session_name") or ""),
                     }
                 )
 
@@ -2335,6 +2336,47 @@ def _resolve_otel_session_window_id(
     session_identity = _resolve_session_execution_identity(session, default_mode="local")
     session_connection = str(session_identity.get("connection_key") or "").strip()
     session_context = str(session_identity.get("context_key") or "").strip()
+    session_tmux_session_key = _normalize_session_name_key(
+        terminal_context.get("tmux_session") or session.get("tmux_session") or ""
+    )
+
+    def _identity_compatible(candidate: Dict[str, Any]) -> bool:
+        window_mode = str(candidate.get("execution_mode") or "").strip()
+        window_connection = str(candidate.get("connection_key") or "").strip()
+        window_context = str(candidate.get("context_key") or "").strip()
+
+        if session_context and window_context and session_context != window_context:
+            return False
+        if session_mode and window_mode and session_mode != window_mode:
+            return False
+        if (
+            session_connection
+            and window_connection
+            and not _connection_keys_equivalent(session_connection, window_connection)
+        ):
+            return False
+        return True
+
+    # Deterministic tmux-session mapping for remote windows when project/context
+    # metadata is absent or stale. Only accept exact unique matches.
+    if session_tmux_session_key:
+        tmux_matches: List[int] = []
+        for candidate in candidates:
+            if not _identity_compatible(candidate):
+                continue
+            candidate_tmux_session_key = _normalize_session_name_key(
+                candidate.get("remote_session_name") or ""
+            )
+            if not candidate_tmux_session_key or candidate_tmux_session_key != session_tmux_session_key:
+                continue
+            candidate_window_id = _safe_int(candidate.get("id"), 0)
+            if candidate_window_id > 0:
+                tmux_matches.append(candidate_window_id)
+
+        if len(tmux_matches) == 1:
+            return tmux_matches[0]
+        if len(tmux_matches) > 1:
+            return None
 
     best_window_id: Optional[int] = None
     best_score: Optional[tuple[int, int, int, int, int, int, int]] = None
@@ -2361,7 +2403,11 @@ def _resolve_otel_session_window_id(
             continue
         if session_mode and window_mode and session_mode != window_mode:
             continue
-        if session_connection and window_connection and session_connection != window_connection:
+        if (
+            session_connection
+            and window_connection
+            and not _connection_keys_equivalent(session_connection, window_connection)
+        ):
             continue
 
         if match_rank == 0:
@@ -2375,7 +2421,7 @@ def _resolve_otel_session_window_id(
                     and session_mode == window_mode
                     and session_connection
                     and window_connection
-                    and session_connection == window_connection
+                    and _connection_keys_equivalent(session_connection, window_connection)
                 )
             )
             if not identity_fallback_match:
@@ -2386,7 +2432,11 @@ def _resolve_otel_session_window_id(
         if session_context and window_context and session_context == window_context:
             identity_rank = 3
         elif session_mode and window_mode and session_mode == window_mode:
-            if session_connection and window_connection and session_connection == window_connection:
+            if (
+                session_connection
+                and window_connection
+                and _connection_keys_equivalent(session_connection, window_connection)
+            ):
                 identity_rank = 2
             else:
                 identity_rank = 1
