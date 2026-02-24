@@ -130,23 +130,34 @@ class ProcessMonitor:
         Returns:
             True if this is a Codex CLI process
         """
-        # Match /nix/store/.../codex or just "codex" binary.
-        # Include `codex exec ...` sessions (these are real Codex runs).
-        # Exclude our telemetry interceptor wrapper process itself.
-        if "/bin/codex" not in cmdline:
+        cmd = str(cmdline or "")
+        # Exclude telemetry interceptor process itself.
+        if "codex-otel-interceptor" in cmd:
             return False
-        if "codex-otel-interceptor" in cmdline:
-            return False
-        return True
+
+        # Match both the wrapper entrypoint and the long-running raw binary.
+        # `codex-raw` powers interactive sessions and must be tracked to keep
+        # session state alive between telemetry bursts.
+        return ("/bin/codex " in cmd) or cmd.endswith("/bin/codex") or ("/bin/codex-raw " in cmd) or cmd.endswith("/bin/codex-raw")
 
     def _is_claude_process(self, cmdline: str) -> bool:
         """Check if command line is a Claude Code process."""
-        if "/bin/.claude-unwrapped" not in cmdline:
+        cmd = str(cmdline or "").strip()
+        if not cmd:
             return False
         # Exclude the native host helper process (not a user session).
-        if "--chrome-native-host" in cmdline:
+        if "--chrome-native-host" in cmd:
             return False
-        return True
+
+        # Prefer explicit Claude entrypoints and wrapped binaries.
+        return (
+            "/bin/.claude-unwrapped " in cmd
+            or cmd.endswith("/bin/.claude-unwrapped")
+            or "/bin/.claude-wrapped_ " in cmd
+            or cmd.endswith("/bin/.claude-wrapped_")
+            or "/bin/claude " in cmd
+            or cmd.endswith("/bin/claude")
+        )
 
     def _is_gemini_process(self, cmdline: str) -> bool:
         """Check if command line is a Gemini CLI process."""
@@ -204,13 +215,13 @@ class ProcessMonitor:
             else:
                 # Existing process - keep session alive
                 session_id = self._process_sessions[pid]
-                await self._keepalive_session(session_id)
+                await self._keepalive_session(session_id, pid)
 
         # Find terminated processes
         terminated_pids = set(self._process_sessions.keys()) - set(current_pids.keys())
         for pid in terminated_pids:
             session_id = self._process_sessions.pop(pid)
-            await self._complete_session(session_id)
+            await self._complete_session(session_id, pid)
 
     async def _create_process_session(
         self,
@@ -290,16 +301,43 @@ class ProcessMonitor:
             logger.info(f"Process monitor: created session {session_id} for pid {pid}")
             self.tracker._mark_dirty_unlocked()
 
-    async def _keepalive_session(self, session_id: str) -> None:
+    async def _resolve_session_id_for_pid(
+        self,
+        session_id: str,
+        pid: int,
+    ) -> Optional[str]:
+        """Resolve session IDs that may have been re-keyed by native identity."""
+        async with self.tracker._lock:
+            if session_id in self.tracker._sessions:
+                return session_id
+
+            for live_session_id, session in self.tracker._sessions.items():
+                if session.pid != pid or session.state == SessionState.EXPIRED:
+                    continue
+                self._process_sessions[pid] = live_session_id
+                logger.debug(
+                    "Process monitor: remapped pid %s session %s -> %s after rekey",
+                    pid,
+                    session_id,
+                    live_session_id,
+                )
+                return live_session_id
+        return None
+
+    async def _keepalive_session(self, session_id: str, pid: int) -> None:
         """Keep a process-based session alive.
 
         Args:
             session_id: Session to keep alive
         """
+        resolved_session_id = await self._resolve_session_id_for_pid(session_id, pid)
+        if not resolved_session_id:
+            return
+
         now = datetime.now(timezone.utc)
 
         async with self.tracker._lock:
-            session = self.tracker._sessions.get(session_id)
+            session = self.tracker._sessions.get(resolved_session_id)
             if not session:
                 return
 
@@ -313,19 +351,23 @@ class ProcessMonitor:
                 session.state_changed_at = now
                 session.state_seq += 1
                 session.status_reason = "process_keepalive"
-                logger.info(f"Process monitor: session {session_id} {old_state} → WORKING")
+                logger.info(f"Process monitor: session {resolved_session_id} {old_state} → WORKING")
                 self.tracker._mark_dirty_unlocked()
 
-    async def _complete_session(self, session_id: str) -> None:
+    async def _complete_session(self, session_id: str, pid: int) -> None:
         """Mark a process-based session as completed.
 
         Args:
             session_id: Session to complete
         """
+        resolved_session_id = await self._resolve_session_id_for_pid(session_id, pid)
+        if not resolved_session_id:
+            return
+
         now = datetime.now(timezone.utc)
 
         async with self.tracker._lock:
-            session = self.tracker._sessions.get(session_id)
+            session = self.tracker._sessions.get(resolved_session_id)
             if not session:
                 return
 
@@ -335,10 +377,12 @@ class ProcessMonitor:
                 session.state_changed_at = now
                 session.state_seq += 1
                 session.status_reason = "process_exited"
-                logger.info(f"Process monitor: session {session_id} {old_state} → COMPLETED (process exited)")
+                logger.info(
+                    f"Process monitor: session {resolved_session_id} {old_state} → COMPLETED (process exited)"
+                )
 
                 # Start completed timeout timer
-                self.tracker._start_completed_timer(session_id)
+                self.tracker._start_completed_timer(resolved_session_id)
 
                 # Broadcast and notify
                 self.tracker._mark_dirty_unlocked()

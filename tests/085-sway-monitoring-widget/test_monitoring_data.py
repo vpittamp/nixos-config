@@ -1067,6 +1067,73 @@ class TestQueryMonitoringData:
         assert top_session["connection_key"] == "vpittamp@ryzen:22"
         assert top_session["project"] == "PittampalliOrg/workflow-builder:main"
 
+    def test_resolve_otel_window_id_avoids_ambiguous_identity_only_fallback(self):
+        """Do not guess a window when only mode+connection are known and multiple SSH windows exist."""
+        outputs = [
+            {
+                "name": "HEADLESS-1",
+                "active": True,
+                "workspaces": [
+                    {
+                        "num": 1,
+                        "name": "1",
+                        "visible": True,
+                        "focused": True,
+                        "windows": [
+                            {
+                                "id": 100,
+                                "class": "Ghostty",
+                                "title": "workflow-builder",
+                                "project": "PittampalliOrg/workflow-builder:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                "remote_session_name": "workflow-builder/main",
+                            },
+                            {
+                                "id": 172,
+                                "class": "Ghostty",
+                                "title": "stacks",
+                                "project": "PittampalliOrg/stacks:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+                                "remote_session_name": "stacks/main",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+        window_candidates = monitoring_data._collect_output_window_candidates(outputs)
+
+        session = {
+            "tool": "codex",
+            "state": "working",
+            # Stale/missing project metadata that cannot disambiguate.
+            "project": "vpittamp/nixos-config:main",
+            "project_path": None,
+            "window_id": None,
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@ryzen:22",
+            "terminal_context": {
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "context_key": None,
+                "tmux_session": None,
+                "tmux_window": None,
+                "tmux_pane": None,
+            },
+        }
+
+        resolved = monitoring_data._resolve_otel_session_window_id(
+            session,
+            outputs,
+            window_candidates=window_candidates,
+        )
+
+        assert resolved is None
+
     @pytest.mark.asyncio
     async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
         """Daemon-provided identity metadata should avoid /proc fallback reads."""
@@ -1353,7 +1420,9 @@ class TestAiReviewLifecycle:
             "display_target": "pane %1",
             "state_seq": 11,
             "status_reason": "quiet_period_expired",
-            "updated_at": "2026-02-23T10:00:00+00:00",
+            # Keep fixture relative to wall clock so review TTL assertions
+            # remain stable over time.
+            "updated_at": monitoring_data.datetime.now().isoformat(),
             "stale": False,
             "stale_age_seconds": 0,
             "synthetic": False,

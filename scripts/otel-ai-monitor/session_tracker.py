@@ -2490,7 +2490,32 @@ class SessionTracker:
                     try:
                         os.kill(session.pid, 0)  # Check if process exists
                     except ProcessLookupError:
-                        # Process doesn't exist - mark for cleanup
+                        # For native sessions, keep session state after process
+                        # exit so review lifecycle can finish deterministically.
+                        # If a native session is still WORKING when its process
+                        # exits, promote to COMPLETED immediately to avoid stale
+                        # WORKING sessions when no further telemetry arrives.
+                        if session.native_session_id:
+                            logger.debug(
+                                "Session %s PID %s exited; detaching PID and retaining native session",
+                                session_id,
+                                session.pid,
+                            )
+                            session.pid = None
+                            if session.state == SessionState.WORKING:
+                                session.state = SessionState.COMPLETED
+                                session.state_changed_at = datetime.now(timezone.utc)
+                                session.state_seq += 1
+                                session.status_reason = "process_exited_retained"
+                                self._start_completed_timer(session_id)
+                            elif (
+                                not session.status_reason
+                                or str(session.status_reason).startswith("event:")
+                            ):
+                                session.status_reason = "process_exited_retained"
+                            self._mark_dirty_unlocked()
+                            continue
+                        # Process doesn't exist - mark non-native sessions for cleanup
                         orphaned.append((session_id, f"PID {session.pid} exited"))
                     except PermissionError:
                         # Process exists but we can't signal it - keep session

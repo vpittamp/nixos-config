@@ -85,7 +85,15 @@ lib.mkIf enableClaudeCode {
         source = createMcpAppSkillDir;
         recursive = true;
       };
-    });
+    })
+    // {
+      # Force PATH-preferred ~/.local/bin/claude to the wrapped Nix binary so
+      # telemetry/session hooks are deterministic across shells and hosts.
+      ".local/bin/claude" = {
+        source = "${claudeCodePackage}/bin/claude";
+        executable = true;
+      };
+    };
 
   # Patch Claude Code plugin scripts for NixOS compatibility
   # Problem: Plugins from the marketplace use #!/bin/bash which doesn't exist on NixOS

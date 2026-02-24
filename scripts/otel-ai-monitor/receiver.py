@@ -19,6 +19,7 @@ Feature 132: Langfuse Integration
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -192,6 +193,58 @@ class OTLPReceiver:
         self.app.router.add_post("/v1/metrics", self._handle_metrics)
         if self.remote_sink is not None:
             self.app.router.add_post("/v1/i3pm/remote-sessions", self._handle_remote_sessions)
+
+    @staticmethod
+    def _infer_tool_from_service_name(service_name: Optional[str]) -> Optional[AITool]:
+        """Best-effort infer tool identity from OTEL service.name."""
+        if not service_name:
+            return None
+        service = str(service_name).lower()
+        if "claude" in service:
+            return AITool.CLAUDE_CODE
+        if "codex" in service:
+            return AITool.CODEX_CLI
+        if "gemini" in service:
+            return AITool.GEMINI_CLI
+        return None
+
+    @staticmethod
+    def _normalize_log_event_name(
+        event_name: str,
+        tool_hint: Optional[AITool],
+    ) -> str:
+        """Normalize unqualified log event names to canonical namespaces.
+
+        Some emitters provide `event.name` as bare values such as `api_request`
+        without provider prefix in the body. Normalize those deterministically
+        so state triggers (`claude_code.api_request`, etc.) always match.
+        """
+        raw = str(event_name or "").strip()
+        if not raw:
+            return raw
+
+        valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.")
+        if raw.startswith(valid_prefixes):
+            return raw
+
+        if tool_hint is None:
+            return raw
+
+        suffix = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", raw)
+        suffix = suffix.replace("-", "_").replace(".", "_")
+        suffix = re.sub(r"_+", "_", suffix).strip("_").lower()
+        if not suffix:
+            return raw
+
+        prefix_by_tool = {
+            AITool.CLAUDE_CODE: "claude_code",
+            AITool.CODEX_CLI: "codex",
+            AITool.GEMINI_CLI: "gemini_cli",
+        }
+        prefix = prefix_by_tool.get(tool_hint)
+        if not prefix:
+            return raw
+        return f"{prefix}.{suffix}"
 
     async def start(self) -> None:
         """Start the HTTP server."""
@@ -1077,16 +1130,14 @@ class OTLPReceiver:
             logger.debug(f"No event_name found. Attributes: {list(attributes.keys())}, session_id: {session_id}")
             return None
 
+        tool_hint = self._infer_tool_from_service_name(service_name)
+        event_name = self._normalize_log_event_name(event_name, tool_hint)
+
         # Determine AI tool from event name or service name
         tool = EventNames.get_tool_from_event(event_name)
         logger.debug(f"Identifying tool for event '{event_name}' (service: '{service_name}'): tool={tool}")
-        if not tool and service_name:
-            if "claude" in service_name.lower():
-                tool = AITool.CLAUDE_CODE
-            elif "codex" in service_name.lower():
-                tool = AITool.CODEX_CLI
-            elif "gemini" in service_name.lower():
-                tool = AITool.GEMINI_CLI
+        if not tool:
+            tool = tool_hint
 
         # Parse timestamp (nanoseconds since epoch)
         try:
@@ -1186,19 +1237,17 @@ class OTLPReceiver:
         if not event_name:
             return None
 
+        tool_hint = self._infer_tool_from_service_name(service_name)
+        event_name = self._normalize_log_event_name(event_name, tool_hint)
+
         # Parse timestamp (nanoseconds since epoch as string)
         time_str = log_record.get("timeUnixNano", "0")
         timestamp = datetime.fromtimestamp(int(time_str) / 1e9, tz=timezone.utc)
 
         # Determine AI tool from event name or service name
         tool = EventNames.get_tool_from_event(event_name)
-        if not tool and service_name:
-            if "claude" in service_name.lower():
-                tool = AITool.CLAUDE_CODE
-            elif "codex" in service_name.lower():
-                tool = AITool.CODEX_CLI
-            elif "gemini" in service_name.lower():
-                tool = AITool.GEMINI_CLI
+        if not tool:
+            tool = tool_hint
 
         # Extract trace context
         trace_id = log_record.get("traceId")

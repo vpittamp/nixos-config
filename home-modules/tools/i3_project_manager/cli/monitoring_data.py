@@ -2378,6 +2378,21 @@ def _resolve_otel_session_window_id(
         if len(tmux_matches) > 1:
             return None
 
+    # Strict identity-only fallback:
+    # When project/tmux metadata is missing or stale, map by identity only if
+    # there is exactly one compatible candidate window. Otherwise do not guess.
+    identity_only_candidates: List[int] = []
+    if has_explicit_identity:
+        for candidate in candidates:
+            if not _identity_compatible(candidate):
+                continue
+            candidate_window_id = _safe_int(candidate.get("id"), 0)
+            if candidate_window_id > 0:
+                identity_only_candidates.append(candidate_window_id)
+    unique_identity_only_window_id: Optional[int] = (
+        identity_only_candidates[0] if len(identity_only_candidates) == 1 else None
+    )
+
     best_window_id: Optional[int] = None
     best_score: Optional[tuple[int, int, int, int, int, int, int]] = None
     for candidate in candidates:
@@ -2413,18 +2428,12 @@ def _resolve_otel_session_window_id(
         if match_rank == 0:
             if not has_explicit_identity:
                 continue
-            identity_fallback_match = bool(
-                (session_context and window_context and session_context == window_context)
-                or (
-                    session_mode
-                    and window_mode
-                    and session_mode == window_mode
-                    and session_connection
-                    and window_connection
-                    and _connection_keys_equivalent(session_connection, window_connection)
-                )
-            )
-            if not identity_fallback_match:
+            # Deterministic only: never pick among multiple identity-compatible
+            # windows on the same remote/local context.
+            if unique_identity_only_window_id is None:
+                continue
+            window_id = _safe_int(candidate.get("id"), 0)
+            if window_id != unique_identity_only_window_id:
                 continue
             match_rank = 1
 

@@ -396,6 +396,9 @@ class EventNames:
         CLAUDE_LLM_CALL,
         CODEX_USER_PROMPT,
         CODEX_CONVERSATION_STARTS,
+        # Codex one-shot/non-interactive flows often emit api_request without
+        # user_prompt/conversation_starts, so treat it as an explicit run start.
+        CODEX_API_REQUEST,
         GEMINI_USER_PROMPT,
         GEMINI_API_REQUEST,
         GEMINI_API_REQUEST_DOT,
