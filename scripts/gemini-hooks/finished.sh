@@ -17,6 +17,24 @@ echo "Reading stdin..." >> "$LOG_FILE"
 INPUT=$(timeout 1 cat 2>/dev/null || echo "{}")
 echo "INPUT length: ${#INPUT}" >> "$LOG_FILE"
 
+# Check if the agent is still running (has tool calls, or status is not complete)
+# This handles edge cases where AfterAgent might fire prematurely.
+IS_DONE=$(echo "$INPUT" | jq -r '
+  if (.toolCalls and (.toolCalls | length) > 0) or
+     (.tool_calls and (.tool_calls | length) > 0) or
+     (.functionCalls and (.functionCalls | length) > 0) or
+     (.function_calls and (.function_calls | length) > 0)
+  then "false"
+  else "true"
+  end
+' 2>/dev/null || echo "true")
+
+if [ "$IS_DONE" = "false" ]; then
+    echo "Agent has tool calls pending. Skipping notification." >> "$LOG_FILE"
+    echo '{"decision": "allow"}'
+    exit 0
+fi
+
 # Try to extract working directory from env or hook input
 WORKING_DIR="${GEMINI_CWD:-}"
 if [ -z "$WORKING_DIR" ]; then

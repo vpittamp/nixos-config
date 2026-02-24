@@ -383,9 +383,8 @@ EOF
         .ui.statusline.enabled = true |
         .ui.statusline.items = ["project", "tmux_pane", "model", "tokens", "context", "mode"] |
 
-        # Enforce AfterAgent hook for unified "finished" notification.
-        .hooks = (.hooks // {}) |
-        .hooks.AfterAgent = [{"hooks": [{"type": "command", "command": "${repoRoot}/scripts/gemini-hooks/finished.sh", "timeout": 10000, "name": "finished-notification"}]}]
+        # Enforce AfterAgent hook for unified "finished" notification and remove any other hooks.
+        .hooks = {"AfterAgent": [{"hooks": [{"type": "command", "command": "${repoRoot}/scripts/gemini-hooks/finished.sh", "timeout": 10000, "name": "finished-notification"}]}]}
       ' "$GEMINI_DIR/settings.json" > "$GEMINI_DIR/settings.json.tmp"
 
       if ! ${pkgs.diffutils}/bin/cmp -s "$GEMINI_DIR/settings.json.tmp" "$GEMINI_DIR/settings.json"; then
