@@ -2696,7 +2696,8 @@ def _list_tmux_active_panes_by_session() -> Dict[str, str]:
 
 
 def _build_otel_badges(
-    otel_sessions: Optional[List[Dict[str, Any]]]
+    otel_sessions: Optional[List[Dict[str, Any]]],
+    window_project: str = "",
 ) -> List[Dict[str, Any]]:
     """
     Build OTEL badges array for multi-indicator display.
@@ -2706,6 +2707,7 @@ def _build_otel_badges(
 
     Args:
         otel_sessions: List of OTEL session info for this window (may be None or empty)
+        window_project: Canonical project label from owning window context
 
     Returns:
         List of badge dicts with otel_state, otel_tool, session_id, etc.
@@ -2730,7 +2732,7 @@ def _build_otel_badges(
         stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
         stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
         tool = str(session.get("tool", "unknown") or "unknown")
-        project = str(session.get("project") or "").strip()
+        project = str(window_project or session.get("project") or "").strip()
         tmux_session = str(terminal_context.get("tmux_session") or "")
         tmux_window = str(terminal_context.get("tmux_window") or "")
         tmux_pane = str(terminal_context.get("tmux_pane") or "")
@@ -3604,7 +3606,8 @@ def transform_window(
         # Feature 136: OTEL badges array for multi-indicator display
         # otel_sessions_by_window maps window_id (int) to LIST of session dicts
         "otel_badges": _build_otel_badges(
-            otel_sessions_by_window.get(window.get("id", 0)) if otel_sessions_by_window else None
+            otel_sessions_by_window.get(window.get("id", 0)) if otel_sessions_by_window else None,
+            str(window.get("project") or ""),
         ),
     }
 
@@ -4085,7 +4088,7 @@ def _build_remote_session_window(
         "geometry_width": 0,
         "geometry_height": 0,
         "badge": {},
-        "otel_badges": _build_otel_badges(otel_sessions),
+        "otel_badges": _build_otel_badges(otel_sessions, project_name),
         "project_remote_enabled": True,
         "project_remote_target": remote_target,
         "project_remote_dir": remote_dir,

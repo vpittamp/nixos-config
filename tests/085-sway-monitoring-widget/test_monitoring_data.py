@@ -211,6 +211,60 @@ class TestTransformWindow:
         result = transform_window(daemon_window)
         assert result["state_classes"] == "window-floating window-focused"
 
+    def test_otel_badge_session_key_uses_window_project_context(self):
+        """Window badges should key review state by canonical window project."""
+        daemon_window = {
+            "id": 100,
+            "class": "Ghostty",
+            "title": "Remote Claude",
+            "project": "PittampalliOrg/workflow-builder:main",
+            "workspace": 1,
+            "marks": ["scoped:terminal:PittampalliOrg/workflow-builder:main:100"],
+        }
+        otel_sessions_by_window = {
+            100: [
+                {
+                    "tool": "claude-code",
+                    "state": "idle",
+                    # Raw session project can be wrong/missing for remote mirrored sessions.
+                    "project": "vpittamp/nixos-config:main",
+                    "identity_confidence": "native",
+                    "native_session_id": "sid-claude-ssh",
+                    "session_id": "claude-code:sid-claude-ssh",
+                    "terminal_context": {
+                        "tmux_session": "workflow-builder/main",
+                        "tmux_window": "2:.claude-unwrapped",
+                        "tmux_pane": "%42",
+                    },
+                    "updated_at": "2026-02-24T11:19:34+00:00",
+                }
+            ]
+        }
+
+        window = transform_window(
+            daemon_window,
+            otel_sessions_by_window=otel_sessions_by_window,
+        )
+        assert len(window["otel_badges"]) == 1
+        badge = window["otel_badges"][0]
+        assert "project=PittampalliOrg/workflow-builder:main" in badge["session_key"]
+
+        windows = [window]
+        sessions = [
+            {
+                "session_key": badge["session_key"],
+                "otel_state": "idle",
+                "review_pending": True,
+                "review_state": "finished_unseen",
+                "synthetic": False,
+                "finished_at": 1771931937,
+                "seen_at": None,
+            }
+        ]
+        monitoring_data._merge_review_state_into_window_badges(windows, sessions)
+        assert len(windows[0]["otel_badges"]) == 1
+        assert windows[0]["otel_badges"][0]["review_pending"] is True
+
 
 class TestTransformWorkspace:
     """Test workspace data transformation."""
