@@ -91,6 +91,20 @@ let
     DOCK_MODE_FILE="$STATE_DIR/dock-mode"
     PANEL_WINDOW_ID="monitoring-panel-main"
 
+    run_eww_quiet() {
+      $TIMEOUT --signal=TERM --kill-after=1s 2s "$EWW" --no-daemonize --config "$CONFIG" "$@" >/dev/null 2>&1
+    }
+
+    run_eww_capture() {
+      $TIMEOUT --signal=TERM --kill-after=1s 2s "$EWW" --no-daemonize --config "$CONFIG" "$@" 2>/dev/null
+    }
+
+    kill_rogue_open_clients() {
+      # Root-cause hardening: stale `eww open --id monitoring-panel-main ...`
+      # clients can persist and spawn duplicate deflisten backends.
+      ${pkgs.procps}/bin/pkill -9 -f "${pkgs.eww}/bin/eww --config $CONFIG open --id $PANEL_WINDOW_ID monitoring-panel-" >/dev/null 2>&1 || true
+    }
+
     ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIR" "$STATE_DIR"
 
     # Write wrapper PID for toggle script to send signals directly to this process only
@@ -99,9 +113,13 @@ let
     # Cleanup on exit
     cleanup() {
       rm -f "$PID_FILE"
+      kill_rogue_open_clients
       kill $DAEMON_PID 2>/dev/null
     }
     trap cleanup EXIT
+
+    # Ensure no stale unmanaged `eww open` client from a previous crash survives.
+    kill_rogue_open_clients
 
     # Start daemon in background, capture PID
     $EWW --config "$CONFIG" daemon --no-daemonize &
@@ -109,7 +127,7 @@ let
 
     # Wait for daemon ready (max 6 seconds)
     for i in $(seq 1 30); do
-      $TIMEOUT 1s $EWW --config "$CONFIG" ping 2>/dev/null && break
+      run_eww_quiet ping && break
       ${pkgs.coreutils}/bin/sleep 0.2
     done
 
@@ -128,7 +146,7 @@ let
       local attempt
       cleanup_panel_windows() {
         local windows line window_name window_id
-        windows="$($TIMEOUT 1s $EWW --config "$CONFIG" active-windows 2>/dev/null || true)"
+        windows="$(run_eww_capture active-windows || true)"
         [[ -n "$windows" ]] || return 0
 
         while IFS= read -r line; do
@@ -136,25 +154,25 @@ let
           if [[ "$line" =~ ^([^:]+):[[:space:]](monitoring-panel-(overlay|docked))$ ]]; then
             window_id="''${BASH_REMATCH[1]}"
             window_name="''${BASH_REMATCH[2]}"
-            $TIMEOUT 1s $EWW --config "$CONFIG" close "$window_id" >/dev/null 2>&1 || true
-            $TIMEOUT 1s $EWW --config "$CONFIG" close "$window_name" >/dev/null 2>&1 || true
+            run_eww_quiet close "$window_id" || true
+            run_eww_quiet close "$window_name" || true
           elif [[ "$line" =~ ^(monitoring-panel-(overlay|docked))$ ]]; then
             window_name="''${BASH_REMATCH[1]}"
-            $TIMEOUT 1s $EWW --config "$CONFIG" close "$window_name" >/dev/null 2>&1 || true
+            run_eww_quiet close "$window_name" || true
           fi
         done <<< "$windows"
 
         # Defensive: close canonical id as well, in case an old mapping survived.
-        $TIMEOUT 1s $EWW --config "$CONFIG" close "$PANEL_WINDOW_ID" >/dev/null 2>&1 || true
+        run_eww_quiet close "$PANEL_WINDOW_ID" || true
       }
       # Cold-start path: daemon has just loaded current config, so avoid `reload`
       # here. Reloading during startup can leave duplicate deflisten processes.
       cleanup_panel_windows
       ${pkgs.coreutils}/bin/sleep 0.15
       # Open once; if IPC returns a transient error, verify through active-windows.
-      $TIMEOUT 2s $EWW --config "$CONFIG" open --id "$PANEL_WINDOW_ID" "$target_window" >/dev/null 2>&1 || true
+      run_eww_quiet open --id "$PANEL_WINDOW_ID" "$target_window" || true
       for attempt in $(seq 1 10); do
-        if $TIMEOUT 1s $EWW --config "$CONFIG" active-windows 2>/dev/null | $GREP -q "^$PANEL_WINDOW_ID:"; then
+        if run_eww_capture active-windows | $GREP -q "^$PANEL_WINDOW_ID:"; then
           return 0
         fi
         ${pkgs.coreutils}/bin/sleep 0.2
@@ -325,9 +343,9 @@ EOF
       exit 0
     fi
 
-    WINDOW_COUNT="$($EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Ec '^monitoring-panel-main: monitoring-panel-(overlay|docked)$' || true)"
+    WINDOW_COUNT="$($EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Ec '^monitoring-panel-main: monitoring-panel-(overlay|docked)$' || true)"
     WINDOW_COUNT="''${WINDOW_COUNT:-0}"
-    TOTAL_PANEL_WINDOWS="$($EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Ec '(^[^:]+: monitoring-panel-(overlay|docked)$)|(^monitoring-panel-(overlay|docked)$)' || true)"
+    TOTAL_PANEL_WINDOWS="$($EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Ec '(^[^:]+: monitoring-panel-(overlay|docked)$)|(^monitoring-panel-(overlay|docked)$)' || true)"
     TOTAL_PANEL_WINDOWS="''${TOTAL_PANEL_WINDOWS:-0}"
     if [[ "$WINDOW_COUNT" -ne 1 || "$TOTAL_PANEL_WINDOWS" -ne 1 ]]; then
       echo "health-guard: detected inconsistent panel windows (main=$WINDOW_COUNT total=$TOTAL_PANEL_WINDOWS); restarting $SERVICE" \
@@ -377,7 +395,7 @@ EOF
 
     count_windows() {
       local windows count
-      windows="$($EWW --config "$CONFIG" active-windows 2>/dev/null || true)"
+      windows="$($EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true)"
       if [[ -z "$windows" ]]; then
         echo 0
         return
@@ -387,7 +405,7 @@ EOF
 
     count_main_windows() {
       local windows
-      windows="$($EWW --config "$CONFIG" active-windows 2>/dev/null || true)"
+      windows="$($EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true)"
       if [[ -z "$windows" ]]; then
         echo 0
         return
@@ -409,7 +427,7 @@ EOF
         attempts=$((attempts + 1))
       done
       echo "Smoke test failed ($label): expected exactly one canonical panel window (total=$count, main=$main_count)" >&2
-      $EWW --config "$CONFIG" active-windows 2>/dev/null || true
+      $EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true
       exit 1
     }
 
@@ -426,7 +444,7 @@ EOF
         attempts=$((attempts + 1))
       done
       echo "Smoke test timeout ($label): panel never stabilized to one window" >&2
-      $EWW --config "$CONFIG" active-windows 2>/dev/null || true
+      $EWW --no-daemonize --config "$CONFIG" active-windows 2>/dev/null || true
       return 1
     }
 
@@ -491,12 +509,12 @@ EOF
     fi
 
     # Only proceed if daemon is running (avoid spawning duplicate daemon)
-    if ! $TIMEOUT 2s $EWW --config "$CONFIG" ping >/dev/null 2>&1; then
+    if ! $TIMEOUT --signal=TERM --kill-after=1s 2s $EWW --no-daemonize --config "$CONFIG" ping >/dev/null 2>&1; then
       exit 0
     fi
 
     # Run sequentially with --kill-after to prevent orphans from rapid tab switching
-    $TIMEOUT --kill-after=1s 2s $EWW --config "$CONFIG" update current_view_index="$INDEX" || true
+    $TIMEOUT --signal=TERM --kill-after=1s 2s $EWW --no-daemonize --config "$CONFIG" update current_view_index="$INDEX" || true
 
     # Refresh projects payload when entering Projects tab.
     if [[ "$INDEX" == "1" ]]; then
@@ -513,7 +531,7 @@ EOF
     # Get current monitoring panel view index
     # Returns: 0=windows, 1=projects, 2=tailscale, 3=health, 4=events, 5=traces, 6=devices
 
-    ${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null || echo "-1"
+    ${pkgs.eww}/bin/eww --no-daemonize --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null || echo "-1"
   '';
 
   # Wrapper script: Check if current view is projects tab
@@ -525,7 +543,7 @@ EOF
     # Check if monitoring panel is on projects tab (index 1)
     # Exit code: 0 = on projects tab, 1 = not on projects tab
 
-    VIEW=$(${pkgs.eww}/bin/eww --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null)
+    VIEW=$(${pkgs.eww}/bin/eww --no-daemonize --config "$HOME/.config/eww-monitoring-panel" get current_view_index 2>/dev/null)
     [ "$VIEW" = "1" ]
   '';
 
@@ -590,7 +608,7 @@ EOF
     #!${pkgs.bash}/bin/bash
     # Feature 086: Handle navigation within monitoring panel
     ACTION="$1"
-    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
 
     # Get current state
     current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "0")
@@ -648,7 +666,7 @@ EOF
   # Feature 099 UX2: Projects tab keyboard navigation script
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
-    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
     # Debug: log the key to journal
     echo "Monitoring panel key pressed: '$KEY'" | ${pkgs.systemd}/bin/systemd-cat -t eww-keyhandler
     case "$KEY" in

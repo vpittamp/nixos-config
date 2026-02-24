@@ -8,6 +8,7 @@
 set -euo pipefail
 
 LOG_FILE="/tmp/gemini-finished.log"
+exec 2>> "$LOG_FILE"
 echo "--- $(date) ---" >> "$LOG_FILE"
 echo "Starting hook..." >> "$LOG_FILE"
 
