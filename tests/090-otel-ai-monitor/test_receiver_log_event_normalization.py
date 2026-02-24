@@ -107,3 +107,26 @@ def test_parse_log_record_json_does_not_force_prefix_without_service_hint():
     assert event is not None
     assert event.event_name == "api_request"
     assert event.tool is None
+
+
+def test_parse_log_record_json_normalizes_gemini_short_event_name():
+    receiver = _make_receiver()
+    log_record = {
+        "timeUnixNano": "1771931000000000000",
+        "body": {"stringValue": "GenAI operation details..."},
+        "attributes": [
+            {"key": "event.name", "value": {"stringValue": "api_request"}},
+            {"key": "session.id", "value": {"stringValue": "sid-gemini-1"}},
+        ],
+    }
+
+    event = receiver._parse_log_record_json(
+        log_record=log_record,
+        service_name="gemini-cli",
+        resource_attrs={"process.pid": 4321},
+    )
+
+    assert event is not None
+    assert event.event_name == "gemini_cli.api_request"
+    assert event.tool == AITool.GEMINI_CLI
+    assert event.attributes.get("process.pid") == 4321

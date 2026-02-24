@@ -92,6 +92,48 @@ def test_is_claude_process_handles_wrapped_and_native_host_filter(cmdline, expec
     assert monitor._is_claude_process(cmdline) is expected
 
 
+@pytest.mark.parametrize(
+    ("cmdline", "expected"),
+    [
+        (
+            "/nix/store/abc/bin/gemini --print hi",
+            True,
+        ),
+        (
+            "/nix/store/abc/bin/gemini",
+            True,
+        ),
+        (
+            "/nix/store/abc/bin/.gemini-wrapped --yolo",
+            True,
+        ),
+        (
+            "/nix/store/node/bin/node /nix/store/abc/bin/.gemini-wrapped --yolo",
+            True,
+        ),
+        (
+            "node /repo/scripts/gemini-otel-interceptor.js",
+            False,
+        ),
+        (
+            "bash /repo/scripts/gemini-hooks/finished.sh",
+            False,
+        ),
+        (
+            "/nix/store/abc/bin/claude --print hi",
+            False,
+        ),
+        (
+            "",
+            False,
+        ),
+    ],
+)
+def test_is_gemini_process_handles_wrapped_and_node_binary(cmdline, expected):
+    monitor = ProcessMonitor(tracker=None)  # type: ignore[arg-type]
+    assert monitor._is_gemini_process(cmdline) is expected
+
+
 @pytest.mark.asyncio
 async def test_complete_session_resolves_rekeyed_native_session_by_pid():
     class _DummyTracker:

@@ -161,7 +161,36 @@ class ProcessMonitor:
 
     def _is_gemini_process(self, cmdline: str) -> bool:
         """Check if command line is a Gemini CLI process."""
-        return "/bin/gemini" in cmdline and "gemini-otel-interceptor" not in cmdline
+        cmd = str(cmdline or "").strip()
+        if not cmd:
+            return False
+
+        cmd_lower = cmd.lower()
+        # Exclude telemetry interceptor process itself.
+        if "gemini-otel-interceptor" in cmd_lower:
+            return False
+
+        parts = cmd.split()
+        if not parts:
+            return False
+
+        executable = Path(parts[0]).name
+
+        # Direct wrapper entrypoints.
+        if executable in {"gemini", ".gemini-wrapped"}:
+            return True
+        if "/bin/gemini " in cmd or cmd.endswith("/bin/gemini"):
+            return True
+        if "/bin/.gemini-wrapped " in cmd or cmd.endswith("/bin/.gemini-wrapped"):
+            return True
+
+        # Nix wrapper executes Node with the wrapped Gemini script as argv[1].
+        if executable.startswith("node") and len(parts) >= 2:
+            target = Path(parts[1]).name
+            if target in {"gemini", ".gemini-wrapped"}:
+                return True
+
+        return False
 
     async def _resolve_process_context(
         self, pid: int
@@ -170,10 +199,31 @@ class ProcessMonitor:
         project: Optional[str] = None
         window_id: Optional[int] = None
         terminal_context = get_tmux_context_for_pid(pid)
+        terminal_context.setdefault("execution_mode", None)
+        terminal_context.setdefault("connection_key", None)
+        terminal_context.setdefault("context_key", None)
+        terminal_context.setdefault("remote_target", None)
+        terminal_context.setdefault("host_name", None)
 
         try:
             i3pm_env = get_process_i3pm_env(pid)
             project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
+            if i3pm_env:
+                remote_user = str(i3pm_env.get("I3PM_REMOTE_USER") or "").strip()
+                remote_host = str(i3pm_env.get("I3PM_REMOTE_HOST") or "").strip()
+                remote_port = str(i3pm_env.get("I3PM_REMOTE_PORT") or "").strip() or "22"
+                remote_target = ""
+                if remote_host:
+                    remote_target = (
+                        f"{remote_user}@{remote_host}:{remote_port}"
+                        if remote_user
+                        else f"{remote_host}:{remote_port}"
+                    )
+                terminal_context["execution_mode"] = i3pm_env.get("I3PM_EXECUTION_MODE")
+                terminal_context["connection_key"] = i3pm_env.get("I3PM_CONNECTION_KEY")
+                terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
+                terminal_context["remote_target"] = remote_target or None
+                terminal_context["host_name"] = remote_host or None
         except Exception as e:
             logger.debug(f"Process monitor: unable to read I3PM env for pid {pid}: {e}")
 
@@ -297,6 +347,11 @@ class ProcessMonitor:
             session.terminal_context.tmux_window = terminal_context.get("tmux_window")
             session.terminal_context.tmux_pane = terminal_context.get("tmux_pane")
             session.terminal_context.pty = terminal_context.get("pty")
+            session.terminal_context.execution_mode = terminal_context.get("execution_mode")
+            session.terminal_context.connection_key = terminal_context.get("connection_key")
+            session.terminal_context.context_key = terminal_context.get("context_key")
+            session.terminal_context.remote_target = terminal_context.get("remote_target")
+            session.terminal_context.host_name = terminal_context.get("host_name")
             self.tracker._sessions[session_id] = session
             logger.info(f"Process monitor: created session {session_id} for pid {pid}")
             self.tracker._mark_dirty_unlocked()
