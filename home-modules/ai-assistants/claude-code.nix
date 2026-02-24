@@ -92,6 +92,7 @@ lib.mkIf enableClaudeCode {
       ".local/bin/claude" = {
         source = "${claudeCodePackage}/bin/claude";
         executable = true;
+        force = true;
       };
     };
 
