@@ -1161,7 +1161,7 @@ class SessionTracker:
             if value and not event_terminal_context.get(key):
                 event_terminal_context[key] = value
 
-        project_for_identity = resolved_project or event_project
+        project_for_identity = event_project or resolved_project
         has_explicit_terminal_identity = bool(
             event_terminal_context_raw.get("tmux_session")
             or event_terminal_context_raw.get("tmux_window")
@@ -1231,7 +1231,7 @@ class SessionTracker:
                 else:
                     identity_confidence = IdentityConfidence.HEURISTIC
 
-                project = resolved_project or event_project
+                project = event_project or resolved_project
                 session = Session(
                     session_id=session_id,
                     native_session_id=native_session_id,
@@ -1339,15 +1339,19 @@ class SessionTracker:
                 session.window_id = resolved_window_id
                 session.terminal_context.window_id = resolved_window_id
 
-            if resolved_project and (
+            if event_project and (
                 not session.project
                 or not session.native_session_id
                 or allow_native_context_override
             ):
-                session.project = resolved_project
-            if event_project and not session.project:
                 session.project = event_project
-            if event_project_path and not session.project_path:
+            if resolved_project and not session.project:
+                session.project = resolved_project
+            if event_project_path and (
+                not session.project_path
+                or not session.native_session_id
+                or allow_native_context_override
+            ):
                 session.project_path = event_project_path
             if session.project is None and session.project_path:
                 session.project = session.project_path
