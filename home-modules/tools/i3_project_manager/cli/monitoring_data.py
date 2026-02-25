@@ -2189,8 +2189,6 @@ def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dic
                 if window_id == 0:
                     continue
                 project_name = str(window.get("project") or "").strip()
-                if not project_name:
-                    continue
 
                 identity = _resolve_window_execution_identity(
                     window,
@@ -2204,6 +2202,9 @@ def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dic
                         "hidden": bool(window.get("hidden", False)),
                         "floating": bool(window.get("floating", False)),
                         "class": str(window.get("class") or ""),
+                        "app_id": str(window.get("app_id") or ""),
+                        "app_name": str(window.get("app_name") or ""),
+                        "display_name": str(window.get("display_name") or ""),
                         "execution_mode": str(identity.get("execution_mode") or ""),
                         "connection_key": str(identity.get("connection_key") or ""),
                         "identity_key": str(identity.get("identity_key") or ""),

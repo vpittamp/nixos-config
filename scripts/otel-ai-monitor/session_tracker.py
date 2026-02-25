@@ -736,9 +736,20 @@ class SessionTracker:
         if preferred == candidate:
             return True
 
-        preferred_tail = preferred.split(":")[-1].split("/")[-1]
-        candidate_tail = candidate.split(":")[-1].split("/")[-1]
-        return preferred_tail == candidate_tail
+        import re
+        def normalize(name: str) -> str:
+            return re.sub(r"[:/]+", "/", name)
+            
+        pref_norm = normalize(preferred)
+        cand_norm = normalize(candidate)
+        
+        if pref_norm.endswith("/" + cand_norm) or cand_norm.endswith("/" + pref_norm):
+            return True
+            
+        def flatten(name: str) -> str:
+            return re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+            
+        return flatten(preferred) == flatten(candidate)
 
     @staticmethod
     def _normalize_project_path(value: Optional[str]) -> Optional[str]:
