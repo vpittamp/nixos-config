@@ -94,6 +94,7 @@ in
 
   # System identification
   networking.hostName = "ryzen";
+  networking.nftables.enable = true;
 
   # Enable Sway Wayland compositor
   services.sway.enable = true;
@@ -119,6 +120,58 @@ in
     # Fingerprint reader support (if USB fingerprint reader is connected)
     # Enroll fingerprint with: fprintd-enroll
     enableFingerprint = true;
+  };
+
+  # ========== INCUS VIRTUALIZATION FOR NIXOS VM TESTING ==========
+  # Uses NAT bridge networking and directory-backed storage on ext4.
+  virtualisation.incus = {
+    enable = true;
+    ui.enable = true;
+    preseed = {
+      networks = [
+        {
+          name = "incusbr0";
+          type = "bridge";
+          config = {
+            "ipv4.address" = "10.42.241.1/24";
+            "ipv4.nat" = "true";
+            "ipv6.address" = "none";
+          };
+        }
+      ];
+
+      storage_pools = [
+        {
+          name = "default";
+          driver = "dir";
+          config = {
+            source = "/var/lib/incus/storage-pools/default";
+          };
+        }
+      ];
+
+      profiles = [
+        {
+          name = "default";
+          description = "Default Incus profile for NAT-backed VM testing";
+          config = {
+            "security.secureboot" = "false";
+          };
+          devices = {
+            eth0 = {
+              name = "eth0";
+              network = "incusbr0";
+              type = "nic";
+            };
+            root = {
+              path = "/";
+              pool = "default";
+              type = "disk";
+            };
+          };
+        }
+      ];
+    };
   };
 
   # ========== SUNSHINE REMOTE DESKTOP (NVIDIA NVENC) ==========
@@ -385,7 +438,7 @@ in
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
   # Add user to required groups
-  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" ];
+  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "incus-admin" ];
 
   # ========== BLUETOOTH SUPPORT ==========
   # For USB Bluetooth adapter or motherboard Bluetooth

@@ -98,10 +98,27 @@
 { config, lib, pkgs, osConfig ? null, ... }:
 
 let
+  # Feature 125: Pass hostName for host-specific parameterization
+  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+
+  # Sway runtime profile mode:
+  # - auto: infer from host
+  # - headless: force virtual/headless setup
+  # - laptop: single-output laptop defaults
+  # - desktop4: 4-monitor desktop layout (Ryzen)
+  detectedSwayProfileMode =
+    if hostName == "hetzner" then "headless"
+    else if hostName == "ryzen" then "desktop4"
+    else "laptop";
+  swayProfileMode =
+    if config.programs.sway-profile.mode == "auto"
+    then detectedSwayProfileMode
+    else config.programs.sway-profile.mode;
+
   # Detect headless Sway configuration (Feature 046)
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "hetzner";
+  isHeadless = swayProfileMode == "headless";
   # Detect Ryzen multi-monitor desktop (Feature 001 extension for 4-tier system)
-  isRyzen = osConfig != null && (osConfig.networking.hostName or "") == "ryzen";
+  isRyzen = swayProfileMode == "desktop4";
   # Check if virtual outputs are supported (headless mode only)
   hasVirtualOutputs = isHeadless;
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
@@ -206,8 +223,6 @@ let
     '';
 
   # Feature 001: Import validated application definitions with monitor role preferences
-  # Feature 125: Pass hostName for host-specific parameterization
-  hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
   appRegistryData = import ./app-registry-data.nix { inherit lib hostName; };
 
   # Feature 001 US3: Import PWA site definitions with monitor role preferences
@@ -280,6 +295,19 @@ in
 {
   # Import keybindings from separate module (moved from dynamic config to static Nix)
   imports = [
+    ({ lib, ... }: {
+      options.programs.sway-profile.mode = lib.mkOption {
+        type = lib.types.enum [ "auto" "headless" "laptop" "desktop4" ];
+        default = "auto";
+        description = ''
+          Select Sway layout/runtime profile.
+          `auto` preserves existing hostname-based behavior.
+          `headless` forces virtual outputs and WayVNC services.
+          `laptop` forces single-display defaults.
+          `desktop4` forces the 4-monitor desktop layout.
+        '';
+      };
+    })
     ./sway-keybindings.nix
     ./unified-bar-theme.nix  # Feature 057: Centralized Catppuccin Mocha theme
     ./swaync.nix  # Feature 057: SwayNC notification center with unified theming

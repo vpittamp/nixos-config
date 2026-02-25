@@ -81,6 +81,24 @@ in
     ];
   };
 
+  # Incus Sway Lite VM
+  # Lightweight headless Sway image with i3pm/worktree/tmux + local AI monitoring
+  # Build: sudo nixos-rebuild switch --flake .#incus-sway-lite
+  incus-sway-lite = helpers.mkSystem {
+    hostname = "incus-sway-lite";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/incus-sway-lite.nix
+
+      # Home Manager integration
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-modules/incus-sway-lite.nix ];
+      })
+    ];
+  };
+
   # ARCHIVED/REMOVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)
