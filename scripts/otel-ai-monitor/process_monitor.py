@@ -198,7 +198,18 @@ class ProcessMonitor:
         """Resolve window/project for a detected process."""
         project: Optional[str] = None
         window_id: Optional[int] = None
-        terminal_context = get_tmux_context_for_pid(pid)
+        raw_tmux_context = await get_tmux_context_for_pid(pid)
+        terminal_context = (
+            dict(raw_tmux_context)
+            if isinstance(raw_tmux_context, dict)
+            else {}
+        )
+        if not isinstance(raw_tmux_context, dict):
+            logger.debug(
+                "Process monitor: tmux context for pid %s returned non-dict %s; using empty context",
+                pid,
+                type(raw_tmux_context).__name__,
+            )
         terminal_context.setdefault("execution_mode", None)
         terminal_context.setdefault("connection_key", None)
         terminal_context.setdefault("context_key", None)

@@ -126,3 +126,50 @@ async def test_cleanup_keeps_native_session_when_pid_exits(monkeypatch):
         assert kept.pid is None
         assert kept.state == SessionState.COMPLETED
         assert kept.status_reason == "process_exited_retained"
+
+
+@pytest.mark.asyncio
+async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+
+    monkeypatch.setattr(
+        session_tracker_module,
+        "get_process_i3pm_env",
+        lambda _pid: {
+            "I3PM_PROJECT_NAME": "vpittamp/nixos-config:main",
+            "I3PM_EXECUTION_MODE": "local",
+            "I3PM_CONNECTION_KEY": "local@thinkpad",
+            "I3PM_CONTEXT_KEY": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "I3PM_REMOTE_HOST": "",
+            "I3PM_REMOTE_USER": "",
+            "I3PM_REMOTE_PORT": "22",
+        },
+    )
+
+    async def _fake_find_window(pid: int):
+        assert pid == 1234
+        return 174
+
+    async def _fake_tmux_context(pid: int):
+        assert pid == 1234
+        return {
+            "tmux_session": "nixos-config/main",
+            "tmux_window": "0:shell",
+            "tmux_pane": "%30",
+            "pty": "/dev/pts/30",
+            "host_name": "thinkpad",
+        }
+
+    monkeypatch.setattr(session_tracker_module, "find_window_for_session", _fake_find_window)
+    monkeypatch.setattr(session_tracker_module, "get_tmux_context_for_pid", _fake_tmux_context)
+
+    window_id, project, terminal_context = await tracker._resolve_window_context(1234)
+
+    assert window_id == 174
+    assert project == "vpittamp/nixos-config:main"
+    assert terminal_context["tmux_session"] == "nixos-config/main"
+    assert terminal_context["tmux_window"] == "0:shell"
+    assert terminal_context["tmux_pane"] == "%30"
+    assert terminal_context["pty"] == "/dev/pts/30"
+    assert terminal_context["connection_key"] == "local@thinkpad"
+    assert terminal_context["context_key"] == "vpittamp/nixos-config:main::local::local@thinkpad"

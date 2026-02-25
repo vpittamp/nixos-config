@@ -757,7 +757,18 @@ class SessionTracker:
                 terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
                 terminal_context["remote_target"] = remote_target or None
             window_id = await find_window_for_session(pid)
-            tmux_context = get_tmux_context_for_pid(pid)
+            raw_tmux_context = await get_tmux_context_for_pid(pid)
+            tmux_context = (
+                dict(raw_tmux_context)
+                if isinstance(raw_tmux_context, dict)
+                else {}
+            )
+            if not isinstance(raw_tmux_context, dict):
+                logger.debug(
+                    "PID %s tmux context returned non-dict %s; using empty context",
+                    pid,
+                    type(raw_tmux_context).__name__,
+                )
             for key, value in tmux_context.items():
                 terminal_context[key] = value
         except Exception as e:
