@@ -1121,6 +1121,135 @@ class TestQueryMonitoringData:
         assert top_session["connection_key"] == "vpittamp@ryzen:22"
         assert top_session["project"] == "PittampalliOrg/workflow-builder:main"
 
+    @pytest.mark.asyncio
+    async def test_remote_otel_merge_remaps_nonlocal_window_id_and_discards_local_remote_context_key(self, monkeypatch, tmp_path):
+        """Remote sessions should remap non-local window IDs and avoid enforcing remote local context keys."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_SINK_FILE",
+            tmp_path / "remote-otel-sink.json",
+        )
+        monkeypatch.setattr(
+            monitoring_data,
+            "REMOTE_OTEL_SOURCE_STALE_SECONDS",
+            30.0,
+        )
+
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 3,
+                            "name": "3",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 100,
+                                    "pid": 9201,
+                                    "class": "Ghostty",
+                                    "title": "workflow-builder",
+                                    "project": "PittampalliOrg/workflow-builder:main",
+                                    "workspace": 3,
+                                    "floating": False,
+                                    "hidden": False,
+                                    "focused": True,
+                                    "marks": [
+                                        "scoped:terminal:PittampalliOrg/workflow-builder:main:100",
+                                        "ctx:PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    ],
+                                    "execution_mode": "ssh",
+                                    "connection_key": "vpittamp@ryzen:22",
+                                    "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    "remote_enabled": "true",
+                                    "remote_user": "vpittamp",
+                                    "remote_host": "ryzen",
+                                    "remote_port": "22",
+                                    "remote_session_name": "workflow-builder/main",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+        local_otel_payload = {
+            "schema_version": "4",
+            "sessions": [],
+            "has_working": False,
+            "timestamp": 0,
+            "updated_at": "",
+            "sessions_by_window": {},
+        }
+
+        remote_sink_payload = {
+            "schema_version": "1",
+            "updated_at": "2026-02-23T19:20:01+00:00",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "source_boot_id": "boot-3",
+                    "sequence": 43,
+                    "payload_hash": "hash-3",
+                    "session_schema_version": "4",
+                    "updated_at": "2026-02-23T19:20:00+00:00",
+                    "sent_at": "2026-02-23T19:20:00+00:00",
+                    "received_at": 1898118000.0,
+                    "timestamp": 0,
+                    "has_working": True,
+                    "sessions": [
+                        {
+                            "tool": "codex",
+                            "state": "working",
+                            # Stale remote-local metadata from source host.
+                            "project": "vpittamp/nixos-config:main",
+                            "project_path": None,
+                            "identity_confidence": "native",
+                            "native_session_id": "sid-remote-remap-window",
+                            "session_id": "codex:sid-remote-remap-window",
+                            "window_id": 89,
+                            "terminal_context": {
+                                "window_id": 89,
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "0:codex-raw",
+                                "tmux_pane": "%37",
+                                "host_name": "ryzen",
+                                "execution_mode": "local",
+                                "connection_key": "local@ryzen",
+                                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                            },
+                            "updated_at": "2026-02-23T19:20:00+00:00",
+                        }
+                    ],
+                }
+            },
+        }
+        monitoring_data._atomic_write_json(monitoring_data.REMOTE_OTEL_SINK_FILE, remote_sink_payload)
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert result["active_ai_sessions"]
+        top_session = result["active_ai_sessions"][0]
+        assert top_session["window_id"] == 100
+        assert top_session["execution_mode"] == "ssh"
+        assert top_session["connection_key"] == "vpittamp@ryzen:22"
+        assert top_session["context_key"] == "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22"
+
     def test_resolve_otel_window_id_avoids_ambiguous_identity_only_fallback(self):
         """Do not guess a window when only mode+connection are known and multiple SSH windows exist."""
         outputs = [

@@ -44,6 +44,8 @@ from otel_ai_monitor.process_monitor import ProcessMonitor  # type: ignore  # no
         ("/nix/store/abc/bin/codex", True),
         ("/nix/store/abc/bin/codex-raw --yolo", True),
         ("/nix/store/abc/bin/codex-raw", True),
+        ("bash -c '/nix/store/abc/bin/codex-raw --yolo'", False),
+        ("sh -c '/nix/store/abc/bin/codex --help'", False),
         ("node /repo/scripts/codex-otel-interceptor.js", False),
         ("/nix/store/abc/bin/gemini", False),
         ("bash -lc echo codex-raw", False),

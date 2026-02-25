@@ -338,11 +338,39 @@ def _normalize_remote_otel_session(
     terminal_context = normalized.get("terminal_context", {}) or {}
     if not isinstance(terminal_context, dict):
         terminal_context = {}
+    raw_context_key = str(
+        terminal_context.get("context_key") or normalized.get("context_key") or ""
+    ).strip()
+    canonical_context_key = ""
+    if raw_context_key:
+        parsed_context = _parse_context_key(raw_context_key)
+        qualified_name = str(parsed_context.get("qualified_name") or "").strip()
+        parsed_mode = _normalize_execution_mode(
+            parsed_context.get("execution_mode"),
+            default="",
+        )
+        parsed_connection = str(parsed_context.get("connection_key") or "").strip()
+        if (
+            qualified_name
+            and parsed_mode == "ssh"
+            and parsed_connection
+            and _connection_keys_equivalent(parsed_connection, connection_key)
+        ):
+            canonical_context_key = f"{qualified_name}::ssh::{connection_key}"
 
     normalized["execution_mode"] = "ssh"
     normalized["connection_key"] = connection_key
-    terminal_context["execution_mode"] = terminal_context.get("execution_mode") or "ssh"
-    terminal_context["connection_key"] = terminal_context.get("connection_key") or connection_key
+    if canonical_context_key:
+        normalized["context_key"] = canonical_context_key
+    else:
+        normalized.pop("context_key", None)
+
+    terminal_context["execution_mode"] = "ssh"
+    terminal_context["connection_key"] = connection_key
+    if canonical_context_key:
+        terminal_context["context_key"] = canonical_context_key
+    else:
+        terminal_context.pop("context_key", None)
     terminal_context["remote_target"] = terminal_context.get("remote_target") or remote_target
     terminal_context["host_name"] = terminal_context.get("host_name") or host
     normalized["terminal_context"] = terminal_context
@@ -4647,6 +4675,11 @@ async def query_monitoring_data() -> Dict[str, Any]:
         otel_sessions = load_otel_sessions()
         outputs = tree_data.get("outputs", [])
         window_candidates = _collect_output_window_candidates(outputs)
+        window_candidates_by_id: Dict[int, Dict[str, Any]] = {}
+        for candidate in window_candidates:
+            cid = _safe_int(candidate.get("id"), 0)
+            if cid > 0:
+                window_candidates_by_id[cid] = candidate
         remote_otel_sessions = _load_remote_otel_sessions_for_windows(window_candidates)
         merged_otel_raw_sessions: List[Dict[str, Any]] = []
         for raw_session in otel_sessions.get("sessions", []):
@@ -4662,27 +4695,48 @@ async def query_monitoring_data() -> Dict[str, Any]:
 
             window_id_raw = session.get("window_id", terminal_context.get("window_id"))
             window_id_int = _safe_int(window_id_raw, 0)
+            resolved_window_id: Optional[int] = None
             if window_id_int != 0:
-                session["window_id"] = window_id_int
-                terminal_context["window_id"] = window_id_int
-                session["terminal_context"] = terminal_context
-                resolved_otel_sessions.append(session)
-                continue
+                existing_candidate = window_candidates_by_id.get(window_id_int, {})
+                if isinstance(existing_candidate, dict) and existing_candidate:
+                    session_identity = _resolve_session_execution_identity(
+                        session,
+                        default_mode="local",
+                    )
+                    if _window_is_ai_terminal_candidate(existing_candidate) and _window_matches_session_identity(
+                        existing_candidate,
+                        session_identity=session_identity,
+                    ):
+                        resolved_window_id = window_id_int
 
-            resolved_window_id = _resolve_otel_session_window_id(
-                session,
-                outputs,
-                window_candidates=window_candidates,
-            )
+            if resolved_window_id is None:
+                resolved_window_id = _resolve_otel_session_window_id(
+                    session,
+                    outputs,
+                    window_candidates=window_candidates,
+                )
+
             if resolved_window_id is not None:
                 session["window_id"] = resolved_window_id
                 terminal_context["window_id"] = resolved_window_id
                 session["terminal_context"] = terminal_context
-                logger.debug(
-                    "Feature 139: resolved missing OTEL window_id via project mapping: session=%s window=%s",
-                    str(session.get("native_session_id") or session.get("session_id") or ""),
-                    resolved_window_id,
-                )
+                if window_id_int != 0 and window_id_int != resolved_window_id:
+                    logger.debug(
+                        "Feature 139: remapped OTEL window_id %s -> %s: session=%s",
+                        window_id_int,
+                        resolved_window_id,
+                        str(session.get("native_session_id") or session.get("session_id") or ""),
+                    )
+                elif window_id_int == 0:
+                    logger.debug(
+                        "Feature 139: resolved missing OTEL window_id via project mapping: session=%s window=%s",
+                        str(session.get("native_session_id") or session.get("session_id") or ""),
+                        resolved_window_id,
+                    )
+            elif window_id_int != 0:
+                session["window_id"] = window_id_int
+                terminal_context["window_id"] = window_id_int
+                session["terminal_context"] = terminal_context
             resolved_otel_sessions.append(session)
 
         otel_sessions_runtime = dict(otel_sessions)
@@ -4694,11 +4748,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
 
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
         per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
-        window_candidates_by_id: Dict[int, Dict[str, Any]] = {}
-        for candidate in window_candidates:
-            cid = _safe_int(candidate.get("id"), 0)
-            if cid > 0:
-                window_candidates_by_id[cid] = candidate
         for session in resolved_otel_sessions:
             identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
             native_session_id = str(session.get("native_session_id") or "").strip()

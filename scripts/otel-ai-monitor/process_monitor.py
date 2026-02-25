@@ -131,14 +131,32 @@ class ProcessMonitor:
             True if this is a Codex CLI process
         """
         cmd = str(cmdline or "")
+        if not cmd.strip():
+            return False
         # Exclude telemetry interceptor process itself.
         if "codex-otel-interceptor" in cmd:
             return False
 
+        parts = cmd.split()
+        if not parts:
+            return False
+
+        executable = Path(parts[0]).name
         # Match both the wrapper entrypoint and the long-running raw binary.
         # `codex-raw` powers interactive sessions and must be tracked to keep
         # session state alive between telemetry bursts.
-        return ("/bin/codex " in cmd) or cmd.endswith("/bin/codex") or ("/bin/codex-raw " in cmd) or cmd.endswith("/bin/codex-raw")
+        if executable in {"codex", "codex-raw", ".codex-wrapped"}:
+            return True
+        if parts[0].endswith("/bin/codex") or parts[0].endswith("/bin/codex-raw"):
+            return True
+
+        # Wrapped Nix launchers may execute Node with a codex script as argv[1].
+        if executable.startswith("node") and len(parts) >= 2:
+            target = Path(parts[1]).name
+            if target in {"codex", "codex-raw", ".codex-wrapped"}:
+                return True
+
+        return False
 
     def _is_claude_process(self, cmdline: str) -> bool:
         """Check if command line is a Claude Code process."""
