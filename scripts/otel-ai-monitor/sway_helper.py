@@ -433,7 +433,7 @@ def get_process_tty_path(pid: int) -> Optional[str]:
     return None
 
 
-def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
+async def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
     """Return tmux session/window/pane metadata for a process when available."""
     tty_path = get_process_tty_path(pid)
     context = {
@@ -446,22 +446,28 @@ def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
         return context
 
     try:
-        result = subprocess.run(
-            [
-                "tmux",
-                "list-panes",
-                "-a",
-                "-F",
-                "#{pane_tty}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_id}\t#{pane_index}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=2,
+        proc = await asyncio.create_subprocess_exec(
+            "tmux",
+            "list-panes",
+            "-a",
+            "-F",
+            "#{pane_tty}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_id}\t#{pane_index}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        if result.returncode != 0:
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logger.debug("get_tmux_context_for_pid: tmux list-panes timed out")
             return context
 
-        for line in result.stdout.strip().split("\n"):
+        if proc.returncode != 0:
+            return context
+
+        stdout_text = stdout.decode('utf-8')
+        for line in stdout_text.strip().split("\n"):
             if not line:
                 continue
             parts = line.split("\t")
@@ -478,8 +484,6 @@ def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
                 )
             context["tmux_pane"] = pane_id or pane_index or None
             return context
-    except subprocess.TimeoutExpired:
-        logger.debug("get_tmux_context_for_pid: tmux list-panes timed out")
     except FileNotFoundError:
         return context
     except Exception as e:
@@ -916,7 +920,7 @@ async def query_daemon_for_window_by_launch_id(
         return None
 
 
-def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
+async def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
     """Find Sway window by tracing through tmux client attachment.
 
     Feature 135: For tmux sessions that share the same I3PM_APP_ID (common when
@@ -939,7 +943,7 @@ def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
         Sway window container ID, or None if not running in tmux or not found
     """
     try:
-        tmux_ctx = get_tmux_context_for_pid(target_pid)
+        tmux_ctx = await get_tmux_context_for_pid(target_pid)
         target_pts = tmux_ctx.get("pty")
         if not target_pts:
             return None
@@ -952,17 +956,28 @@ def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
             return None
 
         # Step 3: Find which tmux client is attached to this session
-        result = subprocess.run(
-            ["tmux", "list-clients", "-F", "#{client_pid} #{session_name}"],
-            capture_output=True,
-            text=True,
-            timeout=2,
+        proc = await asyncio.create_subprocess_exec(
+            "tmux",
+            "list-clients",
+            "-F",
+            "#{client_pid} #{session_name}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        if result.returncode != 0:
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logger.debug("tmux command timed out")
+            return None
+
+        if proc.returncode != 0:
             return None
 
         client_pid = None
-        for line in result.stdout.strip().split("\n"):
+        stdout_text = stdout.decode('utf-8')
+        for line in stdout_text.strip().split("\n"):
             parts = line.split(" ", 1)
             if len(parts) == 2 and parts[1] == session_name:
                 client_pid = int(parts[0])
@@ -983,9 +998,6 @@ def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
 
     except FileNotFoundError:
         # Process doesn't exist
-        return None
-    except subprocess.TimeoutExpired:
-        logger.debug("tmux command timed out")
         return None
     except Exception as e:
         logger.debug(f"find_window_via_tmux_client failed: {e}")
@@ -1065,7 +1077,7 @@ async def find_window_for_session(pid: int) -> Optional[int]:
     # For processes running in tmux, the I3PM-based correlation may be wrong
     # because multiple tmux sessions can share the same I3PM_APP_ID.
     # Try tmux client lookup as a more accurate method for tmux processes.
-    tmux_window = find_window_via_tmux_client(pid)
+    tmux_window = await find_window_via_tmux_client(pid)
     if tmux_window:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         if tmux_window != window_id:

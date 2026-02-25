@@ -79,6 +79,9 @@ let
     export OTEL_BLRP_MAX_EXPORT_BATCH_SIZE=''${OTEL_BLRP_MAX_EXPORT_BATCH_SIZE:-1}
     export OTEL_BLRP_MAX_QUEUE_SIZE=''${OTEL_BLRP_MAX_QUEUE_SIZE:-100}
 
+    # Generate trace token for exact identity correlation
+    export I3PM_AI_TRACE_TOKEN="$(date +%s%N)-$RANDOM"
+
     # Source-side correlation fix:
     # Ensure Codex OTEL resources always include process/context identity so
     # otel-ai-monitor can resolve PID -> Sway window deterministically.
@@ -101,6 +104,7 @@ let
     append_otel_resource_attr "working_directory" "''${PWD:-}"
     append_otel_resource_attr "i3pm.project_name" "''${I3PM_PROJECT_NAME:-}"
     append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-}"
+    append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"
     append_otel_resource_attr "terminal.tmux.session" "''${TMUX_SESSION:-}"
     append_otel_resource_attr "terminal.tmux.window" "''${TMUX_WINDOW:-}"
     append_otel_resource_attr "terminal.tmux.pane" "''${TMUX_PANE:-}"

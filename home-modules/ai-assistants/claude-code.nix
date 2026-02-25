@@ -24,6 +24,8 @@ let
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/claude \
+        --run 'export I3PM_AI_TRACE_TOKEN="''$(date +%s%N)-''$RANDOM"' \
+        --run 'if [ -n "''$OTEL_RESOURCE_ATTRIBUTES" ]; then export OTEL_RESOURCE_ATTRIBUTES="''$OTEL_RESOURCE_ATTRIBUTES,i3pm.ai_trace_token=''$I3PM_AI_TRACE_TOKEN"; else export OTEL_RESOURCE_ATTRIBUTES="i3pm.ai_trace_token=''$I3PM_AI_TRACE_TOKEN"; fi' \
         --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js" \
         --add-flags "--chrome"
     '';

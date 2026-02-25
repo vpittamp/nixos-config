@@ -65,6 +65,9 @@ class TerminalContext(BaseModel):
     pty: Optional[str] = Field(
         default=None, description="Controlling terminal PTY path (e.g. /dev/pts/3)"
     )
+    ai_trace_token: Optional[str] = Field(
+        default=None, description="Deterministic token for correlating native AI telemetry with wrapper process"
+    )
     host_name: Optional[str] = Field(
         default=None, description="Host name where the terminal process is running"
     )

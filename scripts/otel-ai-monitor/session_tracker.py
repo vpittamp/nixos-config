@@ -164,10 +164,90 @@ class SessionTracker:
         # These files are written by Claude Code hooks on session start
         self._metadata_file_cache: dict[str, int] = {}
         self._metadata_cache_mtime: float = 0.0
+        self._metadata_watch_task: Optional[asyncio.Task] = None
         self._display_filter_stats = {
             "suppressed_missing_project": 0,
             "suppressed_non_native": 0,
         }
+
+    def _refresh_metadata_cache(self) -> None:
+        """Fully reload the session metadata cache."""
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+        metadata_patterns = (
+            os.path.join(runtime_dir, "claude-session-*.json"),
+            os.path.join(runtime_dir, "codex-session-*.json"),
+        )
+        try:
+            metadata_files: list[str] = []
+            for pattern in metadata_patterns:
+                metadata_files.extend(glob.glob(pattern))
+
+            if not metadata_files:
+                self._metadata_file_cache.clear()
+                return
+
+            new_cache = {}
+            for filepath in metadata_files:
+                try:
+                    with open(filepath, "r") as f:
+                        data = json.load(f)
+                        sid = data.get("sessionId")
+                        if not sid:
+                            sid = data.get("threadId") or data.get("conversationId")
+                        pid = data.get("pid") or data.get("processPid")
+                        if sid and pid:
+                            new_cache[sid] = int(pid)
+                except (json.JSONDecodeError, IOError, KeyError) as e:
+                    logger.debug(f"Failed to read metadata file {filepath}: {e}")
+                    
+            if new_cache != self._metadata_file_cache:
+                self._metadata_file_cache = new_cache
+                logger.debug(f"Refreshed session metadata cache: {len(self._metadata_file_cache)} entries")
+
+        except OSError as e:
+            logger.debug(f"Failed to scan metadata files: {e}")
+
+    async def _metadata_watch_loop(self) -> None:
+        """Watch the runtime directory for changes to session metadata files."""
+        import shutil
+        inotify_cmd = shutil.which("inotifywait")
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+
+        # Initial load
+        self._refresh_metadata_cache()
+
+        if not inotify_cmd:
+            logger.debug("inotifywait not found, falling back to polling for metadata cache")
+            while self._running:
+                await asyncio.sleep(2.0)
+                self._refresh_metadata_cache()
+            return
+
+        while self._running:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    inotify_cmd, "-m", "-q", "-e", "create,modify,delete,moved_to", "--format", "%f",
+                    runtime_dir,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                if proc.stdout is None:
+                    continue
+                    
+                while self._running:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    filename = line.decode().strip()
+                    if filename.startswith("claude-session-") or filename.startswith("codex-session-"):
+                        self._refresh_metadata_cache()
+            except asyncio.CancelledError:
+                if 'proc' in locals() and proc.returncode is None:
+                    proc.terminate()
+                break
+            except Exception as e:
+                logger.debug(f"Metadata watch loop error: {e}")
+                await asyncio.sleep(2.0)
 
     def _load_session_metadata_pid(self, session_id: str) -> Optional[int]:
         """Look up PID for a session ID from hook-written metadata files.
@@ -185,46 +265,7 @@ class SessionTracker:
         Returns:
             PID if found in metadata files, None otherwise
         """
-        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
-        metadata_patterns = (
-            os.path.join(runtime_dir, "claude-session-*.json"),
-            os.path.join(runtime_dir, "codex-session-*.json"),
-        )
-
-        # Check if we need to refresh the cache (files changed in last 5 seconds)
-        try:
-            # Get the most recent mtime from metadata files
-            metadata_files: list[str] = []
-            for pattern in metadata_patterns:
-                metadata_files.extend(glob.glob(pattern))
-            if not metadata_files:
-                return None
-
-            current_mtime = max(os.path.getmtime(f) for f in metadata_files)
-
-            # Refresh cache if files are newer
-            if current_mtime > self._metadata_cache_mtime:
-                self._metadata_file_cache.clear()
-                for filepath in metadata_files:
-                    try:
-                        with open(filepath, "r") as f:
-                            data = json.load(f)
-                            sid = data.get("sessionId")
-                            if not sid:
-                                sid = data.get("threadId") or data.get("conversationId")
-                            pid = data.get("pid") or data.get("processPid")
-                            if sid and pid:
-                                self._metadata_file_cache[sid] = int(pid)
-                                logger.debug(f"Loaded session metadata: {sid} -> PID {pid}")
-                    except (json.JSONDecodeError, IOError, KeyError) as e:
-                        logger.debug(f"Failed to read metadata file {filepath}: {e}")
-                self._metadata_cache_mtime = current_mtime
-                logger.debug(f"Refreshed session metadata cache: {len(self._metadata_file_cache)} entries")
-
-        except OSError as e:
-            logger.debug(f"Failed to scan metadata files: {e}")
-            return None
-
+        # Cache is now maintained asynchronously by _metadata_watch_loop
         return self._metadata_file_cache.get(session_id)
 
     async def start(self) -> None:
@@ -236,6 +277,9 @@ class SessionTracker:
 
         # Start session expiry checker
         self._expiry_task = asyncio.create_task(self._expiry_loop())
+        
+        # Start metadata file watcher
+        self._metadata_watch_task = asyncio.create_task(self._metadata_watch_loop())
 
         # Emit initial snapshot so consumers have deterministic startup state
         self._broadcast_event.set()
@@ -257,6 +301,8 @@ class SessionTracker:
             self._broadcast_task.cancel()
         if self._expiry_task:
             self._expiry_task.cancel()
+        if self._metadata_watch_task:
+            self._metadata_watch_task.cancel()
 
         logger.info("Session tracker stopped")
 
@@ -726,30 +772,19 @@ class SessionTracker:
         preferred_project: Optional[str], candidate_project: Optional[str]
     ) -> bool:
         """Best-effort project name matching across short/qualified forms."""
-        if not preferred_project or not candidate_project:
-            return False
-
-        preferred = preferred_project.strip().lower()
-        candidate = candidate_project.strip().lower()
-        if not preferred or not candidate:
-            return False
-        if preferred == candidate:
-            return True
-
-        import re
-        def normalize(name: str) -> str:
-            return re.sub(r"[:/]+", "/", name)
-            
-        pref_norm = normalize(preferred)
-        cand_norm = normalize(candidate)
-        
-        if pref_norm.endswith("/" + cand_norm) or cand_norm.endswith("/" + pref_norm):
-            return True
-            
-        def flatten(name: str) -> str:
-            return re.sub(r"[^a-z0-9]+", "-", name).strip("-")
-            
-        return flatten(preferred) == flatten(candidate)
+        try:
+            from i3_project_manager.core.identity import project_names_match
+            return project_names_match(preferred_project, candidate_project)
+        except ImportError:
+            # Fallback if module is missing
+            if not preferred_project or not candidate_project:
+                return False
+            preferred = preferred_project.strip().lower()
+            candidate = candidate_project.strip().lower()
+            if preferred == candidate:
+                return True
+            import re
+            return re.sub(r"[^a-z0-9]+", "-", preferred).strip("-") == re.sub(r"[^a-z0-9]+", "-", candidate).strip("-")
 
     @staticmethod
     def _normalize_project_path(value: Optional[str]) -> Optional[str]:
@@ -834,6 +869,7 @@ class SessionTracker:
             "tmux_window": attrs.get("terminal.tmux.window") or attrs.get("tmux.window"),
             "tmux_pane": attrs.get("terminal.tmux.pane") or attrs.get("tmux.pane"),
             "pty": attrs.get("terminal.pty") or attrs.get("pty"),
+            "ai_trace_token": attrs.get("i3pm.ai_trace_token"),
             "host_name": attrs.get("host.name") or attrs.get("service.instance.id"),
             "execution_mode": attrs.get("terminal.execution_mode") or attrs.get("i3pm.execution_mode"),
             "connection_key": attrs.get("terminal.connection_key") or attrs.get("i3pm.connection_key"),
@@ -969,6 +1005,28 @@ class SessionTracker:
             or session.terminal_context.pty
         ):
             return False
+
+        # Feature 139: Exact correlation using ai_trace_token
+        trace_token = session.terminal_context.ai_trace_token
+        if trace_token:
+            for s in self._sessions.values():
+                if (
+                    s.tool == tool
+                    and s.pid is not None
+                    and s.terminal_context.ai_trace_token == trace_token
+                    and s.session_id != session.session_id
+                ):
+                    session.window_id = s.window_id
+                    session.project = s.project or session.project
+                    session.pid = s.pid
+                    
+                    # Merge terminal contexts while preserving the token
+                    merged_context = s.terminal_context.model_dump()
+                    merged_context["ai_trace_token"] = trace_token
+                    session.terminal_context = TerminalContext(**merged_context)
+                    
+                    s.native_session_id = session.session_id
+                    return True
 
         candidates = [
             s

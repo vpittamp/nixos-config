@@ -162,6 +162,8 @@ let
       # - GEMINI_TELEMETRY_* vars control the Gemini-specific telemetry
       # - OTEL_SERVICE_NAME identifies this process in OTEL payloads
       wrapProgram $out/bin/gemini \
+        --run 'export I3PM_AI_TRACE_TOKEN="''$(date +%s%N)-''$RANDOM"' \
+        --run 'if [ -n "''$OTEL_RESOURCE_ATTRIBUTES" ]; then export OTEL_RESOURCE_ATTRIBUTES="''$OTEL_RESOURCE_ATTRIBUTES,i3pm.ai_trace_token=''$I3PM_AI_TRACE_TOKEN"; else export OTEL_RESOURCE_ATTRIBUTES="i3pm.ai_trace_token=''$I3PM_AI_TRACE_TOKEN"; fi' \
         --unset NODE_OPTIONS \
         --set NODE_OPTIONS "--dns-result-order=ipv4first" \
         --set OTEL_SERVICE_NAME "gemini-cli" \

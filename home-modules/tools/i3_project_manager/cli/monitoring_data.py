@@ -121,11 +121,8 @@ REMOTE_OTEL_SOURCE_STALE_SECONDS = float(
 
 def _normalize_session_name_key(value: str) -> str:
     """Normalize session names so separator variants map to one logical key."""
-    raw = str(value or "").strip().lower()
-    if not raw:
-        return ""
-    # Treat stacks/main, stacks_main, and stacks-main as the same identity.
-    return re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
+    from i3_project_manager.core.identity import normalize_session_name_key
+    return normalize_session_name_key(value)
 
 
 def load_badge_state_from_files() -> Dict[str, Any]:
