@@ -1111,6 +1111,25 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "tekton-dashboard-ryzen.tail286401.ts.net" ];
     }
+
+    # Agentuity (Ryzen K8s via Tailscale)
+    {
+      name = "Agentuity";
+      url = "https://agentuity-ryzen.tail286401.ts.net";
+      domain = "agentuity-ryzen.tail286401.ts.net";
+      icon = iconPath "agentuity.png";
+      description = "Agentuity - Full-stack platform for AI agents";
+      categories = "Development;Network;";
+      keywords = "agentuity;agent;ai;platform;agents;llm;kubernetes;";
+      scope = "https://agentuity-ryzen.tail286401.ts.net/";
+      ulid = "72R56M28C9A7X2KJED61TTVE5E";  # Generated 2026-02-24
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 119;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "agentuity-ryzen.tail286401.ts.net" ];
+    }
   ];
 
   # Filter and format sites
