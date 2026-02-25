@@ -420,16 +420,17 @@ def _load_remote_otel_sessions_for_connection(
     for item in raw_sessions:
         if not isinstance(item, dict):
             continue
-        merged.append(
-            _normalize_remote_otel_session(
-                item,
-                connection_key=normalized_key,
-                host=host_name,
-                remote_target=remote_target,
-                source_stale=source_stale,
-                source_age_seconds=source_age,
-            )
+        normalized_item = _normalize_remote_otel_session(
+            item,
+            connection_key=normalized_key,
+            host=host_name,
+            remote_target=remote_target,
+            source_stale=source_stale,
+            source_age_seconds=source_age,
         )
+        if not _session_tracking_contract_ok(normalized_item):
+            continue
+        merged.append(normalized_item)
     return merged
 
 
@@ -1711,6 +1712,8 @@ _OTEL_TOOL_LABELS = {
     "gemini": "Gemini CLI",
 }
 
+_AI_TRACKABLE_TOOLS = {"claude-code", "codex", "gemini"}
+
 
 def _parse_timestamp_to_epoch(timestamp: str) -> Optional[float]:
     """Best-effort parse for OTEL ISO timestamps."""
@@ -1733,6 +1736,53 @@ def _identity_confidence_level(value: str) -> str:
     if raw in {"contextual", "medium", "derived"}:
         return "medium"
     return "low"
+
+
+def _session_terminal_anchor(session: Dict[str, Any]) -> str:
+    """Return canonical terminal anchor key for deterministic session tracking."""
+    terminal_context = session.get("terminal_context", {}) or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+    tmux_pane = str(
+        session.get("tmux_pane")
+        or terminal_context.get("tmux_pane")
+        or ""
+    ).strip()
+    if tmux_pane:
+        return f"pane:{tmux_pane}"
+
+    pty = str(
+        session.get("pty")
+        or terminal_context.get("pty")
+        or ""
+    ).strip()
+    if pty:
+        return f"pty:{pty}"
+    return ""
+
+
+def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
+    """
+    Enforce deterministic tracking contract for AI sessions.
+
+    A session is eligible only when:
+    - tool is one of supported AI CLIs
+    - execution identity is concrete (local/ssh + connection key)
+    - terminal anchor is concrete (tmux pane or pty)
+    """
+    tool = str(session.get("tool") or "").strip().lower()
+    if tool not in _AI_TRACKABLE_TOOLS:
+        return False
+
+    identity = _resolve_session_execution_identity(session, default_mode="local")
+    mode = str(identity.get("execution_mode") or "").strip()
+    connection = str(identity.get("connection_key") or "").strip()
+    if mode not in {"local", "ssh"}:
+        return False
+    if not connection or connection in {"unknown", "global"}:
+        return False
+
+    return bool(_session_terminal_anchor(session))
 
 
 def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
@@ -2384,16 +2434,24 @@ def _resolve_otel_session_window_id(
         return True
 
     # Deterministic tmux-session mapping for remote windows when project/context
-    # metadata is absent or stale. Only accept exact unique matches.
+    # metadata is absent or stale. When tmux identity is present, it is
+    # authoritative; we never fall back to project heuristics if this lookup
+    # is ambiguous or missing.
     if session_tmux_session_key:
         tmux_matches: List[int] = []
+        tmux_metadata_available = False
         for candidate in candidates:
             if not _identity_compatible(candidate):
                 continue
             candidate_tmux_session_key = _normalize_session_name_key(
                 candidate.get("remote_session_name") or ""
             )
-            if not candidate_tmux_session_key or candidate_tmux_session_key != session_tmux_session_key:
+            if candidate_tmux_session_key:
+                tmux_metadata_available = True
+            if (
+                not candidate_tmux_session_key
+                or candidate_tmux_session_key != session_tmux_session_key
+            ):
                 continue
             candidate_window_id = _safe_int(candidate.get("id"), 0)
             if candidate_window_id > 0:
@@ -2401,7 +2459,7 @@ def _resolve_otel_session_window_id(
 
         if len(tmux_matches) == 1:
             return tmux_matches[0]
-        if len(tmux_matches) > 1:
+        if tmux_metadata_available:
             return None
 
     # Strict identity-only fallback:
@@ -2745,6 +2803,8 @@ def _build_otel_badges(
     badges = []
     now_epoch = time.time()
     for session in _coalesce_otel_badge_sessions(otel_sessions):
+        if not _session_tracking_contract_ok(session):
+            continue
         state = str(session.get("state", "idle") or "idle").strip().lower()
         if state not in _OTEL_VISIBLE_BADGE_STATES:
             continue
@@ -2852,6 +2912,8 @@ def _build_active_ai_sessions(
     now_epoch = time.time()
 
     for raw_session in _coalesce_otel_badge_sessions(otel_sessions):
+        if not _session_tracking_contract_ok(raw_session):
+            continue
         state = str(raw_session.get("state", "idle") or "idle").strip().lower()
         if state not in _OTEL_ACTIVE_SESSION_STATES:
             continue

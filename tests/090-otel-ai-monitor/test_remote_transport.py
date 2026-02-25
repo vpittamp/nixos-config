@@ -30,17 +30,24 @@ _load_otel_monitor_package()
 from otel_ai_monitor.remote_transport import RemoteSessionSinkStore  # type: ignore  # noqa: E402
 
 
-def _build_payload(*, sequence: int, payload_hash: str, session_id: str) -> dict:
+def _build_payload(
+    *,
+    sequence: int,
+    payload_hash: str,
+    session_id: str,
+    source_boot_id: str = "boot-1",
+    sent_at: str = "2026-02-23T20:00:00+00:00",
+) -> dict:
     return {
         "schema_version": "1",
         "source": {
             "connection_key": "vpittamp@ryzen:22",
             "host_name": "ryzen",
         },
-        "source_boot_id": "boot-1",
+        "source_boot_id": source_boot_id,
         "sequence": sequence,
         "payload_hash": payload_hash,
-        "sent_at": "2026-02-23T20:00:00+00:00",
+        "sent_at": sent_at,
         "sessions_payload": {
             "schema_version": "4",
             "updated_at": "2026-02-23T20:00:00+00:00",
@@ -144,5 +151,110 @@ async def test_sink_rejects_conflicting_same_sequence(tmp_path):
         assert accepted is False
         assert reason == "conflicting_same_sequence"
         assert status == 409
+    finally:
+        await sink.stop()
+
+
+@pytest.mark.asyncio
+async def test_sink_accepts_new_boot_epoch_when_sequence_restarts(tmp_path):
+    sink_file = tmp_path / "remote-otel-sink.json"
+    sink = RemoteSessionSinkStore(sink_file)
+    await sink.start()
+    try:
+        accepted, _, _ = await sink.ingest(
+            _build_payload(
+                sequence=9,
+                payload_hash="old-hash",
+                session_id="sid-old",
+                source_boot_id="boot-old",
+                sent_at="2026-02-23T20:00:09+00:00",
+            )
+        )
+        assert accepted is True
+
+        accepted, reason, status = await sink.ingest(
+            _build_payload(
+                sequence=1,
+                payload_hash="new-hash",
+                session_id="sid-new",
+                source_boot_id="boot-new",
+                sent_at="2026-02-23T20:01:00+00:00",
+            )
+        )
+        assert accepted is True
+        assert reason == "accepted"
+        assert status == 200
+
+        payload = json.loads(sink_file.read_text())
+        source = payload["sources"]["vpittamp@ryzen:22"]
+        assert source["source_boot_id"] == "boot-new"
+        assert int(source["sequence"]) == 1
+        assert source["sessions"][0]["session_id"] == "sid-new"
+    finally:
+        await sink.stop()
+
+
+@pytest.mark.asyncio
+async def test_sink_rejects_new_boot_with_non_reset_sequence(tmp_path):
+    sink_file = tmp_path / "remote-otel-sink.json"
+    sink = RemoteSessionSinkStore(sink_file)
+    await sink.start()
+    try:
+        accepted, _, _ = await sink.ingest(
+            _build_payload(
+                sequence=5,
+                payload_hash="old-hash",
+                session_id="sid-old",
+                source_boot_id="boot-old",
+                sent_at="2026-02-23T20:00:09+00:00",
+            )
+        )
+        assert accepted is True
+
+        accepted, reason, status = await sink.ingest(
+            _build_payload(
+                sequence=2,
+                payload_hash="new-hash",
+                session_id="sid-new",
+                source_boot_id="boot-new",
+                sent_at="2026-02-23T20:01:00+00:00",
+            )
+        )
+        assert accepted is False
+        assert reason == "invalid_boot_sequence"
+        assert status == 202
+    finally:
+        await sink.stop()
+
+
+@pytest.mark.asyncio
+async def test_sink_rejects_stale_boot_epoch_timestamp(tmp_path):
+    sink_file = tmp_path / "remote-otel-sink.json"
+    sink = RemoteSessionSinkStore(sink_file)
+    await sink.start()
+    try:
+        accepted, _, _ = await sink.ingest(
+            _build_payload(
+                sequence=4,
+                payload_hash="old-hash",
+                session_id="sid-old",
+                source_boot_id="boot-old",
+                sent_at="2026-02-23T20:02:00+00:00",
+            )
+        )
+        assert accepted is True
+
+        accepted, reason, status = await sink.ingest(
+            _build_payload(
+                sequence=1,
+                payload_hash="new-hash",
+                session_id="sid-new",
+                source_boot_id="boot-new",
+                sent_at="2026-02-23T20:01:00+00:00",
+            )
+        )
+        assert accepted is False
+        assert reason == "stale_boot_epoch"
+        assert status == 202
     finally:
         await sink.stop()

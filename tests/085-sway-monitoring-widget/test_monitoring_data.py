@@ -572,7 +572,9 @@ class TestQueryMonitoringData:
                     "native_session_id": "sid-123",
                     "session_id": "codex:sid-123",
                     "window_id": None,
-                    "terminal_context": {},
+                    "terminal_context": {
+                        "pty": "/dev/pts/17",
+                    },
                     "is_streaming": True,
                     "updated_at": "2026-02-23T16:00:00+00:00",
                 }
@@ -1317,6 +1319,56 @@ class TestQueryMonitoringData:
 
         assert resolved is None
 
+    def test_resolve_otel_window_id_does_not_fallback_when_tmux_identity_present_but_unmatched(self):
+        """When tmux session identity exists but has no match, resolver must not fall back to project heuristics."""
+        outputs = [
+            {
+                "name": "HEADLESS-1",
+                "active": True,
+                "workspaces": [
+                    {
+                        "num": 1,
+                        "name": "1",
+                        "visible": True,
+                        "focused": True,
+                        "windows": [
+                            {
+                                "id": 100,
+                                "class": "Ghostty",
+                                "title": "workflow-builder",
+                                "project": "PittampalliOrg/workflow-builder:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                "remote_session_name": "workflow-builder/main",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+        window_candidates = monitoring_data._collect_output_window_candidates(outputs)
+        session = {
+            "tool": "codex",
+            "state": "working",
+            "project": "PittampalliOrg/workflow-builder:main",
+            "window_id": None,
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@ryzen:22",
+            "terminal_context": {
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "tmux_session": "different-session/main",
+                "tmux_pane": "%37",
+            },
+        }
+        resolved = monitoring_data._resolve_otel_session_window_id(
+            session,
+            outputs,
+            window_candidates=window_candidates,
+        )
+        assert resolved is None
+
     @pytest.mark.asyncio
     async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
         """Daemon-provided identity metadata should avoid /proc fallback reads."""
@@ -1847,6 +1899,46 @@ class TestAiReviewLifecycle:
         assert len(sessions) == 1
         assert sessions[0]["window_id"] == 171
         assert sessions[0]["project"] == "vpittamp/nixos-config:main"
+
+    def test_build_active_ai_sessions_requires_terminal_anchor_contract(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 171,
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "n-local-missing-anchor",
+                "session_id": "s-local-missing-anchor",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "",
+                    "pty": "",
+                },
+                "updated_at": "2026-02-23T10:00:01+00:00",
+            }
+        ]
+        window_lookup = {
+            171: {
+                "id": 171,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            },
+        }
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="vpittamp/nixos-config:main",
+            focused_window_id=171,
+        )
+        assert sessions == []
 
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{

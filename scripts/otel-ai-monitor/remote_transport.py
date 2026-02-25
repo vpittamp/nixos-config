@@ -30,6 +30,18 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_iso_epoch(value: str) -> float:
+    raw = str(value or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        return float(datetime.fromisoformat(raw).timestamp())
+    except ValueError:
+        return 0.0
+
+
 def _normalize_connection_key(value: str) -> str:
     raw = str(value or "").strip().lower()
     if not raw:
@@ -277,6 +289,8 @@ class RemoteSessionSinkStore:
 
         source_host = str(source.get("host_name") or "").strip() or "unknown"
         source_boot_id = str(payload.get("source_boot_id") or "").strip()
+        if not source_boot_id:
+            return False, "missing_source_boot_id", 400
         payload_hash = str(payload.get("payload_hash") or "").strip()
 
         try:
@@ -297,6 +311,7 @@ class RemoteSessionSinkStore:
         session_schema = str(sessions_payload.get("schema_version", "4"))
         updated_at = str(sessions_payload.get("updated_at", ""))
         sent_at = str(payload.get("sent_at", ""))
+        sent_at_epoch = _parse_iso_epoch(sent_at)
         received_at = time.time()
 
         async with self._lock:
@@ -312,6 +327,7 @@ class RemoteSessionSinkStore:
             existing_boot = str(existing.get("source_boot_id") or "")
             existing_seq = int(existing.get("sequence", 0) or 0)
             existing_hash = str(existing.get("payload_hash") or "")
+            existing_sent_epoch = _parse_iso_epoch(str(existing.get("sent_at") or ""))
 
             # Deterministic monotonic sequence validation.
             if source_boot_id and existing_boot and source_boot_id == existing_boot:
@@ -319,6 +335,17 @@ class RemoteSessionSinkStore:
                     return False, "stale_sequence", 202
                 if sequence == existing_seq and payload_hash and existing_hash and payload_hash != existing_hash:
                     return False, "conflicting_same_sequence", 409
+            elif source_boot_id and existing_boot and source_boot_id != existing_boot:
+                # New boot epochs must restart sequence from 1 and be newer than
+                # the currently tracked epoch when sent_at is available.
+                if sequence != 1:
+                    return False, "invalid_boot_sequence", 202
+                if (
+                    sent_at_epoch > 0
+                    and existing_sent_epoch > 0
+                    and sent_at_epoch <= existing_sent_epoch
+                ):
+                    return False, "stale_boot_epoch", 202
 
             sources[source_connection_key] = {
                 "connection_key": source_connection_key,
