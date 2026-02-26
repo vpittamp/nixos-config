@@ -38,3 +38,20 @@ def test_focus_action_emits_seen_ack_event():
     text = WINDOWS_SCRIPTS_NIX.read_text()
     assert "ack-ai-session-seen-action" in text
     assert "ai-session-seen-events.jsonl" in text
+
+
+def test_focus_actions_pass_connection_key_for_session_and_badge_clicks():
+    """Session and badge focus actions should pass connection identity for SSH tmux targeting."""
+    text = WINDOWS_VIEW_YUCK.read_text()
+    assert "session.connection_key ?: \"\"" in text
+    assert "badge.connection_key ?: window.connection_key ?: \"\"" in text
+
+
+def test_focus_script_supports_remote_tmux_targeting_over_ssh():
+    """Focus script should execute tmux targeting remotely when execution mode is ssh."""
+    text = WINDOWS_SCRIPTS_NIX.read_text()
+    assert "parse_ssh_connection_key()" in text
+    assert "run_remote_tmux()" in text
+    assert "-o BatchMode=yes" in text
+    assert "tmux_target_remote_ok" in text
+    assert "tmux_remote_connection_invalid" in text

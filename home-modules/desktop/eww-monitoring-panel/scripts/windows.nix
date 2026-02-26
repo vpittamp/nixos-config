@@ -216,10 +216,11 @@ let
     PROJECT_NAME="''${1:-}"
     WINDOW_ID="''${2:-}"
     TARGET_VARIANT="''${3:-local}"
-    TMUX_PANE="''${4:-}"
-    TMUX_SESSION="''${5:-}"
-    TMUX_WINDOW="''${6:-}"
-    TMUX_PTY="''${7:-}"
+    CONNECTION_KEY="''${4:-}"
+    TMUX_PANE="''${5:-}"
+    TMUX_SESSION="''${6:-}"
+    TMUX_WINDOW="''${7:-}"
+    TMUX_PTY="''${8:-}"
 
     if [[ -z "$PROJECT_NAME" ]]; then
       exit 1
@@ -232,11 +233,56 @@ let
     fi
 
     RECORD_FOCUS_METRIC="${recordAiFocusMetricScript}/bin/record-ai-focus-metric-action"
+    TMUX_TARGET_MODE="none"
+    TMUX_TARGET_STATUS="skipped"
+    SSH_USER=""
+    SSH_HOST=""
+    SSH_PORT=""
 
     log_stage() {
       local stage="$1"
-      printf 'focus-ai-session-action stage=%s project=%s window=%s variant=%s session=%s pane=%s\n' \
-        "$stage" "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" "''${TMUX_SESSION:-none}" "''${TMUX_PANE:-none}" >&2
+      printf 'focus-ai-session-action stage=%s project=%s window=%s variant=%s connection=%s session=%s pane=%s\n' \
+        "$stage" "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" "''${CONNECTION_KEY:-none}" "''${TMUX_SESSION:-none}" "''${TMUX_PANE:-none}" >&2
+    }
+
+    parse_ssh_connection_key() {
+      local raw="''${1:-}"
+      local user_host port user host
+      [[ -n "$raw" ]] || return 1
+      if [[ "$raw" == local@* || "$raw" == "global" || "$raw" == "unknown" ]]; then
+        return 1
+      fi
+
+      user_host="$raw"
+      port="22"
+      if [[ "$raw" == *:* ]]; then
+        port="''${raw##*:}"
+        user_host="''${raw%:*}"
+      fi
+      [[ "$port" =~ ^[0-9]+$ ]] || return 1
+
+      if [[ "$user_host" == *@* ]]; then
+        user="''${user_host%@*}"
+        host="''${user_host#*@}"
+      else
+        user="$(${pkgs.coreutils}/bin/id -un)"
+        host="$user_host"
+      fi
+
+      [[ -n "$user" && -n "$host" ]] || return 1
+      SSH_USER="$user"
+      SSH_HOST="$host"
+      SSH_PORT="$port"
+      return 0
+    }
+
+    run_remote_tmux() {
+      ssh \
+        -o BatchMode=yes \
+        -o ConnectTimeout=2 \
+        -p "$SSH_PORT" \
+        "''${SSH_USER}@''${SSH_HOST}" \
+        -- tmux "$@"
     }
 
     sway_success() {
@@ -299,35 +345,92 @@ let
     fi
 
     # If this AI session reports tmux context, jump to that pane/window.
-    if command -v tmux >/dev/null 2>&1; then
-      if [[ -n "$TMUX_SESSION" ]]; then
-        tmux has-session -t "$TMUX_SESSION" >/dev/null 2>&1 || TMUX_SESSION=""
-      fi
+    if [[ "$TARGET_VARIANT" == "ssh" ]]; then
+      TMUX_TARGET_MODE="remote"
+      if ! parse_ssh_connection_key "$CONNECTION_KEY"; then
+        TMUX_TARGET_STATUS="fail"
+        log_stage "tmux_remote_connection_invalid"
+      else
+        REMOTE_TMUX_OK=true
+        if [[ -n "$TMUX_SESSION" ]]; then
+          if ! run_remote_tmux has-session -t "$TMUX_SESSION" >/dev/null 2>&1; then
+            REMOTE_TMUX_OK=false
+          fi
+        fi
 
-      if [[ -n "$TMUX_WINDOW" ]]; then
         WINDOW_SELECTOR="$TMUX_WINDOW"
         if [[ "$WINDOW_SELECTOR" == *:* ]]; then
           WINDOW_SELECTOR="''${WINDOW_SELECTOR%%:*}"
         fi
-        if [[ -n "$WINDOW_SELECTOR" ]]; then
+        if [[ "$REMOTE_TMUX_OK" == "true" && -n "$WINDOW_SELECTOR" ]]; then
           TARGET_WINDOW="$WINDOW_SELECTOR"
           if [[ -n "$TMUX_SESSION" ]]; then
             TARGET_WINDOW="''${TMUX_SESSION}:''${WINDOW_SELECTOR}"
           fi
-          tmux select-window -t "$TARGET_WINDOW" >/dev/null 2>&1 || true
+          if ! run_remote_tmux select-window -t "$TARGET_WINDOW" >/dev/null 2>&1; then
+            REMOTE_TMUX_OK=false
+          fi
         fi
+
+        TARGET_PANE="$TMUX_PANE"
+        if [[ "$REMOTE_TMUX_OK" == "true" && -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
+          TARGET_PANE=$(
+            run_remote_tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null \
+              | ${pkgs.gawk}/bin/awk -v tty="$TMUX_PTY" '$2 == tty {print $1; exit}'
+          )
+        fi
+
+        if [[ "$REMOTE_TMUX_OK" == "true" && -n "$TARGET_PANE" ]]; then
+          if ! run_remote_tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1; then
+            REMOTE_TMUX_OK=false
+          fi
+        fi
+
+        if [[ "$REMOTE_TMUX_OK" == "true" ]]; then
+          TMUX_TARGET_STATUS="success"
+          log_stage "tmux_target_remote_ok"
+        else
+          TMUX_TARGET_STATUS="fail"
+          log_stage "tmux_target_remote_fail"
+        fi
+      fi
+    elif command -v tmux >/dev/null 2>&1; then
+      TMUX_TARGET_MODE="local"
+      LOCAL_TMUX_OK=true
+      if [[ -n "$TMUX_SESSION" ]]; then
+        tmux has-session -t "$TMUX_SESSION" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
+      fi
+
+      WINDOW_SELECTOR="$TMUX_WINDOW"
+      if [[ "$WINDOW_SELECTOR" == *:* ]]; then
+        WINDOW_SELECTOR="''${WINDOW_SELECTOR%%:*}"
+      fi
+      if [[ "$LOCAL_TMUX_OK" == "true" && -n "$WINDOW_SELECTOR" ]]; then
+        TARGET_WINDOW="$WINDOW_SELECTOR"
+        if [[ -n "$TMUX_SESSION" ]]; then
+          TARGET_WINDOW="''${TMUX_SESSION}:''${WINDOW_SELECTOR}"
+        fi
+        tmux select-window -t "$TARGET_WINDOW" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
       fi
 
       TARGET_PANE="$TMUX_PANE"
-      if [[ -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
-        TARGET_PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null | awk -v tty="$TMUX_PTY" '$2 == tty {print $1; exit}')
+      if [[ "$LOCAL_TMUX_OK" == "true" && -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
+        TARGET_PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null | ${pkgs.gawk}/bin/awk -v tty="$TMUX_PTY" '$2 == tty {print $1; exit}')
       fi
 
-      if [[ -n "$TARGET_PANE" ]]; then
-        tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || true
+      if [[ "$LOCAL_TMUX_OK" == "true" && -n "$TARGET_PANE" ]]; then
+        tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
       fi
-      log_stage "tmux_target_ok"
+      if [[ "$LOCAL_TMUX_OK" == "true" ]]; then
+        TMUX_TARGET_STATUS="success"
+        log_stage "tmux_target_local_ok"
+      else
+        TMUX_TARGET_STATUS="fail"
+        log_stage "tmux_target_local_fail"
+      fi
     else
+      TMUX_TARGET_MODE="local"
+      TMUX_TARGET_STATUS="missing"
       log_stage "tmux_missing"
     fi
 
@@ -340,11 +443,11 @@ let
     fi
 
     if [[ "$FOCUS_OK" == "true" ]]; then
-      "$RECORD_FOCUS_METRIC" success "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+      "$RECORD_FOCUS_METRIC" success "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" "$TMUX_TARGET_MODE" "$TMUX_TARGET_STATUS" "$CONNECTION_KEY" >/dev/null 2>&1 || true
       exit 0
     fi
 
-    "$RECORD_FOCUS_METRIC" fail "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1 || true
+    "$RECORD_FOCUS_METRIC" fail "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" "$TMUX_TARGET_MODE" "$TMUX_TARGET_STATUS" "$CONNECTION_KEY" >/dev/null 2>&1 || true
     exit 1
   '';
 
@@ -357,6 +460,9 @@ let
     PROJECT_NAME="''${2:-}"
     WINDOW_ID="''${3:-}"
     EXECUTION_MODE="''${4:-local}"
+    TMUX_TARGET_MODE="''${5:-none}"
+    TMUX_TARGET_STATUS="''${6:-skipped}"
+    CONNECTION_KEY="''${7:-}"
     if [[ "$STATUS" != "success" && "$STATUS" != "fail" ]]; then
       exit 1
     fi
@@ -377,6 +483,9 @@ let
       --arg project "$PROJECT_NAME" \
       --arg window "$WINDOW_ID" \
       --arg mode "$EXECUTION_MODE" \
+      --arg tmux_mode "$TMUX_TARGET_MODE" \
+      --arg tmux_status "$TMUX_TARGET_STATUS" \
+      --arg connection "$CONNECTION_KEY" \
       --argjson ts "$NOW" '
       .focus_attempts = ((.focus_attempts // 0) + 1)
       | if $status == "success"
@@ -388,6 +497,9 @@ let
           project: $project,
           window_id: $window,
           execution_mode: $mode,
+          connection_key: $connection,
+          tmux_target_mode: $tmux_mode,
+          tmux_target_status: $tmux_status,
           timestamp: $ts
         }
       | .updated_at = $ts
@@ -456,11 +568,12 @@ let
     FALLBACK_PROJECT="''${2:-}"
     FALLBACK_WINDOW_ID="''${3:-}"
     FALLBACK_EXECUTION_MODE="''${4:-local}"
-    FALLBACK_TMUX_PANE="''${5:-}"
-    FALLBACK_TMUX_SESSION="''${6:-}"
-    FALLBACK_TMUX_WINDOW="''${7:-}"
-    FALLBACK_TMUX_PTY="''${8:-}"
-    FALLBACK_FINISH_MARKER="''${9:-}"
+    FALLBACK_CONNECTION_KEY="''${5:-}"
+    FALLBACK_TMUX_PANE="''${6:-}"
+    FALLBACK_TMUX_SESSION="''${7:-}"
+    FALLBACK_TMUX_WINDOW="''${8:-}"
+    FALLBACK_TMUX_PTY="''${9:-}"
+    FALLBACK_FINISH_MARKER="''${10:-}"
     if [[ -z "$SESSION_KEY" ]]; then
       exit 1
     fi
@@ -484,6 +597,7 @@ let
             ($s.project // ""),
             (($s.window_id // 0) | tostring),
             ($s.execution_mode // "local"),
+            ($s.connection_key // ""),
             ($s.tmux_pane // ""),
             ($s.tmux_session // ""),
             ($s.tmux_window // ""),
@@ -494,11 +608,12 @@ let
     ' <<< "$MONITORING_DATA")
 
     if [[ -n "$SESSION_TSV" ]]; then
-      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
+      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE CONNECTION_KEY TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
     else
       PROJECT_NAME="$FALLBACK_PROJECT"
       WINDOW_ID="$FALLBACK_WINDOW_ID"
       EXECUTION_MODE="$FALLBACK_EXECUTION_MODE"
+      CONNECTION_KEY="$FALLBACK_CONNECTION_KEY"
       TMUX_PANE="$FALLBACK_TMUX_PANE"
       TMUX_SESSION="$FALLBACK_TMUX_SESSION"
       TMUX_WINDOW="$FALLBACK_TMUX_WINDOW"
@@ -520,6 +635,7 @@ let
       "$PROJECT_NAME" \
       "$WINDOW_ID" \
       "$EXECUTION_MODE" \
+      "$CONNECTION_KEY" \
       "$TMUX_PANE" \
       "$TMUX_SESSION" \
       "$TMUX_WINDOW" \
@@ -680,25 +796,27 @@ let
             [
               ($s.project // ""),
               (($s.window_id // 0) | tostring),
-            ($s.execution_mode // "local"),
-            ($s.tmux_pane // ""),
-            ($s.tmux_session // ""),
-            ($s.tmux_window // ""),
-            ($s.pty // ""),
-            ($s.finish_marker // "")
-          ] | @tsv
+              ($s.execution_mode // "local"),
+              ($s.connection_key // ""),
+              ($s.tmux_pane // ""),
+              ($s.tmux_session // ""),
+              ($s.tmux_window // ""),
+              ($s.pty // ""),
+              ($s.finish_marker // "")
+            ] | @tsv
         end
       ' <<< "$MONITORING_DATA")
       if [[ -z "$SESSION_TSV" ]]; then
         continue
       fi
-      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
+      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE CONNECTION_KEY TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
 
       if ${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \
         "$TARGET_KEY" \
         "$PROJECT_NAME" \
         "$WINDOW_ID" \
         "$EXECUTION_MODE" \
+        "$CONNECTION_KEY" \
         "$TMUX_PANE" \
         "$TMUX_SESSION" \
         "$TMUX_WINDOW" \
