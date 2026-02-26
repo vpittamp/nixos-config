@@ -1369,6 +1369,146 @@ class TestQueryMonitoringData:
         )
         assert resolved is None
 
+    def test_resolve_otel_window_id_uses_synthetic_tmux_project_hint_and_prefers_primary_terminal(self):
+        """Synthetic remote-session rows can provide tmux->project hint; resolver should pick focusable primary terminal."""
+        outputs = [
+            {
+                "name": "HEADLESS-1",
+                "active": True,
+                "workspaces": [
+                    {
+                        "num": 1,
+                        "name": "1",
+                        "visible": True,
+                        "focused": True,
+                        "windows": [
+                            {
+                                "id": 287,
+                                "class": "Ghostty",
+                                "app_id": "scratchpad-PittampalliOrg/stacks:main-123",
+                                "title": "Scratchpad Terminal",
+                                "project": "PittampalliOrg/stacks:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+                                "floating": True,
+                                "hidden": True,
+                                "marks": ["scoped:scratchpad-terminal:PittampalliOrg/stacks:main:287"],
+                            },
+                            {
+                                "id": 306,
+                                "class": "Ghostty",
+                                "app_id": "terminal-PittampalliOrg/stacks:main-456",
+                                "title": "Ghostty",
+                                "project": "PittampalliOrg/stacks:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+                                "floating": True,
+                                "hidden": True,
+                                "marks": ["scoped:terminal:PittampalliOrg/stacks:main:306"],
+                            },
+                            {
+                                "id": -439499391,
+                                "class": "remote-sesh",
+                                "app_id": "remote-sesh",
+                                "title": "tmux: stacks/main",
+                                "project": "PittampalliOrg/stacks:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "remote_session_name": "stacks/main",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+        window_candidates = monitoring_data._collect_output_window_candidates(outputs)
+        session = {
+            "tool": "gemini",
+            "state": "working",
+            # Stale source-host project metadata.
+            "project": "vpittamp/nixos-config:main",
+            "window_id": 99,
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@ryzen:22",
+            "terminal_context": {
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "context_key": "",
+                "tmux_session": "stacks/main",
+                "tmux_pane": "%36",
+            },
+        }
+        resolved = monitoring_data._resolve_otel_session_window_id(
+            session,
+            outputs,
+            window_candidates=window_candidates,
+        )
+        assert resolved == 306
+
+    def test_resolve_otel_window_id_with_unmatched_synthetic_tmux_identity_does_not_fallback(self):
+        """If synthetic tmux metadata exists but does not match session tmux identity, do not map by stale project fallback."""
+        outputs = [
+            {
+                "name": "HEADLESS-1",
+                "active": True,
+                "workspaces": [
+                    {
+                        "num": 1,
+                        "name": "1",
+                        "visible": True,
+                        "focused": True,
+                        "windows": [
+                            {
+                                "id": 100,
+                                "class": "Ghostty",
+                                "app_id": "terminal-PittampalliOrg/workflow-builder:main-1",
+                                "title": "Ghostty",
+                                "project": "PittampalliOrg/workflow-builder:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                "marks": ["scoped:terminal:PittampalliOrg/workflow-builder:main:100"],
+                            },
+                            {
+                                "id": -12001,
+                                "class": "remote-sesh",
+                                "app_id": "remote-sesh",
+                                "title": "tmux: workflow-builder/main",
+                                "project": "PittampalliOrg/workflow-builder:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "remote_session_name": "workflow-builder/main",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+        window_candidates = monitoring_data._collect_output_window_candidates(outputs)
+        session = {
+            "tool": "gemini",
+            "state": "working",
+            # Stale project that would otherwise map to window 100.
+            "project": "PittampalliOrg/workflow-builder:main",
+            "window_id": None,
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@ryzen:22",
+            "terminal_context": {
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "tmux_session": "stacks/main",
+                "tmux_pane": "%36",
+            },
+        }
+        resolved = monitoring_data._resolve_otel_session_window_id(
+            session,
+            outputs,
+            window_candidates=window_candidates,
+        )
+        assert resolved is None
+
     @pytest.mark.asyncio
     async def test_query_uses_daemon_execution_metadata_without_proc_fallback(self):
         """Daemon-provided identity metadata should avoid /proc fallback reads."""

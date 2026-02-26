@@ -2280,6 +2280,8 @@ def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dic
                         "app_id": str(window.get("app_id") or ""),
                         "app_name": str(window.get("app_name") or ""),
                         "display_name": str(window.get("display_name") or ""),
+                        "title": str(window.get("title") or ""),
+                        "marks": list(window.get("marks") or []) if isinstance(window.get("marks"), list) else [],
                         "execution_mode": str(identity.get("execution_mode") or ""),
                         "connection_key": str(identity.get("connection_key") or ""),
                         "identity_key": str(identity.get("identity_key") or ""),
@@ -2289,6 +2291,37 @@ def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dic
                 )
 
     return candidates
+
+
+def _window_terminal_preference_rank(candidate: Dict[str, Any]) -> int:
+    """
+    Rank window candidates for deterministic AI session targeting.
+
+    Prefer normal project terminals over scratchpad terminals when both share
+    the same identity/project scope.
+    """
+    app_id = str(candidate.get("app_id") or "").strip().lower()
+    display_name = str(candidate.get("display_name") or "").strip().lower()
+    title = str(candidate.get("title") or "").strip().lower()
+    marks_raw = candidate.get("marks") or []
+    marks: List[str] = [str(mark).strip().lower() for mark in marks_raw if str(mark).strip()]
+
+    is_scratchpad = (
+        "scratchpad" in app_id
+        or "scratchpad" in display_name
+        or "scratchpad" in title
+        or any(mark.startswith("scoped:scratchpad-terminal:") for mark in marks)
+    )
+    is_primary_terminal = (
+        app_id.startswith("terminal-")
+        or any(mark.startswith("scoped:terminal:") for mark in marks)
+    )
+
+    if is_primary_terminal and not is_scratchpad:
+        return 2
+    if not is_scratchpad:
+        return 1
+    return 0
 
 
 def _session_project_candidates(raw_project: Any) -> tuple[set[str], set[str]]:
@@ -2438,28 +2471,91 @@ def _resolve_otel_session_window_id(
     # authoritative; we never fall back to project heuristics if this lookup
     # is ambiguous or missing.
     if session_tmux_session_key:
-        tmux_matches: List[int] = []
-        tmux_metadata_available = False
-        for candidate in candidates:
-            if not _identity_compatible(candidate):
+        identity_candidates: List[Dict[str, Any]] = [
+            candidate for candidate in candidates if _identity_compatible(candidate)
+        ]
+        tmux_hint_exact: set[str] = set()
+        tmux_hint_prefixes: set[str] = set()
+
+        # Derive project hints from tmux session suffix (e.g. "stacks/main" ->
+        # "PittampalliOrg/stacks:main") even when daemon windows lack explicit
+        # remote_session_name metadata.
+        for candidate in identity_candidates:
+            candidate_project = str(candidate.get("project") or "").strip()
+            if not candidate_project:
                 continue
+            candidate_suffix = _normalize_session_name_key(
+                _project_session_suffix(candidate_project)
+            )
+            if not candidate_suffix or candidate_suffix != session_tmux_session_key:
+                continue
+            candidate_exact, candidate_prefixes = _session_project_candidates(candidate_project)
+            tmux_hint_exact.update(candidate_exact)
+            tmux_hint_prefixes.update(candidate_prefixes)
+
+        tmux_matches: List[int] = []
+        tmux_nonfocusable_match_found = False
+        for candidate in identity_candidates:
             candidate_tmux_session_key = _normalize_session_name_key(
                 candidate.get("remote_session_name") or ""
             )
-            if candidate_tmux_session_key:
-                tmux_metadata_available = True
             if (
                 not candidate_tmux_session_key
                 or candidate_tmux_session_key != session_tmux_session_key
             ):
                 continue
+            candidate_project = str(candidate.get("project") or "").strip()
+            if candidate_project:
+                candidate_exact, candidate_prefixes = _session_project_candidates(candidate_project)
+                tmux_hint_exact.update(candidate_exact)
+                tmux_hint_prefixes.update(candidate_prefixes)
             candidate_window_id = _safe_int(candidate.get("id"), 0)
             if candidate_window_id > 0:
                 tmux_matches.append(candidate_window_id)
+            else:
+                tmux_nonfocusable_match_found = True
+
+        if tmux_hint_exact or tmux_hint_prefixes:
+            exact_candidates = set(tmux_hint_exact)
+            prefix_candidates = set(tmux_hint_prefixes)
 
         if len(tmux_matches) == 1:
             return tmux_matches[0]
-        if tmux_metadata_available:
+
+        tmux_metadata_available_focusable = False
+        tmux_metadata_available_nonfocusable = False
+        for candidate in identity_candidates:
+            candidate_tmux_session_key = _normalize_session_name_key(
+                candidate.get("remote_session_name") or ""
+            )
+            if not candidate_tmux_session_key:
+                continue
+            if tmux_hint_exact or tmux_hint_prefixes:
+                candidate_project = str(candidate.get("project") or "").strip()
+                if not candidate_project:
+                    continue
+                in_scope = (
+                    candidate_project in tmux_hint_exact
+                    or any(
+                        candidate_project == prefix
+                        or candidate_project.startswith(prefix + ":")
+                        for prefix in tmux_hint_prefixes
+                    )
+                )
+                if not in_scope:
+                    continue
+            candidate_window_id = _safe_int(candidate.get("id"), 0)
+            if candidate_window_id > 0:
+                tmux_metadata_available_focusable = True
+            else:
+                tmux_metadata_available_nonfocusable = True
+
+        if tmux_metadata_available_focusable:
+            return None
+        # Synthetic remote-session rows (negative IDs) cannot be focused directly,
+        # but when they are the only tmux metadata source they can still provide
+        # project hints. If metadata exists and does not match, do not fall back.
+        if tmux_metadata_available_nonfocusable and not tmux_nonfocusable_match_found:
             return None
 
     # Strict identity-only fallback:
@@ -2478,7 +2574,7 @@ def _resolve_otel_session_window_id(
     )
 
     best_window_id: Optional[int] = None
-    best_score: Optional[tuple[int, int, int, int, int, int, int]] = None
+    best_score: Optional[tuple[int, int, int, int, int, int, int, int]] = None
     for candidate in candidates:
         window_project = str(candidate.get("project") or "").strip()
         if not window_project:
@@ -2538,14 +2634,16 @@ def _resolve_otel_session_window_id(
         if window_id == 0:
             continue
 
+        terminal_preference = _window_terminal_preference_rank(candidate)
         score = (
             match_rank,
             identity_rank,
+            terminal_preference,
             int(bool(candidate.get("focused", False))),
             int(not bool(candidate.get("hidden", False))),
             int(str(candidate.get("class") or "") != "remote-sesh"),
             int(not bool(candidate.get("floating", False))),
-            int(window_id > 0),
+            int(window_id),
         )
         if best_score is None or score > best_score:
             best_score = score
