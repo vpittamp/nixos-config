@@ -582,6 +582,8 @@ in
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
     checkReversePath = "loose";  # For Tailscale
+    # Incus bridge needs DHCP/DNS from host-side dnsmasq.
+    trustedInterfaces = [ "incusbr0" ];
   };
 
   # ========== ADVANCED AUDIO (BARE METAL) ==========

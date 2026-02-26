@@ -71,8 +71,47 @@ fi
 
 VERSIONED_ALIAS="${STABLE_ALIAS}-${VERSION}"
 
+incus_cmd() {
+  if (( USE_SG_INCUS_ADMIN )); then
+    local escaped
+    escaped="$(printf '%q ' incus "$@")"
+    # shellcheck disable=SC2086
+    sg incus-admin -c "${escaped% }"
+  else
+    incus "$@"
+  fi
+}
+
+USE_SG_INCUS_ADMIN=0
+if ! incus info >/dev/null 2>&1; then
+  if command -v sg >/dev/null 2>&1 && getent group incus-admin >/dev/null 2>&1; then
+    if sg incus-admin -c "incus info >/dev/null 2>&1"; then
+      USE_SG_INCUS_ADMIN=1
+      echo "[incus-image] Using sg incus-admin for Incus access"
+    else
+      echo "Cannot access Incus daemon. Run: newgrp incus-admin (or re-login)." >&2
+      exit 1
+    fi
+  else
+    echo "Cannot access Incus daemon and incus-admin group fallback is unavailable." >&2
+    exit 1
+  fi
+fi
+
 echo "[incus-image] Building bundle: ${FLAKE_ATTR}"
-BUNDLE_PATH="$(nix build "$FLAKE_ATTR" --print-out-paths --no-link | tail -n1)"
+BUILD_LINK="$(mktemp -u /tmp/incus-bundle.XXXXXX)"
+cleanup() {
+  rm -f "$BUILD_LINK"
+}
+trap cleanup EXIT
+
+nix build "$FLAKE_ATTR" --out-link "$BUILD_LINK"
+BUNDLE_PATH="$(readlink -f "$BUILD_LINK")"
+
+if [[ -z "$BUNDLE_PATH" || ! -d "$BUNDLE_PATH" ]]; then
+  echo "Failed to resolve built bundle path from $BUILD_LINK" >&2
+  exit 1
+fi
 
 METADATA_TAR="${BUNDLE_PATH}/incus.tar.xz"
 DISK_QCOW2="${BUNDLE_PATH}/disk.qcow2"
@@ -91,25 +130,25 @@ echo "[incus-image] Bundle path: $BUNDLE_PATH"
 echo "[incus-image] Versioned alias: $VERSIONED_ALIAS"
 echo "[incus-image] Stable alias:    $STABLE_ALIAS"
 
-import_cmd=(incus image import "$METADATA_TAR" "$DISK_QCOW2" --alias "$VERSIONED_ALIAS")
+import_cmd=(image import "$METADATA_TAR" "$DISK_QCOW2" --alias "$VERSIONED_ALIAS")
 
 if (( DRY_RUN )); then
-  echo "[dry-run] ${import_cmd[*]}"
+  echo "[dry-run] incus ${import_cmd[*]}"
   echo "[dry-run] incus image alias delete $STABLE_ALIAS"
   echo "[dry-run] incus image alias create $STABLE_ALIAS <fingerprint>"
   exit 0
 fi
 
-if incus image alias list --format csv | cut -d, -f1 | grep -Fxq "$VERSIONED_ALIAS"; then
+if incus_cmd image alias list --format csv | cut -d, -f1 | grep -Fxq "$VERSIONED_ALIAS"; then
   echo "Versioned alias already exists: $VERSIONED_ALIAS" >&2
   echo "Use --version with a new value." >&2
   exit 1
 fi
 
 echo "[incus-image] Importing image"
-"${import_cmd[@]}"
+incus_cmd "${import_cmd[@]}"
 
-FINGERPRINT="$(incus image info "$VERSIONED_ALIAS" | awk '/^Fingerprint:/ {print $2}')"
+FINGERPRINT="$(incus_cmd image info "$VERSIONED_ALIAS" | awk '/^Fingerprint:/ {print $2}')"
 if [[ -z "$FINGERPRINT" ]]; then
   echo "Failed to resolve fingerprint for alias: $VERSIONED_ALIAS" >&2
   exit 1
@@ -117,11 +156,11 @@ fi
 
 echo "[incus-image] Imported fingerprint: $FINGERPRINT"
 
-if incus image alias list --format csv | cut -d, -f1 | grep -Fxq "$STABLE_ALIAS"; then
-  incus image alias delete "$STABLE_ALIAS"
+if incus_cmd image alias list --format csv | cut -d, -f1 | grep -Fxq "$STABLE_ALIAS"; then
+  incus_cmd image alias delete "$STABLE_ALIAS"
 fi
 
-incus image alias create "$STABLE_ALIAS" "$FINGERPRINT"
+incus_cmd image alias create "$STABLE_ALIAS" "$FINGERPRINT"
 
 echo "[incus-image] Updated aliases:"
 echo "  - $VERSIONED_ALIAS -> $FINGERPRINT"

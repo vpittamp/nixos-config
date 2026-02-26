@@ -46,10 +46,11 @@
 
     # Local AI monitoring stack (lightweight)
     ./services/otel-ai-monitor.nix
-    ./ai-assistants/claude-code.nix
-    ./ai-assistants/codex.nix
-    ./ai-assistants/gemini-cli.nix
-    ./ai-assistants/nix-ai-help.nix
+    # Keep heavy AI CLIs out of the base image; install on-demand when needed.
+    # ./ai-assistants/claude-code.nix
+    # ./ai-assistants/codex.nix
+    # Keep Gemini/nix-ai-help out of the baked image; it is very large and
+    # can stall disk-image cptofs. Install on-demand inside the VM instead.
 
     # Keep user home clean across rebuild cycles
     ./profiles/declarative-cleanup.nix

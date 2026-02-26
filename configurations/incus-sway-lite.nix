@@ -7,10 +7,7 @@
 
 {
   imports = [
-    # Provides VM image defaults required for disk image generation:
-    # root filesystem, GRUB-on-vda, cloud-init compatibility, qemu guest settings.
-    (modulesPath + "/virtualisation/kubevirt.nix")
-
+    # QEMU guest defaults (drivers, agent integration, virtual hardware tuning).
     (modulesPath + "/profiles/qemu-guest.nix")
     ./base.nix
     ../modules/desktop/sway.nix
@@ -21,6 +18,28 @@
 
   # Keep base image lean; this VM does not need cluster CA sync by default.
   services.clusterCerts.enable = lib.mkForce false;
+
+  # Explicit image defaults for Incus VM disk images.
+  # We intentionally do not import virtualisation/kubevirt.nix here:
+  # that module enables cloud-init metadata crawling which delays boot in Incus
+  # and can interfere with deterministic DHCP behavior.
+  fileSystems."/" = {
+    device = "/dev/disk/by-label/nixos";
+    fsType = "ext4";
+    autoResize = true;
+  };
+
+  boot.growPartition = true;
+  boot.loader.grub = {
+    enable = true;
+    # keep BIOS boot support for compatibility with existing instances
+    device = "/dev/vda";
+    # also install an EFI target so fresh Incus VMs boot without forcing CSM
+    efiSupport = true;
+    efiInstallAsRemovable = true;
+  };
+  boot.loader.timeout = 0;
+  boot.loader.efi.canTouchEfiVariables = false;
 
   boot.initrd.availableKernelModules = [
     "virtio_pci"
@@ -37,7 +56,21 @@
     "console=ttyS0"
   ];
 
-  networking.useDHCP = true;
+  services.qemuGuest.enable = true;
+  systemd.services."serial-getty@ttyS0".enable = true;
+  services.cloud-init.enable = lib.mkForce false;
+
+  # Use deterministic DHCP in Incus VMs via networkd.
+  networking.useDHCP = lib.mkForce false;
+  networking.useNetworkd = true;
+  systemd.network = {
+    enable = true;
+    wait-online.anyInterface = true;
+    networks."10-incus-eth" = {
+      matchConfig.Name = "e*";
+      networkConfig.DHCP = "yes";
+    };
+  };
 
   # Incus VM + Sway headless stack
   services.sway.enable = true;
@@ -119,6 +152,17 @@
   # Keep runtime dependencies for headless desktop debugging available,
   # while keeping system package footprint small.
   environment.systemPackages = lib.mkForce (with pkgs; [
+    # Keep /run/current-system/sw/bin/bash available for passwd shells.
+    bashInteractive
+    coreutils
+    findutils
+    gnugrep
+    gnused
+    iproute2
+    iputils
+    procps
+    systemd
+    util-linux
     vim
     git
     curl
@@ -148,6 +192,8 @@
     isNormalUser = true;
     description = "Vinod Pittampalli";
     extraGroups = [ "wheel" "networkmanager" "video" "input" ];
+    # Avoid /run/current-system shell indirection issues in image boots.
+    shell = lib.getExe pkgs.bashInteractive;
     initialPassword = lib.mkDefault "nixos";
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDzhOKvFTkdSY8/WpeOxd7ZTII7I+klKhiIJxRdMfM5+ vpittamp@devcontainer"
@@ -156,12 +202,29 @@
     ];
   };
 
+  users.users.root.shell = lib.getExe pkgs.bashInteractive;
+
   services.openssh = {
     enable = true;
+    hostKeys = [
+      {
+        path = "/var/lib/ssh/ssh_host_rsa_key";
+        type = "rsa";
+        bits = 4096;
+      }
+      {
+        path = "/var/lib/ssh/ssh_host_ed25519_key";
+        type = "ed25519";
+      }
+    ];
     settings = {
       PermitRootLogin = "prohibit-password";
       PasswordAuthentication = true;
       X11Forwarding = false;
     };
   };
+
+  systemd.tmpfiles.rules = [
+    "d /var/lib/ssh 0700 root root -"
+  ];
 }
