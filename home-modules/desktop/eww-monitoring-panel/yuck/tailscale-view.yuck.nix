@@ -31,12 +31,12 @@
               :space-evenly false
               (label :class "tailscale-title" :text "Tailscale")
               (label :class "tailscale-pill" :text {tailscale_data.status}))
-            (label :class "tailscale-meta" :text {"Host: " + (tailscale_data.self.hostname ?: "unknown")})
+            (label :class "tailscale-meta" :truncate true :text {"Host: " + (tailscale_data.self.hostname ?: "unknown")})
             (box
               :class "tailscale-copyable-row"
               :orientation "h"
               :space-evenly false
-              (label :class "tailscale-meta" :hexpand true :text {"DNS: " + (tailscale_data.self.dns_name ?: "unknown")})
+              (label :class "tailscale-meta" :hexpand true :truncate true :text {"DNS: " + (tailscale_data.self.dns_name ?: "unknown")})
               (eventbox
                 :cursor "pointer"
                 :onclick {"echo -n '" + (tailscale_data.self.dns_name ?: "") + "' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification='Copied DNS' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"}
@@ -46,17 +46,18 @@
               :class "tailscale-copyable-row"
               :orientation "h"
               :space-evenly false
-              (label :class "tailscale-meta" :hexpand true :text {"IP: " + (tailscale_data.self.ip ?: "n/a")})
+              (label :class "tailscale-meta" :hexpand true :truncate true :text {"IP: " + (tailscale_data.self.ip ?: "n/a")})
               (eventbox
                 :cursor "pointer"
                 :onclick {"echo -n '" + (tailscale_data.self.ip ?: "") + "' | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification='Copied IP' success_notification_visible=true && (sleep 2 && ${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"}
                 :tooltip "Copy IP address"
                 (label :class "tailscale-copy-btn" :text "󰆏")))
-            (label :class "tailscale-meta" :text {"Online: " + ((tailscale_data.self.online ?: false) ? "yes" : "no") + " • Backend: " + (tailscale_data.self.backend_state ?: "unknown")})
-            (label :class "tailscale-meta" :text {"Tailnet: " + (tailscale_data.self.tailnet ?: "unknown")})
+            (label :class "tailscale-meta" :truncate true :text {"Online: " + ((tailscale_data.self.online ?: false) ? "yes" : "no") + " • Backend: " + (tailscale_data.self.backend_state ?: "unknown")})
+            (label :class "tailscale-meta" :truncate true :text {"Tailnet: " + (tailscale_data.self.tailnet ?: "unknown")})
             (label
               :visible {(tailscale_data.error ?: "") != ""}
               :class "tailscale-error"
+              :truncate true
               :text {"Error: " + (tailscale_data.error ?: "")}))
 
           ;; === Card 2: Peers (search, filter pills, expandable rows, copy) ===
@@ -148,9 +149,11 @@
                     (label
                       :class "tailscale-peer-host"
                       :halign "start"
+                      :truncate true
                       :text {peer.hostname ?: "unknown"}))
                   (label
                     :class {(peer.connection ?: "relay") == "direct" ? "tailscale-conn-direct" : "tailscale-conn-relay"}
+                    :truncate true
                     :text {(peer.connection ?: "relay") == "direct" ? "direct" : ("relay:" + (peer.relay ?: "?"))})
                   (eventbox
                     :cursor "pointer"
@@ -174,19 +177,19 @@
                     :spacing 2
                     (box :orientation "h" :space-evenly false
                       (label :class "tailscale-detail-label" :text "DNS  ")
-                      (label :class "tailscale-detail-value" :text {peer.dns_name ?: "n/a"}))
+                      (label :class "tailscale-detail-value" :hexpand true :truncate true :text {peer.dns_name ?: "n/a"}))
                     (box :orientation "h" :space-evenly false
                       (label :class "tailscale-detail-label" :text "IP   ")
-                      (label :class "tailscale-detail-value" :text {(peer.ip ?: "n/a") + ((peer.ip6 ?: "") != "" ? (" / " + (peer.ip6 ?: "")) : "")}))
+                      (label :class "tailscale-detail-value" :hexpand true :truncate true :text {(peer.ip ?: "n/a") + ((peer.ip6 ?: "") != "" ? (" / " + (peer.ip6 ?: "")) : "")}))
                     (box :orientation "h" :space-evenly false
                       (label :class "tailscale-detail-label" :text "OS   ")
-                      (label :class "tailscale-detail-value" :text {(peer.os ?: "?") + " • " + ((peer.connection ?: "relay") == "direct" ? ("Direct: " + (peer.cur_addr ?: "")) : ("Relay: " + (peer.relay ?: "?")))}))
+                      (label :class "tailscale-detail-value" :hexpand true :truncate true :text {(peer.os ?: "?") + " • " + ((peer.connection ?: "relay") == "direct" ? ("Direct: " + (peer.cur_addr ?: "")) : ("Relay: " + (peer.relay ?: "?")))}))
                     (box :orientation "h" :space-evenly false
                       (label :class "tailscale-detail-label" :text "Tags ")
-                      (label :class "tailscale-detail-value" :text {(peer.tags_str ?: "") == "" ? "(none)" : (peer.tags_str ?: "")}))
+                      (label :class "tailscale-detail-value" :hexpand true :truncate true :text {(peer.tags_str ?: "") == "" ? "(none)" : (peer.tags_str ?: "")}))
                     (box :orientation "h" :space-evenly false
                       (label :class "tailscale-detail-label" :text "Key  ")
-                      (label :class "tailscale-detail-value" :text {(peer.key_expiry ?: "") == "" ? "no expiry" : (peer.key_expiry ?: "")})))))))
+                      (label :class "tailscale-detail-value" :hexpand true :truncate true :text {(peer.key_expiry ?: "") == "" ? "no expiry" : (peer.key_expiry ?: "")})))))))
 
           ;; === Card 3: Kubernetes (unchanged) ===
           (box
@@ -194,22 +197,23 @@
             :orientation "v"
             :space-evenly false
             (label :class "tailscale-subtitle" :text "Kubernetes")
-            (label :class "tailscale-meta" :text {"Available: " + ((tailscale_data.kubernetes.available ?: false) ? "yes" : "no")})
-            (label :class "tailscale-meta" :text {"Context: " + (tailscale_data.kubernetes.context ?: "none")})
-            (label :class "tailscale-meta" :text {"Namespaces: " + (tailscale_data.kubernetes.namespace_scope ?: "all")})
-            (label :class "tailscale-meta" :text {"Ingress: " + (tailscale_data.kubernetes.ingress_count ?: 0) + " • Services: " + (tailscale_data.kubernetes.service_count ?: 0)})
-            (label :class "tailscale-meta" :text {"Deployments: " + (tailscale_data.kubernetes.deployment_count ?: 0) + " • DaemonSets: " + (tailscale_data.kubernetes.daemonset_count ?: 0)})
-            (label :class "tailscale-meta" :text {"Pods: " + (tailscale_data.kubernetes.pod_count ?: 0)})
+            (label :class "tailscale-meta" :truncate true :text {"Available: " + ((tailscale_data.kubernetes.available ?: false) ? "yes" : "no")})
+            (label :class "tailscale-meta" :truncate true :text {"Context: " + (tailscale_data.kubernetes.context ?: "none")})
+            (label :class "tailscale-meta" :truncate true :text {"Namespaces: " + (tailscale_data.kubernetes.namespace_scope ?: "all")})
+            (label :class "tailscale-meta" :truncate true :text {"Ingress: " + (tailscale_data.kubernetes.ingress_count ?: 0) + " • Services: " + (tailscale_data.kubernetes.service_count ?: 0)})
+            (label :class "tailscale-meta" :truncate true :text {"Deployments: " + (tailscale_data.kubernetes.deployment_count ?: 0) + " • DaemonSets: " + (tailscale_data.kubernetes.daemonset_count ?: 0)})
+            (label :class "tailscale-meta" :truncate true :text {"Pods: " + (tailscale_data.kubernetes.pod_count ?: 0)})
             (label
               :visible {(tailscale_data.kubernetes.error ?: "") != ""}
               :class "tailscale-error"
+              :truncate true
               :text {"K8s: " + (tailscale_data.kubernetes.error ?: "")}))
 
           ;; === Confirm banner (unchanged) ===
           (box
             :visible {tailscale_confirm_action != ""}
             :class "tailscale-confirm-banner"
-            (label :text {"Confirm pending: " + tailscale_confirm_action + " (click again within 5s)"}))
+            (label :truncate true :text {"Confirm pending: " + tailscale_confirm_action + " (click again within 5s)"}))
 
           ;; === Card 4: Actions (unchanged) ===
           (box

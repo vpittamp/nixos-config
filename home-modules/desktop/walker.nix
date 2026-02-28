@@ -2121,8 +2121,11 @@ in
     name_pretty = "1Password"
     min_score = 30
 
-    # Vaults to index - "Personal" and "Private" match our SSH vault config
-    vaults = ["Personal", "Private"]
+    # Vaults to index - use IDs to avoid ambiguity (Employee vault has type=PERSONAL
+    # which conflicts with the Personal vault name when using name-based lookup)
+    # Personal (ampm3rvesendx6mvksmu2ydh6e) - 1 item
+    # Employee (cu4rqh2szvjlrumhepqe2twsmm) - 631 items
+    vaults = ["ampm3rvesendx6mvksmu2ydh6e", "cu4rqh2szvjlrumhepqe2twsmm"]
 
     # Notify after copying password
     notify = true

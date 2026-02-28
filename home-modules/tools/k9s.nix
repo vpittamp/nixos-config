@@ -47,13 +47,13 @@
   '';
 
   # Set the skin as default for k9s
-  xdg.configFile."k9s/config.yml".text = ''
+  xdg.configFile."k9s/config.yaml".text = ''
     k9s:
       skin: catppuccin-mocha
   '';
 
   # K9s views for External Secrets Operator resources
-  xdg.configFile."k9s/views.yml".text = ''
+  xdg.configFile."k9s/views.yaml".text = ''
     k9s:
       views:
         # ExternalSecret - individual secrets being synced from external providers
