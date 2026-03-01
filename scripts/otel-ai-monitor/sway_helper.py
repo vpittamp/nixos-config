@@ -187,6 +187,18 @@ def _extract_project_from_marks(marks: list) -> Optional[str]:
     return None
 
 
+def _extract_context_key_from_marks(marks: list) -> Optional[str]:
+    """Extract context key from mark in format: ctx:<qualified>::<mode>::<connection>."""
+    for mark in marks:
+        if not isinstance(mark, str):
+            continue
+        if mark.startswith("ctx:"):
+            value = mark[4:].strip()
+            if value:
+                return value
+    return None
+
+
 def _find_focused_window_with_app(node: dict) -> Optional[dict]:
     """Find focused window and return full node info.
 
@@ -205,6 +217,78 @@ def _find_focused_window_with_app(node: dict) -> Optional[dict]:
             return result
 
     return None
+
+
+def get_window_context_by_id(window_id: int) -> dict[str, Optional[str]]:
+    """Resolve canonical I3PM context from the owning terminal window process.
+
+    This is more reliable than reading I3PM_* variables from child CLI processes
+    because tmux can preserve stale environment values across panes/sessions.
+    """
+    context: dict[str, Optional[str]] = {
+        "project": None,
+        "execution_mode": None,
+        "connection_key": None,
+        "context_key": None,
+        "remote_target": None,
+    }
+
+    tree = sway_ipc(4)  # GET_TREE
+    if not tree:
+        return context
+
+    window = _find_window_by_id(tree, window_id)
+    if not isinstance(window, dict):
+        return context
+
+    marks = window.get("marks", [])
+    if isinstance(marks, list):
+        project_from_marks = _extract_project_from_marks(marks)
+        context_from_marks = _extract_context_key_from_marks(marks)
+        if project_from_marks:
+            context["project"] = project_from_marks
+        if context_from_marks:
+            context["context_key"] = context_from_marks
+
+    window_pid = window.get("pid")
+    if not isinstance(window_pid, int) or window_pid <= 1:
+        return context
+
+    i3pm_env = get_process_i3pm_env(window_pid)
+    if not i3pm_env:
+        return context
+
+    project_name = str(i3pm_env.get("I3PM_PROJECT_NAME") or "").strip()
+    if project_name:
+        context["project"] = context["project"] or project_name
+
+    execution_mode = str(
+        i3pm_env.get("I3PM_CONTEXT_VARIANT")
+        or i3pm_env.get("I3PM_EXECUTION_MODE")
+        or ""
+    ).strip()
+    if execution_mode:
+        context["execution_mode"] = execution_mode
+
+    connection_key = str(i3pm_env.get("I3PM_CONNECTION_KEY") or "").strip()
+    if connection_key:
+        context["connection_key"] = connection_key
+
+    context_key = str(i3pm_env.get("I3PM_CONTEXT_KEY") or "").strip()
+    if context_key:
+        context["context_key"] = context_key
+
+    remote_user = str(i3pm_env.get("I3PM_REMOTE_USER") or "").strip()
+    remote_host = str(i3pm_env.get("I3PM_REMOTE_HOST") or "").strip()
+    remote_port = str(i3pm_env.get("I3PM_REMOTE_PORT") or "").strip() or "22"
+    if remote_host:
+        context["remote_target"] = (
+            f"{remote_user}@{remote_host}:{remote_port}"
+            if remote_user
+            else f"{remote_host}:{remote_port}"
+        )
+
+    return context
 
 
 def window_exists(window_id: int) -> bool:

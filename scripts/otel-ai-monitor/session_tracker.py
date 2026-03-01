@@ -40,6 +40,7 @@ from .sway_helper import (
     get_all_window_ids,
     get_tmux_context_for_pid,
     get_process_i3pm_env,
+    get_window_context_by_id,
     find_window_for_session,
 )
 
@@ -752,7 +753,10 @@ class SessionTracker:
                         if remote_user
                         else f"{remote_host}:{remote_port}"
                     )
-                terminal_context["execution_mode"] = i3pm_env.get("I3PM_EXECUTION_MODE")
+                terminal_context["execution_mode"] = (
+                    i3pm_env.get("I3PM_CONTEXT_VARIANT")
+                    or i3pm_env.get("I3PM_EXECUTION_MODE")
+                )
                 terminal_context["connection_key"] = i3pm_env.get("I3PM_CONNECTION_KEY")
                 terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
                 terminal_context["remote_target"] = remote_target or None
@@ -771,6 +775,16 @@ class SessionTracker:
                 )
             for key, value in tmux_context.items():
                 terminal_context[key] = value
+            if window_id is not None:
+                window_context = get_window_context_by_id(window_id)
+                if isinstance(window_context, dict):
+                    window_project = window_context.get("project")
+                    if window_project:
+                        project = window_project
+                    for key in ("execution_mode", "connection_key", "context_key", "remote_target"):
+                        value = window_context.get(key)
+                        if value:
+                            terminal_context[key] = value
         except Exception as e:
             logger.debug(f"PID correlation failed for {pid}: {e}")
 
@@ -1237,9 +1251,28 @@ class SessionTracker:
         event_project, event_project_path = self._extract_project_context(event)
         event_terminal_context_raw = self._extract_terminal_context_from_event(event)
         event_terminal_context = dict(event_terminal_context_raw)
+        resolved_context_keys: set[str] = set()
+        authoritative_resolved_keys = {
+            "tmux_session",
+            "tmux_window",
+            "tmux_pane",
+            "pty",
+            "host_name",
+            "execution_mode",
+            "connection_key",
+            "context_key",
+            "remote_target",
+        }
         for key, value in resolved_terminal_context.items():
-            if value and not event_terminal_context.get(key):
+            if not value:
+                continue
+            if key in authoritative_resolved_keys:
                 event_terminal_context[key] = value
+                resolved_context_keys.add(key)
+                continue
+            if not event_terminal_context.get(key):
+                event_terminal_context[key] = value
+                resolved_context_keys.add(key)
 
         project_for_identity = event_project or resolved_project
         has_explicit_terminal_identity = bool(
@@ -1455,6 +1488,7 @@ class SessionTracker:
                     session.native_session_id
                     and getattr(session.terminal_context, key)
                     and not has_explicit_key
+                    and key not in resolved_context_keys
                 ):
                     continue
                 if value:
