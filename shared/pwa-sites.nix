@@ -441,6 +441,25 @@ let
       routing_domains = [ "argocd-ryzen.tail286401.ts.net" ];
     }
 
+    # ArgoCD Hub (Hub K8s cluster via Tailscale)
+    {
+      name = "ArgoCD Hub";
+      url = "https://argocd-hub.tail286401.ts.net";
+      domain = "argocd-hub.tail286401.ts.net";
+      icon = iconPath "argocd-hub.svg";
+      description = "ArgoCD GitOps controller - Hub cluster";
+      categories = "Development;Network;System;";
+      keywords = "argocd;gitops;cd;kubernetes;devops;hub;";
+      scope = "https://argocd-hub.tail286401.ts.net/";
+      ulid = "6PCXYRHXNWA0GYPT5T67J9CBW6";  # Generated 2026-03-01
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 120;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "argocd-hub.tail286401.ts.net" ];
+    }
+
     # Argo Workflows (Ryzen K8s via Tailscale)
     {
       name = "Argo Workflows";
