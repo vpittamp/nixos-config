@@ -25,24 +25,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-02-22, using v0.30.0-preview.3 (pre-release).
+  # As of 2026-03-01, using v0.31.0.
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.30.0";
+    version = "0.31.0";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-+w4w1cftPSj0gJ23Slw8Oexljmu0N/PZWH4IDjw75rs=";
+      hash = "sha256-huPd4W7Jf4/dZshWElicYpcHhktE83wPs/z5jVYwynM=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-Nkd5Q2ugRqsTqaFbCSniC3Obl++uEjVUmoa8MVT5++8=";
+    npmDepsHash = "sha256-iRlwCSGigRi/ilfXi8rI68vlfkeec3vB5nZWPmTLnK8=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 
@@ -64,6 +64,25 @@ let
     preConfigure = ''
       mkdir -p packages/generated
       echo "export const GIT_COMMIT_INFO = { commitHash: '${finalAttrs.src.rev}' };" > packages/generated/git-commit.ts
+    '';
+
+    # Ensure workspace package symlinks exist before build and pre-build devtools.
+    # npm workspaces may not create symlinks in the Nix sandbox, and the default
+    # workspace build order can compile cli before devtools (which cli depends on
+    # for type resolution since v0.31.0).
+    preBuild = ''
+      mkdir -p node_modules/@google
+      for pkg in cli core a2a-server devtools sdk test-utils; do
+        target="node_modules/@google/gemini-cli-''${pkg}"
+        rm -rf "$target"
+        ln -sfn "../../packages/$pkg" "$target"
+      done
+      rm -rf "node_modules/gemini-cli-vscode-ide-companion"
+      ln -sfn "../packages/vscode-ide-companion" "node_modules/gemini-cli-vscode-ide-companion"
+
+      # Pre-build devtools so its types are available when cli's tsc runs
+      echo "Pre-building devtools package..."
+      (cd packages/devtools && npm run build)
     '';
 
     postPatch = ''
@@ -114,12 +133,14 @@ let
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-core
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-a2a-server
+      rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-devtools
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-sdk
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-test-utils
       rm -f $out/share/gemini-cli/node_modules/gemini-cli-vscode-ide-companion
       cp -r packages/cli $out/share/gemini-cli/node_modules/@google/gemini-cli
       cp -r packages/core $out/share/gemini-cli/node_modules/@google/gemini-cli-core
       cp -r packages/a2a-server $out/share/gemini-cli/node_modules/@google/gemini-cli-a2a-server
+      cp -r packages/devtools $out/share/gemini-cli/node_modules/@google/gemini-cli-devtools
       cp -r packages/sdk $out/share/gemini-cli/node_modules/@google/gemini-cli-sdk
 
       rm -f $out/share/gemini-cli/node_modules/@google/gemini-cli-core/dist/docs/CONTRIBUTING.md
