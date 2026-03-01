@@ -104,6 +104,10 @@ let
   # Note: X11 fully supported, Wayland experimental
   vibetyper = pkgs.callPackage ../packages/vibetyper.nix { };
 
+  # Handy - Offline speech-to-text
+  # https://github.com/cjpais/Handy - Uses whisper.cpp, fully offline
+  handy = pkgs.callPackage ../packages/handy.nix { };
+
 in
 {
   # Export different package sets
@@ -118,7 +122,7 @@ in
   kubernetes = kubernetesTools;
 
   # All system packages
-  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp vibetyper ];
+  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp vibetyper handy ];
 
   # Essential system packages only
   essential = systemTools ++ (with pkgs; [
