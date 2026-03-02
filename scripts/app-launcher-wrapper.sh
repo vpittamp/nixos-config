@@ -876,6 +876,41 @@ if [[ -n "$GIT_BEHIND" ]] && [[ "$GIT_BEHIND" != "null" ]]; then
     ENV_EXPORTS+=("export I3PM_GIT_BEHIND='$GIT_BEHIND'")
 fi
 
+# ============================================================================
+# 1Password Kubeconfig Integration for K9s
+# ============================================================================
+if [[ "$APP_NAME" == "k9s" ]]; then
+    log "INFO" "Setting up KUBECONFIG for K9s from 1Password"
+    K9S_KUBECONFIG_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/k9s-kubeconfigs"
+    mkdir -p "$K9S_KUBECONFIG_DIR"
+    
+    # Create an aggregate kubeconfig
+    export KUBECONFIG="$HOME/.kube/config"
+    
+    # If op is available and signed in, pull kubeconfigs from 1Password CLI vault
+    if command -v op >/dev/null 2>&1; then
+        # Find all Database items that start with "Kubeconfig: "
+        OP_ITEMS=$(op item list --vault="CLI" --categories="Database" --format=json 2>/dev/null || echo "[]")
+        
+        if [[ "$OP_ITEMS" != "[]" ]]; then
+            echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id' | while read -r id; do
+                # Download the kubeconfig file (the file field is named 'yaml' when we use kubeconfig.yaml[file]=...)
+                FILE_PATH="$K9S_KUBECONFIG_DIR/$id.yaml"
+                if ! [ -f "$FILE_PATH" ] || [ $(find "$FILE_PATH" -mmin +60 -print) ]; then
+                    log "DEBUG" "Downloading Kubeconfig from 1Password item ID $id"
+                    op read "op://CLI/$id/yaml" > "$FILE_PATH" 2>/dev/null || true
+                fi
+                
+                if [ -s "$FILE_PATH" ]; then
+                    export KUBECONFIG="$KUBECONFIG:$FILE_PATH"
+                fi
+            done
+        fi
+    fi
+    
+    ENV_EXPORTS+=("export KUBECONFIG='$KUBECONFIG'")
+fi
+
 # NOTE: I3PM_PWA_URL is intentionally NOT passed through ENV_EXPORTS
 # It's read directly by launch-pwa-by-name from the calling environment
 # Passing it through swaymsg exec would cause infinite loops when PWAs open
