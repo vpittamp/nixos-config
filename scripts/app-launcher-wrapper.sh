@@ -888,13 +888,15 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     export KUBECONFIG="$HOME/.kube/config"
     
     # If op is available and signed in, pull kubeconfigs from 1Password CLI vault
+    K9S_TARGET_CONTEXT=""
+    OP_SUCCESS=false
+
     if command -v op >/dev/null 2>&1; then
         # Find all Database items that start with "Kubeconfig: "
         OP_ITEMS=$(op item list --vault="CLI" --categories="Database" --format=json 2>/dev/null || echo "[]")
         
-        K9S_TARGET_CONTEXT=""
-        
-        if [[ "$OP_ITEMS" != "[]" ]]; then
+        if [[ "$OP_ITEMS" != "[]" && -n "$OP_ITEMS" ]]; then
+            OP_SUCCESS=true
             for id in $(echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id'); do
                 # Download the kubeconfig file (the file field is named 'yaml' when we use kubeconfig.yaml[file]=...)
                 FILE_PATH="$K9S_KUBECONFIG_DIR/$id.yaml"
@@ -915,6 +917,23 @@ if [[ "$APP_NAME" == "k9s" ]]; then
                 fi
             done
         fi
+    fi
+
+    # Fallback: If 1Password is locked or failed, use whatever configs are already in the directory
+    if [[ "$OP_SUCCESS" == "false" ]]; then
+        log "INFO" "1Password CLI locked or unavailable. Falling back to cached kubeconfigs in $K9S_KUBECONFIG_DIR"
+        for FILE_PATH in "$K9S_KUBECONFIG_DIR"/*.yaml; do
+            if [ -f "$FILE_PATH" ] && [ -s "$FILE_PATH" ]; then
+                export KUBECONFIG="$FILE_PATH:$KUBECONFIG"
+                if [[ -z "$K9S_TARGET_CONTEXT" ]]; then
+                    if command -v yq >/dev/null 2>&1; then
+                        K9S_TARGET_CONTEXT=$(yq -r '."current-context"' "$FILE_PATH" 2>/dev/null || echo "")
+                    else
+                        K9S_TARGET_CONTEXT=$(grep -m1 "current-context:" "$FILE_PATH" | awk '{print $2}' || echo "")
+                    fi
+                fi
+            fi
+        done
     fi
     
     ENV_EXPORTS+=("export KUBECONFIG='$KUBECONFIG'")
