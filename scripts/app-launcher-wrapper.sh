@@ -926,12 +926,13 @@ if [[ "$APP_NAME" == "k9s" ]]; then
         if [[ "${ARGS[i]}" == "k9s" ]]; then
             if [[ "${ARGS[0]}" == "ghostty" ]]; then
                 # Ghostty parses the `-e` flag differently. Replace `k9s` with a bash invocation.
+                # We use escaped single quotes because the entire FULL_CMD gets wrapped in double quotes later
                 if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
                     ARGS[i]="bash"
-                    ARGS+=("-c" "\"export KUBECONFIG=$KUBECONFIG && exec k9s --context $K9S_TARGET_CONTEXT\"")
+                    ARGS+=("-c" "'export KUBECONFIG=$KUBECONFIG && exec k9s --context $K9S_TARGET_CONTEXT'")
                 else
                     ARGS[i]="bash"
-                    ARGS+=("-c" "\"export KUBECONFIG=$KUBECONFIG && exec k9s\"")
+                    ARGS+=("-c" "'export KUBECONFIG=$KUBECONFIG && exec k9s'")
                 fi
             else
                 ARGS[i]="env"
