@@ -900,7 +900,7 @@ if [[ "$APP_NAME" == "k9s" ]]; then
                 op read "op://CLI/$id/yaml" > "$FILE_PATH" 2>/dev/null || true
                 
                 if [ -s "$FILE_PATH" ]; then
-                    export KUBECONFIG="$KUBECONFIG:$FILE_PATH"
+                    export KUBECONFIG="$FILE_PATH:$KUBECONFIG"
                 fi
             done
         fi
