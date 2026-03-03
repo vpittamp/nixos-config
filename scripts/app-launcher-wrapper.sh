@@ -882,35 +882,15 @@ fi
 if [[ "$APP_NAME" == "k9s" ]]; then
     log "INFO" "Discovering Tailscale Kubernetes endpoints..."
     
-    K9S_TARGET_CONTEXT=""
-    
     if command -v tailscale >/dev/null 2>&1; then
-        MAGIC_DNS=$(tailscale status --json 2>/dev/null | jq -r '.MagicDNSSuffix' || echo "")
-        
-        # Find all Tailscale devices ending in '-api'
-        ENDPOINTS=$(tailscale status --json 2>/dev/null | jq -r '.Peer | to_entries[]?.value | select(.HostName | endswith("-api")) | .HostName' || echo "")
+        # Find all Tailscale devices ending in '-api-[0-9]+' and extract the base cluster service name
+        ENDPOINTS=$(tailscale status --json 2>/dev/null | jq -r '.Peer | to_entries[]?.value.HostName | select(test("api.*-[0-9]+$")) | sub("-[0-9]+$"; "")' | sort -u || echo "")
         
         for endpoint in $ENDPOINTS; do
             log "DEBUG" "Configuring local kubeconfig for Tailscale endpoint: $endpoint"
             tailscale configure kubeconfig "$endpoint" >/dev/null 2>&1 || true
-            
-            # Use the first discovered endpoint as our target context
-            if [[ -z "$K9S_TARGET_CONTEXT" && -n "$MAGIC_DNS" ]]; then
-                K9S_TARGET_CONTEXT="${endpoint}.${MAGIC_DNS}"
-            fi
         done
     fi
-
-    # Explicitly wrap the k9s command to pass the target context
-    # ghostty parses the `-e` flag differently, so we just append the args directly
-    for ((i=0; i<${#ARGS[@]}; i++)); do
-        if [[ "${ARGS[i]}" == "k9s" ]]; then
-            if [[ -n "$K9S_TARGET_CONTEXT" ]]; then
-                ARGS+=("--context" "$K9S_TARGET_CONTEXT")
-            fi
-            break
-        fi
-    done
 fi
 
 # NOTE: I3PM_PWA_URL is intentionally NOT passed through ENV_EXPORTS
