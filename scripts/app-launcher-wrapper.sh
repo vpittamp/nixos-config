@@ -924,11 +924,22 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     # the exported environment from swaymsg exec
     for ((i=0; i<${#ARGS[@]}; i++)); do
         if [[ "${ARGS[i]}" == "k9s" ]]; then
-            ARGS[i]="env"
-            if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
-                ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s" "--context" "$K9S_TARGET_CONTEXT")
+            if [[ "${ARGS[0]}" == "ghostty" ]]; then
+                # Ghostty parses the `-e` flag differently. Replace `k9s` with a bash invocation.
+                if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
+                    ARGS[i]="bash"
+                    ARGS+=("-c" "export KUBECONFIG=$KUBECONFIG && exec k9s --context $K9S_TARGET_CONTEXT")
+                else
+                    ARGS[i]="bash"
+                    ARGS+=("-c" "export KUBECONFIG=$KUBECONFIG && exec k9s")
+                fi
             else
-                ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
+                ARGS[i]="env"
+                if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
+                    ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s" "--context" "$K9S_TARGET_CONTEXT")
+                else
+                    ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
+                fi
             fi
             break
         fi
