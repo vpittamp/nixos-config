@@ -45,7 +45,6 @@ in
     ../modules/services/grafana-alloy.nix      # Feature 129: Unified telemetry collector
     ../modules/services/grafana-beyla.nix     # Feature 129: eBPF auto-instrumentation
     # Feature 117: System service removed - now runs as home-manager user service
-    ../modules/services/speech-to-text-safe.nix
 
     # Bare metal optimizations (KVM, Podman, gaming, printing, TPM, etc.)
     ../modules/services/bare-metal.nix
@@ -233,15 +232,6 @@ in
         user = "greeter";
       };
     };
-  };
-
-  # Speech-to-text service
-  services.speech-to-text = {
-    enable = true;
-    model = "base.en";
-    language = "en";
-    enableGlobalShortcut = true;
-    voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix { };
   };
 
   # wshowkeys setuid wrapper for workspace mode visual feedback
@@ -505,9 +495,8 @@ in
     # Terminal
     ghostty
 
-    # AI Voice Typing - https://vibetyper.com
-    # Voice-to-text with AI refinement (X11 fully supported, Wayland experimental)
-    (callPackage ../packages/vibetyper.nix { })
+    # Voxtype - Push-to-talk speech-to-text (Vulkan, works in tmux/CLI)
+    (callPackage ../packages/voxtype.nix { })
 
     # Firefox PWA support
     firefoxpwa

@@ -99,14 +99,9 @@ let
   # Headlamp - custom package for Kubernetes web UI
   headlamp = pkgs.callPackage ../packages/headlamp.nix { };
 
-  # VibeTyper - AI Voice Typing
-  # https://vibetyper.com - Voice-to-text with AI refinement
-  # Note: X11 fully supported, Wayland experimental
-  vibetyper = pkgs.callPackage ../packages/vibetyper.nix { };
-
-  # Handy - Offline speech-to-text
-  # https://github.com/cjpais/Handy - Uses whisper.cpp, fully offline
-  handy = pkgs.callPackage ../packages/handy.nix { };
+  # Voxtype - Push-to-talk speech-to-text for Wayland
+  # https://github.com/dbrgn/voxtype - Vulkan GPU-accelerated, injects via wtype/dotool/clipboard
+  voxtype = pkgs.callPackage ../packages/voxtype.nix { };
 
 in
 {
@@ -122,7 +117,7 @@ in
   kubernetes = kubernetesTools;
 
   # All system packages
-  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp vibetyper handy ];
+  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp voxtype ];
 
   # Essential system packages only
   essential = systemTools ++ (with pkgs; [

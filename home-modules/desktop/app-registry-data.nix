@@ -467,6 +467,22 @@ let
       description = "Moonlight game streaming client";
     })
 
+    # WS21: Speech-to-Text (Voxtype)
+    (mkApp {
+      name = "voxtype";
+      display_name = "Voxtype";
+      command = "voxtype";
+      parameters = "";
+      scope = "global";
+      expected_class = "voxtype";
+      preferred_workspace = 21;
+      icon = "voxtype";
+      nix_package = "pkgs.voxtype";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Push-to-talk speech-to-text for Wayland (Vulkan GPU-accelerated)";
+    })
+
     # WS20: API Development (Postman)
     (mkApp {
       name = "postman";

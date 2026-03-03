@@ -81,6 +81,7 @@ in
     ../tools/remote-kubeconfig.nix
     ../tools/konsole-profiles.nix
     ../tools/walker-commands.nix  # Dynamic command management for Walker (Feature 050)
+    ../tools/voxtype.nix  # Push-to-talk speech-to-text config (Sway handles keybinding)
 
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix
