@@ -75,11 +75,6 @@
       # Session configurations
       # Named sessions for global apps that benefit from tmux persistence
       session = [
-        {
-          name = "k9s";
-          path = "~";  # Global scope, no project context needed
-          startup_command = "k9s";
-        }
       ];
 
       # Window definitions for multi-window sessions
