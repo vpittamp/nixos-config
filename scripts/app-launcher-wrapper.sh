@@ -892,6 +892,8 @@ if [[ "$APP_NAME" == "k9s" ]]; then
         # Find all Database items that start with "Kubeconfig: "
         OP_ITEMS=$(op item list --vault="CLI" --categories="Database" --format=json 2>/dev/null || echo "[]")
         
+        K9S_TARGET_CONTEXT=""
+        
         if [[ "$OP_ITEMS" != "[]" ]]; then
             for id in $(echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id'); do
                 # Download the kubeconfig file (the file field is named 'yaml' when we use kubeconfig.yaml[file]=...)
@@ -901,6 +903,15 @@ if [[ "$APP_NAME" == "k9s" ]]; then
                 
                 if [ -s "$FILE_PATH" ]; then
                     export KUBECONFIG="$FILE_PATH:$KUBECONFIG"
+                    
+                    # Extract the current-context from the first downloaded file to force k9s to use it
+                    if [[ -z "$K9S_TARGET_CONTEXT" ]]; then
+                        if command -v yq >/dev/null 2>&1; then
+                            K9S_TARGET_CONTEXT=$(yq -r '."current-context"' "$FILE_PATH" 2>/dev/null || echo "")
+                        else
+                            K9S_TARGET_CONTEXT=$(grep -m1 "current-context:" "$FILE_PATH" | awk '{print $2}' || echo "")
+                        fi
+                    fi
                 fi
             done
         fi
@@ -914,7 +925,11 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     for ((i=0; i<${#ARGS[@]}; i++)); do
         if [[ "${ARGS[i]}" == "k9s" ]]; then
             ARGS[i]="env"
-            ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
+            if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
+                ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s" "--context" "$K9S_TARGET_CONTEXT")
+            else
+                ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
+            fi
             break
         fi
     done
