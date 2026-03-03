@@ -893,7 +893,7 @@ if [[ "$APP_NAME" == "k9s" ]]; then
         OP_ITEMS=$(op item list --vault="CLI" --categories="Database" --format=json 2>/dev/null || echo "[]")
         
         if [[ "$OP_ITEMS" != "[]" ]]; then
-            echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id' | while read -r id; do
+            for id in $(echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id'); do
                 # Download the kubeconfig file (the file field is named 'yaml' when we use kubeconfig.yaml[file]=...)
                 FILE_PATH="$K9S_KUBECONFIG_DIR/$id.yaml"
                 log "DEBUG" "Downloading Kubeconfig from 1Password item ID $id"
