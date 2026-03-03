@@ -877,89 +877,36 @@ if [[ -n "$GIT_BEHIND" ]] && [[ "$GIT_BEHIND" != "null" ]]; then
 fi
 
 # ============================================================================
-# 1Password Kubeconfig Integration for K9s
+# Tailscale Kubeconfig Integration for K9s
 # ============================================================================
 if [[ "$APP_NAME" == "k9s" ]]; then
-    log "INFO" "Setting up KUBECONFIG for K9s from 1Password"
-    K9S_KUBECONFIG_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/k9s-kubeconfigs"
-    mkdir -p "$K9S_KUBECONFIG_DIR"
+    log "INFO" "Discovering Tailscale Kubernetes endpoints..."
     
-    # Create an aggregate kubeconfig
-    export KUBECONFIG="$HOME/.kube/config"
-    
-    # If op is available and signed in, pull kubeconfigs from 1Password CLI vault
     K9S_TARGET_CONTEXT=""
-    OP_SUCCESS=false
-
-    if command -v op >/dev/null 2>&1; then
-        # Find all Database items that start with "Kubeconfig: "
-        OP_ITEMS=$(op item list --vault="CLI" --categories="Database" --format=json 2>/dev/null || echo "[]")
+    
+    if command -v tailscale >/dev/null 2>&1; then
+        # Find all Tailscale devices ending in '-api'
+        ENDPOINTS=$(tailscale status --json 2>/dev/null | jq -r '.Peer | to_entries[]?.value | select(.HostName | endswith("-api")) | .HostName' || echo "")
         
-        if [[ "$OP_ITEMS" != "[]" && -n "$OP_ITEMS" ]]; then
-            OP_SUCCESS=true
-            for id in $(echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id'); do
-                # Download the kubeconfig file (the file field is named 'yaml' when we use kubeconfig.yaml[file]=...)
-                FILE_PATH="$K9S_KUBECONFIG_DIR/$id.yaml"
-                log "DEBUG" "Downloading Kubeconfig from 1Password item ID $id"
-                op read "op://CLI/$id/yaml" > "$FILE_PATH" 2>/dev/null || true
-                
-                if [ -s "$FILE_PATH" ]; then
-                    export KUBECONFIG="$FILE_PATH:$KUBECONFIG"
-                    
-                    # Extract the current-context from the first downloaded file to force k9s to use it
-                    if [[ -z "$K9S_TARGET_CONTEXT" ]]; then
-                        if command -v yq >/dev/null 2>&1; then
-                            K9S_TARGET_CONTEXT=$(yq -r '."current-context"' "$FILE_PATH" 2>/dev/null || echo "")
-                        else
-                            K9S_TARGET_CONTEXT=$(grep -m1 "current-context:" "$FILE_PATH" | awk '{print $2}' || echo "")
-                        fi
-                    fi
-                fi
-            done
-        fi
-    fi
-
-    # Fallback: If 1Password is locked or failed, use whatever configs are already in the directory
-    if [[ "$OP_SUCCESS" == "false" ]]; then
-        log "INFO" "1Password CLI locked or unavailable. Falling back to cached kubeconfigs in $K9S_KUBECONFIG_DIR"
-        for FILE_PATH in "$K9S_KUBECONFIG_DIR"/*.yaml; do
-            if [ -f "$FILE_PATH" ] && [ -s "$FILE_PATH" ]; then
-                export KUBECONFIG="$FILE_PATH:$KUBECONFIG"
-                if [[ -z "$K9S_TARGET_CONTEXT" ]]; then
-                    if command -v yq >/dev/null 2>&1; then
-                        K9S_TARGET_CONTEXT=$(yq -r '."current-context"' "$FILE_PATH" 2>/dev/null || echo "")
-                    else
-                        K9S_TARGET_CONTEXT=$(grep -m1 "current-context:" "$FILE_PATH" | awk '{print $2}' || echo "")
-                    fi
-                fi
+        for endpoint in $ENDPOINTS; do
+            log "DEBUG" "Configuring local kubeconfig for Tailscale endpoint: $endpoint"
+            tailscale configure kubeconfig "$endpoint" >/dev/null 2>&1 || true
+            
+            # Use the first discovered endpoint as our target context
+            if [[ -z "$K9S_TARGET_CONTEXT" ]]; then
+                K9S_TARGET_CONTEXT="admin@$endpoint"
+                # Strip the -api suffix for the context name to match what Tailscale generates
+                K9S_TARGET_CONTEXT=${K9S_TARGET_CONTEXT%-api}
             fi
         done
     fi
-    
-    ENV_EXPORTS+=("export KUBECONFIG='$KUBECONFIG'")
 
-    # Explicitly wrap the k9s command in env KUBECONFIG=...
-    # because single-instance terminal emulators like ghostty might not inherit
-    # the exported environment from swaymsg exec
+    # Explicitly wrap the k9s command to pass the target context
+    # ghostty parses the `-e` flag differently, so we just append the args directly
     for ((i=0; i<${#ARGS[@]}; i++)); do
         if [[ "${ARGS[i]}" == "k9s" ]]; then
-            if [[ "${ARGS[0]}" == "ghostty" ]]; then
-                # Ghostty accepts commands passed to -e as individual list items.
-                # Do NOT use bash -c here as it breaks swaymsg escaping.
-                if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
-                    ARGS[i]="env"
-                    ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s" "--context" "$K9S_TARGET_CONTEXT")
-                else
-                    ARGS[i]="env"
-                    ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
-                fi
-            else
-                ARGS[i]="env"
-                if [[ -n "$K9S_TARGET_CONTEXT" && "$K9S_TARGET_CONTEXT" != "null" ]]; then
-                    ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s" "--context" "$K9S_TARGET_CONTEXT")
-                else
-                    ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
-                fi
+            if [[ -n "$K9S_TARGET_CONTEXT" ]]; then
+                ARGS+=("--context" "$K9S_TARGET_CONTEXT")
             fi
             break
         fi
