@@ -885,6 +885,8 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     K9S_TARGET_CONTEXT=""
     
     if command -v tailscale >/dev/null 2>&1; then
+        MAGIC_DNS=$(tailscale status --json 2>/dev/null | jq -r '.MagicDNSSuffix' || echo "")
+        
         # Find all Tailscale devices ending in '-api'
         ENDPOINTS=$(tailscale status --json 2>/dev/null | jq -r '.Peer | to_entries[]?.value | select(.HostName | endswith("-api")) | .HostName' || echo "")
         
@@ -893,10 +895,8 @@ if [[ "$APP_NAME" == "k9s" ]]; then
             tailscale configure kubeconfig "$endpoint" >/dev/null 2>&1 || true
             
             # Use the first discovered endpoint as our target context
-            if [[ -z "$K9S_TARGET_CONTEXT" ]]; then
-                K9S_TARGET_CONTEXT="admin@$endpoint"
-                # Strip the -api suffix for the context name to match what Tailscale generates
-                K9S_TARGET_CONTEXT=${K9S_TARGET_CONTEXT%-api}
+            if [[ -z "$K9S_TARGET_CONTEXT" && -n "$MAGIC_DNS" ]]; then
+                K9S_TARGET_CONTEXT="${endpoint}.${MAGIC_DNS}"
             fi
         done
     fi
