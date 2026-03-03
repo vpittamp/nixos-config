@@ -907,6 +907,17 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     fi
     
     ENV_EXPORTS+=("export KUBECONFIG='$KUBECONFIG'")
+
+    # Explicitly wrap the k9s command in env KUBECONFIG=...
+    # because single-instance terminal emulators like ghostty might not inherit
+    # the exported environment from swaymsg exec
+    for ((i=0; i<${#ARGS[@]}; i++)); do
+        if [[ "${ARGS[i]}" == "k9s" ]]; then
+            ARGS[i]="env"
+            ARGS+=("KUBECONFIG=$KUBECONFIG" "k9s")
+            break
+        fi
+    done
 fi
 
 # NOTE: I3PM_PWA_URL is intentionally NOT passed through ENV_EXPORTS
