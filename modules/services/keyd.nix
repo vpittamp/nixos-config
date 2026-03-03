@@ -16,6 +16,12 @@
             # CapsLock becomes Control+0 (workspace mode trigger)
             # Matches the Sway keybinding in sway-keybindings.nix
             capslock = "C-0";
+
+            # ThinkPad Copilot key sends Meta+Shift+F23 as a firmware chord.
+            # Remap F23 → Compose so voxtype sees EVTEST_127 (KEY_COMPOSE)
+            # on both ThinkPad and Ryzen (which has a physical Compose key).
+            # F23 is unused otherwise, so this is harmless on other machines.
+            f23 = "compose";
           };
           # Shift layer: CapsLock becomes Control+Shift+0 (move mode)
           "main:S" = {

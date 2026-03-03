@@ -39,6 +39,9 @@ in
     # Desktop environment (Sway - Wayland compositor)
     ../modules/desktop/sway.nix
 
+    # Kernel-level key remapper (CapsLock→Ctrl+0, Copilot F23→Compose for voxtype)
+    ../modules/services/keyd.nix
+
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix

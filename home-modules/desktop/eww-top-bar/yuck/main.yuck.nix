@@ -55,15 +55,15 @@ let
   mkBadgeShelfWindowDef = output: let
     windowId = sanitizeOutputName output.name;
   in ''
-    ;; Badge shelf overlay (${output.name})
+    ;; Badge shelf dropdown (${output.name})
     (defwindow badge-shelf-${windowId}
       :monitor "${output.name}"
       :geometry (geometry
         :anchor "top left"
-        :x "0px"
-        :y "25px"
-        :width "100%"
-        :height "102px")
+        :x "6px"
+        :y "30px"
+        :width "320px"
+        :height "10px")
       :stacking "overlay"
       :exclusive false
       :focusable "ondemand"
@@ -112,15 +112,15 @@ let
 '';
 
   fallbackBadgeShelfWindow = lib.optionalString (!hasEDP1) ''
-;; Fallback badge shelf overlay window (eDP-1)
+;; Fallback badge shelf dropdown (eDP-1)
 (defwindow badge-shelf-edp1
   :monitor "eDP-1"
   :geometry (geometry
     :anchor "top left"
-    :x "0px"
-    :y "25px"
-    :width "100%"
-    :height "102px")
+    :x "6px"
+    :y "30px"
+    :width "320px"
+    :height "10px")
   :stacking "overlay"
   :exclusive false
   :focusable "ondemand"
@@ -211,6 +211,11 @@ ${if isLaptop then ''
 (deflisten active_project
   :initial '{\"project\":\"Global\",\"active\":false}'
   `python3 ~/.config/eww/eww-top-bar/scripts/active-project.py`)
+
+;; Voxtype push-to-talk status (real-time via deflisten)
+(deflisten voxtype_status
+  :initial '{\"text\":\"\",\"alt\":\"off\",\"class\":\"off\",\"tooltip\":\"Voxtype not running\"}'
+  `voxtype status --follow --format json --icon-theme nerd-font 2>/dev/null || echo '{\"text\":\"\",\"alt\":\"off\",\"class\":\"off\",\"tooltip\":\"Voxtype not running\"}'`)
 
 ;; Hardware capabilities (run once at startup)
 ;; Uses timeout to prevent hanging if D-Bus or other checks are slow
@@ -337,6 +342,16 @@ ${if isLaptop then ''
                           :min 0
                           :max 100
                           :value {volume_status.volume ?: 0})))))
+
+;; Voxtype push-to-talk status indicator
+;; Shows mic icon that changes based on state: idle, recording, transcribing
+(defwidget voxtype-widget []
+  (box :class {"pill metric-pill voxtype voxtype-" + (voxtype_status.class ?: "off")}
+       :spacing 2
+       :visible {(voxtype_status.alt ?: "off") != "off"}
+       :tooltip {voxtype_status.tooltip ?: "Voxtype"}
+       (label :class "icon voxtype-icon"
+              :text {voxtype_status.text ?: ""})))
 
 ;; Legacy volume widget (kept for compatibility)
 (defwidget volume-widget []
@@ -499,87 +514,68 @@ ${if isLaptop then ''
          :tooltip "System badges"
          (label :class "icon status-shelf-icon" :text "󰖷"))))
 
-;; Secondary badge shelf: moved metrics and status badges
+;; Secondary badge shelf: compact dropdown card
 (defwidget badge-shelf-window [monitor_id]
   (box :class "badge-shelf-window"
        :orientation "v"
        :space-evenly false
-       :hexpand true
-       :halign "fill"
     (box :class "badge-shelf-card"
          :orientation "v"
          :space-evenly false
-         :hexpand true
-         :halign "fill"
-         :spacing 4
+         :spacing 6
+         ;; Header
          (box :class "badge-shelf-header"
               :orientation "h"
               :space-evenly false
-              :hexpand true
-              :halign "fill"
               :spacing 6
-              (label :class "badge-shelf-title" :text "Status Shelf")
-              (label :class "badge-shelf-subtitle"
-                     :hexpand true
-                     :halign "start"
-                     :text "Detailed system badges")
+              (label :class "badge-shelf-title" :text "Status")
+              (box :hexpand true)
               (button :class "badge-shelf-close"
                       :onclick {"toggle-topbar-badge-shelf close " + monitor_id + " &"}
                       ""))
-         (box :class "badge-shelf-groups"
+         ;; System
+         (box :class "badge-shelf-group"
               :orientation "v"
               :space-evenly false
-              :hexpand true
-              :halign "fill"
-              :spacing 5
-              (box :class "badge-shelf-group"
+              :spacing 3
+              (label :class "badge-shelf-group-title" :halign "start" :text "System")
+              (box :class "badge-shelf-group-items"
                    :orientation "h"
                    :space-evenly false
-                   :hexpand true
-                   :halign "fill"
-                   :spacing 7
-                   (label :class "badge-shelf-group-title" :text "System")
-                   (box :class "badge-shelf-group-items"
-                        :orientation "h"
-                        :space-evenly true
-                        :hexpand true
-                        :halign "fill"
-                        :spacing 3
-                        (cpu-widget)
-                        (memory-widget)
-                        (disk-widget)
-                        (temperature-widget)))
-              (box :class "badge-shelf-group"
+                   :spacing 4
+                   (cpu-widget)
+                   (memory-widget))
+              (box :class "badge-shelf-group-items"
                    :orientation "h"
                    :space-evenly false
-                   :hexpand true
-                   :halign "fill"
-                   :spacing 7
-                   (label :class "badge-shelf-group-title" :text "Connectivity")
-                   (box :class "badge-shelf-group-items"
-                        :orientation "h"
-                        :space-evenly true
-                        :hexpand true
-                        :halign "fill"
-                        :spacing 3
-                        (network-widget)
-                        (wifi-widget)
-                        ${if isLaptop then "(brightness-widget)" else ""}
-                        (bluetooth-widget)))
-              (box :class "badge-shelf-group"
+                   :spacing 4
+                   (disk-widget)
+                   (temperature-widget)))
+         ;; Connectivity
+         (box :class "badge-shelf-group"
+              :orientation "v"
+              :space-evenly false
+              :spacing 3
+              (label :class "badge-shelf-group-title" :halign "start" :text "Connectivity")
+              (box :class "badge-shelf-group-items"
                    :orientation "h"
                    :space-evenly false
-                   :hexpand true
-                   :halign "fill"
-                   :spacing 7
-                   (label :class "badge-shelf-group-title" :text "Build")
-                   (box :class "badge-shelf-group-items"
-                        :orientation "h"
-                        :space-evenly true
-                        :hexpand true
-                        :halign "fill"
-                        :spacing 3
-                        (build-health-shelf-widget)))))))
+                   :spacing 4
+                   (network-widget)
+                   (wifi-widget))
+              (box :class "badge-shelf-group-items"
+                   :orientation "h"
+                   :space-evenly false
+                   :spacing 4
+                   ${if isLaptop then "(brightness-widget)" else ""}
+                   (bluetooth-widget)))
+         ;; Build
+         (box :class "badge-shelf-group"
+              :orientation "v"
+              :space-evenly false
+              :spacing 3
+              (label :class "badge-shelf-group-title" :halign "start" :text "Build")
+              (build-health-shelf-widget)))))
 
 ;; Separator between blocks
 ;; Visual separator between widget groups
@@ -801,52 +797,38 @@ ${if isLaptop then ''
 ;; Main bar layout - static left metrics with compact interactive controls
 
 (defwidget main-bar [is_primary monitor_id]
-  (centerbox :orientation "h"
-             :class "bar"
-    ;; Left: Minimal always-on controls; extended badges move to shelf popup
-    ;; Wrapped in an expanding side container to keep the center group truly centered.
-    (box :class "bar-side bar-side-left"
+  (centerbox :class "bar"
+             :orientation "h"
+    (box :class "bar-side"
+         :hexpand true
          :orientation "h"
          :space-evenly false
          :halign "start"
-         :hexpand true
-      (box :class "left"
-           :orientation "h"
-           :space-evenly false
-           :halign "start"
-           :spacing 5
-           (status-shelf-toggle :monitor_id monitor_id)
-           (volume-widget-enhanced)
-           (memory-widget)
-           (battery-widget)
-           (build-health-dot-widget :monitor_id monitor_id)))
-
-    ;; Center: Active project
+         :spacing 5
+         (status-shelf-toggle :monitor_id monitor_id)
+         (volume-widget-enhanced)
+         (memory-widget)
+         (battery-widget)
+         (build-health-dot-widget :monitor_id monitor_id))
     (box :class "center"
          :orientation "h"
          :space-evenly false
          :halign "center"
          :spacing 5
+         (voxtype-widget)
          (project-widget))
-
-    ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Badge, and System Tray
-    ;; Wrapped in an expanding side container to mirror left-side expansion.
-    (box :class "bar-side bar-side-right"
+    (box :class "bar-side"
+         :hexpand true
          :orientation "h"
          :space-evenly false
          :halign "end"
-         :hexpand true
-      (box :class "right"
-           :orientation "h"
-           :space-evenly false
-           :halign "end"
-           :spacing 5
-            (monitor-profile-widget)
-            (monitoring-panel-toggle)
-            (notification-badge)
-            (datetime-widget)
-            (systray-widget :is_primary is_primary)
-            (powermenu-toggle :is_primary is_primary :monitor_id monitor_id)))))
+         :spacing 5
+         (monitor-profile-widget)
+         (monitoring-panel-toggle)
+         (notification-badge)
+         (datetime-widget)
+         (systray-widget :is_primary is_primary)
+         (powermenu-toggle :is_primary is_primary :monitor_id monitor_id))))
 
 ;; ============================================================================
 ;; Windows (per-monitor instances)

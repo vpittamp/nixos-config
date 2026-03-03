@@ -24,6 +24,7 @@
     margin: 0 4px;
   }
 
+
   /* Pill foundation */
   .pill {
     background: rgba(49, 50, 68, 0.65);
@@ -158,6 +159,39 @@
   .bluetooth-disabled .bluetooth-count { background: transparent; }
 
   .wifi-disconnected .icon { color: #6c7086; }
+
+  /* Voxtype push-to-talk status */
+  .voxtype .icon { color: #a6adc8; font-size: 11px; margin-right: 0; }
+
+  .voxtype-idle {
+    background: rgba(49, 50, 68, 0.4);
+    border: 1px solid rgba(108, 112, 134, 0.35);
+  }
+
+  .voxtype-idle .icon { color: #a6adc8; }
+
+  .voxtype-recording {
+    background: linear-gradient(135deg, rgba(243, 139, 168, 0.3), rgba(250, 179, 135, 0.25));
+    border: 1px solid rgba(243, 139, 168, 0.75);
+    box-shadow: 0 0 12px rgba(243, 139, 168, 0.5),
+                inset 0 0 8px rgba(243, 139, 168, 0.2);
+  }
+
+  .voxtype-recording .icon {
+    color: #f38ba8;
+    text-shadow: 0 0 8px rgba(243, 139, 168, 0.9);
+  }
+
+  .voxtype-transcribing {
+    background: linear-gradient(135deg, rgba(148, 226, 213, 0.2), rgba(137, 180, 250, 0.15));
+    border: 1px solid rgba(148, 226, 213, 0.6);
+    box-shadow: 0 0 10px rgba(148, 226, 213, 0.4);
+  }
+
+  .voxtype-transcribing .icon {
+    color: #94e2d5;
+    text-shadow: 0 0 8px rgba(148, 226, 213, 0.8);
+  }
 
   /* Project pill accents */
   .project-pill {
@@ -308,7 +342,7 @@
   .health-dot-error .health-dot-icon { color: #f38ba8; }
   .health-dot-unknown .health-dot-icon { color: #6c7086; }
 
-  /* Popup badge shelf */
+  /* Badge shelf dropdown card */
   .badge-shelf-window {
     background: transparent;
     padding: 0;
@@ -316,43 +350,38 @@
 
   .badge-shelf-card {
     background: linear-gradient(180deg, rgba(24, 24, 37, 0.97), rgba(30, 30, 46, 0.95));
-    border: 1px solid rgba(108, 112, 134, 0.45);
-    border-top: 0;
-    border-radius: 0 0 12px 12px;
-    padding: 4px 7px;
-    margin-left: 6px;
-    margin-right: 6px;
-    min-width: 960px;
-    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.42), 0 1px 0 rgba(203, 166, 247, 0.04) inset;
+    border: 1px solid rgba(108, 112, 134, 0.55);
+    border-radius: 12px;
+    padding: 10px 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(203, 166, 247, 0.06);
   }
 
   .badge-shelf-header {
-    padding: 1px 2px 3px 2px;
+    padding: 0 0 4px 0;
+    border-bottom: 1px solid rgba(108, 112, 134, 0.25);
+    margin-bottom: 2px;
   }
 
   .badge-shelf-title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
     color: #cdd6f4;
   }
 
-  .badge-shelf-subtitle {
-    font-size: 10px;
-    color: #a6adc8;
+  .badge-shelf-group {
+    padding: 2px 0;
   }
 
   .badge-shelf-group-title {
-    font-size: 10px;
-    font-weight: 800;
-    color: #89b4fa;
-    letter-spacing: 0.2px;
-    margin-left: 2px;
-    min-width: 86px;
-    margin-top: 2px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #6c7086;
+    letter-spacing: 0.5px;
+    margin-bottom: 1px;
   }
 
   .badge-shelf-group-items {
-    margin-right: 4px;
     min-height: 18px;
   }
 
@@ -370,7 +399,6 @@
     font-size: 11px;
     font-weight: 800;
     color: #a6adc8;
-    margin-left: 4px;
   }
 
   .badge-shelf-close:hover {

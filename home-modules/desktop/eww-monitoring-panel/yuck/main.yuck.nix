@@ -21,7 +21,8 @@
     :windowtype "dock"
     (monitoring-panel-content))
 
-  ;; Docked mode window - Reserves screen space via exclusive zone
+  ;; Docked mode window - Uses Sway gaps (not exclusive zone) to reserve space
+  ;; Avoids shrinking other layer-shell surfaces like the top bar
   (defwindow monitoring-panel-docked
     :monitor "${primaryOutput}"
     :geometry (geometry
@@ -33,8 +34,7 @@
     :namespace "eww-monitoring-panel"
     :stacking "fg"
     :focusable "ondemand"
-    :exclusive true
-    :reserve (struts :side "right" :distance "${toString (panelWidth + 4)}px")
+    :exclusive false
     :windowtype "dock"
     (monitoring-panel-content))
 
