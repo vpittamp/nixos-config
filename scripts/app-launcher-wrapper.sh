@@ -896,10 +896,8 @@ if [[ "$APP_NAME" == "k9s" ]]; then
             echo "$OP_ITEMS" | jq -r '.[] | select(.title | startswith("Kubeconfig: ")) | .id' | while read -r id; do
                 # Download the kubeconfig file (the file field is named 'yaml' when we use kubeconfig.yaml[file]=...)
                 FILE_PATH="$K9S_KUBECONFIG_DIR/$id.yaml"
-                if ! [ -f "$FILE_PATH" ] || [ $(find "$FILE_PATH" -mmin +60 -print) ]; then
-                    log "DEBUG" "Downloading Kubeconfig from 1Password item ID $id"
-                    op read "op://CLI/$id/yaml" > "$FILE_PATH" 2>/dev/null || true
-                fi
+                log "DEBUG" "Downloading Kubeconfig from 1Password item ID $id"
+                op read "op://CLI/$id/yaml" > "$FILE_PATH" 2>/dev/null || true
                 
                 if [ -s "$FILE_PATH" ]; then
                     export KUBECONFIG="$KUBECONFIG:$FILE_PATH"
