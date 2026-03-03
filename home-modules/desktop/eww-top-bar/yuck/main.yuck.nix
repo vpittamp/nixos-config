@@ -9,6 +9,9 @@ let
   mkWindowDef = output: let
     windowId = sanitizeOutputName output.name;
     isPrimary = output.showTray;
+    # Use explicit pixel width to prevent layer-shell exclusive zones
+    # from other surfaces (e.g. docked monitoring panel) shrinking the bar
+    width = if output ? logicalWidth then "${toString output.logicalWidth}px" else "100%";
   in ''
     ;; ${output.name} display (${if isPrimary then "primary" else "secondary"})
     (defwindow top-bar-${windowId}
@@ -16,7 +19,7 @@ let
       :geometry (geometry
         :x "0px"
         :y "0px"
-        :width "100%"
+        :width "${width}"
         :height "26px"
         :anchor "top center")
       :stacking "fg"
@@ -81,7 +84,7 @@ let
   :geometry (geometry
     :x "0px"
     :y "0px"
-    :width "100%"
+    :width "1536px"
     :height "26px"
     :anchor "top center")
   :stacking "fg"

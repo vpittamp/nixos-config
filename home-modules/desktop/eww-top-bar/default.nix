@@ -33,14 +33,15 @@ let
 
   topBarOutputs =
     if isHeadless then [
-      { name = "HEADLESS-1"; showTray = true; }
+      { name = "HEADLESS-1"; showTray = true; logicalWidth = 1920; }
     ] else if isRyzen then [
-      { name = "DP-1"; showTray = true; }
-      { name = "HDMI-A-1"; showTray = false; }
-      { name = "DP-2"; showTray = false; }
-      { name = "DP-3"; showTray = false; }
+      { name = "DP-1"; showTray = true; logicalWidth = 3840; }
+      { name = "HDMI-A-1"; showTray = false; logicalWidth = 1920; }
+      { name = "DP-2"; showTray = false; logicalWidth = 1920; }
+      { name = "DP-3"; showTray = false; logicalWidth = 1920; }
     ] else [
-      { name = "eDP-1"; showTray = true; }
+      # ThinkPad: 1920 physical / 1.25 scale = 1536 logical
+      { name = "eDP-1"; showTray = true; logicalWidth = 1536; }
     ];
 
   sanitizeOutputName = name:

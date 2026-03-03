@@ -83,10 +83,8 @@ let
 
     EWW="${pkgs.eww}/bin/eww"
     GREP="${pkgs.gnugrep}/bin/grep"
-    SWAYMSG="${pkgs.sway}/bin/swaymsg"
     CONFIG="$HOME/.config/eww-monitoring-panel"
     TIMEOUT="${pkgs.coreutils}/bin/timeout"
-    PANEL_GAP=${toString (cfg.panelWidth + 4)}
     RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     PID_FILE="$RUNTIME_DIR/eww-monitoring-panel-wrapper.pid"
     STATE_DIR="$HOME/.local/state/eww-monitoring-panel"
@@ -115,7 +113,6 @@ let
     # Cleanup on exit
     cleanup() {
       rm -f "$PID_FILE"
-      $SWAYMSG "gaps right all set 0" >/dev/null 2>&1 || true
       kill_rogue_open_clients
       kill $DAEMON_PID 2>/dev/null
     }
@@ -194,14 +191,6 @@ let
       # Do not crash-loop the service on transient IPC/startup races.
       # Keep daemon/streams alive and allow manual toggle/reopen to recover.
       echo "[eww-monitoring-panel] startup window open verification failed; continuing without fatal exit" >&2
-    fi
-
-    # Set Sway right gap for docked mode (replaces layer-shell exclusive zone
-    # to avoid shrinking other layer-shell surfaces like the top bar)
-    if [[ "$DOCK_MODE" == "docked" ]]; then
-      $SWAYMSG "gaps right all set $PANEL_GAP" >/dev/null 2>&1 || true
-    else
-      $SWAYMSG "gaps right all set 0" >/dev/null 2>&1 || true
     fi
 
     # Feature 125: Toggle handler - called when SIGUSR1 received
