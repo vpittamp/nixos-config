@@ -174,12 +174,14 @@ in
         };
 
         # Custom allowed browsers
+        # Must include exact binary names as they appear on disk (NixOS uses google-chrome-stable)
         "1password/custom_allowed_browsers" = {
           text = ''
             chromium
             chromium-browser
             chrome
             google-chrome
+            google-chrome-stable
           '';
           mode = "0644";
         };
