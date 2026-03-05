@@ -626,6 +626,48 @@ in
           "bluez5.codecs" = [ "sbc" "sbc_xq" "aac" "ldac" "aptx" "aptx_hd" ];
         };
       };
+
+      # Jabra Evolve2 85 USB dongle - auto-prioritize when connected
+      "50-jabra-usb" = {
+        "monitor.alsa.rules" = [
+          {
+            matches = [
+              { "device.vendor.id" = "2830"; }  # 0x0b0e = 2830 decimal (GN Audio/Jabra)
+            ];
+            actions = {
+              update-props = {
+                "device.description" = "Jabra Evolve2 85";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+          {
+            matches = [
+              { "node.name" = "~alsa_output.usb-0b0e_Jabra*"; }
+            ];
+            actions = {
+              update-props = {
+                "node.description" = "Jabra Evolve2 85 Output";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+          {
+            matches = [
+              { "node.name" = "~alsa_input.usb-0b0e_Jabra*"; }
+            ];
+            actions = {
+              update-props = {
+                "node.description" = "Jabra Evolve2 85 Mic";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+        ];
+      };
     };
   };
 
