@@ -187,8 +187,8 @@ EOF
 
     # Configuration for codex (TOML format)
     settings = {
-      # Model configuration - using latest gpt-5.3-codex (requires codex 0.98.0+)
-      model = "gpt-5.3-codex";
+      # Model configuration - using latest gpt-5.4 (flagship frontier model)
+      model = "gpt-5.4";
       model_provider = "openai";
       model_reasoning_effort = "high"; # Use high reasoning for complex tasks
 
