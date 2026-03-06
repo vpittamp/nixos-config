@@ -49,6 +49,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_DISCOVERED_TMUX_PROJECT_HINT_CACHE: dict[str, object] = {
+    "mtime_ns": None,
+    "size": None,
+    "mapping": {},
+}
+
 # Feature 137: Maximum session count to prevent memory exhaustion
 MAX_SESSIONS = 100
 UNRESOLVED_SESSION_TTL_SEC = 60.0
@@ -779,7 +785,7 @@ class SessionTracker:
                 window_context = get_window_context_by_id(window_id)
                 if isinstance(window_context, dict):
                     window_project = window_context.get("project")
-                    if window_project:
+                    if window_project and not project:
                         project = window_project
                     for key in ("execution_mode", "connection_key", "context_key", "remote_target"):
                         value = window_context.get(key)
@@ -823,6 +829,243 @@ class SessionTracker:
             return os.path.realpath(expanded)
         except Exception:
             return value
+
+    @staticmethod
+    def _parse_context_key(value: Optional[str]) -> dict[str, str]:
+        """Parse context key format '<qualified>::<mode>::<connection>'."""
+        raw = str(value or "").strip()
+        parsed = {
+            "context_key": raw,
+            "qualified_name": "",
+            "execution_mode": "",
+            "connection_key": "",
+        }
+        if not raw:
+            return parsed
+
+        parts = raw.split("::")
+        if len(parts) < 3:
+            return parsed
+
+        parsed["qualified_name"] = "::".join(parts[:-2]).strip()
+        parsed["execution_mode"] = str(parts[-2]).strip().lower()
+        parsed["connection_key"] = str(parts[-1]).strip()
+        return parsed
+
+    @staticmethod
+    def _session_project_candidates(raw_project: Optional[str]) -> tuple[set[str], set[str]]:
+        """Return exact/prefix project candidates from project names or paths."""
+        exact: set[str] = set()
+        prefixes: set[str] = set()
+        value = str(raw_project or "").strip()
+        if not value:
+            return exact, prefixes
+
+        if "/" in value:
+            if ":" in value:
+                exact.add(value)
+                prefixes.add(value.split(":", 1)[0])
+            else:
+                prefixes.add(value)
+
+        normalized_path = None
+        if value.startswith("/") or value.startswith("~"):
+            normalized_path = SessionTracker._normalize_project_path(value)
+        if normalized_path:
+            parts = [segment for segment in normalized_path.split(os.sep) if segment]
+            for idx, segment in enumerate(parts):
+                if segment != "repos":
+                    continue
+                if idx + 3 >= len(parts):
+                    continue
+                account = parts[idx + 1].strip()
+                repo = parts[idx + 2].strip()
+                branch = parts[idx + 3].strip()
+                if not account or not repo:
+                    continue
+                prefixes.add(f"{account}/{repo}")
+                if branch:
+                    exact.add(f"{account}/{repo}:{branch}")
+                break
+
+        return exact, prefixes
+
+    @staticmethod
+    def _project_session_suffix(project_name: Optional[str]) -> str:
+        """Convert qualified project name to the common tmux session suffix."""
+        name = str(project_name or "").strip()
+        if ":" not in name:
+            return ""
+        repo_part, branch = name.split(":", 1)
+        repo_name = repo_part.split("/")[-1].strip()
+        if not repo_name or not branch:
+            return ""
+        return f"{repo_name}/{branch}"
+
+    @staticmethod
+    def _projects_align(left: Optional[str], right: Optional[str]) -> bool:
+        """Check whether two project labels refer to the same logical project."""
+        left_exact, left_prefixes = SessionTracker._session_project_candidates(left)
+        right_exact, right_prefixes = SessionTracker._session_project_candidates(right)
+        return bool(
+            (left_exact and right_exact and left_exact.intersection(right_exact))
+            or (left_prefixes and right_prefixes and left_prefixes.intersection(right_prefixes))
+        )
+
+    @classmethod
+    def _tmux_session_project_hints(cls) -> dict[str, str]:
+        """Map normalized tmux session names to unique discovered worktree projects."""
+        repos_file = os.path.expanduser("~/.config/i3/repos.json")
+        if not os.path.exists(repos_file):
+            _DISCOVERED_TMUX_PROJECT_HINT_CACHE.update({
+                "mtime_ns": None,
+                "size": None,
+                "mapping": {},
+            })
+            return {}
+
+        try:
+            stat_result = os.stat(repos_file)
+        except OSError:
+            return {}
+
+        cached_mapping = _DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("mapping")
+        if (
+            _DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("mtime_ns") == stat_result.st_mtime_ns
+            and _DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("size") == stat_result.st_size
+            and isinstance(cached_mapping, dict)
+        ):
+            return dict(cached_mapping)
+
+        try:
+            with open(repos_file, "r") as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+        repositories = payload.get("repositories", []) if isinstance(payload, dict) else []
+        grouped: dict[str, set[str]] = {}
+        for repo in repositories if isinstance(repositories, list) else []:
+            if not isinstance(repo, dict):
+                continue
+            account = str(repo.get("account") or "").strip()
+            repo_name = str(repo.get("name") or "").strip()
+            if not account or not repo_name:
+                continue
+            for worktree in repo.get("worktrees", []) if isinstance(repo.get("worktrees", []), list) else []:
+                if not isinstance(worktree, dict):
+                    continue
+                branch = str(worktree.get("branch") or "").strip()
+                if not branch:
+                    continue
+                qualified_name = f"{account}/{repo_name}:{branch}"
+                suffix_key = cls._normalize_tmux_session_key(cls._project_session_suffix(qualified_name))
+                if not suffix_key:
+                    continue
+                grouped.setdefault(suffix_key, set()).add(qualified_name)
+
+        mapping = {
+            session_key: sorted(qualified_names)[0]
+            for session_key, qualified_names in grouped.items()
+            if len(qualified_names) == 1
+        }
+        _DISCOVERED_TMUX_PROJECT_HINT_CACHE.update({
+            "mtime_ns": stat_result.st_mtime_ns,
+            "size": stat_result.st_size,
+            "mapping": dict(mapping),
+        })
+        return mapping
+
+    @staticmethod
+    def _normalize_tmux_session_key(value: Optional[str]) -> str:
+        try:
+            from i3_project_manager.core.identity import normalize_session_name_key
+            return normalize_session_name_key(value)
+        except ImportError:
+            raw = str(value or "").strip().lower()
+            return "".join(ch if ch.isalnum() else "-" for ch in raw).strip("-")
+
+    def _resolve_export_project_labels(self, session: Session) -> dict[str, str]:
+        """Resolve canonical session/window/display project fields for export."""
+        raw_session_project = str(session.project or "").strip()
+        project_path = str(session.project_path or "").strip()
+        session_project = raw_session_project
+        if project_path:
+            project_from_path = self._project_from_path(project_path)
+            if project_from_path and (
+                not session_project or not self._projects_align(session_project, project_from_path)
+            ):
+                session_project = project_from_path
+
+        context_key = str(session.terminal_context.context_key or "").strip()
+        parsed_context = self._parse_context_key(context_key)
+        context_project = str(parsed_context.get("qualified_name") or "").strip()
+        tmux_session_key = self._normalize_tmux_session_key(session.terminal_context.tmux_session)
+        tmux_project = self._tmux_session_project_hints().get(tmux_session_key, "")
+
+        window_project = ""
+        if session.window_id is not None:
+            window_context = get_window_context_by_id(session.window_id)
+            if isinstance(window_context, dict):
+                window_project = str(window_context.get("project") or "").strip()
+
+        def _project_matches_tmux(project_name: str) -> bool:
+            if not project_name or not tmux_session_key:
+                return False
+            suffix = self._normalize_tmux_session_key(self._project_session_suffix(project_name))
+            return bool(suffix and suffix == tmux_session_key)
+
+        session_project_source = "window_fallback"
+        session_project_trusted = False
+
+        if session_project:
+            session_project_source = "session"
+
+        if project_path:
+            session_project_source = "path"
+            session_project_trusted = True
+
+        if context_project:
+            if not session_project or not self._projects_align(session_project, context_project):
+                session_project = context_project
+            session_project_source = "context"
+            session_project_trusted = True
+
+        if tmux_project:
+            if not session_project or not self._projects_align(session_project, tmux_project):
+                session_project = tmux_project
+            if not context_project or not self._projects_align(context_project, tmux_project):
+                session_project_source = "tmux_discovered"
+                session_project_trusted = True
+
+        if session_project and not session_project_trusted and _project_matches_tmux(session_project):
+            session_project_source = "tmux"
+            session_project_trusted = True
+
+        if not session_project and window_project:
+            session_project = window_project
+            session_project_source = "window_fallback"
+
+        if (
+            session_project
+            and not session_project_trusted
+            and window_project
+            and not self._projects_align(session_project, window_project)
+            and _project_matches_tmux(window_project)
+            and not _project_matches_tmux(session_project)
+        ):
+            session_project = window_project
+            session_project_source = "tmux_window_fallback"
+
+        display_project = session_project or window_project or raw_session_project or "unknown"
+        focus_project = window_project or session_project or ""
+        return {
+            "session_project": session_project or "",
+            "window_project": window_project,
+            "focus_project": focus_project,
+            "display_project": display_project,
+            "project_source": session_project_source,
+        }
 
     @staticmethod
     def _project_from_path(path_value: Optional[str]) -> Optional[str]:
@@ -1190,23 +1433,30 @@ class SessionTracker:
             confidence = confidence_raw.value
         else:
             confidence = str(confidence_raw or "").strip().lower()
-        if not session.native_session_id or confidence != IdentityConfidence.NATIVE.value:
-            return False
-        if session.project:
-            return True
 
         terminal_context = session.terminal_context
         terminal_window_id = getattr(terminal_context, "window_id", None)
         context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
         tmux_pane = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
         pty = str(getattr(terminal_context, "pty", "") or "").strip()
-        return bool(
+        has_anchor = bool(
             session.window_id is not None
             or terminal_window_id is not None
             or context_key
             or tmux_pane
             or pty
         )
+        has_project = bool(session.project or session.project_path)
+
+        if confidence == IdentityConfidence.NATIVE.value and session.native_session_id:
+            return has_project or has_anchor
+
+        # Long-lived sessions that survive a monitor restart may only be
+        # recoverable from process correlation until the next native OTEL event.
+        if confidence in {IdentityConfidence.PID.value, IdentityConfidence.PANE.value}:
+            return has_project and has_anchor
+
+        return False
 
     async def process_event(self, event: TelemetryEvent) -> None:
         """Process a telemetry event and update session state.
@@ -2412,8 +2662,16 @@ class SessionTracker:
 
         updated_at = datetime.now(timezone.utc).isoformat()
 
-        items = [
-            SessionListItem(
+        items = []
+        fingerprint_source = []
+        for s in active_sessions:
+            project_labels = self._resolve_export_project_labels(s)
+            session_kind = (
+                "native"
+                if s.identity_confidence == IdentityConfidence.NATIVE or s.native_session_id
+                else "process"
+            )
+            item = SessionListItem(
                 session_id=s.session_id,
                 native_session_id=s.native_session_id,
                 context_fingerprint=s.context_fingerprint,
@@ -2421,7 +2679,14 @@ class SessionTracker:
                 identity_confidence=s.identity_confidence,
                 tool=s.tool,
                 state=s.state,
-                project=s.project,
+                project=project_labels["display_project"],
+                session_kind=session_kind,
+                live=True,
+                session_project=project_labels["session_project"],
+                window_project=project_labels["window_project"],
+                focus_project=project_labels["focus_project"],
+                display_project=project_labels["display_project"],
+                project_source=project_labels["project_source"],
                 project_path=s.project_path,
                 window_id=s.window_id,
                 terminal_context=s.terminal_context,
@@ -2433,8 +2698,37 @@ class SessionTracker:
                 status_reason=s.status_reason,
                 updated_at=s.last_event_at.isoformat(),
             )
-            for s in active_sessions
-        ]
+            items.append(item)
+            fingerprint_source.append(
+                (
+                    s.session_id,
+                    s.native_session_id,
+                    s.context_fingerprint,
+                    s.collision_group_id,
+                    str(s.tool),
+                    str(s.state),
+                    item.project,
+                    item.session_project,
+                    item.window_project,
+                    item.focus_project,
+                    item.project_source,
+                    s.project_path,
+                    s.window_id,
+                    s.terminal_context.tmux_session,
+                    s.terminal_context.tmux_window,
+                    s.terminal_context.tmux_pane,
+                    s.terminal_context.execution_mode,
+                    s.terminal_context.connection_key,
+                    s.terminal_context.context_key,
+                    s.terminal_context.remote_target,
+                    s.pid,
+                    s.trace_id,
+                    s.pending_tools,
+                    s.is_streaming,
+                    s.state_seq,
+                    s.status_reason,
+                )
+            )
 
         sessions_by_window: dict[int, list[SessionListItem]] = {}
         for item in items:
@@ -2451,35 +2745,7 @@ class SessionTracker:
                 ),
                 reverse=True
             )
-
         has_working = any(s.state == SessionState.WORKING for s in active_sessions)
-        fingerprint_source = [
-            (
-                s.session_id,
-                s.native_session_id,
-                s.context_fingerprint,
-                s.collision_group_id,
-                str(s.tool),
-                str(s.state),
-                s.project,
-                s.project_path,
-                s.window_id,
-                s.terminal_context.tmux_session,
-                s.terminal_context.tmux_window,
-                s.terminal_context.tmux_pane,
-                s.terminal_context.execution_mode,
-                s.terminal_context.connection_key,
-                s.terminal_context.context_key,
-                s.terminal_context.remote_target,
-                s.pid,
-                s.trace_id,
-                s.pending_tools,
-                s.is_streaming,
-                s.state_seq,
-                s.status_reason,
-            )
-            for s in active_sessions
-        ]
         fingerprint = hashlib.sha256(
             json.dumps(fingerprint_source, separators=(",", ":"), sort_keys=True).encode("utf-8")
         ).hexdigest()

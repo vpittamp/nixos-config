@@ -104,8 +104,9 @@
                       :spacing 3
                       (eventbox
                         :cursor "pointer"
-                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.execution_mode ?: "local"}\" \"''${session.connection_key ?: ""}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" \"''${session.finish_marker ?: ""}\" &"
+                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.focus_project ?: session.window_project ?: session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.focus_execution_mode ?: session.execution_mode ?: "local"}\" \"''${session.focus_connection_key ?: session.connection_key ?: ""}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" \"''${session.finish_marker ?: ""}\" &"
                         :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                          + (((session.window_project ?: "") != "" && (session.window_project ?: "") != (session.display_project ?: session.project ?: "")) ? (" · via " + (session.window_project ?: "")) : "")
                           + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
                           + ((session.host_name ?: "") != "" ? ("@" + (session.host_name ?: "")) : "")
                           + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
@@ -475,7 +476,7 @@
                     :onhoverlost {hovered_ai_badge_key == (badge.badge_key ?: "") ? "eww --no-daemonize --config $HOME/.config/eww-monitoring-panel update hovered_ai_badge_key=" : ""}
                     :cursor {(badge.window_id ?: 0) != 0 ? "pointer" : ((badge.trace_id ?: "") != "" ? "pointer" : "default")}
                     :onclick {(badge.window_id ?: 0) != 0
-                      ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${badge.execution_mode ?: window.execution_mode ?: "local"} ''${badge.connection_key ?: window.connection_key ?: ""} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
+                      ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.focus_project ?: badge.window_project ?: window.project} ''${badge.window_id ?: window.id} ''${badge.focus_execution_mode ?: badge.execution_mode ?: window.execution_mode ?: "local"} ''${badge.focus_connection_key ?: badge.connection_key ?: window.connection_key ?: ""} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                       : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
                     }
                     :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.review_pending ?: false) ? " · Unseen output" : "") + " · " + ((badge.execution_mode ?: "local") == "ssh" ? "remote" : "local") + ((badge.host_name ?: "") != "" ? ("@" + (badge.host_name ?: "")) : "") + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
@@ -515,7 +516,7 @@
                     (eventbox
                       :cursor "pointer"
                       :visible {(badge.window_id ?: 0) != 0}
-                      :onclick "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.project ?: window.project} ''${badge.window_id ?: window.id} ''${badge.execution_mode ?: window.execution_mode ?: "local"} ''${badge.connection_key ?: window.connection_key ?: ""} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
+                      :onclick "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.focus_project ?: badge.window_project ?: window.project} ''${badge.window_id ?: window.id} ''${badge.focus_execution_mode ?: badge.execution_mode ?: window.execution_mode ?: "local"} ''${badge.focus_connection_key ?: badge.connection_key ?: window.connection_key ?: ""} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                       :tooltip "Focus session"
                       (label :class "ai-badge-quick-btn" :text "󰌑"))
                     (eventbox

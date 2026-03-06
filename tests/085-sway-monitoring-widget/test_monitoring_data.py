@@ -248,6 +248,9 @@ class TestTransformWindow:
         assert len(window["otel_badges"]) == 1
         badge = window["otel_badges"][0]
         assert "project=PittampalliOrg/workflow-builder:main" in badge["session_key"]
+        assert badge["project"] == "PittampalliOrg/workflow-builder:main"
+        assert badge["focus_project"] == "PittampalliOrg/workflow-builder:main"
+        assert badge["window_project"] == "PittampalliOrg/workflow-builder:main"
 
         windows = [window]
         sessions = [
@@ -1919,6 +1922,81 @@ class TestAiReviewLifecycle:
         assert int(entry.get("finished_at") or 0) == now_epoch - 120
         assert int(entry.get("expires_at") or 0) == (now_epoch - 120) + monitoring_data._AI_SESSION_REVIEW_TTL_SECONDS
 
+    def test_live_session_suppresses_matching_synthetic_review_entry(self, tmp_path, monkeypatch):
+        review_file = tmp_path / "ai-session-review.json"
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_REVIEW_FILE", review_file)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+
+        now_epoch = 2_000_000
+        monkeypatch.setattr(monitoring_data.time, "time", lambda: float(now_epoch))
+
+        live_session = {
+            "session_key": "tool=codex|project=PittampalliOrg/workflow-builder:main|window=42|pane=%7",
+            "otel_state": "working",
+            "project": "PittampalliOrg/workflow-builder:main",
+            "session_project": "PittampalliOrg/workflow-builder:main",
+            "display_project": "PittampalliOrg/workflow-builder:main",
+            "window_project": "vpittamp/nixos-config:main",
+            "focus_project": "vpittamp/nixos-config:main",
+            "window_id": 42,
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@ryzen:22",
+            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+            "tmux_session": "workflow-builder/main",
+            "tmux_window": "1:main",
+            "tmux_pane": "%7",
+            "pty": "/dev/pts/7",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %7",
+            "updated_at": "2026-03-06T18:49:29+00:00",
+            "synthetic": False,
+        }
+        payload = {
+            "schema_version": "1",
+            "sessions": {
+                "tool=codex|project=vpittamp/nixos-config:main|window=42|pane=%7": {
+                    "project": "vpittamp/nixos-config:main",
+                    "session_project": "vpittamp/nixos-config:main",
+                    "display_project": "vpittamp/nixos-config:main",
+                    "window_project": "vpittamp/nixos-config:main",
+                    "focus_project": "vpittamp/nixos-config:main",
+                    "window_id": 42,
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                    "tmux_session": "workflow-builder/main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%7",
+                    "pty": "/dev/pts/7",
+                    "tool": "codex",
+                    "display_tool": "Codex CLI",
+                    "display_target": "pane %7",
+                    "last_state": "completed",
+                    "finish_marker": "marker-1",
+                    "seen_marker": "",
+                    "finished_at": now_epoch - 30,
+                    "expires_at": now_epoch + 300,
+                    "updated_at": now_epoch - 30,
+                }
+            },
+            "updated_at": now_epoch - 30,
+        }
+        review_file.parent.mkdir(parents=True, exist_ok=True)
+        review_file.write_text(json.dumps(payload))
+
+        sessions, state = monitoring_data._apply_review_lifecycle(
+            [live_session],
+            {42: {"id": 42, "project": "vpittamp/nixos-config:main", "class": "Ghostty"}},
+            None,
+        )
+
+        assert len(sessions) == 1
+        assert sessions[0]["synthetic"] is False
+        assert sessions[0]["review_pending"] is False
+        assert "tool=codex|project=vpittamp/nixos-config:main|window=42|pane=%7" in state
+
     def test_drops_pending_review_entry_when_window_matches_non_terminal_app(self, tmp_path, monkeypatch):
         review_file = tmp_path / "ai-session-review.json"
         seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
@@ -2079,6 +2157,378 @@ class TestAiReviewLifecycle:
             focused_window_id=171,
         )
         assert sessions == []
+
+    def test_build_active_ai_sessions_prefers_session_project_for_display_and_window_project_for_focus(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "PittampalliOrg/stacks:main",
+                "project_path": "/home/vpittamp/repos/PittampalliOrg/stacks/main",
+                "window_id": 168,
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "native_session_id": "n-stacks",
+                "session_id": "s-stacks",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 168,
+                    "tmux_session": "",
+                    "tmux_window": "",
+                    "tmux_pane": "",
+                    "pty": "/dev/pts/7",
+                },
+                "updated_at": "2026-03-06T18:19:45+00:00",
+            }
+        ]
+        window_lookup = {
+            168: {
+                "id": 168,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/stacks:main",
+            focused_window_id=168,
+        )
+
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session["project"] == "PittampalliOrg/stacks:main"
+        assert session["display_project"] == "PittampalliOrg/stacks:main"
+        assert session["session_project"] == "PittampalliOrg/stacks:main"
+        assert session["window_project"] == "vpittamp/nixos-config:main"
+        assert session["focus_project"] == "vpittamp/nixos-config:main"
+
+    def test_build_active_ai_sessions_derives_project_from_tmux_session_when_context_is_stale(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            monitoring_data,
+            "_tmux_session_project_hints",
+            lambda: {"stacks-main": "PittampalliOrg/stacks:main"},
+        )
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 219,
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "session_id": "codex:pid:706991",
+                "identity_confidence": "pid",
+                "terminal_context": {
+                    "window_id": 219,
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "1:codex-raw",
+                    "tmux_pane": "%81",
+                    "pty": "/dev/pts/47",
+                    "connection_key": "local@ryzen",
+                    "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                },
+                "updated_at": "2026-03-06T18:49:29+00:00",
+            }
+        ]
+        window_lookup = {
+            219: {
+                "id": 219,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/stacks:main",
+            focused_window_id=219,
+        )
+
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session["project"] == "PittampalliOrg/stacks:main"
+        assert session["display_project"] == "PittampalliOrg/stacks:main"
+        assert session["session_project"] == "PittampalliOrg/stacks:main"
+        assert session["window_project"] == "vpittamp/nixos-config:main"
+        assert session["focus_project"] == "vpittamp/nixos-config:main"
+        assert session["project_source"] == "tmux_discovered"
+
+    def test_build_active_ai_sessions_preserves_explicit_window_binding_when_shell_context_is_stale(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "PittampalliOrg/workflow-builder:main",
+                "session_project": "PittampalliOrg/workflow-builder:main",
+                "display_project": "PittampalliOrg/workflow-builder:main",
+                "window_project": "PittampalliOrg/workflow-builder:main",
+                "focus_project": "PittampalliOrg/workflow-builder:main",
+                "project_source": "tmux_discovered",
+                "window_id": 14,
+                "session_id": "codex:pid:3775089",
+                "identity_confidence": "pid",
+                "terminal_context": {
+                    "window_id": 14,
+                    "tmux_session": "workflow-builder/main",
+                    "tmux_window": "0:codex-raw",
+                    "tmux_pane": "%5",
+                    "pty": "/dev/pts/5",
+                    "connection_key": "local@ryzen",
+                    "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                },
+                "updated_at": "2026-03-06T19:22:03.457634+00:00",
+            }
+        ]
+        window_lookup = {
+            14: {
+                "id": 14,
+                "project": "PittampalliOrg/workflow-builder:main",
+                "class": "Ghostty",
+                "connection_key": "local@ryzen",
+                "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
+                "hidden": True,
+                "floating": True,
+            },
+            168: {
+                "id": 168,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                "hidden": True,
+                "floating": True,
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/workflow-builder:main",
+            focused_window_id=14,
+        )
+
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session["window_id"] == 14
+        assert session["project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["window_project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["focus_project"] == "PittampalliOrg/workflow-builder:main"
+
+    def test_build_active_ai_sessions_prefers_upstream_canonical_project_fields(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "PittampalliOrg/workflow-builder:main",
+                "session_project": "PittampalliOrg/workflow-builder:main",
+                "display_project": "PittampalliOrg/workflow-builder:main",
+                "window_project": "vpittamp/nixos-config:main",
+                "focus_project": "vpittamp/nixos-config:main",
+                "project_source": "tmux_discovered",
+                "window_id": 168,
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "native_session_id": "n-workflow",
+                "session_id": "s-workflow",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 168,
+                    "tmux_session": "workflow-builder/main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%11",
+                    "pty": "/dev/pts/11",
+                },
+                "updated_at": "2026-03-06T18:19:45+00:00",
+            }
+        ]
+        window_lookup = {
+            168: {
+                "id": 168,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/workflow-builder:main",
+            focused_window_id=168,
+        )
+
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session["project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["display_project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["session_project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["window_project"] == "vpittamp/nixos-config:main"
+        assert session["focus_project"] == "vpittamp/nixos-config:main"
+        assert session["project_source"] == "tmux_discovered"
+
+    def test_build_active_ai_sessions_uses_mapped_window_project_for_focus_when_upstream_window_differs(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "PittampalliOrg/workflow-builder:main",
+                "session_project": "PittampalliOrg/workflow-builder:main",
+                "display_project": "PittampalliOrg/workflow-builder:main",
+                "window_project": "PittampalliOrg/workflow-builder:main",
+                "focus_project": "PittampalliOrg/workflow-builder:main",
+                "project_source": "tmux_discovered",
+                "window_id": 168,
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "native_session_id": "n-workflow",
+                "session_id": "s-workflow",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 168,
+                    "tmux_session": "workflow-builder/main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%11",
+                    "pty": "/dev/pts/11",
+                    "execution_mode": "local",
+                    "connection_key": "local@ryzen",
+                },
+                "updated_at": "2026-03-06T18:19:45+00:00",
+            }
+        ]
+        window_lookup = {
+            168: {
+                "id": 168,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/workflow-builder:main",
+            focused_window_id=168,
+        )
+
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session["project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["session_project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["window_project"] == "vpittamp/nixos-config:main"
+        assert session["focus_project"] == "vpittamp/nixos-config:main"
+        assert session["execution_mode"] == "local"
+        assert session["connection_key"] == "local@ryzen"
+        assert session["focus_execution_mode"] == "local"
+        assert session["focus_connection_key"] == "local@ryzen"
+
+    @pytest.mark.asyncio
+    async def test_query_monitoring_data_preserves_explicit_window_id_when_project_matches_and_context_is_stale(self):
+        mock_daemon_response = {
+            "outputs": [
+                {
+                    "name": "HEADLESS-1",
+                    "active": True,
+                    "workspaces": [
+                        {
+                            "num": 1,
+                            "name": "1",
+                            "visible": True,
+                            "focused": True,
+                            "windows": [
+                                {
+                                    "id": 14,
+                                    "class": "Ghostty",
+                                    "title": "Ghostty",
+                                    "project": "PittampalliOrg/workflow-builder:main",
+                                    "connection_key": "local@ryzen",
+                                    "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
+                                    "marks": ["scoped:terminal:PittampalliOrg/workflow-builder:main:14"],
+                                    "floating": True,
+                                    "hidden": True,
+                                },
+                                {
+                                    "id": 168,
+                                    "class": "Ghostty",
+                                    "title": "Ghostty",
+                                    "project": "vpittamp/nixos-config:main",
+                                    "connection_key": "local@ryzen",
+                                    "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                                    "marks": ["scoped:terminal:vpittamp/nixos-config:main:168"],
+                                    "floating": True,
+                                    "hidden": True,
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "total_windows": 2,
+        }
+        local_otel_payload = {
+            "schema_version": "5",
+            "sessions": [
+                {
+                    "tool": "codex",
+                    "state": "working",
+                    "project": "PittampalliOrg/workflow-builder:main",
+                    "session_project": "PittampalliOrg/workflow-builder:main",
+                    "display_project": "PittampalliOrg/workflow-builder:main",
+                    "window_project": "PittampalliOrg/workflow-builder:main",
+                    "focus_project": "PittampalliOrg/workflow-builder:main",
+                    "project_source": "tmux_discovered",
+                    "window_id": 14,
+                    "session_kind": "process",
+                    "live": True,
+                    "session_id": "codex:pid:3775089",
+                    "identity_confidence": "pid",
+                    "terminal_context": {
+                        "window_id": 14,
+                        "tmux_session": "workflow-builder/main",
+                        "tmux_window": "0:codex-raw",
+                        "tmux_pane": "%5",
+                        "pty": "/dev/pts/5",
+                        "connection_key": "local@ryzen",
+                        "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                    },
+                    "updated_at": "2026-03-06T19:22:03.457634+00:00",
+                }
+            ],
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
+            mock_instance = AsyncMock()
+            mock_instance.get_window_tree.return_value = mock_daemon_response
+            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert result["active_ai_sessions"]
+        session = result["active_ai_sessions"][0]
+        assert session["window_id"] == 14
+        assert session["window_project"] == "PittampalliOrg/workflow-builder:main"
+        assert session["focus_project"] == "PittampalliOrg/workflow-builder:main"
 
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{

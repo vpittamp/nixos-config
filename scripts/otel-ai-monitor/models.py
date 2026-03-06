@@ -308,6 +308,31 @@ class SessionListItem(BaseModel):
     tool: str = Field(description="AI tool type")
     state: str = Field(description="Current session state")
     project: Optional[str] = Field(default=None, description="Project context")
+    session_kind: str = Field(
+        default="native",
+        description="Session origin classification (native, process, or review)",
+    )
+    live: bool = Field(default=True, description="True when the session is currently live")
+    session_project: Optional[str] = Field(
+        default=None,
+        description="Project the AI session is actually operating on",
+    )
+    window_project: Optional[str] = Field(
+        default=None,
+        description="Project owning the focus/navigation window",
+    )
+    focus_project: Optional[str] = Field(
+        default=None,
+        description="Project context used for focus/navigation actions",
+    )
+    display_project: Optional[str] = Field(
+        default=None,
+        description="Primary project label to show in the UI",
+    )
+    project_source: Optional[str] = Field(
+        default=None,
+        description="Source of the resolved project label",
+    )
     project_path: Optional[str] = Field(default=None, description="Canonical project path")
     window_id: Optional[int] = Field(default=None, description="Sway container ID for focus")
     terminal_context: TerminalContext = Field(
@@ -332,7 +357,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="4", description="Session payload schema version")
+    schema_version: str = Field(default="5", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

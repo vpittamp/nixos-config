@@ -81,6 +81,13 @@ let
 
     # Generate trace token for exact identity correlation
     export I3PM_AI_TRACE_TOKEN="$(date +%s%N)-$RANDOM"
+    I3PM_OTEL_REMOTE_TARGET=""
+    if [ -n "''${I3PM_REMOTE_HOST:-}" ]; then
+      I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_HOST}:''${I3PM_REMOTE_PORT:-22}"
+      if [ -n "''${I3PM_REMOTE_USER:-}" ]; then
+        I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_USER}@''${I3PM_OTEL_REMOTE_TARGET}"
+      fi
+    fi
 
     # Source-side correlation fix:
     # Ensure Codex OTEL resources always include process/context identity so
@@ -103,12 +110,22 @@ let
     append_otel_resource_attr "process.pid" "$$"
     append_otel_resource_attr "working_directory" "''${PWD:-}"
     append_otel_resource_attr "i3pm.project_name" "''${I3PM_PROJECT_NAME:-}"
-    append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-}"
+    append_otel_resource_attr "project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"
+    append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"
     append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"
+    append_otel_resource_attr "terminal.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"
+    append_otel_resource_attr "i3pm.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"
+    append_otel_resource_attr "terminal.connection_key" "''${I3PM_CONNECTION_KEY:-}"
+    append_otel_resource_attr "i3pm.connection_key" "''${I3PM_CONNECTION_KEY:-}"
+    append_otel_resource_attr "terminal.context_key" "''${I3PM_CONTEXT_KEY:-}"
+    append_otel_resource_attr "i3pm.context_key" "''${I3PM_CONTEXT_KEY:-}"
+    append_otel_resource_attr "terminal.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"
+    append_otel_resource_attr "i3pm.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"
     append_otel_resource_attr "terminal.tmux.session" "''${TMUX_SESSION:-}"
     append_otel_resource_attr "terminal.tmux.window" "''${TMUX_WINDOW:-}"
     append_otel_resource_attr "terminal.tmux.pane" "''${TMUX_PANE:-}"
     append_otel_resource_attr "terminal.pty" "''${TTY:-}"
+    append_otel_resource_attr "host.name" "''${HOSTNAME:-}"
 
     exec ${codexPackage}/bin/codex "$@"
   '';

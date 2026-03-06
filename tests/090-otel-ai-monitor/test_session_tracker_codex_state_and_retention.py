@@ -128,6 +128,142 @@ async def test_cleanup_keeps_native_session_when_pid_exits(monkeypatch):
         assert kept.status_reason == "process_exited_retained"
 
 
+def test_build_session_list_includes_resolved_pid_session_after_restart():
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:pid:706991",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path="/home/vpittamp/repos/vpittamp/nixos-config/main",
+        window_id=219,
+        pid=706991,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="process_detected",
+    )
+    session.terminal_context.window_id = 219
+    session.terminal_context.pty = "/dev/pts/8"
+    session.terminal_context.tmux_session = "nixos-config/main"
+    session.terminal_context.execution_mode = "local"
+    session.terminal_context.connection_key = "local@ryzen"
+    session.terminal_context.context_key = "vpittamp/nixos-config:main::local::local@ryzen"
+
+    tracker._sessions[session.session_id] = session
+
+    session_list, _ = tracker._build_session_list_unlocked()
+
+    assert len(session_list.sessions) == 1
+    assert session_list.schema_version == "5"
+    assert session_list.sessions[0].session_id == "codex:pid:706991"
+    assert session_list.sessions[0].identity_confidence == IdentityConfidence.PID
+    assert session_list.sessions[0].project == "vpittamp/nixos-config:main"
+    assert session_list.sessions[0].session_kind == "process"
+    assert session_list.sessions[0].live is True
+    assert session_list.sessions[0].session_project == "vpittamp/nixos-config:main"
+    assert session_list.sessions[0].display_project == "vpittamp/nixos-config:main"
+    assert session_list.has_working is True
+
+
+def test_build_session_list_exports_canonical_project_fields(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:pid:workflow-builder",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=314,
+        pid=999001,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="process_detected",
+    )
+    session.terminal_context.window_id = 314
+    session.terminal_context.tmux_session = "workflow-builder/main"
+    session.terminal_context.tmux_window = "1:main"
+    session.terminal_context.tmux_pane = "%37"
+    session.terminal_context.execution_mode = "ssh"
+    session.terminal_context.connection_key = "vpittamp@ryzen:22"
+    session.terminal_context.context_key = "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22"
+
+    tracker._sessions[session.session_id] = session
+
+    monkeypatch.setattr(
+        SessionTracker,
+        "_tmux_session_project_hints",
+        classmethod(lambda cls: {"workflow-builder-main": "PittampalliOrg/workflow-builder:main"}),
+    )
+    monkeypatch.setattr(
+        session_tracker_module,
+        "get_window_context_by_id",
+        lambda window_id: {"project": "vpittamp/nixos-config:main"} if window_id == 314 else {},
+    )
+
+    session_list, _ = tracker._build_session_list_unlocked()
+
+    assert len(session_list.sessions) == 1
+    item = session_list.sessions[0]
+    assert item.project == "PittampalliOrg/workflow-builder:main"
+    assert item.session_project == "PittampalliOrg/workflow-builder:main"
+    assert item.window_project == "vpittamp/nixos-config:main"
+    assert item.focus_project == "vpittamp/nixos-config:main"
+    assert item.display_project == "PittampalliOrg/workflow-builder:main"
+    assert item.project_source == "tmux_discovered"
+
+
+def test_build_session_list_still_suppresses_unresolved_heuristic_session():
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:heuristic:1",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.HEURISTIC,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=None,
+        pid=None,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="heuristic_only",
+    )
+
+    tracker._sessions[session.session_id] = session
+
+    session_list, _ = tracker._build_session_list_unlocked()
+
+    assert session_list.sessions == []
+
+
 @pytest.mark.asyncio
 async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())

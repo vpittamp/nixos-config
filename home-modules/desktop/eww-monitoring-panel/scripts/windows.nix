@@ -285,6 +285,120 @@ let
         -- tmux "$@"
     }
 
+    tmux_window_index() {
+      local raw="''${1:-}"
+      if [[ "$raw" == *:* ]]; then
+        printf '%s\n' "''${raw%%:*}"
+      else
+        printf '%s\n' "$raw"
+      fi
+    }
+
+    resolve_remote_pane_by_tty() {
+      local tty="''${1:-}"
+      [[ -n "$tty" ]] || return 1
+      run_remote_tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null \
+        | ${pkgs.gawk}/bin/awk -v tty="$tty" '$2 == tty {print $1; exit}'
+    }
+
+    resolve_local_pane_by_tty() {
+      local tty="''${1:-}"
+      [[ -n "$tty" ]] || return 1
+      tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null \
+        | ${pkgs.gawk}/bin/awk -v tty="$tty" '$2 == tty {print $1; exit}'
+    }
+
+    validate_remote_tmux_target() {
+      local expected_session="''${1:-}"
+      local expected_window="''${2:-}"
+      local expected_pane="''${3:-}"
+      local expected_tty="''${4:-}"
+      local target scope actual_session actual_window actual_pane actual_tty
+
+      scope="$expected_session"
+      [[ -n "$scope" ]] || scope="$expected_window"
+      [[ -n "$scope" ]] || return 0
+
+      target="$scope"
+      actual_session=$(run_remote_tmux display-message -p -t "$target" '#{session_name}' 2>/dev/null || true)
+      actual_window=$(run_remote_tmux display-message -p -t "$target" '#{window_index}' 2>/dev/null || true)
+      actual_pane=$(run_remote_tmux display-message -p -t "$target" '#{pane_id}' 2>/dev/null || true)
+      actual_tty=$(run_remote_tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null || true)
+
+      [[ -z "$expected_session" || "$actual_session" == "$expected_session" ]] || return 1
+      [[ -z "$expected_window" || "$actual_window" == "$expected_window" ]] || return 1
+      [[ -z "$expected_pane" || "$actual_pane" == "$expected_pane" ]] || return 1
+      [[ -z "$expected_tty" || "$actual_tty" == "$expected_tty" ]] || return 1
+      return 0
+    }
+
+    validate_local_tmux_target() {
+      local expected_session="''${1:-}"
+      local expected_window="''${2:-}"
+      local expected_pane="''${3:-}"
+      local expected_tty="''${4:-}"
+      local target scope actual_session actual_window actual_pane actual_tty
+
+      scope="$expected_session"
+      [[ -n "$scope" ]] || scope="$expected_window"
+      [[ -n "$scope" ]] || return 0
+
+      target="$scope"
+      actual_session=$(tmux display-message -p -t "$target" '#{session_name}' 2>/dev/null || true)
+      actual_window=$(tmux display-message -p -t "$target" '#{window_index}' 2>/dev/null || true)
+      actual_pane=$(tmux display-message -p -t "$target" '#{pane_id}' 2>/dev/null || true)
+      actual_tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null || true)
+
+      [[ -z "$expected_session" || "$actual_session" == "$expected_session" ]] || return 1
+      [[ -z "$expected_window" || "$actual_window" == "$expected_window" ]] || return 1
+      [[ -z "$expected_pane" || "$actual_pane" == "$expected_pane" ]] || return 1
+      [[ -z "$expected_tty" || "$actual_tty" == "$expected_tty" ]] || return 1
+      return 0
+    }
+
+    select_local_tmux_target() {
+      local LOCAL_TMUX_OK=true WINDOW_SELECTOR TARGET_WINDOW TARGET_PANE
+
+      command -v tmux >/dev/null 2>&1 || return 1
+
+      if [[ -n "$TMUX_SESSION" ]]; then
+        tmux has-session -t "$TMUX_SESSION" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
+      fi
+
+      WINDOW_SELECTOR=$(tmux_window_index "$TMUX_WINDOW")
+      if [[ "$LOCAL_TMUX_OK" == "true" && -n "$WINDOW_SELECTOR" ]]; then
+        TARGET_WINDOW="$WINDOW_SELECTOR"
+        if [[ -n "$TMUX_SESSION" ]]; then
+          TARGET_WINDOW="''${TMUX_SESSION}:''${WINDOW_SELECTOR}"
+        fi
+        tmux select-window -t "$TARGET_WINDOW" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
+      fi
+
+      TARGET_PANE="$TMUX_PANE"
+      if [[ "$LOCAL_TMUX_OK" == "true" && -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
+        TARGET_PANE=$(resolve_local_pane_by_tty "$TMUX_PTY" || true)
+      fi
+
+      if [[ "$LOCAL_TMUX_OK" == "true" && -n "$TARGET_PANE" ]]; then
+        if ! tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1; then
+          if [[ -n "$TMUX_PTY" ]]; then
+            TARGET_PANE=$(resolve_local_pane_by_tty "$TMUX_PTY" || true)
+          fi
+          if [[ -n "$TARGET_PANE" ]]; then
+            tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
+          else
+            LOCAL_TMUX_OK=false
+          fi
+        fi
+      fi
+
+      if [[ "$LOCAL_TMUX_OK" == "true" ]]; then
+        validate_local_tmux_target "$TMUX_SESSION" "$WINDOW_SELECTOR" "$TARGET_PANE" "$TMUX_PTY" || LOCAL_TMUX_OK=false
+      fi
+
+      [[ "$LOCAL_TMUX_OK" == "true" ]]
+    }
+
     sway_success() {
       local payload="$1"
       printf '%s\n' "$payload" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1
@@ -358,10 +472,7 @@ let
           fi
         fi
 
-        WINDOW_SELECTOR="$TMUX_WINDOW"
-        if [[ "$WINDOW_SELECTOR" == *:* ]]; then
-          WINDOW_SELECTOR="''${WINDOW_SELECTOR%%:*}"
-        fi
+        WINDOW_SELECTOR=$(tmux_window_index "$TMUX_WINDOW")
         if [[ "$REMOTE_TMUX_OK" == "true" && -n "$WINDOW_SELECTOR" ]]; then
           TARGET_WINDOW="$WINDOW_SELECTOR"
           if [[ -n "$TMUX_SESSION" ]]; then
@@ -374,14 +485,24 @@ let
 
         TARGET_PANE="$TMUX_PANE"
         if [[ "$REMOTE_TMUX_OK" == "true" && -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
-          TARGET_PANE=$(
-            run_remote_tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null \
-              | ${pkgs.gawk}/bin/awk -v tty="$TMUX_PTY" '$2 == tty {print $1; exit}'
-          )
+          TARGET_PANE=$(resolve_remote_pane_by_tty "$TMUX_PTY" || true)
         fi
 
         if [[ "$REMOTE_TMUX_OK" == "true" && -n "$TARGET_PANE" ]]; then
           if ! run_remote_tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1; then
+            if [[ -n "$TMUX_PTY" ]]; then
+              TARGET_PANE=$(resolve_remote_pane_by_tty "$TMUX_PTY" || true)
+            fi
+            if [[ -n "$TARGET_PANE" ]]; then
+              run_remote_tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || REMOTE_TMUX_OK=false
+            else
+              REMOTE_TMUX_OK=false
+            fi
+          fi
+        fi
+
+        if [[ "$REMOTE_TMUX_OK" == "true" ]]; then
+          if ! validate_remote_tmux_target "$TMUX_SESSION" "$WINDOW_SELECTOR" "$TARGET_PANE" "$TMUX_PTY"; then
             REMOTE_TMUX_OK=false
           fi
         fi
@@ -396,32 +517,7 @@ let
       fi
     elif command -v tmux >/dev/null 2>&1; then
       TMUX_TARGET_MODE="local"
-      LOCAL_TMUX_OK=true
-      if [[ -n "$TMUX_SESSION" ]]; then
-        tmux has-session -t "$TMUX_SESSION" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
-      fi
-
-      WINDOW_SELECTOR="$TMUX_WINDOW"
-      if [[ "$WINDOW_SELECTOR" == *:* ]]; then
-        WINDOW_SELECTOR="''${WINDOW_SELECTOR%%:*}"
-      fi
-      if [[ "$LOCAL_TMUX_OK" == "true" && -n "$WINDOW_SELECTOR" ]]; then
-        TARGET_WINDOW="$WINDOW_SELECTOR"
-        if [[ -n "$TMUX_SESSION" ]]; then
-          TARGET_WINDOW="''${TMUX_SESSION}:''${WINDOW_SELECTOR}"
-        fi
-        tmux select-window -t "$TARGET_WINDOW" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
-      fi
-
-      TARGET_PANE="$TMUX_PANE"
-      if [[ "$LOCAL_TMUX_OK" == "true" && -z "$TARGET_PANE" && -n "$TMUX_PTY" ]]; then
-        TARGET_PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_tty}' 2>/dev/null | ${pkgs.gawk}/bin/awk -v tty="$TMUX_PTY" '$2 == tty {print $1; exit}')
-      fi
-
-      if [[ "$LOCAL_TMUX_OK" == "true" && -n "$TARGET_PANE" ]]; then
-        tmux select-pane -t "$TARGET_PANE" >/dev/null 2>&1 || LOCAL_TMUX_OK=false
-      fi
-      if [[ "$LOCAL_TMUX_OK" == "true" ]]; then
+      if select_local_tmux_target; then
         TMUX_TARGET_STATUS="success"
         log_stage "tmux_target_local_ok"
       else
@@ -432,6 +528,11 @@ let
       TMUX_TARGET_MODE="local"
       TMUX_TARGET_STATUS="missing"
       log_stage "tmux_missing"
+    fi
+
+    if [[ ("$TMUX_PANE" != "" || "$TMUX_SESSION" != "" || "$TMUX_WINDOW" != "" || "$TMUX_PTY" != "") && "$TMUX_TARGET_STATUS" != "success" ]]; then
+      FOCUS_OK=false
+      log_stage "tmux_target_required_fail"
     fi
 
     # Final safeguard: tmux targeting can alter focus context; enforce tiled state again.
@@ -594,10 +695,10 @@ let
       ((.active_ai_sessions // []) | map(select((.session_key // "") == $key)) | first) as $s
       | if $s == null then "" else
           [
-            ($s.project // ""),
+            ($s.focus_project // $s.window_project // $s.project // ""),
             (($s.window_id // 0) | tostring),
-            ($s.execution_mode // "local"),
-            ($s.connection_key // ""),
+            ($s.focus_execution_mode // $s.execution_mode // "local"),
+            ($s.focus_connection_key // $s.connection_key // ""),
             ($s.tmux_pane // ""),
             ($s.tmux_session // ""),
             ($s.tmux_window // ""),
@@ -793,14 +894,14 @@ let
       SESSION_TSV=$(${pkgs.jq}/bin/jq -r --arg key "$TARGET_KEY" '
         ((.active_ai_sessions // []) | map(select((.session_key // "") == $key)) | first) as $s
         | if $s == null then "" else
-            [
-              ($s.project // ""),
-              (($s.window_id // 0) | tostring),
-              ($s.execution_mode // "local"),
-              ($s.connection_key // ""),
-              ($s.tmux_pane // ""),
-              ($s.tmux_session // ""),
-              ($s.tmux_window // ""),
+              [
+                ($s.focus_project // $s.window_project // $s.project // ""),
+                (($s.window_id // 0) | tostring),
+                ($s.focus_execution_mode // $s.execution_mode // "local"),
+                ($s.focus_connection_key // $s.connection_key // ""),
+                ($s.tmux_pane // ""),
+                ($s.tmux_session // ""),
+                ($s.tmux_window // ""),
               ($s.pty // ""),
               ($s.finish_marker // "")
             ] | @tsv
