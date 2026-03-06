@@ -31,18 +31,18 @@ let
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.31.0";
+    version = "0.32.1";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-huPd4W7Jf4/dZshWElicYpcHhktE83wPs/z5jVYwynM=";
+      hash = "sha256-2vi4bYWdiwTdGVXgOwq31sgly0mL3cBALTXbR0bGSh8=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-iRlwCSGigRi/ilfXi8rI68vlfkeec3vB5nZWPmTLnK8=";
+    npmDepsHash = "sha256-xmKoVMrwItuCNi6Te+EzGnbmO7nWL7JetNNaQQWnYgw=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 
