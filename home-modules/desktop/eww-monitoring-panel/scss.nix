@@ -1184,7 +1184,6 @@
     margin-top: 0;
     color: ${mocha.text};
     background: rgba(108, 112, 134, 0.24);
-    text-align: center;
   }
 
   .active-ai-chip-stage.stage-starting,
