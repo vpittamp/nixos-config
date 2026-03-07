@@ -1107,6 +1107,10 @@
     min-width: 0;
   }
 
+  .active-ai-chip-scroll {
+    min-width: 0;
+  }
+
   .active-ai-chip {
     background: rgba(49, 50, 68, 0.65);
     border: 1px solid rgba(108, 112, 134, 0.36);
@@ -1172,13 +1176,15 @@
   }
 
   .active-ai-chip-stage {
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 700;
     border-radius: 8px;
-    padding: 1px 5px;
-    margin-top: 1px;
+    min-width: 14px;
+    padding: 1px 4px;
+    margin-top: 0;
     color: ${mocha.text};
     background: rgba(108, 112, 134, 0.24);
+    text-align: center;
   }
 
   .active-ai-chip-stage.stage-starting,

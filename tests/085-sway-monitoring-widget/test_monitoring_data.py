@@ -2676,6 +2676,67 @@ class TestAiReviewLifecycle:
         assert stage["stage_label"] == "Starting"
         assert stage["stage_detail"] == "Process detected"
         assert stage["stage_visual_state"] == "working"
+        assert stage["stage_glyph"] == "◔"
+
+    @pytest.mark.parametrize(
+        ("session", "expected_stage", "expected_label", "expected_detail", "expected_glyph"),
+        [
+            (
+                {
+                    "otel_state": "working",
+                    "pending_tools": 2,
+                    "status_reason": "event:claude_code.tool_start",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "tool_running",
+                "Tool",
+                "Tool started",
+                "⛭",
+            ),
+            (
+                {
+                    "otel_state": "working",
+                    "is_streaming": True,
+                    "status_reason": "event:claude_code.stream_token",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "streaming",
+                "Streaming",
+                "Streaming response",
+                "⇢",
+            ),
+            (
+                {
+                    "otel_state": "working",
+                    "status_reason": "event:claude_code.permission_request",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "waiting_input",
+                "Waiting",
+                "Waiting on permission",
+                "✋",
+            ),
+            (
+                {
+                    "otel_state": "attention",
+                    "user_action_reason": "rate_limit",
+                    "status_reason": "rate_limit",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "attention",
+                "Attention",
+                "Rate limit",
+                "!",
+            ),
+        ],
+    )
+    def test_normalize_stage_fields_maps_semantic_stage_variants(self, session, expected_stage, expected_label, expected_detail, expected_glyph):
+        stage = monitoring_data._normalize_stage_fields(session, now_epoch=1741380000.0)
+
+        assert stage["stage"] == expected_stage
+        assert stage["stage_label"] == expected_label
+        assert stage["stage_detail"] == expected_detail
+        assert stage["stage_glyph"] == expected_glyph
 
     def test_normalize_stage_fields_marks_unseen_output_as_ready(self):
         stage = monitoring_data._normalize_stage_fields(
@@ -2690,6 +2751,7 @@ class TestAiReviewLifecycle:
         assert stage["stage"] == "output_ready"
         assert stage["output_unseen"] is True
         assert stage["stage_detail"] == "Unread output retained"
+        assert stage["stage_glyph"] == "✓"
 
     def test_normalize_stage_fields_marks_remote_stale_without_faking_completion(self):
         stage = monitoring_data._normalize_stage_fields(

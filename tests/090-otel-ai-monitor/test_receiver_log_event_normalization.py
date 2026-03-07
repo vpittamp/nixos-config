@@ -9,7 +9,7 @@ if "aiohttp" not in sys.modules:
     aiohttp_stub.web = types.SimpleNamespace(
         Request=object,
         Response=object,
-        Application=lambda: None,
+        Application=lambda **kwargs: types.SimpleNamespace(kwargs=kwargs, router=types.SimpleNamespace(add_get=lambda *a, **k: None, add_post=lambda *a, **k: None)),
         AppRunner=object,
         TCPSite=object,
         json_response=lambda *args, **kwargs: {},
@@ -38,11 +38,25 @@ def _load_otel_monitor_package():
 
 _load_otel_monitor_package()
 from otel_ai_monitor.models import AITool  # type: ignore  # noqa: E402
-from otel_ai_monitor.receiver import OTLPReceiver  # type: ignore  # noqa: E402
+from otel_ai_monitor.receiver import OTLPReceiver, _receiver_max_request_bytes  # type: ignore  # noqa: E402
 
 
 def _make_receiver() -> OTLPReceiver:
     return object.__new__(OTLPReceiver)
+
+
+def test_receiver_max_request_bytes_defaults_to_32_mib(monkeypatch):
+    monkeypatch.delenv("OTEL_AI_MONITOR_MAX_REQUEST_MIB", raising=False)
+
+    assert _receiver_max_request_bytes() == 32 * 1024 * 1024
+
+
+def test_receiver_max_request_bytes_clamps_invalid_values(monkeypatch):
+    monkeypatch.setenv("OTEL_AI_MONITOR_MAX_REQUEST_MIB", "bogus")
+    assert _receiver_max_request_bytes() == 32 * 1024 * 1024
+
+    monkeypatch.setenv("OTEL_AI_MONITOR_MAX_REQUEST_MIB", "0")
+    assert _receiver_max_request_bytes() == 1 * 1024 * 1024
 
 
 def test_parse_log_record_json_normalizes_claude_short_event_name():

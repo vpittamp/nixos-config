@@ -40,10 +40,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_MAX_REQUEST_MIB = 32
+
 # Feature 132: Check if Langfuse enrichment is enabled
 LANGFUSE_ENABLED = os.environ.get("LANGFUSE_ENABLED", "0") == "1"
 LANGFUSE_USER_ID = os.environ.get("LANGFUSE_USER_ID")
 LANGFUSE_DEFAULT_TAGS = os.environ.get("LANGFUSE_TAGS")
+
+
+def _receiver_max_request_bytes() -> int:
+    """Return the OTLP HTTP request size ceiling in bytes."""
+    raw_value = str(os.environ.get("OTEL_AI_MONITOR_MAX_REQUEST_MIB", _DEFAULT_MAX_REQUEST_MIB)).strip()
+    try:
+        max_mib = int(raw_value)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid OTEL_AI_MONITOR_MAX_REQUEST_MIB=%r, using %s MiB",
+            raw_value,
+            _DEFAULT_MAX_REQUEST_MIB,
+        )
+        max_mib = _DEFAULT_MAX_REQUEST_MIB
+    max_mib = max(1, max_mib)
+    return max_mib * 1024 * 1024
 
 
 def _any_value_to_python(av: Any) -> Any:
@@ -181,7 +199,7 @@ class OTLPReceiver:
         self.port = port
         self.tracker = tracker
         self.remote_sink = remote_sink
-        self.app = web.Application()
+        self.app = web.Application(client_max_size=_receiver_max_request_bytes())
         self.runner: Optional[web.AppRunner] = None
         self._setup_routes()
 

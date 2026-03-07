@@ -1851,6 +1851,16 @@ _AI_STAGE_VISUAL_STATES = {
     "output_ready": "completed",
     "idle": "idle",
 }
+_AI_STAGE_GLYPHS = {
+    "starting": "◔",
+    "thinking": "⋯",
+    "tool_running": "⛭",
+    "streaming": "⇢",
+    "waiting_input": "✋",
+    "attention": "!",
+    "output_ready": "✓",
+    "idle": "·",
+}
 _OTEL_VISIBLE_BADGE_STATES = {"working", "attention", "completed", "idle"}
 _OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
 _AI_SESSION_STALE_THRESHOLD_SECONDS = 15 * 60
@@ -2060,6 +2070,7 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
         "stage_class": stage_class,
         "stage_visual_state": stage_visual_state,
         "stage_rank": stage_rank,
+        "stage_glyph": str(session.get("stage_glyph") or _AI_STAGE_GLYPHS.get(stage, "·")),
         "needs_user_action": needs_user_action,
         "user_action_reason": user_action_reason,
         "output_ready": output_ready,
@@ -3692,6 +3703,7 @@ def _build_otel_badges(
             "stage_class": str(stage_fields.get("stage_class") or "stage-idle"),
             "stage_visual_state": str(stage_fields.get("stage_visual_state") or "idle"),
             "stage_rank": int(stage_fields.get("stage_rank") or 0),
+            "stage_glyph": str(stage_fields.get("stage_glyph") or _AI_STAGE_GLYPHS.get(str(stage_fields.get("stage") or "idle"), "·")),
             "needs_user_action": bool(stage_fields.get("needs_user_action", False)),
             "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
             "output_ready": bool(stage_fields.get("output_ready", False)),
@@ -3902,6 +3914,7 @@ def _build_active_ai_sessions(
             "stage_class": str(stage_fields.get("stage_class") or "stage-idle"),
             "stage_visual_state": str(stage_fields.get("stage_visual_state") or "idle"),
             "stage_rank": int(stage_fields.get("stage_rank") or 0),
+            "stage_glyph": str(stage_fields.get("stage_glyph") or _AI_STAGE_GLYPHS.get(str(stage_fields.get("stage") or "idle"), "·")),
             "needs_user_action": bool(stage_fields.get("needs_user_action", False)),
             "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
             "output_ready": bool(stage_fields.get("output_ready", False)),
@@ -4290,6 +4303,7 @@ def _apply_review_lifecycle(
             "stage_class": f"stage-{stage}",
             "stage_visual_state": "completed",
             "stage_rank": _AI_STAGE_RANKS[stage],
+            "stage_glyph": _AI_STAGE_GLYPHS[stage],
             "needs_user_action": False,
             "user_action_reason": "",
             "output_ready": True,
@@ -4442,6 +4456,7 @@ def _merge_review_state_into_window_badges(
                 "stage_class",
                 "stage_visual_state",
                 "stage_rank",
+                "stage_glyph",
                 "needs_user_action",
                 "user_action_reason",
                 "output_ready",
@@ -4478,6 +4493,7 @@ def _merge_review_state_into_window_badges(
                 "stage_class": str(session.get("stage_class") or "stage-output_ready"),
                 "stage_visual_state": str(session.get("stage_visual_state") or "completed"),
                 "stage_rank": int(session.get("stage_rank") or _AI_STAGE_RANKS["output_ready"]),
+                "stage_glyph": str(session.get("stage_glyph") or _AI_STAGE_GLYPHS["output_ready"]),
                 "needs_user_action": False,
                 "user_action_reason": "",
                 "output_ready": True,
