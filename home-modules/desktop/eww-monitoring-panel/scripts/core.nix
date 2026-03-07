@@ -130,6 +130,10 @@ let
       run_eww_quiet ping && break
       ${pkgs.coreutils}/bin/sleep 0.2
     done
+    # Eww can report ping-ready slightly before the GTK application thread is
+    # consistently accepting window open responses. Give it a short settle
+    # window to avoid the recurring "channel closed" startup race.
+    ${pkgs.coreutils}/bin/sleep 0.35
 
     # Feature 125: Read dock mode state and open correct window
     # Default to docked mode if state file doesn't exist or is invalid
@@ -168,7 +172,7 @@ let
       # Cold-start path: daemon has just loaded current config, so avoid `reload`
       # here. Reloading during startup can leave duplicate deflisten processes.
       cleanup_panel_windows
-      ${pkgs.coreutils}/bin/sleep 0.15
+      ${pkgs.coreutils}/bin/sleep 0.25
       # Open once; if IPC returns a transient error, verify through active-windows.
       run_eww_quiet open --id "$PANEL_WINDOW_ID" "$target_window" || true
       for attempt in $(seq 1 10); do

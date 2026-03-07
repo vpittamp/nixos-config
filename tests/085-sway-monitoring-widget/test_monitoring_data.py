@@ -1372,6 +1372,81 @@ class TestQueryMonitoringData:
         )
         assert resolved is None
 
+    def test_resolve_otel_window_id_uses_unique_identity_window_when_upstream_window_project_matches(self):
+        """Allow deterministic SSH-window remap when canonical window ownership is known upstream."""
+        outputs = [
+            {
+                "name": "HEADLESS-1",
+                "active": True,
+                "workspaces": [
+                    {
+                        "num": 1,
+                        "name": "1",
+                        "visible": True,
+                        "focused": True,
+                        "windows": [
+                            {
+                                "id": 168,
+                                "class": "Ghostty",
+                                "title": "local shell",
+                                "project": "vpittamp/nixos-config:main",
+                                "execution_mode": "local",
+                                "connection_key": "local@ryzen",
+                                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                            },
+                            {
+                                "id": 219,
+                                "class": "Ghostty",
+                                "title": "ssh shell",
+                                "project": "vpittamp/nixos-config:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                "remote_session_name": "nixos-config/main",
+                            },
+                            {
+                                "id": 220,
+                                "class": "Ghostty",
+                                "title": "ssh scratchpad",
+                                "project": "vpittamp/nixos-config:main",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                                "floating": True,
+                                "hidden": True,
+                                "marks": ["scoped:scratchpad-terminal:vpittamp/nixos-config:main:220"],
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+        window_candidates = monitoring_data._collect_output_window_candidates(outputs)
+        session = {
+            "tool": "claude-code",
+            "state": "working",
+            "project": "PittampalliOrg/stacks:main",
+            "session_project": "PittampalliOrg/stacks:main",
+            "display_project": "PittampalliOrg/stacks:main",
+            "window_project": "vpittamp/nixos-config:main",
+            "focus_project": "vpittamp/nixos-config:main",
+            "window_id": 168,
+            "terminal_context": {
+                "window_id": 168,
+                "tmux_session": "stacks/main",
+                "tmux_pane": "%79",
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+            },
+        }
+        resolved = monitoring_data._resolve_otel_session_window_id(
+            session,
+            outputs,
+            window_candidates=window_candidates,
+        )
+        assert resolved == 219
+
     def test_resolve_otel_window_id_uses_synthetic_tmux_project_hint_and_prefers_primary_terminal(self):
         """Synthetic remote-session rows can provide tmux->project hint; resolver should pick focusable primary terminal."""
         outputs = [
@@ -1572,7 +1647,7 @@ class TestQueryMonitoringData:
         assert scoped_projects[0]["execution_mode"] == "ssh"
 
     def test_remote_otel_sink_stale_source_is_read_only(self, monkeypatch):
-        """Stale sink sources should never surface as active working sessions."""
+        """Stale sink sources should remain read-only and carry stale markers."""
         monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
         monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SOURCE_STALE_SECONDS", 5.0)
 
@@ -1603,8 +1678,9 @@ class TestQueryMonitoringData:
         )
         assert sessions
         assert sessions[0]["remote_source_stale"] is True
-        assert sessions[0]["state"] == "completed"
-        assert sessions[0]["status_reason"] == "remote_source_stale"
+        assert sessions[0]["state"] == "working"
+        assert "status_reason" not in sessions[0]
+        assert sessions[0]["remote_source_age_seconds"] >= 120
 
     def test_remote_otel_sink_uses_deterministic_source_without_ssh(self, monkeypatch):
         """Deterministic sink path should not perform SSH fetches."""
@@ -2563,28 +2639,79 @@ class TestAiReviewLifecycle:
         assert badge["session_key"] == sessions[0]["session_key"]
 
     def test_active_ai_sort_rank_places_finished_unseen_between_working_and_completed(self):
-        working = {"otel_state": "working", "review_pending": False}
-        finished_unseen = {"otel_state": "idle", "review_pending": True}
-        completed_seen = {"otel_state": "completed", "review_pending": False}
+        working = {"stage_rank": 3}
+        finished_unseen = {"stage_rank": 1}
+        completed_seen = {"stage_rank": 0}
         assert monitoring_data._active_ai_session_sort_rank(working) > monitoring_data._active_ai_session_sort_rank(finished_unseen)
         assert monitoring_data._active_ai_session_sort_rank(finished_unseen) > monitoring_data._active_ai_session_sort_rank(completed_seen)
 
     def test_should_render_ai_session_hides_seen_idle_and_completed(self):
-        assert monitoring_data._should_render_ai_session({"otel_state": "working", "review_pending": False}) is True
-        assert monitoring_data._should_render_ai_session({"otel_state": "attention", "review_pending": False}) is True
-        assert monitoring_data._should_render_ai_session({"otel_state": "idle", "review_pending": True}) is True
-        assert monitoring_data._should_render_ai_session({"otel_state": "completed", "review_pending": True}) is True
-        assert monitoring_data._should_render_ai_session({"otel_state": "idle", "review_pending": False}) is False
-        assert monitoring_data._should_render_ai_session({"otel_state": "completed", "review_pending": False}) is False
-        assert monitoring_data._should_render_ai_session({"otel_state": "idle", "review_pending": False, "pinned": True}) is True
+        assert monitoring_data._should_render_ai_session({"stage": "thinking", "review_pending": False}) is True
+        assert monitoring_data._should_render_ai_session({"stage": "attention", "review_pending": False}) is True
+        assert monitoring_data._should_render_ai_session({"stage": "output_ready", "output_unseen": True}) is True
+        assert monitoring_data._should_render_ai_session({"stage": "idle", "review_pending": False}) is False
+        assert monitoring_data._should_render_ai_session({"stage": "output_ready", "output_unseen": False}) is False
+        assert monitoring_data._should_render_ai_session({"stage": "idle", "review_pending": False, "pinned": True}) is True
 
     def test_should_render_otel_badge_hides_seen_idle_and_completed(self):
-        assert monitoring_data._should_render_otel_badge({"otel_state": "working", "review_pending": False}) is True
-        assert monitoring_data._should_render_otel_badge({"otel_state": "attention", "review_pending": False}) is True
-        assert monitoring_data._should_render_otel_badge({"otel_state": "idle", "review_pending": True}) is True
-        assert monitoring_data._should_render_otel_badge({"otel_state": "completed", "review_pending": True}) is True
-        assert monitoring_data._should_render_otel_badge({"otel_state": "idle", "review_pending": False}) is False
-        assert monitoring_data._should_render_otel_badge({"otel_state": "completed", "review_pending": False}) is False
+        assert monitoring_data._should_render_otel_badge({"stage": "thinking", "review_pending": False}) is True
+        assert monitoring_data._should_render_otel_badge({"stage": "attention", "review_pending": False}) is True
+        assert monitoring_data._should_render_otel_badge({"stage": "output_ready", "output_unseen": True}) is True
+        assert monitoring_data._should_render_otel_badge({"stage": "idle", "review_pending": False}) is False
+        assert monitoring_data._should_render_otel_badge({"stage": "output_ready", "output_unseen": False}) is False
+
+    def test_normalize_stage_fields_derives_semantic_stage_from_raw_session(self):
+        stage = monitoring_data._normalize_stage_fields(
+            {
+                "otel_state": "working",
+                "status_reason": "process_detected",
+                "pending_tools": 0,
+                "is_streaming": False,
+                "identity_confidence": "pid",
+                "updated_at": "2026-03-07T20:33:51+00:00",
+            },
+            now_epoch=1741380000.0,
+        )
+        assert stage["stage"] == "starting"
+        assert stage["stage_label"] == "Starting"
+        assert stage["stage_detail"] == "Process detected"
+        assert stage["stage_visual_state"] == "working"
+
+    def test_normalize_stage_fields_marks_unseen_output_as_ready(self):
+        stage = monitoring_data._normalize_stage_fields(
+            {
+                "otel_state": "idle",
+                "review_pending": True,
+                "status_reason": "finished_unseen_retained",
+                "updated_at": "2026-03-07T20:33:51+00:00",
+            },
+            now_epoch=1741380000.0,
+        )
+        assert stage["stage"] == "output_ready"
+        assert stage["output_unseen"] is True
+        assert stage["stage_detail"] == "Unread output retained"
+
+    def test_normalize_stage_fields_marks_remote_stale_without_faking_completion(self):
+        stage = monitoring_data._normalize_stage_fields(
+            {
+                "otel_state": "working",
+                "status_reason": "process_keepalive",
+                "identity_confidence": "native",
+                "remote_source_stale": True,
+                "remote_source_age_seconds": 240,
+                "updated_at": "2026-03-07T20:33:51+00:00",
+            },
+            now_epoch=1741380000.0,
+        )
+        assert stage["stage"] == "thinking"
+        assert stage["activity_freshness"] == "stale"
+        assert stage["activity_age_seconds"] >= 240
+        assert stage["stage_detail"] == "Still active · Source stale"
+
+    def test_format_activity_age_prefers_compact_relative_copy(self):
+        assert monitoring_data._format_activity_age(12) == "12s ago"
+        assert monitoring_data._format_activity_age(120) == "2m ago"
+        assert monitoring_data._format_activity_age(7200) == "2h ago"
 
     def test_consume_seen_events_empty_file_does_not_rewrite(self, tmp_path, monkeypatch):
         seen_events_file = tmp_path / "ai-session-seen-events.jsonl"

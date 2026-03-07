@@ -105,22 +105,22 @@
                       (eventbox
                         :cursor "pointer"
                         :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.focus_project ?: session.window_project ?: session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.focus_execution_mode ?: session.execution_mode ?: "local"}\" \"''${session.focus_connection_key ?: session.connection_key ?: ""}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" \"''${session.finish_marker ?: ""}\" &"
-                        :tooltip {session.display_tool + " · " + (session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                        :tooltip {session.display_tool + " · " + (session.stage_label ?: session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                          + ((session.stage_detail ?: "") != "" ? (" · " + (session.stage_detail ?: "")) : "")
                           + (((session.window_project ?: "") != "" && (session.window_project ?: "") != (session.display_project ?: session.project ?: "")) ? (" · via " + (session.window_project ?: "")) : "")
                           + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
                           + ((session.host_name ?: "") != "" ? ("@" + (session.host_name ?: "")) : "")
                           + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
                           + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
                           + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
-                          + ((session.review_pending ?: false) ? " · Unseen output" : "")
+                          + ((session.output_unseen ?: session.review_pending ?: false) ? " · Unseen output" : "")
                           + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
                           + " · Click to focus"}
                         (box
                           :class {"active-ai-chip " +
-                            ((session.otel_state ?: "idle") == "working"
-                              ? "working"
-                              : ((session.otel_state ?: "idle") == "attention" ? "attention" : "completed")) +
-                            ((session.review_pending ?: false) ? " review-pending" : "") +
+                            (session.stage_class ?: ("stage-" + (session.otel_state ?: "idle"))) + " " +
+                            (session.stage_visual_state ?: "idle") +
+                            ((session.output_unseen ?: session.review_pending ?: false) ? " review-pending" : "") +
                             ((session.tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((session.tool ?: "unknown") == "codex" ? " tool-codex" : ((session.tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                             ((session.stale ?: false) ? " stale" : "") +
                             (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
@@ -142,15 +142,23 @@
                           (label
                             :class "active-ai-chip-text"
                             :text {session.display_tool ?: session.tool ?: "AI"}
-                            :limit-width 16
+                            :limit-width 14
                             :truncate true)
                           (label
-                            :class {"active-ai-chip-mode " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")}
-                            :text {(session.execution_mode ?: "local") == "ssh" ? "R" : "L"})
+                            :class {"active-ai-chip-stage " + (session.stage_class ?: "stage-idle")}
+                            :text {session.stage_label ?: session.otel_state ?: "Idle"})
                           (label
-                            :class "active-ai-chip-unread-dot"
-                            :visible {session.review_pending ?: false}
-                            :text "●")))
+                            :class "active-ai-chip-marker remote"
+                            :visible {(session.execution_mode ?: "local") == "ssh"}
+                            :text "SSH")
+                          (label
+                            :class "active-ai-chip-marker action"
+                            :visible {session.needs_user_action ?: false}
+                            :text "Action")
+                          (label
+                            :class "active-ai-chip-marker unread"
+                            :visible {session.output_unseen ?: session.review_pending ?: false}
+                            :text "New")))
                       (eventbox
                         :cursor "pointer"
                         :onclick "${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action \"''${session.session_key ?: ""}\" &"
@@ -181,7 +189,13 @@
                   :truncate true)
                 (label
                   :class "active-ai-timeline-line"
-                  :text {"Now: " + (session.otel_state ?: "idle") + ((session.pending_tools ?: 0) > 0 ? (" · tools " + (session.pending_tools ?: 0)) : "")})
+                  :text {"Stage: " + (session.stage_label ?: session.otel_state ?: "idle") + ((session.stage_detail ?: "") != "" ? (" · " + (session.stage_detail ?: "")) : "")})
+                (label
+                  :class "active-ai-timeline-line"
+                  :text {"Activity: " + ((session.is_streaming ?: false) ? "streaming" : ((session.pending_tools ?: 0) > 0 ? ("tools " + (session.pending_tools ?: 0)) : (session.activity_freshness ?: "fresh"))) + " · source " + (session.identity_source ?: "unknown")})
+                (label
+                  :class "active-ai-timeline-line"
+                  :text {"Updated: " + (session.activity_age_label ?: "just now") + ((session.remote_source_stale ?: false) ? " · remote source stale" : "")})
                 (label
                   :class "active-ai-timeline-line"
                   :text {"Target: " + ((session.display_target ?: "") != "" ? (session.display_target ?: "") : ("win " + (session.window_id ?: 0)))}
@@ -461,14 +475,9 @@
                   :spacing 2
                   (eventbox
                     :class {"ai-badge-hover " +
-                      ((badge.otel_state ?: "idle") == "working"
-                        ? "working"
-                        : ((badge.otel_state ?: "idle") == "attention"
-                          ? "attention"
-                          : ((badge.otel_state ?: "idle") == "completed"
-                            ? "completed"
-                            : "idle"))) +
-                      ((badge.review_pending ?: false) ? " review-pending" : "") +
+                      (badge.stage_class ?: ("stage-" + (badge.otel_state ?: "idle"))) + " " +
+                      (badge.stage_visual_state ?: "idle") +
+                      ((badge.output_unseen ?: badge.review_pending ?: false) ? " review-pending" : "") +
                       ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                       ((badge.stale ?: false) ? " stale" : "") +
                       (((badge.confidence_level ?: "") != "") ? (" confidence-" + (badge.confidence_level ?: "")) : "")}
@@ -479,20 +488,14 @@
                       ? "${focusAiSessionScript}/bin/focus-ai-session-action ''${badge.focus_project ?: badge.window_project ?: window.project} ''${badge.window_id ?: window.id} ''${badge.focus_execution_mode ?: badge.execution_mode ?: window.execution_mode ?: "local"} ''${badge.focus_connection_key ?: badge.connection_key ?: window.connection_key ?: ""} ''${badge.tmux_pane ?: ""} ''${badge.tmux_session ?: ""} ''${badge.tmux_window ?: ""} ''${badge.pty ?: ""} &"
                       : ((badge.trace_id ?: "") != "" ? "${openLangfuseTraceScript}/bin/open-langfuse-trace " + badge.trace_id + " &" : "")
                     }
-                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + ((badge.otel_state ?: "idle") == "working" ? "⏳ Working" : ((badge.otel_state ?: "idle") == "completed" ? "✓ Ready" : ((badge.otel_state ?: "idle") == "attention" ? "⚠ Attention" : "💤 Idle"))) + ((badge.review_pending ?: false) ? " · Unseen output" : "") + " · " + ((badge.execution_mode ?: "local") == "ssh" ? "remote" : "local") + ((badge.host_name ?: "") != "" ? ("@" + (badge.host_name ?: "")) : "") + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
+                    :tooltip {((badge.otel_tool ?: "unknown") == "claude-code" ? "Claude Code" : ((badge.otel_tool ?: "unknown") == "codex" ? "Codex CLI" : ((badge.otel_tool ?: "unknown") == "gemini" ? "Gemini CLI" : (badge.otel_tool ?: "Unknown")))) + " · " + (badge.stage_label ?: badge.otel_state ?: "Idle") + ((badge.stage_detail ?: "") != "" ? (" · " + (badge.stage_detail ?: "")) : "") + ((badge.output_unseen ?: badge.review_pending ?: false) ? " · Unseen output" : "") + " · " + ((badge.execution_mode ?: "local") == "ssh" ? "remote" : "local") + ((badge.host_name ?: "") != "" ? ("@" + (badge.host_name ?: "")) : "") + ((badge.native_session_id ?: "") != "" ? " · SID " + badge.native_session_id : ((badge.session_id ?: "") != "" ? " · SID " + badge.session_id : "")) + ((badge.pid ?: "") != "" ? " · PID " + badge.pid : "") + ((badge.tmux_pane ?: "") != "" ? " · pane " + badge.tmux_pane : "") + ((badge.confidence_level ?: "") != "" ? " · confidence " + badge.confidence_level : "") + ((badge.stale ?: false) ? (" · stale " + (badge.stale_age_seconds ?: 0) + "s") : "") + ((badge.window_id ?: 0) != 0 ? " · Click to focus session" : ((badge.trace_id ?: "") != "" ? " · Click for trace" : ""))}
                     (box
                       :orientation "h"
                       :space-evenly false
                       :spacing 1
                       (image
                         :class {"ai-badge-icon" +
-                          ((badge.otel_state ?: "idle") == "working"
-                            ? " working"
-                            : ((badge.otel_state ?: "idle") == "completed"
-                              ? " completed"
-                              : ((badge.otel_state ?: "idle") == "attention"
-                                ? " attention"
-                                : " idle"))) +
+                          " " + (badge.stage_visual_state ?: "idle") +
                           ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown")))}
                         :path {(badge.otel_tool ?: "unknown") == "claude-code"
                           ? "${iconPaths.claude}"
@@ -501,11 +504,11 @@
                             : ((badge.otel_tool ?: "unknown") == "gemini"
                               ? "${iconPaths.gemini}"
                               : "${iconPaths.anthropic}"))}
-                        :image-width {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)}
-                        :image-height {(badge.otel_state ?: "idle") == "working" ? 18 : ((badge.otel_state ?: "idle") == "attention" ? 17 : 16)})
+                        :image-width {(badge.stage_visual_state ?: "idle") == "working" ? 18 : (((badge.stage_visual_state ?: "idle") == "attention") ? 17 : 16)}
+                        :image-height {(badge.stage_visual_state ?: "idle") == "working" ? 18 : (((badge.stage_visual_state ?: "idle") == "attention") ? 17 : 16)})
                       (label
                         :class "ai-badge-unread-dot"
-                        :visible {badge.review_pending ?: false}
+                        :visible {badge.output_unseen ?: badge.review_pending ?: false}
                         :text "●")))
                   (box
                     :class "ai-badge-quick-actions"
@@ -536,7 +539,7 @@
                 :class "badge badge-overflow"
                 :text {"+''${arraylength(window.otel_badges ?: []) - 3}"}
                 :visible {arraylength(window.otel_badges ?: []) > 3}
-                :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + .otel_state) | join(\"\\n\")")}))
+                :tooltip {jq(window.otel_badges ?: [], ".[3:] | map(.otel_tool + \": \" + (.stage_label // .otel_state // \"idle\")) | join(\"\\n\")")}))
             (box
               :class {"window-action-rail" + ((hovered_window_id == window.id) && !(window.is_remote_session ?: false) ? " visible" : "")}
               :orientation "h"

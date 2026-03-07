@@ -321,6 +321,27 @@ class ProcessMonitor:
             project: Project name if available
         """
         now = datetime.now(timezone.utc)
+        metadata = self.tracker._load_pid_metadata(pid)
+        metadata_session_id = str(metadata.get("session_id") or "").strip()
+        if metadata_session_id:
+            session_id = session_id if session_id.startswith(f"{tool.value}:") else f"{tool.value}:pid:{pid}"
+
+        recovered_project = str(metadata.get("project") or "").strip() or project
+        recovered_project_path = str(metadata.get("project_path") or "").strip() or None
+        recovered_context = dict(terminal_context)
+        for key in (
+            "tmux_session",
+            "tmux_window",
+            "tmux_pane",
+            "pty",
+            "host_name",
+            "execution_mode",
+            "connection_key",
+            "context_key",
+            "remote_target",
+        ):
+            if not recovered_context.get(key) and metadata.get(key):
+                recovered_context[key] = metadata.get(key)
 
         async with self.tracker._lock:
             # Check if session already exists (from telemetry)
@@ -357,12 +378,12 @@ class ProcessMonitor:
 
             session = Session(
                 session_id=session_id,
-                native_session_id=None,
+                native_session_id=metadata_session_id or None,
                 identity_confidence=IdentityConfidence.PID,
                 tool=tool,
                 state=SessionState.WORKING,
-                project=project,
-                project_path=None,
+                project=recovered_project,
+                project_path=recovered_project_path,
                 window_id=window_id,
                 pid=pid,
                 created_at=now,
@@ -372,15 +393,18 @@ class ProcessMonitor:
                 status_reason="process_detected",
             )
             session.terminal_context.window_id = window_id
-            session.terminal_context.tmux_session = terminal_context.get("tmux_session")
-            session.terminal_context.tmux_window = terminal_context.get("tmux_window")
-            session.terminal_context.tmux_pane = terminal_context.get("tmux_pane")
-            session.terminal_context.pty = terminal_context.get("pty")
-            session.terminal_context.execution_mode = terminal_context.get("execution_mode")
-            session.terminal_context.connection_key = terminal_context.get("connection_key")
-            session.terminal_context.context_key = terminal_context.get("context_key")
-            session.terminal_context.remote_target = terminal_context.get("remote_target")
-            session.terminal_context.host_name = terminal_context.get("host_name")
+            session.terminal_context.tmux_session = recovered_context.get("tmux_session")
+            session.terminal_context.tmux_window = recovered_context.get("tmux_window")
+            session.terminal_context.tmux_pane = recovered_context.get("tmux_pane")
+            session.terminal_context.pty = recovered_context.get("pty")
+            session.terminal_context.execution_mode = recovered_context.get("execution_mode")
+            session.terminal_context.connection_key = recovered_context.get("connection_key")
+            session.terminal_context.context_key = recovered_context.get("context_key")
+            session.terminal_context.remote_target = recovered_context.get("remote_target")
+            session.terminal_context.host_name = recovered_context.get("host_name")
+            if session.native_session_id:
+                session.collision_group_id = f"{tool.value}:{session.native_session_id}"
+                self.tracker._register_native_session_unlocked(session.collision_group_id, session.session_id)
             self.tracker._sessions[session_id] = session
             logger.info(f"Process monitor: created session {session_id} for pid {pid}")
             self.tracker._mark_dirty_unlocked()

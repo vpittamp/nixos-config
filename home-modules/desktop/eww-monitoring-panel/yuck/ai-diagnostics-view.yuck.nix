@@ -36,10 +36,16 @@
           :text {"Attention: " + (monitoring_data.ai_monitor_metrics.attention_sessions ?: 0) + " · stale: " + (monitoring_data.ai_monitor_metrics.stale_sessions ?: 0)})
         (label :class "ai-diagnostics-row"
           :truncate true
-          :text {"Review pending: " + (monitoring_data.ai_monitor_metrics.review_pending_sessions ?: 0)})
+          :text {"Ready/unread: " + (monitoring_data.ai_monitor_metrics.review_pending_sessions ?: 0) + " · ready: " + (monitoring_data.ai_monitor_metrics.output_ready_sessions ?: 0)})
         (label :class "ai-diagnostics-row"
           :truncate true
-          :text {"Pinned: " + (monitoring_data.ai_monitor_metrics.pinned_sessions ?: 0)}))
+          :text {"Tool: " + (monitoring_data.ai_monitor_metrics.stage_tool_running_sessions ?: 0) + " · streaming: " + (monitoring_data.ai_monitor_metrics.stage_streaming_sessions ?: 0) + " · waiting: " + (monitoring_data.ai_monitor_metrics.stage_waiting_sessions ?: 0)})
+        (label :class "ai-diagnostics-row"
+          :truncate true
+          :text {"Source native: " + (monitoring_data.ai_monitor_metrics.stage_from_native ?: 0) + " · process: " + (monitoring_data.ai_monitor_metrics.stage_from_process ?: 0) + " · review: " + (monitoring_data.ai_monitor_metrics.stage_from_review ?: 0)})
+        (label :class "ai-diagnostics-row"
+          :truncate true
+          :text {"Pinned: " + (monitoring_data.ai_monitor_metrics.pinned_sessions ?: 0) + " · stale remote: " + (monitoring_data.ai_monitor_metrics.stale_source_sessions ?: 0)}))
       (box
         :class "ai-diagnostics-last-focus"
         :orientation "v"

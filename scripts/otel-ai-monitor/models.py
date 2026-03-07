@@ -22,6 +22,38 @@ class SessionState(str, Enum):
     ATTENTION = "attention"  # Feature 135: User action needed (permissions, errors)
 
 
+class SessionStage(str, Enum):
+    """Canonical user-facing session stages."""
+
+    STARTING = "starting"
+    THINKING = "thinking"
+    TOOL_RUNNING = "tool_running"
+    STREAMING = "streaming"
+    WAITING_INPUT = "waiting_input"
+    ATTENTION = "attention"
+    OUTPUT_READY = "output_ready"
+    IDLE = "idle"
+
+
+class ActivityFreshness(str, Enum):
+    """User-facing freshness bucket for last session activity."""
+
+    FRESH = "fresh"
+    WARM = "warm"
+    STALE = "stale"
+
+
+class UserActionReason(str, Enum):
+    """Normalized reasons for user intervention."""
+
+    NONE = ""
+    PERMISSION = "permission"
+    AUTH = "auth"
+    RATE_LIMIT = "rate_limit"
+    MAX_TOKENS = "max_tokens"
+    ERROR = "error"
+
+
 class AITool(str, Enum):
     """Supported AI assistant tools."""
 
@@ -345,6 +377,26 @@ class SessionListItem(BaseModel):
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
     state_seq: int = Field(default=0, description="Monotonic state sequence")
     status_reason: Optional[str] = Field(default=None, description="Machine-readable status reason")
+    stage: SessionStage = Field(default=SessionStage.IDLE, description="Canonical user-facing stage")
+    stage_label: str = Field(default="Idle", description="Short user-facing stage label")
+    stage_detail: str = Field(default="", description="Short user-facing detail for the current stage")
+    stage_class: str = Field(default="stage-idle", description="CSS-friendly stage class")
+    stage_visual_state: str = Field(default="idle", description="Collapsed visual state for styling")
+    stage_rank: int = Field(default=0, description="Canonical sort priority for UI")
+    needs_user_action: bool = Field(default=False, description="True when the session is blocked on the user")
+    user_action_reason: UserActionReason = Field(
+        default=UserActionReason.NONE,
+        description="Normalized user action reason when attention is required",
+    )
+    output_ready: bool = Field(default=False, description="True when the session has a completed result")
+    output_unseen: bool = Field(default=False, description="True when output is ready but still unseen")
+    activity_freshness: ActivityFreshness = Field(
+        default=ActivityFreshness.FRESH,
+        description="Freshness bucket for last activity",
+    )
+    activity_age_seconds: int = Field(default=0, description="Age of last activity in seconds")
+    identity_source: str = Field(default="heuristic", description="How identity was established for display")
+    lifecycle_source: str = Field(default="trace", description="Primary source of lifecycle state")
     updated_at: str = Field(description="RFC3339 timestamp when session was last updated")
 
 
@@ -357,7 +409,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="5", description="Session payload schema version")
+    schema_version: str = Field(default="6", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

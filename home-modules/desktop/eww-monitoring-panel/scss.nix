@@ -1171,7 +1171,36 @@
     min-width: 0;
   }
 
-  .active-ai-chip-mode {
+  .active-ai-chip-stage {
+    font-size: 8px;
+    font-weight: 700;
+    border-radius: 8px;
+    padding: 1px 5px;
+    margin-top: 1px;
+    color: ${mocha.text};
+    background: rgba(108, 112, 134, 0.24);
+  }
+
+  .active-ai-chip-stage.stage-starting,
+  .active-ai-chip-stage.stage-thinking,
+  .active-ai-chip-stage.stage-tool_running,
+  .active-ai-chip-stage.stage-streaming {
+    color: ${mocha.red};
+    background: rgba(243, 139, 168, 0.16);
+  }
+
+  .active-ai-chip-stage.stage-waiting_input,
+  .active-ai-chip-stage.stage-attention {
+    color: ${mocha.peach};
+    background: rgba(250, 179, 135, 0.18);
+  }
+
+  .active-ai-chip-stage.stage-output_ready {
+    color: ${mocha.blue};
+    background: rgba(137, 180, 250, 0.16);
+  }
+
+  .active-ai-chip-marker {
     font-size: 8px;
     font-weight: 700;
     border-radius: 8px;
@@ -1179,14 +1208,19 @@
     margin-top: 1px;
   }
 
-  .active-ai-chip-mode.local {
-    color: ${mocha.overlay0};
-    background: rgba(108, 112, 134, 0.2);
-  }
-
-  .active-ai-chip-mode.remote {
+  .active-ai-chip-marker.remote {
     color: ${mocha.blue};
     background: rgba(137, 180, 250, 0.16);
+  }
+
+  .active-ai-chip-marker.action {
+    color: ${mocha.peach};
+    background: rgba(250, 179, 135, 0.18);
+  }
+
+  .active-ai-chip-marker.unread {
+    color: ${mocha.green};
+    background: rgba(166, 227, 161, 0.18);
   }
 
   @keyframes active-ai-working-pulse {

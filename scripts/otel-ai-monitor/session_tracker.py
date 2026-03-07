@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
 from .models import (
+    ActivityFreshness,
     AITool,
     EventNames,
     IdentityConfidence,
@@ -29,10 +30,12 @@ from .models import (
     Session,
     SessionList,
     SessionListItem,
+    SessionStage,
     SessionState,
     SessionUpdate,
     TelemetryEvent,
     TOOL_PROVIDER,
+    UserActionReason,
 )
 from .pricing import calculate_cost
 from .sway_helper import (
@@ -53,6 +56,12 @@ _DISCOVERED_TMUX_PROJECT_HINT_CACHE: dict[str, object] = {
     "mtime_ns": None,
     "size": None,
     "mapping": {},
+}
+
+_BOOTSTRAP_RESTOREABLE_STATES = {
+    SessionState.WORKING,
+    SessionState.ATTENTION,
+    SessionState.COMPLETED,
 }
 
 # Feature 137: Maximum session count to prevent memory exhaustion
@@ -86,6 +95,186 @@ def state_priority(state: SessionState) -> int:
         SessionState.IDLE: 1,
         SessionState.EXPIRED: 0,
     }.get(state, 0)
+
+
+_STAGE_LABELS = {
+    SessionStage.STARTING: "Starting",
+    SessionStage.THINKING: "Thinking",
+    SessionStage.TOOL_RUNNING: "Tool",
+    SessionStage.STREAMING: "Streaming",
+    SessionStage.WAITING_INPUT: "Waiting",
+    SessionStage.ATTENTION: "Attention",
+    SessionStage.OUTPUT_READY: "Ready",
+    SessionStage.IDLE: "Idle",
+}
+
+_STAGE_RANKS = {
+    SessionStage.ATTENTION: 7,
+    SessionStage.WAITING_INPUT: 6,
+    SessionStage.TOOL_RUNNING: 5,
+    SessionStage.STREAMING: 4,
+    SessionStage.THINKING: 3,
+    SessionStage.STARTING: 2,
+    SessionStage.OUTPUT_READY: 1,
+    SessionStage.IDLE: 0,
+}
+_STAGE_VISUAL_STATES = {
+    SessionStage.STARTING: "working",
+    SessionStage.THINKING: "working",
+    SessionStage.TOOL_RUNNING: "working",
+    SessionStage.STREAMING: "working",
+    SessionStage.WAITING_INPUT: "attention",
+    SessionStage.ATTENTION: "attention",
+    SessionStage.OUTPUT_READY: "completed",
+    SessionStage.IDLE: "idle",
+}
+
+_STATUS_REASON_DETAILS = {
+    "created": "Session created",
+    "trace_correlated": "Trace connected",
+    "window_correlated_fallback": "Window correlated",
+    "window_correlated_process_candidate": "Process attached to terminal",
+    "metrics_heartbeat_created": "Heartbeat detected",
+    "process_detected": "Process detected",
+    "process_keepalive": "Still active",
+    "process_exited_retained": "Exited, retaining result",
+    "quiet_period_expired": "Response finished",
+    "completed_timeout": "Session idle",
+}
+
+
+def _classify_user_action_reason(session: Session) -> UserActionReason:
+    """Normalize the session's current blocking reason for the UI."""
+    status_reason = str(session.status_reason or "").strip().lower()
+    last_error_type = str(session.last_error_type or "").strip().lower()
+
+    if "permission" in status_reason:
+        return UserActionReason.PERMISSION
+    if "max_tokens" in status_reason:
+        return UserActionReason.MAX_TOKENS
+    if last_error_type == "auth":
+        return UserActionReason.AUTH
+    if last_error_type == "rate_limit":
+        return UserActionReason.RATE_LIMIT
+    if session.state == SessionState.ATTENTION or session.error_count > 0:
+        return UserActionReason.ERROR
+    return UserActionReason.NONE
+
+
+def _activity_freshness(age_seconds: int) -> ActivityFreshness:
+    """Bucket last activity age for display."""
+    if age_seconds <= 15:
+        return ActivityFreshness.FRESH
+    if age_seconds <= 90:
+        return ActivityFreshness.WARM
+    return ActivityFreshness.STALE
+
+
+def _humanize_status_reason(session: Session) -> str:
+    """Convert machine reason fields into concise user-facing detail."""
+    user_action_reason = _classify_user_action_reason(session)
+    if user_action_reason == UserActionReason.PERMISSION:
+        return "Waiting on permission"
+    if user_action_reason == UserActionReason.AUTH:
+        return "Authentication needed"
+    if user_action_reason == UserActionReason.RATE_LIMIT:
+        return "Rate limited"
+    if user_action_reason == UserActionReason.MAX_TOKENS:
+        return "Response hit max tokens"
+    if user_action_reason == UserActionReason.ERROR:
+        return "Needs user attention"
+
+    status_reason = str(session.status_reason or "").strip()
+    if not status_reason:
+        return ""
+    lowered = status_reason.lower()
+    if lowered in _STATUS_REASON_DETAILS:
+        return _STATUS_REASON_DETAILS[lowered]
+    if lowered.startswith("event:"):
+        event_name = lowered.split("event:", 1)[1]
+        if "tool_start" in event_name:
+            return "Tool started"
+        if "tool_complete" in event_name or "tool_result" in event_name:
+            return "Tool completed"
+        if "stream_start" in event_name or "stream_token" in event_name:
+            return "Streaming response"
+        if "api_request" in event_name:
+            return "Model request active"
+        if "user_prompt" in event_name:
+            return "Prompt sent"
+        if "permission" in event_name:
+            return "Waiting on permission"
+    return status_reason.replace("_", " ").strip().capitalize()
+
+
+def _identity_source(session: Session) -> str:
+    """Return a stable user-facing identity source label."""
+    confidence = session.identity_confidence
+    if confidence == IdentityConfidence.NATIVE or session.native_session_id:
+        return "native"
+    if confidence == IdentityConfidence.PID:
+        return "pid"
+    if confidence == IdentityConfidence.PANE:
+        return "pane"
+    return "heuristic"
+
+
+def _lifecycle_source(session: Session) -> str:
+    """Describe the primary lifecycle source backing the current status."""
+    status_reason = str(session.status_reason or "").strip().lower()
+    if status_reason in {"metrics_heartbeat_created", "process_keepalive"}:
+        return "heartbeat"
+    if session.trace_id or session.native_session_id:
+        return "trace"
+    return "process"
+
+
+def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> dict[str, object]:
+    """Compute canonical user-facing stage fields from raw session state."""
+    now = now or datetime.now(timezone.utc)
+    activity_age_seconds = max(0, int((now - session.last_event_at).total_seconds()))
+    freshness = _activity_freshness(activity_age_seconds)
+    user_action_reason = _classify_user_action_reason(session)
+    output_ready = session.state == SessionState.COMPLETED
+    output_unseen = False
+
+    if user_action_reason == UserActionReason.PERMISSION:
+        stage = SessionStage.WAITING_INPUT
+    elif user_action_reason != UserActionReason.NONE or session.state == SessionState.ATTENTION:
+        stage = SessionStage.ATTENTION
+    elif session.pending_tools > 0:
+        stage = SessionStage.TOOL_RUNNING
+    elif session.is_streaming:
+        stage = SessionStage.STREAMING
+    elif output_ready:
+        stage = SessionStage.OUTPUT_READY
+    elif (
+        session.state == SessionState.WORKING
+        and _identity_source(session) != "native"
+        and str(session.status_reason or "").strip().lower() in {"process_detected", "metrics_heartbeat_created"}
+    ):
+        stage = SessionStage.STARTING
+    elif session.state == SessionState.WORKING:
+        stage = SessionStage.THINKING
+    else:
+        stage = SessionStage.IDLE
+
+    return {
+        "stage": stage,
+        "stage_label": _STAGE_LABELS[stage],
+        "stage_detail": _humanize_status_reason(session),
+        "stage_class": f"stage-{str(stage.value)}",
+        "stage_visual_state": _STAGE_VISUAL_STATES[stage],
+        "stage_rank": _STAGE_RANKS[stage],
+        "needs_user_action": stage in {SessionStage.WAITING_INPUT, SessionStage.ATTENTION},
+        "user_action_reason": user_action_reason,
+        "output_ready": output_ready,
+        "output_unseen": output_unseen,
+        "activity_freshness": freshness,
+        "activity_age_seconds": activity_age_seconds,
+        "identity_source": _identity_source(session),
+        "lifecycle_source": _lifecycle_source(session),
+    }
 
 
 class SessionTracker:
@@ -167,9 +356,11 @@ class SessionTracker:
         # Monotonic counter for fallback session keys when native session_id is absent.
         self._fallback_counter = 0
 
-        # Feature 138: Cache for session metadata files (sessionId -> pid)
-        # These files are written by Claude Code hooks on session start
-        self._metadata_file_cache: dict[str, int] = {}
+        # Feature 138: Cache session metadata sidecars written by hooks.
+        # Session-keyed view supports native log correlation; pid-keyed view
+        # lets the process monitor recover stronger identity on restart.
+        self._metadata_file_cache: dict[str, dict[str, object]] = {}
+        self._pid_metadata_cache: dict[int, dict[str, object]] = {}
         self._metadata_cache_mtime: float = 0.0
         self._metadata_watch_task: Optional[asyncio.Task] = None
         self._display_filter_stats = {
@@ -193,7 +384,8 @@ class SessionTracker:
                 self._metadata_file_cache.clear()
                 return
 
-            new_cache = {}
+            new_cache: dict[str, dict[str, object]] = {}
+            new_pid_cache: dict[int, dict[str, object]] = {}
             for filepath in metadata_files:
                 try:
                     with open(filepath, "r") as f:
@@ -203,12 +395,32 @@ class SessionTracker:
                             sid = data.get("threadId") or data.get("conversationId")
                         pid = data.get("pid") or data.get("processPid")
                         if sid and pid:
-                            new_cache[sid] = int(pid)
+                            pid_int = int(pid)
+                            entry = {
+                                "session_id": str(sid),
+                                "pid": pid_int,
+                                "tool": str(data.get("tool") or "").strip().lower() or None,
+                                "project": str(data.get("projectName") or "").strip() or None,
+                                "project_path": str(data.get("projectPath") or data.get("cwd") or "").strip() or None,
+                                "tmux_session": str(data.get("tmuxSession") or "").strip() or None,
+                                "tmux_window": str(data.get("tmuxWindow") or "").strip() or None,
+                                "tmux_pane": str(data.get("tmuxPane") or "").strip() or None,
+                                "pty": str(data.get("pty") or "").strip() or None,
+                                "host_name": str(data.get("hostName") or "").strip() or None,
+                                "execution_mode": str(data.get("executionMode") or "").strip().lower() or None,
+                                "connection_key": str(data.get("connectionKey") or "").strip() or None,
+                                "context_key": str(data.get("contextKey") or "").strip() or None,
+                                "remote_target": str(data.get("remoteTarget") or "").strip() or None,
+                                "updated_at": str(data.get("updatedAt") or "").strip() or None,
+                            }
+                            new_cache[str(sid)] = entry
+                            new_pid_cache[pid_int] = entry
                 except (json.JSONDecodeError, IOError, KeyError) as e:
                     logger.debug(f"Failed to read metadata file {filepath}: {e}")
                     
-            if new_cache != self._metadata_file_cache:
+            if new_cache != self._metadata_file_cache or new_pid_cache != self._pid_metadata_cache:
                 self._metadata_file_cache = new_cache
+                self._pid_metadata_cache = new_pid_cache
                 logger.debug(f"Refreshed session metadata cache: {len(self._metadata_file_cache)} entries")
 
         except OSError as e:
@@ -273,11 +485,157 @@ class SessionTracker:
             PID if found in metadata files, None otherwise
         """
         # Cache is now maintained asynchronously by _metadata_watch_loop
-        return self._metadata_file_cache.get(session_id)
+        entry = self._metadata_file_cache.get(session_id) or {}
+        pid = entry.get("pid")
+        try:
+            return int(pid) if pid is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _load_session_metadata(self, session_id: str) -> dict[str, object]:
+        entry = self._metadata_file_cache.get(session_id)
+        return dict(entry) if isinstance(entry, dict) else {}
+
+    def _load_pid_metadata(self, pid: int) -> dict[str, object]:
+        entry = self._pid_metadata_cache.get(pid)
+        return dict(entry) if isinstance(entry, dict) else {}
+
+    @staticmethod
+    def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    async def _restore_previous_snapshot(self) -> None:
+        """Best-effort bootstrap from the last emitted live session snapshot.
+
+        This preserves native identity and richer stage hints across monitor
+        restarts, avoiding a temporary collapse to PID-only "Starting" chips.
+        """
+        snapshot_path = getattr(self.output, "json_file_path", None)
+        if snapshot_path is None or not snapshot_path.exists():
+            return
+
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug("Failed to load previous session snapshot: %s", exc)
+            return
+
+        items = payload.get("sessions", [])
+        if not isinstance(items, list):
+            return
+
+        now = datetime.now(timezone.utc)
+        restored = 0
+        async with self._lock:
+            for raw in items:
+                if not isinstance(raw, dict):
+                    continue
+                session_id = str(raw.get("session_id") or "").strip()
+                if not session_id or session_id in self._sessions:
+                    continue
+
+                tool_raw = str(raw.get("tool") or "").strip().lower()
+                try:
+                    tool = self._normalize_tool(tool_raw)
+                    state = SessionState(str(raw.get("state") or SessionState.IDLE.value))
+                except Exception:
+                    continue
+                if state not in _BOOTSTRAP_RESTOREABLE_STATES:
+                    continue
+
+                updated_at = self._parse_datetime(raw.get("updated_at")) or now
+                age_seconds = max(0.0, (now - updated_at).total_seconds())
+                if state == SessionState.COMPLETED:
+                    if age_seconds > self.completed_timeout_sec:
+                        continue
+                elif age_seconds > self.session_timeout_sec:
+                    continue
+
+                provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
+                terminal_context_raw = raw.get("terminal_context", {}) or {}
+                if not isinstance(terminal_context_raw, dict):
+                    terminal_context_raw = {}
+                identity_raw = str(raw.get("identity_confidence") or IdentityConfidence.HEURISTIC.value)
+                try:
+                    identity_confidence = IdentityConfidence(identity_raw)
+                except ValueError:
+                    identity_confidence = IdentityConfidence.HEURISTIC
+
+                session = Session(
+                    session_id=session_id,
+                    native_session_id=str(raw.get("native_session_id") or "").strip() or None,
+                    context_fingerprint=str(raw.get("context_fingerprint") or "").strip() or None,
+                    collision_group_id=str(raw.get("collision_group_id") or "").strip() or None,
+                    identity_confidence=identity_confidence,
+                    tool=tool,
+                    provider=provider,
+                    state=state,
+                    project=str(
+                        raw.get("session_project")
+                        or raw.get("project")
+                        or raw.get("display_project")
+                        or ""
+                    ).strip() or None,
+                    project_path=str(raw.get("project_path") or "").strip() or None,
+                    window_id=raw.get("window_id"),
+                    pid=raw.get("pid"),
+                    trace_id=str(raw.get("trace_id") or "").strip() or None,
+                    created_at=updated_at,
+                    last_event_at=updated_at,
+                    state_changed_at=updated_at,
+                    state_seq=int(raw.get("state_seq", 1) or 1),
+                    status_reason=str(raw.get("status_reason") or "").strip() or "restored_snapshot",
+                    pending_tools=int(raw.get("pending_tools", 0) or 0),
+                    is_streaming=bool(raw.get("is_streaming", False)),
+                )
+                session.terminal_context.window_id = raw.get("window_id")
+                for key in (
+                    "tmux_session",
+                    "tmux_window",
+                    "tmux_pane",
+                    "pty",
+                    "host_name",
+                    "execution_mode",
+                    "connection_key",
+                    "context_key",
+                    "remote_target",
+                ):
+                    value = terminal_context_raw.get(key)
+                    if value is not None:
+                        setattr(session.terminal_context, key, value)
+
+                self._sessions[session_id] = session
+                if session.pid is not None:
+                    pid_int = int(session.pid)
+                    self._session_pids[session_id] = pid_int
+                    if session.native_session_id:
+                        self._session_pids[session.native_session_id] = pid_int
+                if session.collision_group_id:
+                    self._register_native_session_unlocked(session.collision_group_id, session_id)
+                    if session.pid is not None:
+                        self._session_pids[session.collision_group_id] = int(session.pid)
+                restored += 1
+
+            if restored:
+                self._mark_dirty_unlocked()
+        if restored:
+            logger.info("Restored %s sessions from previous snapshot", restored)
 
     async def start(self) -> None:
         """Start background tasks for broadcasting and expiry."""
         self._running = True
+
+        await self._restore_previous_snapshot()
 
         # Start broadcast worker
         self._broadcast_task = asyncio.create_task(self._broadcast_loop())
@@ -2664,8 +3022,10 @@ class SessionTracker:
 
         items = []
         fingerprint_source = []
+        snapshot_now = datetime.now(timezone.utc)
         for s in active_sessions:
             project_labels = self._resolve_export_project_labels(s)
+            stage_fields = _derive_session_stage(s, now=snapshot_now)
             session_kind = (
                 "native"
                 if s.identity_confidence == IdentityConfidence.NATIVE or s.native_session_id
@@ -2696,6 +3056,20 @@ class SessionTracker:
                 is_streaming=s.is_streaming,
                 state_seq=s.state_seq,
                 status_reason=s.status_reason,
+                stage=stage_fields["stage"],
+                stage_label=str(stage_fields["stage_label"]),
+                stage_detail=str(stage_fields["stage_detail"]),
+                stage_class=str(stage_fields["stage_class"]),
+                stage_visual_state=str(stage_fields["stage_visual_state"]),
+                stage_rank=int(stage_fields["stage_rank"]),
+                needs_user_action=bool(stage_fields["needs_user_action"]),
+                user_action_reason=stage_fields["user_action_reason"],
+                output_ready=bool(stage_fields["output_ready"]),
+                output_unseen=bool(stage_fields["output_unseen"]),
+                activity_freshness=stage_fields["activity_freshness"],
+                activity_age_seconds=int(stage_fields["activity_age_seconds"]),
+                identity_source=str(stage_fields["identity_source"]),
+                lifecycle_source=str(stage_fields["lifecycle_source"]),
                 updated_at=s.last_event_at.isoformat(),
             )
             items.append(item)
@@ -2727,6 +3101,20 @@ class SessionTracker:
                     s.is_streaming,
                     s.state_seq,
                     s.status_reason,
+                    str(stage_fields["stage"]),
+                    str(stage_fields["stage_label"]),
+                    str(stage_fields["stage_detail"]),
+                    str(stage_fields["stage_class"]),
+                    str(stage_fields["stage_visual_state"]),
+                    int(stage_fields["stage_rank"]),
+                    bool(stage_fields["needs_user_action"]),
+                    str(stage_fields["user_action_reason"]),
+                    bool(stage_fields["output_ready"]),
+                    bool(stage_fields["output_unseen"]),
+                    str(stage_fields["activity_freshness"]),
+                    int(stage_fields["activity_age_seconds"]),
+                    str(stage_fields["identity_source"]),
+                    str(stage_fields["lifecycle_source"]),
                 )
             )
 

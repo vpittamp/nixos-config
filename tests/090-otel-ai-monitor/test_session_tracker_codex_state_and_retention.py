@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +40,9 @@ from otel_ai_monitor.session_tracker import SessionTracker  # type: ignore  # no
 
 
 class _DummyOutput:
+    def __init__(self, json_file_path: Path | None = None) -> None:
+        self.json_file_path = json_file_path
+
     async def start(self) -> None:
         return None
 
@@ -164,7 +168,7 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     session_list, _ = tracker._build_session_list_unlocked()
 
     assert len(session_list.sessions) == 1
-    assert session_list.schema_version == "5"
+    assert session_list.schema_version == "6"
     assert session_list.sessions[0].session_id == "codex:pid:706991"
     assert session_list.sessions[0].identity_confidence == IdentityConfidence.PID
     assert session_list.sessions[0].project == "vpittamp/nixos-config:main"
@@ -172,6 +176,12 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     assert session_list.sessions[0].live is True
     assert session_list.sessions[0].session_project == "vpittamp/nixos-config:main"
     assert session_list.sessions[0].display_project == "vpittamp/nixos-config:main"
+    assert session_list.sessions[0].stage == "starting"
+    assert session_list.sessions[0].stage_label == "Starting"
+    assert session_list.sessions[0].stage_detail == "Process detected"
+    assert session_list.sessions[0].stage_visual_state == "working"
+    assert session_list.sessions[0].identity_source == "pid"
+    assert session_list.sessions[0].lifecycle_source == "process"
     assert session_list.has_working is True
 
 
@@ -230,6 +240,66 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
     assert item.focus_project == "vpittamp/nixos-config:main"
     assert item.display_project == "PittampalliOrg/workflow-builder:main"
     assert item.project_source == "tmux_discovered"
+
+
+@pytest.mark.asyncio
+async def test_tracker_restores_recent_working_session_from_previous_snapshot(tmp_path):
+    snapshot_path = tmp_path / "otel-ai-sessions.json"
+    updated_at = datetime.now(timezone.utc).isoformat()
+    snapshot_path.write_text(json.dumps({
+        "schema_version": "6",
+        "type": "session_list",
+        "updated_at": updated_at,
+        "sessions": [{
+            "session_id": "codex:native-restore",
+            "native_session_id": "native-restore",
+            "context_fingerprint": "pane=%9",
+            "collision_group_id": "codex:native-restore",
+            "identity_confidence": "native",
+            "tool": "codex",
+            "state": "working",
+            "project": "PittampalliOrg/stacks:main",
+            "session_project": "PittampalliOrg/stacks:main",
+            "window_project": "vpittamp/nixos-config:main",
+            "focus_project": "vpittamp/nixos-config:main",
+            "display_project": "PittampalliOrg/stacks:main",
+            "project_source": "project_path",
+            "project_path": "/home/vpittamp/repos/PittampalliOrg/stacks/main",
+            "window_id": 219,
+            "terminal_context": {
+                "window_id": 219,
+                "tmux_session": "stacks/main",
+                "tmux_window": "1:main",
+                "tmux_pane": "%9",
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+            },
+            "pid": 706991,
+            "trace_id": "abc123",
+            "pending_tools": 1,
+            "is_streaming": False,
+            "state_seq": 3,
+            "status_reason": "event:codex.tool_start",
+            "updated_at": updated_at,
+        }],
+    }))
+
+    tracker = SessionTracker(output=_DummyOutput(snapshot_path))
+    await tracker._restore_previous_snapshot()
+
+    async with tracker._lock:
+        restored = tracker._sessions.get("codex:native-restore")
+        assert restored is not None
+        assert restored.native_session_id == "native-restore"
+        assert restored.identity_confidence == IdentityConfidence.NATIVE
+        assert restored.project == "PittampalliOrg/stacks:main"
+        assert restored.project_path == "/home/vpittamp/repos/PittampalliOrg/stacks/main"
+        assert restored.pending_tools == 1
+        assert restored.terminal_context.tmux_pane == "%9"
+        assert tracker._session_pids["codex:native-restore"] == 706991
+        assert tracker._session_pids["native-restore"] == 706991
+        assert "codex:native-restore" in tracker._native_session_map["codex:native-restore"]
 
 
 def test_build_session_list_still_suppresses_unresolved_heuristic_session():
