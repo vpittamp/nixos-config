@@ -89,7 +89,10 @@ let
     tailscalePollInterval = cfg.tailscale.pollInterval;
   };
 
-  windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // { inherit pkgs iconPaths; });
+  windowsViewYuck = import ./yuck/windows-view.yuck.nix (scripts // {
+    inherit pkgs iconPaths;
+    activeAiGroupMaxVisibleSessions = max 1 (builtins.floor (((cfg.panelWidth - 150) * 1.0) / 110.0));
+  });
 
   projectsViewYuck = import ./yuck/projects-view.yuck.nix (scripts // { inherit pkgs config; });
 

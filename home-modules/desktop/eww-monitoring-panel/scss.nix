@@ -971,6 +971,7 @@
     padding: 4px 10px 8px 10px;
     border-bottom: 1px solid rgba(108, 112, 134, 0.34);
     margin-bottom: 2px;
+    min-width: 0;
   }
 
   .active-ai-mru-switcher {
@@ -1012,6 +1013,7 @@
     border: 1px solid rgba(108, 112, 134, 0.3);
     border-radius: 8px;
     padding: 6px 8px;
+    min-width: 0;
   }
 
   .active-ai-rail-title {
@@ -1040,10 +1042,12 @@
   .active-ai-group {
     border-top: 1px solid rgba(108, 112, 134, 0.18);
     padding-top: 3px;
+    min-width: 0;
   }
 
   .active-ai-group-row {
     padding: 0 2px;
+    min-width: 0;
   }
 
   .active-ai-group-chevron {

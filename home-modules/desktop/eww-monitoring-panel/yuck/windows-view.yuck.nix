@@ -1,4 +1,4 @@
-{ pkgs, focusWindowScript, focusAiSessionScript, focusActiveAiSessionScript, toggleAiSessionPinScript, toggleAiGroupCollapseScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, ... }:
+{ pkgs, focusWindowScript, focusAiSessionScript, focusActiveAiSessionScript, toggleAiSessionPinScript, toggleAiGroupCollapseScript, closeWorktreeScript, closeAllWindowsScript, closeWindowScript, toggleWindowsProjectExpandScript, toggleProjectContextScript, switchProjectScript, openRemoteSessionWindowScript, openLangfuseTraceScript, iconPaths, activeAiGroupMaxVisibleSessions ? 2, ... }:
 
 ''
   ;; Feature 138: Pinned active AI rail for quick session switching.
@@ -9,6 +9,8 @@
       :visible {current_view_index == 0}
       :orientation "v"
       :space-evenly false
+      :hexpand true
+      :halign "fill"
       (revealer
         :reveal {ai_mru_switcher_visible && arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) > 0}
         :transition "slidedown"
@@ -46,6 +48,8 @@
         :orientation "v"
         :space-evenly false
         :spacing 5
+        :hexpand true
+        :halign "fill"
         (box
           :class "active-ai-group-header"
           :orientation "h"
@@ -60,12 +64,16 @@
           :orientation "v"
           :space-evenly false
           :spacing 4
+          :hexpand true
+          :halign "fill"
           (for group in {jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), "group_by(.display_project // .project // \"unknown\") | map({project:(.[0].display_project // .[0].project // \"unknown\"), sessions:.})")}
             (box
               :class "active-ai-group"
               :orientation "v"
               :space-evenly false
               :spacing 2
+              :hexpand true
+              :halign "fill"
               (eventbox
                 :cursor "pointer"
                 :onclick "${toggleAiGroupCollapseScript}/bin/toggle-ai-group-collapse-action \"''${group.project ?: "unknown"}\" &"
@@ -74,6 +82,8 @@
                   :class "active-ai-group-row"
                   :orientation "h"
                   :space-evenly false
+                  :hexpand true
+                  :halign "fill"
                   (label
                     :class "active-ai-group-chevron"
                     :text {jq(ai_group_collapsed_projects, ". | index(\"" + (group.project ?: "unknown") + "\") != null") ? "󰅂" : "󰅀"})
@@ -95,8 +105,8 @@
                   :space-evenly false
                   :spacing 4
                   :hexpand true
-                  :halign "start"
-                  (for session in {arraylength(group.sessions ?: []) <= 4 ? (group.sessions ?: []) : jq(group.sessions ?: [], ".[:4]")}
+                  :halign "fill"
+                  (for session in {arraylength(group.sessions ?: []) <= ${toString activeAiGroupMaxVisibleSessions} ? (group.sessions ?: []) : jq(group.sessions ?: [], ".[:${toString activeAiGroupMaxVisibleSessions}]")}
                     (box
                       :class "active-ai-chip-wrap"
                       :orientation "h"
@@ -168,9 +178,9 @@
                           :class {"active-ai-pin-btn" + ((session.pinned ?: false) ? " pinned" : "")}
                           :text {(session.pinned ?: false) ? "󰐃" : "󰓎"}))))
                   (eventbox
-                    :visible {arraylength(group.sessions ?: []) > 4}
+                    :visible {arraylength(group.sessions ?: []) > ${toString activeAiGroupMaxVisibleSessions}}
                     :cursor "default"
-                    :tooltip {jq(group.sessions ?: [], ".[4:] | map((.display_tool // .tool // \"AI\") + \" · \" + (.stage_label // .otel_state // \"Idle\")) | join(\"\\n\")")}
+                    :tooltip {jq(group.sessions ?: [], ".[${toString activeAiGroupMaxVisibleSessions}:] | map((.display_tool // .tool // \"AI\") + \" · \" + (.stage_label // .otel_state // \"Idle\")) | join(\"\\n\")")}
                     (box
                       :class "active-ai-overflow-chip"
                       :orientation "h"
@@ -179,7 +189,7 @@
                       (label :class "active-ai-overflow-icon" :text "󰇘")
                       (label
                         :class "active-ai-overflow-text"
-                        :text {"+''${arraylength(group.sessions ?: []) - 4}"})))))))
+                        :text {"+''${arraylength(group.sessions ?: []) - ${toString activeAiGroupMaxVisibleSessions}}"})))))))
         (label
           :class "active-ai-empty-state"
           :visible {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) == 0}
