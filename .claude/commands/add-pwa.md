@@ -6,7 +6,181 @@ You are helping the user add a new Firefox Progressive Web App (PWA) to their Ni
 
 # PWA Addition Workflow
 
-This command automates the complete workflow for adding a new Firefox PWA, including icon discovery, configuration, and installation.
+This command automates the complete workflow for adding a new Firefox PWA, including icon discovery, configuration, and installation. It supports both **single PWAs** and **multi-environment PWAs** (dev/staging/prod/ryzen variants of the same service).
+
+## Detect Mode: Single vs Multi-Environment
+
+Before starting, determine which workflow to follow:
+
+**Multi-environment indicators** (use Multi-Environment Workflow below):
+- User mentions "dev", "staging", "prod", "ryzen" environments
+- User provides Tailscale ingress URLs with environment suffixes (e.g., `*-staging.tail286401.ts.net`)
+- User asks for multiple variants of the same service
+- User mentions "cluster", "Talos", or "Kubernetes" services
+
+**Single PWA indicators** (use Standard Workflow below):
+- User wants one PWA for a single URL
+- No environment variants needed
+
+---
+
+# Multi-Environment PWA Workflow
+
+For services deployed across multiple environments (dev/staging/prod/ryzen clusters).
+
+## ME-Step 0: Identify Services and Environments
+
+Parse the user's request to determine:
+1. **Services**: Which services need PWAs (e.g., grafana, keycloak, langfuse)
+2. **Environments**: Which environments (dev, staging, prod, ryzen)
+3. **URL pattern**: Usually `https://{service}-{env}.tail286401.ts.net`
+
+### Current Environment Conventions
+
+| Environment | URL Suffix | Badge Color | Letter | Workspace Range |
+|-------------|-----------|-------------|--------|-----------------|
+| Dev | `-dev` | Green `#10b981` | D | 121-131 |
+| Staging | `-staging` | Amber `#f59e0b` | S | 132-142 |
+| Prod | `-prod` | Blue `#3b82f6` | P | 143-153 |
+| Ryzen | `-ryzen` | Purple `#a855f7` | R | (existing, varies) |
+
+### Current Service-to-Icon Mapping
+
+| Service | Source Icon | Notes |
+|---------|------------|-------|
+| dapr | `dapr.svg` | Dapr Dashboard |
+| grafana | `grafana.svg` | Observability |
+| keycloak | `keycloak.svg` | Identity/Auth |
+| langfuse | `langfuse.svg` | LLM Observability |
+| loki | `loki.svg` | Log aggregation (no Ryzen entry) |
+| mcp-inspector-client | `mcp-inspector.svg` | MCP debugging client |
+| mcp-inspector-proxy | `mcp-inspector.svg` | MCP debugging proxy |
+| mimir | `mimir.svg` | Metrics backend (no Ryzen entry) |
+| phoenix | `phoenix-azire.svg` | AI Tracing |
+| redisinsight | `redis-insights.svg` | Redis GUI |
+| workflow-builder | `ai-workflow-builder.svg` | AI Workflow Builder |
+
+## ME-Step 1: Check for Existing Base Icons
+
+For each service, verify the source icon exists:
+
+```bash
+for icon in dapr.svg grafana.svg keycloak.svg langfuse.svg loki.svg mcp-inspector.svg mimir.svg phoenix-azire.svg redis-insights.svg ai-workflow-builder.svg; do
+  [ -f "/etc/nixos/assets/icons/$icon" ] && echo "✓ $icon" || echo "✗ MISSING: $icon"
+done
+```
+
+**If any base icon is missing:** Find/download it using the Icon Discovery process (Step 3 in Standard Workflow below) before proceeding.
+
+## ME-Step 2: Generate Environment-Badged Icons
+
+Use the existing badge generation scripts to create environment-specific icon variants:
+
+### Single Service Icon
+
+```bash
+/etc/nixos/scripts/generate-env-icon.sh <source-icon> <env> <output-path>
+# Example:
+/etc/nixos/scripts/generate-env-icon.sh /etc/nixos/assets/icons/grafana.svg dev /etc/nixos/assets/icons/grafana-dev.png
+```
+
+### Batch Generation (All Services)
+
+```bash
+/etc/nixos/scripts/generate-all-env-icons.sh
+```
+
+This generates all icon variants for all configured services. Output naming: `{service}-{env}.png`
+
+### How Icon Badges Work
+
+The badge system overlays a colored circle with an environment letter onto the bottom-right corner of the base icon:
+- **Input**: Source SVG icon (any service)
+- **Output**: 512x512 PNG with environment badge
+- **Badge**: 40% diameter circle, white 6px border, colored inner circle, white letter
+- **Pipeline**: `rsvg-convert` (SVG→PNG) → `magick` composite (badge overlay)
+
+### Adding a New Service to the Badge System
+
+If adding a service not in the current `generate-all-env-icons.sh` mapping, edit the script:
+
+```bash
+# Add to the ICON_MAP associative array in /etc/nixos/scripts/generate-all-env-icons.sh
+[new-service]="new-service-icon.svg"
+
+# Add to ALL_ENV_SERVICES or NO_RYZEN_SERVICES array depending on whether it has a Ryzen deployment
+```
+
+## ME-Step 3: Generate ULIDs
+
+Generate one ULID per new PWA entry:
+
+```bash
+# Generate N ULIDs (one per service × environment combination)
+for i in $(seq 1 N); do /etc/nixos/scripts/generate-ulid.sh; done
+```
+
+## ME-Step 4: Add Entries to pwa-sites.nix
+
+Add entries organized by environment block. Use this template for each entry:
+
+```nix
+    # {Service Display Name} ({Environment})
+    {
+      name = "{Service} {Env}";  # e.g., "Grafana Dev"
+      url = "https://{service}-{env}.tail286401.ts.net";
+      domain = "{service}-{env}.tail286401.ts.net";
+      icon = iconPath "{service}-{env}.png";
+      description = "{Service description} - {Env} environment";
+      categories = "Network;Development;";
+      keywords = "{service};{relevant-keywords};{env};";
+      scope = "https://{service}-{env}.tail286401.ts.net/";
+      ulid = "{GENERATED_ULID}";
+      app_scope = "global";
+      preferred_workspace = {workspace_number};  # See workspace table above
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "{service}-{env}.tail286401.ts.net" ];
+    }
+```
+
+**Naming convention**: `"Service Dev"`, `"Service Staging"`, `"Service Prod"`, `"Service Ryzen"`
+
+**Workspace allocation** (alphabetical within each environment block):
+
+| Service | Dev | Staging | Prod |
+|---------|-----|---------|------|
+| dapr | 121 | 132 | 143 |
+| grafana | 122 | 133 | 144 |
+| keycloak | 123 | 134 | 145 |
+| langfuse | 124 | 135 | 146 |
+| loki | 125 | 136 | 147 |
+| mcp-inspector-client | 126 | 137 | 148 |
+| mcp-inspector-proxy | 127 | 138 | 149 |
+| mimir | 128 | 139 | 150 |
+| phoenix | 129 | 140 | 151 |
+| redisinsight | 130 | 141 | 152 |
+| workflow-builder | 131 | 142 | 153 |
+
+For new services not in this table, find the next available workspace in each range.
+
+## ME-Step 5: Rename Existing Entries (if applicable)
+
+When adding environment variants for services that already have Ryzen PWAs, rename the existing entries for consistency:
+
+| Old Name Pattern | New Name Pattern | New Icon |
+|-----------------|------------------|----------|
+| "Grafana Local" | "Grafana Ryzen" | `grafana-ryzen.png` |
+| "Dapr Dashboard" | "Dapr Ryzen" | `dapr-ryzen.png` |
+| "Phoenix Azire" | "Phoenix Ryzen" | `phoenix-ryzen.png` |
+| "{Service}" | "{Service} Ryzen" | `{service}-ryzen.png` |
+
+Keep the existing ULID, URL, and workspace. Only change `name`, `icon`, and add `ryzen;` to `keywords`.
+
+Then continue to **Step 10** (Validate) below.
+
+---
+
+# Standard Single-PWA Workflow
 
 ## Step 0: Pre-flight Checks (Critical)
 
@@ -23,7 +197,7 @@ grep -i "name = \"$PROPOSED_NAME\"" /etc/nixos/shared/pwa-sites.nix
 
 **If name exists:**
 ```
-⚠️  PWA name "$PROPOSED_NAME" already exists in configuration!
+PWA name "$PROPOSED_NAME" already exists in configuration!
 
 Existing PWA:
 - Name: $EXISTING_NAME
@@ -104,8 +278,10 @@ If user invokes without context or arguments are unclear:
    - Ask only if user is familiar with i3pm: "App scope: global or scoped?"
 
 7. **Preferred Workspace**
-   - Default: Next available in range 50-70 (query pwa-sites.nix)
-   - PWAs use 50-70 to avoid conflicts with standard apps (1-9)
+   - Default: Next available workspace (query pwa-sites.nix for highest used)
+   - PWAs use workspaces 50+ to avoid conflicts with standard apps (1-49)
+   - Single PWAs: 50-120 range
+   - Multi-environment PWAs: Dev 121-131, Staging 132-142, Prod 143-153
    - Ask: "Use workspace {next_available} or specify different?"
 
 8. **Preferred Monitor Role** (optional)
@@ -504,12 +680,20 @@ Confirm all of these before marking as complete:
 | "Service not running" | localhost service down | Start service |
 | "Syntax error" | Invalid Nix syntax | Check brackets, semicolons, quotes |
 | "Unknown host" | Hostname not in flake | Specify correct flake target |
+| "Badge icon generation failed" | Missing rsvg-convert or magick | Install librsvg and imagemagick |
+| "Source SVG not found" | Base icon missing for badge generation | Download base icon first, then run badge script |
+| "Workspace conflict" | Workspace already assigned | Check allocation table; use next available in range |
 
 ## Files Modified/Created
 
 ### Modified:
-- `/etc/nixos/shared/pwa-sites.nix` - Added new PWA entry
+- `/etc/nixos/shared/pwa-sites.nix` - Added new PWA entry/entries
 - `/etc/nixos/assets/icons/{filename}` - New icon (if downloaded)
+
+### Multi-environment additions:
+- `/etc/nixos/assets/icons/{service}-{env}.png` - Badge icons (generated by `generate-env-icon.sh`)
+- `/etc/nixos/scripts/generate-env-icon.sh` - Single icon badge generator
+- `/etc/nixos/scripts/generate-all-env-icons.sh` - Batch icon generator (update ICON_MAP for new services)
 
 ### Auto-generated (during rebuild):
 - `~/.local/share/applications/FFPWA-{ULID}.desktop`
@@ -541,3 +725,6 @@ After completing all steps, provide the user with:
 - Feature 056 Quickstart: `/etc/nixos/specs/056-declarative-pwa-installation/quickstart.md`
 - PWA Sites Config: `/etc/nixos/shared/pwa-sites.nix`
 - App Registry Data: `/etc/nixos/home-modules/desktop/app-registry-data.nix`
+- Icon Badge Generator: `/etc/nixos/scripts/generate-env-icon.sh`
+- Batch Icon Generator: `/etc/nixos/scripts/generate-all-env-icons.sh`
+- Icon Assets: `/etc/nixos/assets/icons/` (base SVGs and generated `*-{env}.png` variants)
