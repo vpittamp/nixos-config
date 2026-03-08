@@ -736,6 +736,6 @@ in
 
     # Open firewall for OTLP port (only on localhost by default)
     # If you need external access, configure firewall separately
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.otlpPort ];
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.otlpPort cfg.localForwardPort ];
   };
 }
