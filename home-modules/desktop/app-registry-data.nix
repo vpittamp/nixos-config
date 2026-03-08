@@ -278,7 +278,7 @@ let
       name = "lazydocker";
       display_name = "Lazydocker";
       command = "ghostty";
-      parameters = "-e lazydocker";
+      parameters = if hostName == "thinkpad" then "-e ssh -t ryzen lazydocker" else "-e lazydocker";
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
@@ -287,7 +287,7 @@ let
       nix_package = "pkgs.lazydocker";
       multi_instance = false;
       fallback_behavior = "skip";
-      description = "Terminal UI for Docker container management";
+      description = "Terminal UI for Docker container management via SSH to ryzen (thinkpad) or local";
     })
 
     # WS17: GUI Git Client (gittyup)

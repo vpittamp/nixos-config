@@ -386,13 +386,13 @@ let
 
     # Keycloak (Ryzen K8s via Tailscale)
     {
-      name = "Keycloak";
+      name = "Keycloak Ryzen";
       url = "https://keycloak-ryzen.tail286401.ts.net";
       domain = "keycloak-ryzen.tail286401.ts.net";
-      icon = iconPath "keycloak.svg";
+      icon = iconPath "keycloak-ryzen.png";
       description = "Keycloak identity and access management";
       categories = "Security;Network;";
-      keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;ryzen;";
       scope = "https://keycloak-ryzen.tail286401.ts.net/";
       ulid = "01MD4CZ7H4KJ4TR0C2Q3C8ZQ9V";  # Generated 2025-11-17
       # App registry metadata
@@ -479,23 +479,23 @@ let
       routing_domains = [ "argo-workflows-ryzen.tail286401.ts.net" ];
     }
 
-    # Gitea (Ryzen K8s via Tailscale)
+    # Gitea Hub (via Tailscale)
     {
-      name = "Gitea";
-      url = "https://gitea-ryzen.tail286401.ts.net";
-      domain = "gitea-ryzen.tail286401.ts.net";
+      name = "Gitea Hub";
+      url = "https://gitea-hub.tail286401.ts.net";
+      domain = "gitea-hub.tail286401.ts.net";
       icon = iconPath "gitea.svg";
-      description = "Gitea self-hosted git service";
+      description = "Gitea Hub - Self-hosted git service hub";
       categories = "Development;Network;";
-      keywords = "gitea;git;scm;code;devops;kubernetes;";
-      scope = "https://gitea-ryzen.tail286401.ts.net/";
+      keywords = "gitea;hub;git;scm;code;devops;";
+      scope = "https://gitea-hub.tail286401.ts.net/";
       ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 71;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "gitea-ryzen.tail286401.ts.net" ];
+      routing_domains = [ "gitea-hub.tail286401.ts.net" ];
     }
 
     # CVS Pharmacy
@@ -599,13 +599,13 @@ let
 
     # Grafana (Ryzen K8s via Tailscale)
     {
-      name = "Grafana Local";
+      name = "Grafana Ryzen";
       url = "https://grafana-ryzen.tail286401.ts.net";
       domain = "grafana-ryzen.tail286401.ts.net";
-      icon = iconPath "grafana.svg";
+      icon = iconPath "grafana-ryzen.png";
       description = "Grafana observability dashboard for CNOE local";
       categories = "Network;Development;";
-      keywords = "grafana;observability;metrics;logs;kubernetes;cnoe;";
+      keywords = "grafana;observability;metrics;logs;kubernetes;cnoe;ryzen;";
       scope = "https://grafana-ryzen.tail286401.ts.net/";
       ulid = "01JGNK2P3Q4R5S6T7V8W9X0Y1Z";  # Generated 2026-01-01
       # App registry metadata
@@ -618,13 +618,13 @@ let
 
     # Langfuse (Ryzen K8s via Tailscale)
     {
-      name = "Langfuse";
+      name = "Langfuse Ryzen";
       url = "https://langfuse-ryzen.tail286401.ts.net";
       domain = "langfuse-ryzen.tail286401.ts.net";
-      icon = iconPath "langfuse.svg";
+      icon = iconPath "langfuse-ryzen.png";
       description = "Langfuse AI observability platform";
       categories = "Network;Development;";
-      keywords = "langfuse;ai;observability;tracing;kubernetes;";
+      keywords = "langfuse;ai;observability;tracing;kubernetes;ryzen;";
       scope = "https://langfuse-ryzen.tail286401.ts.net/";
       ulid = "4NAWESCFFZM8CHZJBCMXVWF4TK";  # Generated 2025-12-24
       # App registry metadata
@@ -772,13 +772,13 @@ let
 
     # Dapr Dashboard (Ryzen K8s via Tailscale)
     {
-      name = "Dapr Dashboard";
+      name = "Dapr Ryzen";
       url = "https://dapr-ryzen.tail286401.ts.net";
       domain = "dapr-ryzen.tail286401.ts.net";
-      icon = iconPath "dapr.svg";
+      icon = iconPath "dapr-ryzen.png";
       description = "Dapr - Distributed application runtime dashboard";
       categories = "Development;Network;";
-      keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;";
+      keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;ryzen;";
       scope = "https://dapr-ryzen.tail286401.ts.net/";
       ulid = "01KEAAZKYV8GMQGH5YX6ZV4GS5";  # Generated 2026-01-06
       # App registry metadata
@@ -884,15 +884,15 @@ let
       routing_domains = [ "openwebui-ryzen.tail286401.ts.net" ];
     }
 
-    # Phoenix Azire (Ryzen K8s via Tailscale)
+    # Phoenix (Ryzen K8s via Tailscale)
     {
-      name = "Phoenix Azire";
+      name = "Phoenix Ryzen";
       url = "https://phoenix-ryzen.tail286401.ts.net";
       domain = "phoenix-ryzen.tail286401.ts.net";
-      icon = iconPath "phoenix-azire.svg";
-      description = "Phoenix Azire - AI observability and LLM tracing platform";
+      icon = iconPath "phoenix-ryzen.png";
+      description = "Phoenix - AI observability and LLM tracing platform";
       categories = "Development;Network;";
-      keywords = "phoenix;azire;ai;observability;tracing;llm;kubernetes;";
+      keywords = "phoenix;ai;observability;tracing;llm;kubernetes;ryzen;";
       scope = "https://phoenix-ryzen.tail286401.ts.net/";
       ulid = "5A70F22AX1NP456PSAFESPEZ5E";  # Generated 2026-01-26
       # App registry metadata
@@ -903,15 +903,15 @@ let
       routing_domains = [ "phoenix-ryzen.tail286401.ts.net" ];
     }
 
-    # AI Workflow Builder (Ryzen K8s via Tailscale)
+    # Workflow Builder (Ryzen K8s via Tailscale)
     {
-      name = "AI Workflow Builder";
+      name = "Workflow Builder Ryzen";
       url = "https://workflow-builder-ryzen.tail286401.ts.net";
       domain = "workflow-builder-ryzen.tail286401.ts.net";
-      icon = iconPath "ai-workflow-builder.svg";
-      description = "AI Workflow Builder - Visual node-based workflow automation editor";
+      icon = iconPath "workflow-builder-ryzen.png";
+      description = "Workflow Builder - Visual node-based workflow automation editor";
       categories = "Development;Network;";
-      keywords = "workflow;builder;visual;editor;automation;ai;nodes;react-flow;nextjs;";
+      keywords = "workflow;builder;visual;editor;automation;ai;nodes;react-flow;nextjs;ryzen;";
       scope = "https://workflow-builder-ryzen.tail286401.ts.net/";
       ulid = "31EYAA8SZG1WY6TCVYB2PJDNBM";  # Generated 2026-01-29
       # App registry metadata
@@ -924,13 +924,13 @@ let
 
     # Redis Insights (Ryzen K8s via Tailscale)
     {
-      name = "Redis Insights";
+      name = "Redis Insights Ryzen";
       url = "https://redisinsight-ryzen.tail286401.ts.net";
       domain = "redisinsight-ryzen.tail286401.ts.net";
-      icon = iconPath "redis-insights.svg";
+      icon = iconPath "redisinsight-ryzen.png";
       description = "Redis Insights - Redis database management and visualization tool";
       categories = "Development;Network;";
-      keywords = "redis;insights;database;cache;visualization;kubernetes;cnoe;";
+      keywords = "redis;insights;database;cache;visualization;kubernetes;cnoe;ryzen;";
       scope = "https://redisinsight-ryzen.tail286401.ts.net/";
       ulid = "348E7WKJSMP0YRHTHEY3ETR5J6";  # Generated 2026-02-02
       # App registry metadata
@@ -1019,13 +1019,13 @@ let
 
     # MCP Inspector (Ryzen K8s via Tailscale)
     {
-      name = "MCP Inspector";
+      name = "MCP Inspector Ryzen";
       url = "https://mcp-inspector-ryzen.tail286401.ts.net/?MCP_PROXY_PORT=8443";
       domain = "mcp-inspector-ryzen.tail286401.ts.net";
-      icon = iconPath "mcp-inspector.svg";
+      icon = iconPath "mcp-inspector-client-ryzen.png";
       description = "MCP Inspector - Visual testing and debugging tool for MCP servers";
       categories = "Development;Network;";
-      keywords = "mcp;inspector;model;context;protocol;debug;test;server;ai;";
+      keywords = "mcp;inspector;model;context;protocol;debug;test;server;ai;ryzen;";
       scope = "https://mcp-inspector-ryzen.tail286401.ts.net/";
       ulid = "39ADZC4WY3Y4AKR1YVSZDR1NKQ";  # Generated 2026-02-11
       # App registry metadata
@@ -1112,23 +1112,23 @@ let
       routing_domains = [ "signoz-ryzen.tail286401.ts.net" ];
     }
 
-    # Tekton Dashboard (Ryzen K8s via Tailscale)
+    # Tekton Dashboard (Hub via Tailscale)
     {
       name = "Tekton Dashboard";
-      url = "https://tekton-ryzen.tail286401.ts.net";
-      domain = "tekton-ryzen.tail286401.ts.net";
+      url = "https://tekton-dashboard-hub.tail286401.ts.net";
+      domain = "tekton-dashboard-hub.tail286401.ts.net";
       icon = iconPath "tekton.svg";
       description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard";
       categories = "Development;Network;";
       keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;";
-      scope = "https://tekton-ryzen.tail286401.ts.net/";
+      scope = "https://tekton-dashboard-hub.tail286401.ts.net/";
       ulid = "4J8JTH6DJZTY538Z0G01P5GS7R";  # Generated 2026-02-24
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 118;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "tekton-ryzen.tail286401.ts.net" ];
+      routing_domains = [ "tekton-dashboard-hub.tail286401.ts.net" ];
     }
 
     # Agentuity (Ryzen K8s via Tailscale)
@@ -1148,6 +1148,595 @@ let
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "agentuity-ryzen.tail286401.ts.net" ];
+    }
+
+    # =========================================================================
+    # Talos Cluster PWAs - Dev / Staging / Prod environments
+    # URL pattern: https://{service}-{env}.tail286401.ts.net
+    # =========================================================================
+
+    # --- Dev Environment (workspaces 121-131) ---
+
+    # Dapr Dev
+    {
+      name = "Dapr Dev";
+      url = "https://dapr-dev.tail286401.ts.net";
+      domain = "dapr-dev.tail286401.ts.net";
+      icon = iconPath "dapr-dev.png";
+      description = "Dapr distributed application runtime dashboard - Dev environment";
+      categories = "Development;Network;";
+      keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;dev;";
+      scope = "https://dapr-dev.tail286401.ts.net/";
+      ulid = "0VTAAQZ18CYCQ39Q1PVMR1Q4XT";
+      app_scope = "global";
+      preferred_workspace = 121;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "dapr-dev.tail286401.ts.net" ];
+    }
+
+    # Grafana Dev
+    {
+      name = "Grafana Dev";
+      url = "https://grafana-dev.tail286401.ts.net";
+      domain = "grafana-dev.tail286401.ts.net";
+      icon = iconPath "grafana-dev.png";
+      description = "Grafana observability dashboard - Dev environment";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;dev;";
+      scope = "https://grafana-dev.tail286401.ts.net/";
+      ulid = "0DRKX8Y1R8C9926F9RGE93R1NM";
+      app_scope = "global";
+      preferred_workspace = 122;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "grafana-dev.tail286401.ts.net" ];
+    }
+
+    # Keycloak Dev
+    {
+      name = "Keycloak Dev";
+      url = "https://keycloak-dev.tail286401.ts.net";
+      domain = "keycloak-dev.tail286401.ts.net";
+      icon = iconPath "keycloak-dev.png";
+      description = "Keycloak identity and access management - Dev environment";
+      categories = "Security;Network;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;dev;";
+      scope = "https://keycloak-dev.tail286401.ts.net/";
+      ulid = "2XHD6JF5823Y315JX9849H8QH0";
+      app_scope = "global";
+      preferred_workspace = 123;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "keycloak-dev.tail286401.ts.net" ];
+    }
+
+    # Langfuse Dev
+    {
+      name = "Langfuse Dev";
+      url = "https://langfuse-dev.tail286401.ts.net";
+      domain = "langfuse-dev.tail286401.ts.net";
+      icon = iconPath "langfuse-dev.png";
+      description = "Langfuse AI observability platform - Dev environment";
+      categories = "Network;Development;";
+      keywords = "langfuse;ai;observability;tracing;dev;";
+      scope = "https://langfuse-dev.tail286401.ts.net/";
+      ulid = "1MZJ5B3V9AZ5BEQH2GB5WXVWQM";
+      app_scope = "global";
+      preferred_workspace = 124;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "langfuse-dev.tail286401.ts.net" ];
+    }
+
+    # Loki Dev
+    {
+      name = "Loki Dev";
+      url = "https://loki-dev.tail286401.ts.net";
+      domain = "loki-dev.tail286401.ts.net";
+      icon = iconPath "loki-dev.png";
+      description = "Grafana Loki log aggregation - Dev environment";
+      categories = "Network;Development;";
+      keywords = "loki;logs;aggregation;grafana;dev;";
+      scope = "https://loki-dev.tail286401.ts.net/";
+      ulid = "1BBH36GXZMK15Z5E9QP17B4FXT";
+      app_scope = "global";
+      preferred_workspace = 125;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "loki-dev.tail286401.ts.net" ];
+    }
+
+    # MCP Inspector Client Dev
+    {
+      name = "MCP Inspector Client Dev";
+      url = "https://mcp-inspector-client-dev.tail286401.ts.net";
+      domain = "mcp-inspector-client-dev.tail286401.ts.net";
+      icon = iconPath "mcp-inspector-client-dev.png";
+      description = "MCP Inspector client UI - Dev environment";
+      categories = "Development;Network;";
+      keywords = "mcp;inspector;client;model;context;protocol;dev;";
+      scope = "https://mcp-inspector-client-dev.tail286401.ts.net/";
+      ulid = "5JE0R8XVCP5HQZS2X9EG8JHTW0";
+      app_scope = "global";
+      preferred_workspace = 126;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcp-inspector-client-dev.tail286401.ts.net" ];
+    }
+
+    # MCP Inspector Proxy Dev
+    {
+      name = "MCP Inspector Proxy Dev";
+      url = "https://mcp-inspector-proxy-dev.tail286401.ts.net";
+      domain = "mcp-inspector-proxy-dev.tail286401.ts.net";
+      icon = iconPath "mcp-inspector-proxy-dev.png";
+      description = "MCP Inspector proxy server - Dev environment";
+      categories = "Development;Network;";
+      keywords = "mcp;inspector;proxy;model;context;protocol;dev;";
+      scope = "https://mcp-inspector-proxy-dev.tail286401.ts.net/";
+      ulid = "7011NB1X8WSWF9SG4442WRVSYF";
+      app_scope = "global";
+      preferred_workspace = 127;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcp-inspector-proxy-dev.tail286401.ts.net" ];
+    }
+
+    # Mimir Dev
+    {
+      name = "Mimir Dev";
+      url = "https://mimir-dev.tail286401.ts.net";
+      domain = "mimir-dev.tail286401.ts.net";
+      icon = iconPath "mimir-dev.png";
+      description = "Grafana Mimir metrics storage - Dev environment";
+      categories = "Network;Development;";
+      keywords = "mimir;metrics;storage;grafana;dev;";
+      scope = "https://mimir-dev.tail286401.ts.net/";
+      ulid = "47VE0PR7PAZWQ9H9H9BDPYME1C";
+      app_scope = "global";
+      preferred_workspace = 128;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mimir-dev.tail286401.ts.net" ];
+    }
+
+    # Phoenix Dev
+    {
+      name = "Phoenix Dev";
+      url = "https://phoenix-dev.tail286401.ts.net";
+      domain = "phoenix-dev.tail286401.ts.net";
+      icon = iconPath "phoenix-dev.png";
+      description = "Phoenix AI observability and LLM tracing - Dev environment";
+      categories = "Development;Network;";
+      keywords = "phoenix;ai;observability;tracing;llm;dev;";
+      scope = "https://phoenix-dev.tail286401.ts.net/";
+      ulid = "32TW51EX0NJY1WMPMQ2CCKAN1J";
+      app_scope = "global";
+      preferred_workspace = 129;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "phoenix-dev.tail286401.ts.net" ];
+    }
+
+    # Redis Insights Dev
+    {
+      name = "Redis Insights Dev";
+      url = "https://redisinsight-dev.tail286401.ts.net";
+      domain = "redisinsight-dev.tail286401.ts.net";
+      icon = iconPath "redisinsight-dev.png";
+      description = "Redis Insights database management - Dev environment";
+      categories = "Development;Network;";
+      keywords = "redis;insights;database;cache;visualization;dev;";
+      scope = "https://redisinsight-dev.tail286401.ts.net/";
+      ulid = "78QYGKCJKX2YSK4WZKKZ0BN3NG";
+      app_scope = "global";
+      preferred_workspace = 130;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "redisinsight-dev.tail286401.ts.net" ];
+    }
+
+    # Workflow Builder Dev
+    {
+      name = "Workflow Builder Dev";
+      url = "https://workflow-builder-dev.tail286401.ts.net";
+      domain = "workflow-builder-dev.tail286401.ts.net";
+      icon = iconPath "workflow-builder-dev.png";
+      description = "Workflow Builder visual automation editor - Dev environment";
+      categories = "Development;Network;";
+      keywords = "workflow;builder;visual;editor;automation;ai;dev;";
+      scope = "https://workflow-builder-dev.tail286401.ts.net/";
+      ulid = "06Q70H5KMNKF3Q175J7ABD4RYS";
+      app_scope = "global";
+      preferred_workspace = 131;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "workflow-builder-dev.tail286401.ts.net" ];
+    }
+
+    # --- Staging Environment (workspaces 132-142) ---
+
+    # Dapr Staging
+    {
+      name = "Dapr Staging";
+      url = "https://dapr-staging.tail286401.ts.net";
+      domain = "dapr-staging.tail286401.ts.net";
+      icon = iconPath "dapr-staging.png";
+      description = "Dapr distributed application runtime dashboard - Staging environment";
+      categories = "Development;Network;";
+      keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;staging;";
+      scope = "https://dapr-staging.tail286401.ts.net/";
+      ulid = "40E3KQV4H9EBGT0X3QZPGFZHVP";
+      app_scope = "global";
+      preferred_workspace = 132;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "dapr-staging.tail286401.ts.net" ];
+    }
+
+    # Grafana Staging
+    {
+      name = "Grafana Staging";
+      url = "https://grafana-staging.tail286401.ts.net";
+      domain = "grafana-staging.tail286401.ts.net";
+      icon = iconPath "grafana-staging.png";
+      description = "Grafana observability dashboard - Staging environment";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;staging;";
+      scope = "https://grafana-staging.tail286401.ts.net/";
+      ulid = "63A13QQHS5QD0FD2G28CYAQX4V";
+      app_scope = "global";
+      preferred_workspace = 133;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "grafana-staging.tail286401.ts.net" ];
+    }
+
+    # Keycloak Staging
+    {
+      name = "Keycloak Staging";
+      url = "https://keycloak-staging.tail286401.ts.net";
+      domain = "keycloak-staging.tail286401.ts.net";
+      icon = iconPath "keycloak-staging.png";
+      description = "Keycloak identity and access management - Staging environment";
+      categories = "Security;Network;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;staging;";
+      scope = "https://keycloak-staging.tail286401.ts.net/";
+      ulid = "6682MPSPR7BNES8DQ6ZK5XNZB4";
+      app_scope = "global";
+      preferred_workspace = 134;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "keycloak-staging.tail286401.ts.net" ];
+    }
+
+    # Langfuse Staging
+    {
+      name = "Langfuse Staging";
+      url = "https://langfuse-staging.tail286401.ts.net";
+      domain = "langfuse-staging.tail286401.ts.net";
+      icon = iconPath "langfuse-staging.png";
+      description = "Langfuse AI observability platform - Staging environment";
+      categories = "Network;Development;";
+      keywords = "langfuse;ai;observability;tracing;staging;";
+      scope = "https://langfuse-staging.tail286401.ts.net/";
+      ulid = "11X277EJ1WQ9AAQPZPDB37ZXZF";
+      app_scope = "global";
+      preferred_workspace = 135;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "langfuse-staging.tail286401.ts.net" ];
+    }
+
+    # Loki Staging
+    {
+      name = "Loki Staging";
+      url = "https://loki-staging.tail286401.ts.net";
+      domain = "loki-staging.tail286401.ts.net";
+      icon = iconPath "loki-staging.png";
+      description = "Grafana Loki log aggregation - Staging environment";
+      categories = "Network;Development;";
+      keywords = "loki;logs;aggregation;grafana;staging;";
+      scope = "https://loki-staging.tail286401.ts.net/";
+      ulid = "2434K5XQ8ZY3224HFGD2DKRF4F";
+      app_scope = "global";
+      preferred_workspace = 136;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "loki-staging.tail286401.ts.net" ];
+    }
+
+    # MCP Inspector Client Staging
+    {
+      name = "MCP Inspector Client Staging";
+      url = "https://mcp-inspector-client-staging.tail286401.ts.net";
+      domain = "mcp-inspector-client-staging.tail286401.ts.net";
+      icon = iconPath "mcp-inspector-client-staging.png";
+      description = "MCP Inspector client UI - Staging environment";
+      categories = "Development;Network;";
+      keywords = "mcp;inspector;client;model;context;protocol;staging;";
+      scope = "https://mcp-inspector-client-staging.tail286401.ts.net/";
+      ulid = "7XEQKWRSDCV44DZWGH5W2E371E";
+      app_scope = "global";
+      preferred_workspace = 137;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcp-inspector-client-staging.tail286401.ts.net" ];
+    }
+
+    # MCP Inspector Proxy Staging
+    {
+      name = "MCP Inspector Proxy Staging";
+      url = "https://mcp-inspector-proxy-staging.tail286401.ts.net";
+      domain = "mcp-inspector-proxy-staging.tail286401.ts.net";
+      icon = iconPath "mcp-inspector-proxy-staging.png";
+      description = "MCP Inspector proxy server - Staging environment";
+      categories = "Development;Network;";
+      keywords = "mcp;inspector;proxy;model;context;protocol;staging;";
+      scope = "https://mcp-inspector-proxy-staging.tail286401.ts.net/";
+      ulid = "0TCP3MC4JFCNTTA4519D4CQ69D";
+      app_scope = "global";
+      preferred_workspace = 138;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcp-inspector-proxy-staging.tail286401.ts.net" ];
+    }
+
+    # Mimir Staging
+    {
+      name = "Mimir Staging";
+      url = "https://mimir-staging.tail286401.ts.net";
+      domain = "mimir-staging.tail286401.ts.net";
+      icon = iconPath "mimir-staging.png";
+      description = "Grafana Mimir metrics storage - Staging environment";
+      categories = "Network;Development;";
+      keywords = "mimir;metrics;storage;grafana;staging;";
+      scope = "https://mimir-staging.tail286401.ts.net/";
+      ulid = "03KQS5Y4XX82WQWMZKKYD8KVKQ";
+      app_scope = "global";
+      preferred_workspace = 139;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mimir-staging.tail286401.ts.net" ];
+    }
+
+    # Phoenix Staging
+    {
+      name = "Phoenix Staging";
+      url = "https://phoenix-staging.tail286401.ts.net";
+      domain = "phoenix-staging.tail286401.ts.net";
+      icon = iconPath "phoenix-staging.png";
+      description = "Phoenix AI observability and LLM tracing - Staging environment";
+      categories = "Development;Network;";
+      keywords = "phoenix;ai;observability;tracing;llm;staging;";
+      scope = "https://phoenix-staging.tail286401.ts.net/";
+      ulid = "2DC5AR856MB04BTKD4VQNRA255";
+      app_scope = "global";
+      preferred_workspace = 140;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "phoenix-staging.tail286401.ts.net" ];
+    }
+
+    # Redis Insights Staging
+    {
+      name = "Redis Insights Staging";
+      url = "https://redisinsight-staging.tail286401.ts.net";
+      domain = "redisinsight-staging.tail286401.ts.net";
+      icon = iconPath "redisinsight-staging.png";
+      description = "Redis Insights database management - Staging environment";
+      categories = "Development;Network;";
+      keywords = "redis;insights;database;cache;visualization;staging;";
+      scope = "https://redisinsight-staging.tail286401.ts.net/";
+      ulid = "5Y0P0Z7VM3XFWYSXNZBZ5NP5JP";
+      app_scope = "global";
+      preferred_workspace = 141;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "redisinsight-staging.tail286401.ts.net" ];
+    }
+
+    # Workflow Builder Staging
+    {
+      name = "Workflow Builder Staging";
+      url = "https://workflow-builder-staging.tail286401.ts.net";
+      domain = "workflow-builder-staging.tail286401.ts.net";
+      icon = iconPath "workflow-builder-staging.png";
+      description = "Workflow Builder visual automation editor - Staging environment";
+      categories = "Development;Network;";
+      keywords = "workflow;builder;visual;editor;automation;ai;staging;";
+      scope = "https://workflow-builder-staging.tail286401.ts.net/";
+      ulid = "1PTDDNJQTPZ8BZEDA3KV7H2DPT";
+      app_scope = "global";
+      preferred_workspace = 142;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "workflow-builder-staging.tail286401.ts.net" ];
+    }
+
+    # --- Prod Environment (workspaces 143-153) ---
+
+    # Dapr Prod
+    {
+      name = "Dapr Prod";
+      url = "https://dapr-prod.tail286401.ts.net";
+      domain = "dapr-prod.tail286401.ts.net";
+      icon = iconPath "dapr-prod.png";
+      description = "Dapr distributed application runtime dashboard - Prod environment";
+      categories = "Development;Network;";
+      keywords = "dapr;microservices;kubernetes;sidecar;distributed;runtime;prod;";
+      scope = "https://dapr-prod.tail286401.ts.net/";
+      ulid = "05X3Q3WTR1DEMN1XV7JQHZCVQW";
+      app_scope = "global";
+      preferred_workspace = 143;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "dapr-prod.tail286401.ts.net" ];
+    }
+
+    # Grafana Prod
+    {
+      name = "Grafana Prod";
+      url = "https://grafana-prod.tail286401.ts.net";
+      domain = "grafana-prod.tail286401.ts.net";
+      icon = iconPath "grafana-prod.png";
+      description = "Grafana observability dashboard - Prod environment";
+      categories = "Network;Development;";
+      keywords = "grafana;observability;metrics;prod;";
+      scope = "https://grafana-prod.tail286401.ts.net/";
+      ulid = "3279KZJ1N2T2BY6APGVWR1NRNN";
+      app_scope = "global";
+      preferred_workspace = 144;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "grafana-prod.tail286401.ts.net" ];
+    }
+
+    # Keycloak Prod
+    {
+      name = "Keycloak Prod";
+      url = "https://keycloak-prod.tail286401.ts.net";
+      domain = "keycloak-prod.tail286401.ts.net";
+      icon = iconPath "keycloak-prod.png";
+      description = "Keycloak identity and access management - Prod environment";
+      categories = "Security;Network;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;prod;";
+      scope = "https://keycloak-prod.tail286401.ts.net/";
+      ulid = "1P1WFGGBR7WVRXDQ4DCZJCWH8N";
+      app_scope = "global";
+      preferred_workspace = 145;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "keycloak-prod.tail286401.ts.net" ];
+    }
+
+    # Langfuse Prod
+    {
+      name = "Langfuse Prod";
+      url = "https://langfuse-prod.tail286401.ts.net";
+      domain = "langfuse-prod.tail286401.ts.net";
+      icon = iconPath "langfuse-prod.png";
+      description = "Langfuse AI observability platform - Prod environment";
+      categories = "Network;Development;";
+      keywords = "langfuse;ai;observability;tracing;prod;";
+      scope = "https://langfuse-prod.tail286401.ts.net/";
+      ulid = "1R0ZBYS1RV0YJG2XCTZ2Q788ZT";
+      app_scope = "global";
+      preferred_workspace = 146;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "langfuse-prod.tail286401.ts.net" ];
+    }
+
+    # Loki Prod
+    {
+      name = "Loki Prod";
+      url = "https://loki-prod.tail286401.ts.net";
+      domain = "loki-prod.tail286401.ts.net";
+      icon = iconPath "loki-prod.png";
+      description = "Grafana Loki log aggregation - Prod environment";
+      categories = "Network;Development;";
+      keywords = "loki;logs;aggregation;grafana;prod;";
+      scope = "https://loki-prod.tail286401.ts.net/";
+      ulid = "65K5V06XC3VG635K4KW0B75MMT";
+      app_scope = "global";
+      preferred_workspace = 147;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "loki-prod.tail286401.ts.net" ];
+    }
+
+    # MCP Inspector Client Prod
+    {
+      name = "MCP Inspector Client Prod";
+      url = "https://mcp-inspector-client-prod.tail286401.ts.net";
+      domain = "mcp-inspector-client-prod.tail286401.ts.net";
+      icon = iconPath "mcp-inspector-client-prod.png";
+      description = "MCP Inspector client UI - Prod environment";
+      categories = "Development;Network;";
+      keywords = "mcp;inspector;client;model;context;protocol;prod;";
+      scope = "https://mcp-inspector-client-prod.tail286401.ts.net/";
+      ulid = "65K0CPGHV2BM6HX6GNRCNVR4ND";
+      app_scope = "global";
+      preferred_workspace = 148;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcp-inspector-client-prod.tail286401.ts.net" ];
+    }
+
+    # MCP Inspector Proxy Prod
+    {
+      name = "MCP Inspector Proxy Prod";
+      url = "https://mcp-inspector-proxy-prod.tail286401.ts.net";
+      domain = "mcp-inspector-proxy-prod.tail286401.ts.net";
+      icon = iconPath "mcp-inspector-proxy-prod.png";
+      description = "MCP Inspector proxy server - Prod environment";
+      categories = "Development;Network;";
+      keywords = "mcp;inspector;proxy;model;context;protocol;prod;";
+      scope = "https://mcp-inspector-proxy-prod.tail286401.ts.net/";
+      ulid = "6PVX0QGCZRKE796YK4FDW81AKE";
+      app_scope = "global";
+      preferred_workspace = 149;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcp-inspector-proxy-prod.tail286401.ts.net" ];
+    }
+
+    # Mimir Prod
+    {
+      name = "Mimir Prod";
+      url = "https://mimir-prod.tail286401.ts.net";
+      domain = "mimir-prod.tail286401.ts.net";
+      icon = iconPath "mimir-prod.png";
+      description = "Grafana Mimir metrics storage - Prod environment";
+      categories = "Network;Development;";
+      keywords = "mimir;metrics;storage;grafana;prod;";
+      scope = "https://mimir-prod.tail286401.ts.net/";
+      ulid = "1JXWXDGZ48JEG76QJW93CP9VP6";
+      app_scope = "global";
+      preferred_workspace = 150;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mimir-prod.tail286401.ts.net" ];
+    }
+
+    # Phoenix Prod
+    {
+      name = "Phoenix Prod";
+      url = "https://phoenix-prod.tail286401.ts.net";
+      domain = "phoenix-prod.tail286401.ts.net";
+      icon = iconPath "phoenix-prod.png";
+      description = "Phoenix AI observability and LLM tracing - Prod environment";
+      categories = "Development;Network;";
+      keywords = "phoenix;ai;observability;tracing;llm;prod;";
+      scope = "https://phoenix-prod.tail286401.ts.net/";
+      ulid = "0TP1W7EZKV6FX63BKE7G2D0NHM";
+      app_scope = "global";
+      preferred_workspace = 151;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "phoenix-prod.tail286401.ts.net" ];
+    }
+
+    # Redis Insights Prod
+    {
+      name = "Redis Insights Prod";
+      url = "https://redisinsight-prod.tail286401.ts.net";
+      domain = "redisinsight-prod.tail286401.ts.net";
+      icon = iconPath "redisinsight-prod.png";
+      description = "Redis Insights database management - Prod environment";
+      categories = "Development;Network;";
+      keywords = "redis;insights;database;cache;visualization;prod;";
+      scope = "https://redisinsight-prod.tail286401.ts.net/";
+      ulid = "6MK87S5NDVQKM7XM2SAFPP5V9B";
+      app_scope = "global";
+      preferred_workspace = 152;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "redisinsight-prod.tail286401.ts.net" ];
+    }
+
+    # Workflow Builder Prod
+    {
+      name = "Workflow Builder Prod";
+      url = "https://workflow-builder-prod.tail286401.ts.net";
+      domain = "workflow-builder-prod.tail286401.ts.net";
+      icon = iconPath "workflow-builder-prod.png";
+      description = "Workflow Builder visual automation editor - Prod environment";
+      categories = "Development;Network;";
+      keywords = "workflow;builder;visual;editor;automation;ai;prod;";
+      scope = "https://workflow-builder-prod.tail286401.ts.net/";
+      ulid = "4Y0GT13JY712055K53GG03NA0D";
+      app_scope = "global";
+      preferred_workspace = 153;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "workflow-builder-prod.tail286401.ts.net" ];
+    }
+
+    # BlueBubbles
+    {
+      name = "BlueBubbles";
+      url = "https://bluebubbles.app/web";
+      domain = "bluebubbles.app";
+      icon = iconPath "bluebubbles.png";
+      description = "BlueBubbles iMessage relay web interface";
+      categories = "Network;Chat;";
+      keywords = "bluebubbles;imessage;messages;chat;sms;texting;";
+      scope = "https://bluebubbles.app/";
+      ulid = "7RSRF1XG7MM1SG173BSTFYMEEZ";
+      app_scope = "global";
+      preferred_workspace = 154;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "bluebubbles.app" ];
     }
   ];
 

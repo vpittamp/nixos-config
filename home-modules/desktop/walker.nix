@@ -1706,7 +1706,7 @@ in
         provider = "snippets"
 
         [[providers.prefixes]]
-        prefix = "w"
+        prefix = "w "
         provider = "windows"
 
         [[providers.prefixes]]
