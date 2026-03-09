@@ -880,19 +880,15 @@ fi
 # Tailscale Kubeconfig Integration for K9s
 # ============================================================================
 if [[ "$APP_NAME" == "k9s" ]]; then
-    log "INFO" "Discovering Tailscale Kubernetes endpoints..."
-    
-    if command -v tailscale >/dev/null 2>&1; then
-        # Use canonical Tailscale kube-apiserver service names instead of legacy
-        # suffix-based device discovery (kind-api/kind-operator, *-api-N).
-        read -r -a ENDPOINTS <<< "${TAILSCALE_K8S_ENDPOINTS:-k8s-api-hub.tail286401.ts.net k8s-api-dev.tail286401.ts.net k8s-api-staging.tail286401.ts.net k8s-api-ryzen.tail286401.ts.net}"
+    log "INFO" "Synchronizing canonical local kubeconfigs for k9s..."
 
-        for endpoint in "${ENDPOINTS[@]}"; do
-            [[ -z "$endpoint" ]] && continue
-            log "DEBUG" "Configuring local kubeconfig for Tailscale endpoint: $endpoint"
-            tailscale configure kubeconfig "$endpoint" >/dev/null 2>&1 || true
-        done
+    if command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
+        sync-stacks-kubeconfigs >/dev/null 2>&1 || warn "sync-stacks-kubeconfigs failed"
+    else
+        warn "sync-stacks-kubeconfigs not found; k9s will use existing kubeconfig state"
     fi
+
+    ENV_EXPORTS+=("export KUBECONFIG='$HOME/.kube/stacks/config'")
 fi
 
 # NOTE: I3PM_PWA_URL is intentionally NOT passed through ENV_EXPORTS

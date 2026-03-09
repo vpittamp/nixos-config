@@ -9,80 +9,44 @@ in
   options.modules.tools.remoteKubeconfig = {
     enable = mkEnableOption "remote kubeconfig helper backed by Tailscale service endpoints";
 
-    targetConfig = mkOption {
-      type = types.nullOr types.str;
-      default = null;
+    stacksRepoPath = mkOption {
+      type = types.str;
+      default = "${config.home.homeDirectory}/repos/PittampalliOrg/stacks/main";
       description = ''
-        Filesystem path to the kubeconfig that should receive the merged content.
-        Defaults to ~/.kube/config.
+        Local checkout of the stacks repo that owns kubeconfig synchronization.
       '';
     };
 
-    tailscaleEndpoints = mkOption {
-      type = types.listOf types.str;
-      default = [
-        "k8s-api-hub.tail286401.ts.net"
-        "k8s-api-dev.tail286401.ts.net"
-        "k8s-api-staging.tail286401.ts.net"
-        "k8s-api-ryzen.tail286401.ts.net"
-      ];
-      example = [
-        "k8s-api-hub.tail286401.ts.net"
-        "k8s-api-dev.tail286401.ts.net"
-      ];
+    outputDir = mkOption {
+      type = types.str;
+      default = "${config.home.homeDirectory}/.kube/stacks";
       description = ''
-        Canonical Tailscale Kubernetes API service endpoints to configure into the
-        local kubeconfig. Unreachable endpoints are skipped.
+        Directory owned by the stacks kubeconfig sync process. Contains per-cluster
+        kubeconfigs plus the merged config consumed by k9s.
       '';
     };
   };
 
   config = mkIf cfg.enable (
     let
-      targetPath =
-        if cfg.targetConfig != null
-        then cfg.targetConfig
-        else "${config.home.homeDirectory}/.kube/config";
-      targetDir = dirOf targetPath;
-      endpointsFile = pkgs.writeText "remote-kubeconfig-endpoints.json" (builtins.toJSON cfg.tailscaleEndpoints);
-      mergeScript = pkgs.writeShellScriptBin "merge-remote-kubeconfig" ''
+      stacksSyncScript = "${cfg.stacksRepoPath}/deployment/scripts/tailscale/sync-local-kubeconfigs.sh";
+      syncScript = pkgs.writeShellScriptBin "sync-stacks-kubeconfigs" ''
         set -euo pipefail
 
-        TARGET=${lib.escapeShellArg targetPath}
+        if [[ ! -x "${stacksSyncScript}" ]]; then
+          echo "Error: stacks kubeconfig sync script not found or not executable: ${stacksSyncScript}" >&2
+          exit 1
+        fi
 
-        for cmd in kubectl tailscale ${pkgs.python3}/bin/python3; do
-          if ! command -v "$cmd" >/dev/null 2>&1; then
-            echo "Error: required command '$cmd' not found in PATH" >&2
-            exit 1
-          fi
-        done
-
-        mkdir -p "$(dirname "$TARGET")"
-        touch "$TARGET"
-        chmod 600 "$TARGET"
-
-        mapfile -t ENDPOINTS < <(${pkgs.python3}/bin/python3 -c 'import json,sys; [print(x) for x in json.load(open(sys.argv[1]))]' ${endpointsFile})
-
-        for endpoint in "''${ENDPOINTS[@]}"; do
-          [ -z "$endpoint" ] && continue
-          echo "Configuring kubeconfig for $endpoint..."
-          if KUBECONFIG="$TARGET" tailscale configure kubeconfig "$endpoint" >/dev/null 2>&1; then
-            echo "✓ Added/updated $endpoint"
-          else
-            echo "WARNING: skipped unreachable endpoint $endpoint"
-          fi
-        done
-
-        echo "Done. Available contexts in $TARGET:"
-        kubectl config get-contexts || true
+        exec "${stacksSyncScript}" --output-dir ${lib.escapeShellArg cfg.outputDir}
       '';
     in
     {
-      home.packages = [ mergeScript ];
+      home.packages = [ syncScript ];
 
       home.activation.ensureKubeConfigDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        $DRY_RUN_CMD mkdir -p ${lib.escapeShellArg targetDir}
-        $DRY_RUN_CMD chmod 700 ${lib.escapeShellArg targetDir}
+        $DRY_RUN_CMD mkdir -p ${lib.escapeShellArg cfg.outputDir}
+        $DRY_RUN_CMD chmod 700 ${lib.escapeShellArg cfg.outputDir}
       '';
     }
   );

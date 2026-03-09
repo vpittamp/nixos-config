@@ -19,7 +19,13 @@ let
   # Using --qwindowtitle to set the actual window title for KWin matching
   k9sLauncher = pkgs.writeScriptBin "k9s-launcher" ''
     #!/usr/bin/env bash
-    exec ${pkgs.kdePackages.konsole}/bin/konsole --separate --qwindowtitle "K9s" -e ${pkgs.k9s}/bin/k9s
+    exec ${pkgs.kdePackages.konsole}/bin/konsole --separate --qwindowtitle "K9s" -e bash -lc '
+      if command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
+        sync-stacks-kubeconfigs >/dev/null 2>&1 || true
+      fi
+      export KUBECONFIG="$HOME/.kube/stacks/config"
+      exec ${pkgs.k9s}/bin/k9s
+    '
   '';
 in
 {
