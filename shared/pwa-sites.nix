@@ -692,23 +692,23 @@ let
       routing_domains = [ "rag-webui-ryzen.tail286401.ts.net" ];
     }
 
-    # NocoDB (Ryzen K8s via Tailscale)
+    # NocoDB Hub
     {
-      name = "NocoDB";
-      url = "https://nocodb-ryzen.tail286401.ts.net";
-      domain = "nocodb-ryzen.tail286401.ts.net";
-      icon = iconPath "nocodb.svg";
-      description = "NocoDB - Open source Airtable alternative";
+      name = "NocoDB Hub";
+      url = "https://nocodb-hub.tail286401.ts.net";
+      domain = "nocodb-hub.tail286401.ts.net";
+      icon = iconPath "nocodb-hub.png";
+      description = "NocoDB - Open source Airtable alternative - Hub environment";
       categories = "Development;Network;Office;";
-      keywords = "nocodb;database;airtable;spreadsheet;no-code;kubernetes;";
-      scope = "https://nocodb-ryzen.tail286401.ts.net/";
+      keywords = "nocodb;database;airtable;spreadsheet;no-code;kubernetes;hub;";
+      scope = "https://nocodb-hub.tail286401.ts.net/";
       ulid = "7WK88MM2SQ3M161Q045W2R50HK";  # Generated 2026-01-04
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 96;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "nocodb-ryzen.tail286401.ts.net" ];
+      routing_domains = [ "nocodb-hub.tail286401.ts.net" ];
     }
 
     # Oracle Cloud Console
@@ -1112,15 +1112,15 @@ let
       routing_domains = [ "signoz-ryzen.tail286401.ts.net" ];
     }
 
-    # Tekton Dashboard (Hub via Tailscale)
+    # Tekton Dashboard Hub
     {
-      name = "Tekton Dashboard";
+      name = "Tekton Dashboard Hub";
       url = "https://tekton-dashboard-hub.tail286401.ts.net";
       domain = "tekton-dashboard-hub.tail286401.ts.net";
-      icon = iconPath "tekton.svg";
-      description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard";
+      icon = iconPath "tekton-hub.png";
+      description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard - Hub environment";
       categories = "Development;Network;";
-      keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;";
+      keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;hub;";
       scope = "https://tekton-dashboard-hub.tail286401.ts.net/";
       ulid = "4J8JTH6DJZTY538Z0G01P5GS7R";  # Generated 2026-02-24
       # App registry metadata
@@ -1129,6 +1129,25 @@ let
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "tekton-dashboard-hub.tail286401.ts.net" ];
+    }
+
+    # Tekton Dashboard Ryzen
+    {
+      name = "Tekton Dashboard Ryzen";
+      url = "https://tekton-dashboard-ryzen.tail286401.ts.net";
+      domain = "tekton-dashboard-ryzen.tail286401.ts.net";
+      icon = iconPath "tekton-ryzen.png";
+      description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard - Ryzen environment";
+      categories = "Development;Network;";
+      keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;ryzen;";
+      scope = "https://tekton-dashboard-ryzen.tail286401.ts.net/";
+      ulid = "487A5F9MW1YR3WVC12MXT6SATT";  # Generated 2026-03-08
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 155;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "tekton-dashboard-ryzen.tail286401.ts.net" ];
     }
 
     # Agentuity (Ryzen K8s via Tailscale)
@@ -1737,6 +1756,25 @@ let
       preferred_workspace = 154;
       preferred_monitor_role = "secondary";
       routing_domains = [ "bluebubbles.app" ];
+    }
+
+    # Google Gemini
+    {
+      name = "Google Gemini";
+      url = "https://gemini.google.com";
+      domain = "gemini.google.com";
+      icon = iconPath "gemini.svg";
+      description = "Google Gemini - AI assistant and chatbot";
+      categories = "Network;Development;";
+      keywords = "gemini;google;ai;chat;assistant;llm;";
+      scope = "https://gemini.google.com/";
+      ulid = "6679T35EFZX37R862EQX68PRVX";  # Generated 2026-03-09
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 156;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "gemini.google.com" ];
     }
   ];
 
