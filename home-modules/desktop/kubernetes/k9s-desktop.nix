@@ -20,9 +20,17 @@ let
   k9sLauncher = pkgs.writeScriptBin "k9s-launcher" ''
     #!/usr/bin/env bash
     exec ${pkgs.kdePackages.konsole}/bin/konsole --separate --qwindowtitle "K9s" -e bash -lc '
-      if command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
-        sync-stacks-kubeconfigs >/dev/null 2>&1 || true
+      set -euo pipefail
+      if ! command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
+        echo "sync-stacks-kubeconfigs is not available" >&2
+        exit 1
       fi
+      sync-stacks-kubeconfigs >/dev/null 2>&1
+      if [[ ! -r "$HOME/.kube/stacks/config" ]]; then
+        echo "Expected kubeconfig not found: $HOME/.kube/stacks/config" >&2
+        exit 1
+      fi
+      unset KUBECONFIG
       export KUBECONFIG="$HOME/.kube/stacks/config"
       exec ${pkgs.k9s}/bin/k9s
     '

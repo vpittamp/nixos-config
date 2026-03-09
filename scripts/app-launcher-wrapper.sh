@@ -883,11 +883,18 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     log "INFO" "Synchronizing canonical local kubeconfigs for k9s..."
 
     if command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
-        sync-stacks-kubeconfigs >/dev/null 2>&1 || warn "sync-stacks-kubeconfigs failed"
+        if ! sync-stacks-kubeconfigs >/dev/null 2>&1; then
+            error "sync-stacks-kubeconfigs failed. Refusing to launch k9s with stale kubeconfig state."
+        fi
     else
-        warn "sync-stacks-kubeconfigs not found; k9s will use existing kubeconfig state"
+        error "sync-stacks-kubeconfigs not found. Refusing to launch k9s without the canonical kubeconfig sync."
     fi
 
+    if [[ ! -r "$HOME/.kube/stacks/config" ]]; then
+        error "Expected kubeconfig not found: $HOME/.kube/stacks/config"
+    fi
+
+    ENV_EXPORTS+=("unset KUBECONFIG")
     ENV_EXPORTS+=("export KUBECONFIG='$HOME/.kube/stacks/config'")
 fi
 
@@ -908,6 +915,12 @@ ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 USE_REMOTE_EXECUTION="false"
 if [[ "$SCOPE" == "scoped" ]] && [[ "$REMOTE_ENABLED" == "true" ]]; then
     USE_REMOTE_EXECUTION="true"
+fi
+
+# k9s always uses the local canonical kubeconfig and should never be SSH-wrapped
+# through a remote project profile.
+if [[ "$APP_NAME" == "k9s" ]]; then
+    USE_REMOTE_EXECUTION="false"
 fi
 
 # If this is a remote scoped project AND a terminal application, wrap command

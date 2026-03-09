@@ -7,7 +7,7 @@ let
 in
 {
   options.modules.tools.remoteKubeconfig = {
-    enable = mkEnableOption "remote kubeconfig helper backed by Tailscale service endpoints";
+    enable = mkEnableOption "local admin kubeconfig sync owned by the stacks repo";
 
     stacksRepoPath = mkOption {
       type = types.str;
