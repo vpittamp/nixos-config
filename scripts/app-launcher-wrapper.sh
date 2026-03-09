@@ -883,10 +883,12 @@ if [[ "$APP_NAME" == "k9s" ]]; then
     log "INFO" "Discovering Tailscale Kubernetes endpoints..."
     
     if command -v tailscale >/dev/null 2>&1; then
-        # Find all Tailscale devices ending in '-api-[0-9]+' and extract the base cluster service name
-        ENDPOINTS=$(tailscale status --json 2>/dev/null | jq -r '.Peer | to_entries[]?.value.HostName | select(test("api.*-[0-9]+$")) | sub("-[0-9]+$"; "")' | sort -u || echo "")
-        
-        for endpoint in $ENDPOINTS; do
+        # Use canonical Tailscale kube-apiserver service names instead of legacy
+        # suffix-based device discovery (kind-api/kind-operator, *-api-N).
+        read -r -a ENDPOINTS <<< "${TAILSCALE_K8S_ENDPOINTS:-k8s-api-hub.tail286401.ts.net k8s-api-dev.tail286401.ts.net k8s-api-staging.tail286401.ts.net k8s-api-ryzen.tail286401.ts.net}"
+
+        for endpoint in "${ENDPOINTS[@]}"; do
+            [[ -z "$endpoint" ]] && continue
             log "DEBUG" "Configuring local kubeconfig for Tailscale endpoint: $endpoint"
             tailscale configure kubeconfig "$endpoint" >/dev/null 2>&1 || true
         done
