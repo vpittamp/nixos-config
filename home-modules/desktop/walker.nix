@@ -991,6 +991,152 @@ REMOTE
   walkerProjectListCmd = lib.getExe walkerProjectList;
   walkerProjectSwitchCmd = lib.getExe walkerProjectSwitch;
 
+  walkerOnePasswordCacheRefresh = pkgs.writeShellScriptBin "walker-1password-cache-refresh" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cache_dir="$HOME/.cache/walker-1password"
+    tmp_dir=$(${pkgs.coreutils}/bin/mktemp -d)
+    op_cmd="/run/wrappers/bin/op"
+
+    mkdir -p "$cache_dir"
+    trap '${pkgs.coreutils}/bin/rm -rf "$tmp_dir"' EXIT
+
+    if [[ ! -x "$op_cmd" ]]; then
+      op_cmd="${pkgs._1password-cli}/bin/op"
+    fi
+
+    run_op() {
+      local script="$1"
+      shift
+
+      ${pkgs.systemd}/bin/systemd-run --user --wait --pipe --quiet \
+        ${pkgs.bashInteractive}/bin/bash -ilc "$script" _ "$@"
+    }
+
+    fetch_vault() {
+      local vault="$1"
+      local outfile="$2"
+
+      if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
+        run_op '/run/wrappers/bin/op item list --vault "$1" --format=json' "$vault" >"$outfile"
+      else
+        run_op '${pkgs._1password-cli}/bin/op item list --vault "$1" --format=json' "$vault" >"$outfile"
+      fi
+    }
+
+    fetch_vault "ampm3rvesendx6mvksmu2ydh6e" "$tmp_dir/personal.json"
+    fetch_vault "cu4rqh2szvjlrumhepqe2twsmm" "$tmp_dir/employee.json"
+
+    ${pkgs.jq}/bin/jq -s 'add | map({
+      id,
+      title,
+      additional_information: (.additional_information // ""),
+      category: ((.category // "LOGIN") | ascii_downcase)
+    })' \
+      "$tmp_dir/personal.json" \
+      "$tmp_dir/employee.json" \
+      >"$tmp_dir/items.json"
+
+    ${pkgs.coreutils}/bin/mv "$tmp_dir/items.json" "$cache_dir/items.json"
+  '';
+
+  walkerOnePasswordList = pkgs.writeShellScriptBin "walker-1password-list" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cache_dir="$HOME/.cache/walker-1password"
+    cache_file="$cache_dir/items.json"
+    ttl_seconds=900
+
+    mkdir -p "$cache_dir"
+
+    refresh_needed=false
+    if [[ ! -f "$cache_file" ]]; then
+      refresh_needed=true
+    else
+      now=$(date +%s)
+      mtime=$(${pkgs.coreutils}/bin/stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+      age=$((now - mtime))
+      if (( age >= ttl_seconds )); then
+        refresh_needed=true
+      fi
+    fi
+
+    if [[ "$refresh_needed" == "true" ]]; then
+      if [[ -f "$cache_file" ]]; then
+        (${lib.getExe walkerOnePasswordCacheRefresh} >/dev/null 2>&1) &
+      else
+        ${lib.getExe walkerOnePasswordCacheRefresh} >/dev/null 2>&1 || exit 0
+      fi
+    fi
+
+    [[ -f "$cache_file" ]] || exit 0
+
+    ${pkgs.jq}/bin/jq -r '.[] | [.title, .additional_information, .id, .category] | @tsv' "$cache_file"
+  '';
+
+  walkerOnePasswordCopy = pkgs.writeShellScriptBin "walker-1password-copy" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    mode="''${1:-password}"
+    item_id="''${2:-}"
+    op_cmd="/run/wrappers/bin/op"
+
+    if [[ -z "$item_id" ]]; then
+      exit 1
+    fi
+
+    if [[ ! -x "$op_cmd" ]]; then
+      op_cmd="${pkgs._1password-cli}/bin/op"
+    fi
+
+    run_op() {
+      local script="$1"
+      shift
+
+      ${pkgs.systemd}/bin/systemd-run --user --wait --pipe --quiet \
+        ${pkgs.bashInteractive}/bin/bash -ilc "$script" _ "$@"
+    }
+
+    case "$mode" in
+      password)
+        if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
+          value=$(run_op '/run/wrappers/bin/op item get "$1" --fields password --reveal' "$item_id")
+        else
+          value=$(run_op '${pkgs._1password-cli}/bin/op item get "$1" --fields password --reveal' "$item_id")
+        fi
+        label="password"
+        ;;
+      username)
+        if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
+          value=$(run_op '/run/wrappers/bin/op item get "$1" --fields username --reveal' "$item_id")
+        else
+          value=$(run_op '${pkgs._1password-cli}/bin/op item get "$1" --fields username --reveal' "$item_id")
+        fi
+        label="username"
+        ;;
+      otp)
+        if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
+          value=$(run_op '/run/wrappers/bin/op item get "$1" --otp' "$item_id")
+        else
+          value=$(run_op '${pkgs._1password-cli}/bin/op item get "$1" --otp' "$item_id")
+        fi
+        label="otp"
+        ;;
+      *)
+        echo "Unsupported mode: $mode" >&2
+        exit 1
+        ;;
+    esac
+
+    [[ -n "$value" ]] || exit 1
+
+    printf '%s' "$value" | ${clipboardSyncScript}
+    ${pkgs.libnotify}/bin/notify-send "1Password" "Copied $label"
+  '';
+
   # Walker window action scripts - enhanced window management via Walker
   walkerWindowClose = pkgs.writeShellScriptBin "walker-window-close" ''
     #!/usr/bin/env bash
@@ -1522,6 +1668,9 @@ in
     walkerOpenInNvim
     walkerProjectList
     walkerProjectSwitch
+    walkerOnePasswordCacheRefresh
+    walkerOnePasswordList
+    walkerOnePasswordCopy
     walkerSshWorktreeList
     walkerSshWorktreeMaterialize
     walkerSshWorktreeSelect
@@ -1756,12 +1905,12 @@ in
         provider = "menus:history"
 
         # 1Password integration
-        # Use "* " instead of bare "*" so activating the provider with your
-        # existing muscle memory preserves an empty query and shows all items.
-        # Return: copy password | Shift+Return: copy username | Ctrl+Return: copy OTP
+        # Use a cached custom menu instead of Elephant's built-in 1Password
+        # provider. The built-in provider cannot reliably connect to the
+        # 1Password desktop app from Elephant's daemon context on this machine.
         [[providers.prefixes]]
         prefix = "* "
-        provider = "1password"
+        provider = "menus:onepassword"
 
         [[providers.actions.desktopapplications]]
         action = "open"
@@ -1836,28 +1985,6 @@ in
         bind = "ctrl d"
         label = "delete entry"
 
-        # 1Password provider actions
-        # Return: copy password (default action)
-        [[providers.actions.1password]]
-        action = "copy_password"
-        after = "Close"
-        bind = "Return"
-        default = true
-        label = "copy password"
-
-        # Shift+Return: copy username
-        [[providers.actions.1password]]
-        action = "copy_username"
-        after = "Close"
-        bind = "shift Return"
-        label = "copy username"
-
-        # Ctrl+Return: copy OTP/TOTP
-        [[providers.actions.1password]]
-        action = "copy_2fa"
-        after = "Close"
-        bind = "ctrl Return"
-        label = "copy OTP"
     '';
   };
 
@@ -2121,6 +2248,7 @@ in
     # Docs: elephant generatedoc 1password
     icon = "1password"
     name_pretty = "1Password"
+    hide_from_providerlist = true
     min_score = 30
 
     # Vaults to index - use IDs to avoid ambiguity (Employee vault has type=PERSONAL
@@ -2294,6 +2422,63 @@ in
                         Value = url,
                         Icon = icon,
                         Keywords = {domain or "", "history", "browser", "recent"}
+                    })
+                end
+            end
+            handle:close()
+        end
+
+        return entries
+    end
+  '';
+
+  # 1Password menu backed by a cached transient CLI query.
+  # Access: Meta+D -> *<space>
+  xdg.configFile."elephant/menus/onepassword.lua".text = ''
+    Name = "onepassword"
+    NamePretty = "1Password"
+    Icon = "1password"
+    Cache = false
+    Action = "walker-1password-copy password '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "1Password items (cached via transient CLI query)"
+    SearchName = true
+    GlobalSearch = false
+
+    local icons = {
+      login = "dialog-password-symbolic",
+      secure_note = "accessories-text-editor-symbolic",
+      ssh_key = "utilities-terminal-symbolic",
+      credit_card = "auth-smartcard-symbolic",
+      identity = "avatar-default-symbolic",
+      document = "folder-documents-symbolic",
+      password = "dialog-password-symbolic",
+      api_credential = "network-server-symbolic",
+    }
+
+    function GetEntries()
+        local entries = {}
+        local handle = io.popen("walker-1password-list 2>/dev/null")
+
+        if handle then
+            for line in handle:lines() do
+                local title, subtext, item_id, category = line:match("^([^\t]*)\t([^\t]*)\t([^\t]+)\t([^\t]+)$")
+                if title and item_id then
+                    local icon = icons[category] or "1password"
+                    local keywords = {"1password", "password", "secret", category or ""}
+
+                    if subtext and subtext ~= "" then
+                        for word in subtext:gmatch("%S+") do
+                            table.insert(keywords, word:lower())
+                        end
+                    end
+
+                    table.insert(entries, {
+                        Text = title,
+                        Subtext = subtext,
+                        Value = item_id,
+                        Icon = icon,
+                        Keywords = keywords
                     })
                 end
             end
@@ -2595,6 +2780,11 @@ in
       # IMPORTANT: Include ~/.local/bin in PATH so Elephant can find app-launcher-wrapper.sh
       Environment = [
         "PATH=${config.home.homeDirectory}/.local/bin:${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
+        # Elephant's 1Password provider shells out to `op`, which needs the user
+        # session bus and SSH agent path to survive service restarts.
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"
+        "SSH_AUTH_SOCK=${config.home.homeDirectory}/.1password/agent.sock"
+        "LIBSECRET_BACKEND=kwallet"
         # CURATED PRIORITY: Curated apps first, then user profile, then system
         # Directory 1: i3pmAppsDir = ~/.local/share/i3pm-applications (curated registry apps - PRIORITY)
         # Directory 2: ~/.local/share (PWAs + user apps)
@@ -2602,7 +2792,11 @@ in
         # Directory 4: User's nix-profile share
         # Directory 5: System share (fallback icon themes)
         "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:/etc/profiles/per-user/${config.home.username}/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
+        "XDG_CACHE_HOME=${config.home.homeDirectory}/.cache"
+        "XDG_CONFIG_HOME=${config.home.homeDirectory}/.config"
+        "XDG_DATA_HOME=${config.home.homeDirectory}/.local/share"
         "XDG_RUNTIME_DIR=%t"
+        "XDG_STATE_HOME=${config.home.homeDirectory}/.local/state"
       ];
       # CRITICAL: Pass compositor environment variables for launched apps
       # X11/i3: DISPLAY
