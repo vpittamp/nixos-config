@@ -1620,11 +1620,11 @@ def get_icon_registry() -> Dict[str, str]:
             with open(PWA_REGISTRY_PATH) as f:
                 data = json.load(f)
                 for pwa in data.get("pwas", []):
-                    # PWAs use ULID-based app_id (e.g., "FFPWA-01JCYF8Z2M")
+                    # PWAs use ULID-based app_id (e.g., "WebApp-01JCYF8Z2M")
                     ulid = pwa.get("ulid", "")
                     icon = pwa.get("icon", "")
                     if ulid and icon:
-                        _icon_registry[f"ffpwa-{ulid}".lower()] = _resolve_icon_name(icon)
+                        _icon_registry[f"webapp-{ulid}".lower()] = _resolve_icon_name(icon)
         except Exception:
             pass
 

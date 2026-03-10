@@ -73,8 +73,8 @@ def app_registry():
         "vscode": {"name": "vscode", "scope": "scoped", "command": "code"},
         "terminal": {"name": "terminal", "scope": "scoped", "command": "ghostty"},
         "firefox": {"name": "firefox", "scope": "global", "command": "firefox"},
-        "claude-pwa": {"name": "claude-pwa", "scope": "scoped", "command": "firefoxpwa"},
-        "youtube-pwa": {"name": "youtube-pwa", "scope": "global", "command": "firefoxpwa"},
+        "claude-pwa": {"name": "claude-pwa", "scope": "scoped", "command": "launch-pwa-by-name"},
+        "youtube-pwa": {"name": "youtube-pwa", "scope": "global", "command": "launch-pwa-by-name"},
     }
 
 

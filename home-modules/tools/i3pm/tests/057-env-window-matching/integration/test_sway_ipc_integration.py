@@ -178,7 +178,7 @@ class TestPWAIdentification:
             "I3PM_EXPECTED_CLASS": "FFPWA-01JCYF8Z2M7R4N6QW9XKPHVTB5"
         }
         proc_claude = launch_test_process(
-            ["firefoxpwa", "site", "launch", "01JCYF8Z2M7R4N6QW9XKPHVTB5"],
+            ["launch-pwa-by-name", "01JCYF8Z2M7R4N6QW9XKPHVTB5"],
             env_vars=env_claude
         )
         processes.append(proc_claude)
@@ -191,7 +191,7 @@ class TestPWAIdentification:
             "I3PM_EXPECTED_CLASS": "FFPWA-01JBCXYZABC123456789"
         }
         proc_youtube = launch_test_process(
-            ["firefoxpwa", "site", "launch", "01JBCXYZABC123456789"],
+            ["launch-pwa-by-name", "01JBCXYZABC123456789"],
             env_vars=env_youtube
         )
         processes.append(proc_youtube)
@@ -363,7 +363,7 @@ class TestSimplifiedWindowMatching:
             "I3PM_EXPECTED_CLASS": "FFPWA-01JCYF8Z2M7R4N6QW9XKPHVTB5",  # For validation only
         }
 
-        # Launch PWA (mocked - would normally use firefoxpwa command)
+        # Launch PWA (mocked - would normally use launch-pwa-by-name command)
         proc = launch_test_process(
             ["sleep", "60"],  # Placeholder - real test would launch actual PWA
             env_vars=pwa_env

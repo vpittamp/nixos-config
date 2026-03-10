@@ -30,18 +30,18 @@ class TestPWAInstanceDistinction:
     """
 
     def test_firefox_pwa_identification(self):
-        """Firefox PWAs use FFPWA-* class pattern."""
-        # Example Firefox PWA window
+        """Chrome PWAs can use WebApp-* class pattern explicitly set."""
+        # Example Chrome PWA window with explicit WebApp-* instance
         identity = get_window_identity(
-            actual_class="FFPWA-01234567890",
-            actual_instance="google-chat-work",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-01234567890",
             window_title="Google Chat - Work Account",
         )
 
         assert identity["is_pwa"] is True
-        assert identity["pwa_id"] == "FFPWA-01234567890"
-        assert identity["original_class"] == "FFPWA-01234567890"
-        assert identity["original_instance"] == "google-chat-work"
+        assert identity["pwa_id"] == "WebApp-01234567890"
+        assert identity["original_class"] == "Google-chrome"
+        assert identity["original_instance"] == "WebApp-01234567890"
 
     def test_chrome_pwa_identification(self):
         """Chrome PWAs use Google-chrome class with custom instance."""
@@ -91,16 +91,16 @@ class TestPWAInstanceDistinction:
         assert pwa2["pwa_id"] == "chat.google.com__personal"
 
     def test_multiple_firefox_pwas_distinguished(self):
-        """Multiple Firefox PWAs should have unique identities."""
+        """Multiple Chrome PWAs with explicit WebApp instances should have unique identities."""
         pwa1 = get_window_identity(
-            actual_class="FFPWA-01111111111",
-            actual_instance="google-chat-work",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-01111111111",
             window_title="Google Chat - Work",
         )
 
         pwa2 = get_window_identity(
-            actual_class="FFPWA-02222222222",
-            actual_instance="google-chat-personal",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-02222222222",
             window_title="Google Chat - Personal",
         )
 
@@ -110,8 +110,8 @@ class TestPWAInstanceDistinction:
 
         # But have different IDs
         assert pwa1["pwa_id"] != pwa2["pwa_id"]
-        assert pwa1["pwa_id"] == "FFPWA-01111111111"
-        assert pwa2["pwa_id"] == "FFPWA-02222222222"
+        assert pwa1["pwa_id"] == "WebApp-01111111111"
+        assert pwa2["pwa_id"] == "WebApp-02222222222"
 
 
 class TestPWAWorkspaceAssignment:
@@ -127,28 +127,28 @@ class TestPWAWorkspaceAssignment:
     """
 
     def test_firefox_pwa_matches_in_registry(self):
-        """Firefox PWA should match against registry entry."""
-        # Application registry with Firefox PWA entry
+        """Chrome PWA explicitly identified should match against registry entry."""
+        # Application registry with Chrome explicit PWA entry
         registry = {
             "google-chat-work": {
                 "display_name": "Google Chat (Work)",
-                "expected_class": "FFPWA-01234567890",
+                "expected_class": "WebApp-01234567890",
                 "scope": "scoped",
                 "preferred_workspace": 4,
             }
         }
 
-        # Try matching a Firefox PWA window
+        # Try matching a Chrome PWA window instance
         match = match_with_registry(
-            actual_class="FFPWA-01234567890",
-            actual_instance="google-chat-work",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-01234567890",
             application_registry=registry,
         )
 
         assert match is not None
         assert match["_matched_app_name"] == "google-chat-work"
         assert match["preferred_workspace"] == 4
-        assert match["_match_type"] == "exact"
+        assert match["_match_type"] == "instance"
 
     def test_chrome_pwa_matches_by_instance(self):
         """Chrome PWA should match by instance field."""
@@ -310,34 +310,34 @@ class TestPWADisambiguation:
         assert matched_wrong is False
 
     def test_pwa_id_used_for_firefox_disambiguation(self):
-        """Firefox FFPWA-* class provides built-in disambiguation."""
-        # Firefox PWAs have unique class per instance
+        """Chrome WebApp-* class provides built-in disambiguation via instance."""
+        # Chrome PWAs have unique instance per app
         identity1 = get_window_identity(
-            actual_class="FFPWA-01111111111",
-            actual_instance="google-chat-work",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-01111111111",
             window_title="Google Chat - Work",
         )
 
         identity2 = get_window_identity(
-            actual_class="FFPWA-02222222222",
-            actual_instance="google-chat-personal",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-02222222222",
             window_title="Google Chat - Personal",
         )
 
-        # PWA IDs are different (based on class)
+        # PWA IDs are different (based on instance)
         assert identity1["pwa_id"] != identity2["pwa_id"]
 
         # Matching by class provides disambiguation
         matched1, _ = match_window_class(
-            expected="FFPWA-01111111111",
-            actual_class="FFPWA-01111111111",
-            actual_instance="google-chat-work",
+            expected="WebApp-01111111111",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-01111111111",
         )
 
         matched2, _ = match_window_class(
-            expected="FFPWA-02222222222",
-            actual_class="FFPWA-02222222222",
-            actual_instance="google-chat-personal",
+            expected="WebApp-02222222222",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-02222222222",
         )
 
         assert matched1 is True
@@ -357,8 +357,8 @@ class TestPWAConfigurationGuidance:
     def test_pwa_identity_includes_all_fields(self):
         """PWA identity should include all fields needed for configuration."""
         identity = get_window_identity(
-            actual_class="FFPWA-01234567890",
-            actual_instance="google-chat",
+            actual_class="Google-chrome",
+            actual_instance="WebApp-01234567890",
             window_title="Google Chat - Work Account",
         )
 
@@ -372,11 +372,11 @@ class TestPWAConfigurationGuidance:
         assert "pwa_id" in identity
 
         # Values are correct
-        assert identity["original_class"] == "FFPWA-01234567890"
-        assert identity["original_instance"] == "google-chat"
+        assert identity["original_class"] == "Google-chrome"
+        assert identity["original_instance"] == "WebApp-01234567890"
         assert identity["title"] == "Google Chat - Work Account"
         assert identity["is_pwa"] is True
-        assert identity["pwa_id"] == "FFPWA-01234567890"
+        assert identity["pwa_id"] == "WebApp-01234567890"
 
     def test_chrome_pwa_identity_shows_instance_for_config(self):
         """Chrome PWA identity should highlight instance field for config."""

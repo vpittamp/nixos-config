@@ -117,10 +117,10 @@ let
     command = "launch-pwa-by-name";
     parameters = pwa.ulid;  # Use ULID for reliable PWA launch
     scope = pwa.app_scope;
-    expected_class = "FFPWA-${pwa.ulid}";  # NOW CORRECT with declarative ULIDs!
+    expected_class = "WebApp-${pwa.ulid}";  # NOW CORRECT with declarative ULIDs!
     preferred_workspace = pwa.preferred_workspace;
     icon = pwa.icon;  # Use icon from PWA definition (absolute path)
-    nix_package = "pkgs.firefoxpwa";
+    nix_package = "pkgs.google-chrome";
     multi_instance = false;
     fallback_behavior = "use_home";
     description = pwa.description;

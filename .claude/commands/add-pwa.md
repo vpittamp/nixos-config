@@ -1,12 +1,12 @@
 ---
-description: Add a new Firefox PWA to the NixOS configuration
+description: Add a new Google Chrome PWA to the NixOS configuration
 ---
 
-You are helping the user add a new Firefox Progressive Web App (PWA) to their NixOS configuration.
+You are helping the user add a new Google Chrome Progressive Web App (PWA) to their NixOS configuration.
 
 # PWA Addition Workflow
 
-This command automates the complete workflow for adding a new Firefox PWA, including icon discovery, configuration, and installation. It supports both **single PWAs** and **multi-environment PWAs** (dev/staging/prod/ryzen variants of the same service).
+This command automates the complete workflow for adding a new Google Chrome PWA, including icon discovery, configuration, and installation. It supports both **single PWAs** and **multi-environment PWAs** (dev/staging/prod/ryzen variants of the same service).
 
 ## Detect Mode: Single vs Multi-Environment
 
@@ -588,9 +588,8 @@ This will:
 1. Generate PWA manifest JSON in /nix/store
 2. Update application registry at `~/.config/i3/application-registry.json`
 3. Update PWA registry at `~/.config/i3/pwa-registry.json`
-4. Create desktop entry at `~/.local/share/applications/FFPWA-{ULID}.desktop`
-5. Update firefoxpwa config
-6. Register PWA with i3pm daemon
+4. Create desktop entry at `~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop`
+5. Register PWA with i3pm daemon
 
 ## Step 12: Wait for Home-Manager Activation
 
@@ -599,30 +598,11 @@ echo "⏳ Waiting for home-manager activation to complete..."
 sleep 10
 ```
 
-## Step 13: Verify firefoxpwa Profile Installation (CRITICAL)
-
-```bash
-firefoxpwa profile list 2>&1 | grep -q "{ULID}" && echo "✓ PWA profile installed" || echo "✗ PWA profile NOT found"
-```
-
-**If profile NOT found:**
-```
-❌ CRITICAL: firefoxpwa profile was NOT created!
-
-Troubleshooting:
-1. Check firefoxpwa is installed: which firefoxpwa
-2. Check existing profiles: firefoxpwa profile list
-3. Manually verify ULID is in pwa-sites.nix
-4. Try rebuilding again
-
-DO NOT proceed until profile is installed!
-```
-
-## Step 14: Verify Desktop Entry and Registries
+## Step 13: Verify Desktop Entry and Registries
 
 ```bash
 # 1. Check desktop entry exists
-if [ -f ~/.local/share/applications/FFPWA-{ULID}.desktop ]; then
+if [ -f ~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop ]; then
   echo "✓ Desktop entry exists"
 else
   echo "✗ Desktop entry NOT found"
@@ -661,7 +641,7 @@ Confirm all of these before marking as complete:
 
 - ✅ Icon found/validated (colored, icon-only)
 - ✅ PWA entry added to pwa-sites.nix
-- ✅ Desktop entry exists at `~/.local/share/applications/FFPWA-{ULID}.desktop`
+- ✅ Desktop entry exists at `~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop`
 - ✅ PWA appears in registries
 - ✅ PWA searchable in Walker (Meta+D)
 - ✅ PWA launches successfully
@@ -696,10 +676,9 @@ Confirm all of these before marking as complete:
 - `/etc/nixos/scripts/generate-all-env-icons.sh` - Batch icon generator (update ICON_MAP for new services)
 
 ### Auto-generated (during rebuild):
-- `~/.local/share/applications/FFPWA-{ULID}.desktop`
+- `~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop`
 - `~/.config/i3/application-registry.json`
 - `~/.config/i3/pwa-registry.json`
-- `~/.local/share/firefoxpwa/config.json`
 
 ## Summary
 

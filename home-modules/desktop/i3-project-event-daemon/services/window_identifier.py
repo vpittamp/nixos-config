@@ -161,24 +161,23 @@ def get_window_identity(
     }
 
     # Detect PWA (Firefox PWAs use FFPWA-* pattern)
-    # Feature 039 - T079: PWA Detection
-    if actual_class and actual_class.startswith("FFPWA-"):
-        identity["is_pwa"] = True
-        identity["pwa_id"] = actual_class  # e.g., FFPWA-01234567890
-        identity["pwa_type"] = "firefox"
-        logger.debug(f"Detected Firefox PWA: class={actual_class}")
-
+    # Check if this is a PWA
     # Chrome PWAs typically use "Google-chrome" class with specific instance
     # Feature 039 - T079: PWA Detection
-    elif actual_class == "Google-chrome" and actual_instance:
+    if actual_class == "Google-chrome" and actual_instance:
         if actual_instance != "google-chrome":  # Not the main Chrome browser
             identity["is_pwa"] = True
             identity["pwa_id"] = actual_instance
-            identity["pwa_type"] = "chrome"
+
+            # If the instance literally starts with WebApp-, it's a declarative PWA
+            if actual_instance.startswith("WebApp-"):
+                identity["pwa_type"] = "chrome"
+            else:
+                identity["pwa_type"] = "chrome"
+
             logger.debug(
                 f"Detected Chrome PWA: instance={actual_instance}, title={window_title}"
             )
-
     return identity
 
 
@@ -191,7 +190,6 @@ def match_pwa_instance(
     Match PWA instance using PWA-specific logic.
 
     For Chrome PWAs: Matches by instance field (since class is generic "Google-chrome")
-    For Firefox PWAs: Matches by class field (since class is unique FFPWA-*)
 
     Feature 039 - T080: PWA Instance Matching
 
@@ -211,22 +209,15 @@ def match_pwa_instance(
         ...     "chat.google.com__work"
         ... )
         True
-
-        >>> # Firefox PWA matching
-        >>> match_pwa_instance(
-        ...     "FFPWA-01234567890",
-        ...     "FFPWA-01234567890",
-        ...     "google-chat"
-        ... )
-        True
     """
-    # Firefox PWA: Match by class (unique per PWA)
-    if actual_class and actual_class.startswith("FFPWA-"):
-        return pwa_id_expected == actual_class
-
-    # Chrome PWA: Match by instance (class is generic "Google-chrome")
+    # Chrome PWA (using generic class with specific instance)
     if actual_class == "Google-chrome" and actual_instance:
-        return pwa_id_expected == actual_instance
+        # If the expected ID is a declarative WebApp-id but Chrome reports it as the instance
+        if pwa_id_expected == actual_instance:
+            return True
+        # If the expected ID is the raw ULID but Chrome reports WebApp-{ULID}
+        if pwa_id_expected.startswith("WebApp-") and pwa_id_expected == f"WebApp-{actual_instance}":
+            return True
 
     # Not a PWA or no match
     return False

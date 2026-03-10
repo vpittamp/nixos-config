@@ -556,7 +556,7 @@ in
   # Firefox configuration with PWA support
   programs.firefox = {
     enable = lib.mkDefault true;
-    nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
+    nativeMessagingHosts.packages = [ ];
   };
 
   # Tailscale VPN

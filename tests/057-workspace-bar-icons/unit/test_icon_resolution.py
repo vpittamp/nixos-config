@@ -121,8 +121,8 @@ class TestPWAIconResolution:
                 mock_resolve.return_value = "/etc/nixos/assets/pwa-icons/claude.png"
                 index = DesktopIconIndex()
 
-        # Test: Lookup by PWA app_id (ffpwa-{ulid} format)
-        result = index.lookup(app_id="ffpwa-01jcyf8z2vqrstuvwxyz123456", window_class=None, window_instance=None)
+        # Test: Lookup by PWA app_id (webapp-{ulid} format)
+        result = index.lookup(app_id="webapp-01jcyf8z2vqrstuvwxyz123456", window_class=None, window_instance=None)
 
         # Verify: Absolute PWA icon path should be returned
         assert result["icon"] == "/etc/nixos/assets/pwa-icons/claude.png", \
@@ -141,8 +141,8 @@ class TestPWAIconResolution:
                 mock_resolve.return_value = "/etc/nixos/assets/pwa-icons/claude.png"
                 index = DesktopIconIndex()
 
-        # Test: Lookup with uppercase FFPWA (Sway may return this)
-        result = index.lookup(app_id="FFPWA-01JCYF8Z2VQRSTUVWXYZ123456", window_class=None, window_instance=None)
+        # Test: Lookup with uppercase WebApp (Sway may return this)
+        result = index.lookup(app_id="WebApp-01JCYF8Z2VQRSTUVWXYZ123456", window_class=None, window_instance=None)
 
         # Verify: Should match despite uppercase
         assert result["icon"] == "/etc/nixos/assets/pwa-icons/claude.png", \

@@ -23,8 +23,8 @@ def test_apps():
         {"name": "vscode", "command": "code", "scope": "scoped"},
         {"name": "terminal", "command": "ghostty", "scope": "scoped"},
         {"name": "firefox", "command": "firefox", "scope": "global"},
-        {"name": "claude-pwa", "command": "firefoxpwa site launch 01JCYF8Z2M7R4N6QW9XKPHVTB5", "scope": "scoped"},
-        {"name": "youtube-pwa", "command": "firefoxpwa site launch 01JD0H7Z8MXYZ...", "scope": "global"},
+        {"name": "claude-pwa", "command": "launch-pwa-by-name 01JCYF8Z2M7R4N6QW9XKPHVTB5", "scope": "scoped"},
+        {"name": "youtube-pwa", "command": "launch-pwa-by-name 01JD0H7Z8MXYZ...", "scope": "global"},
     ]
 
 

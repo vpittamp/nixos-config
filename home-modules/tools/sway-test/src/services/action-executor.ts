@@ -919,8 +919,8 @@ export class ActionExecutor {
       );
     }
 
-    // T031: Pre-flight check for firefoxpwa binary
-    const firefoxpwaPath = await this.checkFirefoxpwaBinary();
+    // T031: Pre-flight check for PWA launcher binary
+    const launcherPath = await this.checkPWALauncherBinary();
 
     try {
       // T027-T028: Resolve PWA definition from registry
@@ -928,9 +928,9 @@ export class ActionExecutor {
         ? await lookupPWA(pwa_name)        // T027: Name resolution
         : await lookupPWAByULID(pwa_ulid!); // T028: ULID resolution
 
-      // T026: Launch PWA using firefoxpwa subprocess
-      const launchCommand = new Deno.Command(firefoxpwaPath, {
-        args: ["site", "launch", pwa.ulid],
+      // T026: Launch PWA using wrapper subprocess
+      const launchCommand = new Deno.Command(launcherPath, {
+        args: [pwa.ulid],
         stdout: "piped",
         stderr: "piped",
       });
@@ -951,7 +951,7 @@ export class ActionExecutor {
             `PWA launch timed out after ${timeout}ms`,
             [
               `Increase timeout parameter (current: ${timeout}ms)`,
-              `Check if firefoxpwa is responding: firefoxpwa --version`,
+              `Check if launcher is responding: ${launcherPath} --help`,
               `Verify PWA is installed: pwa-list | grep ${pwa.name}`,
               `Check system resources (RAM, CPU)`
             ],
@@ -982,8 +982,7 @@ export class ActionExecutor {
           `Failed to launch PWA "${pwa.name}" (ULID: ${pwa.ulid})`,
           [
             `Verify PWA is installed: pwa-list | grep ${pwa.name}`,
-            `Try reinstalling: pwa-install-all`,
-            `Check firefoxpwa status: firefoxpwa site list`,
+            `Check registry status: pwa-diagnose`,
             `Verify ULID is correct: ${pwa.ulid}`,
             stderr ? `Error output: ${stderr.trim()}` : ""
           ].filter(Boolean),
@@ -1014,18 +1013,18 @@ export class ActionExecutor {
   }
 
   /**
-   * Check if firefoxpwa binary is available
-   * T031: Pre-flight check for firefoxpwa
+   * Check if launch-pwa-by-name binary is available
+   * T031: Pre-flight check for PWA launcher
    *
-   * @returns Path to firefoxpwa binary
-   * @throws StructuredError if firefoxpwa not found
+   * @returns Path to launch-pwa-by-name binary
+   * @throws StructuredError if launch-pwa-by-name not found
    */
-  private async checkFirefoxpwaBinary(): Promise<string> {
-    const firefoxpwaPath = "firefoxpwa"; // Assumes it's in PATH
+  private async checkPWALauncherBinary(): Promise<string> {
+    const launcherPath = "launch-pwa-by-name"; // Assumes it's in PATH
 
     try {
-      const checkCommand = new Deno.Command(firefoxpwaPath, {
-        args: ["--version"],
+      const checkCommand = new Deno.Command("which", {
+        args: [launcherPath],
         stdout: "piped",
         stderr: "piped",
       });
@@ -1033,23 +1032,22 @@ export class ActionExecutor {
       const output = await checkCommand.output();
 
       if (!output.success) {
-        throw new Error("firefoxpwa binary check failed");
+        throw new Error("launch-pwa-by-name binary check failed");
       }
 
-      return firefoxpwaPath;
+      return launcherPath;
     } catch (_error) {
       throw new StructuredError(
         ErrorType.LAUNCH_FAILED,
         "PWA Launcher",
-        "firefoxpwa binary not found or not executable",
+        "launch-pwa-by-name binary not found or not executable",
         [
-          "Install firefoxpwa: nix-shell -p firefoxpwa",
-          "Verify installation: which firefoxpwa",
+          "Verify installation: which launch-pwa-by-name",
           "Check system PATH includes NixOS profiles",
-          "Ensure firefoxpwa is configured in your NixOS configuration"
+          "Ensure Google Chrome PWA support is configured in your NixOS configuration"
         ],
         {
-          expected_binary: "firefoxpwa",
+          expected_binary: "launch-pwa-by-name",
           path_env: Deno.env.get("PATH") || "not set"
         }
       );

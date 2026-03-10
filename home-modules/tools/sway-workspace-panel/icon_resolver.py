@@ -82,8 +82,8 @@ class DesktopIconIndex:
                         "icon": icon_path or "",
                         "name": pwa.get("name", ""),
                     }
-                    # Index by ULID-based app_id (e.g., "FFPWA-01JCYF8Z2M")
-                    pwa_id = f"ffpwa-{pwa.get('ulid', '')}".lower()
+                    # Index by ULID-based app_id (e.g., "WebApp-01JCYF8Z2M")
+                    pwa_id = f"webapp-{pwa.get('ulid', '')}".lower()
                     if pwa_id:
                         self._by_app_id[pwa_id] = payload
         except Exception:

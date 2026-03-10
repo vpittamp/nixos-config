@@ -539,7 +539,7 @@ export async function lookupPWAByULID(ulid: string): Promise<PWADefinition> {
       `PWA with ULID "${ulid}" not found in registry`,
       [
         `Check if the ULID is correct (available ULIDs: ${availableULIDs.join(", ")})`,
-        `Install the PWA using firefoxpwa: firefoxpwa site install <url>`,
+        `Ensure the application is defined in your NixOS configuration`,
         `Add the PWA to pwa-sites.nix with the correct ULID`,
         `Run pwa-list to see all installed PWAs with their ULIDs`
       ],

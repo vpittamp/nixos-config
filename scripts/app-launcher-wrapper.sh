@@ -16,7 +16,7 @@
 #
 # Supported App Types:
 # - Regular applications (firefox, thunar, btop, etc.)
-# - Firefox PWAs (claude-pwa, youtube-pwa, etc.) - deterministic class matching
+# - Google Chrome PWAs (claude-pwa, youtube-pwa, etc.) - deterministic class matching
 # - VS Code (multi-instance with project context)
 # - Terminal apps (alacritty, ghostty with sesh integration)
 #

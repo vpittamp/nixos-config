@@ -62,7 +62,8 @@ in
     enable = true;
     package = pkgs.firefox;
     nativeMessagingHosts = [
-      pkgs.firefoxpwa  # PWA native messaging host
+      # PWA native messaging host - DEPRECATED
+      # pkgs.firefoxpwa
     ];
     policies = {
       # Install cluster CA certificate for HTTPS trust to *.cnoe.localtest.me
@@ -181,7 +182,7 @@ in
           "dom.event.clipboardevents.enabled" = true; # Required for 1Password
 
           # Enable native messaging for PWAsForFirefox
-          "extensions.firefoxpwa.native-messaging-hosts" = true;
+          # "extensions.firefoxpwa.native-messaging-hosts" = true;
 
           # Privacy and history settings
           "privacy.history.enabled" = true;

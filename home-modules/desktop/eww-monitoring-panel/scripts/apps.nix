@@ -68,13 +68,13 @@ let
       fi
       # Generate ULID for PWA
       ULID=$(${scriptWrappers.generate-ulid}/bin/generate-ulid)
-      EXPECTED_CLASS="FFPWA-$ULID"
+      EXPECTED_CLASS="WebApp-$ULID"
 
       CONFIG_JSON=$(${pkgs.jq}/bin/jq -n \
         --arg name "$NAME" \
         --arg display_name "$DISPLAY_NAME" \
-        --arg command "firefoxpwa" \
-        --argjson parameters '["site", "launch", "'"$ULID"'"]' \
+        --arg command "launch-pwa-by-name" \
+        --argjson parameters '["'"$ULID"'"]' \
         --arg expected_class "$EXPECTED_CLASS" \
         --arg scope "global" \
         --argjson preferred_workspace "$WORKSPACE" \

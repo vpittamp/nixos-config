@@ -146,7 +146,7 @@ class PWAConfig(ApplicationConfig):
     ulid: str = Field(..., min_length=26, max_length=26, description="26-character ULID identifier")
     start_url: str = Field(..., min_length=1, description="PWA launch URL")
     scope_url: str = Field(..., min_length=1, description="URL scope for PWA")
-    expected_class: str = Field(..., pattern=r'^FFPWA-[0-9A-HJKMNP-TV-Z]{26}$', description="Format: FFPWA-<ULID>")
+    expected_class: str = Field(..., pattern=r'^WebApp-[0-9A-HJKMNP-TV-Z]{26}$', description="Format: WebApp-<ULID>")
     app_scope: Literal["scoped", "global"] = Field(default="scoped", description="PWA-specific scope")
     categories: str = Field(default="Network;", description="Desktop entry categories")
     keywords: str = Field(default="", description="Search keywords")
@@ -184,10 +184,10 @@ class PWAConfig(ApplicationConfig):
                 {
                     "name": "youtube-pwa",
                     "display_name": "YouTube",
-                    "command": "firefoxpwa",
-                    "parameters": ["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+                    "command": "launch-pwa-by-name",
+                    "parameters": ["01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
                     "scope": "global",
-                    "expected_class": "FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                    "expected_class": "WebApp-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
                     "preferred_workspace": 50,
                     "preferred_monitor_role": "secondary",
                     "icon": "/etc/nixos/assets/icons/youtube.svg",

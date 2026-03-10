@@ -6,7 +6,7 @@
 # This launcher:
 # 1. Resolves PWA display name → app registry name (e.g., "Claude" → "claude-pwa")
 # 2. Delegates to app-launcher-wrapper.sh for unified launch logic
-# 3. Falls back to direct firefoxpwa launch if PWA not in registry
+# 3. Falls back to desktop file search if PWA not in registry
 # 4. Feature 113: Optionally accepts a URL argument for deep linking
 #
 # Benefits of unified approach:
@@ -36,83 +36,105 @@ let
     URL="''${I3PM_PWA_URL:-''${2:-}}"
 
     # ============================================================================
-    # PHASE 1: Resolve PWA ULID from name
+    # PHASE 1: Resolve PWA ULID from pwa-registry.json
     # ============================================================================
 
-    PWA_ID=""
+    REGISTRY="$HOME/.config/i3/pwa-registry.json"
+    PWA_DATA=""
 
-    # Method 1: Check if NAME is already a ULID (26 character ULID format)
-    if [[ "$NAME" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]]; then
-    PWA_ID="$NAME"
-  fi
-
-    # Method 2: Query firefoxpwa directly for dynamic PWA ID lookup
-    if [[ -z "$PWA_ID" ]]; then
-      PWA_ID=$(${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | \
-               grep -E "^- $NAME:" | \
-               grep -oP '[0-9A-HJKMNP-TV-Z]{26}' | \
-               head -1)
-    fi
-
-    # Method 3: Fallback to desktop file search (exact or with suffix like [WS4])
-    if [[ -z "$PWA_ID" ]]; then
-      for pattern in "FFPWA*.desktop" "*-pwa.desktop"; do
-        DESKTOP_FILE=$(grep -l "^Name=$NAME\(\s\|$\)" ~/.local/share/applications/$pattern 2>/dev/null | head -1)
-        if [[ -n "$DESKTOP_FILE" ]]; then
-          # Try extracting ULID from Exec line
-          PWA_ID=$(grep "^Exec=" "$DESKTOP_FILE" | grep -oP '[0-9A-HJKMNP-TV-Z]{26}' | head -1)
-          # Also try StartupWMClass field
-          if [[ -z "$PWA_ID" ]]; then
-            PWA_ID=$(grep "^StartupWMClass=" "$DESKTOP_FILE" | grep -oP '[0-9A-HJKMNP-TV-Z]{26}' | head -1)
-          fi
-          [[ -n "$PWA_ID" ]] && break
-        fi
-      done
-    fi
-
-    if [[ -z "$PWA_ID" ]]; then
-      echo "Error: PWA '$NAME' not found" >&2
-      echo "Available PWAs:" >&2
-      ${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | grep -E "^- " | cut -d: -f1 | sed 's/^- //' | sort >&2
+    if [[ ! -f "$REGISTRY" ]]; then
+      echo "Error: Registry file not found: $REGISTRY" >&2
       exit 1
     fi
 
-    # Ensure 1Password extension and prefs are applied before launch
-    if command -v pwa-enable-1password >/dev/null 2>&1; then
-      pwa-enable-1password --profile "$PWA_ID" >/dev/null 2>&1 || true
-    fi
-    if command -v pwa-fix-dialogs >/dev/null 2>&1; then
-      pwa-fix-dialogs --profile "$PWA_ID" >/dev/null 2>&1 || true
-    fi
-
-    # ============================================================================
-    # PHASE 2: Launch PWA directly via firefoxpwa
-    # ============================================================================
-    # NOTE: This script is called BY app-launcher-wrapper.sh which has already:
-    # - Injected I3PM_* environment variables
-    # - Sent launch notification to daemon
-    # - Set up workspace assignment
-    #
-    # This script's only job is to resolve the PWA name → ULID and launch it.
-    # DO NOT route back to app-launcher-wrapper.sh (would cause infinite loop)
-
-    export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
-    export MOZ_ENABLE_WAYLAND=1
-    export MOZ_DBUS_REMOTE=1
-    export EGL_PLATFORM=wayland
-    export GDK_BACKEND=wayland
-
-    # ============================================================================
-    # PHASE 3: Launch PWA (Feature 113: with optional URL for deep linking)
-    # ============================================================================
-    if [[ -n "$URL" ]]; then
-      # Feature 113: Launch with URL for deep linking
-      # Use --url option to open the PWA at a specific URL
-      exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID" --url "$URL"
+    # Method 1: Check if NAME is already a ULID (26 character ULID format)
+    if [[ "$NAME" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]]; then
+      PWA_DATA=$(${pkgs.jq}/bin/jq -c --arg ulid "$NAME" '.pwas[] | select(.ulid == $ulid)' "$REGISTRY")
     else
-      # Standard launch without URL
-      exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID"
+      # Method 2: Search by name (case-insensitive)
+      NAME_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+      PWA_DATA=$(${pkgs.jq}/bin/jq -c --arg name "$NAME_LOWER" '.pwas[] | select(.name == $name)' "$REGISTRY")
     fi
+
+    if [[ -z "$PWA_DATA" ]]; then
+      echo "Error: PWA '$NAME' not found in registry" >&2
+      echo "Available PWAs:" >&2
+      ${pkgs.jq}/bin/jq -r '.pwas[].name' "$REGISTRY" | sort >&2
+      exit 1
+    fi
+
+    PWA_ID=$(echo "$PWA_DATA" | ${pkgs.jq}/bin/jq -r '.ulid')
+    PWA_URL=$(echo "$PWA_DATA" | ${pkgs.jq}/bin/jq -r '.url')
+    
+    # If URL argument is provided, use it instead of base URL
+    TARGET_URL="''${URL:-$PWA_URL}"
+
+    # ============================================================================
+    # PHASE 2: Setup Google Chrome Profile
+    # ============================================================================
+
+    PROFILE_DIR="$HOME/.local/share/webapps/webapp-$PWA_ID"
+    MAIN_CHROME_PROFILE="$HOME/.config/google-chrome/Default"
+    ONEPASSWORD_EXT_ID="aeblfdkhhhdcdjpifhhbdiojplfjncoa"
+
+    mkdir -p "$PROFILE_DIR/Default/Local Extension Settings"
+    mkdir -p "$PROFILE_DIR/External Extensions"
+    mkdir -p "$PROFILE_DIR/NativeMessagingHosts"
+
+    # Install 1Password extension via External Extensions mechanism
+    cat > "$PROFILE_DIR/External Extensions/''${ONEPASSWORD_EXT_ID}.json" <<EOF
+{"external_update_url":"https://clients2.google.com/service/update2/crx"}
+EOF
+
+    # Link 1Password native messaging host configuration
+    ln -sf "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json" \
+      "$PROFILE_DIR/NativeMessagingHosts/com.1password.1password.json" 2>/dev/null || true
+    ln -sf "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json" \
+      "$PROFILE_DIR/NativeMessagingHosts/com.1password.browser_support.json" 2>/dev/null || true
+
+    # Share 1Password extension data from main Chrome profile for persistent authentication
+    if [ -d "$MAIN_CHROME_PROFILE/Local Extension Settings/''${ONEPASSWORD_EXT_ID}" ]; then
+      rm -rf "$PROFILE_DIR/Default/Local Extension Settings/''${ONEPASSWORD_EXT_ID}" 2>/dev/null
+      ln -sf "$MAIN_CHROME_PROFILE/Local Extension Settings/''${ONEPASSWORD_EXT_ID}" \
+        "$PROFILE_DIR/Default/Local Extension Settings/''${ONEPASSWORD_EXT_ID}"
+    fi
+
+    # Share extension state and sync data for seamless authentication
+    if [ -d "$MAIN_CHROME_PROFILE/Extension State" ]; then
+      rm -rf "$PROFILE_DIR/Default/Extension State" 2>/dev/null
+      ln -sf "$MAIN_CHROME_PROFILE/Extension State" "$PROFILE_DIR/Default/Extension State"
+    fi
+
+    # Share extension cookies for authentication
+    if [ -f "$MAIN_CHROME_PROFILE/Extension Cookies" ]; then
+      ln -sf "$MAIN_CHROME_PROFILE/Extension Cookies" "$PROFILE_DIR/Default/Extension Cookies" 2>/dev/null
+    fi
+
+    # Pin the 1Password extension so it's visible in the PWA toolbar
+    PREFS_FILE="$PROFILE_DIR/Default/Preferences"
+    if [ ! -f "$PREFS_FILE" ]; then
+      ${pkgs.jq}/bin/jq -n --arg ext "$ONEPASSWORD_EXT_ID" '{"extensions": {"pinned_extensions": [$ext]}}' > "$PREFS_FILE"
+    else
+      # If file exists, update it without wiping other preferences
+      ${pkgs.jq}/bin/jq --arg ext "$ONEPASSWORD_EXT_ID" '.extensions.pinned_extensions = (if .extensions.pinned_extensions then (.extensions.pinned_extensions + [$ext] | unique) else [$ext] end)' "$PREFS_FILE" > "$PREFS_FILE.tmp" && mv "$PREFS_FILE.tmp" "$PREFS_FILE"
+    fi
+
+    # Ensure Wayland variables are available
+    export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
+
+    # ============================================================================
+    # PHASE 3: Launch PWA
+    # ============================================================================
+    # Chrome uses --class to set the window app_id under native Wayland or WM_CLASS under XWayland
+    
+    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
+      --user-data-dir="$PROFILE_DIR" \
+      --class="WebApp-$PWA_ID" \
+      --app="$TARGET_URL" \
+      --enable-native-messaging \
+      --no-first-run \
+      --no-default-browser-check \
+      --password-store=basic
   '';
 in
 {

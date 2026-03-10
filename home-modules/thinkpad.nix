@@ -36,7 +36,7 @@
     ./tools/pwa-launcher.nix
 
     # Declarative PWA Installation
-    ./tools/firefox-pwas-declarative.nix
+
     ./tools/pwa-helpers.nix
   ];
 
@@ -80,9 +80,7 @@
   };
 
   # Declarative PWA Installation
-  programs.firefoxpwa-declarative = {
-    enable = true;
-  };
+
 
   # eww workspace bar with SVG icons
   programs.eww-workspace-bar.enable = true;

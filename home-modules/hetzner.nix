@@ -104,7 +104,7 @@ in
     ./tools/pwa-launcher.nix    # Dynamic PWA launcher (queries IDs at runtime)
 
     # Feature 056: Declarative PWA Installation
-    ./tools/firefox-pwas-declarative.nix  # TDD-driven declarative PWA management with ULIDs
+
     ./tools/pwa-helpers.nix               # Helper CLI commands for PWA management
 
     # Feature 121: Stale socket cleanup
@@ -219,9 +219,7 @@ in
   };
 
   # Feature 056: Declarative PWA Installation
-  programs.firefoxpwa-declarative = {
-    enable = true;
-  };
+
 
   # Override default browser to Chromium for better OAuth/authentication support
   # (Goose and other apps that need browser auth work better with Chromium)
