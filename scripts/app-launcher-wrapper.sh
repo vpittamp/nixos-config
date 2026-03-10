@@ -880,18 +880,19 @@ fi
 # Tailscale Kubeconfig Integration for K9s
 # ============================================================================
 if [[ "$APP_NAME" == "k9s" ]]; then
-    log "INFO" "Synchronizing canonical local kubeconfigs for k9s..."
-
-    if command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
-        if ! sync-stacks-kubeconfigs >/dev/null 2>&1; then
-            error "sync-stacks-kubeconfigs failed. Refusing to launch k9s with stale kubeconfig state."
-        fi
-    else
-        error "sync-stacks-kubeconfigs not found. Refusing to launch k9s without the canonical kubeconfig sync."
-    fi
-
     if [[ ! -r "$HOME/.kube/stacks/config" ]]; then
-        error "Expected kubeconfig not found: $HOME/.kube/stacks/config"
+        log "INFO" "Missing ~/.kube/stacks/config; attempting fallback sync for k9s..."
+        if command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
+            if ! sync-stacks-kubeconfigs >/dev/null 2>&1; then
+                error "sync-stacks-kubeconfigs failed. Refusing to launch k9s without a usable kubeconfig."
+            fi
+        else
+            error "Expected kubeconfig not found and sync-stacks-kubeconfigs is unavailable: $HOME/.kube/stacks/config"
+        fi
+
+        if [[ ! -r "$HOME/.kube/stacks/config" ]]; then
+            error "Expected kubeconfig not found after fallback sync: $HOME/.kube/stacks/config"
+        fi
     fi
 
     ENV_EXPORTS+=("unset KUBECONFIG")

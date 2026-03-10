@@ -21,14 +21,16 @@ let
     #!/usr/bin/env bash
     exec ${pkgs.kdePackages.konsole}/bin/konsole --separate --qwindowtitle "K9s" -e bash -lc '
       set -euo pipefail
-      if ! command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
-        echo "sync-stacks-kubeconfigs is not available" >&2
-        exit 1
-      fi
-      sync-stacks-kubeconfigs >/dev/null 2>&1
       if [[ ! -r "$HOME/.kube/stacks/config" ]]; then
-        echo "Expected kubeconfig not found: $HOME/.kube/stacks/config" >&2
-        exit 1
+        if ! command -v sync-stacks-kubeconfigs >/dev/null 2>&1; then
+          echo "Expected kubeconfig not found and sync-stacks-kubeconfigs is unavailable: $HOME/.kube/stacks/config" >&2
+          exit 1
+        fi
+        sync-stacks-kubeconfigs >/dev/null 2>&1
+        if [[ ! -r "$HOME/.kube/stacks/config" ]]; then
+          echo "Expected kubeconfig not found after fallback sync: $HOME/.kube/stacks/config" >&2
+          exit 1
+        fi
       fi
       unset KUBECONFIG
       export KUBECONFIG="$HOME/.kube/stacks/config"
