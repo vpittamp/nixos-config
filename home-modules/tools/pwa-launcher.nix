@@ -70,81 +70,19 @@ let
     TARGET_URL="''${URL:-$PWA_URL}"
 
     # ============================================================================
-    # PHASE 2: Setup Google Chrome Profile
+    # PHASE 2: Launch PWA
     # ============================================================================
-
-    PROFILE_DIR="$HOME/.local/share/webapps/webapp-$PWA_ID"
-    MAIN_CHROME_PROFILE="$HOME/.config/google-chrome/Default"
-    ONEPASSWORD_EXT_ID="aeblfdkhhhdcdjpifhhbdiojplfjncoa"
-
-    mkdir -p "$PROFILE_DIR/Default/Local Extension Settings"
-    mkdir -p "$PROFILE_DIR/External Extensions"
-    mkdir -p "$PROFILE_DIR/NativeMessagingHosts"
-
-    # Install 1Password extension via External Extensions mechanism
-    cat > "$PROFILE_DIR/External Extensions/''${ONEPASSWORD_EXT_ID}.json" <<EOF
-{"external_update_url":"https://clients2.google.com/service/update2/crx"}
-EOF
-
-    # Link 1Password native messaging host configuration
-    ln -sf "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json" \
-      "$PROFILE_DIR/NativeMessagingHosts/com.1password.1password.json" 2>/dev/null || true
-    ln -sf "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json" \
-      "$PROFILE_DIR/NativeMessagingHosts/com.1password.browser_support.json" 2>/dev/null || true
-
-    # Share 1Password extension data from main Chrome profile for persistent authentication
-    if [ -d "$MAIN_CHROME_PROFILE/Local Extension Settings/''${ONEPASSWORD_EXT_ID}" ]; then
-      rm -rf "$PROFILE_DIR/Default/Local Extension Settings/''${ONEPASSWORD_EXT_ID}" 2>/dev/null
-      ln -sf "$MAIN_CHROME_PROFILE/Local Extension Settings/''${ONEPASSWORD_EXT_ID}" \
-        "$PROFILE_DIR/Default/Local Extension Settings/''${ONEPASSWORD_EXT_ID}"
-    fi
-
-    # Share extension state and sync data for seamless authentication
-    if [ -d "$MAIN_CHROME_PROFILE/Extension State" ]; then
-      rm -rf "$PROFILE_DIR/Default/Extension State" 2>/dev/null
-      ln -sf "$MAIN_CHROME_PROFILE/Extension State" "$PROFILE_DIR/Default/Extension State"
-    fi
-
-    # Share extension cookies for authentication
-    if [ -f "$MAIN_CHROME_PROFILE/Extension Cookies" ]; then
-      ln -sf "$MAIN_CHROME_PROFILE/Extension Cookies" "$PROFILE_DIR/Default/Extension Cookies" 2>/dev/null
-    fi
-
-    # Pin the 1Password extension so it's visible in the PWA toolbar
-    PREFS_FILE="$PROFILE_DIR/Default/Preferences"
-    if [ ! -f "$PREFS_FILE" ]; then
-      ${pkgs.jq}/bin/jq -n --arg ext "$ONEPASSWORD_EXT_ID" '{"extensions": {"pinned_extensions": [$ext]}}' > "$PREFS_FILE"
-    else
-      # If file exists, update it without wiping other preferences
-      ${pkgs.jq}/bin/jq --arg ext "$ONEPASSWORD_EXT_ID" '.extensions.pinned_extensions = (if .extensions.pinned_extensions then (.extensions.pinned_extensions + [$ext] | unique) else [$ext] end)' "$PREFS_FILE" > "$PREFS_FILE.tmp" && mv "$PREFS_FILE.tmp" "$PREFS_FILE"
-    fi
-
-    # Ensure Wayland variables are available
-    export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
-
-    # ============================================================================
-    # PHASE 3: Launch PWA
-    # ============================================================================
-    # Chrome uses --class to set the window app_id under native Wayland or WM_CLASS under XWayland
+    # Feature 056: Chrome uses --class to set the window app_id under native Wayland.
+    # By running out of the main profile directly, we instantly inherit all extensions
+    # (including 1Password) and authentication state perfectly, while the unique class
+    # ensures i3pm can still track and route the PWA independently!
     
-    # Feature 056: Find the 1Password extension directory in the main profile to force-load it
-    # This guarantees it's available without waiting for Chrome Web Store sync in the isolated profile
-    EXT_LOAD_ARG=""
-    if [ -d "$MAIN_CHROME_PROFILE/Extensions/$ONEPASSWORD_EXT_ID" ]; then
-      EXT_DIR=$(find "$MAIN_CHROME_PROFILE/Extensions/$ONEPASSWORD_EXT_ID" -maxdepth 1 -mindepth 1 -type d | head -n 1)
-      if [ -n "$EXT_DIR" ]; then
-        EXT_LOAD_ARG="--load-extension=$EXT_DIR"
-      fi
-    fi
-
     exec ${pkgs.google-chrome}/bin/google-chrome-stable \
-      --user-data-dir="$PROFILE_DIR" \
+      --profile-directory="Default" \
       --class="WebApp-$PWA_ID" \
       --enable-native-messaging \
       --no-first-run \
       --no-default-browser-check \
-      --password-store=basic \
-      $EXT_LOAD_ARG \
       "$TARGET_URL"
   '';
 in
