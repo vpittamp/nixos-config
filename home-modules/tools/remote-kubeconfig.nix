@@ -47,7 +47,7 @@ in
         (pkgs.writeShellScriptBin "install-stacks-kubeconfig-bundle" ''
           set -euo pipefail
 
-          bundle_path="${1:-}"
+          bundle_path="''${1:-}"
           if [[ -z "$bundle_path" ]]; then
             echo "Usage: install-stacks-kubeconfig-bundle /path/to/stacks-kubeconfigs-<ts>.tar.gz" >&2
             exit 1
