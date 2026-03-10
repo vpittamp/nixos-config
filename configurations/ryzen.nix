@@ -579,6 +579,7 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
+    interfaces."tailscale0".allowedTCPPorts = [ 4320 ];  # Remote OTEL sink ingress from peers
     checkReversePath = "loose";  # For Tailscale
     # Incus bridge needs DHCP/DNS from host-side dnsmasq.
     trustedInterfaces = [ "incusbr0" ];

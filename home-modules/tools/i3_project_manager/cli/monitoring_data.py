@@ -27,6 +27,7 @@ Stream Mode (--listen):
 
 import argparse
 import asyncio
+import copy
 import hashlib
 import json
 import logging
@@ -129,6 +130,10 @@ DISCOVERED_TMUX_PROJECT_HINT_CACHE: Dict[str, Any] = {
 }
 OTEL_WINDOW_RESOLUTION_CACHE_TTL_SECONDS = 5.0
 OTEL_WINDOW_RESOLUTION_CACHE: Dict[str, Dict[str, Any]] = {}
+TMUX_ACTIVE_PANES_CACHE_LOCAL_TTL_SECONDS = 0.15
+TMUX_ACTIVE_PANES_CACHE_REMOTE_TTL_SECONDS = 0.75
+TMUX_ACTIVE_PANES_CACHE_MAX_AGE_SECONDS = 10.0
+TMUX_ACTIVE_PANES_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _normalize_session_name_key(value: str) -> str:
@@ -2025,6 +2030,23 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     stage_class = str(session.get("stage_class") or f"stage-{stage}")
     stage_visual_state = str(session.get("stage_visual_state") or _AI_STAGE_VISUAL_STATES.get(stage, "idle"))
     stage_rank = int(session.get("stage_rank", _AI_STAGE_RANKS.get(stage, 0)) or 0)
+    pulse_working = False
+    if stage in {"thinking", "tool_running", "streaming"}:
+        if pending_tools > 0 or is_streaming:
+            pulse_working = True
+        elif status_reason.startswith("event:"):
+            event_name = status_reason.split("event:", 1)[1]
+            pulse_working = any(
+                marker in event_name
+                for marker in (
+                    "tool_start",
+                    "stream_start",
+                    "stream_token",
+                    "api_request",
+                    "response",
+                    "completion",
+                )
+            )
     activity_freshness = str(session.get("activity_freshness") or "").strip().lower()
     if activity_freshness not in {"fresh", "warm", "stale"}:
         if (
@@ -2069,6 +2091,7 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
         "stage_detail": detail,
         "stage_class": stage_class,
         "stage_visual_state": stage_visual_state,
+        "pulse_working": pulse_working,
         "stage_rank": stage_rank,
         "stage_glyph": str(session.get("stage_glyph") or _AI_STAGE_GLYPHS.get(stage, "·")),
         "needs_user_action": needs_user_action,
@@ -3545,35 +3568,113 @@ def _session_anchor_key(session: Dict[str, Any]) -> str:
     return "|".join(key_parts)
 
 
-def _list_tmux_active_panes_by_session() -> Dict[str, str]:
+def _tmux_connection_cache_key(connection_key: str) -> str:
+    """Return stable cache key for tmux focus lookups."""
+    normalized = _normalize_connection_key(str(connection_key or "").strip())
+    if not normalized:
+        return _local_connection_key()
+    return normalized
+
+
+def _tmux_active_panes_cache_ttl(connection_key: str) -> float:
+    """Return cache TTL for local vs SSH tmux focus lookups."""
+    parsed = _parse_ssh_connection_key(connection_key)
+    if parsed:
+        return TMUX_ACTIVE_PANES_CACHE_REMOTE_TTL_SECONDS
+    return TMUX_ACTIVE_PANES_CACHE_LOCAL_TTL_SECONDS
+
+
+def _run_tmux_list_clients(connection_key: str) -> str:
+    """List tmux clients for a local or SSH-backed execution context."""
+    parsed = _parse_ssh_connection_key(connection_key)
+    if parsed:
+        target = str(parsed.get("target") or "").strip()
+        port = str(parsed.get("port") or 22)
+        try:
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=1",
+                    "-p",
+                    port,
+                    target,
+                    "--",
+                    "tmux",
+                    "list-clients",
+                    "-F",
+                    "#{session_name}|#{pane_id}|#{client_activity}",
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=0.75,
+            )
+        except Exception:
+            return ""
+    else:
+        try:
+            result = subprocess.run(
+                [
+                    "tmux",
+                    "list-clients",
+                    "-F",
+                    "#{session_name}|#{pane_id}|#{client_activity}",
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=0.25,
+            )
+        except Exception:
+            return ""
+
+    if result.returncode != 0:
+        return ""
+    return str(result.stdout or "")
+
+
+def _list_tmux_active_panes_by_session(connection_key: str = "") -> Dict[str, str]:
     """
     Return most-recent active pane per tmux session.
 
     Uses client activity timestamps to approximate what pane the user most
     recently inspected manually.
     """
-    try:
-        result = subprocess.run(
-            [
-                "tmux",
-                "list-clients",
-                "-F",
-                "#{session_name}|#{pane_id}|#{client_activity}",
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=0.25,
-        )
-    except Exception:
-        return {}
+    cache_key = _tmux_connection_cache_key(connection_key)
+    now = time.time()
+    ttl = _tmux_active_panes_cache_ttl(cache_key)
 
-    if result.returncode != 0:
+    stale_cache_keys = [
+        key
+        for key, value in TMUX_ACTIVE_PANES_CACHE.items()
+        if now - float(value.get("updated_at", 0.0) or 0.0) > TMUX_ACTIVE_PANES_CACHE_MAX_AGE_SECONDS
+    ]
+    for key in stale_cache_keys:
+        TMUX_ACTIVE_PANES_CACHE.pop(key, None)
+
+    cached = TMUX_ACTIVE_PANES_CACHE.get(cache_key)
+    if cached is not None:
+        updated_at = float(cached.get("updated_at", 0.0) or 0.0)
+        if now - updated_at <= ttl:
+            panes = cached.get("panes")
+            if isinstance(panes, dict):
+                return dict(panes)
+
+    output = _run_tmux_list_clients(cache_key)
+    if not output:
+        TMUX_ACTIVE_PANES_CACHE[cache_key] = {
+            "updated_at": now,
+            "panes": {},
+        }
         return {}
 
     by_session: Dict[str, tuple[int, str]] = {}
-    for raw in result.stdout.splitlines():
+    for raw in output.splitlines():
         parts = raw.strip().split("|")
         if len(parts) < 3:
             continue
@@ -3585,7 +3686,163 @@ def _list_tmux_active_panes_by_session() -> Dict[str, str]:
         if existing is None or activity >= existing[0]:
             by_session[session_name] = (activity, pane_id)
 
-    return {session_name: pane for session_name, (_, pane) in by_session.items()}
+    panes = {session_name: pane for session_name, (_, pane) in by_session.items()}
+    TMUX_ACTIVE_PANES_CACHE[cache_key] = {
+        "updated_at": now,
+        "panes": dict(panes),
+    }
+    return panes
+
+
+def _select_current_ai_session_key(
+    active_sessions: List[Dict[str, Any]],
+    focused_window_id: Optional[int],
+) -> str:
+    """Return the single session key that owns current focus in the main window."""
+    if focused_window_id is None:
+        return ""
+
+    candidates = [
+        session
+        for session in active_sessions
+        if _safe_int(session.get("window_id"), 0) == focused_window_id
+        and str(session.get("session_key") or "").strip()
+    ]
+    if not candidates:
+        return ""
+    if len(candidates) == 1:
+        return str(candidates[0].get("session_key") or "")
+
+    tmux_candidates = [
+        session
+        for session in candidates
+        if str(session.get("tmux_session") or "").strip()
+        and str(session.get("tmux_pane") or "").strip()
+    ]
+    if tmux_candidates:
+        for session in candidates:
+            tmux_session = str(session.get("tmux_session") or "").strip()
+            tmux_pane = str(session.get("tmux_pane") or "").strip()
+            connection_key = str(
+                session.get("focus_connection_key")
+                or session.get("connection_key")
+                or ""
+            ).strip()
+            if not tmux_session or not tmux_pane:
+                continue
+            tmux_active_by_session = _list_tmux_active_panes_by_session(connection_key)
+            if tmux_active_by_session.get(tmux_session) == tmux_pane:
+                return str(session.get("session_key") or "")
+
+    return str(candidates[0].get("session_key") or "")
+
+
+def _set_current_window_marker(
+    active_sessions: List[Dict[str, Any]],
+    current_session_key: str,
+) -> bool:
+    """Apply current-window marker to exactly one session."""
+    changed = False
+    current_session_key = str(current_session_key or "")
+    for session in active_sessions:
+        is_current = bool(
+            current_session_key
+            and str(session.get("session_key") or "") == current_session_key
+        )
+        if bool(session.get("is_current_window", False)) != is_current:
+            session["is_current_window"] = is_current
+            changed = True
+    return changed
+
+
+def _apply_current_window_marker(
+    active_sessions: List[Dict[str, Any]],
+    focused_window_id: Optional[int],
+) -> str:
+    """Mark only the single focused session as current within the active window."""
+    current_session_key = _select_current_ai_session_key(active_sessions, focused_window_id)
+    _set_current_window_marker(active_sessions, current_session_key)
+    return current_session_key
+
+
+def _sort_active_ai_sessions_for_display(
+    active_sessions: List[Dict[str, Any]],
+    *,
+    focused_window_id: Optional[int],
+    active_project_name: str = "",
+) -> None:
+    """Apply canonical display ordering for the active AI rail."""
+    active_sessions.sort(
+        key=lambda session: (
+            int(bool(session.get("is_current_window", False))),
+            int(focused_window_id is not None and session.get("window_id") == focused_window_id),
+            int(
+                bool(active_project_name)
+                and str(session.get("display_project") or session.get("project") or "").strip() == active_project_name
+            ),
+            int(session.get("stage_rank", 0) or 0),
+            str(session.get("updated_at") or ""),
+            str(session.get("session_key") or ""),
+        ),
+        reverse=True,
+    )
+
+
+def _payload_requires_fast_tmux_focus_tracking(payload: Dict[str, Any]) -> bool:
+    """Whether the current payload has ambiguous tmux focus inside the focused window."""
+    if not isinstance(payload, dict):
+        return False
+    focused_window_id = _safe_int(payload.get("focused_window_id"), 0)
+    if focused_window_id <= 0:
+        return False
+    active_sessions = payload.get("active_ai_sessions")
+    if not isinstance(active_sessions, list):
+        return False
+    focused_tmux_sessions = [
+        session
+        for session in active_sessions
+        if isinstance(session, dict)
+        and _safe_int(session.get("window_id"), 0) == focused_window_id
+        and str(session.get("tmux_session") or "").strip()
+        and str(session.get("tmux_pane") or "").strip()
+    ]
+    return len(focused_tmux_sessions) > 1
+
+
+def _refresh_current_window_marker_in_payload(payload: Dict[str, Any]) -> bool:
+    """Refresh current-session marker from tmux focus using the last emitted payload."""
+    if not isinstance(payload, dict):
+        return False
+
+    active_sessions = payload.get("active_ai_sessions")
+    if not isinstance(active_sessions, list) or not active_sessions:
+        return False
+
+    focused_window_id = _safe_int(payload.get("focused_window_id"), 0)
+    if focused_window_id <= 0:
+        return False
+
+    current_session_key = _select_current_ai_session_key(active_sessions, focused_window_id)
+    previous_session_key = str(payload.get("current_ai_session_key") or "")
+    changed = _set_current_window_marker(active_sessions, current_session_key)
+
+    active_project_name = str(payload.get("active_project") or "").strip()
+    if changed:
+        _sort_active_ai_sessions_for_display(
+            active_sessions,
+            focused_window_id=focused_window_id,
+            active_project_name=active_project_name,
+        )
+
+    mru_sessions = payload.get("active_ai_sessions_mru")
+    if isinstance(mru_sessions, list):
+        changed = _set_current_window_marker(mru_sessions, current_session_key) or changed
+
+    if previous_session_key != current_session_key:
+        payload["current_ai_session_key"] = current_session_key
+        changed = True
+
+    return changed
 
 
 def _build_otel_badges(
@@ -3885,6 +4142,7 @@ def _build_active_ai_sessions(
             "project_source": project_source,
             "project_path": str(raw_session.get("project_path") or ""),
             "window_id": window_id_int,
+            "is_current_window": False,
             "execution_mode": execution_mode,
             "connection_key": str(identity.get("connection_key") or ""),
             "identity_key": str(identity.get("identity_key") or ""),
@@ -3949,18 +4207,11 @@ def _build_active_ai_sessions(
             merged_by_key[session_key] = (dict(raw_session), session_payload)
 
     active_sessions = [payload for _, payload in merged_by_key.values()]
-    active_sessions.sort(
-        key=lambda session: (
-            int(focused_window_id is not None and session.get("window_id") == focused_window_id),
-            int(
-                bool(active_project_name)
-                and str(session.get("display_project") or session.get("project") or "").strip() == active_project_name
-            ),
-            int(session.get("stage_rank", 0) or 0),
-            str(session.get("updated_at") or ""),
-            str(session.get("session_key") or ""),
-        ),
-        reverse=True,
+    _apply_current_window_marker(active_sessions, focused_window_id)
+    _sort_active_ai_sessions_for_display(
+        active_sessions,
+        focused_window_id=focused_window_id,
+        active_project_name=active_project_name,
     )
     return active_sessions
 
@@ -4168,8 +4419,6 @@ def _apply_review_lifecycle(
             and _window_matches_session_binding(focused_window, entry)
         ]
         if focused_candidates:
-            requires_tmux = any(str(entry.get("tmux_pane") or "") for _, entry in focused_candidates)
-            tmux_active_by_session = _list_tmux_active_panes_by_session() if requires_tmux else {}
             for _, entry in focused_candidates:
                 finish_marker = str(entry.get("finish_marker") or "")
                 if not finish_marker:
@@ -4177,8 +4426,14 @@ def _apply_review_lifecycle(
                 target_pane = str(entry.get("tmux_pane") or "")
                 if target_pane:
                     session_name = str(entry.get("tmux_session") or "")
+                    connection_key = str(
+                        entry.get("focus_connection_key")
+                        or entry.get("connection_key")
+                        or ""
+                    ).strip()
                     if not session_name:
                         continue
+                    tmux_active_by_session = _list_tmux_active_panes_by_session(connection_key)
                     if tmux_active_by_session.get(session_name) != target_pane:
                         continue
                 entry["seen_marker"] = finish_marker
@@ -4565,6 +4820,8 @@ def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
 
 def _should_render_ai_session(session: Dict[str, Any]) -> bool:
     """Visible rail sessions: active work, pending review, or pinned."""
+    if _is_tmux_discovered_process_ghost(session):
+        return False
     stage = str(session.get("stage") or "").strip().lower()
     if stage in {"starting", "thinking", "tool_running", "streaming", "waiting_input", "attention"}:
         return True
@@ -4577,10 +4834,53 @@ def _should_render_ai_session(session: Dict[str, Any]) -> bool:
 
 def _should_render_otel_badge(badge: Dict[str, Any]) -> bool:
     """Visible window badges: active work or pending review."""
+    if _is_tmux_discovered_process_ghost(badge):
+        return False
     stage = str(badge.get("stage") or "").strip().lower()
     if stage in {"starting", "thinking", "tool_running", "streaming", "waiting_input", "attention"}:
         return True
     return bool(badge.get("output_unseen", False) or badge.get("review_pending", False))
+
+
+def _is_tmux_discovered_process_ghost(session: Dict[str, Any]) -> bool:
+    """Suppress process-only tmux-derived sessions that conflict with window context.
+
+    This catches stale wrapper processes that keep advertising a project from an
+    old tmux session even though the owning window context now points at a
+    different project. Native or telemetry-backed sessions are kept.
+    """
+    if str(session.get("project_source") or "").strip() != "tmux_discovered":
+        return False
+
+    if str(session.get("identity_source") or "").strip().lower() not in {"pid", "pane", "heuristic"}:
+        return False
+
+    if str(session.get("native_session_id") or "").strip():
+        return False
+
+    status_reason = str(session.get("status_reason") or "").strip().lower()
+    if status_reason not in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
+        return False
+
+    session_project = str(
+        session.get("project")
+        or session.get("session_project")
+        or session.get("display_project")
+        or ""
+    ).strip()
+    window_project = str(
+        session.get("window_project")
+        or session.get("focus_project")
+        or ""
+    ).strip()
+    if not session_project or not window_project:
+        return False
+
+    session_exact, _session_prefixes = _session_project_candidates(session_project)
+    window_exact, _window_prefixes = _session_project_candidates(window_project)
+    return not bool(
+        session_exact and window_exact and session_exact.intersection(window_exact)
+    )
 
 
 def transform_window(
@@ -5922,8 +6222,10 @@ async def query_monitoring_data() -> Dict[str, Any]:
             window_lookup=window_lookup,
             focused_window_id=focused_window_id,
         )
+        current_ai_session_key = _apply_current_window_marker(active_ai_sessions, focused_window_id)
         active_ai_sessions.sort(
             key=lambda session: (
+                int(bool(session.get("is_current_window", False))),
                 int(focused_window_id is not None and session.get("window_id") == focused_window_id),
                 int(bool(active_qualified_name) and str(session.get("project", "")).strip() == active_qualified_name),
                 _active_ai_session_sort_rank(session),
@@ -6034,6 +6336,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "status": "ok",
             "projects": projects,
             "active_project": active_project,
+            "focused_window_id": focused_window_id,
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
             "error": None,
@@ -6046,6 +6349,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "active_ai_sessions": active_ai_sessions,
             # Feature 139: MRU-ordered list for rapid Alt+Tab-style switching.
             "active_ai_sessions_mru": active_ai_sessions_mru,
+            "current_ai_session_key": current_ai_session_key,
             "ai_monitor_metrics": ai_metrics,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions_runtime,
@@ -6061,6 +6365,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "status": "error",
             "projects": [],
             "active_project": None,
+            "focused_window_id": None,
             "timestamp": error_timestamp,
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": str(e),
@@ -6069,6 +6374,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": [],
             "active_ai_sessions": [],
             "active_ai_sessions_mru": [],
+            "current_ai_session_key": "",
             "ai_monitor_metrics": load_ai_monitor_metrics(),
             "otel_sessions": otel_sessions,
         }
@@ -6083,6 +6389,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "status": "error",
             "projects": [],
             "active_project": None,
+            "focused_window_id": None,
             "timestamp": error_timestamp,
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": f"Unexpected error: {type(e).__name__}: {e}",
@@ -6091,6 +6398,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "ai_sessions": [],
             "active_ai_sessions": [],
             "active_ai_sessions_mru": [],
+            "current_ai_session_key": "",
             "ai_monitor_metrics": load_ai_monitor_metrics(),
             "otel_sessions": otel_sessions,
         }
@@ -7760,6 +8068,7 @@ async def stream_monitoring_data():
     badge_change_event = asyncio.Event()
     inotify_reader_task: Optional[asyncio.Task] = None
     use_inotify = True  # Will be set to False if inotifywait unavailable
+    tmux_focus_tracking_interval = 0.25
 
     try:
         badge_watcher_process = await create_badge_watcher()
@@ -7798,16 +8107,18 @@ async def stream_monitoring_data():
             last_payload_hash = hashlib.md5(initial_json.encode()).hexdigest()
             # Feature 123: Store last payload for heartbeat (avoid re-query)
             last_payload_json = initial_json
+            last_payload_data = data
 
             # Feature 123: Daemon state change event for triggering refresh
             daemon_state_change_event = asyncio.Event()
 
             # Feature 095 Enhancement: Track if we have working badges for spinner animation
             has_working_badge = False
+            last_tmux_focus_check = time.time()
 
             async def refresh_and_output():
                 """Query daemon and output updated JSON with change detection."""
-                nonlocal last_update, has_working_badge, last_payload_hash, last_payload_json
+                nonlocal last_update, has_working_badge, last_payload_hash, last_payload_json, last_payload_data
                 try:
                     data = await query_monitoring_data()
                     # Track if we have working badges to enable spinner updates
@@ -7821,12 +8132,37 @@ async def stream_monitoring_data():
                         print(payload_json, flush=True)
                         last_payload_hash = payload_hash
                         last_payload_json = payload_json  # Feature 123: Store for heartbeat
+                        last_payload_data = data
                         last_update = time.time()
                         logger.debug(f"Output updated (hash changed)")
                     else:
+                        last_payload_data = data
                         logger.debug(f"Skipped output (no change)")
                 except Exception as e:
                     logger.warning(f"Error refreshing data: {e}")
+
+            async def refresh_tmux_focus_marker():
+                """Cheap focused-session refresh for tmux tab changes without daemon activity."""
+                nonlocal last_update, last_payload_hash, last_payload_json, last_payload_data
+                if not _payload_requires_fast_tmux_focus_tracking(last_payload_data):
+                    return
+                try:
+                    payload = copy.deepcopy(last_payload_data)
+                    if not _refresh_current_window_marker_in_payload(payload):
+                        return
+                    payload_json = json.dumps(payload, separators=(",", ":"))
+                    payload_hash = hashlib.md5(payload_json.encode()).hexdigest()
+                    if payload_hash == last_payload_hash:
+                        last_payload_data = payload
+                        return
+                    print(payload_json, flush=True)
+                    last_payload_hash = payload_hash
+                    last_payload_json = payload_json
+                    last_payload_data = payload
+                    last_update = time.time()
+                    logger.debug("Output updated from tmux focus tracking")
+                except Exception as e:
+                    logger.debug(f"Tmux focus tracking refresh failed: {e}")
 
             # Feature 123: Subscribe to daemon state changes
             # This creates a background task that sets daemon_state_change_event when notified
@@ -7886,6 +8222,10 @@ async def stream_monitoring_data():
                             logger.debug("Feature 095: Detected working badge from file (polling), triggering refresh")
                             await refresh_and_output()
                         last_polling_check = current_time
+
+                elif (current_time - last_tmux_focus_check) >= tmux_focus_tracking_interval:
+                    last_tmux_focus_check = current_time
+                    await refresh_tmux_focus_marker()
 
                 # Feature 095 Enhancement: Spinner animation is now handled by EWW defpoll
                 # (spinner_frame and spinner_opacity), so we don't need to refresh here.

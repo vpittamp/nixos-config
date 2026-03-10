@@ -49,6 +49,14 @@ def _normalize_connection_key(value: str) -> str:
     return re.sub(r"[^a-z0-9@._:-]+", "-", raw)
 
 
+def _format_exception_detail(exc: Exception) -> str:
+    """Return a useful log string even for blank exception messages."""
+    detail = str(exc).strip()
+    if detail:
+        return f"{exc.__class__.__name__}: {detail}"
+    return exc.__class__.__name__
+
+
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Optional[Path] = None
@@ -168,7 +176,11 @@ class RemoteSessionPushClient:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                logger.warning(f"Remote OTEL push worker error: {exc}")
+                logger.warning(
+                    "Remote OTEL push worker error for %s: %s",
+                    self.endpoint_url,
+                    _format_exception_detail(exc),
+                )
 
     async def _send_if_needed(self) -> None:
         now = time.monotonic()
@@ -228,7 +240,12 @@ class RemoteSessionPushClient:
                     body[:300],
                 )
         except Exception as exc:
-            logger.warning(f"Remote OTEL push failed: {exc}")
+            logger.warning(
+                "Remote OTEL push failed: endpoint=%s source=%s detail=%s",
+                self.endpoint_url,
+                self.source_connection_key,
+                _format_exception_detail(exc),
+            )
 
 
 class RemoteSessionSinkStore:

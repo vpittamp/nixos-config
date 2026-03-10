@@ -48,6 +48,16 @@
     margin-left: 0px;
   }
 
+  .workspace-scroll {
+    min-width: 0;
+  }
+
+  .workspace-scroll scrollbar {
+    opacity: 0;
+    min-height: 0;
+    min-width: 0;
+  }
+
   .workspace-button {
     background: rgba(30, 30, 46, 0.3);
     padding: 3px 6px;
@@ -82,6 +92,10 @@
   .workspace-button.urgent {
     background: rgba(243, 139, 168, 0.25);
     border: 1px solid rgba(243, 139, 168, 0.5);
+  }
+
+  .workspace-button.compact {
+    padding: 3px 3px;
   }
 
   .workspace-button.empty {
@@ -119,6 +133,18 @@
   .workspace-button.pending.focused .workspace-number {
     color: $yellow;
     font-weight: 600;
+  }
+
+  .workspace-separator {
+    margin: 0 4px;
+    padding: 3px 0;
+    min-width: 1px;
+  }
+
+  .separator-line {
+    min-width: 1px;
+    min-height: 16px;
+    background-color: rgba(108, 112, 134, 0.5);
   }
 
   .workspace-pill {

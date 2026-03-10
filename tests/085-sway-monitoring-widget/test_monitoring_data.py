@@ -2193,6 +2193,384 @@ class TestAiReviewLifecycle:
         assert len(sessions) == 1
         assert sessions[0]["window_id"] == 171
         assert sessions[0]["project"] == "vpittamp/nixos-config:main"
+        assert sessions[0]["is_current_window"] is True
+
+    def test_build_active_ai_sessions_marks_only_focused_window_current(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "claude-code",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 171,
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "n-171",
+                "session_id": "s-171",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%1",
+                },
+                "updated_at": "2026-02-23T10:00:01+00:00",
+            },
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 172,
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "n-172",
+                "session_id": "s-172",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 172,
+                    "tmux_session": "nixos-main",
+                    "tmux_window": "2:main",
+                    "tmux_pane": "%2",
+                },
+                "updated_at": "2026-02-23T10:00:02+00:00",
+            },
+        ]
+        window_lookup = {
+            171: {
+                "id": 171,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            },
+            172: {
+                "id": 172,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="vpittamp/nixos-config:main",
+            focused_window_id=171,
+        )
+
+        sessions_by_window = {session["window_id"]: session for session in sessions}
+        assert sessions_by_window[171]["is_current_window"] is True
+        assert sessions_by_window[172]["is_current_window"] is False
+
+    def test_build_active_ai_sessions_marks_only_active_tmux_pane_current_within_focused_window(self, monkeypatch):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "claude-code",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 171,
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "n-171-a",
+                "session_id": "s-171-a",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_window": "1:editor",
+                    "tmux_pane": "%1",
+                },
+                "updated_at": "2026-02-23T10:00:01+00:00",
+            },
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "vpittamp/nixos-config:main",
+                "window_id": 171,
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "n-171-b",
+                "session_id": "s-171-b",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_window": "2:agent",
+                    "tmux_pane": "%2",
+                },
+                "updated_at": "2026-02-23T10:00:02+00:00",
+            },
+        ]
+        window_lookup = {
+            171: {
+                "id": 171,
+                "project": "vpittamp/nixos-config:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            },
+        }
+        monkeypatch.setattr(
+            monitoring_data,
+            "_list_tmux_active_panes_by_session",
+            lambda connection_key="": {"nixos-main": "%2"},
+        )
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="vpittamp/nixos-config:main",
+            focused_window_id=171,
+        )
+
+        current_sessions = [session for session in sessions if session["is_current_window"]]
+        assert len(current_sessions) == 1
+        assert current_sessions[0]["tmux_pane"] == "%2"
+
+    def test_build_active_ai_sessions_uses_remote_tmux_focus_for_ssh_window(self, monkeypatch):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "PittampalliOrg/stacks:main",
+                "window_id": 171,
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "native_session_id": "ssh-a",
+                "session_id": "ssh-a",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "1:editor",
+                    "tmux_pane": "%11",
+                },
+                "updated_at": "2026-02-23T10:00:01+00:00",
+            },
+            {
+                "state": "working",
+                "tool": "claude-code",
+                "project": "PittampalliOrg/stacks:main",
+                "window_id": 171,
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "native_session_id": "ssh-b",
+                "session_id": "ssh-b",
+                "identity_confidence": "native",
+                "terminal_context": {
+                    "window_id": 171,
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "2:agent",
+                    "tmux_pane": "%12",
+                },
+                "updated_at": "2026-02-23T10:00:02+00:00",
+            },
+        ]
+        window_lookup = {
+            171: {
+                "id": 171,
+                "project": "PittampalliOrg/stacks:main",
+                "class": "Ghostty",
+                "execution_mode": "ssh",
+                "connection_key": "vpittamp@ryzen:22",
+                "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+            },
+        }
+        seen_connections = []
+
+        def fake_tmux_lookup(connection_key=""):
+            seen_connections.append(connection_key)
+            if connection_key == "vpittamp@ryzen:22":
+                return {"stacks/main": "%12"}
+            return {}
+
+        monkeypatch.setattr(monitoring_data, "_list_tmux_active_panes_by_session", fake_tmux_lookup)
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/stacks:main",
+            focused_window_id=171,
+        )
+
+        current_sessions = [session for session in sessions if session["is_current_window"]]
+        assert len(current_sessions) == 1
+        assert current_sessions[0]["tmux_pane"] == "%12"
+        assert "vpittamp@ryzen:22" in seen_connections
+
+    def test_apply_current_window_marker_falls_back_to_single_session_when_tmux_has_no_match(self):
+        sessions = [
+            {
+                "session_key": "first",
+                "window_id": 171,
+                "tmux_session": "nixos-main",
+                "tmux_pane": "%1",
+                "is_current_window": False,
+            },
+            {
+                "session_key": "second",
+                "window_id": 171,
+                "tmux_session": "nixos-main",
+                "tmux_pane": "%2",
+                "is_current_window": False,
+            },
+        ]
+
+        with patch.object(monitoring_data, "_list_tmux_active_panes_by_session", return_value={}):
+            current_key = monitoring_data._apply_current_window_marker(sessions, 171)
+
+        assert current_key == "first"
+        assert sessions[0]["is_current_window"] is True
+        assert sessions[1]["is_current_window"] is False
+
+    def test_payload_requires_fast_tmux_focus_tracking_only_for_ambiguous_focused_tmux_sessions(self):
+        payload = {
+            "focused_window_id": 171,
+            "active_ai_sessions": [
+                {"session_key": "a", "window_id": 171, "tmux_session": "nixos-main", "tmux_pane": "%1"},
+                {"session_key": "b", "window_id": 171, "tmux_session": "nixos-main", "tmux_pane": "%2"},
+                {"session_key": "c", "window_id": 172, "tmux_session": "nixos-main", "tmux_pane": "%3"},
+            ],
+        }
+
+        assert monitoring_data._payload_requires_fast_tmux_focus_tracking(payload) is True
+        assert monitoring_data._payload_requires_fast_tmux_focus_tracking(
+            {"focused_window_id": 171, "active_ai_sessions": payload["active_ai_sessions"][:1]}
+        ) is False
+        assert monitoring_data._payload_requires_fast_tmux_focus_tracking(
+            {"focused_window_id": 171, "active_ai_sessions": [{"session_key": "x", "window_id": 171}]}
+        ) is False
+
+    def test_refresh_current_window_marker_in_payload_updates_cached_payload_without_daemon_refresh(self, monkeypatch):
+        payload = {
+            "focused_window_id": 171,
+            "active_project": "vpittamp/nixos-config:main",
+            "current_ai_session_key": "first",
+            "active_ai_sessions": [
+                {
+                    "session_key": "first",
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_pane": "%1",
+                    "display_project": "vpittamp/nixos-config:main",
+                    "project": "vpittamp/nixos-config:main",
+                    "stage_rank": 20,
+                    "updated_at": "2026-02-23T10:00:01+00:00",
+                    "is_current_window": True,
+                },
+                {
+                    "session_key": "second",
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_pane": "%2",
+                    "display_project": "vpittamp/nixos-config:main",
+                    "project": "vpittamp/nixos-config:main",
+                    "stage_rank": 20,
+                    "updated_at": "2026-02-23T10:00:02+00:00",
+                    "is_current_window": False,
+                },
+            ],
+            "active_ai_sessions_mru": [
+                {
+                    "session_key": "second",
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_pane": "%2",
+                    "is_current_window": False,
+                },
+                {
+                    "session_key": "first",
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_pane": "%1",
+                    "is_current_window": True,
+                },
+            ],
+        }
+        monkeypatch.setattr(
+            monitoring_data,
+            "_list_tmux_active_panes_by_session",
+            lambda connection_key="": {"nixos-main": "%2"},
+        )
+
+        changed = monitoring_data._refresh_current_window_marker_in_payload(payload)
+
+        assert changed is True
+        assert payload["current_ai_session_key"] == "second"
+        assert payload["active_ai_sessions"][0]["session_key"] == "second"
+        assert payload["active_ai_sessions"][0]["is_current_window"] is True
+        assert payload["active_ai_sessions"][1]["is_current_window"] is False
+        assert payload["active_ai_sessions_mru"][0]["is_current_window"] is True
+        assert payload["active_ai_sessions_mru"][1]["is_current_window"] is False
+
+    def test_apply_review_lifecycle_marks_remote_focused_tmux_review_seen(self, tmp_path, monkeypatch):
+        review_file = tmp_path / "ai-session-review.json"
+        seen_events_file = tmp_path / "ai-session-seen-events.jsonl"
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_REVIEW_FILE", review_file)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_SEEN_EVENTS_FILE", seen_events_file)
+
+        now_epoch = 2_000_000
+        monkeypatch.setattr(monitoring_data.time, "time", lambda: float(now_epoch))
+        monkeypatch.setattr(
+            monitoring_data,
+            "_list_tmux_active_panes_by_session",
+            lambda connection_key="": {"stacks/main": "%12"} if connection_key == "vpittamp@ryzen:22" else {},
+        )
+
+        payload = {
+            "schema_version": "1",
+            "sessions": {
+                "remote-review": {
+                    "project": "PittampalliOrg/stacks:main",
+                    "display_project": "PittampalliOrg/stacks:main",
+                    "window_project": "PittampalliOrg/stacks:main",
+                    "focus_project": "PittampalliOrg/stacks:main",
+                    "window_id": 171,
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "focus_connection_key": "vpittamp@ryzen:22",
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "2:agent",
+                    "tmux_pane": "%12",
+                    "tool": "codex",
+                    "display_tool": "Codex CLI",
+                    "display_target": "pane %12",
+                    "last_state": "completed",
+                    "finish_marker": "marker-remote",
+                    "seen_marker": "",
+                    "finished_at": now_epoch - 30,
+                    "expires_at": now_epoch + 300,
+                    "updated_at": now_epoch - 30,
+                }
+            },
+            "updated_at": now_epoch - 30,
+        }
+        review_file.parent.mkdir(parents=True, exist_ok=True)
+        review_file.write_text(json.dumps(payload))
+
+        sessions, state = monitoring_data._apply_review_lifecycle(
+            [],
+            {
+                171: {
+                    "id": 171,
+                    "project": "PittampalliOrg/stacks:main",
+                    "class": "Ghostty",
+                    "execution_mode": "ssh",
+                    "connection_key": "vpittamp@ryzen:22",
+                }
+            },
+            171,
+        )
+
+        assert state["remote-review"]["seen_marker"] == "marker-remote"
+        assert state["remote-review"]["seen_at"] == now_epoch
 
     def test_build_active_ai_sessions_requires_terminal_anchor_contract(self):
         otel_sessions = [
@@ -2653,12 +3031,97 @@ class TestAiReviewLifecycle:
         assert monitoring_data._should_render_ai_session({"stage": "output_ready", "output_unseen": False}) is False
         assert monitoring_data._should_render_ai_session({"stage": "idle", "review_pending": False, "pinned": True}) is True
 
+    def test_should_render_ai_session_hides_tmux_discovered_process_ghost(self):
+        session = {
+            "stage": "starting",
+            "project": "PittampalliOrg/stacks:127-remove-idpbuilder",
+            "window_project": "PittampalliOrg/stacks:main",
+            "focus_project": "PittampalliOrg/stacks:main",
+            "project_source": "tmux_discovered",
+            "identity_source": "pid",
+            "status_reason": "process_detected",
+            "native_session_id": "",
+        }
+
+        assert monitoring_data._should_render_ai_session(session) is False
+
+    def test_should_render_ai_session_keeps_tmux_discovered_native_session(self):
+        session = {
+            "stage": "thinking",
+            "project": "PittampalliOrg/workflow-builder:main",
+            "window_project": "vpittamp/nixos-config:main",
+            "focus_project": "vpittamp/nixos-config:main",
+            "project_source": "tmux_discovered",
+            "identity_source": "native",
+            "status_reason": "process_keepalive",
+            "native_session_id": "native-123",
+        }
+
+        assert monitoring_data._should_render_ai_session(session) is True
+
     def test_should_render_otel_badge_hides_seen_idle_and_completed(self):
         assert monitoring_data._should_render_otel_badge({"stage": "thinking", "review_pending": False}) is True
         assert monitoring_data._should_render_otel_badge({"stage": "attention", "review_pending": False}) is True
         assert monitoring_data._should_render_otel_badge({"stage": "output_ready", "output_unseen": True}) is True
         assert monitoring_data._should_render_otel_badge({"stage": "idle", "review_pending": False}) is False
         assert monitoring_data._should_render_otel_badge({"stage": "output_ready", "output_unseen": False}) is False
+
+    def test_should_render_otel_badge_hides_tmux_discovered_process_ghost(self):
+        badge = {
+            "stage": "starting",
+            "project": "PittampalliOrg/stacks:127-remove-idpbuilder",
+            "window_project": "vpittamp/nixos-config:main",
+            "focus_project": "vpittamp/nixos-config:main",
+            "project_source": "tmux_discovered",
+            "identity_source": "pid",
+            "status_reason": "process_detected",
+            "native_session_id": "",
+        }
+
+        assert monitoring_data._should_render_otel_badge(badge) is False
+
+    def test_normalize_stage_fields_only_pulses_on_real_work_signals(self):
+        process_keepalive = monitoring_data._normalize_stage_fields(
+            {
+                "otel_state": "working",
+                "status_reason": "process_keepalive",
+                "pending_tools": 0,
+                "is_streaming": False,
+                "identity_confidence": "native",
+                "updated_at": "2026-03-07T20:33:51+00:00",
+            },
+            now_epoch=1741380000.0,
+        )
+        assert process_keepalive["stage"] == "thinking"
+        assert process_keepalive["pulse_working"] is False
+
+        tool_running = monitoring_data._normalize_stage_fields(
+            {
+                "otel_state": "working",
+                "status_reason": "event:claude_code.tool_start",
+                "pending_tools": 1,
+                "is_streaming": False,
+                "identity_confidence": "native",
+                "updated_at": "2026-03-07T20:33:51+00:00",
+            },
+            now_epoch=1741380000.0,
+        )
+        assert tool_running["stage"] == "tool_running"
+        assert tool_running["pulse_working"] is True
+
+        streaming = monitoring_data._normalize_stage_fields(
+            {
+                "otel_state": "working",
+                "status_reason": "event:codex.stream_token",
+                "pending_tools": 0,
+                "is_streaming": True,
+                "identity_confidence": "native",
+                "updated_at": "2026-03-07T20:33:51+00:00",
+            },
+            now_epoch=1741380000.0,
+        )
+        assert streaming["stage"] == "streaming"
+        assert streaming["pulse_working"] is True
 
     def test_normalize_stage_fields_derives_semantic_stage_from_raw_session(self):
         stage = monitoring_data._normalize_stage_fields(

@@ -25,6 +25,21 @@ def test_active_ai_review_pending_visual_hooks_present():
     assert "ai-badge-unread-dot" in text
 
 
+def test_active_ai_current_window_visual_hooks_present():
+    """Windows view should distinguish the currently focused AI window."""
+    text = WINDOWS_VIEW_YUCK.read_text()
+    assert "session.is_current_window ?: false" in text
+    assert "active-ai-chip-marker current" in text
+    assert ':text "Now"' in text
+
+
+def test_active_ai_pulse_uses_explicit_work_signal():
+    """Pulsing should be driven by pulse_working, not broad stage classes."""
+    text = WINDOWS_VIEW_YUCK.read_text()
+    assert "session.pulse_working ?: false" in text
+    assert "badge.pulse_working ?: false" in text
+
+
 def test_ai_tmux_view_supports_unseen_finished_sessions_by_default():
     """ai-tmux-view should include unseen-finished sessions with opt-out flag."""
     text = AI_TMUX_VIEW_NIX.read_text()

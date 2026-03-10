@@ -23,7 +23,9 @@
           (label :class "active-ai-mru-title" :text "Recent")
           (for session in {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) <= 6 ? (monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []) : jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[:6]")}
             (box
-              :class {"active-ai-mru-chip " + ((ai_sessions_selected_key == (session.session_key ?: "")) ? "selected" : "")}
+              :class {"active-ai-mru-chip"
+                + ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")
+                + ((session.is_current_window ?: false) ? " current-window" : "")}
               :orientation "h"
               :space-evenly false
               :spacing 3
@@ -130,11 +132,13 @@
                           :class {"active-ai-chip " +
                             (session.stage_class ?: ("stage-" + (session.otel_state ?: "idle"))) + " " +
                             (session.stage_visual_state ?: "idle") +
+                            ((session.pulse_working ?: false) ? " pulse-working" : "") +
                             ((session.output_unseen ?: session.review_pending ?: false) ? " review-pending" : "") +
                             ((session.tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((session.tool ?: "unknown") == "codex" ? " tool-codex" : ((session.tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                             ((session.stale ?: false) ? " stale" : "") +
                             (((session.confidence_level ?: "") != "") ? (" confidence-" + (session.confidence_level ?: "")) : "") +
-                            ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")}
+                            ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "") +
+                            ((session.is_current_window ?: false) ? " current-window" : "")}
                           :orientation "h"
                           :space-evenly false
                           :spacing 4
@@ -159,6 +163,10 @@
                             :xalign 0.5
                             :text {session.stage_glyph ?: "·"})
                           (label
+                            :class "active-ai-chip-marker current"
+                            :visible {session.is_current_window ?: false}
+                            :text "Now")
+                          (label
                             :class "active-ai-chip-marker remote"
                             :visible {(session.execution_mode ?: "local") == "ssh"}
                             :text "SSH")
@@ -166,6 +174,10 @@
                             :class "active-ai-chip-marker action"
                             :visible {session.needs_user_action ?: false}
                             :text "Action")
+                          (label
+                            :class "active-ai-chip-unread-dot"
+                            :visible {session.output_unseen ?: session.review_pending ?: false}
+                            :text "•")
                           (label
                             :class "active-ai-chip-marker unread"
                             :visible {session.output_unseen ?: session.review_pending ?: false}
@@ -247,7 +259,7 @@
         :hscroll false
         :vexpand true
         (box
-          :class "content-container"
+          :class "content-container windows-content-container"
           :orientation "v"
           :space-evenly false
           :vexpand true
@@ -501,6 +513,7 @@
                     :class {"ai-badge-hover " +
                       (badge.stage_class ?: ("stage-" + (badge.otel_state ?: "idle"))) + " " +
                       (badge.stage_visual_state ?: "idle") +
+                      ((badge.pulse_working ?: false) ? " pulse-working" : "") +
                       ((badge.output_unseen ?: badge.review_pending ?: false) ? " review-pending" : "") +
                       ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown"))) +
                       ((badge.stale ?: false) ? " stale" : "") +
@@ -520,6 +533,7 @@
                       (image
                         :class {"ai-badge-icon" +
                           " " + (badge.stage_visual_state ?: "idle") +
+                          ((badge.pulse_working ?: false) ? " pulse-working" : "") +
                           ((badge.otel_tool ?: "unknown") == "claude-code" ? " tool-claude-code" : ((badge.otel_tool ?: "unknown") == "codex" ? " tool-codex" : ((badge.otel_tool ?: "unknown") == "gemini" ? " tool-gemini" : " tool-unknown")))}
                         :path {(badge.otel_tool ?: "unknown") == "claude-code"
                           ? "${iconPaths.claude}"

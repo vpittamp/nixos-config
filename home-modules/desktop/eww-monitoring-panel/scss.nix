@@ -237,6 +237,10 @@
     padding: 8px 24px 8px 12px;
   }
 
+  .windows-content-container {
+    padding-top: 0;
+  }
+
   .projects-list {
     min-width: 0;
   }
@@ -968,9 +972,9 @@
   }
 
   .active-ai-rail-container {
-    padding: 4px 10px 8px 10px;
+    padding: 4px 10px 4px 10px;
     border-bottom: 1px solid rgba(108, 112, 134, 0.34);
-    margin-bottom: 2px;
+    margin-bottom: 0;
     min-width: 0;
   }
 
@@ -1000,6 +1004,19 @@
   .active-ai-mru-chip.selected {
     border-color: rgba(137, 180, 250, 0.66);
     background: rgba(69, 71, 90, 0.84);
+  }
+
+  .active-ai-mru-chip.current-window {
+    border-color: rgba(148, 226, 213, 0.7);
+    background: rgba(24, 24, 37, 0.94);
+    box-shadow: inset 0 0 0 1px rgba(148, 226, 213, 0.2),
+                0 0 10px rgba(137, 220, 235, 0.12);
+  }
+
+  .active-ai-mru-chip.current-window.selected {
+    border-color: rgba(148, 226, 213, 0.86);
+    box-shadow: inset 0 0 0 1px rgba(148, 226, 213, 0.24),
+                0 0 12px rgba(137, 220, 235, 0.18);
   }
 
   .active-ai-mru-chip-text {
@@ -1164,6 +1181,26 @@
     background: rgba(69, 71, 90, 0.92);
   }
 
+  .active-ai-chip.current-window {
+    border-color: rgba(148, 226, 213, 0.82);
+    background: rgba(17, 17, 27, 0.96);
+    box-shadow: inset 0 0 0 1px rgba(148, 226, 213, 0.22),
+                0 0 0 1px rgba(137, 220, 235, 0.14),
+                0 0 16px rgba(137, 220, 235, 0.14);
+  }
+
+  .active-ai-chip.current-window.selected {
+    border-color: rgba(148, 226, 213, 0.92);
+    box-shadow: inset 0 0 0 1px rgba(148, 226, 213, 0.26),
+                0 0 0 1px rgba(137, 220, 235, 0.22),
+                0 0 18px rgba(137, 220, 235, 0.18);
+  }
+
+  .active-ai-chip.current-window .active-ai-chip-text {
+    color: ${mocha.text};
+    font-weight: 700;
+  }
+
   .active-ai-chip.overflow {
     padding: 2px 6px;
   }
@@ -1227,6 +1264,11 @@
     background: rgba(250, 179, 135, 0.18);
   }
 
+  .active-ai-chip-marker.current {
+    color: ${mocha.base};
+    background: rgba(148, 226, 213, 0.9);
+  }
+
   .active-ai-chip-marker.unread {
     color: ${mocha.green};
     background: rgba(166, 227, 161, 0.18);
@@ -1238,7 +1280,7 @@
     100% { border-color: rgba(243, 139, 168, 0.36); background-color: rgba(69, 71, 90, 0.75); }
   }
 
-  .active-ai-chip.working {
+  .active-ai-chip.pulse-working {
     animation: active-ai-working-pulse 1.6s infinite ease-in-out;
   }
 
@@ -1249,7 +1291,8 @@
   }
 
   .active-ai-chip.attention {
-    animation: active-ai-attention-pulse 1.9s infinite ease-in-out;
+    border-color: rgba(250, 179, 135, 0.6);
+    background: rgba(250, 179, 135, 0.12);
   }
 
   .active-ai-chip.completed {
@@ -1371,7 +1414,7 @@
     100% { background-color: rgba(243, 139, 168, 0.12); border-color: rgba(243, 139, 168, 0.0); box-shadow: 0 0 0 rgba(243, 139, 168, 0.0); }
   }
 
-  .ai-session-chip.working {
+  .ai-session-chip.pulse-working {
     animation: ai-chip-pulse 2s infinite ease-in-out;
     border: 1px solid transparent;
   }
@@ -1446,7 +1489,7 @@
   }
 
   .ai-session-chip.attention {
-    animation: ai-attention-pulse 3s infinite ease-in-out;
+    background-color: rgba(250, 179, 135, 0.18);
     border: 1px solid transparent;
   }
 

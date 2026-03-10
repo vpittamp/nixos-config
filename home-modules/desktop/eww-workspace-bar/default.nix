@@ -26,18 +26,19 @@ let
 
   workspaceOutputs =
     if isHeadless then [
-      { name = "HEADLESS-1"; label = "Headless 1"; }
-      { name = "HEADLESS-2"; label = "Headless 2"; }
-      { name = "HEADLESS-3"; label = "Headless 3"; }
+      { name = "HEADLESS-1"; label = "Headless 1"; logicalWidth = 1920; }
+      { name = "HEADLESS-2"; label = "Headless 2"; logicalWidth = 1920; }
+      { name = "HEADLESS-3"; label = "Headless 3"; logicalWidth = 1920; }
     ]
     else if isRyzen then [
-      { name = "DP-1"; label = "Primary"; }
-      { name = "HDMI-A-1"; label = "HDMI"; }
-      { name = "DP-2"; label = "DP-2"; }
-      { name = "DP-3"; label = "DP-3"; }
+      { name = "DP-1"; label = "Primary"; logicalWidth = 3840; }
+      { name = "HDMI-A-1"; label = "HDMI"; logicalWidth = 1920; }
+      { name = "DP-2"; label = "DP-2"; logicalWidth = 1920; }
+      { name = "DP-3"; label = "DP-3"; logicalWidth = 1920; }
     ]
     else [
-      { name = "eDP-1"; label = "Built-in"; }
+      # ThinkPad: 1920 physical / 1.25 scale = 1536 logical
+      { name = "eDP-1"; label = "Built-in"; logicalWidth = 1536; }
     ];
 
   sanitize = name:
@@ -166,7 +167,7 @@ let
           :geometry (geometry :anchor "bottom center"
                                 :x "0px"
                                 :y "0px"
-                                :width "100%"
+                                :width "${toString output.logicalWidth}px"
                                 :height "32px")
           :reserve (struts :side "bottom" :distance "36px")
           (workspace-strip :output_label "${output.label}" :markup_var ${varName})

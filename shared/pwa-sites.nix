@@ -1776,6 +1776,24 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "gemini.google.com" ];
     }
+
+    # Empower Retirement
+    {
+      name = "Empower Retirement";
+      url = "https://participant.empower-retirement.com/";
+      domain = "participant.empower-retirement.com";
+      icon = iconPath "empower-retirement.png";
+      description = "Empower Retirement - 401k and retirement savings";
+      categories = "Network;Office;";
+      keywords = "empower;retirement;401k;savings;investing;finance;";
+      scope = "https://participant.empower-retirement.com/";
+      ulid = "3X2786DR1MKG1HN0GTRWKJTHRM";
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 157;
+      # Feature 113: URL routing domains
+      routing_domains = [ "participant.empower-retirement.com" ];
+    }
   ];
 
   # Filter and format sites

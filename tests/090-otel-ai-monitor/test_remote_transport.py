@@ -27,7 +27,10 @@ def _load_otel_monitor_package():
 
 
 _load_otel_monitor_package()
-from otel_ai_monitor.remote_transport import RemoteSessionSinkStore  # type: ignore  # noqa: E402
+from otel_ai_monitor.remote_transport import (  # type: ignore  # noqa: E402
+    RemoteSessionPushClient,
+    RemoteSessionSinkStore,
+)
 
 
 def _build_payload(
@@ -258,3 +261,27 @@ async def test_sink_rejects_stale_boot_epoch_timestamp(tmp_path):
         assert status == 202
     finally:
         await sink.stop()
+
+
+@pytest.mark.asyncio
+async def test_push_logs_endpoint_and_exception_detail(caplog):
+    class _ExplodingSession:
+        def post(self, *args, **kwargs):
+            raise TimeoutError()
+
+    client = RemoteSessionPushClient(
+        endpoint_url="http://thinkpad:4320/v1/i3pm/remote-sessions",
+        source_connection_key="vpittamp@ryzen:22",
+        source_host_name="ryzen",
+    )
+    client._session = _ExplodingSession()
+    client._latest_payload = {"schema_version": "6", "sessions": [{"session_id": "sid-1"}]}
+    client._latest_payload_hash = "hash-1"
+    client._sequence = 1
+
+    with caplog.at_level("WARNING"):
+        await client._send_if_needed()
+
+    assert "endpoint=http://thinkpad:4320/v1/i3pm/remote-sessions" in caplog.text
+    assert "source=vpittamp@ryzen:22" in caplog.text
+    assert "TimeoutError" in caplog.text

@@ -315,8 +315,19 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     return "true" if value else "false"
                 return json.dumps(value, separators=(",", ":"))
 
+            # Adaptive compact mode: enable when 30+ workspaces on this output
+            compact = len(rows) >= 30
+            spacing = 2 if compact else 3
+
             parts = []
+            prev_num = None
             for row in rows:
+                # Insert separator between regular workspaces (<50) and PWAs (>=50)
+                ws_num = row["num"]
+                if prev_num is not None and prev_num < 50 and ws_num >= 50:
+                    parts.append("(workspace-separator)")
+                prev_num = ws_num
+
                 attrs = [
                     ("number_label", format_value(row["numberLabel"])),
                     ("workspace_name", format_value(row["name"])),
@@ -329,6 +340,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     ("urgent", format_value(row["urgent"])),
                     ("pending", format_value(row["pending"])),  # Feature 058: Pending highlight
                     ("empty", format_value(row["isEmpty"])),
+                    ("compact", format_value(compact)),
                 ]
                 attr_string = " ".join(
                     f":{key} {value}"
@@ -337,7 +349,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 parts.append(f"(workspace-button {attr_string})")
 
             # Wrap in a box container so eww's (literal :content) gets a single element
-            serialized = f"(box :orientation \"h\" :spacing 3 {''.join(parts)})"
+            serialized = f"(box :orientation \"h\" :spacing {spacing} {''.join(parts)})"
         if serialized != last_payload:
             print(serialized, flush=True)
             last_payload = serialized
