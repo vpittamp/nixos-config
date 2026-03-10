@@ -143,7 +143,6 @@ in
 
       # Environment variables
       environment.sessionVariables = {
-        SSH_AUTH_SOCK = "/home/${cfg.user}/.1password/agent.sock";
         OP_BIOMETRIC_UNLOCK_ENABLED = if cfg.gui.enable then "true" else "false";
         OP_DEVICE = if cfg.gui.enable then null else "hetzner-server";
       };
@@ -283,11 +282,27 @@ in
 
       # Configure SSH client to use 1Password agent
       programs.ssh.extraConfig = ''
-        # Use 1Password SSH agent for all hosts
-        Host *
+        # Prefer a forwarded SSH agent when present, otherwise fall back to
+        # the local 1Password agent for desktop sessions on this machine.
+        Match exec "test -n \"$SSH_AUTH_SOCK\""
+          IdentityAgent $SSH_AUTH_SOCK
+
+        Match exec "test -z \"$SSH_AUTH_SOCK\""
           IdentityAgent ~/.1password/agent.sock
-          IdentitiesOnly yes
+
+        Host *
+          AddKeysToAgent yes
           PreferredAuthentications publickey
+
+        Host github.com
+          User git
+          IdentitiesOnly yes
+          IdentityFile ~/.ssh/git_signing_key.pub
+
+        Host gitlab.com
+          User git
+          IdentitiesOnly yes
+          IdentityFile ~/.ssh/git_signing_key.pub
       '';
 
       # SSH agent configuration file
@@ -382,7 +397,9 @@ in
           # Load 1Password service account token
           if [ -f /var/lib/onepassword/service-account-token ]; then
             export OP_SERVICE_ACCOUNT_TOKEN="$(cat /var/lib/onepassword/service-account-token)"
-            export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+            if [ -z "''${SSH_AUTH_SOCK:-}" ]; then
+              export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+            fi
           else
             echo "Service account token not found. Run: sudo /etc/nixos/scripts/1password-setup-token.sh"
           fi
@@ -403,7 +420,9 @@ in
         # Auto-load 1Password service account token if available
         if [ -f /var/lib/onepassword/service-account-token ]; then
           export OP_SERVICE_ACCOUNT_TOKEN="$(cat /var/lib/onepassword/service-account-token)"
-          export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+          if [ -z "''${SSH_AUTH_SOCK:-}" ]; then
+            export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+          fi
         fi
       '';
 

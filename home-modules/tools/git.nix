@@ -1,5 +1,8 @@
 { config, pkgs, lib, ... }:
 
+let
+  gitSigningPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
+in
 {
   # Git credential OAuth - disabled in favor of 1Password integration
   programs.git-credential-oauth = {
@@ -14,7 +17,7 @@
     # SSH signing configuration with 1Password
     # All commits will be signed with SSH key from 1Password
     signing = {
-      key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
+      key = gitSigningPublicKey;
       signByDefault = true;  # Sign all commits by default for verification
     };
 
@@ -42,9 +45,6 @@
       core = {
         editor = "nvim";
         autocrlf = "input";
-        # Explicitly use 1Password SSH agent for git operations
-        # This ensures SSH auth works even in subprocesses without SSH_AUTH_SOCK
-        sshCommand = "ssh -o IdentityAgent=~/.1password/agent.sock";
       };
       color.ui = true;
       push.autoSetupRemote = true;
@@ -70,6 +70,10 @@
   
   # Create the allowed signers file for SSH signing verification
   home.file.".config/git/allowed_signers".text = ''
-    vinod@pittampalli.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7
+    vinod@pittampalli.com ${gitSigningPublicKey}
   '';
+
+  # OpenSSH needs a real public key file when IdentitiesOnly is enabled.
+  # Point github/gitlab auth at the same 1Password-managed SSH key used for signing.
+  home.file.".ssh/git_signing_key.pub".text = "${gitSigningPublicKey} Git Signing Key\n";
 }

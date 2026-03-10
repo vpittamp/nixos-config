@@ -16,51 +16,45 @@ in
     text = ''
       Include ~/.ssh/devspace_config
 
-      Host *
+      Match exec "test -n \"$SSH_AUTH_SOCK\""
+        IdentityAgent $SSH_AUTH_SOCK
+
+      Match exec "test -z \"$SSH_AUTH_SOCK\""
         IdentityAgent ${onePasswordAgentPath}
+
+      Host *
         AddKeysToAgent yes
-        IdentitiesOnly no
       
       Host github.com
         User git
-        IdentityAgent ${onePasswordAgentPath}
         IdentitiesOnly yes
-        IdentityFile ~/.ssh/unused_placeholder
+        IdentityFile ~/.ssh/git_signing_key.pub
 
       Host gitlab.com
         User git
-        IdentityAgent ${onePasswordAgentPath}
         IdentitiesOnly yes
-        IdentityFile ~/.ssh/unused_placeholder
+        IdentityFile ~/.ssh/git_signing_key.pub
 
       Host *.hetzner.cloud
         User root
-        IdentityAgent ${onePasswordAgentPath}
         ForwardAgent yes
-        IdentitiesOnly no
 
       # Tailscale hosts - generic pattern
       Host nixos-* *.tail*.ts.net
         User vpittamp
-        IdentityAgent ${onePasswordAgentPath}
         ForwardAgent yes
-        IdentitiesOnly no
         StrictHostKeyChecking accept-new
 
       # Specific Tailscale machines for better compatibility
       Host nixos-hetzner
         HostName nixos-hetzner
         User vpittamp
-        IdentityAgent ${onePasswordAgentPath}
         ForwardAgent yes
-        IdentitiesOnly no
 
       Host nixos-wsl
         HostName nixos-wsl
         User vpittamp
-        IdentityAgent ${onePasswordAgentPath}
         ForwardAgent yes
-        IdentitiesOnly no
     '';
     onChange = ''
       # Create a writable SSH config from the source
