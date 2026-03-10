@@ -42,7 +42,22 @@ in
       '';
     in
     {
-      home.packages = [ syncScript ];
+      home.packages = [
+        syncScript
+        (pkgs.writeShellScriptBin "install-stacks-kubeconfig-bundle" ''
+          set -euo pipefail
+
+          bundle_path="${1:-}"
+          if [[ -z "$bundle_path" ]]; then
+            echo "Usage: install-stacks-kubeconfig-bundle /path/to/stacks-kubeconfigs-<ts>.tar.gz" >&2
+            exit 1
+          fi
+
+          exec "${cfg.stacksRepoPath}/deployment/scripts/tailscale/install-kubeconfig-bundle.sh" \
+            --bundle "$bundle_path" \
+            --target-dir ${lib.escapeShellArg cfg.outputDir}
+        '')
+      ];
 
       home.activation.ensureKubeConfigDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         $DRY_RUN_CMD mkdir -p ${lib.escapeShellArg cfg.outputDir}
