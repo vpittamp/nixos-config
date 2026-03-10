@@ -584,7 +584,9 @@ in
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "client";
-    extraUpFlags = [ "--ssh" "--accept-routes" ];
+    # Keep plain SSH over the tailnet so tagged infrastructure devices like
+    # ryzen can still reach this user-owned workstation.
+    extraUpFlags = [ "--accept-routes" ];
   };
 
   # Firewall configuration
