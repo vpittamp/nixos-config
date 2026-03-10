@@ -996,6 +996,8 @@ REMOTE
     set -euo pipefail
 
     cache_dir="$HOME/.cache/walker-1password"
+    lock_file="$cache_dir/refresh.lock"
+    last_attempt_file="$cache_dir/last-attempt"
     tmp_dir=$(${pkgs.coreutils}/bin/mktemp -d)
     op_cmd="/run/wrappers/bin/op"
 
@@ -1005,6 +1007,10 @@ REMOTE
     if [[ ! -x "$op_cmd" ]]; then
       op_cmd="${pkgs._1password-cli}/bin/op"
     fi
+
+    exec 9>"$lock_file"
+    ${pkgs.util-linux}/bin/flock -n 9 || exit 0
+    ${pkgs.coreutils}/bin/date +%s >"$last_attempt_file"
 
     run_op() {
       local script="$1"
@@ -1047,15 +1053,18 @@ REMOTE
 
     cache_dir="$HOME/.cache/walker-1password"
     cache_file="$cache_dir/items.json"
+    lock_file="$cache_dir/refresh.lock"
+    last_attempt_file="$cache_dir/last-attempt"
     ttl_seconds=900
+    retry_delay_seconds=300
 
     mkdir -p "$cache_dir"
 
+    now=$(${pkgs.coreutils}/bin/date +%s)
     refresh_needed=false
     if [[ ! -f "$cache_file" ]]; then
       refresh_needed=true
     else
-      now=$(date +%s)
       mtime=$(${pkgs.coreutils}/bin/stat -c %Y "$cache_file" 2>/dev/null || echo 0)
       age=$((now - mtime))
       if (( age >= ttl_seconds )); then
@@ -1063,10 +1072,30 @@ REMOTE
       fi
     fi
 
+    refresh_recently_attempted=false
+    if [[ -f "$last_attempt_file" ]]; then
+      last_attempt=$(<"$last_attempt_file")
+      if [[ "$last_attempt" =~ ^[0-9]+$ ]] && (( now - last_attempt < retry_delay_seconds )); then
+        refresh_recently_attempted=true
+      fi
+    fi
+
+    refresh_running=false
+    exec 9>"$lock_file"
+    if ! ${pkgs.util-linux}/bin/flock -n 9; then
+      refresh_running=true
+    else
+      ${pkgs.util-linux}/bin/flock -u 9
+    fi
+
     if [[ "$refresh_needed" == "true" ]]; then
-      if [[ -f "$cache_file" ]]; then
+      if [[ "$refresh_running" == "true" || "$refresh_recently_attempted" == "true" ]]; then
+        :
+      elif [[ -f "$cache_file" ]]; then
+        ${pkgs.coreutils}/bin/date +%s >"$last_attempt_file"
         (${lib.getExe walkerOnePasswordCacheRefresh} >/dev/null 2>&1) &
       else
+        ${pkgs.coreutils}/bin/date +%s >"$last_attempt_file"
         ${lib.getExe walkerOnePasswordCacheRefresh} >/dev/null 2>&1 || exit 0
       fi
     fi
