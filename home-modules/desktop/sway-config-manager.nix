@@ -197,6 +197,7 @@ let
             "title": "^1Password$"
           },
           "actions": [
+            "move container to workspace number 22",
             "floating enable",
             "resize set width 900 px height 600 px",
             "move position center"

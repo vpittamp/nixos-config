@@ -169,6 +169,9 @@ in
             ];
             PasswordManagerEnabled = false;
             AutofillEnabled = true;
+            # Let 1Password extension handle passkeys instead of Chrome's built-in handler
+            WebAuthnFactors = [ "all" ];
+            PasswordManagerPasskeyEnabled = false;
           };
           mode = "0644";
         };

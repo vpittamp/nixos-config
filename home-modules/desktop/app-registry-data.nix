@@ -500,6 +500,22 @@ let
       description = "API development and testing platform";
     })
 
+    # WS22: 1Password (global - password/passkey manager)
+    (mkApp {
+      name = "1password";
+      display_name = "1Password";
+      command = "1password";
+      parameters = "";
+      scope = "global";
+      expected_class = "1password";
+      preferred_workspace = 22;
+      icon = "1password";
+      nix_package = "pkgs._1password-gui";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Password and passkey manager";
+    })
+
     # Scratchpad Terminal (Feature 062, Feature 101)
     # Special floating terminal for quick project access
     # NOTE: Launched by daemon via Sway IPC, not through wrapper
