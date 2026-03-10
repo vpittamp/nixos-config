@@ -35,6 +35,7 @@ class ApplicationConfig(BaseModel):
     )
     fallback_behavior: Literal["skip", "create"] = Field(default="skip", description="Behavior when window not found")
     description: str = Field(default="", description="Application description")
+    pwa_domain: Optional[str] = Field(default=None, description="The origin domain string to map to native Wayland chrome dynamically generated IDs")
     terminal: bool = Field(default=False, description="Terminal-based application flag")
 
     @field_validator("name")

@@ -118,6 +118,7 @@ let
     parameters = pwa.ulid;  # Use ULID for reliable PWA launch
     scope = pwa.app_scope;
     expected_class = "WebApp-${pwa.ulid}";  # NOW CORRECT with declarative ULIDs!
+    pwa_domain = pwa.domain; # Required for Wayland dynamic Chrome window class matching
     preferred_workspace = pwa.preferred_workspace;
     icon = pwa.icon;  # Use icon from PWA definition (absolute path)
     nix_package = "pkgs.google-chrome";

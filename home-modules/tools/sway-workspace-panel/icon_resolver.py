@@ -86,6 +86,15 @@ class DesktopIconIndex:
                     pwa_id = f"webapp-{pwa.get('ulid', '')}".lower()
                     if pwa_id:
                         self._by_app_id[pwa_id] = payload
+                        
+                    # Feature 056: Chrome dynamically generated app_id fallback mapping
+                    # When launched as native Wayland, Chrome uses `chrome-{domain}__-Default`
+                    domain = pwa.get("domain", "")
+                    if domain:
+                        chrome_dynamic_id_1 = f"chrome-{domain}__-default".lower()
+                        chrome_dynamic_id_2 = f"chrome-{domain}-default".lower()
+                        self._by_app_id[chrome_dynamic_id_1] = payload
+                        self._by_app_id[chrome_dynamic_id_2] = payload
         except Exception:
             pass
 

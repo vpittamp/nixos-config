@@ -26,6 +26,7 @@ let
   pwaDefinitions = map (pwa: {
     name = lib.toLower pwa.name;  # Normalize to lowercase for consistency
     url = pwa.url;
+    domain = pwa.domain; # Feature 056: Chrome dynamic ID fallback mapping
     ulid = pwa.ulid;
     icon = pwa.icon;  # Include icon for workspace panel
     preferred_workspace = if pwa ? preferred_workspace then pwa.preferred_workspace else null;
@@ -41,6 +42,7 @@ let
     in
     ''
       [Desktop Entry]
+      Version=1.4
       Type=Application
       Name=${app.display_name}
       Comment=${comment}

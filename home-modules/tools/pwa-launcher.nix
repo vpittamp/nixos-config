@@ -127,14 +127,25 @@ EOF
     # ============================================================================
     # Chrome uses --class to set the window app_id under native Wayland or WM_CLASS under XWayland
     
+    # Feature 056: Find the 1Password extension directory in the main profile to force-load it
+    # This guarantees it's available without waiting for Chrome Web Store sync in the isolated profile
+    EXT_LOAD_ARG=""
+    if [ -d "$MAIN_CHROME_PROFILE/Extensions/$ONEPASSWORD_EXT_ID" ]; then
+      EXT_DIR=$(find "$MAIN_CHROME_PROFILE/Extensions/$ONEPASSWORD_EXT_ID" -maxdepth 1 -mindepth 1 -type d | head -n 1)
+      if [ -n "$EXT_DIR" ]; then
+        EXT_LOAD_ARG="--load-extension=$EXT_DIR"
+      fi
+    fi
+
     exec ${pkgs.google-chrome}/bin/google-chrome-stable \
       --user-data-dir="$PROFILE_DIR" \
       --class="WebApp-$PWA_ID" \
-      --app="$TARGET_URL" \
       --enable-native-messaging \
       --no-first-run \
       --no-default-browser-check \
-      --password-store=basic
+      --password-store=basic \
+      $EXT_LOAD_ARG \
+      "$TARGET_URL"
   '';
 in
 {

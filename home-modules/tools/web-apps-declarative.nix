@@ -85,25 +85,27 @@ EOF
       ln -sf "$MAIN_CHROMIUM_PROFILE/Extension Cookies" "$PROFILE_DIR/Default/Extension Cookies" 2>/dev/null
     fi
 
-    # Pin the 1Password extension so it's visible in the PWA toolbar
-    PREFS_FILE="$PROFILE_DIR/Default/Preferences"
-    if [ ! -f "$PREFS_FILE" ]; then
-      ${pkgs.jq}/bin/jq -n --arg ext "$onePasswordExtensionId" '{"extensions": {"pinned_extensions": [$ext]}}' > "$PREFS_FILE"
-    else
-      # If file exists, update it without wiping other preferences
-      ${pkgs.jq}/bin/jq --arg ext "$onePasswordExtensionId" '.extensions.pinned_extensions = (if .extensions.pinned_extensions then (.extensions.pinned_extensions + [$ext] | unique) else [$ext] end)' "$PREFS_FILE" > "$PREFS_FILE.tmp" && mv "$PREFS_FILE.tmp" "$PREFS_FILE"
+    # Feature 056: Find the 1Password extension directory in the main profile to force-load it
+    # This guarantees it's available without waiting for Chrome Web Store sync in the isolated profile
+    EXT_LOAD_ARG=""
+    if [ -d "$MAIN_CHROMIUM_PROFILE/Extensions/$onePasswordExtensionId" ]; then
+      EXT_DIR=$(find "$MAIN_CHROMIUM_PROFILE/Extensions/$onePasswordExtensionId" -maxdepth 1 -mindepth 1 -type d | head -n 1)
+      if [ -n "$EXT_DIR" ]; then
+        EXT_LOAD_ARG="--load-extension=$EXT_DIR"
+      fi
     fi
 
     # Launch Chromium/Chrome in app mode with custom WM_CLASS for i3wm targeting
     exec ${browserPkg}/bin/${browserBin} \
       --user-data-dir="$PROFILE_DIR" \
       --class="${app.wmClass}" \
-      --app="${app.url}" \
       --enable-native-messaging \
       --no-first-run \
       --no-default-browser-check \
       --password-store=basic \
-      ${concatStringsSep " " (app.extraBrowserArgs or [])}
+      $EXT_LOAD_ARG \
+      ${concatStringsSep " " (app.extraBrowserArgs or [])} \
+      "${app.url}"
   '';
 
   # Generate i3wm window rules for workspace assignment

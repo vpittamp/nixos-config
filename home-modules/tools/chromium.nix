@@ -56,6 +56,19 @@ in
     ++ lib.optionals (pkgs ? google-chrome-beta) [ pkgs.google-chrome-beta ]
     ++ lib.optionals (pkgs ? google-chrome-unstable) [ pkgs.google-chrome-unstable ];
 
+  # Configure Chrome enterprise policies
+  # - Disables built-in password manager (we use 1Password)
+  # - Force installs 1Password extension
+  xdg.configFile."google-chrome/policies/managed/managed_policies.json" = {
+    text = builtins.toJSON {
+      PasswordManagerEnabled = false;
+      BrowserSignin = 0;
+      ExtensionInstallForcelist = [
+        "aeblfdkhhhdcdjpifhhbdiojplfjncoa;https://clients2.google.com/service/update2/crx"
+      ];
+    };
+  };
+
   # Native messaging host manifest for 1Password (Google Chrome)
   home.file.".config/google-chrome/NativeMessagingHosts/com.1password.1password.json" = {
     text = builtins.toJSON {

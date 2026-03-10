@@ -1756,9 +1756,11 @@ in
         provider = "menus:history"
 
         # 1Password integration
+        # Use "* " instead of bare "*" so activating the provider with your
+        # existing muscle memory preserves an empty query and shows all items.
         # Return: copy password | Shift+Return: copy username | Ctrl+Return: copy OTP
         [[providers.prefixes]]
-        prefix = "*"
+        prefix = "* "
         provider = "1password"
 
         [[providers.actions.desktopapplications]]
@@ -1837,7 +1839,7 @@ in
         # 1Password provider actions
         # Return: copy password (default action)
         [[providers.actions.1password]]
-        action = "copy"
+        action = "copy_password"
         after = "Close"
         bind = "Return"
         default = true
@@ -1852,7 +1854,7 @@ in
 
         # Ctrl+Return: copy OTP/TOTP
         [[providers.actions.1password]]
-        action = "copy_otp"
+        action = "copy_2fa"
         after = "Close"
         bind = "ctrl Return"
         label = "copy OTP"

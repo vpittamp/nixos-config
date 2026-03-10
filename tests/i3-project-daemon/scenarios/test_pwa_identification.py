@@ -148,7 +148,7 @@ class TestPWAWorkspaceAssignment:
         assert match is not None
         assert match["_matched_app_name"] == "google-chat-work"
         assert match["preferred_workspace"] == 4
-        assert match["_match_type"] == "instance"
+        assert match["_match_type"] == "pwa_instance"
 
     def test_chrome_pwa_matches_by_instance(self):
         """Chrome PWA should match by instance field."""
@@ -173,7 +173,7 @@ class TestPWAWorkspaceAssignment:
         assert match["_matched_app_name"] == "google-chat-personal"
         assert match["preferred_workspace"] == 5
         # Matches by instance (tier 2)
-        assert match["_match_type"] == "instance"
+        assert match["_match_type"] == "pwa_instance"
 
     def test_pwa_with_no_workspace_config_uses_fallback(self):
         """PWA without preferred_workspace should use fallback."""

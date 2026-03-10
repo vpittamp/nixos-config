@@ -178,6 +178,22 @@ def get_window_identity(
             logger.debug(
                 f"Detected Chrome PWA: instance={actual_instance}, title={window_title}"
             )
+
+    # Native Wayland PWAs often expose their app_id directly via the --class arg
+    elif actual_class and actual_class.startswith("WebApp-"):
+        identity["is_pwa"] = True
+        identity["pwa_id"] = actual_class
+        identity["pwa_type"] = "chrome"
+        logger.debug(f"Detected Native Wayland PWA: class={actual_class}")
+
+    # Fallback: Chrome generates dynamic app_ids under native Wayland 
+    # e.g., 'chrome-workflow-builder-ryzen.tail286401.ts.net__-Default'
+    elif actual_class and actual_class.startswith("chrome-") and actual_class.endswith("-Default"):
+        identity["is_pwa"] = True
+        identity["pwa_id"] = actual_class
+        identity["pwa_type"] = "chrome"
+        logger.debug(f"Detected Dynamic Wayland Chrome PWA: class={actual_class}")
+        
     return identity
 
 
@@ -185,6 +201,7 @@ def match_pwa_instance(
     pwa_id_expected: str,
     actual_class: str,
     actual_instance: str,
+    pwa_domain: Optional[str] = None,
 ) -> bool:
     """
     Match PWA instance using PWA-specific logic.
@@ -219,6 +236,17 @@ def match_pwa_instance(
         if pwa_id_expected.startswith("WebApp-") and pwa_id_expected == f"WebApp-{actual_instance}":
             return True
 
+    # Native Wayland PWA matches --class directly
+    if actual_class and actual_class.startswith("WebApp-"):
+        if pwa_id_expected == actual_class:
+            return True
+
+    # Dynamic Chrome fallback matching via domain
+    if pwa_domain and actual_class and actual_class.startswith("chrome-"):
+        # Format can be chrome-{domain}__-Default or chrome-{domain}-Default depending on the Wayland bridge version
+        if actual_class in [f"chrome-{pwa_domain}__-Default", f"chrome-{pwa_domain}-Default"]:
+            return True
+
     # Not a PWA or no match
     return False
 
@@ -247,9 +275,21 @@ def match_with_registry(
     for app_name, app_def in application_registry.items():
         # Get expected class from registry
         expected_class = app_def.get("expected_class", app_name)
+        pwa_domain = app_def.get("pwa_domain")
         aliases = app_def.get("aliases", [])
 
-        # Try matching
+        # Try matching using PWA logic first
+        if match_pwa_instance(expected_class, actual_class, actual_instance, pwa_domain):
+            result = app_def.copy()
+            result["_match_type"] = "pwa_instance"
+            result["_matched_app_name"] = app_name
+            logger.debug(
+                f"Matched PWA window class={actual_class} instance={actual_instance} "
+                f"to app={app_name} via pwa_instance"
+            )
+            return result
+
+        # Try matching using standard logic
         matched, match_type = match_window_class(
             expected_class, actual_class, actual_instance, aliases
         )
