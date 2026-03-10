@@ -88,7 +88,14 @@
       # --silent: Start minimized to system tray (persists in tray)
       # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
       # --ozone-platform-hint=auto: Auto-detect X11/Wayland
-      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
+      # Run with 'onepassword' as primary group so internal IPC peer-credential
+      # checks pass (1Password validates SO_PEERCRED gid == onepassword).
+      # newgrp is setuid root and can change the primary group, then exec 1password.
+      ExecStart = let
+        launcher = pkgs.writeShellScript "1password-launch" ''
+          echo 'exec ${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform' | exec /run/wrappers/bin/newgrp onepassword
+        '';
+      in "${launcher}";
       Restart = "on-failure";
       RestartSec = 5;
       # Ensure 1Password stays running

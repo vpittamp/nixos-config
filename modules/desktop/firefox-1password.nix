@@ -110,7 +110,7 @@ in
               "onepassword@1password.com"
               "{d634138d-c276-4fc8-924b-40a0ea21d284}"  # 1Password extension ID
             ];
-            path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+            path = "/run/wrappers/bin/1Password-BrowserSupport";
           };
           mode = "0644";
         };
@@ -125,7 +125,7 @@ in
               "onepassword@1password.com"
               "{d634138d-c276-4fc8-924b-40a0ea21d284}"
             ];
-            path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+            path = "/run/wrappers/bin/1Password-BrowserSupport";
           };
           mode = "0644";
         };

@@ -2,7 +2,7 @@
 
 let
   # Use Nix package reference for 1Password browser support
-  onePasswordBrowserSupport = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+  onePasswordBrowserSupport = "/run/wrappers/bin/1Password-BrowserSupport";
 
   # Cluster CA certificate for *.cnoe.localtest.me
   # This is the CA certificate (with CA:TRUE) that signs the server certificates

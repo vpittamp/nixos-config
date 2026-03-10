@@ -158,6 +158,7 @@ in
         polkitPolicyOwners = cfg.gui.polkitPolicyOwners;
       };
 
+
       # Chromium integration
       environment.etc = {
         # Chromium policy - minimal configuration
@@ -195,7 +196,7 @@ in
             allowed_origins = [
               "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
             ];
-            path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+            path = "/run/wrappers/bin/1Password-BrowserSupport";
           };
           mode = "0644";
         };
@@ -208,7 +209,7 @@ in
             allowed_origins = [
               "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
             ];
-            path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+            path = "/run/wrappers/bin/1Password-BrowserSupport";
           };
           mode = "0644";
         };
