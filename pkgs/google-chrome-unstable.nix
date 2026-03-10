@@ -190,11 +190,11 @@ let
 in
 stdenvNoCC.mkDerivation (finalAttrs: {
   inherit pname meta;
-  version = "146.0.7670.2";
+  version = "147.0.7719.3";
 
   src = fetchurl {
     url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-unstable/google-chrome-unstable_${finalAttrs.version}-1_amd64.deb";
-    hash = "sha256-a5BgRgc0E8jjs1cGug2yxYQbKWxNdSw+QNCCr7Aq3RA=";
+    hash = "sha256-TB3uFBtFeHdP3H48gVRzbkmECvcOHWzGRfMPUqdnYkI=";
   };
 
   strictDeps = false;

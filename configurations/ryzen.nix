@@ -65,6 +65,15 @@ in
       firefox = pkgs-unstable.firefox;
       firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
 
+      # Update Google Chrome Stable to latest available without updating entire nixpkgs
+      google-chrome = prev.google-chrome.overrideAttrs (old: rec {
+        version = "145.0.7632.159";
+        src = prev.fetchurl {
+          url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${version}-1_amd64.deb";
+          hash = "sha256-xi7xUT9BSvF7g690gaEsubTwAN181Y08FSPD2+pFJdk=";
+        };
+      });
+
       # Chrome 146 beta/dev channel (for testing features behind newer flags)
       google-chrome-beta = prev.callPackage ../pkgs/google-chrome-beta.nix { };
       google-chrome-unstable = prev.callPackage ../pkgs/google-chrome-unstable.nix { };
