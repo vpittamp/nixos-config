@@ -103,13 +103,16 @@ build_remote_terminal_command() {
     # shellcheck source=/dev/null
     source "$script_dir/managed-tmux-session.sh"
 
-    tmux_session_name="$(managed_tmux_session_name "${I3PM_PROJECT_NAME:-project}" "${I3PM_TERMINAL_ANCHOR_ID}")"
+    tmux_session_name="$(jq -r '.terminal_launch.tmux_session_name // empty' <<< "$spec_json")"
+    if [[ -z "$tmux_session_name" ]]; then
+        tmux_session_name="$(managed_tmux_session_name "${I3PM_PROJECT_NAME:-project}" "${I3PM_TERMINAL_ANCHOR_ID}")"
+    fi
     export I3PM_TMUX_SESSION_NAME="$tmux_session_name"
 
-    remote_dir="$(jq -r '.remote_profile.remote_dir // empty' <<< "$spec_json")"
-    remote_user="$(jq -r '.remote_profile.user // empty' <<< "$spec_json")"
-    remote_host="$(jq -r '.remote_profile.host // empty' <<< "$spec_json")"
-    remote_port="$(jq -r '.remote_profile.port // 22' <<< "$spec_json")"
+    remote_dir="$(jq -r '.terminal_launch.remote.remote_dir // .remote_profile.remote_dir // empty' <<< "$spec_json")"
+    remote_user="$(jq -r '.terminal_launch.remote.user // .remote_profile.user // empty' <<< "$spec_json")"
+    remote_host="$(jq -r '.terminal_launch.remote.host // .remote_profile.host // empty' <<< "$spec_json")"
+    remote_port="$(jq -r '.terminal_launch.remote.port // .remote_profile.port // 22' <<< "$spec_json")"
 
     [[ -n "$remote_dir" && -n "$remote_user" && -n "$remote_host" ]] || error "Remote terminal launch requires a complete SSH profile"
     [[ "$remote_port" =~ ^[0-9]+$ ]] || error "Invalid remote SSH port: $remote_port"
@@ -203,6 +206,7 @@ SPEC_JSON="$(rpc_request "prepare_launch" "$PREPARE_PARAMS")"
 COMMAND="$(jq -r '.command' <<< "$SPEC_JSON")"
 mapfile -t ARGS < <(jq -r '.args[]?' <<< "$SPEC_JSON")
 EXECUTION_MODE="$(jq -r '.execution_mode // "local"' <<< "$SPEC_JSON")"
+LAUNCH_STRATEGY="$(jq -r '.launch_strategy // empty' <<< "$SPEC_JSON")"
 LOCAL_PROJECT_DIR="$(jq -r '.local_project_directory // empty' <<< "$SPEC_JSON")"
 PROJECT_NAME="$(jq -r '.project_name // empty' <<< "$SPEC_JSON")"
 TERMINAL_MODE="$(jq -r '.terminal // false' <<< "$SPEC_JSON")"
@@ -231,6 +235,8 @@ if [[ "$APP_NAME" == "terminal" && "$EXECUTION_MODE" == "local" ]]; then
         ARGS=(-e "$SCRIPT_DIR/project-terminal-launch.sh" "$LOCAL_PROJECT_DIR")
     fi
 elif [[ "$APP_NAME" == "terminal" && "$EXECUTION_MODE" == "ssh" ]]; then
+    [[ -z "$LAUNCH_STRATEGY" || "$LAUNCH_STRATEGY" == "managed_remote_terminal" ]] || \
+        error "Unsupported SSH launch strategy: $LAUNCH_STRATEGY"
     REMOTE_HELPER_SCRIPT="$(build_remote_terminal_command "$SPEC_JSON")"
     ARGS=(-e "$REMOTE_HELPER_SCRIPT")
 elif [[ "$EXECUTION_MODE" == "ssh" ]]; then

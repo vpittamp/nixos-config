@@ -7,6 +7,7 @@ Updated: 2025-10-23 - Added unified event logging for all IPC methods
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -496,6 +497,8 @@ class IPCServer:
                 result = await self._worktree_remote_list(params)
             elif method == "worktree.remote.test":
                 result = await self._worktree_remote_test(params)
+            elif method == "worktree.diagnose":
+                result = await self._worktree_diagnose(params)
 
             # Feature 101: Window tracing for debugging
             elif method == "trace.start":
@@ -687,6 +690,22 @@ class IPCServer:
             # Unexpected error - check if it's i3 IPC related
             error_type = type(e).__name__
             logger.error(f"Error handling request {method}: {error_type}: {e}")
+
+            structured_error = None
+            try:
+                candidate = json.loads(str(e))
+                if isinstance(candidate, dict) and candidate.get("message"):
+                    structured_error = candidate
+            except Exception:
+                structured_error = None
+
+            if structured_error:
+                return self._error_response(
+                    request_id,
+                    int(structured_error.get("code", INTERNAL_ERROR)),
+                    str(structured_error.get("message", "Internal server error")),
+                    structured_error.get("data"),
+                )
 
             # Check if it's an i3ipc exception
             if 'i3ipc' in error_type.lower() or 'connection' in error_type.lower():
@@ -5094,6 +5113,21 @@ class IPCServer:
                 }))
 
         execution_mode = "ssh" if remote_profile else "local"
+        if execution_mode == "ssh" and not app.terminal:
+            raise RuntimeError(json.dumps({
+                "code": -32004,
+                "message": (
+                    f"Remote project execution only supports managed terminal launches; "
+                    f"'{app_name}' must run locally or in global context"
+                ),
+                "data": {
+                    "app_name": app_name,
+                    "project_name": qualified_name,
+                    "execution_mode": execution_mode,
+                    "ssh_policy": "terminal_only",
+                }
+            }))
+
         if qualified_name:
             identity = self._build_worktree_context_identity(qualified_name, remote_profile)
             connection_key = identity["connection_key"]
@@ -5110,6 +5144,7 @@ class IPCServer:
             worktree_repo = ""
 
         project_name = qualified_name if app.scope == "scoped" else ""
+        remote_session_name_override = str(params.get("remote_session_name_override") or "").strip()
         project_dir = str(remote_profile.get("remote_dir", "")) if remote_profile else local_directory
         local_project_dir = local_directory if project_name else str(Path.home())
         if project_name and execution_mode == "local" and not Path(local_project_dir).is_dir():
@@ -5157,11 +5192,32 @@ class IPCServer:
             launcher_pid=launcher_pid,
             launch_identity=launch_identity,
             restore_mark=str(params.get("restore_mark") or "").strip(),
-            remote_session_name=str(params.get("remote_session_name_override") or "").strip(),
+            remote_session_name=remote_session_name_override,
             worktree_branch=worktree_branch,
             worktree_account=worktree_account,
             worktree_repo=worktree_repo,
         )
+        launch_strategy = "direct"
+        terminal_launch: Optional[Dict[str, Any]] = None
+        if bool(app.terminal) and execution_mode == "local":
+            launch_strategy = "managed_local_terminal"
+        elif bool(app.terminal) and execution_mode == "ssh":
+            launch_strategy = "managed_remote_terminal"
+            terminal_launch = {
+                "mode": "managed_remote_terminal",
+                "tmux_session_name": self._build_managed_tmux_session_name(
+                    project_name or app.name,
+                    launch_identity["terminal_anchor_id"],
+                ),
+                "remote_session_name": remote_session_name_override,
+                "remote": {
+                    "host": str(remote_profile.get("host", "")) if remote_profile else "",
+                    "user": str(remote_profile.get("user", "")) if remote_profile else "",
+                    "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
+                    "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+                },
+            }
+
         if dry_run:
             launch = {
                 "status": "skipped",
@@ -5196,7 +5252,10 @@ class IPCServer:
             "execution_mode": execution_mode,
             "connection_key": connection_key,
             "context_key": context_key,
+            "launch_strategy": launch_strategy,
+            "ssh_policy": "terminal_only" if execution_mode == "ssh" else "not_applicable",
             "remote_profile": remote_profile,
+            "terminal_launch": terminal_launch,
             "environment": environment,
             "launch": launch,
             "terminal_anchor_id": launch_identity["terminal_anchor_id"],
@@ -8963,6 +9022,13 @@ class IPCServer:
             return "unknown"
         return re.sub(r"[^a-z0-9@._:-]+", "-", raw)
 
+    def _build_managed_tmux_session_name(self, project_name: str, terminal_anchor_id: str) -> str:
+        """Build the canonical managed tmux session name used by launcher helpers."""
+        slug = re.sub(r"[^a-z0-9_-]+", "-", str(project_name or "project").strip().lower())
+        slug = re.sub(r"-{2,}", "-", slug).strip("-") or "project"
+        digest = hashlib.sha1(str(terminal_anchor_id or "").encode()).hexdigest()[:8]
+        return f"i3pm-{slug[:24]}-{digest}"
+
     def _local_host_alias(self) -> str:
         """Resolve local host alias used in local execution mode."""
         host = (
@@ -9517,6 +9583,115 @@ class IPCServer:
                 "stdout": "",
                 "message": "SSH connectivity test timed out",
             }
+
+    async def _worktree_diagnose(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Diagnose SSH/runtime readiness for a worktree."""
+        qualified_name = str(params.get("qualified_name") or "").strip()
+        active_context = await self._context_get_active({})
+
+        if not qualified_name:
+            qualified_name = str(active_context.get("qualified_name") or "").strip()
+        if not qualified_name:
+            raise ValueError("qualified_name parameter is required when no active worktree context exists")
+
+        resolved = self._find_worktree_by_qualified_name(qualified_name)
+        full_qualified_name = resolved["full_qualified_name"]
+        remote_profile = self._get_worktree_remote_profile(full_qualified_name)
+        target_identity = self._build_worktree_context_identity(full_qualified_name, remote_profile)
+
+        remote_test = None
+        if remote_profile:
+            remote_test = await self._worktree_remote_test({"qualified_name": full_qualified_name})
+
+        scratchpad_payload: Dict[str, Any] = {
+            "available": False,
+            "context_key": target_identity["context_key"],
+            "count": 0,
+            "terminal": None,
+        }
+        if self.scratchpad_manager:
+            try:
+                scratchpad_status = await self._scratchpad_status({
+                    "project_name": full_qualified_name,
+                    "context_key": target_identity["context_key"],
+                })
+                terminals = scratchpad_status.get("terminals", [])
+                terminal_info = terminals[0] if terminals else None
+                scratchpad_payload = {
+                    "available": bool(terminal_info),
+                    "context_key": target_identity["context_key"],
+                    "count": int(scratchpad_status.get("count", 0) or 0),
+                    "terminal": terminal_info,
+                }
+            except Exception as e:
+                logger.warning("worktree.diagnose scratchpad status failed for %s: %s", full_qualified_name, e)
+
+        launch_stats = await self._get_launch_stats()
+        pending_launches = []
+        if hasattr(self.state_manager, "launch_registry"):
+            pending_launches = await self.state_manager.launch_registry.get_pending_launches(include_matched=True)
+        project_pending_launches = [
+            {
+                "app_name": str(item.get("app_name") or ""),
+                "matched": bool(item.get("matched", False)),
+                "age": float(item.get("age", 0.0) or 0.0),
+            }
+            for item in pending_launches
+            if str(item.get("project_name") or "") == full_qualified_name
+        ]
+
+        readiness_reasons = []
+        if not remote_profile:
+            readiness_reasons.append("No enabled SSH remote profile is configured for this worktree.")
+        if remote_test and not remote_test.get("success"):
+            readiness_reasons.append(
+                str(remote_test.get("stderr") or remote_test.get("message") or "SSH connectivity test failed")
+            )
+
+        recommended_commands = [
+            f"i3pm worktree switch {full_qualified_name}",
+            f"i3pm worktree current --json",
+        ]
+        if remote_profile:
+            recommended_commands.append(f"i3pm worktree remote test {full_qualified_name}")
+            recommended_commands.append(f"i3pm scratchpad toggle --context-key {target_identity['context_key']}")
+        else:
+            recommended_commands.append(
+                f"i3pm worktree remote set {full_qualified_name} --host ryzen --user {os.environ.get('USER', 'vpittamp')} --dir <remote_dir>"
+            )
+
+        return {
+            "success": True,
+            "qualified_name": full_qualified_name,
+            "active_context": {
+                "qualified_name": str(active_context.get("qualified_name") or ""),
+                "execution_mode": str(active_context.get("execution_mode") or "global"),
+                "connection_key": str(active_context.get("connection_key") or ""),
+                "context_key": str(active_context.get("context_key") or ""),
+                "is_global": bool(active_context.get("is_global", False)),
+            },
+            "target_context": {
+                "execution_mode": target_identity["execution_mode"],
+                "connection_key": target_identity["connection_key"],
+                "context_key": target_identity["context_key"],
+            },
+            "remote_profile_configured": bool(remote_profile),
+            "remote_profile": remote_profile,
+            "remote_test": remote_test,
+            "scratchpad": scratchpad_payload,
+            "launch_support": {
+                "ssh_terminal_supported": bool(remote_profile),
+                "ssh_scoped_gui_supported": False,
+                "ssh_policy": "terminal_only",
+            },
+            "launch_stats": launch_stats,
+            "project_pending_launches": project_pending_launches,
+            "readiness": {
+                "ssh_ready": bool(remote_profile and (remote_test is None or remote_test.get("success"))),
+                "reasons": readiness_reasons,
+            },
+            "recommended_commands": recommended_commands,
+        }
 
     # =========================================================================
     # Feature 101: Window Tracing for Debugging

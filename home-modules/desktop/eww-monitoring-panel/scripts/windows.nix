@@ -8,8 +8,12 @@ let
 
     rpc_request() {
       local method="$1"
-      local params_json="''${2:-{}}"
+      local params_json="''${2-}"
       local request response error_json
+
+      if [[ -z "$params_json" ]]; then
+        params_json='{}'
+      fi
 
       request=$(${pkgs.jq}/bin/jq -nc \
         --arg method "$method" \
@@ -109,11 +113,6 @@ let
     ${variantSwitchHelpers}
 
     # Validate inputs (T010)
-    if [[ -z "$PROJECT_NAME" ]]; then
-        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "No project name provided"
-        exit 1
-    fi
-
     if [[ -z "$WINDOW_ID" ]] || [[ ! "$WINDOW_ID" =~ ^-?[0-9]+$ ]]; then
         ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "Invalid window ID"
         exit 1
@@ -140,7 +139,7 @@ let
     log_stage() {
       local stage="$1"
       printf 'focus-window-action stage=%s project=%s window=%s variant=%s\n' \
-        "$stage" "$PROJECT_NAME" "$WINDOW_ID" "''${TARGET_VARIANT:-auto}" >&2
+        "$stage" "''${PROJECT_NAME:-current}" "$WINDOW_ID" "''${TARGET_VARIANT:-auto}" >&2
     }
 
     FOCUS_PARAMS=$(${pkgs.jq}/bin/jq -nc \
@@ -445,7 +444,7 @@ let
     fi
 
     # Final safeguard: tmux targeting can alter focus context; enforce tiled state again.
-    if ! ensure_window_focus_tiled 3 0.1; then
+    if ! ${focusWindowScript}/bin/focus-window-action "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1; then
       FOCUS_OK=false
       log_stage "post_tmux_focus_tiled_fail"
     else

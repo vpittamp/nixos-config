@@ -94,8 +94,8 @@ let
 
     daemon_socket="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
     request=$(${pkgs.jq}/bin/jq -nc \
-      --arg workspace_name "$workspace_name" \
-      '{jsonrpc:"2.0", method:"workspace.focus", params:{workspace_name:$workspace_name}, id:1}')
+      --arg workspace "$workspace_name" \
+      '{jsonrpc:"2.0", method:"workspace.focus", params:{workspace:$workspace}, id:1}')
 
     [[ -S "$daemon_socket" ]] || exit 1
     response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$daemon_socket" <<< "$request" 2>/dev/null || true)
