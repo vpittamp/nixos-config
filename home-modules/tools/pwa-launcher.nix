@@ -70,20 +70,27 @@ let
     TARGET_URL="''${URL:-$PWA_URL}"
 
     # ============================================================================
-    # PHASE 2: Launch PWA
+    # PHASE 2: Setup Google Chrome Profile
     # ============================================================================
-    # Feature 056: Chrome uses --class to set the window app_id under native Wayland.
-    # By running out of the main profile directly, we instantly inherit all extensions
-    # (including 1Password) and authentication state perfectly, while the unique class
-    # ensures i3pm can still track and route the PWA independently!
+
+    PROFILE_DIR="$HOME/.local/share/webapps/webapp-$PWA_ID"
+    mkdir -p "$PROFILE_DIR/Default"
+
+    # Ensure Wayland variables are available
+    export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
+
+    # ============================================================================
+    # PHASE 3: Launch PWA
+    # ============================================================================
+    # Chrome uses --class to set the window app_id under native Wayland or WM_CLASS under XWayland
     
     exec ${pkgs.google-chrome}/bin/google-chrome-stable \
-      --profile-directory="Default" \
+      --user-data-dir="$PROFILE_DIR" \
       --class="WebApp-$PWA_ID" \
-      --enable-native-messaging \
+      --app="$TARGET_URL" \
       --no-first-run \
       --no-default-browser-check \
-      "$TARGET_URL"
+      --password-store=basic
   '';
 in
 {
