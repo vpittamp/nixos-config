@@ -127,13 +127,13 @@ build_remote_terminal_command() {
         echo "set -euo pipefail"
         echo "remote_cmd=\$(cat <<'EOF_REMOTE'"
         build_env_exports "$spec_json"
-        cat <<EOF_REMOTE
+        printf 'session_name=%q\n' "$tmux_session_name"
+        printf 'remote_dir=%q\n' "$remote_dir"
+        cat <<'EOF_REMOTE'
 if ! command -v tmux >/dev/null 2>&1; then
   echo "[i3pm] tmux is not installed on remote host."
   exit 127
 fi
-session_name=$(printf '%q' "$tmux_session_name")
-remote_dir=$(printf '%q' "$remote_dir")
 if tmux has-session -t "$session_name" 2>/dev/null; then
   :
 else
@@ -154,13 +154,14 @@ exec env TMUX= tmux attach-session -t "$session_name"
 EOF_REMOTE
         echo "EOF_REMOTE"
         echo ")"
+        echo 'remote_cmd_quoted=$(printf "%q" "$remote_cmd")'
         echo "ssh_args=("
         printf "  %q\n" ssh -t -o BatchMode=yes -o ConnectTimeout=2
         if [[ "$remote_port" != "22" ]]; then
             printf "  %q\n" -p "$remote_port"
         fi
         printf "  %q\n" "${remote_user}@${remote_host}"
-        printf "  %q\n" "bash -lc $(printf '%q' "\$remote_cmd")"
+        echo '  "bash -lc $remote_cmd_quoted"'
         cat <<'EOF_SCRIPT'
 )
 if ! "${ssh_args[@]}"; then
