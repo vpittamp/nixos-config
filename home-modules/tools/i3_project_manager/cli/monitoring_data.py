@@ -3697,9 +3697,16 @@ def _list_tmux_active_panes_by_session(connection_key: str = "") -> Dict[str, st
 def _select_current_ai_session_key(
     active_sessions: List[Dict[str, Any]],
     focused_window_id: Optional[int],
+    previous_session_key: str = "",
 ) -> str:
     """Return the single session key that owns current focus in the main window."""
+    previous_session_key = str(previous_session_key or "").strip()
     if focused_window_id is None:
+        if previous_session_key and any(
+            str(session.get("session_key") or "").strip() == previous_session_key
+            for session in active_sessions
+        ):
+            return previous_session_key
         return ""
 
     candidates = [
@@ -3709,6 +3716,11 @@ def _select_current_ai_session_key(
         and str(session.get("session_key") or "").strip()
     ]
     if not candidates:
+        if previous_session_key and any(
+            str(session.get("session_key") or "").strip() == previous_session_key
+            for session in active_sessions
+        ):
+            return previous_session_key
         return ""
     if len(candidates) == 1:
         return str(candidates[0].get("session_key") or "")
@@ -3749,7 +3761,8 @@ def _set_current_window_marker(
             current_session_key
             and str(session.get("session_key") or "") == current_session_key
         )
-        if bool(session.get("is_current_window", False)) != is_current:
+        existing = session.get("is_current_window")
+        if not isinstance(existing, bool) or existing != is_current:
             session["is_current_window"] = is_current
             changed = True
     return changed
@@ -3758,9 +3771,14 @@ def _set_current_window_marker(
 def _apply_current_window_marker(
     active_sessions: List[Dict[str, Any]],
     focused_window_id: Optional[int],
+    previous_session_key: str = "",
 ) -> str:
     """Mark only the single focused session as current within the active window."""
-    current_session_key = _select_current_ai_session_key(active_sessions, focused_window_id)
+    current_session_key = _select_current_ai_session_key(
+        active_sessions,
+        focused_window_id,
+        previous_session_key=previous_session_key,
+    )
     _set_current_window_marker(active_sessions, current_session_key)
     return current_session_key
 
@@ -3822,8 +3840,12 @@ def _refresh_current_window_marker_in_payload(payload: Dict[str, Any]) -> bool:
     if focused_window_id <= 0:
         return False
 
-    current_session_key = _select_current_ai_session_key(active_sessions, focused_window_id)
     previous_session_key = str(payload.get("current_ai_session_key") or "")
+    current_session_key = _select_current_ai_session_key(
+        active_sessions,
+        focused_window_id,
+        previous_session_key=previous_session_key,
+    )
     changed = _set_current_window_marker(active_sessions, current_session_key)
 
     active_project_name = str(payload.get("active_project") or "").strip()
@@ -4574,6 +4596,7 @@ def _apply_review_lifecycle(
             "focus_project": focus_project,
             "project_source": str(entry.get("project_source") or "review"),
             "window_id": window_id,
+            "is_current_window": False,
             "execution_mode": execution_mode,
             "connection_key": connection_key,
             "identity_key": identity_key,
@@ -4778,6 +4801,7 @@ def _merge_review_state_into_window_badges(
                 "focus_context_key": str(session.get("focus_context_key") or ""),
                 "host_name": "",
                 "window_id": window_id,
+                "is_current_window": False,
                 "session_project": str(session.get("session_project") or session.get("project") or ""),
                 "window_project": str(session.get("window_project") or window.get("project") or ""),
                 "focus_project": str(
@@ -5932,7 +5956,7 @@ def transform_to_project_view(
     return projects
 
 
-async def query_monitoring_data() -> Dict[str, Any]:
+async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Dict[str, Any]:
     """
     Query i3pm daemon for monitoring panel data.
 
@@ -6222,7 +6246,11 @@ async def query_monitoring_data() -> Dict[str, Any]:
             window_lookup=window_lookup,
             focused_window_id=focused_window_id,
         )
-        current_ai_session_key = _apply_current_window_marker(active_ai_sessions, focused_window_id)
+        current_ai_session_key = _apply_current_window_marker(
+            active_ai_sessions,
+            focused_window_id,
+            previous_session_key=previous_current_ai_session_key,
+        )
         active_ai_sessions.sort(
             key=lambda session: (
                 int(bool(session.get("is_current_window", False))),
@@ -8120,7 +8148,9 @@ async def stream_monitoring_data():
                 """Query daemon and output updated JSON with change detection."""
                 nonlocal last_update, has_working_badge, last_payload_hash, last_payload_json, last_payload_data
                 try:
-                    data = await query_monitoring_data()
+                    data = await query_monitoring_data(
+                        str(last_payload_data.get("current_ai_session_key") or "")
+                    )
                     # Track if we have working badges to enable spinner updates
                     has_working_badge = data.get("has_working_badge", False)
 

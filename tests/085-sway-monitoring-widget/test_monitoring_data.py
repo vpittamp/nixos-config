@@ -2430,6 +2430,57 @@ class TestAiReviewLifecycle:
         assert sessions[0]["is_current_window"] is True
         assert sessions[1]["is_current_window"] is False
 
+    def test_apply_current_window_marker_retains_previous_session_when_focus_leaves_ai_windows(self):
+        sessions = [
+            {
+                "session_key": "first",
+                "window_id": 171,
+                "tmux_session": "nixos-main",
+                "tmux_pane": "%1",
+                "is_current_window": True,
+            },
+            {
+                "session_key": "second",
+                "window_id": 172,
+                "tmux_session": "workflow-builder-main",
+                "tmux_pane": "%2",
+                "is_current_window": False,
+            },
+        ]
+
+        current_key = monitoring_data._apply_current_window_marker(
+            sessions,
+            999,
+            previous_session_key="first",
+        )
+
+        assert current_key == "first"
+        assert sessions[0]["is_current_window"] is True
+        assert sessions[1]["is_current_window"] is False
+
+    def test_apply_current_window_marker_normalizes_missing_flags_to_explicit_booleans(self):
+        sessions = [
+            {
+                "session_key": "first",
+                "window_id": 171,
+            },
+            {
+                "session_key": "second",
+                "window_id": 172,
+                "is_current_window": None,
+            },
+        ]
+
+        current_key = monitoring_data._apply_current_window_marker(
+            sessions,
+            999,
+            previous_session_key="first",
+        )
+
+        assert current_key == "first"
+        assert sessions[0]["is_current_window"] is True
+        assert sessions[1]["is_current_window"] is False
+
     def test_payload_requires_fast_tmux_focus_tracking_only_for_ambiguous_focused_tmux_sessions(self):
         payload = {
             "focused_window_id": 171,
@@ -2509,6 +2560,62 @@ class TestAiReviewLifecycle:
         assert payload["active_ai_sessions"][1]["is_current_window"] is False
         assert payload["active_ai_sessions_mru"][0]["is_current_window"] is True
         assert payload["active_ai_sessions_mru"][1]["is_current_window"] is False
+
+    def test_refresh_current_window_marker_in_payload_retains_previous_session_when_focus_is_non_ai(self):
+        payload = {
+            "focused_window_id": 999,
+            "active_project": "vpittamp/nixos-config:main",
+            "current_ai_session_key": "first",
+            "active_ai_sessions": [
+                {
+                    "session_key": "first",
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_pane": "%1",
+                    "display_project": "vpittamp/nixos-config:main",
+                    "project": "vpittamp/nixos-config:main",
+                    "stage_rank": 20,
+                    "updated_at": "2026-02-23T10:00:01+00:00",
+                    "is_current_window": True,
+                },
+                {
+                    "session_key": "second",
+                    "window_id": 172,
+                    "tmux_session": "workflow-builder-main",
+                    "tmux_pane": "%2",
+                    "display_project": "PittampalliOrg/workflow-builder:main",
+                    "project": "PittampalliOrg/workflow-builder:main",
+                    "stage_rank": 20,
+                    "updated_at": "2026-02-23T10:00:02+00:00",
+                    "is_current_window": False,
+                },
+            ],
+            "active_ai_sessions_mru": [
+                {
+                    "session_key": "second",
+                    "window_id": 172,
+                    "tmux_session": "workflow-builder-main",
+                    "tmux_pane": "%2",
+                    "is_current_window": False,
+                },
+                {
+                    "session_key": "first",
+                    "window_id": 171,
+                    "tmux_session": "nixos-main",
+                    "tmux_pane": "%1",
+                    "is_current_window": True,
+                },
+            ],
+        }
+
+        changed = monitoring_data._refresh_current_window_marker_in_payload(payload)
+
+        assert changed is False
+        assert payload["current_ai_session_key"] == "first"
+        assert payload["active_ai_sessions"][0]["is_current_window"] is True
+        assert payload["active_ai_sessions"][1]["is_current_window"] is False
+        assert payload["active_ai_sessions_mru"][0]["is_current_window"] is False
+        assert payload["active_ai_sessions_mru"][1]["is_current_window"] is True
 
     def test_apply_review_lifecycle_marks_remote_focused_tmux_review_seen(self, tmp_path, monkeypatch):
         review_file = tmp_path / "ai-session-review.json"
