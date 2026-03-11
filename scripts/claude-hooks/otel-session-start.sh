@@ -64,6 +64,7 @@ if [[ -n "$SESSION_ID" ]]; then
     --arg cwd "$CWD" \
     --arg projectName "$PROJECT_NAME" \
     --arg projectPath "$PROJECT_PATH" \
+    --arg terminalAnchorId "${I3PM_TERMINAL_ANCHOR_ID:-}" \
     --arg tmuxSession "$TMUX_SESSION" \
     --arg tmuxWindow "$TMUX_WINDOW" \
     --arg tmuxPane "$TMUX_PANE" \
@@ -82,6 +83,7 @@ if [[ -n "$SESSION_ID" ]]; then
       cwd: (if $cwd == "" then null else $cwd end),
       projectName: (if $projectName == "" then null else $projectName end),
       projectPath: (if $projectPath == "" then null else $projectPath end),
+      terminalAnchorId: (if $terminalAnchorId == "" then null else $terminalAnchorId end),
       tmuxSession: (if $tmuxSession == "" then null else $tmuxSession end),
       tmuxWindow: (if $tmuxWindow == "" then null else $tmuxWindow end),
       tmuxPane: (if $tmuxPane == "" then null else $tmuxPane end),

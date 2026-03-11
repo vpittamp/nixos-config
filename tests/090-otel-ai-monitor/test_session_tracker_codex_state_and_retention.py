@@ -83,6 +83,89 @@ async def test_codex_api_request_enters_working_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_event_repairs_restored_native_session_window_binding(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    restored = Session(
+        session_id="codex:native-restore",
+        native_session_id="native-restore",
+        context_fingerprint="pane=%5",
+        collision_group_id="codex:native-restore",
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=2212,
+        pid=1108845,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="restored_snapshot",
+    )
+    restored.terminal_context.window_id = 2212
+    restored.terminal_context.tmux_session = "workflow-builder/main"
+    restored.terminal_context.tmux_window = "0:codex-raw"
+    restored.terminal_context.tmux_pane = "%5"
+
+    async with tracker._lock:
+        tracker._sessions[restored.session_id] = restored
+        tracker._session_pids[restored.session_id] = 1108845
+        tracker._session_pids["native-restore"] = 1108845
+        tracker._session_pids["codex:native-restore"] = 1108845
+        tracker._native_session_map["codex:native-restore"] = {restored.session_id}
+
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    async def _fake_resolve_window_context(pid: int):
+        assert pid == 1108845
+        return (
+            2218,
+            "PittampalliOrg/workflow-builder:main",
+            {
+                "tmux_session": "workflow-builder/main",
+                "tmux_window": "0:codex-raw",
+                "tmux_pane": "%5",
+                "pty": "/dev/pts/5",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
+                "remote_target": None,
+            },
+        )
+
+    monkeypatch.setattr(tracker, "_resolve_window_context", _fake_resolve_window_context)
+
+    event = TelemetryEvent(
+        event_name="codex.api_request",
+        timestamp=now,
+        session_id="native-restore",
+        tool=AITool.CODEX_CLI,
+        attributes={
+            "project": "PittampalliOrg/workflow-builder:main",
+        },
+    )
+
+    await tracker.process_event(event)
+
+    async with tracker._lock:
+        repaired_matches = [
+            session
+            for session in tracker._sessions.values()
+            if session.native_session_id == "native-restore"
+        ]
+        assert len(repaired_matches) == 1
+        repaired = repaired_matches[0]
+        assert repaired.window_id == 2218
+        assert repaired.terminal_context.window_id == 2218
+        assert repaired.project == "PittampalliOrg/workflow-builder:main"
+
+
+@pytest.mark.asyncio
 async def test_cleanup_keeps_native_session_when_pid_exits(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
@@ -157,6 +240,7 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
         status_reason="process_detected",
     )
     session.terminal_context.window_id = 219
+    session.terminal_context.terminal_anchor_id = "anchor-706991"
     session.terminal_context.pty = "/dev/pts/8"
     session.terminal_context.tmux_session = "nixos-config/main"
     session.terminal_context.execution_mode = "local"
@@ -210,6 +294,7 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
         status_reason="process_detected",
     )
     session.terminal_context.window_id = 314
+    session.terminal_context.terminal_anchor_id = "anchor-workflow-builder"
     session.terminal_context.tmux_session = "workflow-builder/main"
     session.terminal_context.tmux_window = "1:main"
     session.terminal_context.tmux_pane = "%37"
@@ -220,11 +305,6 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
     tracker._sessions[session.session_id] = session
 
     monkeypatch.setattr(
-        SessionTracker,
-        "_tmux_session_project_hints",
-        classmethod(lambda cls: {"workflow-builder-main": "PittampalliOrg/workflow-builder:main"}),
-    )
-    monkeypatch.setattr(
         session_tracker_module,
         "get_window_context_by_id",
         lambda window_id: {"project": "vpittamp/nixos-config:main"} if window_id == 314 else {},
@@ -234,12 +314,12 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
 
     assert len(session_list.sessions) == 1
     item = session_list.sessions[0]
-    assert item.project == "PittampalliOrg/workflow-builder:main"
-    assert item.session_project == "PittampalliOrg/workflow-builder:main"
+    assert item.project == "vpittamp/nixos-config:main"
+    assert item.session_project == "vpittamp/nixos-config:main"
     assert item.window_project == "vpittamp/nixos-config:main"
     assert item.focus_project == "vpittamp/nixos-config:main"
-    assert item.display_project == "PittampalliOrg/workflow-builder:main"
-    assert item.project_source == "tmux_discovered"
+    assert item.display_project == "vpittamp/nixos-config:main"
+    assert item.project_source == "anchor"
 
 
 @pytest.mark.asyncio
@@ -342,6 +422,7 @@ async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
         session_tracker_module,
         "get_process_i3pm_env",
         lambda _pid: {
+            "I3PM_TERMINAL_ANCHOR_ID": "anchor-1234",
             "I3PM_PROJECT_NAME": "vpittamp/nixos-config:main",
             "I3PM_EXECUTION_MODE": "local",
             "I3PM_CONNECTION_KEY": "local@thinkpad",
@@ -351,10 +432,6 @@ async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
             "I3PM_REMOTE_PORT": "22",
         },
     )
-
-    async def _fake_find_window(pid: int):
-        assert pid == 1234
-        return 174
 
     async def _fake_tmux_context(pid: int):
         assert pid == 1234
@@ -366,7 +443,21 @@ async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
             "host_name": "thinkpad",
         }
 
-    monkeypatch.setattr(session_tracker_module, "find_window_for_session", _fake_find_window)
+    async def _fake_query_anchor(anchor_id: str):
+        assert anchor_id == "anchor-1234"
+        return {
+            "terminal_anchor_id": anchor_id,
+            "window_id": 174,
+            "project_name": "vpittamp/nixos-config:main",
+            "binding": "window_map",
+            "matched": True,
+        }
+
+    monkeypatch.setattr(
+        session_tracker_module,
+        "query_daemon_for_terminal_anchor",
+        _fake_query_anchor,
+    )
     monkeypatch.setattr(session_tracker_module, "get_tmux_context_for_pid", _fake_tmux_context)
 
     window_id, project, terminal_context = await tracker._resolve_window_context(1234)

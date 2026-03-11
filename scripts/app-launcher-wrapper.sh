@@ -531,15 +531,19 @@ fi
 # - Dedicated window for devenv services (devenv up)
 # - Fallback to standard sesh for non-devenv projects
 
-if [[ "$APP_NAME" == "terminal" ]] && [[ "$REMOTE_ENABLED" != "true" ]] && [[ -n "$LOCAL_PROJECT_DIR" ]] && [[ -f "$LOCAL_PROJECT_DIR/devenv.nix" ]]; then
-    log "INFO" "Devenv project detected at $LOCAL_PROJECT_DIR, using devenv-terminal-launch"
-    # Override ARGS to use devenv-aware terminal launcher
-    # devenv-terminal-launch handles: session creation, devenv window, sesh fallback
-    # Use script path relative to this script's location (both in scripts/)
+if [[ "$APP_NAME" == "terminal" ]] && [[ "$REMOTE_ENABLED" != "true" ]] && [[ -n "$LOCAL_PROJECT_DIR" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    DEVENV_LAUNCHER="$SCRIPT_DIR/devenv-terminal-launch.sh"
-    ARGS=("$COMMAND" "-e" "$DEVENV_LAUNCHER" "$LOCAL_PROJECT_DIR" "$SESSION_NAME")
-    log "DEBUG" "Devenv ARGS: ${ARGS[*]}"
+    if [[ -f "$LOCAL_PROJECT_DIR/devenv.nix" ]]; then
+        log "INFO" "Devenv project detected at $LOCAL_PROJECT_DIR, using devenv-terminal-launch"
+        DEVENV_LAUNCHER="$SCRIPT_DIR/devenv-terminal-launch.sh"
+        ARGS=("$COMMAND" "-e" "$DEVENV_LAUNCHER" "$LOCAL_PROJECT_DIR" "$SESSION_NAME")
+        log "DEBUG" "Devenv ARGS: ${ARGS[*]}"
+    else
+        log "INFO" "Using deterministic project-terminal-launch for $LOCAL_PROJECT_DIR"
+        PROJECT_TMUX_LAUNCHER="$SCRIPT_DIR/project-terminal-launch.sh"
+        ARGS=("$COMMAND" "-e" "$PROJECT_TMUX_LAUNCHER" "$LOCAL_PROJECT_DIR" "$SESSION_NAME")
+        log "DEBUG" "Project terminal ARGS: ${ARGS[*]}"
+    fi
 fi
 
 log "INFO" "Resolved command: ${ARGS[*]}"
@@ -571,7 +575,7 @@ fi
 # - PWAs: Deterministic class matching + env context for project filtering
 # - VS Code: Multi-instance tracking with unique app IDs
 
-# Generate unique application instance ID
+# Generate canonical terminal/session anchor.
 # Format: ${app_name}-${project_name}-${pid}-${timestamp}
 generate_app_instance_id() {
     local app_name="$1"
@@ -591,6 +595,7 @@ fi
 
 # I3PM environment variables (injected for ALL apps)
 export I3PM_APP_ID="$APP_INSTANCE_ID"
+export I3PM_TERMINAL_ANCHOR_ID="$APP_INSTANCE_ID"
 export I3PM_APP_NAME="$APP_NAME"
 export I3PM_PROJECT_NAME="${PROJECT_NAME:-}"
 export I3PM_PROJECT_DIR="${PROJECT_DIR:-}"
@@ -647,6 +652,7 @@ if [[ -n "${I3PM_RESTORE_MARK:-}" ]]; then
 fi
 
 log "DEBUG" "I3PM_APP_ID=$I3PM_APP_ID"
+log "DEBUG" "I3PM_TERMINAL_ANCHOR_ID=$I3PM_TERMINAL_ANCHOR_ID"
 log "DEBUG" "I3PM_APP_NAME=$I3PM_APP_NAME"
 log "DEBUG" "I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME"
 log "DEBUG" "I3PM_SCOPE=$I3PM_SCOPE"
@@ -734,7 +740,8 @@ notify_launch() {
                 launcher_pid: ($pid | tonumber),
                 workspace_number: ($ws | tonumber),
                 timestamp: ($ts | tonumber),
-                expected_class: $class
+                expected_class: $class,
+                terminal_anchor_id: env.I3PM_TERMINAL_ANCHOR_ID
             },
             id: 1
         }')
@@ -768,7 +775,13 @@ notify_launch() {
     # Log success
     local launch_id
     launch_id=$(echo "$response" | jq -r '.result.launch_id // "unknown"' 2>/dev/null || echo "unknown")
-    log "INFO" "Launch notification sent: launch_id=$launch_id, app=$app_name, class=$expected_class"
+    local returned_anchor
+    returned_anchor=$(echo "$response" | jq -r '.result.terminal_anchor_id // empty' 2>/dev/null || echo "")
+    if [[ -n "$returned_anchor" && "$returned_anchor" != "$I3PM_TERMINAL_ANCHOR_ID" ]]; then
+        warn "Daemon returned mismatched terminal anchor: expected=$I3PM_TERMINAL_ANCHOR_ID actual=$returned_anchor"
+        return 1
+    fi
+    log "INFO" "Launch notification sent: launch_id=$launch_id, anchor=$I3PM_TERMINAL_ANCHOR_ID, app=$app_name, class=$expected_class"
 
     return 0
 }
@@ -783,7 +796,7 @@ if [[ -n "$PREFERRED_WORKSPACE" ]]; then
     if notify_launch "$APP_NAME" "$PROJECT_NAME" "$PROJECT_DIR" "$PREFERRED_WORKSPACE" "$LAUNCH_TIMESTAMP" "$EXPECTED_CLASS"; then
         log "INFO" "Launch notification successful for $APP_NAME"
     else
-        warn "Launch notification failed for $APP_NAME (app will still launch)"
+        error "Launch notification failed for $APP_NAME; refusing to launch without a daemon-issued terminal anchor."
     fi
 else
     log "DEBUG" "Skipping launch notification (no preferred workspace)"
@@ -814,6 +827,7 @@ fi
 # Export all I3PM_* variables so daemon can identify the window
 ENV_EXPORTS=(
     "export I3PM_APP_ID='$I3PM_APP_ID'"
+    "export I3PM_TERMINAL_ANCHOR_ID='$I3PM_TERMINAL_ANCHOR_ID'"
     "export I3PM_APP_NAME='$I3PM_APP_NAME'"
     "export I3PM_PROJECT_NAME='$I3PM_PROJECT_NAME'"
     "export I3PM_PROJECT_DIR='$I3PM_PROJECT_DIR'"

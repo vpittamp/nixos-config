@@ -256,6 +256,7 @@ function newSession(sessionId, meta) {
     cwd: meta.cwd || null,
     projectName: meta.projectName || null,
     projectPath: meta.projectPath || null,
+    terminalAnchorId: meta.terminalAnchorId || process.env.I3PM_TERMINAL_ANCHOR_ID || null,
     tmuxSession: meta.tmuxSession || null,
     tmuxWindow: meta.tmuxWindow || null,
     tmuxPane: meta.tmuxPane || null,
@@ -349,6 +350,10 @@ function makeSpanRecord(session, span) {
   }
   if (session.projectName) {
     resourceAttrs.push({ key: 'i3pm.project_name', value: { stringValue: session.projectName } });
+  }
+  if (session.terminalAnchorId) {
+    resourceAttrs.push({ key: 'terminal.anchor_id', value: { stringValue: session.terminalAnchorId } });
+    resourceAttrs.push({ key: 'i3pm.terminal_anchor_id', value: { stringValue: session.terminalAnchorId } });
   }
   if (session.tmuxSession) {
     resourceAttrs.push({ key: 'terminal.tmux.session', value: { stringValue: session.tmuxSession } });

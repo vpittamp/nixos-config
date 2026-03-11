@@ -82,6 +82,12 @@ class IdentityConfidence(str, Enum):
 class TerminalContext(BaseModel):
     """Terminal/tmux context used for session correlation."""
 
+    terminal_anchor_id: Optional[str] = Field(
+        default=None, description="Daemon-issued canonical terminal/session anchor"
+    )
+    anchor_lookup: Optional[str] = Field(
+        default=None, description="Daemon lookup status for the terminal anchor"
+    )
     window_id: Optional[int] = Field(
         default=None, description="Sway container ID of originating terminal window"
     )
@@ -232,6 +238,12 @@ class Session(BaseModel):
     cost_estimated: bool = Field(
         default=False, description="True if cost uses default rate (model not in pricing table)"
     )
+    focusable: bool = Field(
+        default=True, description="True when the session has deterministic focus/navigation context"
+    )
+    invalid_reason: Optional[str] = Field(
+        default=None, description="Machine-readable invalidation reason when the session is not focusable"
+    )
 
     # Timestamps
     created_at: datetime = Field(description="When session was first detected")
@@ -370,6 +382,12 @@ class SessionListItem(BaseModel):
     terminal_context: TerminalContext = Field(
         default_factory=TerminalContext, description="Terminal/tmux correlation context"
     )
+    focusable: bool = Field(
+        default=True, description="True when the session can be focused deterministically"
+    )
+    invalid_reason: Optional[str] = Field(
+        default=None, description="Reason the session is hidden from the active session rail"
+    )
     pid: Optional[int] = Field(default=None, description="Process ID for debugging/correlation")
     trace_id: Optional[str] = Field(default=None, description="OTLP trace ID for Langfuse link")
     # Feature 136: Additional fields for multi-indicator support
@@ -418,6 +436,10 @@ class SessionList(BaseModel):
     sessions_by_window: dict[int, list[SessionListItem]] = Field(
         default_factory=dict,
         description="Sessions grouped by window_id for multi-indicator display"
+    )
+    diagnostics: list[dict] = Field(
+        default_factory=list,
+        description="Deterministic diagnostics for invalid or unsupported session records"
     )
     timestamp: int = Field(description="Unix timestamp in seconds")
     updated_at: str = Field(description="RFC3339 timestamp when this payload was generated")

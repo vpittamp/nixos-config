@@ -18,6 +18,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+_DISCOVERED_TMUX_PROJECT_HINT_CACHE = {
+    "mtime_ns": None,
+    "size": None,
+    "mapping": {},
+}
+
 
 def get_sway_socket() -> Optional[str]:
     """Find the Sway IPC socket path.
@@ -363,18 +369,13 @@ def _collect_window_ids(node: dict, ids: set[int]) -> None:
 # =============================================================================
 
 
-def get_process_i3pm_env(pid: int) -> dict[str, str]:
-    """Read I3PM_* environment variables from a process.
-
-    This enables deterministic window correlation by reading the environment
-    variables injected by app-launcher-wrapper.sh into the AI CLI process.
-
-    Args:
-        pid: Process ID to read environment from
-
-    Returns:
-        Dict of I3PM_* variable name to value, empty dict on error
-    """
+def get_process_env_values(
+    pid: int,
+    *,
+    include_keys: tuple[str, ...] = (),
+    include_prefixes: tuple[str, ...] = (),
+) -> dict[str, str]:
+    """Read selected environment variables from a process."""
     environ_path = Path(f"/proc/{pid}/environ")
     if not environ_path.exists():
         logger.debug(f"Process {pid} environ not found")
@@ -391,16 +392,154 @@ def get_process_i3pm_env(pid: int) -> dict[str, str]:
                 if "=" not in decoded:
                     continue
                 key, value = decoded.split("=", 1)
-                if key.startswith("I3PM_"):
+                if (
+                    key in include_keys
+                    or any(key.startswith(prefix) for prefix in include_prefixes)
+                ):
                     result[key] = value
             except ValueError:
                 continue
         if result:
-            logger.debug(f"PID {pid} I3PM env: {list(result.keys())}")
+            logger.debug(f"PID {pid} env values: {list(result.keys())}")
         return result
     except (PermissionError, FileNotFoundError, ProcessLookupError) as e:
         logger.debug(f"Cannot read PID {pid} environ: {e}")
         return {}
+
+
+def get_process_i3pm_env(pid: int) -> dict[str, str]:
+    """Read I3PM_* environment variables from a process.
+
+    This enables deterministic window correlation by reading the environment
+    variables injected by app-launcher-wrapper.sh into the AI CLI process.
+
+    Args:
+        pid: Process ID to read environment from
+
+    Returns:
+        Dict of I3PM_* variable name to value, empty dict on error
+    """
+    return get_process_env_values(pid, include_prefixes=("I3PM_",))
+
+
+def _normalize_project_path(value: Optional[str]) -> Optional[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    expanded = os.path.expanduser(raw)
+    if not os.path.isabs(expanded):
+        return None
+    return os.path.normpath(expanded)
+
+
+def _project_from_path(path_value: Optional[str]) -> Optional[str]:
+    """Best-effort derive <account>/<repo>:<branch> from a repos path."""
+    normalized = _normalize_project_path(path_value)
+    if not normalized:
+        return None
+    try:
+        parts = [segment for segment in normalized.split(os.sep) if segment]
+        for idx, segment in enumerate(parts):
+            if segment != "repos":
+                continue
+            if idx + 3 >= len(parts):
+                continue
+            account = parts[idx + 1].strip()
+            repo = parts[idx + 2].strip()
+            branch = parts[idx + 3].strip()
+            if not account or not repo or not branch:
+                continue
+            return f"{account}/{repo}:{branch}"
+    except Exception:
+        return None
+    return None
+
+
+def _project_session_suffix(project_name: Optional[str]) -> str:
+    """Convert qualified project name to the common tmux session suffix."""
+    name = str(project_name or "").strip()
+    if ":" not in name:
+        return ""
+    repo_part, branch = name.split(":", 1)
+    repo_name = repo_part.split("/")[-1].strip()
+    if not repo_name or not branch:
+        return ""
+    return f"{repo_name}/{branch}"
+
+
+def _normalize_tmux_session_key(value: Optional[str]) -> str:
+    try:
+        from i3_project_manager.core.identity import normalize_session_name_key
+
+        return normalize_session_name_key(value)
+    except ImportError:
+        raw = str(value or "").strip().lower()
+        return "".join(ch if ch.isalnum() else "-" for ch in raw).strip("-")
+
+
+def _tmux_session_project_hints() -> dict[str, str]:
+    """Map normalized tmux session names to unique discovered worktree projects."""
+    repos_file = os.path.expanduser("~/.config/i3/repos.json")
+    if not os.path.exists(repos_file):
+        _DISCOVERED_TMUX_PROJECT_HINT_CACHE.update({
+            "mtime_ns": None,
+            "size": None,
+            "mapping": {},
+        })
+        return {}
+
+    try:
+        stat_result = os.stat(repos_file)
+    except OSError:
+        return {}
+
+    cached_mapping = _DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("mapping")
+    if (
+        _DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("mtime_ns") == stat_result.st_mtime_ns
+        and _DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("size") == stat_result.st_size
+        and isinstance(cached_mapping, dict)
+    ):
+        return dict(cached_mapping)
+
+    try:
+        with open(repos_file, "r") as f:
+            payload = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    repositories = payload.get("repositories", []) if isinstance(payload, dict) else []
+    grouped: dict[str, set[str]] = {}
+    for repo in repositories if isinstance(repositories, list) else []:
+        if not isinstance(repo, dict):
+            continue
+        account = str(repo.get("account") or "").strip()
+        repo_name = str(repo.get("name") or "").strip()
+        if not account or not repo_name:
+            continue
+        worktrees = repo.get("worktrees", [])
+        for worktree in worktrees if isinstance(worktrees, list) else []:
+            if not isinstance(worktree, dict):
+                continue
+            branch = str(worktree.get("branch") or "").strip()
+            if not branch:
+                continue
+            qualified_name = f"{account}/{repo_name}:{branch}"
+            suffix_key = _normalize_tmux_session_key(_project_session_suffix(qualified_name))
+            if not suffix_key:
+                continue
+            grouped.setdefault(suffix_key, set()).add(qualified_name)
+
+    mapping = {
+        session_key: sorted(qualified_names)[0]
+        for session_key, qualified_names in grouped.items()
+        if len(qualified_names) == 1
+    }
+    _DISCOVERED_TMUX_PROJECT_HINT_CACHE.update({
+        "mtime_ns": stat_result.st_mtime_ns,
+        "size": stat_result.st_size,
+        "mapping": dict(mapping),
+    })
+    return mapping
 
 
 def find_window_by_i3pm_env(
@@ -1005,7 +1144,55 @@ async def query_daemon_for_window_by_launch_id(
         return None
 
 
-async def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
+async def query_daemon_for_terminal_anchor(terminal_anchor_id: str) -> Optional[dict]:
+    """Query daemon for canonical terminal anchor state."""
+    anchor = str(terminal_anchor_id or "").strip()
+    if not anchor:
+        return None
+
+    uid = os.getuid()
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+    socket_path = os.path.join(runtime_dir, "i3-project-daemon", "ipc.sock")
+    if not os.path.exists(socket_path):
+        logger.debug(f"Daemon socket not found: {socket_path}")
+        return None
+
+    try:
+        request = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "get_terminal_anchor",
+            "params": {
+                "terminal_anchor_id": anchor,
+            },
+            "id": 1,
+        })
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_unix_connection(socket_path),
+            timeout=2.0,
+        )
+        try:
+            writer.write(request.encode("utf-8"))
+            writer.write_eof()
+            await writer.drain()
+            response_data = await asyncio.wait_for(reader.read(), timeout=2.0)
+            response = json.loads(response_data.decode("utf-8"))
+            if "error" in response:
+                logger.debug(f"query_daemon_for_terminal_anchor: daemon error={response['error']}")
+                return None
+            return response.get("result", {})
+        finally:
+            writer.close()
+            await writer.wait_closed()
+    except Exception as e:
+        logger.debug(f"query_daemon_for_terminal_anchor failed: {e}")
+        return None
+
+
+async def find_window_via_tmux_client(
+    target_pid: int,
+    *,
+    tmux_ctx: Optional[dict[str, Optional[str]]] = None,
+) -> Optional[int]:
     """Find Sway window by tracing through tmux client attachment.
 
     Feature 135: For tmux sessions that share the same I3PM_APP_ID (common when
@@ -1028,7 +1215,7 @@ async def find_window_via_tmux_client(target_pid: int) -> Optional[int]:
         Sway window container ID, or None if not running in tmux or not found
     """
     try:
-        tmux_ctx = await get_tmux_context_for_pid(target_pid)
+        tmux_ctx = tmux_ctx or await get_tmux_context_for_pid(target_pid)
         target_pts = tmux_ctx.get("pty")
         if not target_pts:
             return None
@@ -1162,7 +1349,8 @@ async def find_window_for_session(pid: int) -> Optional[int]:
     # For processes running in tmux, the I3PM-based correlation may be wrong
     # because multiple tmux sessions can share the same I3PM_APP_ID.
     # Try tmux client lookup as a more accurate method for tmux processes.
-    tmux_window = await find_window_via_tmux_client(pid)
+    tmux_ctx = await get_tmux_context_for_pid(pid)
+    tmux_window = await find_window_via_tmux_client(pid, tmux_ctx=tmux_ctx)
     if tmux_window:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         if tmux_window != window_id:
@@ -1192,33 +1380,48 @@ async def find_window_for_session(pid: int) -> Optional[int]:
     # - Daemon restarted (lost correlation_launch_id state)
     # - Tmux lookup timeout/failure
     # - Race condition at terminal startup
-    project_name = i3pm_env.get("I3PM_PROJECT_NAME")
-    if project_name:
+    process_env = get_process_env_values(pid, include_keys=("PWD",))
+    tmux_project = _tmux_session_project_hints().get(
+        _normalize_tmux_session_key(tmux_ctx.get("tmux_session"))
+    )
+    path_project = _project_from_path(process_env.get("PWD"))
+
+    fallback_projects: list[tuple[str, str]] = []
+    for source_name, project_name in (
+        ("tmux_project", tmux_project),
+        ("pwd_project", path_project),
+        ("i3pm_project", i3pm_env.get("I3PM_PROJECT_NAME")),
+    ):
+        normalized_project = str(project_name or "").strip()
+        if not normalized_project:
+            continue
+        if any(existing_project == normalized_project for existing_project, _ in fallback_projects):
+            continue
+        fallback_projects.append((normalized_project, source_name))
+
+    for project_name, source_name in fallback_projects:
         project_windows = find_all_terminal_windows_for_project(project_name)
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         if len(project_windows) == 1:
-            # Unambiguous - single terminal for this project
             logger.info(
                 f"find_window_for_session: PID {pid} → window {project_windows[0]} "
-                f"via project fallback (time={elapsed_ms:.2f}ms)"
+                f"via {source_name} fallback ({project_name}, time={elapsed_ms:.2f}ms)"
             )
             return project_windows[0]
 
-        elif project_windows:
-            # Multiple terminals for project - try focused window disambiguation
+        if project_windows:
             focused_id, _ = get_focused_window_info()
             if focused_id and focused_id in project_windows:
                 logger.info(
                     f"find_window_for_session: PID {pid} → window {focused_id} "
-                    f"via focused+project fallback (time={elapsed_ms:.2f}ms)"
+                    f"via focused+{source_name} fallback ({project_name}, time={elapsed_ms:.2f}ms)"
                 )
                 return focused_id
 
-            # Last resort: return first terminal (better than None/global)
             logger.warning(
                 f"find_window_for_session: PID {pid} → window {project_windows[0]} "
-                f"via ambiguous project fallback ({len(project_windows)} candidates, time={elapsed_ms:.2f}ms)"
+                f"via ambiguous {source_name} fallback ({project_name}, {len(project_windows)} candidates, time={elapsed_ms:.2f}ms)"
             )
             return project_windows[0]
 

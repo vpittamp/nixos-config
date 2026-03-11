@@ -389,6 +389,8 @@ class IPCServer:
             elif method == "get_window_by_launch_id":
                 # Feature 135: OTEL AI session window correlation
                 result = await self._get_window_by_launch_id(params)
+            elif method == "get_terminal_anchor":
+                result = await self._get_terminal_anchor(params)
 
             # Feature 042: Workspace mode navigation methods
             elif method == "workspace_mode.digit":
@@ -4877,6 +4879,7 @@ class IPCServer:
         launcher_pid = params.get("launcher_pid")
         workspace_number = params.get("workspace_number")
         timestamp = params.get("timestamp")
+        terminal_anchor_id = str(params.get("terminal_anchor_id") or "").strip()
 
         # Feature 041 T023: Log received launch notification
         logger.info(f"Received notify_launch: {app_name} → {project_name}")
@@ -4922,6 +4925,13 @@ class IPCServer:
                 "code": -32602,
                 "message": "Missing required parameter: timestamp",
                 "data": {"param": "timestamp"}
+            }))
+
+        if not terminal_anchor_id:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: terminal_anchor_id",
+                "data": {"param": "terminal_anchor_id"}
             }))
 
         # Get application registry to resolve expected_class
@@ -4971,6 +4981,7 @@ class IPCServer:
                 timestamp=timestamp,
                 expected_class=expected_class,
                 pwa_match_domains=pwa_match_domains,
+                terminal_anchor_id=terminal_anchor_id,
                 matched=False
             )
         except Exception as e:
@@ -4993,6 +5004,7 @@ class IPCServer:
                 # Build environment variables that will be injected
                 env_vars = {
                     "I3PM_APP_NAME": app_name,
+                    "I3PM_TERMINAL_ANCHOR_ID": terminal_anchor_id,
                     "I3PM_PROJECT_NAME": project_name,
                     "I3PM_PROJECT_DIR": str(project_directory),
                     "I3PM_TARGET_WORKSPACE": str(workspace_number),
@@ -5041,6 +5053,7 @@ class IPCServer:
         result = {
             "status": "success",
             "launch_id": launch_id,
+            "terminal_anchor_id": terminal_anchor_id,
             "expected_class": expected_class,
             "pending_count": stats.total_pending
         }
@@ -5214,6 +5227,47 @@ class IPCServer:
                 "error": "not_found",
                 "message": f"No window with correlation_launch_id={target_launch_id}"
             }
+
+    async def _get_terminal_anchor(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve canonical terminal anchor state from daemon-owned window tracking."""
+        terminal_anchor_id = str(params.get("terminal_anchor_id") or "").strip()
+        if not terminal_anchor_id:
+            raise ValueError("'terminal_anchor_id' is required")
+
+        for window_id, window_info in self.state_manager.state.window_map.items():
+            if str(getattr(window_info, "terminal_anchor_id", "") or "").strip() != terminal_anchor_id:
+                continue
+
+            return {
+                "terminal_anchor_id": terminal_anchor_id,
+                "window_id": window_id,
+                "project_name": getattr(window_info, "project", None),
+                "app_name": getattr(window_info, "app_identifier", None),
+                "workspace": getattr(window_info, "workspace", None),
+                "matched": True,
+                "binding": "window_map",
+            }
+
+        pending_launch = await self.state_manager.launch_registry.get_by_terminal_anchor(
+            terminal_anchor_id
+        )
+        if pending_launch:
+            return {
+                "terminal_anchor_id": terminal_anchor_id,
+                "window_id": None,
+                "project_name": pending_launch.project_name,
+                "app_name": pending_launch.app_name,
+                "workspace": pending_launch.workspace_number,
+                "matched": False,
+                "binding": "pending",
+            }
+
+        return {
+            "terminal_anchor_id": terminal_anchor_id,
+            "window_id": None,
+            "error": "not_found",
+            "matched": False,
+        }
 
     # =============================================================================
     # Feature 042: Workspace Mode Navigation IPC Methods

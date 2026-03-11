@@ -47,6 +47,7 @@ class WindowEnvironment:
     """Parsed I3PM_* environment variables from process"""
 
     app_id: str  # I3PM_APP_ID - unique instance identifier
+    terminal_anchor_id: str  # I3PM_TERMINAL_ANCHOR_ID - canonical anchor for managed terminals
     app_name: str  # I3PM_APP_NAME - registry application name
     project_name: str  # I3PM_PROJECT_NAME - project name or empty string
     project_dir: str  # I3PM_PROJECT_DIR - project directory or empty string
@@ -283,6 +284,7 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
 
         return WindowEnvironment(
             app_id=env["I3PM_APP_ID"],
+            terminal_anchor_id=env.get("I3PM_TERMINAL_ANCHOR_ID", env["I3PM_APP_ID"]),
             app_name=env["I3PM_APP_NAME"],
             project_name=env.get("I3PM_PROJECT_NAME", ""),
             project_dir=env.get("I3PM_PROJECT_DIR", ""),

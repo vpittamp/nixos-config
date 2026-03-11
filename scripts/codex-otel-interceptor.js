@@ -168,6 +168,8 @@ function enrichLogAttrsForCorrelation(attrs, meta, pidEnv) {
   upsertStringAttr(attrs, 'project_path', meta.projectPath);
   upsertStringAttr(attrs, 'i3pm.project_path', meta.projectPath);
   upsertStringAttr(attrs, 'i3pm.project_name', meta.projectName);
+  upsertStringAttr(attrs, 'terminal.anchor_id', env.I3PM_TERMINAL_ANCHOR_ID || meta.terminalAnchorId || null);
+  upsertStringAttr(attrs, 'i3pm.terminal_anchor_id', env.I3PM_TERMINAL_ANCHOR_ID || meta.terminalAnchorId || null);
   upsertStringAttr(attrs, 'terminal.tmux.session', meta.tmuxSession);
   upsertStringAttr(attrs, 'terminal.tmux.window', meta.tmuxWindow);
   upsertStringAttr(attrs, 'terminal.tmux.pane', meta.tmuxPane);
@@ -268,6 +270,7 @@ function newSession(conversationId, meta) {
     cwd: meta.cwd || null,
     projectName: meta.projectName || null,
     projectPath: meta.projectPath || null,
+    terminalAnchorId: meta.terminalAnchorId || process.env.I3PM_TERMINAL_ANCHOR_ID || null,
     tmuxSession: meta.tmuxSession || null,
     tmuxWindow: meta.tmuxWindow || null,
     tmuxPane: meta.tmuxPane || null,

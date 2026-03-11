@@ -1,11 +1,4 @@
-"""Process-based monitoring for AI assistants.
-
-This module provides a fallback detection mechanism for tools that don't
-emit telemetry in real-time (like Codex which batches until shutdown).
-
-It periodically scans for running processes and creates/updates sessions
-based on process presence.
-"""
+"""Process-based liveness monitoring for already-tracked AI assistant sessions."""
 
 import asyncio
 import logging
@@ -13,12 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from .models import AITool, IdentityConfidence, Session, SessionState
-from .sway_helper import (
-    find_window_for_session,
-    get_tmux_context_for_pid,
-    get_process_i3pm_env,
-)
+from .models import AITool, SessionState
 
 if TYPE_CHECKING:
     from .session_tracker import SessionTracker
@@ -27,10 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessMonitor:
-    """Monitors running processes for AI assistant tools.
-
-    Provides fallback detection when telemetry is unavailable or delayed.
-    """
+    """Monitors AI assistant processes to keep existing sessions alive."""
 
     def __init__(
         self,
@@ -210,59 +195,6 @@ class ProcessMonitor:
 
         return False
 
-    async def _resolve_process_context(
-        self, pid: int
-    ) -> tuple[Optional[int], Optional[str], dict]:
-        """Resolve window/project for a detected process."""
-        project: Optional[str] = None
-        window_id: Optional[int] = None
-        raw_tmux_context = await get_tmux_context_for_pid(pid)
-        terminal_context = (
-            dict(raw_tmux_context)
-            if isinstance(raw_tmux_context, dict)
-            else {}
-        )
-        if not isinstance(raw_tmux_context, dict):
-            logger.debug(
-                "Process monitor: tmux context for pid %s returned non-dict %s; using empty context",
-                pid,
-                type(raw_tmux_context).__name__,
-            )
-        terminal_context.setdefault("execution_mode", None)
-        terminal_context.setdefault("connection_key", None)
-        terminal_context.setdefault("context_key", None)
-        terminal_context.setdefault("remote_target", None)
-        terminal_context.setdefault("host_name", None)
-
-        try:
-            i3pm_env = get_process_i3pm_env(pid)
-            project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
-            if i3pm_env:
-                remote_user = str(i3pm_env.get("I3PM_REMOTE_USER") or "").strip()
-                remote_host = str(i3pm_env.get("I3PM_REMOTE_HOST") or "").strip()
-                remote_port = str(i3pm_env.get("I3PM_REMOTE_PORT") or "").strip() or "22"
-                remote_target = ""
-                if remote_host:
-                    remote_target = (
-                        f"{remote_user}@{remote_host}:{remote_port}"
-                        if remote_user
-                        else f"{remote_host}:{remote_port}"
-                    )
-                terminal_context["execution_mode"] = i3pm_env.get("I3PM_EXECUTION_MODE")
-                terminal_context["connection_key"] = i3pm_env.get("I3PM_CONNECTION_KEY")
-                terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
-                terminal_context["remote_target"] = remote_target or None
-                terminal_context["host_name"] = remote_host or None
-        except Exception as e:
-            logger.debug(f"Process monitor: unable to read I3PM env for pid {pid}: {e}")
-
-        try:
-            window_id = await find_window_for_session(pid)
-        except Exception as e:
-            logger.debug(f"Process monitor: window correlation failed for pid {pid}: {e}")
-
-        return window_id, project, terminal_context
-
     async def _update_sessions(self, current_pids: dict[int, AITool]) -> None:
         """Update session tracker based on detected processes.
 
@@ -274,22 +206,18 @@ class ProcessMonitor:
         # Find new processes
         for pid, tool in current_pids.items():
             if pid not in self._process_sessions:
-                # New process detected - create session
-                session_id = f"{tool.value}:pid:{pid}"
-                self._process_sessions[pid] = session_id
-
-                # Get window/project context for this specific process.
-                window_id, window_project, terminal_context = await self._resolve_process_context(pid)
-
-                # Create session in tracker
-                await self._create_process_session(
-                    session_id=session_id,
-                    tool=tool,
-                    pid=pid,
-                    window_id=window_id,
-                    project=window_project,
-                    terminal_context=terminal_context,
+                resolved_session_id = await self._resolve_session_id_for_pid(
+                    f"{tool.value}:pid:{pid}",
+                    pid,
                 )
+                if resolved_session_id:
+                    self._process_sessions[pid] = resolved_session_id
+                else:
+                    logger.debug(
+                        "Process monitor: ignoring untracked %s pid=%s during anchor-only cutover",
+                        tool.value,
+                        pid,
+                    )
 
             else:
                 # Existing process - keep session alive
@@ -301,113 +229,6 @@ class ProcessMonitor:
         for pid in terminated_pids:
             session_id = self._process_sessions.pop(pid)
             await self._complete_session(session_id, pid)
-
-    async def _create_process_session(
-        self,
-        session_id: str,
-        tool: AITool,
-        pid: int,
-        window_id: Optional[int],
-        project: Optional[str],
-        terminal_context: dict,
-    ) -> None:
-        """Create a new session for a detected process.
-
-        Args:
-            session_id: Unique session identifier
-            tool: AI tool type
-            pid: Process ID
-            window_id: Sway window ID if available
-            project: Project name if available
-        """
-        now = datetime.now(timezone.utc)
-        metadata = self.tracker._load_pid_metadata(pid)
-        metadata_session_id = str(metadata.get("session_id") or "").strip()
-        if metadata_session_id:
-            session_id = session_id if session_id.startswith(f"{tool.value}:") else f"{tool.value}:pid:{pid}"
-
-        recovered_project = str(metadata.get("project") or "").strip() or project
-        recovered_project_path = str(metadata.get("project_path") or "").strip() or None
-        recovered_context = dict(terminal_context)
-        for key in (
-            "tmux_session",
-            "tmux_window",
-            "tmux_pane",
-            "pty",
-            "host_name",
-            "execution_mode",
-            "connection_key",
-            "context_key",
-            "remote_target",
-        ):
-            if not recovered_context.get(key) and metadata.get(key):
-                recovered_context[key] = metadata.get(key)
-
-        async with self.tracker._lock:
-            # Check if session already exists (from telemetry)
-            if session_id in self.tracker._sessions:
-                return
-            for existing in self.tracker._sessions.values():
-                if existing.tool == tool and existing.pid == pid and existing.state != SessionState.EXPIRED:
-                    self._process_sessions[pid] = existing.session_id
-                    logger.debug(
-                        "Process monitor: reusing existing session %s for pid %s",
-                        existing.session_id,
-                        pid,
-                    )
-                    return
-                # Some native sessions don't carry process.pid. If we already have
-                # a native session in the same pane/project, reuse it instead of
-                # creating a duplicate pid session.
-                if (
-                    existing.tool == tool
-                    and existing.native_session_id
-                    and existing.state != SessionState.EXPIRED
-                    and terminal_context.get("tmux_pane")
-                    and existing.terminal_context.tmux_pane == terminal_context.get("tmux_pane")
-                    and (not project or existing.project == project)
-                ):
-                    self._process_sessions[pid] = existing.session_id
-                    logger.debug(
-                        "Process monitor: reusing native session %s for pid %s via pane %s",
-                        existing.session_id,
-                        pid,
-                        terminal_context.get("tmux_pane"),
-                    )
-                    return
-
-            session = Session(
-                session_id=session_id,
-                native_session_id=metadata_session_id or None,
-                identity_confidence=IdentityConfidence.PID,
-                tool=tool,
-                state=SessionState.WORKING,
-                project=recovered_project,
-                project_path=recovered_project_path,
-                window_id=window_id,
-                pid=pid,
-                created_at=now,
-                last_event_at=now,
-                state_changed_at=now,
-                state_seq=1,
-                status_reason="process_detected",
-            )
-            session.terminal_context.window_id = window_id
-            session.terminal_context.tmux_session = recovered_context.get("tmux_session")
-            session.terminal_context.tmux_window = recovered_context.get("tmux_window")
-            session.terminal_context.tmux_pane = recovered_context.get("tmux_pane")
-            session.terminal_context.pty = recovered_context.get("pty")
-            session.terminal_context.execution_mode = recovered_context.get("execution_mode")
-            session.terminal_context.connection_key = recovered_context.get("connection_key")
-            session.terminal_context.context_key = recovered_context.get("context_key")
-            session.terminal_context.remote_target = recovered_context.get("remote_target")
-            session.terminal_context.host_name = recovered_context.get("host_name")
-            if session.native_session_id:
-                session.collision_group_id = f"{tool.value}:{session.native_session_id}"
-                self.tracker._register_native_session_unlocked(session.collision_group_id, session.session_id)
-            self.tracker._sessions[session_id] = session
-            logger.info(f"Process monitor: created session {session_id} for pid {pid}")
-            self.tracker._mark_dirty_unlocked()
 
     async def _resolve_session_id_for_pid(
         self,

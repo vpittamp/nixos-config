@@ -136,7 +136,7 @@ let
 
   applications = [
     # TERMINAL APPLICATIONS OVERVIEW:
-    # 1. Regular terminals (name="terminal", "ghostty"): Use sesh for smart tmux session management
+    # 1. Regular terminals (name="terminal", "ghostty"): Use deterministic anchor-keyed tmux session management
     # 2. Scratchpad terminal (name="scratchpad-terminal"): Uses tmux directly with scratchpad-{project} naming
     #    - Scratchpad is launched by daemon, not via app registry wrapper
     #    - Provides quick floating terminal access per project
@@ -146,9 +146,9 @@ let
       name = "terminal";
       display_name = "Terminal";
       command = "ghostty";
-      # Use sesh connect to attach/create tmux session in project directory
-      # sesh will use PROJECT_DIR as session directory context
-      parameters = "-e sesh connect $PROJECT_DIR";
+      # app-launcher-wrapper.sh replaces this with a deterministic managed tmux
+      # launcher for local project terminals.
+      parameters = "-e bash -lc true";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
@@ -157,7 +157,7 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Regular terminal with sesh session management for project directory";
+      description = "Regular terminal with daemon-managed tmux session identity for project directory";
     })
 
     # WS2: Editors (Primary: code)

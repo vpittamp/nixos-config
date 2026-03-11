@@ -138,63 +138,19 @@ def test_is_gemini_process_handles_wrapped_and_node_binary(cmdline, expected):
 
 
 @pytest.mark.asyncio
-async def test_resolve_process_context_awaits_tmux_and_merges_i3pm(monkeypatch):
+async def test_update_sessions_ignores_untracked_pid_during_anchor_cutover():
     class _DummyTracker:
-        _lock = None
-        _sessions = {}
-        enable_notifications = False
+        def __init__(self):
+            self._lock = asyncio.Lock()
+            self._sessions = {}
+            self.enable_notifications = False
 
     monitor = ProcessMonitor(tracker=_DummyTracker())  # type: ignore[arg-type]
 
-    async def _fake_tmux_context(pid: int):
-        assert pid == 777
-        return {
-            "tmux_session": "workflow-builder/main",
-            "tmux_window": "1:node",
-            "tmux_pane": "%40",
-            "pty": "/dev/pts/12",
-            "host_name": "ryzen",
-        }
+    await monitor._update_sessions({777: AITool.CODEX_CLI})
 
-    async def _fake_find_window(pid: int):
-        assert pid == 777
-        return 100
-
-    monkeypatch.setattr(
-        process_monitor_module,
-        "get_tmux_context_for_pid",
-        _fake_tmux_context,
-    )
-    monkeypatch.setattr(
-        process_monitor_module,
-        "find_window_for_session",
-        _fake_find_window,
-    )
-    monkeypatch.setattr(
-        process_monitor_module,
-        "get_process_i3pm_env",
-        lambda _pid: {
-            "I3PM_PROJECT_NAME": "PittampalliOrg/workflow-builder:main",
-            "I3PM_EXECUTION_MODE": "ssh",
-            "I3PM_CONNECTION_KEY": "vpittamp@ryzen:22",
-            "I3PM_CONTEXT_KEY": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
-            "I3PM_REMOTE_USER": "vpittamp",
-            "I3PM_REMOTE_HOST": "ryzen",
-            "I3PM_REMOTE_PORT": "22",
-        },
-    )
-
-    window_id, project, terminal_context = await monitor._resolve_process_context(777)
-
-    assert window_id == 100
-    assert project == "PittampalliOrg/workflow-builder:main"
-    assert terminal_context["tmux_session"] == "workflow-builder/main"
-    assert terminal_context["tmux_window"] == "1:node"
-    assert terminal_context["tmux_pane"] == "%40"
-    assert terminal_context["execution_mode"] == "ssh"
-    assert terminal_context["connection_key"] == "vpittamp@ryzen:22"
-    assert terminal_context["context_key"] == "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22"
-    assert terminal_context["remote_target"] == "vpittamp@ryzen:22"
+    assert monitor._process_sessions == {}
+    assert monitor.tracker._sessions == {}
 
 
 @pytest.mark.asyncio

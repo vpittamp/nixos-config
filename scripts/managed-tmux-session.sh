@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+managed_tmux_require_context() {
+    if ! command -v tmux >/dev/null 2>&1; then
+        echo "managed-tmux: tmux is required but not installed" >&2
+        exit 1
+    fi
+
+    if [[ -z "${I3PM_CONTEXT_KEY:-}" || -z "${I3PM_TERMINAL_ANCHOR_ID:-}" ]]; then
+        echo "managed-tmux: missing I3PM terminal context; refusing unmanaged tmux launch" >&2
+        exit 1
+    fi
+}
+
+managed_tmux_session_name() {
+    local project_name="${1:-project}"
+    local anchor_id="${2:-}"
+    local slug digest
+    slug="$(printf '%s' "$project_name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g; s/-\\{2,\\}/-/g; s/^-//; s/-$//')"
+    if [[ -z "$slug" ]]; then
+        slug="project"
+    fi
+    digest="$(printf '%s' "$anchor_id" | sha1sum | awk '{print $1}' | cut -c1-8)"
+    printf 'i3pm-%s-%s' "${slug:0:24}" "$digest"
+}
+
+managed_tmux_export_current_env() {
+    local session_name="$1"
+    while IFS='=' read -r name _; do
+        [[ -n "$name" ]] && tmux set-environment -t "$session_name" -u "$name" 2>/dev/null || true
+    done < <(tmux show-environment -t "$session_name" 2>/dev/null | sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' | rg '^I3PM_' || true)
+
+    while IFS='=' read -r name value; do
+        [[ -n "$name" ]] || continue
+        tmux set-environment -t "$session_name" "$name" "$value"
+    done < <(env | rg '^I3PM_')
+}
+
+managed_tmux_set_metadata() {
+    local session_name="$1"
+    tmux set-option -t "$session_name" -q @i3pm_managed "1"
+    tmux set-option -t "$session_name" -q @i3pm_terminal_anchor "${I3PM_TERMINAL_ANCHOR_ID}"
+    tmux set-option -t "$session_name" -q @i3pm_context_key "${I3PM_CONTEXT_KEY}"
+    tmux set-option -t "$session_name" -q @i3pm_project_name "${I3PM_PROJECT_NAME:-}"
+    tmux set-option -t "$session_name" -q @i3pm_tmux_session_name "${I3PM_TMUX_SESSION_NAME:-$session_name}"
+}
+
+managed_tmux_validate_metadata() {
+    local session_name="$1"
+    local existing_managed existing_anchor existing_context
+    existing_managed="$(tmux show-options -t "$session_name" -qv @i3pm_managed || true)"
+    existing_anchor="$(tmux show-options -t "$session_name" -qv @i3pm_terminal_anchor || true)"
+    existing_context="$(tmux show-options -t "$session_name" -qv @i3pm_context_key || true)"
+
+    if [[ "$existing_managed" != "1" ]]; then
+        echo "managed-tmux: refusing to attach unmanaged tmux session '$session_name'" >&2
+        exit 1
+    fi
+
+    if [[ "$existing_anchor" != "${I3PM_TERMINAL_ANCHOR_ID}" || "$existing_context" != "${I3PM_CONTEXT_KEY}" ]]; then
+        echo "managed-tmux: refusing to attach stale tmux session '$session_name' (context='$existing_context' anchor='$existing_anchor'; expected context='${I3PM_CONTEXT_KEY}' anchor='${I3PM_TERMINAL_ANCHOR_ID}')" >&2
+        exit 1
+    fi
+}
+
+managed_tmux_prepare_env() {
+    export I3PM_TMUX_SESSION_NAME="$1"
+}

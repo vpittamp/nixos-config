@@ -98,9 +98,12 @@
   const attrs = [`process.pid=${process.pid}`];
   const projectName = process.env.I3PM_PROJECT_NAME;
   const projectPath = process.env.I3PM_PROJECT_PATH || process.cwd();
+  const terminalAnchorId = process.env.I3PM_TERMINAL_ANCHOR_ID;
   const tmuxPane = process.env.TMUX_PANE;
   if (projectName) attrs.push(`i3pm.project_name=${escapeAttr(projectName)}`);
   if (projectPath) attrs.push(`i3pm.project_path=${escapeAttr(projectPath)}`);
+  if (terminalAnchorId) attrs.push(`terminal.anchor_id=${escapeAttr(terminalAnchorId)}`);
+  if (terminalAnchorId) attrs.push(`i3pm.terminal_anchor_id=${escapeAttr(terminalAnchorId)}`);
   if (tmuxPane) attrs.push(`terminal.tmux.pane=${escapeAttr(tmuxPane)}`);
   process.env.OTEL_RESOURCE_ATTRIBUTES = originalEnv
     ? `${originalEnv},${attrs.join(',')}`

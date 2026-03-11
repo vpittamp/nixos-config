@@ -44,7 +44,7 @@ from .sway_helper import (
     get_tmux_context_for_pid,
     get_process_i3pm_env,
     get_window_context_by_id,
-    find_window_for_session,
+    query_daemon_for_terminal_anchor,
 )
 
 if TYPE_CHECKING:
@@ -367,6 +367,7 @@ class SessionTracker:
             "suppressed_missing_project": 0,
             "suppressed_non_native": 0,
         }
+        self._session_diagnostics: dict[str, dict[str, object]] = {}
 
     def _refresh_metadata_cache(self) -> None:
         """Fully reload the session metadata cache."""
@@ -402,6 +403,7 @@ class SessionTracker:
                                 "tool": str(data.get("tool") or "").strip().lower() or None,
                                 "project": str(data.get("projectName") or "").strip() or None,
                                 "project_path": str(data.get("projectPath") or data.get("cwd") or "").strip() or None,
+                                "terminal_anchor_id": str(data.get("terminalAnchorId") or "").strip() or None,
                                 "tmux_session": str(data.get("tmuxSession") or "").strip() or None,
                                 "tmux_window": str(data.get("tmuxWindow") or "").strip() or None,
                                 "tmux_pane": str(data.get("tmuxPane") or "").strip() or None,
@@ -600,6 +602,8 @@ class SessionTracker:
                 )
                 session.terminal_context.window_id = raw.get("window_id")
                 for key in (
+                    "terminal_anchor_id",
+                    "anchor_lookup",
                     "tmux_session",
                     "tmux_window",
                     "tmux_pane",
@@ -615,6 +619,7 @@ class SessionTracker:
                         setattr(session.terminal_context, key, value)
 
                 self._sessions[session_id] = session
+                self._apply_tracking_contract_unlocked(session)
                 if session.pid is not None:
                     pid_int = int(session.pid)
                     self._session_pids[session_id] = pid_int
@@ -837,6 +842,7 @@ class SessionTracker:
             parts.append(f"{name}={text}")
 
         # Highest-signal terminal identity first.
+        add_part("anchor", terminal_context.get("terminal_anchor_id"))
         add_part("pane", terminal_context.get("tmux_pane"))
         add_part("pty", terminal_context.get("pty"))
         add_part("window", window_id)
@@ -1048,6 +1054,12 @@ class SessionTracker:
         if client_pid is None:
             client_pid = self._session_pids.get(session_id)
 
+        if client_pid is None and native_group_id:
+            client_pid = self._session_pids.get(native_group_id)
+
+        if client_pid is None and native_session_id:
+            client_pid = self._session_pids.get(native_session_id)
+
         if client_pid is None and native_session_id:
             client_pid = self._load_session_metadata_pid(native_session_id)
 
@@ -1074,11 +1086,12 @@ class SessionTracker:
             self._unregister_native_session_unlocked(native_group_id, session_id)
 
         self._last_notification.pop(session_id, None)
+        self._session_diagnostics.pop(session_id, None)
 
     async def _resolve_window_context(
         self, pid: int
     ) -> tuple[Optional[int], Optional[str], dict]:
-        """Resolve PID -> window/project/tmux context with short TTL cache."""
+        """Resolve PID -> daemon-owned terminal anchor context with short TTL cache."""
         now = datetime.now(timezone.utc).timestamp()
         if len(self._pid_context_cache) > 512:
             self._pid_context_cache = {
@@ -1094,6 +1107,8 @@ class SessionTracker:
         window_id: Optional[int] = None
         project: Optional[str] = None
         terminal_context = {
+            "terminal_anchor_id": None,
+            "anchor_lookup": None,
             "tmux_session": None,
             "tmux_window": None,
             "tmux_pane": None,
@@ -1107,6 +1122,10 @@ class SessionTracker:
             i3pm_env = get_process_i3pm_env(pid)
             project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
             if i3pm_env:
+                terminal_context["terminal_anchor_id"] = (
+                    i3pm_env.get("I3PM_TERMINAL_ANCHOR_ID")
+                    or i3pm_env.get("I3PM_APP_ID")
+                )
                 remote_user = str(i3pm_env.get("I3PM_REMOTE_USER") or "").strip()
                 remote_host = str(i3pm_env.get("I3PM_REMOTE_HOST") or "").strip()
                 remote_port = str(i3pm_env.get("I3PM_REMOTE_PORT") or "").strip() or "22"
@@ -1124,7 +1143,6 @@ class SessionTracker:
                 terminal_context["connection_key"] = i3pm_env.get("I3PM_CONNECTION_KEY")
                 terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
                 terminal_context["remote_target"] = remote_target or None
-            window_id = await find_window_for_session(pid)
             raw_tmux_context = await get_tmux_context_for_pid(pid)
             tmux_context = (
                 dict(raw_tmux_context)
@@ -1139,16 +1157,34 @@ class SessionTracker:
                 )
             for key, value in tmux_context.items():
                 terminal_context[key] = value
-            if window_id is not None:
-                window_context = get_window_context_by_id(window_id)
-                if isinstance(window_context, dict):
-                    window_project = window_context.get("project")
-                    if window_project and not project:
-                        project = window_project
-                    for key in ("execution_mode", "connection_key", "context_key", "remote_target"):
-                        value = window_context.get(key)
-                        if value:
-                            terminal_context[key] = value
+
+            anchor_id = str(terminal_context.get("terminal_anchor_id") or "").strip()
+            if anchor_id:
+                anchor_context = await query_daemon_for_terminal_anchor(anchor_id)
+                if isinstance(anchor_context, dict):
+                    terminal_context["anchor_lookup"] = (
+                        anchor_context.get("binding")
+                        or anchor_context.get("error")
+                        or "unknown"
+                    )
+                    window_id_raw = anchor_context.get("window_id")
+                    try:
+                        window_id = int(window_id_raw) if window_id_raw is not None else None
+                    except (TypeError, ValueError):
+                        window_id = None
+                    project = str(
+                        anchor_context.get("project_name")
+                        or project
+                        or ""
+                    ).strip() or None
+                    if window_id is not None:
+                        terminal_context["window_id"] = window_id
+                    window_context = get_window_context_by_id(window_id) if window_id is not None else {}
+                    if isinstance(window_context, dict):
+                        for key in ("execution_mode", "connection_key", "context_key", "remote_target"):
+                            value = window_context.get(key)
+                            if value:
+                                terminal_context[key] = value
         except Exception as e:
             logger.debug(f"PID correlation failed for {pid}: {e}")
 
@@ -1344,86 +1380,79 @@ class SessionTracker:
             return "".join(ch if ch.isalnum() else "-" for ch in raw).strip("-")
 
     def _resolve_export_project_labels(self, session: Session) -> dict[str, str]:
-        """Resolve canonical session/window/display project fields for export."""
-        raw_session_project = str(session.project or "").strip()
+        """Resolve canonical project fields from daemon-backed anchor state only."""
+        session_project = str(session.project or "").strip()
         project_path = str(session.project_path or "").strip()
-        session_project = raw_session_project
-        if project_path:
-            project_from_path = self._project_from_path(project_path)
-            if project_from_path and (
-                not session_project or not self._projects_align(session_project, project_from_path)
-            ):
-                session_project = project_from_path
+        if not session_project and project_path:
+            session_project = self._project_from_path(project_path) or project_path
 
-        context_key = str(session.terminal_context.context_key or "").strip()
-        parsed_context = self._parse_context_key(context_key)
-        context_project = str(parsed_context.get("qualified_name") or "").strip()
-        tmux_session_key = self._normalize_tmux_session_key(session.terminal_context.tmux_session)
-        tmux_project = self._tmux_session_project_hints().get(tmux_session_key, "")
-
-        window_project = ""
-        if session.window_id is not None:
-            window_context = get_window_context_by_id(session.window_id)
-            if isinstance(window_context, dict):
-                window_project = str(window_context.get("project") or "").strip()
-
-        def _project_matches_tmux(project_name: str) -> bool:
-            if not project_name or not tmux_session_key:
-                return False
-            suffix = self._normalize_tmux_session_key(self._project_session_suffix(project_name))
-            return bool(suffix and suffix == tmux_session_key)
-
-        session_project_source = "window_fallback"
-        session_project_trusted = False
-
-        if session_project:
-            session_project_source = "session"
-
-        if project_path:
-            session_project_source = "path"
-            session_project_trusted = True
-
-        if context_project:
-            if not session_project or not self._projects_align(session_project, context_project):
-                session_project = context_project
-            session_project_source = "context"
-            session_project_trusted = True
-
-        if tmux_project:
-            if not session_project or not self._projects_align(session_project, tmux_project):
-                session_project = tmux_project
-            if not context_project or not self._projects_align(context_project, tmux_project):
-                session_project_source = "tmux_discovered"
-                session_project_trusted = True
-
-        if session_project and not session_project_trusted and _project_matches_tmux(session_project):
-            session_project_source = "tmux"
-            session_project_trusted = True
-
-        if not session_project and window_project:
-            session_project = window_project
-            session_project_source = "window_fallback"
-
-        if (
-            session_project
-            and not session_project_trusted
-            and window_project
-            and not self._projects_align(session_project, window_project)
-            and _project_matches_tmux(window_project)
-            and not _project_matches_tmux(session_project)
-        ):
-            session_project = window_project
-            session_project_source = "tmux_window_fallback"
-
-        display_project = session_project or window_project or raw_session_project or "unknown"
-        focus_project = window_project or session_project or ""
+        display_project = session_project or "unknown"
+        focus_project = session_project
         return {
-            "session_project": session_project or "",
-            "window_project": window_project,
+            "session_project": session_project,
+            "window_project": session_project,
             "focus_project": focus_project,
             "display_project": display_project,
-            "project_source": session_project_source,
+            "project_source": "anchor",
         }
+
+    def _set_session_diagnostic_unlocked(
+        self,
+        session: Session,
+        reason: Optional[str],
+        *,
+        detail: Optional[str] = None,
+    ) -> None:
+        key = session.session_id
+        reason_text = str(reason or "").strip()
+        if not reason_text:
+            session.focusable = True
+            session.invalid_reason = None
+            self._session_diagnostics.pop(key, None)
+            return
+
+        session.focusable = False
+        session.invalid_reason = reason_text
+        self._session_diagnostics[key] = {
+            "session_id": session.session_id,
+            "tool": str(session.tool.value if hasattr(session.tool, "value") else session.tool),
+            "pid": session.pid,
+            "terminal_anchor_id": session.terminal_context.terminal_anchor_id,
+            "reason": reason_text,
+            "detail": str(detail or reason_text),
+            "updated_at": session.last_event_at.isoformat(),
+        }
+
+    def _apply_tracking_contract_unlocked(self, session: Session) -> None:
+        anchor_id = str(session.terminal_context.terminal_anchor_id or "").strip()
+        if not anchor_id:
+            self._set_session_diagnostic_unlocked(
+                session,
+                "missing_terminal_anchor",
+                detail="Telemetry arrived without a daemon-issued terminal anchor.",
+            )
+            return
+        if session.window_id is None:
+            anchor_lookup = str(getattr(session.terminal_context, "anchor_lookup", "") or "").strip()
+            reason = "unknown_terminal_anchor" if anchor_lookup in {"not_found", "daemon_unavailable"} else "anchor_window_unbound"
+            self._set_session_diagnostic_unlocked(
+                session,
+                reason,
+                detail=(
+                    "Telemetry references a terminal anchor unknown to the daemon."
+                    if reason == "unknown_terminal_anchor"
+                    else "Daemon knows the terminal anchor but no live Sway window is bound."
+                ),
+            )
+            return
+        if not str(session.project or "").strip() and not str(session.project_path or "").strip():
+            self._set_session_diagnostic_unlocked(
+                session,
+                "missing_project",
+                detail="Anchor resolved to a live window but no project context is available.",
+            )
+            return
+        self._set_session_diagnostic_unlocked(session, None)
 
     @staticmethod
     def _project_from_path(path_value: Optional[str]) -> Optional[str]:
@@ -1491,6 +1520,8 @@ class SessionTracker:
     def _extract_terminal_context_from_event(event: TelemetryEvent) -> dict:
         attrs = event.attributes
         return {
+            "terminal_anchor_id": attrs.get("terminal.anchor_id") or attrs.get("i3pm.terminal_anchor_id"),
+            "anchor_lookup": None,
             "tmux_session": attrs.get("terminal.tmux.session") or attrs.get("tmux.session"),
             "tmux_window": attrs.get("terminal.tmux.window") or attrs.get("tmux.window"),
             "tmux_pane": attrs.get("terminal.tmux.pane") or attrs.get("tmux.pane"),
@@ -1786,35 +1817,18 @@ class SessionTracker:
     def _session_is_resolved_for_display(session: Session, now_ts: float) -> bool:
         """Whether a session should be visible in project-scoped UI output."""
         _ = now_ts
-        confidence_raw = session.identity_confidence
-        if isinstance(confidence_raw, IdentityConfidence):
-            confidence = confidence_raw.value
-        else:
-            confidence = str(confidence_raw or "").strip().lower()
-
         terminal_context = session.terminal_context
-        terminal_window_id = getattr(terminal_context, "window_id", None)
-        context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
-        tmux_pane = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
-        pty = str(getattr(terminal_context, "pty", "") or "").strip()
-        has_anchor = bool(
-            session.window_id is not None
-            or terminal_window_id is not None
-            or context_key
-            or tmux_pane
-            or pty
+        terminal_anchor_id = str(
+            getattr(terminal_context, "terminal_anchor_id", "") or ""
+        ).strip()
+        has_project = bool(str(session.project or "").strip() or str(session.project_path or "").strip())
+        return bool(
+            session.focusable
+            and not session.invalid_reason
+            and terminal_anchor_id
+            and session.window_id is not None
+            and has_project
         )
-        has_project = bool(session.project or session.project_path)
-
-        if confidence == IdentityConfidence.NATIVE.value and session.native_session_id:
-            return has_project or has_anchor
-
-        # Long-lived sessions that survive a monitor restart may only be
-        # recoverable from process correlation until the next native OTEL event.
-        if confidence in {IdentityConfidence.PID.value, IdentityConfidence.PANE.value}:
-            return has_project and has_anchor
-
-        return False
 
     async def process_event(self, event: TelemetryEvent) -> None:
         """Process a telemetry event and update session state.
@@ -1881,6 +1895,26 @@ class SessionTracker:
             if not event_terminal_context.get(key):
                 event_terminal_context[key] = value
                 resolved_context_keys.add(key)
+
+        explicit_anchor_id = str(
+            event_terminal_context.get("terminal_anchor_id") or ""
+        ).strip()
+        if explicit_anchor_id and resolved_window_id is None:
+            anchor_context = await query_daemon_for_terminal_anchor(explicit_anchor_id)
+            if isinstance(anchor_context, dict):
+                event_terminal_context["anchor_lookup"] = (
+                    anchor_context.get("binding")
+                    or anchor_context.get("error")
+                    or "unknown"
+                )
+                window_id_raw = anchor_context.get("window_id")
+                try:
+                    resolved_window_id = int(window_id_raw) if window_id_raw is not None else None
+                except (TypeError, ValueError):
+                    resolved_window_id = None
+                anchor_project = str(anchor_context.get("project_name") or "").strip()
+                if anchor_project:
+                    resolved_project = anchor_project
 
         project_for_identity = event_project or resolved_project
         has_explicit_terminal_identity = bool(
@@ -1974,6 +2008,12 @@ class SessionTracker:
                     status_reason="created",
                 )
                 session.terminal_context.window_id = resolved_window_id
+                session.terminal_context.terminal_anchor_id = event_terminal_context.get(
+                    "terminal_anchor_id"
+                )
+                session.terminal_context.anchor_lookup = event_terminal_context.get(
+                    "anchor_lookup"
+                )
                 session.terminal_context.tmux_session = event_terminal_context.get(
                     "tmux_session"
                 )
@@ -2049,12 +2089,30 @@ class SessionTracker:
                 if session.identity_confidence != IdentityConfidence.NATIVE:
                     session.identity_confidence = IdentityConfidence.PID
 
+            has_fresh_pid_context = bool(client_pid is not None)
+            stale_window_binding = bool(
+                resolved_window_id is not None
+                and session.window_id is not None
+                and session.window_id != resolved_window_id
+            )
+            stale_event_project = bool(
+                event_project
+                and session.project
+                and not self._project_names_match(session.project, event_project)
+            )
+            stale_resolved_project = bool(
+                resolved_project
+                and session.project
+                and not self._project_names_match(session.project, resolved_project)
+            )
+
             if (
                 resolved_window_id is not None
                 and (
                     session.window_id is None
                     or not session.native_session_id
                     or allow_native_context_override
+                    or (has_fresh_pid_context and stale_window_binding)
                 )
             ):
                 session.window_id = resolved_window_id
@@ -2064,9 +2122,13 @@ class SessionTracker:
                 not session.project
                 or not session.native_session_id
                 or allow_native_context_override
+                or (has_fresh_pid_context and stale_event_project)
             ):
                 session.project = event_project
-            if resolved_project and not session.project:
+            if resolved_project and (
+                not session.project
+                or (has_fresh_pid_context and stale_resolved_project)
+            ):
                 session.project = resolved_project
             if event_project_path and (
                 not session.project_path
@@ -2078,6 +2140,8 @@ class SessionTracker:
                 session.project = session.project_path
 
             for key in (
+                "terminal_anchor_id",
+                "anchor_lookup",
                 "tmux_session",
                 "tmux_window",
                 "tmux_pane",
@@ -2108,61 +2172,13 @@ class SessionTracker:
                 session.trace_id = event.trace_id
                 session.status_reason = "trace_correlated"
 
-            # Fallback correlation for events that don't include process.pid.
-            # Reuse context from active process-backed sessions when unambiguous.
-            if session.window_id is None and event.tool:
-                (
-                    fallback_window_id,
-                    fallback_project,
-                    fallback_pid,
-                    fallback_terminal_ctx,
-                    fallback_confidence,
-                ) = self._resolve_context_from_process_sessions_unlocked(
-                    tool,
-                    session.project,
-                    event_terminal_context,
-                )
-                if fallback_window_id is not None:
-                    session.window_id = fallback_window_id
-                    session.terminal_context.window_id = fallback_window_id
-                    if fallback_project:
-                        session.project = fallback_project
-                    if session.pid is None and fallback_pid is not None:
-                        session.pid = fallback_pid
-                    if fallback_confidence != IdentityConfidence.HEURISTIC:
-                        session.identity_confidence = fallback_confidence
-                    for key in (
-                        "tmux_session",
-                        "tmux_window",
-                        "tmux_pane",
-                        "pty",
-                        "host_name",
-                        "execution_mode",
-                        "connection_key",
-                        "context_key",
-                        "remote_target",
-                    ):
-                        value = fallback_terminal_ctx.get(key)
-                        if value and not getattr(session.terminal_context, key):
-                            setattr(session.terminal_context, key, value)
-                    session.status_reason = "window_correlated_fallback"
-                    logger.info(
-                        "Fallback correlation: %s -> window %s via active %s process session",
-                        session.session_id,
-                        fallback_window_id,
-                        tool,
-                    )
-                elif self._has_tmux_context(event_terminal_context) and session.identity_confidence not in (
-                    IdentityConfidence.NATIVE,
-                    IdentityConfidence.PID,
-                ):
-                    session.identity_confidence = IdentityConfidence.PANE
-                elif (
-                    session.native_session_id
-                    and not session.terminal_context.tmux_pane
-                    and not session.terminal_context.pty
-                ):
-                    self._bind_native_to_process_candidate_unlocked(session, tool)
+            if self._has_tmux_context(event_terminal_context) and session.identity_confidence not in (
+                IdentityConfidence.NATIVE,
+                IdentityConfidence.PID,
+            ):
+                session.identity_confidence = IdentityConfidence.PANE
+
+            self._apply_tracking_contract_unlocked(session)
 
             self._update_metrics(session, event)
             await self._handle_tool_lifecycle(session, event)
@@ -2281,50 +2297,11 @@ class SessionTracker:
                     session_id = f"{tool.value}:pid:{pid}"
                     provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
 
-                    session = Session(
-                        session_id=session_id,
-                        identity_confidence=IdentityConfidence.PID,
-                        tool=tool,
-                        provider=provider,
-                        state=SessionState.IDLE,
-                        project=resolved_project,
-                        project_path=None,
-                        window_id=resolved_window_id,
-                        native_session_id=None,
-                        pid=pid,
-                        created_at=now,
-                        last_event_at=now,
-                        state_changed_at=now,
-                        state_seq=1,
-                        status_reason="metrics_heartbeat_created",
+                    logger.debug(
+                        "Ignoring heartbeat-only session for %s pid=%s; anchor-only cutover requires telemetry-backed session creation",
+                        tool.value,
+                        pid,
                     )
-                    session.terminal_context.window_id = resolved_window_id
-                    session.terminal_context.tmux_session = resolved_terminal_context.get(
-                        "tmux_session"
-                    )
-                    session.terminal_context.tmux_window = resolved_terminal_context.get(
-                        "tmux_window"
-                    )
-                    session.terminal_context.tmux_pane = resolved_terminal_context.get(
-                        "tmux_pane"
-                    )
-                    session.terminal_context.pty = resolved_terminal_context.get("pty")
-                    session.terminal_context.host_name = resolved_terminal_context.get("host_name")
-                    session.terminal_context.execution_mode = resolved_terminal_context.get("execution_mode")
-                    session.terminal_context.connection_key = resolved_terminal_context.get("connection_key")
-                    session.terminal_context.context_key = resolved_terminal_context.get("context_key")
-                    session.terminal_context.remote_target = resolved_terminal_context.get("remote_target")
-                    # Feature 137: Evict oldest IDLE session if at capacity
-                    if len(self._sessions) >= MAX_SESSIONS:
-                        self._evict_oldest_idle_session()
-                    self._sessions[session_id] = session
-                    self._session_pids[session_id] = pid
-                    logger.info(
-                        f"Created session {session_id} from metrics heartbeat "
-                        f"for {tool.value} (pid={pid}, window_id={resolved_window_id}, project={resolved_project})"
-                    )
-                    found_session = True
-                    changed = True
 
             # Fall back to extending all working sessions for tool
             if not found_session:
@@ -3021,6 +2998,7 @@ class SessionTracker:
         updated_at = datetime.now(timezone.utc).isoformat()
 
         items = []
+        diagnostics = []
         fingerprint_source = []
         snapshot_now = datetime.now(timezone.utc)
         for s in active_sessions:
@@ -3050,6 +3028,8 @@ class SessionTracker:
                 project_path=s.project_path,
                 window_id=s.window_id,
                 terminal_context=s.terminal_context,
+                focusable=s.focusable,
+                invalid_reason=s.invalid_reason,
                 pid=s.pid,
                 trace_id=s.trace_id,
                 pending_tools=s.pending_tools,
@@ -3088,6 +3068,7 @@ class SessionTracker:
                     item.project_source,
                     s.project_path,
                     s.window_id,
+                    s.terminal_context.terminal_anchor_id,
                     s.terminal_context.tmux_session,
                     s.terminal_context.tmux_window,
                     s.terminal_context.tmux_pane,
@@ -3115,6 +3096,26 @@ class SessionTracker:
                     int(stage_fields["activity_age_seconds"]),
                     str(stage_fields["identity_source"]),
                     str(stage_fields["lifecycle_source"]),
+                    bool(s.focusable),
+                    str(s.invalid_reason or ""),
+                )
+            )
+
+        for diagnostic in sorted(
+            self._session_diagnostics.values(),
+            key=lambda entry: (
+                str(entry.get("reason") or ""),
+                str(entry.get("session_id") or ""),
+            ),
+        ):
+            diagnostics.append(dict(diagnostic))
+            fingerprint_source.append(
+                (
+                    "diagnostic",
+                    str(diagnostic.get("session_id") or ""),
+                    str(diagnostic.get("reason") or ""),
+                    str(diagnostic.get("terminal_anchor_id") or ""),
+                    str(diagnostic.get("detail") or ""),
                 )
             )
 
@@ -3141,6 +3142,7 @@ class SessionTracker:
         session_list = SessionList(
             sessions=items,
             sessions_by_window=sessions_by_window,
+            diagnostics=diagnostics,
             timestamp=int(datetime.now(timezone.utc).timestamp()),
             updated_at=updated_at,
             has_working=has_working,

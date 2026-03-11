@@ -53,6 +53,7 @@ class WindowInfo:
     correlation_confidence: Optional[float] = None  # Correlation confidence (0.0-1.0)
     correlation_confidence_level: Optional[str] = None  # Confidence level: EXACT, HIGH, MEDIUM, LOW
     correlation_signals: Optional[Dict[str, Any]] = None  # Signals used in correlation
+    terminal_anchor_id: Optional[str] = None  # Canonical terminal/session anchor issued at launch
 
     def __post_init__(self) -> None:
         """Validate window information."""
@@ -1044,6 +1045,10 @@ class PendingLaunch(BaseModel):
     pwa_match_domains: list[str] = Field(
         default_factory=list,
         description="Candidate domains for matching dynamic Chrome PWA app_ids"
+    )
+    terminal_anchor_id: str = Field(
+        ...,
+        description="Canonical terminal/session anchor ID injected into the launched process tree"
     )
 
     # State tracking

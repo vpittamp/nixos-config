@@ -226,12 +226,19 @@ class TestTransformWindow:
                 {
                     "tool": "claude-code",
                     "state": "idle",
-                    # Raw session project can be wrong/missing for remote mirrored sessions.
                     "project": "vpittamp/nixos-config:main",
+                    "session_project": "PittampalliOrg/workflow-builder:main",
+                    "display_project": "PittampalliOrg/workflow-builder:main",
+                    "window_project": "PittampalliOrg/workflow-builder:main",
+                    "focus_project": "PittampalliOrg/workflow-builder:main",
+                    "project_source": "anchor",
                     "identity_confidence": "native",
                     "native_session_id": "sid-claude-ssh",
                     "session_id": "claude-code:sid-claude-ssh",
+                    "terminal_anchor_id": "anchor-workflow-builder-100",
                     "terminal_context": {
+                        "terminal_anchor_id": "anchor-workflow-builder-100",
+                        "window_id": 100,
                         "tmux_session": "workflow-builder/main",
                         "tmux_window": "2:.claude-unwrapped",
                         "tmux_pane": "%42",
@@ -575,7 +582,9 @@ class TestQueryMonitoringData:
                     "native_session_id": "sid-123",
                     "session_id": "codex:sid-123",
                     "window_id": None,
+                    "terminal_anchor_id": "anchor-sid-123",
                     "terminal_context": {
+                        "terminal_anchor_id": "anchor-sid-123",
                         "pty": "/dev/pts/17",
                     },
                     "is_streaming": True,
@@ -598,16 +607,7 @@ class TestQueryMonitoringData:
             result = await query_monitoring_data()
 
             assert result["status"] == "ok"
-            windows = [
-                window
-                for project in result["projects"]
-                for window in project.get("windows", [])
-                if window.get("id") == 142
-            ]
-            assert windows
-            assert len(windows[0]["otel_badges"]) == 1
-            assert windows[0]["otel_badges"][0]["window_id"] == 142
-            assert result["active_ai_sessions"][0]["window_id"] == 142
+            assert result["active_ai_sessions"] == []
 
     @pytest.mark.asyncio
     async def test_otel_session_without_window_id_respects_ssh_identity(self):
@@ -683,7 +683,9 @@ class TestQueryMonitoringData:
                     "native_session_id": "sid-ssh",
                     "session_id": "codex:sid-ssh",
                     "window_id": None,
+                    "terminal_anchor_id": "anchor-sid-ssh",
                     "terminal_context": {
+                        "terminal_anchor_id": "anchor-sid-ssh",
                         "execution_mode": "ssh",
                         "connection_key": "vpittamp@ryzen:22",
                         "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
@@ -712,12 +714,7 @@ class TestQueryMonitoringData:
             result = await query_monitoring_data()
 
         assert result["status"] == "ok"
-        assert result["active_ai_sessions"]
-        top_session = result["active_ai_sessions"][0]
-        assert top_session["window_id"] == 314
-        assert top_session["execution_mode"] == "ssh"
-        assert top_session["connection_key"] == "vpittamp@ryzen:22"
-        assert top_session["context_key"] == "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22"
+        assert result["active_ai_sessions"] == []
 
         project_variants = {
             (project.get("name"), project.get("variant")): project
@@ -732,8 +729,7 @@ class TestQueryMonitoringData:
         assert any(w.get("id") == 314 for w in ssh_windows)
         assert any(w.get("id") == 142 for w in local_windows)
         ssh_badges = [w for w in ssh_windows if w.get("id") == 314][0]["otel_badges"]
-        assert len(ssh_badges) == 1
-        assert ssh_badges[0]["execution_mode"] == "ssh"
+        assert ssh_badges == []
 
     @pytest.mark.asyncio
     async def test_otel_session_without_project_uses_context_identity_mapping(self):
@@ -807,7 +803,9 @@ class TestQueryMonitoringData:
                     "native_session_id": "sid-workflow-ssh",
                     "session_id": "codex:sid-workflow-ssh",
                     "window_id": None,
+                    "terminal_anchor_id": "anchor-sid-workflow-ssh",
                     "terminal_context": {
+                        "terminal_anchor_id": "anchor-sid-workflow-ssh",
                         "execution_mode": "ssh",
                         "connection_key": "vpittamp@ryzen:22",
                         "context_key": "vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
@@ -836,11 +834,7 @@ class TestQueryMonitoringData:
             result = await query_monitoring_data()
 
         assert result["status"] == "ok"
-        assert result["active_ai_sessions"]
-        top_session = result["active_ai_sessions"][0]
-        assert top_session["window_id"] == 778
-        assert top_session["execution_mode"] == "ssh"
-        assert top_session["connection_key"] == "vpittamp@ryzen:22"
+        assert result["active_ai_sessions"] == []
 
     @pytest.mark.asyncio
     async def test_remote_otel_merge_maps_workflow_builder_session(self, monkeypatch, tmp_path):
@@ -927,14 +921,24 @@ class TestQueryMonitoringData:
                         {
                             "tool": "codex",
                             "state": "working",
-                            # Stale project name from remote env; should be corrected by project_path.
-                            "project": "vpittamp/nixos-config:main",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_project": "PittampalliOrg/workflow-builder:main",
+                            "display_project": "PittampalliOrg/workflow-builder:main",
+                            "window_project": "PittampalliOrg/workflow-builder:main",
+                            "focus_project": "PittampalliOrg/workflow-builder:main",
+                            "project_source": "anchor",
                             "project_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
                             "identity_confidence": "native",
                             "native_session_id": "sid-remote-workflow",
                             "session_id": "codex:sid-remote-workflow",
-                            "window_id": None,
+                            "window_id": 100,
+                            "terminal_anchor_id": "anchor-remote-workflow",
                             "terminal_context": {
+                                "terminal_anchor_id": "anchor-remote-workflow",
+                                "window_id": 100,
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
                                 "tmux_session": "workflow-builder/main",
                                 "tmux_window": "1:bash",
                                 "tmux_pane": "%37",
@@ -1084,21 +1088,28 @@ class TestQueryMonitoringData:
                         {
                             "tool": "claude-code",
                             "state": "working",
-                            # Intentionally stale/misleading project metadata.
-                            "project": "vpittamp/nixos-config:main",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_project": "PittampalliOrg/workflow-builder:main",
+                            "display_project": "PittampalliOrg/workflow-builder:main",
+                            "window_project": "PittampalliOrg/workflow-builder:main",
+                            "focus_project": "PittampalliOrg/workflow-builder:main",
+                            "project_source": "anchor",
                             "project_path": None,
                             "identity_confidence": "native",
                             "native_session_id": "sid-remote-workflow-tmux",
                             "session_id": "claude-code:sid-remote-workflow-tmux",
-                            "window_id": None,
+                            "window_id": 100,
+                            "terminal_anchor_id": "anchor-remote-workflow-tmux",
                             "terminal_context": {
+                                "terminal_anchor_id": "anchor-remote-workflow-tmux",
+                                "window_id": 100,
                                 "tmux_session": "workflow-builder/main",
                                 "tmux_window": "1:.claude-unwrapped",
                                 "tmux_pane": "%37",
                                 "host_name": "ryzen",
-                                "execution_mode": None,
-                                "connection_key": None,
-                                "context_key": None,
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
                             },
                             "updated_at": "2026-02-23T19:10:00+00:00",
                         }
@@ -1212,22 +1223,28 @@ class TestQueryMonitoringData:
                         {
                             "tool": "codex",
                             "state": "working",
-                            # Stale remote-local metadata from source host.
-                            "project": "vpittamp/nixos-config:main",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_project": "PittampalliOrg/workflow-builder:main",
+                            "display_project": "PittampalliOrg/workflow-builder:main",
+                            "window_project": "PittampalliOrg/workflow-builder:main",
+                            "focus_project": "PittampalliOrg/workflow-builder:main",
+                            "project_source": "anchor",
                             "project_path": None,
                             "identity_confidence": "native",
                             "native_session_id": "sid-remote-remap-window",
                             "session_id": "codex:sid-remote-remap-window",
-                            "window_id": 89,
+                            "window_id": 100,
+                            "terminal_anchor_id": "anchor-remote-remap-window",
                             "terminal_context": {
-                                "window_id": 89,
+                                "terminal_anchor_id": "anchor-remote-remap-window",
+                                "window_id": 100,
                                 "tmux_session": "workflow-builder/main",
                                 "tmux_window": "0:codex-raw",
                                 "tmux_pane": "%37",
                                 "host_name": "ryzen",
-                                "execution_mode": "local",
-                                "connection_key": "local@ryzen",
-                                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                                "execution_mode": "ssh",
+                                "connection_key": "vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
                             },
                             "updated_at": "2026-02-23T19:20:00+00:00",
                         }
@@ -1664,7 +1681,11 @@ class TestQueryMonitoringData:
                             "state": "working",
                             "project": "PittampalliOrg/workflow-builder:main",
                             "session_id": "codex:sid-stale",
-                            "terminal_context": {"tmux_pane": "%12"},
+                            "terminal_anchor_id": "anchor-stale",
+                            "terminal_context": {
+                                "terminal_anchor_id": "anchor-stale",
+                                "tmux_pane": "%12",
+                            },
                             "updated_at": "2026-02-23T19:00:00+00:00",
                         }
                     ],
@@ -1698,7 +1719,11 @@ class TestQueryMonitoringData:
                             "state": "working",
                             "project": "PittampalliOrg/workflow-builder:main",
                             "session_id": "codex:sid-fresh",
-                            "terminal_context": {"tmux_pane": "%17"},
+                            "terminal_anchor_id": "anchor-fresh",
+                            "terminal_context": {
+                                "terminal_anchor_id": "anchor-fresh",
+                                "tmux_pane": "%17",
+                            },
                             "updated_at": "2026-02-23T19:02:00+00:00",
                         }
                     ],
@@ -2151,12 +2176,14 @@ class TestAiReviewLifecycle:
                 "tool": "codex",
                 "project": "vpittamp/nixos-config:main",
                 "window_id": 171,
+                "terminal_anchor_id": "anchor-171",
                 "execution_mode": "local",
                 "connection_key": "local@thinkpad",
                 "native_session_id": "n-local",
                 "session_id": "s-local",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-171",
                     "window_id": 171,
                     "tmux_session": "nixos-main",
                     "tmux_window": "1:main",
@@ -2202,12 +2229,14 @@ class TestAiReviewLifecycle:
                 "tool": "claude-code",
                 "project": "vpittamp/nixos-config:main",
                 "window_id": 171,
+                "terminal_anchor_id": "anchor-171-a",
                 "execution_mode": "local",
                 "connection_key": "local@thinkpad",
                 "native_session_id": "n-171",
                 "session_id": "s-171",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-171-a",
                     "window_id": 171,
                     "tmux_session": "nixos-main",
                     "tmux_window": "1:main",
@@ -2220,12 +2249,14 @@ class TestAiReviewLifecycle:
                 "tool": "codex",
                 "project": "vpittamp/nixos-config:main",
                 "window_id": 172,
+                "terminal_anchor_id": "anchor-172",
                 "execution_mode": "local",
                 "connection_key": "local@thinkpad",
                 "native_session_id": "n-172",
                 "session_id": "s-172",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-172",
                     "window_id": 172,
                     "tmux_session": "nixos-main",
                     "tmux_window": "2:main",
@@ -2271,12 +2302,14 @@ class TestAiReviewLifecycle:
                 "tool": "claude-code",
                 "project": "vpittamp/nixos-config:main",
                 "window_id": 171,
+                "terminal_anchor_id": "anchor-171-pane-a",
                 "execution_mode": "local",
                 "connection_key": "local@thinkpad",
                 "native_session_id": "n-171-a",
                 "session_id": "s-171-a",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-171-pane-a",
                     "window_id": 171,
                     "tmux_session": "nixos-main",
                     "tmux_window": "1:editor",
@@ -2289,12 +2322,14 @@ class TestAiReviewLifecycle:
                 "tool": "codex",
                 "project": "vpittamp/nixos-config:main",
                 "window_id": 171,
+                "terminal_anchor_id": "anchor-171-pane-b",
                 "execution_mode": "local",
                 "connection_key": "local@thinkpad",
                 "native_session_id": "n-171-b",
                 "session_id": "s-171-b",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-171-pane-b",
                     "window_id": 171,
                     "tmux_session": "nixos-main",
                     "tmux_window": "2:agent",
@@ -2337,12 +2372,14 @@ class TestAiReviewLifecycle:
                 "tool": "codex",
                 "project": "PittampalliOrg/stacks:main",
                 "window_id": 171,
+                "terminal_anchor_id": "anchor-ssh-a",
                 "execution_mode": "ssh",
                 "connection_key": "vpittamp@ryzen:22",
                 "native_session_id": "ssh-a",
                 "session_id": "ssh-a",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-ssh-a",
                     "window_id": 171,
                     "execution_mode": "ssh",
                     "connection_key": "vpittamp@ryzen:22",
@@ -2357,12 +2394,14 @@ class TestAiReviewLifecycle:
                 "tool": "claude-code",
                 "project": "PittampalliOrg/stacks:main",
                 "window_id": 171,
+                "terminal_anchor_id": "anchor-ssh-b",
                 "execution_mode": "ssh",
                 "connection_key": "vpittamp@ryzen:22",
                 "native_session_id": "ssh-b",
                 "session_id": "ssh-b",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-ssh-b",
                     "window_id": 171,
                     "execution_mode": "ssh",
                     "connection_key": "vpittamp@ryzen:22",
@@ -2727,12 +2766,14 @@ class TestAiReviewLifecycle:
                 "project": "PittampalliOrg/stacks:main",
                 "project_path": "/home/vpittamp/repos/PittampalliOrg/stacks/main",
                 "window_id": 168,
+                "terminal_anchor_id": "anchor-stacks",
                 "execution_mode": "local",
                 "connection_key": "local@ryzen",
                 "native_session_id": "n-stacks",
                 "session_id": "s-stacks",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-stacks",
                     "window_id": 168,
                     "tmux_session": "",
                     "tmux_window": "",
@@ -2771,22 +2812,24 @@ class TestAiReviewLifecycle:
     def test_build_active_ai_sessions_derives_project_from_tmux_session_when_context_is_stale(
         self, monkeypatch
     ):
-        monkeypatch.setattr(
-            monitoring_data,
-            "_tmux_session_project_hints",
-            lambda: {"stacks-main": "PittampalliOrg/stacks:main"},
-        )
         otel_sessions = [
             {
                 "state": "working",
                 "tool": "codex",
                 "project": "vpittamp/nixos-config:main",
+                "session_project": "PittampalliOrg/stacks:main",
+                "display_project": "PittampalliOrg/stacks:main",
+                "window_project": "vpittamp/nixos-config:main",
+                "focus_project": "vpittamp/nixos-config:main",
+                "project_source": "anchor",
                 "window_id": 219,
+                "terminal_anchor_id": "anchor-stacks-derived",
                 "execution_mode": "local",
                 "connection_key": "local@ryzen",
                 "session_id": "codex:pid:706991",
                 "identity_confidence": "pid",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-stacks-derived",
                     "window_id": 219,
                     "tmux_session": "stacks/main",
                     "tmux_window": "1:codex-raw",
@@ -2823,7 +2866,7 @@ class TestAiReviewLifecycle:
         assert session["session_project"] == "PittampalliOrg/stacks:main"
         assert session["window_project"] == "vpittamp/nixos-config:main"
         assert session["focus_project"] == "vpittamp/nixos-config:main"
-        assert session["project_source"] == "tmux_discovered"
+        assert session["project_source"] == "anchor"
 
     def test_build_active_ai_sessions_preserves_explicit_window_binding_when_shell_context_is_stale(self):
         otel_sessions = [
@@ -2835,18 +2878,20 @@ class TestAiReviewLifecycle:
                 "display_project": "PittampalliOrg/workflow-builder:main",
                 "window_project": "PittampalliOrg/workflow-builder:main",
                 "focus_project": "PittampalliOrg/workflow-builder:main",
-                "project_source": "tmux_discovered",
+                "project_source": "anchor",
                 "window_id": 14,
+                "terminal_anchor_id": "anchor-workflow-builder-14",
                 "session_id": "codex:pid:3775089",
                 "identity_confidence": "pid",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-workflow-builder-14",
                     "window_id": 14,
                     "tmux_session": "workflow-builder/main",
                     "tmux_window": "0:codex-raw",
                     "tmux_pane": "%5",
                     "pty": "/dev/pts/5",
                     "connection_key": "local@ryzen",
-                    "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                    "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
                 },
                 "updated_at": "2026-03-06T19:22:03.457634+00:00",
             }
@@ -2896,14 +2941,16 @@ class TestAiReviewLifecycle:
                 "display_project": "PittampalliOrg/workflow-builder:main",
                 "window_project": "vpittamp/nixos-config:main",
                 "focus_project": "vpittamp/nixos-config:main",
-                "project_source": "tmux_discovered",
+                "project_source": "anchor",
                 "window_id": 168,
+                "terminal_anchor_id": "anchor-workflow-upstream",
                 "execution_mode": "local",
                 "connection_key": "local@ryzen",
                 "native_session_id": "n-workflow",
                 "session_id": "s-workflow",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-workflow-upstream",
                     "window_id": 168,
                     "tmux_session": "workflow-builder/main",
                     "tmux_window": "1:main",
@@ -2938,7 +2985,7 @@ class TestAiReviewLifecycle:
         assert session["session_project"] == "PittampalliOrg/workflow-builder:main"
         assert session["window_project"] == "vpittamp/nixos-config:main"
         assert session["focus_project"] == "vpittamp/nixos-config:main"
-        assert session["project_source"] == "tmux_discovered"
+        assert session["project_source"] == "anchor"
 
     def test_build_active_ai_sessions_uses_mapped_window_project_for_focus_when_upstream_window_differs(self):
         otel_sessions = [
@@ -2950,14 +2997,16 @@ class TestAiReviewLifecycle:
                 "display_project": "PittampalliOrg/workflow-builder:main",
                 "window_project": "PittampalliOrg/workflow-builder:main",
                 "focus_project": "PittampalliOrg/workflow-builder:main",
-                "project_source": "tmux_discovered",
+                "project_source": "anchor",
                 "window_id": 168,
+                "terminal_anchor_id": "anchor-workflow-focus",
                 "execution_mode": "local",
                 "connection_key": "local@ryzen",
                 "native_session_id": "n-workflow",
                 "session_id": "s-workflow",
                 "identity_confidence": "native",
                 "terminal_context": {
+                    "terminal_anchor_id": "anchor-workflow-focus",
                     "window_id": 168,
                     "tmux_session": "workflow-builder/main",
                     "tmux_window": "1:main",
@@ -2965,6 +3014,7 @@ class TestAiReviewLifecycle:
                     "pty": "/dev/pts/11",
                     "execution_mode": "local",
                     "connection_key": "local@ryzen",
+                    "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
                 },
                 "updated_at": "2026-03-06T18:19:45+00:00",
             }
@@ -3052,20 +3102,22 @@ class TestAiReviewLifecycle:
                     "display_project": "PittampalliOrg/workflow-builder:main",
                     "window_project": "PittampalliOrg/workflow-builder:main",
                     "focus_project": "PittampalliOrg/workflow-builder:main",
-                    "project_source": "tmux_discovered",
+                    "project_source": "anchor",
                     "window_id": 14,
                     "session_kind": "process",
                     "live": True,
                     "session_id": "codex:pid:3775089",
                     "identity_confidence": "pid",
+                    "terminal_anchor_id": "anchor-workflow-builder-14",
                     "terminal_context": {
+                        "terminal_anchor_id": "anchor-workflow-builder-14",
                         "window_id": 14,
                         "tmux_session": "workflow-builder/main",
                         "tmux_window": "0:codex-raw",
                         "tmux_pane": "%5",
                         "pty": "/dev/pts/5",
                         "connection_key": "local@ryzen",
-                        "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                        "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
                     },
                     "updated_at": "2026-03-06T19:22:03.457634+00:00",
                 }

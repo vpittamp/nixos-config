@@ -72,6 +72,7 @@ try {
         pid: parentPid,
         projectName: process.env.I3PM_PROJECT_NAME || null,
         projectPath: process.env.I3PM_PROJECT_PATH || process.cwd(),
+        terminalAnchorId: process.env.I3PM_TERMINAL_ANCHOR_ID || null,
         tmuxSession: process.env.TMUX_SESSION || null,
         tmuxWindow: process.env.TMUX_WINDOW || null,
         tmuxPane: process.env.TMUX_PANE || null,

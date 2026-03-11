@@ -669,25 +669,64 @@ async def on_window_new(
             timestamp=time.time(),
         )
 
-        # Query launch registry for matching pending launch
-        matched_launch = await state_manager.launch_registry.find_match(launch_window_info)
+        matched_launch = None
+        correlation_signals = None
+        confidence_level = None
+        terminal_anchor_id = (
+            window_env.terminal_anchor_id
+            if window_env and getattr(window_env, "terminal_anchor_id", "")
+            else None
+        )
+
+        if terminal_anchor_id:
+            matched_launch = await state_manager.launch_registry.find_by_terminal_anchor(
+                terminal_anchor_id
+            )
+            if matched_launch:
+                correlation_confidence = 1.0
+                correlation_signals = {
+                    "terminal_anchor_id": terminal_anchor_id,
+                    "match_type": "terminal_anchor_exact",
+                    "workspace_match": matched_launch.workspace_number == workspace_number,
+                }
+                confidence_level = "ANCHOR"
+                correlated_project = matched_launch.project_name
+                logger.info(
+                    "Bound window %s (%s) to terminal anchor %s for project '%s'",
+                    window_id,
+                    window_class,
+                    terminal_anchor_id,
+                    correlated_project,
+                )
+            else:
+                logger.error(
+                    "Window %s (%s) exposed terminal anchor %s without a pending daemon registration",
+                    window_id,
+                    window_class,
+                    terminal_anchor_id,
+                )
+
+        # Query launch registry for matching pending launch when no exact anchor was available.
+        if matched_launch is None:
+            matched_launch = await state_manager.launch_registry.find_match(launch_window_info)
 
         if matched_launch:
             # Successful correlation - use project from launch notification
             # T040: calculate_confidence now returns (confidence, signals) tuple
-            from .services.window_correlator import calculate_confidence
-            correlation_confidence, correlation_signals = calculate_confidence(matched_launch, launch_window_info)
-            correlated_project = matched_launch.project_name
+            if confidence_level != "ANCHOR":
+                from .services.window_correlator import calculate_confidence
+                correlation_confidence, correlation_signals = calculate_confidence(matched_launch, launch_window_info)
+                correlated_project = matched_launch.project_name
 
-            # Determine confidence level for logging
-            if correlation_confidence >= 1.0:
-                confidence_level = "EXACT"
-            elif correlation_confidence >= 0.8:
-                confidence_level = "HIGH"
-            elif correlation_confidence >= 0.6:
-                confidence_level = "MEDIUM"
-            else:
-                confidence_level = "LOW"
+                # Determine confidence level for logging
+                if correlation_confidence >= 1.0:
+                    confidence_level = "EXACT"
+                elif correlation_confidence >= 0.8:
+                    confidence_level = "HIGH"
+                elif correlation_confidence >= 0.6:
+                    confidence_level = "MEDIUM"
+                else:
+                    confidence_level = "LOW"
 
             # T040: Enhanced logging with workspace match information
             workspace_match_str = ""
@@ -861,6 +900,7 @@ async def on_window_new(
             correlation_confidence=correlation_confidence if matched_launch else None,
             correlation_confidence_level=confidence_level if matched_launch else None,
             correlation_signals=correlation_signals if matched_launch else None,
+            terminal_anchor_id=terminal_anchor_id,
         )
         await state_manager.add_window(window_info)
 

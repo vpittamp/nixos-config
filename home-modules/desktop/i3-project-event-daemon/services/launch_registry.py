@@ -97,6 +97,33 @@ class LaunchRegistry:
 
         return launch_id
 
+    async def find_by_terminal_anchor(self, terminal_anchor_id: str) -> Optional[PendingLaunch]:
+        """Return the pending launch registered for an exact terminal anchor."""
+        await self._cleanup_expired()
+        target = str(terminal_anchor_id or "").strip()
+        if not target:
+            return None
+
+        for launch in self._launches.values():
+            if str(launch.terminal_anchor_id or "").strip() != target:
+                continue
+            if not launch.matched:
+                launch.matched = True
+                self._total_matched += 1
+            return launch
+        return None
+
+    async def get_by_terminal_anchor(self, terminal_anchor_id: str) -> Optional[PendingLaunch]:
+        """Return a pending launch by exact anchor without mutating match state."""
+        await self._cleanup_expired()
+        target = str(terminal_anchor_id or "").strip()
+        if not target:
+            return None
+        for launch in self._launches.values():
+            if str(launch.terminal_anchor_id or "").strip() == target:
+                return launch
+        return None
+
     async def find_match(self, window: LaunchWindowInfo) -> Optional[PendingLaunch]:
         """
         Find the best matching pending launch for a window.

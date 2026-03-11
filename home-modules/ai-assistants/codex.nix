@@ -113,6 +113,8 @@ let
     append_otel_resource_attr "project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"
     append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"
     append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"
+    append_otel_resource_attr "terminal.anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"
+    append_otel_resource_attr "i3pm.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"
     append_otel_resource_attr "terminal.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"
     append_otel_resource_attr "i3pm.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"
     append_otel_resource_attr "terminal.connection_key" "''${I3PM_CONNECTION_KEY:-}"

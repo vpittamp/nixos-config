@@ -191,6 +191,7 @@ def load_otel_sessions() -> Dict[str, Any]:
         "timestamp": 0,
         "updated_at": "",
         "sessions_by_window": {},
+        "diagnostics": [],
     }
 
     if not OTEL_SESSIONS_FILE.exists():
@@ -206,6 +207,7 @@ def load_otel_sessions() -> Dict[str, Any]:
             updated_at = data.get("updated_at", "")
             schema_version = str(data.get("schema_version", "1"))
             sessions_by_window = data.get("sessions_by_window", {})
+            diagnostics = data.get("diagnostics", [])
 
             return {
                 "sessions": sessions,
@@ -214,6 +216,7 @@ def load_otel_sessions() -> Dict[str, Any]:
                 "updated_at": updated_at,
                 "schema_version": schema_version,
                 "sessions_by_window": sessions_by_window,
+                "diagnostics": diagnostics,
             }
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 123: Failed to read OTEL sessions file: {e}")
@@ -2111,21 +2114,13 @@ def _session_terminal_anchor(session: Dict[str, Any]) -> str:
     terminal_context = session.get("terminal_context", {}) or {}
     if not isinstance(terminal_context, dict):
         terminal_context = {}
-    tmux_pane = str(
-        session.get("tmux_pane")
-        or terminal_context.get("tmux_pane")
+    terminal_anchor_id = str(
+        session.get("terminal_anchor_id")
+        or terminal_context.get("terminal_anchor_id")
         or ""
     ).strip()
-    if tmux_pane:
-        return f"pane:{tmux_pane}"
-
-    pty = str(
-        session.get("pty")
-        or terminal_context.get("pty")
-        or ""
-    ).strip()
-    if pty:
-        return f"pty:{pty}"
+    if terminal_anchor_id:
+        return f"anchor:{terminal_anchor_id}"
     return ""
 
 
@@ -2136,7 +2131,7 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
     A session is eligible only when:
     - tool is one of supported AI CLIs
     - execution identity is concrete (local/ssh + connection key)
-    - terminal anchor is concrete (tmux pane or pty)
+    - terminal anchor is concrete (daemon-issued anchor ID)
     """
     tool = str(session.get("tool") or "").strip().lower()
     if tool not in _AI_TRACKABLE_TOOLS:
@@ -2149,7 +2144,10 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
         return False
     if not connection or connection in {"unknown", "global"}:
         return False
-
+    if not bool(session.get("focusable", True)):
+        return False
+    if str(session.get("invalid_reason") or "").strip():
+        return False
     return bool(_session_terminal_anchor(session))
 
 
@@ -2171,9 +2169,16 @@ def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
     window_id = session.get("window_id", terminal_context.get("window_id"))
     pane = str(terminal_context.get("tmux_pane") or "")
     pty = str(terminal_context.get("pty") or "")
+    terminal_anchor_id = str(
+        terminal_context.get("terminal_anchor_id")
+        or session.get("terminal_anchor_id")
+        or ""
+    )
 
     # Highest-priority dedupe scope: tool + concrete terminal context.
     # This keeps one badge per pane/pty even when many native session ids exist.
+    if terminal_anchor_id:
+        return f"tool={tool}|anchor={terminal_anchor_id}"
     if pane:
         return f"tool={tool}|pane={pane}"
     if pty:
@@ -2273,6 +2278,7 @@ def _coalesce_otel_badge_sessions(
         other_context = other.get("terminal_context", {}) or {}
         for ctx_key in (
             "window_id",
+            "terminal_anchor_id",
             "tmux_session",
             "tmux_window",
             "tmux_pane",
@@ -2822,145 +2828,29 @@ def _resolve_session_project_labels(
     *,
     window_project: str = "",
 ) -> Dict[str, str]:
-    """Resolve display vs. focus project labels for a session.
-
-    `session_project` is what the AI session is actually operating on.
-    `focus_project` is the project context required to reveal/focus the owning
-    window. They may differ for hidden/shared terminals or remote SSH anchors.
-    """
+    """Resolve canonical project labels from upstream anchor-backed session data."""
     upstream_session_project = str(session.get("session_project") or "").strip()
     upstream_display_project = str(session.get("display_project") or "").strip()
     upstream_focus_project = str(session.get("focus_project") or "").strip()
     upstream_window_project = str(session.get("window_project") or "").strip()
     upstream_project_source = str(session.get("project_source") or "").strip()
-    if any(
-        [
-            upstream_session_project,
-            upstream_display_project,
-            upstream_focus_project,
-            upstream_window_project,
-            upstream_project_source,
-        ]
-    ):
-        resolved_window_project = str(window_project or "").strip() or upstream_window_project
-        session_project = upstream_session_project or str(session.get("project") or "").strip()
-        display_project = (
-            upstream_display_project
-            or session_project
-            or resolved_window_project
-            or str(session.get("project") or "").strip()
-            or "unknown"
-        )
-        focus_project = resolved_window_project or upstream_focus_project or session_project or ""
-        project_source = upstream_project_source or ("session" if session_project else "window_fallback")
-        return {
-            "session_project": session_project,
-            "window_project": resolved_window_project,
-            "focus_project": focus_project,
-            "display_project": display_project,
-            "project_source": project_source,
-        }
-
-    normalized_session = _normalize_session_project_from_path(session)
-    session_project = str(normalized_session.get("project") or "").strip()
-    raw_session_project = str(session.get("project") or "").strip()
-    project_path = str(normalized_session.get("project_path") or "").strip()
-    window_project = str(window_project or "").strip()
-
-    terminal_context = normalized_session.get("terminal_context", {}) or {}
-    if not isinstance(terminal_context, dict):
-        terminal_context = {}
-
-    context_key = str(
-        normalized_session.get("context_key")
-        or terminal_context.get("context_key")
-        or ""
-    ).strip()
-    parsed_context = _parse_context_key(context_key)
-    context_project = str(parsed_context.get("qualified_name") or "").strip()
-
-    tmux_session_key = _normalize_session_name_key(
-        terminal_context.get("tmux_session") or session.get("tmux_session") or ""
+    resolved_window_project = str(window_project or "").strip() or upstream_window_project
+    session_project = upstream_session_project or str(session.get("project") or "").strip()
+    display_project = (
+        upstream_display_project
+        or session_project
+        or resolved_window_project
+        or "unknown"
     )
-    tmux_project = _tmux_session_project_hints().get(tmux_session_key, "")
-
-    def _projects_align(left: str, right: str) -> bool:
-        if not left or not right:
-            return False
-        left_exact, left_prefixes = _session_project_candidates(left)
-        right_exact, right_prefixes = _session_project_candidates(right)
-        return bool(
-            (left_exact and right_exact and left_exact.intersection(right_exact))
-            or (left_prefixes and right_prefixes and left_prefixes.intersection(right_prefixes))
-        )
-
-    def _project_matches_tmux(project_name: str) -> bool:
-        if not project_name or not tmux_session_key:
-            return False
-        suffix = _normalize_session_name_key(_project_session_suffix(project_name))
-        return bool(suffix and suffix == tmux_session_key)
-
-    session_project_source = "window_fallback"
-    session_project_trusted = False
-
-    if session_project:
-        session_project_source = "session"
-        session_project_trusted = False
-
-    if project_path:
-        session_project_source = "path"
-        session_project_trusted = True
-
-    if context_project:
-        if not session_project or not _projects_align(session_project, context_project):
-            session_project = context_project
-        session_project_source = "context"
-        session_project_trusted = True
-
-    if tmux_project:
-        if not session_project or not _projects_align(session_project, tmux_project):
-            session_project = tmux_project
-        if not context_project or not _projects_align(context_project, tmux_project):
-            session_project_source = "tmux_discovered"
-            session_project_trusted = True
-
-    if session_project and not session_project_trusted and _project_matches_tmux(session_project):
-        session_project_source = "tmux"
-        session_project_trusted = True
-
-    if not session_project and window_project:
-        session_project = window_project
-        session_project_source = "window_fallback"
-        session_project_trusted = False
-
-    if (
-        session_project
-        and not session_project_trusted
-        and window_project
-        and not _projects_align(session_project, window_project)
-        and _project_matches_tmux(window_project)
-        and not _project_matches_tmux(session_project)
-    ):
-        session_project = window_project
-        session_project_source = "tmux_window_fallback"
-
-    if (
-        session_project
-        and raw_session_project
-        and session_project_source == "session"
-        and _projects_align(session_project, window_project)
-    ):
-        session_project_trusted = True
-
-    display_project = session_project or window_project or "unknown"
-    focus_project = window_project or session_project or ""
+    focus_project = resolved_window_project or upstream_focus_project or session_project or ""
+    project_source = upstream_project_source or ("anchor" if session_project else "window")
 
     return {
-        "session_project": session_project or "",
-        "window_project": window_project,
+        "session_project": session_project,
+        "window_project": resolved_window_project,
         "focus_project": focus_project,
         "display_project": display_project,
-        "project_source": session_project_source,
+        "project_source": project_source,
     }
 
 
@@ -3363,84 +3253,12 @@ def _window_matches_session_identity(
 
 
 def _window_matches_session_binding(window: Dict[str, Any], session: Dict[str, Any]) -> bool:
-    """Allow project/tmux affinity to preserve explicit window bindings when shell context is stale."""
+    """Validate an explicit session->window binding without heuristic repair."""
     if not _window_is_ai_terminal_candidate(window):
         return False
 
     session_identity = _resolve_session_execution_identity(session, default_mode="local")
-    if _window_matches_session_identity(window, session_identity=session_identity):
-        return True
-
-    window_identity = _window_tracking_identity(window)
-    window_mode = str(window_identity.get("execution_mode") or "").strip()
-    window_connection = str(window_identity.get("connection_key") or "").strip()
-    session_mode = str(session_identity.get("execution_mode") or "").strip()
-    session_connection = str(session_identity.get("connection_key") or "").strip()
-    if session_mode and window_mode and session_mode != window_mode:
-        return False
-    if (
-        session_connection
-        and window_connection
-        and not _connection_keys_equivalent(session_connection, window_connection)
-    ):
-        return False
-
-    window_project = str(window.get("project") or "").strip()
-    if not window_project:
-        return False
-
-    exact_candidates: set[str] = set()
-    prefix_candidates: set[str] = set()
-    terminal_context = session.get("terminal_context", {}) or {}
-    if not isinstance(terminal_context, dict):
-        terminal_context = {}
-
-    for source in (
-        session.get("focus_project"),
-        session.get("window_project"),
-        session.get("session_project"),
-        session.get("display_project"),
-        session.get("project"),
-        session.get("project_path"),
-    ):
-        exact, prefixes = _session_project_candidates(source)
-        exact_candidates.update(exact)
-        prefix_candidates.update(prefixes)
-
-    for raw_context in (
-        session.get("focus_context_key"),
-        session.get("context_key"),
-        terminal_context.get("context_key"),
-    ):
-        parsed_context = _parse_context_key(str(raw_context or ""))
-        qualified_name = str(parsed_context.get("qualified_name") or "").strip()
-        if not qualified_name:
-            continue
-        if ":" in qualified_name:
-            exact_candidates.add(qualified_name)
-            prefix_candidates.add(qualified_name.split(":", 1)[0])
-        else:
-            prefix_candidates.add(qualified_name)
-
-    if window_project in exact_candidates:
-        return True
-    if any(
-        window_project == prefix or window_project.startswith(prefix + ":")
-        for prefix in prefix_candidates
-    ):
-        return True
-
-    tmux_session_key = _normalize_session_name_key(
-        terminal_context.get("tmux_session") or session.get("tmux_session") or ""
-    )
-    if tmux_session_key:
-        candidate_tmux_key = _normalize_session_name_key(
-            window.get("remote_session_name") or _project_session_suffix(window_project)
-        )
-        if candidate_tmux_key and candidate_tmux_key == tmux_session_key:
-            return True
-
-    return False
+    return _window_matches_session_identity(window, session_identity=session_identity)
 
 
 def _window_is_ai_terminal_candidate(window: Dict[str, Any]) -> bool:
@@ -4064,6 +3882,11 @@ def _build_active_ai_sessions(
             continue
 
         terminal_context = raw_session.get("terminal_context", {}) or {}
+        terminal_anchor_id = str(
+            raw_session.get("terminal_anchor_id")
+            or terminal_context.get("terminal_anchor_id")
+            or ""
+        ).strip()
         window_id = raw_session.get("window_id", terminal_context.get("window_id"))
         try:
             window_id_int = int(window_id)
@@ -4164,7 +3987,10 @@ def _build_active_ai_sessions(
             "project_source": project_source,
             "project_path": str(raw_session.get("project_path") or ""),
             "window_id": window_id_int,
+            "terminal_anchor_id": terminal_anchor_id,
             "is_current_window": False,
+            "focusable": bool(raw_session.get("focusable", True)),
+            "invalid_reason": str(raw_session.get("invalid_reason") or ""),
             "execution_mode": execution_mode,
             "connection_key": str(identity.get("connection_key") or ""),
             "identity_key": str(identity.get("identity_key") or ""),
@@ -6060,7 +5886,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             cid = _safe_int(candidate.get("id"), 0)
             if cid > 0:
                 window_candidates_by_id[cid] = candidate
-        window_candidates_fingerprint = _window_candidates_cache_fingerprint(window_candidates)
         remote_otel_sessions = _load_remote_otel_sessions_for_windows(window_candidates)
         merged_otel_raw_sessions: List[Dict[str, Any]] = []
         for raw_session in otel_sessions.get("sessions", []):
@@ -6069,57 +5894,29 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         merged_otel_raw_sessions.extend(remote_otel_sessions)
         resolved_otel_sessions: List[Dict[str, Any]] = []
         for raw_session in merged_otel_raw_sessions:
-            session = _normalize_session_project_from_path(raw_session)
+            session = dict(raw_session)
             terminal_context = session.get("terminal_context", {}) or {}
             if not isinstance(terminal_context, dict):
                 terminal_context = {}
+            terminal_context = dict(terminal_context)
+            session["terminal_context"] = terminal_context
 
             window_id_raw = session.get("window_id", terminal_context.get("window_id"))
             window_id_int = _safe_int(window_id_raw, 0)
-            resolved_window_id: Optional[int] = None
             if window_id_int != 0:
                 existing_candidate = window_candidates_by_id.get(window_id_int, {})
                 if isinstance(existing_candidate, dict) and existing_candidate:
                     if _window_matches_session_binding(existing_candidate, session):
-                        resolved_window_id = window_id_int
-
-            if resolved_window_id is None:
-                cache_key = _window_resolution_cache_key(
-                    session,
-                    candidates_fingerprint=window_candidates_fingerprint,
-                )
-                cache_hit, cached_window_id = _get_cached_window_resolution(cache_key)
-                if cache_hit:
-                    resolved_window_id = cached_window_id
-                else:
-                    resolved_window_id = _resolve_otel_session_window_id(
-                        session,
-                        outputs,
-                        window_candidates=window_candidates,
-                    )
-                    _store_cached_window_resolution(cache_key, resolved_window_id)
-
-            if resolved_window_id is not None:
-                session["window_id"] = resolved_window_id
-                terminal_context["window_id"] = resolved_window_id
-                session["terminal_context"] = terminal_context
-                if window_id_int != 0 and window_id_int != resolved_window_id:
-                    logger.debug(
-                        "Feature 139: remapped OTEL window_id %s -> %s: session=%s",
-                        window_id_int,
-                        resolved_window_id,
-                        str(session.get("native_session_id") or session.get("session_id") or ""),
-                    )
-                elif window_id_int == 0:
-                    logger.debug(
-                        "Feature 139: resolved missing OTEL window_id via project mapping: session=%s window=%s",
-                        str(session.get("native_session_id") or session.get("session_id") or ""),
-                        resolved_window_id,
-                    )
-            elif window_id_int != 0:
-                session["window_id"] = window_id_int
-                terminal_context["window_id"] = window_id_int
-                session["terminal_context"] = terminal_context
+                        session["window_id"] = window_id_int
+                        terminal_context["window_id"] = window_id_int
+                    else:
+                        logger.warning(
+                            "Dropping stale OTEL window binding during anchor cutover: session=%s window_id=%s",
+                            str(session.get("native_session_id") or session.get("session_id") or ""),
+                            window_id_int,
+                        )
+                        session.pop("window_id", None)
+                        terminal_context.pop("window_id", None)
             resolved_otel_sessions.append(session)
 
         otel_sessions_runtime = dict(otel_sessions)
@@ -6241,11 +6038,33 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             active_project_name=active_qualified_name,
             focused_window_id=focused_window_id,
         )
-        active_ai_sessions, _review_sessions = _apply_review_lifecycle(
+        review_enriched_ai_sessions, _review_sessions = _apply_review_lifecycle(
             active_ai_sessions,
             window_lookup=window_lookup,
             focused_window_id=focused_window_id,
         )
+        review_enriched_ai_sessions.sort(
+            key=lambda session: (
+                int(bool(session.get("is_current_window", False))),
+                int(focused_window_id is not None and session.get("window_id") == focused_window_id),
+                int(bool(active_qualified_name) and str(session.get("project", "")).strip() == active_qualified_name),
+                _active_ai_session_sort_rank(session),
+                str(session.get("updated_at") or ""),
+                str(session.get("session_key") or ""),
+            ),
+            reverse=True,
+        )
+        _merge_review_state_into_window_badges(all_windows, review_enriched_ai_sessions)
+        pinned_session_keys = load_ai_session_pins()
+        pinned_session_set = {str(key) for key in pinned_session_keys if str(key)}
+        for session in review_enriched_ai_sessions:
+            key = str(session.get("session_key") or "")
+            session["pinned"] = key in pinned_session_set
+        active_ai_sessions = [
+            session
+            for session in review_enriched_ai_sessions
+            if _session_tracking_contract_ok(session) and _should_render_ai_session(session)
+        ]
         current_ai_session_key = _apply_current_window_marker(
             active_ai_sessions,
             focused_window_id,
@@ -6262,14 +6081,10 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             ),
             reverse=True,
         )
-        _merge_review_state_into_window_badges(all_windows, active_ai_sessions)
-        pinned_session_keys = load_ai_session_pins()
-        pinned_session_set = {str(key) for key in pinned_session_keys if str(key)}
-        for session in active_ai_sessions:
-            key = str(session.get("session_key") or "")
-            session["pinned"] = key in pinned_session_set
         active_ai_sessions = [
-            session for session in active_ai_sessions if _should_render_ai_session(session)
+            session
+            for session in active_ai_sessions
+            if _session_tracking_contract_ok(session) and _should_render_ai_session(session)
         ]
         active_ai_sessions = _apply_pinned_session_order(active_ai_sessions, pinned_session_keys)
         active_ai_sessions_mru = _apply_ai_session_mru_order(
@@ -6279,6 +6094,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         active_ai_sessions_mru = _apply_pinned_session_order(active_ai_sessions_mru, pinned_session_keys)
         emit_ai_state_transition_notifications(active_ai_sessions)
         ai_metrics = load_ai_monitor_metrics()
+        otel_diagnostics = otel_sessions_runtime.get("diagnostics", []) if isinstance(otel_sessions_runtime, dict) else []
         ai_metrics.update({
             "active_sessions": len(active_ai_sessions),
             "working_sessions": sum(1 for s in active_ai_sessions if str(s.get("stage")) in {"starting", "thinking", "tool_running", "streaming"}),
@@ -6315,6 +6131,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
                 and not str(s.get("project_path") or "").strip()
                 and not str(s.get("session_project") or "").strip()
             ),
+            "invalid_sessions": len(otel_diagnostics),
         })
 
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
@@ -6379,6 +6196,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "active_ai_sessions_mru": active_ai_sessions_mru,
             "current_ai_session_key": current_ai_session_key,
             "ai_monitor_metrics": ai_metrics,
+            "ai_session_diagnostics": otel_diagnostics,
             # Feature 123: OTEL AI sessions for window badge rendering
             "otel_sessions": otel_sessions_runtime,
         }
