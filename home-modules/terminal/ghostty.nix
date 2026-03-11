@@ -3,6 +3,9 @@
 { config, lib, pkgs, ... }:
 
 let
+  detachedCommand = ''
+    ${pkgs.systemd}/bin/systemd-run --user --quiet --collect
+  '';
   # Tmux file path scanner using fzf (urlscan has PTY permission issues)
   # File-focused: Only shows valid file paths that exist, discards URLs
   tmux-url-scan = pkgs.writeShellScriptBin "tmux-url-scan" ''
@@ -96,9 +99,8 @@ let
           FILE_ARGS="$FILE_ARGS \"$file\""
         done
 
-        # Launch via Sway exec on workspace 4 with all files
-        # Nvim will open all files as buffers (use :bn/:bp to navigate)
-        ${pkgs.sway}/bin/swaymsg exec "env I3PM_APP_ID=nvim-editor-$$-$(date +%s) I3PM_APP_NAME=nvim I3PM_PROJECT_NAME=\''${I3PM_PROJECT_NAME:-} I3PM_PROJECT_DIR=\''${I3PM_PROJECT_DIR:-} I3PM_SCOPE=scoped I3PM_TARGET_WORKSPACE=4 I3PM_EXPECTED_CLASS=com.mitchellh.ghostty ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim $FILE_ARGS" > /dev/null 2>&1
+        # Launch detached without direct Sway IPC; Nvim opens all files as buffers.
+        ${detachedCommand} env I3PM_APP_ID=nvim-editor-$$-$(date +%s) I3PM_APP_NAME=nvim I3PM_PROJECT_NAME=\''${I3PM_PROJECT_NAME:-} I3PM_PROJECT_DIR=\''${I3PM_PROJECT_DIR:-} I3PM_SCOPE=scoped I3PM_TARGET_WORKSPACE=4 I3PM_EXPECTED_CLASS=com.mitchellh.ghostty ${pkgs.bash}/bin/bash -lc "${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim $FILE_ARGS" > /dev/null 2>&1
       fi
     fi
   '';
@@ -152,9 +154,8 @@ let
     # Open selected URLs
     if [ ''${#SELECTED[@]} -gt 0 ]; then
       for url in "''${SELECTED[@]}"; do
-        # Use swaymsg exec to launch in detached context (survives popup close)
-        # Open URL via xdg-open (routes to default browser)
-        ${pkgs.sway}/bin/swaymsg exec "${pkgs.xdg-utils}/bin/xdg-open '$url'" > /dev/null 2>&1
+        # Open URL detached without Sway IPC.
+        ${detachedCommand} ${pkgs.xdg-utils}/bin/xdg-open "$url" > /dev/null 2>&1
         sleep 0.3  # Small delay between opens to prevent overwhelming
       done
     fi
@@ -194,10 +195,9 @@ let
     # Normalize path (remove .., ., etc)
     TARGET=$(${pkgs.coreutils}/bin/realpath -m "$TARGET" 2>/dev/null || echo "$TARGET")
 
-    # If file exists, open in Neovim via Sway exec on workspace 4
-    # This follows the pattern from fzf-file-search.nix for reliable window creation
+    # If file exists, open in Neovim via detached user unit.
     if [[ -e "$TARGET" ]]; then
-      ${pkgs.sway}/bin/swaymsg exec "env I3PM_APP_ID=nvim-editor-$$-$(date +%s) I3PM_APP_NAME=nvim I3PM_PROJECT_NAME=\''${I3PM_PROJECT_NAME:-} I3PM_PROJECT_DIR=\''${I3PM_PROJECT_DIR:-} I3PM_SCOPE=scoped I3PM_TARGET_WORKSPACE=4 I3PM_EXPECTED_CLASS=com.mitchellh.ghostty ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim \"$TARGET\"" > /dev/null 2>&1
+      ${detachedCommand} env I3PM_APP_ID=nvim-editor-$$-$(date +%s) I3PM_APP_NAME=nvim I3PM_PROJECT_NAME=\''${I3PM_PROJECT_NAME:-} I3PM_PROJECT_DIR=\''${I3PM_PROJECT_DIR:-} I3PM_SCOPE=scoped I3PM_TARGET_WORKSPACE=4 I3PM_EXPECTED_CLASS=com.mitchellh.ghostty ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim "$TARGET" > /dev/null 2>&1
     else
       # File doesn't exist, try xdg-open as fallback
       ${pkgs.xdg-utils}/bin/xdg-open "$TARGET" &

@@ -248,7 +248,7 @@ in
       pswitch = "i3pm worktree switch";
       pclear = "i3pm project clear";  # Still uses project clear to return to global mode
       plist = "i3pm worktree list";
-      pcurrent = "jq -r '.qualified_name // \"global\"' ~/.config/i3/active-worktree.json 2>/dev/null || echo global";
+      pcurrent = "i3pm project current --json 2>/dev/null | jq -r '.name // \"global\"' 2>/dev/null || echo global";
 
       # Additional i3pm aliases
       iwin = "i3pm windows";
@@ -605,6 +605,21 @@ in
         tmux source-file ~/.tmux-popups.conf 2>/dev/null
       fi
 
+      _i3pm_daemon_socket() {
+        printf '%s\n' "''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+      }
+
+      _i3pm_rpc() {
+        local method="$1"
+        local params_json="''${2:-{}}"
+        local socket request
+        socket="$(_i3pm_daemon_socket)"
+        [[ -S "$socket" ]] || return 1
+        request=$(jq -nc --arg method "$method" --argjson params "$params_json" \
+          '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+        timeout 2s socat - UNIX-CONNECT:"$socket" <<< "$request" 2>/dev/null | jq -c '.result'
+      }
+
       # i3 helper: Launch application on specific workspace
       # Usage: i3-launch-on <workspace_number> <command>
       # Example: i3-launch-on 4 code
@@ -615,8 +630,8 @@ in
         fi
         local workspace="$1"
         shift
-        # Switch to workspace twice to lock focus, preventing race condition
-        i3-msg "workspace number $workspace; exec $*; workspace number $workspace" >/dev/null
+        _i3pm_rpc "workspace.focus" "$(jq -nc --arg workspace "$workspace" '{workspace:$workspace}')" >/dev/null || return 1
+        systemd-run --user --quiet --collect bash -lc "$*"
       }
 
       # Claude Code hook: Register commands in bash history
@@ -694,9 +709,16 @@ in
           url=$(echo "''$selected" | cut -d'|' -f2)
           firefox "''$url" &>/dev/null &
 
-          # Give Firefox a moment to open the URL, then focus it
           sleep 0.5
-          i3-msg '[class="firefox"] focus' >/dev/null 2>&1
+          local firefox_window
+          firefox_window=$(_i3pm_rpc "get_windows" '{}' | jq -r '
+            .. | objects
+            | select(((.class // "") | ascii_downcase) == "firefox")
+            | .id
+          ' | head -n1 || true)
+          if [[ -n "''$firefox_window" && "''$firefox_window" != "null" ]]; then
+            _i3pm_rpc "window.focus" "$(jq -nc --argjson window_id "$firefox_window" '{window_id:$window_id}')" >/dev/null || true
+          fi
         fi
       }
     '';

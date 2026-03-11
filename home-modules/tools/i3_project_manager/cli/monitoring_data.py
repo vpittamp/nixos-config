@@ -904,10 +904,6 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if OTEL_SESSIONS_FILE.parent.exists():
         watch_paths.append(str(OTEL_SESSIONS_FILE.parent))
     
-    # Watch the active-worktree.json directory for immediate project switch detection
-    if ACTIVE_WORKTREE_FILE.parent.exists():
-        if str(ACTIVE_WORKTREE_FILE.parent) not in watch_paths:
-            watch_paths.append(str(ACTIVE_WORKTREE_FILE.parent))
     if AI_SESSION_MRU_FILE.parent.exists():
         if str(AI_SESSION_MRU_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_MRU_FILE.parent))
@@ -966,8 +962,6 @@ async def read_inotify_events(
     # Get paths for filtering
     otel_filename = OTEL_SESSIONS_FILE.name  # "otel-ai-sessions.json"
     otel_tmp_filename = otel_filename.replace(".json", ".tmp")  # "otel-ai-sessions.tmp"
-    active_worktree_filename = ACTIVE_WORKTREE_FILE.name
-    active_worktree_tmp_filename = active_worktree_filename.replace(".json", ".tmp")
     mru_filename = AI_SESSION_MRU_FILE.name
     mru_tmp_filename = mru_filename + ".tmp"
     pin_filename = AI_SESSION_PIN_FILE.name
@@ -1007,7 +1001,6 @@ async def read_inotify_events(
             # Events from XDG_RUNTIME_DIR (OTEL sessions parent) must match specific files
             is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
             is_otel_file = filename in (otel_filename, otel_tmp_filename)
-            is_active_worktree_file = filename in (active_worktree_filename, active_worktree_tmp_filename)
             is_mru_file = filename in (mru_filename, mru_tmp_filename)
             is_pin_file = filename in (pin_filename, pin_tmp_filename)
             is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
@@ -1015,7 +1008,7 @@ async def read_inotify_events(
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
             is_remote_otel_sink_file = filename in (remote_otel_sink_filename, remote_otel_sink_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_active_worktree_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_sink_file:
+            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_sink_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -6527,10 +6520,7 @@ def load_active_worktree_identity() -> Dict[str, Any]:
     try:
         data = _read_active_context_from_daemon()
         if data is None:
-            if not ACTIVE_WORKTREE_FILE.exists():
-                return default_identity
-            with open(ACTIVE_WORKTREE_FILE, "r") as f:
-                data = json.load(f)
+            return default_identity
 
         qualified_name = str(data.get("qualified_name", "")).strip()
         remote = data.get("remote")

@@ -8,14 +8,45 @@ focus the terminal window.
 """
 
 import asyncio
+import json
 import logging
+import os
 import shutil
+import socket
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models import Session
 
 logger = logging.getLogger(__name__)
+DAEMON_SOCKET = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}",
+    "i3-project-daemon",
+    "ipc.sock",
+)
+
+
+async def _daemon_rpc(method: str, params: dict[str, object]) -> dict[str, object]:
+    """Send a single JSON-RPC request to the i3pm daemon."""
+    def _call() -> dict[str, object]:
+        request = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": 1,
+        }
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1.5)
+            sock.connect(DAEMON_SOCKET)
+            sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
+            response = sock.makefile("r", encoding="utf-8").readline()
+        payload = json.loads(response or "{}")
+        if "error" in payload:
+            raise RuntimeError(str(payload["error"]))
+        result = payload.get("result")
+        return result if isinstance(result, dict) else {}
+
+    return await asyncio.to_thread(_call)
 
 
 async def _handle_notification_response(session: "Session", cmd: list[str]) -> None:
@@ -94,26 +125,22 @@ async def focus_terminal_action(session: "Session") -> None:
     Args:
         session: The session to focus
     """
-    swaymsg = shutil.which("swaymsg")
-    if swaymsg and session.window_id:
+    if session.window_id:
         try:
-            # Switch project if needed using i3pm
-            i3pm = shutil.which("i3pm")
-            if i3pm and session.project:
-                await asyncio.create_subprocess_exec(
-                    i3pm, "worktree", "switch", session.project,
-                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-                )
-
-            # Focus Sway window
-            process = await asyncio.create_subprocess_exec(
-                swaymsg, f"[con_id={session.window_id}] focus",
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+            result = await _daemon_rpc(
+                "window.focus",
+                {
+                    "window_id": int(session.window_id),
+                    "project_name": str(session.project or ""),
+                    "target_variant": str(getattr(session, "execution_mode", "") or ""),
+                },
             )
-            await process.wait()
-            logger.debug(f"Focused Sway window {session.window_id}")
+            if result.get("success") is True:
+                logger.debug("Focused daemon-managed window %s", session.window_id)
+            else:
+                logger.error("Daemon focus failed for %s: %s", session.window_id, result)
         except Exception as e:
-            logger.error(f"Error focusing Sway window: {e}")
+            logger.error(f"Error focusing daemon-managed window: {e}")
 
     tmux = shutil.which("tmux")
     tc = session.terminal_context

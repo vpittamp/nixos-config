@@ -2,6 +2,7 @@
 // T048: Create `i3pm worktree remove <branch>` CLI command
 
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
+import { DaemonClient } from "../../services/daemon-client.ts";
 import {
   type WorktreeRemoveRequest,
   WorktreeRemoveRequestSchema,
@@ -15,7 +16,6 @@ import {
 
 const HOME = Deno.env.get("HOME") || "";
 const REMOTE_PROFILES_FILE = `${HOME}/.config/i3/worktree-remote-profiles.json`;
-const ACTIVE_WORKTREE_FILE = `${HOME}/.config/i3/active-worktree.json`;
 
 async function removeRemoteProfile(qualifiedName: string): Promise<boolean> {
   try {
@@ -40,9 +40,9 @@ async function removeRemoteProfile(qualifiedName: string): Promise<boolean> {
 }
 
 async function clearActiveContextIfRemoved(qualifiedName: string): Promise<void> {
+  const client = new DaemonClient();
   try {
-    const content = await Deno.readTextFile(ACTIVE_WORKTREE_FILE);
-    const active = JSON.parse(content);
+    const active = await client.request<{ qualified_name?: string }>("context.get_active", {});
     if (active?.qualified_name !== qualifiedName) return;
 
     const clearCmd = new Deno.Command("i3pm", {
@@ -53,6 +53,8 @@ async function clearActiveContextIfRemoved(qualifiedName: string): Promise<void>
     await clearCmd.output();
   } catch {
     // best-effort active context cleanup
+  } finally {
+    await client.close();
   }
 }
 

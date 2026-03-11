@@ -1,4 +1,5 @@
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
+import { DaemonClient } from "../../services/daemon-client.ts";
 import {
   getDefaultBranch,
   hasGitWorktreeRoot,
@@ -11,7 +12,6 @@ import {
 
 const HOME = Deno.env.get("HOME") || "";
 const REMOTE_PROFILES_FILE = `${HOME}/.config/i3/worktree-remote-profiles.json`;
-const ACTIVE_WORKTREE_FILE = `${HOME}/.config/i3/active-worktree.json`;
 
 function showUsage(): void {
   console.error(
@@ -52,9 +52,9 @@ async function updateActiveContextIfNeeded(
   oldQualified: string,
   newQualified: string,
 ): Promise<void> {
+  const client = new DaemonClient();
   try {
-    const content = await Deno.readTextFile(ACTIVE_WORKTREE_FILE);
-    const active = JSON.parse(content);
+    const active = await client.request<{ qualified_name?: string }>("context.get_active", {});
     if (active?.qualified_name !== oldQualified) return;
 
     const switchCmd = new Deno.Command("i3pm", {
@@ -65,6 +65,8 @@ async function updateActiveContextIfNeeded(
     await switchCmd.output();
   } catch {
     // best-effort switch for active context
+  } finally {
+    await client.close();
   }
 }
 

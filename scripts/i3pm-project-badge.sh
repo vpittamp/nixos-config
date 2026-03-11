@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 
 # Display a compact I3PM project badge for prompts and tmux status bars.
-# Supports reading context from environment variables and/or the
-# active-worktree context file for tmux reliability.
+# Supports reading context from environment variables, pane process
+# environments, and daemon-backed i3pm context.
 
 set -euo pipefail
 
 mode="plain"
 source_mode="${I3PM_PROJECT_BADGE_SOURCE:-auto}"
 max_len="${I3PM_PROJECT_BADGE_MAX_LEN:-22}"
-active_worktree_file="${I3PM_ACTIVE_WORKTREE_FILE:-$HOME/.config/i3/active-worktree.json}"
 pane_pid="${I3PM_PROJECT_BADGE_PANE_PID:-}"
 
 project_icon=""
@@ -257,10 +256,6 @@ load_context_from_pane() {
 }
 
 load_context_from_file() {
-  if [[ ! -f "$active_worktree_file" ]]; then
-    return 1
-  fi
-
   if ! command -v jq >/dev/null 2>&1; then
     return 1
   fi
@@ -272,15 +267,15 @@ load_context_from_file() {
       [
         (.repo_name // ""),
         (.branch // ""),
-        (.qualified_name // ""),
-        (.remote.enabled // false | tostring),
+        (.name // ""),
+        ((.execution_mode // "local") == "ssh" | tostring),
         (.remote.host // ""),
         (.remote.user // ""),
         ((.remote.port // 22) | tostring),
-        (.remote.remote_dir // "")
+        (.remote.remote_dir // .directory // "")
       ] | @tsv
       end
-    ' "$active_worktree_file" 2>/dev/null || true
+    ' <(i3pm project current --json 2>/dev/null || echo '{}') 2>/dev/null || true
   )"
 
   if [[ -z "$parsed" ]]; then

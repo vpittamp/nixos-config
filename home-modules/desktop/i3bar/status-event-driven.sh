@@ -49,9 +49,6 @@ WALKER_BIN="@walker@"
 WALKER_PROJECT_LIST_BIN="@walker_project_list@"
 WALKER_PROJECT_SWITCH_BIN="@walker_project_switch@"
 
-# Feature 101: active-worktree.json is the single source of truth
-ACTIVE_WORKTREE_FILE="${USER_HOME}/.config/i3/active-worktree.json"
-
 # Colors (Catppuccin Mocha)
 COLOR_LAVENDER="#b4befe"
 COLOR_GREEN="#a6e3a1"
@@ -62,21 +59,14 @@ COLOR_TEXT="#cdd6f4"
 COLOR_SUBTEXT="#bac2de"
 COLOR_SURFACE0="#313244"
 
-# Build project block
-# Feature 101: Uses active-worktree.json as single source of truth
+# Build project block from daemon-backed i3pm context
 build_project_block() {
-    local qualified_name branch repo_name branch_number icon display_name full_text
+    local project_json qualified_name branch repo_name branch_number icon display_name full_text
 
-    # Determine current worktree from active-worktree.json (Feature 101)
-    if [ -f "$ACTIVE_WORKTREE_FILE" ]; then
-        qualified_name=$("$JQ_BIN" -r '.qualified_name // empty' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
-        branch=$("$JQ_BIN" -r '.branch // empty' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
-        repo_name=$("$JQ_BIN" -r '.repo_name // empty' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
-    else
-        qualified_name=""
-        branch=""
-        repo_name=""
-    fi
+    project_json="$("$I3PM_BIN" project current --json 2>/dev/null || echo '{}')"
+    qualified_name=$(printf '%s\n' "$project_json" | "$JQ_BIN" -r '.name // empty' 2>/dev/null || echo "")
+    branch=$(printf '%s\n' "$project_json" | "$JQ_BIN" -r '.branch // empty' 2>/dev/null || echo "")
+    repo_name=$(printf '%s\n' "$project_json" | "$JQ_BIN" -r '.repo_name // .display_name // empty' 2>/dev/null || echo "")
 
     if [ -z "$qualified_name" ]; then
         # No active project - global mode

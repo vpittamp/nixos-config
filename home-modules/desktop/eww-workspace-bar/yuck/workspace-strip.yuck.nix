@@ -1,4 +1,4 @@
-{ fallbackIconPath, ... }:
+{ fallbackIconPath, workspaceFocusCommand, ... }:
 
 ''
   (defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty ?compact]
@@ -15,7 +15,7 @@
       }
       :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
       :onclick {
-        "swaymsg workspace \""
+        "${workspaceFocusCommand} \""
         + replace(workspace_name, "\"", "\\\"")
         + "\""
       }

@@ -53,6 +53,6 @@ if [ "$KEY" = "ctrl-b" ]; then
     # Background execution with notification
     "$FLAKE_ROOT/scripts/run-background-command.sh" "$COMMAND"
 else
-    # Normal foreground execution
-    exec i3-msg -q "exec --no-startup-id $COMMAND"
+    # Detached execution without direct Sway IPC
+    exec systemd-run --user --quiet --collect bash -lc "$COMMAND"
 fi

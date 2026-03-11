@@ -87,6 +87,22 @@ let
     }) workspaceOutputs;
   };
 
+  workspaceFocusScript = pkgs.writeShellScriptBin "eww-workspace-focus" ''
+    set -euo pipefail
+    workspace_name="''${1:-}"
+    [[ -n "$workspace_name" ]] || exit 2
+
+    daemon_socket="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
+    request=$(${pkgs.jq}/bin/jq -nc \
+      --arg workspace_name "$workspace_name" \
+      '{jsonrpc:"2.0", method:"workspace.focus", params:{workspace_name:$workspace_name}, id:1}')
+
+    [[ -S "$daemon_socket" ]] || exit 1
+    response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$daemon_socket" <<< "$request" 2>/dev/null || true)
+    [[ -n "$response" ]] || exit 1
+    ${pkgs.jq}/bin/jq -e '.error | not' >/dev/null <<< "$response"
+  '';
+
   # Wrapper script that starts daemon and opens all bar windows
   wrapperScript = pkgs.writeShellScriptBin "eww-workspace-bar-wrapper" ''
     #!${pkgs.bash}/bin/bash
@@ -179,6 +195,7 @@ let
   };
   workspaceStripYuck = import ./yuck/workspace-strip.yuck.nix {
     fallbackIconPath = fallbackWorkspaceIconPath;
+    workspaceFocusCommand = "${workspaceFocusScript}/bin/eww-workspace-focus";
   };
 
   mainScss = import ./scss/main.scss.nix {
@@ -190,7 +207,7 @@ in
   options.programs.eww-workspace-bar.enable = mkEnableOption "Eww-driven workspace bar with SVG icons";
 
   config = mkIf cfg.enable {
-    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin restoreBarScript wrapperScript ];
+    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin restoreBarScript wrapperScript workspaceFocusScript ];
 
     xdg.configFile."${ewwConfigDir}/eww.yuck".text = mainYuck;
     xdg.configFile."${ewwConfigDir}/workspace-preview.yuck".text = workspacePreviewYuck;

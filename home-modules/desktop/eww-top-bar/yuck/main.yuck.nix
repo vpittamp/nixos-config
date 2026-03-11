@@ -1,4 +1,4 @@
-{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), isLaptop ? false, ... }:
+{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), isLaptop ? false, projectSwitcherCommand, swayExitCommand, ... }:
 
 # Feature 061: Eww Top Bar - Enhanced widget definitions
 # Adds: System tray, WiFi widget, enhanced volume control with popup
@@ -435,7 +435,7 @@ ${if isLaptop then ''
 ;; Active Project widget (with click handler to open project switcher)
 ;; Feature 079: US7 - T052/T053 - Enhanced with icon and branch number
 (defwidget project-widget []
-  (eventbox :onclick "swaymsg mode '→ WS' && i3pm-workspace-mode char ':' &"
+  (eventbox :onclick "${projectSwitcherCommand}"
             :tooltip {(active_project.remote_enabled ?: false)
                       ? ("Mode: SSH\n" + (active_project.formatted_label ?: "Global") + "\nSSH: " + (active_project.remote_target ?: "") +
                          ((active_project.remote_directory_display ?: "") != "" ? "\n" + (active_project.remote_directory_display ?: "") : ""))
@@ -697,7 +697,7 @@ ${if isLaptop then ''
                 :label "Logout"
                 :icon ""
                 :class "logout"
-                :onclick "toggle-topbar-powermenu; swaymsg exit"))
+                :onclick "toggle-topbar-powermenu; ${swayExitCommand}"))
             (box :class "powermenu-row"
                  :orientation "h"
                  :space-evenly false

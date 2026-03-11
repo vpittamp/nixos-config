@@ -400,6 +400,8 @@ class IPCServer:
                 result = await self._window_focus(params)
             elif method == "window.action":
                 result = await self._window_action(params)
+            elif method == "session.exit":
+                result = await self._session_exit(params)
 
             # Feature 042: Workspace mode navigation methods
             elif method == "workspace_mode.digit":
@@ -528,6 +530,14 @@ class IPCServer:
             # Feature 102 T046: Output state IPC method
             elif method == "outputs.get_state":
                 result = await self._outputs_get_state(params)
+            elif method == "output.configure":
+                result = await self._output_configure(params)
+            elif method == "output.create_virtual":
+                result = await self._output_create_virtual(params)
+            elif method == "workspace.move_to_output":
+                result = await self._workspace_move_to_output(params)
+            elif method == "workspace.focus":
+                result = await self._workspace_focus(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -7310,6 +7320,17 @@ class IPCServer:
         await self._send_tick_barrier(f"i3pm:window-action:{action}:{window_id}")
         return {"success": True, "window_id": window_id, "action": action}
 
+    async def _session_exit(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Exit the current Sway session through the daemon-owned IPC connection."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        result = await self.i3_connection.conn.command("exit")
+        if not self._sway_command_succeeded(result):
+            raise RuntimeError("Sway exit command was rejected")
+
+        return {"success": True}
+
     def _parse_context_key(self, context_key: str) -> Dict[str, str]:
         """Parse context key into project/variant/connection tuple."""
         raw = str(context_key or "").strip()
@@ -10164,6 +10185,16 @@ class IPCServer:
                 for name, state in cached_outputs.items()
             }
             active_outputs = output_service.get_active_outputs()
+            focused_output = None
+            try:
+                if self.i3_connection and getattr(self.i3_connection, "conn", None):
+                    sway_outputs = await self.i3_connection.conn.get_outputs()
+                    for output in sway_outputs:
+                        if getattr(output, "focused", False):
+                            focused_output = getattr(output, "name", None)
+                            break
+            except Exception as e:
+                logger.debug("Failed to resolve focused output: %s", e)
 
             return {
                 "initialized": True,
@@ -10171,4 +10202,98 @@ class IPCServer:
                 "count": len(cached_outputs),
                 "active_count": len(active_outputs),
                 "active_outputs": active_outputs,
+                "focused_output": focused_output,
             }
+
+    async def _output_configure(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a deterministic output configuration command through the daemon."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        output_name = str(params.get("output_name") or "").strip()
+        if not output_name:
+            raise ValueError("output_name is required")
+
+        enabled = params.get("enabled")
+        mode = str(params.get("mode") or "").strip()
+        scale = params.get("scale")
+        position_x = params.get("position_x")
+        position_y = params.get("position_y")
+
+        command_parts = [f"output {output_name}"]
+        if enabled is not None:
+            command_parts.append("enable" if bool(enabled) else "disable")
+        if mode:
+            command_parts.append(f"mode {mode}")
+        if position_x is not None and position_y is not None:
+            command_parts.append(f"position {int(position_x)},{int(position_y)}")
+        if scale is not None:
+            command_parts.append(f"scale {float(scale)}")
+
+        if len(command_parts) == 1:
+            raise ValueError("No output configuration fields were provided")
+
+        command = " ".join(command_parts)
+        result = await self.i3_connection.conn.command(command)
+        if not self._sway_command_succeeded(result):
+            return {"success": False, "output_name": output_name, "error": f"command_failed:{command}"}
+        await self._send_tick_barrier(f"i3pm:output-configure:{output_name}")
+        return {"success": True, "output_name": output_name, "command": command}
+
+    async def _output_create_virtual(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a virtual output through the daemon-owned Sway connection."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+        result = await self.i3_connection.conn.command("create_output")
+        if not self._sway_command_succeeded(result):
+            return {"success": False, "error": "command_failed:create_output"}
+        await self._send_tick_barrier("i3pm:output-create")
+        return {"success": True}
+
+    async def _workspace_move_to_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Move a workspace to a target output through the daemon."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        workspace = params.get("workspace")
+        output_name = str(params.get("output_name") or "").strip()
+        if workspace is None:
+            raise ValueError("workspace is required")
+        if not output_name:
+            raise ValueError("output_name is required")
+
+        workspace_ref = str(workspace).strip()
+        if not workspace_ref:
+            raise ValueError("workspace must not be empty")
+
+        command = f"workspace number {workspace_ref} output {output_name}"
+        result = await self.i3_connection.conn.command(command)
+        if not self._sway_command_succeeded(result):
+            return {
+                "success": False,
+                "workspace": workspace_ref,
+                "output_name": output_name,
+                "error": f"command_failed:{command}",
+            }
+        await self._send_tick_barrier(f"i3pm:workspace-output:{workspace_ref}:{output_name}")
+        return {"success": True, "workspace": workspace_ref, "output_name": output_name}
+
+    async def _workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a workspace through the daemon-owned Sway connection."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        workspace = params.get("workspace")
+        if workspace is None:
+            raise ValueError("workspace is required")
+
+        workspace_ref = str(workspace).strip()
+        if not workspace_ref:
+            raise ValueError("workspace must not be empty")
+
+        command = f"workspace number {workspace_ref}"
+        result = await self.i3_connection.conn.command(command)
+        if not self._sway_command_succeeded(result):
+            return {"success": False, "workspace": workspace_ref, "error": f"command_failed:{command}"}
+        await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
+        return {"success": True, "workspace": workspace_ref}

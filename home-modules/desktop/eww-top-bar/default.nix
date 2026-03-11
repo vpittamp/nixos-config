@@ -41,7 +41,7 @@ let
     );
 
   scripts = import ./scripts.nix { inherit pkgs; };
-  inherit (scripts) hardwareDetectScript togglePowermenuScript toggleBadgeShelfScript;
+  inherit (scripts) hardwareDetectScript togglePowermenuScript toggleBadgeShelfScript projectSwitcherScript swayExitScript;
   openActiveWindowsScript = shared.mkOpenActiveEwwWindowsScript {
     scriptName = "eww-top-bar-open-active";
     configDir = "eww/eww-top-bar";
@@ -64,7 +64,7 @@ in
   };
 
   config = mkIf cfg.enable {
-    home.packages = [ pkgs.eww togglePowermenuScript toggleBadgeShelfScript ];
+    home.packages = [ pkgs.eww togglePowermenuScript toggleBadgeShelfScript projectSwitcherScript swayExitScript ];
 
     xdg.configFile."eww/eww-top-bar/scripts/hardware-detect.py" = {
       source = hardwareDetectScript;
@@ -87,6 +87,8 @@ in
       inherit config lib pkgs topBarOutputs sanitizeOutputName isLaptop;
       inherit (pkgs.stdenv.hostPlatform) system;
       osConfig = osConfig;
+      projectSwitcherCommand = "${projectSwitcherScript}/bin/eww-project-switcher-open";
+      swayExitCommand = "${swayExitScript}/bin/eww-sway-exit";
     };
 
     xdg.configFile."eww/eww-top-bar/eww.scss".text = import ./scss/main.scss.nix {

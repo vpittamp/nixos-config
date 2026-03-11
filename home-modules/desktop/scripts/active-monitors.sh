@@ -14,6 +14,19 @@
 #      workspaces using its fallback logic.
 
 set -euo pipefail
+DAEMON_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+
+rpc_request() {
+  local method="$1"
+  local params_json="${2:-{}}"
+  local request response
+  request=$(jq -nc --arg method "$method" --argjson params "$params_json" \
+    '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+  [[ -S "$DAEMON_SOCKET" ]] || { echo "daemon socket not found: $DAEMON_SOCKET" >&2; exit 1; }
+  response=$(timeout 2s socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+  [[ -n "$response" ]] || { echo "no response from daemon for $method" >&2; exit 1; }
+  jq -c '.result' <<< "$response"
+}
 
 usage() {
   cat <<'EOF'
@@ -32,7 +45,7 @@ Examples:
   active-monitors --profile triple
 
 Notes:
-  - Requires running inside an active Sway session (swaymsg must work).
+  - Requires the i3pm daemon to be running in the active session.
   - WayVNC units are started/stopped to match selected outputs when present.
 EOF
 }
@@ -89,12 +102,6 @@ if (( list_profiles )); then
   exit 0
 fi
 
-SWAYMSG_BIN="$(command -v swaymsg || true)"
-if [[ -z "$SWAYMSG_BIN" ]]; then
-  echo "swaymsg not found; ensure Sway is installed and in PATH." >&2
-  exit 1
-fi
-
 # Feature 084: Detect hybrid mode (M1 with physical + virtual displays)
 is_hybrid_mode=0
 if [[ "$(hostname)" == "nixos-m1" ]]; then
@@ -136,9 +143,9 @@ else
 fi
 
 # Capture current outputs (active + all known)
-outputs_json="$("$SWAYMSG_BIN" -t get_outputs)"
-mapfile -t active_outputs < <(printf '%s' "$outputs_json" | jq -r '.[] | select(.active == true) | .name')
-mapfile -t all_outputs < <(printf '%s' "$outputs_json" | jq -r '.[] | .name')
+outputs_json="$(rpc_request "outputs.get_state" '{}')"
+mapfile -t active_outputs < <(printf '%s' "$outputs_json" | jq -r '.active_outputs[]?')
+mapfile -t all_outputs < <(printf '%s' "$outputs_json" | jq -r '.outputs | keys[]')
 
 # Deduplicate requested outputs
 declare -A seen
@@ -158,7 +165,7 @@ for out in "${active_outputs[@]}"; do
     [[ "$out" == "$w" ]] && skip=true && break
   done
   if ! $skip; then
-    "$SWAYMSG_BIN" "output $out disable" >/dev/null || true
+    rpc_request "output.configure" "$(jq -nc --arg output_name "$out" '{output_name:$output_name, enabled:false}')" >/dev/null || true
     systemctl --user stop "wayvnc@$out.service" 2>/dev/null || true
   fi
 done
@@ -176,35 +183,33 @@ if (( is_hybrid_mode )); then
     done
     if ! $output_exists; then
       # Create the virtual output
-      "$SWAYMSG_BIN" create_output >/dev/null 2>&1 || true
+      rpc_request "output.create_virtual" '{}' >/dev/null 2>&1 || true
       echo "Created virtual output: $vout"
     fi
   done
   # Refresh output list after creation
-  outputs_json="$("$SWAYMSG_BIN" -t get_outputs)"
-  mapfile -t all_outputs < <(printf '%s' "$outputs_json" | jq -r '.[] | .name')
+  outputs_json="$(rpc_request "outputs.get_state" '{}')"
+  mapfile -t all_outputs < <(printf '%s' "$outputs_json" | jq -r '.outputs | keys[]')
 fi
 
 # Enable requested outputs and configure them
 # Feature 084: Use different settings for physical vs virtual displays
 pos_x=0
 for out in "${want[@]}"; do
-  "$SWAYMSG_BIN" "output $out enable" >/dev/null || true
-
   if (( is_hybrid_mode )); then
     if [[ "$out" == "eDP-1" ]]; then
       # Physical display - Retina resolution with 2x scaling
-      "$SWAYMSG_BIN" "output $out mode 2560x1600@60Hz position 0,0 scale 2.0" >/dev/null || true
+      rpc_request "output.configure" "$(jq -nc --arg output_name "$out" '{output_name:$output_name, enabled:true, mode:"2560x1600@60Hz", position_x:0, position_y:0, scale:2.0}')" >/dev/null || true
       pos_x=1280  # Account for logical width (2560/2)
     else
       # Virtual display - VNC resolution
-      "$SWAYMSG_BIN" "output $out mode 1920x1080@60Hz position ${pos_x},0 scale 1.0" >/dev/null || true
+      rpc_request "output.configure" "$(jq -nc --arg output_name "$out" --argjson position_x "$pos_x" '{output_name:$output_name, enabled:true, mode:"1920x1080@60Hz", position_x:$position_x, position_y:0, scale:1.0}')" >/dev/null || true
       systemctl --user start "wayvnc@$out.service" 2>/dev/null || true
       pos_x=$((pos_x + 1920))
     fi
   else
     # Headless mode - all outputs are virtual
-    "$SWAYMSG_BIN" "output $out mode 1920x1200@60Hz position ${pos_x},0 scale 1.0" >/dev/null || true
+    rpc_request "output.configure" "$(jq -nc --arg output_name "$out" --argjson position_x "$pos_x" '{output_name:$output_name, enabled:true, mode:"1920x1200@60Hz", position_x:$position_x, position_y:0, scale:1.0}')" >/dev/null || true
     systemctl --user start "wayvnc@$out.service" 2>/dev/null || true
     pos_x=$((pos_x + 1920))
   fi

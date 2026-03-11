@@ -251,9 +251,8 @@ fi
 FULL_CMD="${ENV_STRING}; cd $(printf '%q' "$WORKDIR") && ${APP_CMD}"
 
 log "INFO" "Executing app=$APP_NAME anchor=${I3PM_TERMINAL_ANCHOR_ID:-} mode=$EXECUTION_MODE workspace=${PREFERRED_WORKSPACE:-none} class=${EXPECTED_CLASS:-none}"
-if command -v swaymsg >/dev/null 2>&1; then
-    SWAY_RESULT="$(swaymsg exec "bash -lc $(printf '%q' "$FULL_CMD")" 2>&1)" || true
-    jq -e 'type == "array" and any(.[]; .success == true)' <<< "$SWAY_RESULT" >/dev/null 2>&1 || error "Sway exec failed: $SWAY_RESULT"
-else
-    exec bash -lc "$FULL_CMD"
-fi
+command -v systemd-run >/dev/null 2>&1 || error "systemd-run is required for detached launches"
+UNIT_NAME="i3pm-launch-${APP_NAME//[^a-zA-Z0-9_.-]/-}-$$-$(date +%s)"
+SYSTEMD_RESULT="$(systemd-run --user --quiet --collect --unit "$UNIT_NAME" bash -lc "$FULL_CMD" 2>&1)" || \
+    error "Detached launch failed: ${SYSTEMD_RESULT:-systemd-run error}"
+log "INFO" "Detached launch submitted via systemd-run unit=$UNIT_NAME"

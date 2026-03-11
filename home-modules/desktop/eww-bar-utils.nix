@@ -29,14 +29,25 @@ let
       CONFIG="$HOME/.config/${configDir}"
       TIMEOUT="${pkgs.coreutils}/bin/timeout"
       JQ="${pkgs.jq}/bin/jq"
+      SOCAT="${pkgs.socat}/bin/socat"
+      DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
       KNOWN_WINDOWS='${builtins.toJSON windowMappings}'
+
+      daemon_outputs_state() {
+        local request response
+        request="$($JQ -nc '{jsonrpc:"2.0", method:"outputs.get_state", params:{}, id:1}')"
+        [[ -S "$DAEMON_SOCKET" ]] || return 1
+        response="$($TIMEOUT 2s $SOCAT - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)"
+        [[ -n "$response" ]] || return 1
+        $JQ -ec '.result' <<< "$response"
+      }
 
       for i in $(seq 1 50); do
         $TIMEOUT 1s $EWW --config "$CONFIG" ping >/dev/null 2>&1 && break
         sleep 0.2
       done
 
-      active_json="$(swaymsg -t get_outputs -r 2>/dev/null || echo '[]')"
+      active_json="$(daemon_outputs_state | $JQ -c '[.outputs[]? | select(.active == true) | {name}]' 2>/dev/null || echo '[]')"
       mapfile -t windows < <(
         printf '%s' "$KNOWN_WINDOWS" | "$JQ" -r --argjson outputs "$active_json" '
           ($outputs | map(select(.active == true) | .name) | INDEX(.)) as $active

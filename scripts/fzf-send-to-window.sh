@@ -3,6 +3,19 @@
 # Usage: fzf-send-to-window.sh [target_workspace]
 
 TARGET_WORKSPACE="${1:-4}"  # Default to workspace 4
+DAEMON_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+
+rpc_request() {
+    local method="$1"
+    local params_json="${2:-{}}"
+    local request response
+    request=$(jq -nc --arg method "$method" --argjson params "$params_json" \
+      '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+    [[ -S "$DAEMON_SOCKET" ]] || return 1
+    response=$(timeout 2s socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+    [[ -n "$response" ]] || return 1
+    jq -c '.result' <<< "$response"
+}
 
 # FZF options
 OPTS='--info=inline --print-query --expect=ctrl-space --bind=tab:replace-query'
@@ -38,12 +51,13 @@ if [ -z "$COMMAND" ]; then
     exit 0
 fi
 
-# Get window info from i3 for the target workspace
-WINDOW_INFO=$(i3-msg -t get_tree | jq -r "
-  .. | select(.type? == \"workspace\" and .num? == $TARGET_WORKSPACE)
-  | .nodes[] | select(.window_properties?)
-  | {window: .window, class: .window_properties.class, name: .name}
-" | jq -s '.[0]')
+# Get first window info for the target workspace from daemon tree
+WINDOW_INFO=$(rpc_request "get_windows" '{}' | jq -r --argjson workspace "$TARGET_WORKSPACE" '
+  [.. | objects
+   | select((.workspace? | tonumber? // -1) == $workspace)
+   | {window: .id, class: (.class // .app_id // "unknown"), name: (.title // .name // "(untitled)")}]
+  | .[0]
+')
 
 if [ "$WINDOW_INFO" == "null" ] || [ -z "$WINDOW_INFO" ]; then
     notify-send -u critical "Send to Window" "No window found in workspace $TARGET_WORKSPACE"
@@ -53,8 +67,8 @@ fi
 WINDOW_CLASS=$(echo "$WINDOW_INFO" | jq -r '.class')
 WINDOW_NAME=$(echo "$WINDOW_INFO" | jq -r '.name')
 
-# Focus the workspace
-i3-msg "workspace number $TARGET_WORKSPACE" > /dev/null 2>&1
+# Focus the workspace via daemon
+rpc_request "workspace.focus" "$(jq -nc --argjson workspace "$TARGET_WORKSPACE" '{workspace:$workspace}')" > /dev/null 2>&1 || true
 
 # Give i3 a moment to switch
 sleep 0.1

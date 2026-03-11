@@ -115,6 +115,21 @@ let
   smartPasteScript = pkgs.writeShellScript "smart-paste" ''
     #!/usr/bin/env bash
     set -euo pipefail
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
+
+    focused_window_class() {
+      local request response
+      request=$(${pkgs.jq}/bin/jq -nc '{jsonrpc:"2.0", method:"get_windows", params:{}, id:1}')
+      [[ -S "$DAEMON_SOCKET" ]] || return 1
+      response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+      [[ -n "$response" ]] || return 1
+      printf '%s\n' "$response" | ${pkgs.jq}/bin/jq -r '
+        .result
+        | .. | objects
+        | select(.focused? == true)
+        | .app_id // .class // ""
+      ' | head -n1
+    }
 
     # Copy content to clipboard first (reads from stdin)
     ${pkgs.wl-clipboard}/bin/wl-copy
@@ -122,8 +137,8 @@ let
     # Small delay for clipboard to sync and Walker window to close
     sleep 0.15
 
-    # Get focused window app_id or class
-    focused=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused? == true) | .app_id // .window_properties.class // ""' 2>/dev/null | head -1)
+    # Get focused window app_id or class from daemon state
+    focused="$(focused_window_class || true)"
 
     # Terminal detection - for terminals, DON'T auto-paste
     # This allows users to use their preferred paste method:
@@ -1161,66 +1176,80 @@ REMOTE
     #!/usr/bin/env bash
     # Close/kill the selected window
     set -euo pipefail
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
 
     if [ $# -eq 0 ]; then
       exit 0
     fi
 
-    # The windows provider returns the window ID
     WINDOW_ID="$1"
-
-    # Use swaymsg to kill the focused window
-    # The windows provider should have already focused it
-    swaymsg kill
+    REQUEST=$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WINDOW_ID" '{jsonrpc:"2.0", method:"window.action", params:{window_id:$window_id, action:"kill"}, id:1}')
+    ${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$REQUEST" >/dev/null
   '';
 
   walkerWindowFloat = pkgs.writeShellScriptBin "walker-window-float" ''
     #!/usr/bin/env bash
     # Toggle floating mode for the selected window
     set -euo pipefail
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
 
     if [ $# -eq 0 ]; then
       exit 0
     fi
 
-    swaymsg floating toggle
+    WINDOW_ID="$1"
+    REQUEST=$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WINDOW_ID" '{jsonrpc:"2.0", method:"window.action", params:{window_id:$window_id, action:"floating_toggle"}, id:1}')
+    ${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$REQUEST" >/dev/null
   '';
 
   walkerWindowFullscreen = pkgs.writeShellScriptBin "walker-window-fullscreen" ''
     #!/usr/bin/env bash
     # Toggle fullscreen mode for the selected window
     set -euo pipefail
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
 
     if [ $# -eq 0 ]; then
       exit 0
     fi
 
-    swaymsg fullscreen toggle
+    WINDOW_ID="$1"
+    REQUEST=$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WINDOW_ID" '{jsonrpc:"2.0", method:"window.action", params:{window_id:$window_id, action:"fullscreen_toggle"}, id:1}')
+    ${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$REQUEST" >/dev/null
   '';
 
   walkerWindowScratchpad = pkgs.writeShellScriptBin "walker-window-scratchpad" ''
     #!/usr/bin/env bash
     # Move the selected window to scratchpad
     set -euo pipefail
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
 
     if [ $# -eq 0 ]; then
       exit 0
     fi
 
-    swaymsg move scratchpad
+    WINDOW_ID="$1"
+    REQUEST=$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WINDOW_ID" '{jsonrpc:"2.0", method:"window.action", params:{window_id:$window_id, action:"move_scratchpad"}, id:1}')
+    ${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$REQUEST" >/dev/null
   '';
 
   walkerWindowInfo = pkgs.writeShellScriptBin "walker-window-info" ''
     #!/usr/bin/env bash
     # Show detailed window information
     set -euo pipefail
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
 
     if [ $# -eq 0 ]; then
       exit 0
     fi
 
-    # Get the focused window info from swaymsg
-    WINDOW_INFO=$(swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused? == true) | {id, name, app_id, pid, window_properties, geometry, floating, fullscreen, urgent, visible, focused}')
+    WINDOW_ID="$1"
+    REQUEST=$(${pkgs.jq}/bin/jq -nc '{jsonrpc:"2.0", method:"get_windows", params:{}, id:1}')
+    RESPONSE=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$REQUEST" 2>/dev/null || echo '{}')
+    WINDOW_INFO=$(printf '%s\n' "$RESPONSE" | ${pkgs.jq}/bin/jq -r --argjson window_id "$WINDOW_ID" '
+      .result
+      | .. | objects
+      | select((.id? // 0) == $window_id)
+    ')
 
     # Display in a notification using our terminal
     echo "$WINDOW_INFO" | ${pkgs.jq}/bin/jq '.' | ${pkgs.rofi}/bin/rofi -dmenu -p "Window Info" -theme-str 'window {width: 800px; height: 600px;}' -no-custom
@@ -1406,10 +1435,14 @@ REMOTE
 
     # Stage 1: Select a window
     get_windows() {
-        ${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '
-            recurse(.nodes[]?, .floating_nodes[]?) |
-            select(.type == "con" and .pid != null) |
-            "\(.id)|\(.app_id // .window_properties.class // "unknown")|\(.name)"
+        local request response
+        request=$(${pkgs.jq}/bin/jq -nc '{jsonrpc:"2.0", method:"get_windows", params:{}, id:1}')
+        response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+        printf '%s\n' "$response" | ${pkgs.jq}/bin/jq -r '
+            .result
+            | .. | objects
+            | select((.id? // 0) > 0 and (.pid? != null))
+            | "\(.id)|\(.app_id // .class // "unknown")|\(.title // .name // "(untitled)")"
         ' | while IFS='|' read -r id app_id name; do
             # Format: "app_id - name [id]"
             echo "''${id}|''${app_id} - ''${name}"

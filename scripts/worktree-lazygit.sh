@@ -22,8 +22,6 @@ set -euo pipefail
 
 # Default terminal emulator (ghostty per plan.md)
 TERMINAL="${TERMINAL:-ghostty}"
-ACTIVE_WORKTREE_FILE="${HOME}/.config/i3/active-worktree.json"
-
 REMOTE_HOST=""
 REMOTE_USER=""
 REMOTE_PORT="22"
@@ -36,23 +34,23 @@ resolve_path() {
 
 load_remote_context_for_path() {
     local worktree_path="$1"
+    local project_json
 
-    if [[ ! -f "$ACTIVE_WORKTREE_FILE" ]]; then
-        return 1
-    fi
     if ! command -v jq >/dev/null 2>&1; then
         return 1
     fi
 
+    project_json=$(i3pm project current --json 2>/dev/null || echo '{}')
+
     local remote_enabled
-    remote_enabled=$(jq -r '.remote.enabled // false' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "false")
+    remote_enabled=$(printf '%s\n' "$project_json" | jq -r '.execution_mode == "ssh"' 2>/dev/null || echo "false")
     if [[ "$remote_enabled" != "true" ]]; then
         return 1
     fi
 
     local active_local_dir active_dir
-    active_local_dir=$(jq -r '.local_directory // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
-    active_dir=$(jq -r '.directory // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
+    active_local_dir=$(printf '%s\n' "$project_json" | jq -r '.local_directory // ""' 2>/dev/null || echo "")
+    active_dir=$(printf '%s\n' "$project_json" | jq -r '.directory // ""' 2>/dev/null || echo "")
     if [[ -z "$active_local_dir" ]]; then
         active_local_dir="$active_dir"
     fi
@@ -67,10 +65,10 @@ load_remote_context_for_path() {
         return 1
     fi
 
-    REMOTE_HOST=$(jq -r '.remote.host // "ryzen"' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "ryzen")
-    REMOTE_USER=$(jq -r '.remote.user // env.USER // "vpittamp"' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "${USER:-vpittamp}")
-    REMOTE_PORT=$(jq -r '.remote.port // 22' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "22")
-    REMOTE_DIR=$(jq -r '.remote.remote_dir // .directory // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
+    REMOTE_HOST=$(printf '%s\n' "$project_json" | jq -r '.remote.host // "ryzen"' 2>/dev/null || echo "ryzen")
+    REMOTE_USER=$(printf '%s\n' "$project_json" | jq -r '.remote.user // env.USER // "vpittamp"' 2>/dev/null || echo "${USER:-vpittamp}")
+    REMOTE_PORT=$(printf '%s\n' "$project_json" | jq -r '.remote.port // 22' 2>/dev/null || echo "22")
+    REMOTE_DIR=$(printf '%s\n' "$project_json" | jq -r '.remote.remote_dir // .directory // ""' 2>/dev/null || echo "")
 
     if [[ -z "$REMOTE_HOST" || -z "$REMOTE_USER" || -z "$REMOTE_DIR" ]]; then
         return 1

@@ -16,8 +16,21 @@ CLI_NAME="${1:-AI}"
 MESSAGE="${2:-Task complete - awaiting your input}"
 
 LOG_FILE="/tmp/ai-finished-notification.log"
+DAEMON_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
 echo "--- $(date) ---" >> "$LOG_FILE"
 echo "CLI: $CLI_NAME, Message length: ${#MESSAGE}" >> "$LOG_FILE"
+
+daemon_rpc() {
+    local method="$1"
+    local params_json="${2:-{}}"
+    local request response
+    request=$(jq -nc --arg method "$method" --argjson params "$params_json" \
+        '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+    [[ -S "$DAEMON_SOCKET" ]] || return 1
+    response=$(timeout 2s socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+    [[ -n "$response" ]] || return 1
+    jq -ec '.result' <<< "$response"
+}
 
 # ── Window detection ──────────────────────────────────────────────────
 # Walk process tree from PPID to find a matching Sway window ID.
@@ -44,8 +57,9 @@ fi
 
 echo "Tracing up from PID: $START_PID" >> "$LOG_FILE"
 
-# Get mapping of sway pid -> window id
-SWAY_MAPPINGS=$(swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select(.type=="con" and .pid!=null) | "\(.pid)=\(.id)"' || echo "")
+# Get daemon window tree and build pid -> window id mapping
+WINDOW_TREE=$(daemon_rpc "get_windows" '{}' || echo '[]')
+SWAY_MAPPINGS=$(printf '%s\n' "$WINDOW_TREE" | jq -r '.. | objects | select((.pid? // 0) > 0) | "\(.pid)=\(.id)"' || echo "")
 
 # Walk up process tree to find a matching Sway window
 current_pid=$START_PID
@@ -62,7 +76,7 @@ done
 # Fallback to currently focused window
 if [ -z "$WINDOW_ID" ]; then
     echo "Could not find WINDOW_ID by walking tree. Falling back to focused window." >> "$LOG_FILE"
-    FOCUSED_WINDOW_ID=$(swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select(.focused==true) | .id' || echo "")
+    FOCUSED_WINDOW_ID=$(printf '%s\n' "$WINDOW_TREE" | jq -r '.. | objects | select(.focused==true) | .id' || echo "")
     if [ -n "$FOCUSED_WINDOW_ID" ]; then
         WINDOW_ID=$FOCUSED_WINDOW_ID
         echo "Fallback FOCUSED_WINDOW_ID: $WINDOW_ID" >> "$LOG_FILE"
@@ -92,34 +106,26 @@ if [ -n "$WINDOW_ID" ]; then
     if [ "$RESPONSE" = "focus" ]; then
         echo "Focusing window $WINDOW_ID" >> "$LOG_FILE"
 
-        # Use focus-ai-session-action if available (handles project switching + tmux targeting)
-        FOCUS_SCRIPT="$HOME/.config/eww-monitoring-panel/scripts/focus-ai-session-action"
-        if [ -x "$FOCUS_SCRIPT" ]; then
-            # Determine project from Sway marks on this window
-            PROJECT_NAME=$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson id "$WINDOW_ID" '
-                .. | objects | select(.id? == $id) |
-                [.marks[]? | select(startswith("scoped:") or startswith("global:"))] |
-                first | split(":") |
-                if length >= 4 then .[2:-1] | join(":") else "" end
-            ' 2>/dev/null || echo "")
-            [ -z "$PROJECT_NAME" ] && PROJECT_NAME="global"
+        PROJECT_NAME=$(printf '%s\n' "$WINDOW_TREE" | jq -r --argjson id "$WINDOW_ID" '
+            .. | objects | select(.id? == $id) | .project // empty
+        ' 2>/dev/null | head -n1 || echo "")
+        TARGET_VARIANT=$(printf '%s\n' "$WINDOW_TREE" | jq -r --argjson id "$WINDOW_ID" '
+            .. | objects | select(.id? == $id) | .execution_mode // empty
+        ' 2>/dev/null | head -n1 || echo "")
+        FOCUS_PARAMS=$(jq -nc \
+            --argjson window_id "$WINDOW_ID" \
+            --arg project_name "$PROJECT_NAME" \
+            --arg target_variant "$TARGET_VARIANT" \
+            '{window_id:$window_id, project_name:$project_name, target_variant:$target_variant}')
+        daemon_rpc "window.focus" "$FOCUS_PARAMS" >> "$LOG_FILE" 2>&1 || true
 
-            echo "Delegating to focus-ai-session-action: project=$PROJECT_NAME" >> "$LOG_FILE"
-            "$FOCUS_SCRIPT" "$PROJECT_NAME" "$WINDOW_ID" "local" \
-                "${TMUX_PANE:-}" "${TMUX_SESSION:-}" "${TMUX_WINDOW:-}" "" \
-                >> "$LOG_FILE" 2>&1 || true
-        else
-            # Fallback: direct sway focus + tmux select
-            swaymsg "[con_id=$WINDOW_ID] focus" >> "$LOG_FILE" 2>&1 || true
-
-            if [ -n "$TMUX_SESSION" ] && [ -n "$TMUX_WINDOW" ]; then
-                if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-                    tmux select-window -t "${TMUX_SESSION}:${TMUX_WINDOW}" >> "$LOG_FILE" 2>&1 || true
-                fi
+        if [ -n "$TMUX_SESSION" ] && [ -n "$TMUX_WINDOW" ]; then
+            if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+                tmux select-window -t "${TMUX_SESSION}:${TMUX_WINDOW}" >> "$LOG_FILE" 2>&1 || true
             fi
-            if [ -n "${TMUX_PANE:-}" ]; then
-                tmux select-pane -t "$TMUX_PANE" >> "$LOG_FILE" 2>&1 || true
-            fi
+        fi
+        if [ -n "${TMUX_PANE:-}" ]; then
+            tmux select-pane -t "$TMUX_PANE" >> "$LOG_FILE" 2>&1 || true
         fi
     fi
 else

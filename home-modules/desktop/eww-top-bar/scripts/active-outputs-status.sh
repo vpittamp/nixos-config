@@ -9,11 +9,22 @@
 set -euo pipefail
 
 STATE_FILE="${HOME}/.config/sway/output-states.json"
+DAEMON_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
 
-# Get all outputs from Sway
-outputs_json="$(swaymsg -t get_outputs 2>/dev/null || echo '[]')"
+daemon_outputs_state() {
+  local request response
+  request="$(jq -nc '{jsonrpc:"2.0", method:"outputs.get_state", params:{}, id:1}')"
+  [[ -S "$DAEMON_SOCKET" ]] || return 1
+  response="$(timeout 2s socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)"
+  [[ -n "$response" ]] || return 1
+  jq -ec '.result' <<< "$response"
+}
 
-# Get all output names from Sway
+# Get outputs from daemon cache
+outputs_state="$(daemon_outputs_state || echo '{"outputs":{},"active_outputs":[]}')"
+outputs_json="$(printf '%s\n' "$outputs_state" | jq -c '[.outputs[]?]')"
+
+# Get all output names from daemon
 all_outputs=$(echo "$outputs_json" | jq -r '.[].name')
 
 # Read state file (create default if not exists)

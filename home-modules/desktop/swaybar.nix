@@ -33,8 +33,8 @@ let
   # Reuses existing i3bar script (protocol-compatible with Sway)
   systemMonitorScript = pkgs.writeShellScript "swaybar-status-system-monitor" (
     builtins.replaceStrings
-      [ "@date@" "@grep@" "@awk@" "@sed@" ]
-      [ "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.gnused}/bin/sed" ]
+      [ "@date@" "@grep@" "@awk@" "@sed@" "@jq@" "@timeout@" "@socat@" "@id@" ]
+      [ "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.gnused}/bin/sed" "${pkgs.jq}/bin/jq" "${pkgs.coreutils}/bin/timeout" "${pkgs.socat}/bin/socat" "${pkgs.coreutils}/bin/id" ]
       (builtins.readFile ./i3bar/status-system-monitor.sh)
   );
 

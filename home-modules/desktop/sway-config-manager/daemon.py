@@ -8,6 +8,7 @@ Handles configuration loading, validation, and hot-reload.
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -34,6 +35,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+tools_root = Path(__file__).resolve().parents[2] / "tools"
+if str(tools_root) not in sys.path:
+    sys.path.insert(0, str(tools_root))
+
+from i3_project_manager.core.daemon_client import DaemonClient, DaemonError
 
 
 class SwayConfigDaemon:
@@ -197,31 +204,20 @@ class SwayConfigDaemon:
 
     async def load_active_project(self):
         """
-        Load active project from i3pm active-worktree.json.
+        Load active project from the i3pm daemon.
 
         Feature 047 User Story 3: Query active project and apply project-specific rules
-        Feature 101: Migrated to active-worktree.json as single source of truth
         """
         try:
-            import json
             from sway_config_manager.models import Project
 
-            # Feature 101: Read from active-worktree.json (single source of truth)
-            active_worktree_file = self.config_dir.parent / "i3" / "active-worktree.json"
-
-            if not active_worktree_file.exists():
-                logger.debug("No active worktree file found")
-                self.active_project = None
-                self.window_rule_engine.set_active_project(None)
-                self.keybinding_manager.set_active_project(None)
-                return
-
-            with open(active_worktree_file, 'r') as f:
-                worktree_data = json.load(f)
-
+            async with DaemonClient() as daemon:
+                worktree_data = await daemon.get_active_context()
             qualified_name = worktree_data.get("qualified_name")
-            if not qualified_name:
-                logger.debug("Active worktree file has no qualified_name")
+            directory = worktree_data.get("directory") or worktree_data.get("local_directory") or ""
+
+            if not qualified_name or not directory:
+                logger.debug("No active daemon-managed project context")
                 self.active_project = None
                 self.window_rule_engine.set_active_project(None)
                 self.keybinding_manager.set_active_project(None)
@@ -232,7 +228,7 @@ class SwayConfigDaemon:
             project_data = {
                 "name": qualified_name,
                 "display_name": worktree_data.get("repo_name", qualified_name),
-                "directory": worktree_data.get("directory", ""),
+                "directory": directory,
                 "icon": "🌿" if worktree_data.get("branch") not in ["main", "master"] else "📦",
             }
 
@@ -245,6 +241,11 @@ class SwayConfigDaemon:
 
             logger.info(f"Loaded active project: {self.active_project.name}")
 
+        except DaemonError as e:
+            logger.warning(f"Failed to query i3pm daemon for active project: {e}")
+            self.active_project = None
+            self.window_rule_engine.set_active_project(None)
+            self.keybinding_manager.set_active_project(None)
         except Exception as e:
             logger.error(f"Failed to load active project: {e}")
             self.active_project = None

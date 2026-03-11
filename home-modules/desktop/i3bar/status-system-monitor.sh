@@ -8,6 +8,10 @@ DATE_BIN="@date@"
 GREP_BIN="@grep@"
 AWK_BIN="@awk@"
 SED_BIN="@sed@"
+JQ_BIN="@jq@"
+TIMEOUT_BIN="@timeout@"
+SOCAT_BIN="@socat@"
+ID_BIN="@id@"
 
 # Catppuccin Mocha colors
 COLOR_LAVENDER="#b4befe"
@@ -30,6 +34,24 @@ COLOR_SUBTEXT0="#a6adc8"
 COLOR_OVERLAY2="#9399b2"
 COLOR_SURFACE2="#585b70"
 COLOR_BASE="#1e1e2e"
+
+DAEMON_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$("$ID_BIN" -u)}/i3-project-daemon/ipc.sock"
+
+daemon_rpc() {
+    local method="$1"
+    local params_json="${2:-{}}"
+    local request response
+
+    request=$("$JQ_BIN" -nc \
+        --arg method "$method" \
+        --argjson params "$params_json" \
+        '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+
+    [[ -S "$DAEMON_SOCKET" ]] || return 1
+    response=$("$TIMEOUT_BIN" 2s "$SOCAT_BIN" - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+    [[ -n "$response" ]] || return 1
+    "$JQ_BIN" -ec '.result' <<< "$response"
+}
 
 escape_json_string() {
     local str="$1"
@@ -196,10 +218,17 @@ get_load_average() {
     echo "$load"
 }
 
-# Get current Sway binding mode
+# Get current daemon-managed workspace mode
 get_mode_indicator() {
-    local mode
-    mode=$(swaymsg -t get_binding_state 2>/dev/null | jq -r '.name' 2>/dev/null)
+    local state_json mode
+    state_json=$(daemon_rpc "workspace_mode.state" '{}' 2>/dev/null || true)
+    mode=$("$JQ_BIN" -r '
+        if (.active // false) then
+            (if (.mode_type // "goto") == "move" then "⇒ WS" else "→ WS" end)
+        else
+            "default"
+        end
+    ' <<< "$state_json" 2>/dev/null)
 
     # Only show indicator if not in default mode
     if [ -z "$mode" ] || [ "$mode" = "default" ]; then
@@ -211,10 +240,9 @@ get_mode_indicator() {
     mode_upper=$(echo "$mode" | tr '[:lower:]' '[:upper:]')
 
     # Feature 072: Hide workspace mode indicators (visual feedback now in preview card)
-    # Special handling for workspace modes - DISABLED (preview card provides feedback)
     local display_text=" ⚡ ${mode_upper} ⚡ "
     if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ] || [ "$mode" = "→ WS" ] || [ "$mode" = "⇒ WS" ]; then
-        # Don't show workspace mode in swaybar - preview card handles this now
+        # Don't show workspace mode in swaybar/i3bar - preview card handles this now
         return 0
     fi
 

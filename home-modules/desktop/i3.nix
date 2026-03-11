@@ -42,9 +42,8 @@ in
     set $ws9 "9 "
 
     # Default workspace-to-output assignments for i3bar
-    # These are defaults; assign-workspace-monitor.sh will override based on monitor count
     # NOTE: These assignments are intentionally permissive (multiple outputs per workspace)
-    # to ensure workspaces show on i3bar even before dynamic assignment runs
+    # to ensure workspaces show on i3bar even before daemon-managed reassignment runs
 
     # Feature 039: ALL window-to-workspace assignments now handled by Python daemon
     # - Unified workspace assignment for ALL apps (GLOBAL and SCOPED)

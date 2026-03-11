@@ -1,12 +1,8 @@
-"""i3pm project indicator status block.
-
-Feature 101: Uses active-worktree.json as single source of truth.
-"""
+"""i3pm project indicator status block."""
 
 import json
+import subprocess
 import logging
-import re
-from pathlib import Path
 from typing import Optional
 
 from .models import StatusBlock
@@ -16,32 +12,21 @@ logger = logging.getLogger(__name__)
 
 
 def get_active_worktree() -> Optional[dict]:
-    """Get active worktree from i3pm state file.
-
-    Feature 101: Uses active-worktree.json as single source of truth.
-
-    Returns:
-        Dict with worktree data or None if no active project
-    """
-    active_worktree_file = Path.home() / ".config" / "i3" / "active-worktree.json"
-
+    """Get active worktree from the daemon-backed i3pm CLI."""
     try:
-        if not active_worktree_file.exists():
-            logger.debug("No active worktree file found")
+        result = subprocess.run(
+            ["i3pm", "project", "current", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=1.5,
+            check=False,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
             return None
-
-        with open(active_worktree_file, "r") as f:
-            data = json.load(f)
-
-        if not data or "qualified_name" not in data:
-            logger.debug("No qualified_name in active worktree file")
+        data = json.loads(result.stdout)
+        if not isinstance(data, dict) or not data.get("name"):
             return None
-
         return data
-
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse active worktree JSON: {e}")
-        return None
     except Exception as e:
         logger.error(f"Failed to read active worktree: {e}")
         return None
@@ -65,14 +50,10 @@ def create_project_block(config: Config) -> Optional[StatusBlock]:
         return None
 
     # Extract display info from worktree data
-    branch = worktree_data.get("branch", "")
-    repo_name = worktree_data.get("repo_name", "")
-
-    # Extract branch number if present (e.g., "101-feature" -> "101")
-    branch_number = None
-    match = re.match(r'^(\d+)-', branch)
-    if match:
-        branch_number = match.group(1)
+    branch = str(worktree_data.get("branch") or "")
+    repo_name = str(worktree_data.get("repo_name") or worktree_data.get("display_name") or "")
+    branch_prefix = branch.split("-", 1)[0]
+    branch_number = branch_prefix if branch_prefix.isdigit() else None
 
     # Format display name: "101 - repo_name" or just "repo_name" for main
     if branch_number:

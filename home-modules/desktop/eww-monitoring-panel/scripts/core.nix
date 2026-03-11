@@ -71,6 +71,22 @@ let
     done
   '';
 
+  daemonRpcHelpers = ''
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+
+    rpc_request() {
+      local method="$1"
+      local params_json="''${2:-{}}"
+      local request response
+      request=$(${pkgs.jq}/bin/jq -nc --arg method "$method" --argjson params "$params_json" \
+        '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+      [[ -S "$DAEMON_SOCKET" ]] || return 1
+      response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+      [[ -n "$response" ]] || return 1
+      ${pkgs.jq}/bin/jq -c '.result' <<< "$response"
+    }
+  '';
+
   # Feature 110: Spinner animation uses CSS transition (defpoll toggles pulse_phase)
   # GTK3 supports CSS transitions but EWW doesn't support @keyframes properly
 
@@ -613,6 +629,7 @@ EOF
     # Feature 086: Handle navigation within monitoring panel
     ACTION="$1"
     EWW_CMD="${pkgs.eww}/bin/eww --no-daemonize --config $HOME/.config/eww-monitoring-panel"
+    ${daemonRpcHelpers}
 
     # Get current state
     current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "0")
@@ -658,10 +675,8 @@ EOF
         $EWW_CMD update selected_window_id=0
         ;;
       focus)
-        # Focus the selected window in Sway
         if [ "$selected_window" != "0" ] && [ "$selected_window" != "null" ]; then
-          ${pkgs.sway}/bin/swaymsg "[con_id=$selected_window] focus"
-          # Feature 125: exit-monitor-mode removed (focus mode replaced by dock mode)
+          rpc_request "window.focus" "$(${pkgs.jq}/bin/jq -nc --argjson window_id "$selected_window" '{window_id:$window_id}')" >/dev/null || true
         fi
         ;;
     esac

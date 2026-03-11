@@ -3,28 +3,27 @@
 # Feature 048: Detects which HEADLESS outputs have active VNC connections
 
 set -euo pipefail
+DAEMON_SOCKET="${XDG_RUNTIME_DIR:-/run/user/1000}/i3-project-daemon/ipc.sock"
 
 # ----------------------------------------------------------------------------
 # Utility helpers
 # ----------------------------------------------------------------------------
 
-ensure_sway_sock() {
-    if [ -n "${SWAYSOCK:-}" ] && [ -S "$SWAYSOCK" ]; then
-        return
-    fi
-    local sock
-    sock=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
-    if [ -z "$sock" ]; then
-        echo "Error: Sway not running" >&2
-        exit 1
-    fi
-    export SWAYSOCK="$sock"
+rpc_request() {
+    local method="$1"
+    local params_json="${2:-{}}"
+    local request response
+    request=$(jq -nc --arg method "$method" --argjson params "$params_json" \
+        '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+    [[ -S "$DAEMON_SOCKET" ]] || { echo "Error: daemon socket not found" >&2; exit 1; }
+    response=$(timeout 2s socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+    [[ -n "$response" ]] || { echo "Error: no response from daemon" >&2; exit 1; }
+    jq -c '.result' <<< "$response"
 }
 
-# Get Sway outputs
+# Get daemon output state
 get_sway_outputs() {
-    ensure_sway_sock
-    swaymsg -t get_outputs 2>/dev/null || echo "[]"
+    rpc_request "outputs.get_state" '{}' | jq -c '[.outputs[]?]'
 }
 
 # Check VNC connection for a display
@@ -44,8 +43,7 @@ check_vnc_connection() {
 # Get workspace assignments for an output
 get_workspaces_for_output() {
     local output=$1
-    ensure_sway_sock
-    swaymsg -t get_workspaces 2>/dev/null | jq -r --arg output "$output" \
+    rpc_request "get_workspaces" '{}' | jq -r --arg output "$output" \
         '.[] | select(.output == $output) | .num' | sort -n | tr '\n' ',' | sed 's/,$//'
 }
 
@@ -71,19 +69,17 @@ detect_active_monitors() {
 }
 
 collect_current_workspaces() {
-    ensure_sway_sock
-    swaymsg -t get_workspaces 2>/dev/null | jq -r '.[].num' | sort -n | uniq
+    rpc_request "get_workspaces" '{}' | jq -r '.[].num' | sort -n | uniq
 }
 
 assign_workspaces_to_output() {
     local output=$1
     shift
     [ "$#" -eq 0 ] && return
-    ensure_sway_sock
     local ws summary
     summary="$(printf '%s ' "$@" | sed 's/ $//')"
     for ws in "$@"; do
-        swaymsg "workspace number $ws output $output" > /dev/null 2>&1 || {
+        rpc_request "workspace.move_to_output" "$(jq -nc --arg output_name "$output" --arg workspace "$ws" '{workspace:$workspace, output_name:$output_name}')" > /dev/null 2>&1 || {
             echo "Warning: failed to assign workspace $ws to $output" >&2
         }
     done
@@ -157,8 +153,6 @@ case "$cmd" in
         ;;
 
     json)
-        ensure_sway_sock
-
         echo "{"
         echo '  "monitors": ['
         first=true

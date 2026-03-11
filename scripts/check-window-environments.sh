@@ -2,7 +2,7 @@
 #
 # Check I3PM_* Environment Variables for Running Windows
 #
-# This script inspects all currently running windows in i3
+# This script inspects daemon-tracked windows
 # and displays their I3PM_* environment variables
 
 set -euo pipefail
@@ -19,26 +19,45 @@ echo -e "${BLUE}i3 Window Environment Inspector${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Check if i3 is running
-if ! pgrep -x i3 >/dev/null; then
-    echo -e "${RED}ERROR: i3 is not running${NC}"
-    exit 1
-fi
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+DAEMON_SOCKET="${DAEMON_SOCKET:-$RUNTIME_DIR/i3-project-daemon/ipc.sock}"
 
-# Get window list from i3
-echo -e "${GREEN}Fetching window list from i3...${NC}"
+rpc_request() {
+    local method="$1"
+    local params_json="$2"
+    local request response error_json
+
+    request=$(jq -nc \
+        --arg method "$method" \
+        --argjson params "$params_json" \
+        '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+
+    [[ -S "$DAEMON_SOCKET" ]] || {
+        echo -e "${RED}ERROR: daemon socket not found: $DAEMON_SOCKET${NC}" >&2
+        exit 1
+    }
+
+    response=$(printf '%s\n' "$request" | socat - UNIX-CONNECT:"$DAEMON_SOCKET")
+    error_json=$(jq -c '.error // empty' <<< "$response")
+    if [[ -n "$error_json" ]]; then
+        echo -e "${RED}ERROR: daemon request failed: $error_json${NC}" >&2
+        exit 1
+    fi
+
+    jq -c '.result' <<< "$response"
+}
+
+echo -e "${GREEN}Fetching window list from daemon...${NC}"
 echo ""
 
-# Use i3-msg to get window tree and extract window IDs
 window_count=0
 windows_with_env=0
 windows_without_env=0
 
 while IFS= read -r line; do
-    # Parse JSON line for window info
-    window_id=$(echo "$line" | jq -r '.id // empty')
-    window_name=$(echo "$line" | jq -r '.name // empty')
-    window_class=$(echo "$line" | jq -r '.window_properties.class // empty')
+    window_id=$(echo "$line" | jq -r '.window_id // empty')
+    window_name=$(echo "$line" | jq -r '.title // empty')
+    window_class=$(echo "$line" | jq -r '.class // empty')
 
     if [[ -z "$window_id" ]]; then
         continue
@@ -46,12 +65,13 @@ while IFS= read -r line; do
 
     ((window_count++))
 
-    # Get window PID using xprop
-    pid=$(xprop -id "$window_id" _NET_WM_PID 2>/dev/null | awk '{print $3}')
+    state_json=$(rpc_request "windows.getState" "$(jq -nc --argjson window_id "$window_id" '{window_id:$window_id}')")
+    pid=$(echo "$state_json" | jq -r '.pid // empty')
+    env_vars=$(echo "$state_json" | jq -r '.i3pm_env // {} | to_entries[]? | "\(.key)=\(.value)"')
 
     if [[ -z "$pid" || "$pid" == "" ]]; then
         echo -e "${YELLOW}Window $window_count: ${window_class:-Unknown} - ${window_name}${NC}"
-        echo "  No PID found (xprop failed)"
+        echo "  No PID found"
         echo ""
         continue
     fi
@@ -62,16 +82,6 @@ while IFS= read -r line; do
     echo "  Title: ${window_name}"
     echo "  PID: $pid"
     echo "  Window ID: $window_id"
-
-    # Check if /proc/<pid>/environ is readable
-    if [[ ! -r "/proc/$pid/environ" ]]; then
-        echo -e "  ${YELLOW}Cannot read /proc/$pid/environ (permission denied)${NC}"
-        echo ""
-        continue
-    fi
-
-    # Read environment variables
-    env_vars=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep "^I3PM_" || true)
 
     if [[ -n "$env_vars" ]]; then
         echo -e "  ${GREEN}✓ I3PM Environment Variables Found:${NC}"
@@ -106,12 +116,12 @@ while IFS= read -r line; do
         ((windows_with_env++))
     else
         echo -e "  ${RED}✗ No I3PM_* variables found${NC}"
-        echo "  (Window not launched via app-launcher-wrapper.sh)"
+        echo "  (Window is not carrying managed I3PM environment)"
         ((windows_without_env++))
     fi
 
     echo ""
-done < <(i3-msg -t get_tree | jq -r '.. | select(.window?) | @json')
+done < <(rpc_request "get_windows" '{}' | jq -c '.windows[]?')
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}Summary:${NC}"

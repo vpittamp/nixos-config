@@ -1124,6 +1124,7 @@ let
     # Feature 119: Close all windows belonging to a specific worktree/project
     # Improved with rate limiting, error handling, and state validation
     set -euo pipefail
+    ${daemonRpcHelpers}
 
     PROJECT_NAME="''${1:-}"
     TARGET_VARIANT="''${2:-}"
@@ -1166,26 +1167,11 @@ let
     echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
-    # Get all window IDs with marks matching this project.
-    # Mark format: <scope>:<app>:<project>:<window_id>, where project may contain ':'.
-    # Optional ctx filtering keeps local/SSH cards isolated.
-    WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" --arg ctx "$TARGET_CONTEXT_KEY" '
-      def is_project_mark:
-        (startswith("scoped:") or startswith("global:")) and ((split(":") | length) >= 4);
-      def project_from_mark:
-        (split(":")) as $parts | ($parts[2:($parts | length - 1)] | join(":"));
-      def has_ctx_mark:
-        any(.marks[]?; startswith("ctx:"));
-      def matches_ctx:
-        ($ctx == "")
-        or any(.marks[]?; . == ("ctx:" + $ctx))
-        or (has_ctx_mark | not);
-
-      .. | objects | select(.marks? != null)
-      | select(
-          (any(.marks[]?; (is_project_mark and (project_from_mark == $proj))))
-          and matches_ctx
-        )
+    WINDOW_TREE=$(rpc_request "get_windows" '{}' || echo '[]')
+    WINDOW_IDS=$(printf '%s\n' "$WINDOW_TREE" | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" --arg ctx "$TARGET_CONTEXT_KEY" '
+      .. | objects
+      | select((.id? // 0) > 0)
+      | select(((.project // "") == $proj) and (($ctx == "") or ((.context_key // "") == $ctx)))
       | .id
     ' 2>/dev/null || echo "")
 
@@ -1201,7 +1187,7 @@ let
     CLOSED=0
     FAILED=0
     for WID in $WINDOW_IDS; do
-        if ${pkgs.sway}/bin/swaymsg "[con_id=$WID] kill" 2>/dev/null; then
+        if rpc_request "window.action" "$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WID" '{window_id:$window_id, action:"kill"}')" >/dev/null; then
             ((CLOSED++)) || true
         else
             ((FAILED++)) || true
@@ -1212,25 +1198,12 @@ let
 
     # Feature 119: Re-query sway tree to confirm close
     sleep 0.2  # Brief wait for window close to propagate
-    REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" --arg ctx "$TARGET_CONTEXT_KEY" '
-      def is_project_mark:
-        (startswith("scoped:") or startswith("global:")) and ((split(":") | length) >= 4);
-      def project_from_mark:
-        (split(":")) as $parts | ($parts[2:($parts | length - 1)] | join(":"));
-      def has_ctx_mark:
-        any(.marks[]?; startswith("ctx:"));
-      def matches_ctx:
-        ($ctx == "")
-        or any(.marks[]?; . == ("ctx:" + $ctx))
-        or (has_ctx_mark | not);
-
-      .. | objects | select(.marks? != null)
-      | select(
-          (any(.marks[]?; (is_project_mark and (project_from_mark == $proj))))
-          and matches_ctx
-        )
-      | .id
-    ' 2>/dev/null | wc -l || echo "0")
+    WINDOW_TREE=$(rpc_request "get_windows" '{}' || echo '[]')
+    REMAINING=$(printf '%s\n' "$WINDOW_TREE" | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" --arg ctx "$TARGET_CONTEXT_KEY" '
+      [.. | objects
+       | select((.id? // 0) > 0)
+       | select(((.project // "") == $proj) and (($ctx == "") or ((.context_key // "") == $ctx)))] | length
+    ' 2>/dev/null || echo "0")
 
     # Feature 119: Send notification with actual close count
     if [[ "$REMAINING" -gt 0 ]]; then
@@ -1248,6 +1221,7 @@ let
     # Feature 119: Close all windows tracked by the monitoring panel
     # Improved with rate limiting, error handling, and state validation
     set -euo pipefail
+    ${daemonRpcHelpers}
 
     # Feature 119: Rate limiting instead of lock file (1 second debounce)
     LOCK_FILE="/tmp/eww-close-all-windows.lock"
@@ -1266,11 +1240,12 @@ let
     echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
-    # Get all window IDs with i3pm marks (scoped windows)
-    WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '
-      .. | objects | select(.marks? != null) |
-      select(.marks | map(startswith("scoped:")) | any) |
-      .id
+    WINDOW_TREE=$(rpc_request "get_windows" '{}' || echo '[]')
+    WINDOW_IDS=$(printf '%s\n' "$WINDOW_TREE" | ${pkgs.jq}/bin/jq -r '
+      .. | objects
+      | select((.id? // 0) > 0)
+      | select((.project // "") != "")
+      | .id
     ' 2>/dev/null || echo "")
 
     if [[ -z "$WINDOW_IDS" ]]; then
@@ -1285,7 +1260,7 @@ let
     CLOSED=0
     FAILED=0
     for WID in $WINDOW_IDS; do
-        if ${pkgs.sway}/bin/swaymsg "[con_id=$WID] kill" 2>/dev/null; then
+        if rpc_request "window.action" "$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WID" '{window_id:$window_id, action:"kill"}')" >/dev/null; then
             ((CLOSED++)) || true
         else
             ((FAILED++)) || true
@@ -1295,11 +1270,10 @@ let
 
     # Feature 119: Re-query sway tree to confirm close
     sleep 0.2  # Brief wait for window close to propagate
-    REMAINING=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '
-      .. | objects | select(.marks? != null) |
-      select(.marks | map(startswith("scoped:")) | any) |
-      .id
-    ' 2>/dev/null | wc -l || echo "0")
+    WINDOW_TREE=$(rpc_request "get_windows" '{}' || echo '[]')
+    REMAINING=$(printf '%s\n' "$WINDOW_TREE" | ${pkgs.jq}/bin/jq -r '
+      [.. | objects | select((.id? // 0) > 0) | select((.project // "") != "")] | length
+    ' 2>/dev/null || echo "0")
 
     # Feature 119: Send notification with actual close count
     if [[ "$REMAINING" -gt 0 ]]; then
@@ -1317,6 +1291,7 @@ let
     #!${pkgs.bash}/bin/bash
     # Feature 119: Close individual window with rate limiting and error handling
     set -euo pipefail
+    ${daemonRpcHelpers}
 
     WINDOW_ID="''${1:-}"
 
@@ -1345,8 +1320,9 @@ let
     ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0 &
 
     # Check if window still exists before trying to close
-    WINDOW_EXISTS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg id "$WINDOW_ID" '
-        .. | objects | select(.type=="con") | select(.id == ($id | tonumber)) | .id
+    WINDOW_TREE=$(rpc_request "get_windows" '{}' || echo '[]')
+    WINDOW_EXISTS=$(printf '%s\n' "$WINDOW_TREE" | ${pkgs.jq}/bin/jq -r --argjson id "$WINDOW_ID" '
+        .. | objects | select((.id? // 0) == $id) | .id
     ' 2>/dev/null | head -1 || echo "")
 
     if [[ -z "$WINDOW_EXISTS" ]]; then
@@ -1356,7 +1332,7 @@ let
     fi
 
     # Close the window
-    if ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] kill" 2>/dev/null; then
+    if rpc_request "window.action" "$(${pkgs.jq}/bin/jq -nc --argjson window_id "$WINDOW_ID" '{window_id:$window_id, action:"kill"}')" >/dev/null; then
         # Success - clean up lock file after brief delay
         (sleep 0.5 && rm -f "$LOCK_FILE") &
         exit 0
@@ -1763,8 +1739,8 @@ let
 
     echo "$(date): Opening URL: $URL" >> /tmp/langfuse-debug.log
 
-    # Open in Firefox with new tab (xdg-open can fail with running Firefox)
-    ${pkgs.sway}/bin/swaymsg exec "firefox --new-tab '$URL'" >> /tmp/langfuse-debug.log 2>&1 || \
+    # Open detached without Sway IPC.
+    ${pkgs.systemd}/bin/systemd-run --user --quiet --collect firefox --new-tab "$URL" >> /tmp/langfuse-debug.log 2>&1 || \
       ${pkgs.xdg-utils}/bin/xdg-open "$URL" &
   '';
 
