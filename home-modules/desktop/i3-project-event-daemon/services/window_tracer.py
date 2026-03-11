@@ -86,7 +86,7 @@ class TraceEventType(str, Enum):
     # Feature 101 Enhancement: Pre-launch tracing
     # These events track the complete launch lifecycle before window appears
     LAUNCH_INTENT = "launch::intent"              # CLI registered pending trace for app
-    LAUNCH_NOTIFICATION = "launch::notification"  # Daemon received notify_launch from wrapper
+    LAUNCH_NOTIFICATION = "launch::notification"  # Daemon prepared a managed launch spec
     LAUNCH_ENV_INJECTED = "launch::env_injected"  # I3PM_* environment variables captured
     LAUNCH_CORRELATED = "launch::correlated"      # Window matched to pending launch
 
@@ -1333,9 +1333,9 @@ class WindowTracer:
         launcher_pid: Optional[int],
         env_vars: Dict[str, str],
     ) -> None:
-        """Record launch notification events for a trace.
+        """Record launch preparation events for a trace.
 
-        Called when daemon receives notify_launch for a traced app.
+        Called when the daemon prepares a managed launch spec for a traced app.
 
         Args:
             trace_id: The pending trace ID

@@ -117,7 +117,7 @@ export I3PM_EXPECTED_CLASS="firefox"
 #### 4.4. Sends Launch Notification (Feature 041)
 ```bash
 # Sends JSON-RPC to daemon BEFORE app launches
-notify_launch "$APP_NAME" "$PROJECT_NAME" "$PROJECT_DIR" \
+prepare_launch "$APP_NAME" "$PROJECT_NAME" "$PROJECT_DIR" \
     "$PREFERRED_WORKSPACE" "$LAUNCH_TIMESTAMP" "$EXPECTED_CLASS"
 ```
 

@@ -667,6 +667,7 @@ async def on_window_new(
             window_pid=window_pid,
             workspace_number=workspace_number,
             timestamp=time.time(),
+            window_instance=container.window_instance or "",
         )
 
         matched_launch = None
@@ -705,30 +706,31 @@ async def on_window_new(
                     window_class,
                     terminal_anchor_id,
                 )
-
-        # Query launch registry for matching pending launch when no exact anchor was available.
-        if matched_launch is None:
-            matched_launch = await state_manager.launch_registry.find_match(launch_window_info)
+        else:
+            matched_launch = await state_manager.launch_registry.find_by_window_signature(
+                launch_window_info
+            )
+            if matched_launch:
+                correlation_confidence = 1.0
+                correlation_signals = {
+                    "match_type": "window_signature_exact",
+                    "window_class": window_class,
+                    "window_instance": container.window_instance or "",
+                    "workspace_match": matched_launch.workspace_number == workspace_number,
+                }
+                confidence_level = "SIGNATURE"
+                correlated_project = matched_launch.project_name
+                logger.info(
+                    "Bound window %s (%s/%s) to managed launch signature for app '%s' project '%s'",
+                    window_id,
+                    window_class,
+                    container.window_instance or "",
+                    matched_launch.app_name,
+                    correlated_project,
+                )
 
         if matched_launch:
-            # Successful correlation - use project from launch notification
-            # T040: calculate_confidence now returns (confidence, signals) tuple
-            if confidence_level != "ANCHOR":
-                from .services.window_correlator import calculate_confidence
-                correlation_confidence, correlation_signals = calculate_confidence(matched_launch, launch_window_info)
-                correlated_project = matched_launch.project_name
-
-                # Determine confidence level for logging
-                if correlation_confidence >= 1.0:
-                    confidence_level = "EXACT"
-                elif correlation_confidence >= 0.8:
-                    confidence_level = "HIGH"
-                elif correlation_confidence >= 0.6:
-                    confidence_level = "MEDIUM"
-                else:
-                    confidence_level = "LOW"
-
-            # T040: Enhanced logging with workspace match information
+            correlated_project = matched_launch.project_name
             workspace_match_str = ""
             if "workspace_match" in correlation_signals:
                 workspace_match = correlation_signals["workspace_match"]
@@ -756,39 +758,25 @@ async def on_window_new(
                     )
                     logger.info(f"[Feature 101] Recorded launch correlation for trace {matched_launch.trace_id}")
         else:
-            # No matching launch found - explicit failure (FR-008, FR-009)
             logger.warning(
-                f"✗ Window {window_id} ({window_class}) appeared without matching launch notification. "
-                f"No project assignment via launch correlation. "
-                f"(workspace={workspace_number}, pid={window_pid})"
+                "Managed window %s (%s) appeared without a matching terminal anchor registration; "
+                "project assignment will rely on explicit window environment only (workspace=%s pid=%s)",
+                window_id,
+                window_class,
+                workspace_number,
+                window_pid,
             )
 
-        # Determine actual project using priority order (Feature 058 - Intent-first architecture):
-        # Priority 1: Launch correlation (Feature 041 - explicit user action via walker)
-        # Priority 2: Active project (Feature 058 - current user intent, fixes shared-PID apps)
-        # Priority 3: I3PM environment (Feature 035 - fallback for non-walker launches)
-        # Priority 4: No assignment (global scope)
+        # Determine actual project from deterministic launch/window identity only.
         actual_project = None
 
         if correlated_project:
-            # Priority 1: Use project from launch correlation
             actual_project = correlated_project
             logger.info(
                 f"Window {window_id} assigned to project '{actual_project}' via launch correlation "
                 f"(confidence={correlation_confidence:.2f})"
             )
-        elif state_manager.state.active_project:
-            # Priority 2: Use active project (current user intent)
-            # This handles shared-PID apps (VS Code, Chrome, Electron) where environment
-            # variables from the main process don't reflect the per-window project context.
-            # Since all apps are launched via walker (which injects environment at launch),
-            # active_project is the source of truth for user intent.
-            actual_project = state_manager.state.active_project
-            logger.info(
-                f"Window {window_id} assigned to project '{actual_project}' from active project (user intent)"
-            )
         elif window_env and window_env.project_name:
-            # Priority 3: Use I3PM environment (fallback for non-walker launches)
             actual_project = window_env.project_name
             logger.info(
                 f"Window {window_id} has I3PM environment: "
@@ -796,7 +784,6 @@ async def on_window_new(
                 f"scope={window_env.scope}, instance_id={window_env.app_id}"
             )
         else:
-            # Priority 4: No project assignment → assume global scope
             actual_project = None
             logger.debug(f"Window {window_id} has no project assignment, assuming global scope")
 

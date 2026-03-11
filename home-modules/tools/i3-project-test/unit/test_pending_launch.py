@@ -42,6 +42,7 @@ class TestPendingLaunchValidation:
             workspace_number=2,
             timestamp=now,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         assert launch.app_name == "vscode"
@@ -66,13 +67,14 @@ class TestPendingLaunchValidation:
                 workspace_number=0,  # Invalid: below minimum
                 timestamp=now,
                 expected_class="Code",
+                terminal_anchor_id="terminal-nixos-12345-1",
             )
 
         # Verify the error mentions workspace_number
         assert "workspace_number" in str(exc_info.value)
 
     def test_workspace_number_validation_maximum(self):
-        """Test workspace_number must be <= 70."""
+        """Test workspace_number must be <= 200."""
         now = time.time()
 
         with pytest.raises(ValidationError) as exc_info:
@@ -81,16 +83,17 @@ class TestPendingLaunchValidation:
                 project_name="nixos",
                 project_directory=Path("/etc/nixos"),
                 launcher_pid=12345,
-                workspace_number=71,  # Invalid: above maximum
+                workspace_number=201,  # Invalid: above maximum
                 timestamp=now,
                 expected_class="Code",
+                terminal_anchor_id="terminal-nixos-12345-1",
             )
 
         # Verify the error mentions workspace_number
         assert "workspace_number" in str(exc_info.value)
 
     def test_workspace_number_validation_boundaries(self):
-        """Test workspace_number boundary values 1 and 70 are valid."""
+        """Test workspace_number boundary values include the extended launcher range."""
         now = time.time()
 
         # Test minimum boundary (1)
@@ -102,20 +105,22 @@ class TestPendingLaunchValidation:
             workspace_number=1,
             timestamp=now,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
         assert launch_min.workspace_number == 1
 
-        # Test maximum boundary (70)
+        # Test extended maximum boundary (200)
         launch_max = PendingLaunch(
             app_name="vscode",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
-            workspace_number=70,
+            workspace_number=200,
             timestamp=now,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
-        assert launch_max.workspace_number == 70
+        assert launch_max.workspace_number == 200
 
     def test_launcher_pid_validation_positive(self):
         """Test launcher_pid must be > 0."""
@@ -130,6 +135,7 @@ class TestPendingLaunchValidation:
                 workspace_number=2,
                 timestamp=now,
                 expected_class="Code",
+                terminal_anchor_id="terminal-nixos-12345-1",
             )
 
         # Verify the error mentions launcher_pid
@@ -148,6 +154,7 @@ class TestPendingLaunchValidation:
                 workspace_number=2,
                 timestamp=future_time,
                 expected_class="Code",
+                terminal_anchor_id="terminal-nixos-12345-1",
             )
 
         # Verify the error mentions timestamp or future
@@ -167,6 +174,7 @@ class TestPendingLaunchValidation:
             workspace_number=2,
             timestamp=near_future,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Should succeed - within 1 second tolerance
@@ -198,6 +206,7 @@ class TestPendingLaunchMethods:
             workspace_number=2,
             timestamp=launch_time,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Age should be very small immediately after creation
@@ -223,6 +232,7 @@ class TestPendingLaunchMethods:
             workspace_number=2,
             timestamp=five_seconds_ago,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Age should be approximately 5 seconds
@@ -240,6 +250,7 @@ class TestPendingLaunchMethods:
             workspace_number=2,
             timestamp=launch_time,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Not expired immediately
@@ -268,6 +279,7 @@ class TestPendingLaunchMethods:
             workspace_number=2,
             timestamp=launch_time,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Custom timeout: 2 seconds
@@ -291,6 +303,7 @@ class TestPendingLaunchMethods:
             workspace_number=2,
             timestamp=launch_time,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Even with zero timeout, exact time should not be expired
@@ -309,6 +322,7 @@ class TestPendingLaunchMethods:
             workspace_number=2,
             timestamp=time.time(),
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Default should be False
@@ -323,6 +337,7 @@ class TestPendingLaunchMethods:
             workspace_number=3,
             timestamp=time.time(),
             expected_class="Alacritty",
+            terminal_anchor_id="terminal-stacks-54321-1",
             matched=True,
         )
         assert matched_launch.matched is True
@@ -342,6 +357,7 @@ class TestPendingLaunchPathHandling:
             workspace_number=2,
             timestamp=time.time(),
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Should be converted to absolute path
@@ -357,6 +373,7 @@ class TestPendingLaunchPathHandling:
             workspace_number=2,
             timestamp=time.time(),
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         # Should be converted to Path object
@@ -378,6 +395,7 @@ class TestPendingLaunchStringRepresentation:
             workspace_number=2,
             timestamp=launch_time,
             expected_class="Code",
+            terminal_anchor_id="terminal-nixos-12345-1",
         )
 
         str_repr = str(launch)

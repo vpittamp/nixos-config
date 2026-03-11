@@ -120,22 +120,20 @@ async function showProject(name: string | undefined, flags: Record<string, unkno
 }
 
 async function currentProject(flags: Record<string, unknown>): Promise<number> {
-  // Feature 101: Read from active-worktree.json (single source of truth)
-  const homeDir = Deno.env.get("HOME") || "";
-  const worktreeFile = `${homeDir}/.config/i3/active-worktree.json`;
-
+  const client = new DaemonClient();
   try {
-    const content = await Deno.readTextFile(worktreeFile);
-    const worktree = JSON.parse(content) as {
+    const context = await client.request<{
       qualified_name: string;
-      repo_qualified_name: string;
-      branch: string;
       directory: string;
-      account: string;
-      repo_name: string;
-    };
+      local_directory: string;
+      execution_mode: string;
+      connection_key: string;
+      is_global: boolean;
+      remote?: { host?: string; user?: string; port?: number };
+    }>("context.get_active", {});
 
-    if (!worktree.qualified_name) {
+    const qualifiedName = context.qualified_name || "";
+    if (!qualifiedName) {
       if (flags.json) {
         console.log(JSON.stringify({ project_name: null, message: "No active project" }, null, 2));
       } else {
@@ -144,39 +142,45 @@ async function currentProject(flags: Record<string, unknown>): Promise<number> {
       return 0;
     }
 
+    const [repoQualified, branch = ""] = qualifiedName.split(":");
+    const repoName = repoQualified.split("/").at(-1) || repoQualified;
+    const account = repoQualified.split("/")[0] || "";
+
     if (flags.json) {
       console.log(JSON.stringify({
-        name: worktree.qualified_name,
-        directory: worktree.directory,
-        display_name: worktree.repo_name,
-        branch: worktree.branch,
-        account: worktree.account,
-        repo_name: worktree.repo_name,
+        name: qualifiedName,
+        directory: context.directory,
+        local_directory: context.local_directory,
+        display_name: repoName,
+        branch,
+        account,
+        repo_name: repoName,
+        execution_mode: context.execution_mode,
+        connection_key: context.connection_key,
+        remote: context.remote || null,
       }, null, 2));
       return 0;
     }
 
-    // Extract branch number if present
-    const branchMatch = worktree.branch.match(/^(\d+)-/);
+    const branchMatch = branch.match(/^(\d+)-/);
     const branchNumber = branchMatch ? branchMatch[1] : null;
-    const displayName = branchNumber ? `${branchNumber} - ${worktree.repo_name}` : worktree.repo_name;
+    const displayName = branchNumber ? `${branchNumber} - ${repoName}` : repoName;
+    const modeSuffix = context.execution_mode && context.execution_mode !== "local"
+      ? ` (${context.execution_mode})`
+      : "";
 
-    console.log(`\nCurrent Project: ${displayName}`);
-    console.log(`  Qualified Name: ${worktree.qualified_name}`);
-    console.log(`  Branch:         ${worktree.branch}`);
-    console.log(`  Directory:      ${worktree.directory}\n`);
+    console.log(`\nCurrent Project: ${displayName}${modeSuffix}`);
+    console.log(`  Qualified Name: ${qualifiedName}`);
+    console.log(`  Branch:         ${branch}`);
+    console.log(`  Directory:      ${context.directory || context.local_directory || ""}`);
+    if (context.connection_key) {
+      console.log(`  Connection:     ${context.connection_key}`);
+    }
+    console.log();
 
     return 0;
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      if (flags.json) {
-        console.log(JSON.stringify({ project_name: null, message: "No active project" }, null, 2));
-      } else {
-        console.log("No active project. Use 'i3pm worktree switch <name>' to activate a project.");
-      }
-      return 0;
-    }
-    throw error;
+  } finally {
+    client.disconnect();
   }
 }
 

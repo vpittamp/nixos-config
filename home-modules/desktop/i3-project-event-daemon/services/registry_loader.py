@@ -31,6 +31,7 @@ class RegistryApp:
     scope: str  # "scoped" or "global"
     fallback_behavior: str  # "skip", "use_home", "error"
     multi_instance: bool
+    pwa_match_domains: List[str]
     nix_package: Optional[str] = None
     description: Optional[str] = None
 
@@ -112,6 +113,7 @@ class RegistryLoader:
                 scope=data["scope"],
                 fallback_behavior=data.get("fallback_behavior", "use_home"),
                 multi_instance=data.get("multi_instance", False),
+                pwa_match_domains=data.get("pwa_match_domains", []),
                 nix_package=data.get("nix_package"),
                 description=data.get("description"),
             )

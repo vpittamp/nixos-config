@@ -1029,7 +1029,7 @@ class PendingLaunch(BaseModel):
     workspace_number: int = Field(
         ...,
         ge=1,
-        le=70,
+        le=200,
         description="Target workspace number for the application"
     )
     timestamp: float = Field(
@@ -1134,8 +1134,12 @@ class LaunchWindowInfo(BaseModel):
     workspace_number: int = Field(
         ...,
         ge=1,
-        le=70,
+        le=200,
         description="Workspace number where window appeared"
+    )
+    window_instance: str = Field(
+        default="",
+        description="WM_CLASS instance/app_id when available"
     )
 
     # Timing

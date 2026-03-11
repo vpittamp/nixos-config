@@ -271,17 +271,12 @@ PY
 
     # Feature 101: Get worktrees JSON from repos.json
     REPOS_FILE="$HOME/.config/i3/repos.json"
-    ACTIVE_WORKTREE_FILE="$HOME/.config/i3/active-worktree.json"
 
     if [ ! -f "$REPOS_FILE" ]; then
       exit 0
     fi
 
-    # Get current active worktree qualified name
-    ACTIVE_PROJECT=""
-    if [ -f "$ACTIVE_WORKTREE_FILE" ]; then
-      ACTIVE_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
-    fi
+    ACTIVE_PROJECT=$("$I3PM" project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.name // ""' 2>/dev/null || echo "")
 
     # Add "Clear Project" option if a project is active
     if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
@@ -363,8 +358,6 @@ PY
     REMOTE_REPOS_FILE="~/.config/i3/repos.json"
 
     LOCAL_REPOS_FILE="$HOME/.config/i3/repos.json"
-    ACTIVE_WORKTREE_FILE="$HOME/.config/i3/active-worktree.json"
-
     mkdir -p "$CACHE_DIR"
 
     cleanup_stale_refresh_lock() {
@@ -460,10 +453,7 @@ PY
       exit 0
     fi
 
-    ACTIVE_QUALIFIED=""
-    if [[ -f "$ACTIVE_WORKTREE_FILE" ]]; then
-      ACTIVE_QUALIFIED=$(${pkgs.jq}/bin/jq -r '.qualified_name // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
-    fi
+    ACTIVE_QUALIFIED=$("${config.home.profileDirectory}/bin/i3pm" project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.name // ""' 2>/dev/null || echo "")
 
     LOCAL_REPOS=()
     LOCAL_WORKTREES=()
@@ -1399,6 +1389,21 @@ REMOTE
     # Walker-based window manager - two-stage selection
     set -euo pipefail
 
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
+
+    daemon_window_action() {
+      local window_id="$1"
+      local action="$2"
+      local request response
+      request=$(${pkgs.jq}/bin/jq -nc \
+        --arg action "$action" \
+        --argjson window_id "$window_id" \
+        '{jsonrpc:"2.0", method:"window.action", params:{window_id:$window_id, action:$action}, id:1}')
+      response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+      [[ -n "$response" ]] || return 1
+      printf '%s\n' "$response" | ${pkgs.jq}/bin/jq -e '.result.success == true' >/dev/null 2>&1
+    }
+
     # Stage 1: Select a window
     get_windows() {
         ${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '
@@ -1429,9 +1434,6 @@ REMOTE
     # Extract window ID from the original data
     WINDOW_ID=$(echo "$WINDOWS" | ${pkgs.gnugrep}/bin/grep -F "$SELECTED_WINDOW" | ${pkgs.coreutils}/bin/cut -d'|' -f1)
 
-    # Focus the selected window first
-    ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus"
-
     # Stage 2: Select an action
     ACTIONS="❌  Close/Kill Window
 ⬜  Toggle Floating
@@ -1454,47 +1456,27 @@ REMOTE
     fi
 
     # Execute the action
+    ACTION_KEY=""
     case "$SELECTED_ACTION" in
-        "❌  Close/Kill Window")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] kill"
-            ;;
-        "⬜  Toggle Floating")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] floating toggle"
-            ;;
-        "⛶  Toggle Fullscreen")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] fullscreen toggle"
-            ;;
-        "📦  Move to Scratchpad")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move scratchpad"
-            ;;
-        "⬅️  Move Left")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move left"
-            ;;
-        "➡️  Move Right")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move right"
-            ;;
-        "⬆️  Move Up")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move up"
-            ;;
-        "⬇️  Move Down")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move down"
-            ;;
-        "🔲  Split Horizontal")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus; split h"
-            ;;
-        "⬛  Split Vertical")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus; split v"
-            ;;
-        "📊  Layout Stacking")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] layout stacking"
-            ;;
-        "📑  Layout Tabbed")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] layout tabbed"
-            ;;
-        "⚡  Layout Toggle Split")
-            ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] layout toggle split"
-            ;;
+        "❌  Close/Kill Window") ACTION_KEY="kill" ;;
+        "⬜  Toggle Floating") ACTION_KEY="floating_toggle" ;;
+        "⛶  Toggle Fullscreen") ACTION_KEY="fullscreen_toggle" ;;
+        "📦  Move to Scratchpad") ACTION_KEY="move_scratchpad" ;;
+        "⬅️  Move Left") ACTION_KEY="move_left" ;;
+        "➡️  Move Right") ACTION_KEY="move_right" ;;
+        "⬆️  Move Up") ACTION_KEY="move_up" ;;
+        "⬇️  Move Down") ACTION_KEY="move_down" ;;
+        "🔲  Split Horizontal") ACTION_KEY="split_h" ;;
+        "⬛  Split Vertical") ACTION_KEY="split_v" ;;
+        "📊  Layout Stacking") ACTION_KEY="layout_stacking" ;;
+        "📑  Layout Tabbed") ACTION_KEY="layout_tabbed" ;;
+        "⚡  Layout Toggle Split") ACTION_KEY="layout_toggle_split" ;;
     esac
+
+    if [[ -z "$ACTION_KEY" ]] || ! daemon_window_action "$WINDOW_ID" "$ACTION_KEY"; then
+      ${pkgs.libnotify}/bin/notify-send "Window Action Failed" "$SELECTED_ACTION"
+      exit 1
+    fi
 
     ${pkgs.libnotify}/bin/notify-send "Window Action" "Executed: $SELECTED_ACTION"
   '';
@@ -2219,8 +2201,12 @@ in
     # Format: alias = "desktop-file-id" (without .desktop extension)
     # These aliases are prioritized in search results
     [aliases]
-    backstage = "FFPWA-01MD4D0A6S2CVXKNNY4EJ5PQ1G"
-    "backstage talos" = "FFPWA-7KZ3PBQKJKQJKQ7ZA831VYAFXC"
+    backstage = "backstage-pwa"
+    "backstage talos" = "backstage-pwa"
+    "google ai" = "google-ai-pwa"
+    gemini = "google-gemini-pwa"
+    gmail = "gmail-pwa"
+    calendar = "google-calendar-pwa"
   '';
 
   # Calculator provider configuration

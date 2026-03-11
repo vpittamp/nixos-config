@@ -3,16 +3,46 @@
 let
   # Full path to i3pm (user profile binary, not in standard PATH for EWW onclick commands)
   i3pm = "${config.home.profileDirectory}/bin/i3pm";
+  daemonRpcHelpers = ''
+    DAEMON_SOCKET="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3-project-daemon/ipc.sock"
+
+    rpc_request() {
+      local method="$1"
+      local params_json="''${2:-{}}"
+      local request response error_json
+
+      request=$(${pkgs.jq}/bin/jq -nc \
+        --arg method "$method" \
+        --argjson params "$params_json" \
+        '{jsonrpc:"2.0", method:$method, params:$params, id:1}')
+
+      [[ -S "$DAEMON_SOCKET" ]] || return 1
+      response=$(${pkgs.coreutils}/bin/timeout 2s ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$DAEMON_SOCKET" <<< "$request" 2>/dev/null || true)
+      [[ -n "$response" ]] || return 1
+
+      error_json=$(${pkgs.jq}/bin/jq -c '.error // empty' <<< "$response" 2>/dev/null || true)
+      [[ -z "$error_json" ]] || return 1
+
+      ${pkgs.jq}/bin/jq -c '.result' <<< "$response"
+    }
+
+    get_current_context_json() {
+      rpc_request "context.get_active" '{}' || printf '%s\n' '{"qualified_name":"","execution_mode":"global","connection_key":"global","is_global":true}'
+    }
+  '';
 
   variantSwitchHelpers = ''
+    ${daemonRpcHelpers}
+
     get_current_variant() {
-      local variant
-      variant=$(${pkgs.jq}/bin/jq -r '
+      local context_json variant
+      context_json=$(get_current_context_json)
+      variant=$(printf '%s\n' "$context_json" | ${pkgs.jq}/bin/jq -r '
         if ((.execution_mode // "") == "local") or ((.execution_mode // "") == "ssh") then (.execution_mode // "")
-        elif (.remote != null and (.remote.enabled // false)) then "ssh"
+        elif (.is_global // false) then "local"
         else "local"
         end
-      ' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "local")
+      ' 2>/dev/null || echo "local")
 
       case "$variant" in
         local|ssh)
@@ -40,11 +70,12 @@ let
       local expected_project="$1"
       local expected_variant="''${2:-}"
       local timeout_seconds="''${3:-4}"
-      local start_ts now_ts current_project current_variant
+      local start_ts now_ts current_project current_variant context_json
 
       start_ts=$(date +%s)
       while true; do
-        current_project=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
+        context_json=$(get_current_context_json)
+        current_project=$(printf '%s\n' "$context_json" | ${pkgs.jq}/bin/jq -r '.qualified_name // "global"' 2>/dev/null || echo "global")
         current_variant=$(get_current_variant)
 
         if [[ "$current_project" == "$expected_project" ]]; then
@@ -112,95 +143,22 @@ let
         "$stage" "$PROJECT_NAME" "$WINDOW_ID" "''${TARGET_VARIANT:-auto}" >&2
     }
 
-    sway_success() {
-      local payload="$1"
-      printf '%s\n' "$payload" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1
-    }
+    FOCUS_PARAMS=$(${pkgs.jq}/bin/jq -nc \
+      --arg project_name "$PROJECT_NAME" \
+      --argjson window_id "$WINDOW_ID" \
+      --arg target_variant "$TARGET_VARIANT" \
+      '{project_name:$project_name, window_id:$window_id, target_variant:$target_variant}')
+    FOCUS_RESULT=$(rpc_request "window.focus" "$FOCUS_PARAMS" || true)
 
-    is_regular_window_state() {
-      local state fullscreen_mode floating_state
-      state=$(
-        ${pkgs.sway}/bin/swaymsg -t get_tree 2>/dev/null \
-          | ${pkgs.jq}/bin/jq -r --argjson id "$WINDOW_ID" '
-              first(.. | objects | select(.id? == $id) | [(.fullscreen_mode // -1), (.floating // "unknown")] | @tsv) // empty
-            ' 2>/dev/null || true
-      )
-      [[ -n "$state" ]] || return 1
-      IFS=$'\t' read -r fullscreen_mode floating_state <<< "$state"
-      [[ "$fullscreen_mode" == "0" && "$floating_state" == "auto_off" ]]
-    }
-
-    ensure_focus_tiled() {
-      local attempts="''${1:-3}"
-      local delay="''${2:-0.12}"
-      local try focus_result
-
-      for try in $(seq 1 "$attempts"); do
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
-        focus_result=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
-        if ! sway_success "$focus_result"; then
-          sleep "$delay"
-          continue
-        fi
-
-        # Use both criteria-targeted and focused-container commands to handle
-        # timing races during project switches and floating container transitions.
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] floating disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "floating disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] fullscreen disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "fullscreen disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
-
-        if is_regular_window_state; then
-          return 0
-        fi
-
-        sleep "$delay"
-      done
-
-      return 1
-    }
-
-    # Get current project (T012) - Read from active-worktree.json (Feature 101 single source of truth)
-    CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
-
-    # Conditional project switch (T013) with deterministic variant alignment.
-    # For variant-targeted actions (local/ssh), always run switch to re-apply
-    # context-aware filtering and prevent mixed local+SSH windows on one workspace.
-    NEEDS_SWITCH=false
-    if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
-        NEEDS_SWITCH=true
-    fi
-    if [[ -n "$TARGET_VARIANT" ]]; then
-        NEEDS_SWITCH=true
-    fi
-
-    if [[ "$NEEDS_SWITCH" == "true" ]]; then
-        if ! switch_project_variant "$PROJECT_NAME" "$TARGET_VARIANT"; then
-            EXIT_CODE=$?
-            ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
-                "Failed to switch to project $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)} (exit code: $EXIT_CODE)"
-            exit 1
-        fi
-        if ! wait_for_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" 4; then
-            ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Timeout" \
-                "Context did not converge to $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)}"
-            exit 1
-        fi
-        log_stage "switch_ok"
-    fi
-
-    # Focus + tiled/non-floating protocol (idempotent + retried).
-    if ensure_focus_tiled 3 0.12; then
+    if [[ -n "$FOCUS_RESULT" ]] && printf '%s\n' "$FOCUS_RESULT" | ${pkgs.jq}/bin/jq -e '.success == true' >/dev/null 2>&1; then
         log_stage "focus_tiled_ok"
-        # Success path (T015) - Visual feedback only, no notification
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=$WINDOW_ID
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0) &
         exit 0
     else
         log_stage "focus_tiled_fail"
-        # Failure path - Keep critical notification for actual errors
-        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Failed" "Window unavailable or failed to restore tiled state"
+        ERROR_MSG=$(printf '%s\n' "''${FOCUS_RESULT:-{}}" | ${pkgs.jq}/bin/jq -r '.error // "Window unavailable or failed to focus"' 2>/dev/null || echo "Window unavailable or failed to focus")
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Failed" "$ERROR_MSG"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0
         exit 1
     fi
@@ -399,63 +357,14 @@ let
       [[ "$LOCAL_TMUX_OK" == "true" ]]
     }
 
-    sway_success() {
-      local payload="$1"
-      printf '%s\n' "$payload" | ${pkgs.jq}/bin/jq -e 'type == "array" and any(.[]; .success == true)' >/dev/null 2>&1
-    }
-
-    is_regular_window_state() {
-      local state fullscreen_mode floating_state
-      state=$(
-        ${pkgs.sway}/bin/swaymsg -t get_tree 2>/dev/null \
-          | ${pkgs.jq}/bin/jq -r --argjson id "$WINDOW_ID" '
-              first(.. | objects | select(.id? == $id) | [(.fullscreen_mode // -1), (.floating // "unknown")] | @tsv) // empty
-            ' 2>/dev/null || true
-      )
-      [[ -n "$state" ]] || return 1
-      IFS=$'\t' read -r fullscreen_mode floating_state <<< "$state"
-      [[ "$fullscreen_mode" == "0" && "$floating_state" == "auto_off" ]]
-    }
-
-    ensure_window_focus_tiled() {
-      local attempts="''${1:-3}"
-      local delay="''${2:-0.12}"
-      local try focus_result
-
-      for try in $(seq 1 "$attempts"); do
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] scratchpad show" >/dev/null 2>&1 || true
-        focus_result=$(${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" 2>/dev/null || true)
-        if ! sway_success "$focus_result"; then
-          sleep "$delay"
-          continue
-        fi
-
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] floating disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "floating disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] fullscreen disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "fullscreen disable" >/dev/null 2>&1 || true
-        ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
-
-        if is_regular_window_state; then
-          return 0
-        fi
-
-        sleep "$delay"
-      done
-
-      return 1
-    }
-
     FOCUS_OK=true
 
-    # Reuse shared project-aware focus protocol first (switch -> focus -> tiled state).
+    # Reuse shared daemon-owned focus protocol first (switch -> focus -> tiled state).
     if ${focusWindowScript}/bin/focus-window-action "$PROJECT_NAME" "$WINDOW_ID" "$TARGET_VARIANT" >/dev/null 2>&1; then
       log_stage "focus_protocol_ok"
     else
-      log_stage "focus_protocol_retry"
-      if ! ensure_window_focus_tiled 3 0.12; then
-        FOCUS_OK=false
-      fi
+      log_stage "focus_protocol_fail"
+      FOCUS_OK=false
     fi
 
     # If this AI session reports tmux context, jump to that pane/window.
@@ -666,15 +575,6 @@ let
     set -euo pipefail
 
     SESSION_KEY="''${1:-}"
-    FALLBACK_PROJECT="''${2:-}"
-    FALLBACK_WINDOW_ID="''${3:-}"
-    FALLBACK_EXECUTION_MODE="''${4:-local}"
-    FALLBACK_CONNECTION_KEY="''${5:-}"
-    FALLBACK_TMUX_PANE="''${6:-}"
-    FALLBACK_TMUX_SESSION="''${7:-}"
-    FALLBACK_TMUX_WINDOW="''${8:-}"
-    FALLBACK_TMUX_PTY="''${9:-}"
-    FALLBACK_FINISH_MARKER="''${10:-}"
     if [[ -z "$SESSION_KEY" ]]; then
       exit 1
     fi
@@ -708,19 +608,8 @@ let
         end
     ' <<< "$MONITORING_DATA")
 
-    if [[ -n "$SESSION_TSV" ]]; then
-      IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE CONNECTION_KEY TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
-    else
-      PROJECT_NAME="$FALLBACK_PROJECT"
-      WINDOW_ID="$FALLBACK_WINDOW_ID"
-      EXECUTION_MODE="$FALLBACK_EXECUTION_MODE"
-      CONNECTION_KEY="$FALLBACK_CONNECTION_KEY"
-      TMUX_PANE="$FALLBACK_TMUX_PANE"
-      TMUX_SESSION="$FALLBACK_TMUX_SESSION"
-      TMUX_WINDOW="$FALLBACK_TMUX_WINDOW"
-      TMUX_PTY="$FALLBACK_TMUX_PTY"
-      FINISH_MARKER="$FALLBACK_FINISH_MARKER"
-    fi
+    [[ -n "$SESSION_TSV" ]] || exit 1
+    IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE CONNECTION_KEY TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
 
     if [[ "$EXECUTION_MODE" != "local" && "$EXECUTION_MODE" != "ssh" ]]; then
       EXECUTION_MODE="local"
@@ -913,16 +802,7 @@ let
       IFS=$'\t' read -r PROJECT_NAME WINDOW_ID EXECUTION_MODE CONNECTION_KEY TMUX_PANE TMUX_SESSION TMUX_WINDOW TMUX_PTY FINISH_MARKER <<< "$SESSION_TSV"
 
       if ${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \
-        "$TARGET_KEY" \
-        "$PROJECT_NAME" \
-        "$WINDOW_ID" \
-        "$EXECUTION_MODE" \
-        "$CONNECTION_KEY" \
-        "$TMUX_PANE" \
-        "$TMUX_SESSION" \
-        "$TMUX_WINDOW" \
-        "$TMUX_PTY" \
-        "$FINISH_MARKER" >/dev/null 2>&1; then
+        "$TARGET_KEY" >/dev/null 2>&1; then
         exit 0
       fi
     done
@@ -1120,7 +1000,7 @@ let
       exit 1
     fi
 
-    CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
+    CURRENT_PROJECT=$(get_current_context_json | ${pkgs.jq}/bin/jq -r '.qualified_name // "global"' 2>/dev/null || echo "global")
 
     NEEDS_SWITCH=false
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
@@ -1202,8 +1082,7 @@ let
     echo "$CURRENT_TIME" > "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT INT TERM
 
-    # Get current project (T019) - Read from active-worktree.json (Feature 101 single source of truth)
-    CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
+    CURRENT_PROJECT=$(get_current_context_json | ${pkgs.jq}/bin/jq -r '.qualified_name // "global"' 2>/dev/null || echo "global")
 
     CURRENT_VARIANT=$(get_current_variant)
     NEEDS_SWITCH=false

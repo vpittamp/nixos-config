@@ -106,6 +106,7 @@ AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
+DAEMON_SOCKET_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3-project-daemon" / "ipc.sock"
 
 # Feature 107: inotify watcher for immediate badge detection (<15ms latency)
 # Uses subprocess inotifywait to avoid adding Python dependencies
@@ -6478,6 +6479,39 @@ def load_worktree_remote_profiles() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
+def _read_active_context_from_daemon(timeout_s: float = 0.15) -> Optional[Dict[str, Any]]:
+    """Read active runtime context directly from the daemon socket."""
+    if not DAEMON_SOCKET_PATH.exists():
+        return None
+
+    request = {
+        "jsonrpc": "2.0",
+        "method": "context.get_active",
+        "params": {},
+        "id": 1,
+    }
+
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout_s)
+            sock.connect(str(DAEMON_SOCKET_PATH))
+            sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
+            response = b""
+            while not response.endswith(b"\n"):
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                response += chunk
+        if not response:
+            return None
+        payload = json.loads(response.decode("utf-8").strip())
+        if isinstance(payload, dict) and isinstance(payload.get("result"), dict):
+            return payload["result"]
+    except Exception as e:
+        logger.debug("Failed to read active context from daemon: %s", e)
+    return None
+
+
 def load_active_worktree_identity() -> Dict[str, Any]:
     """Return canonical active worktree identity fields for card activation."""
     default_identity = {
@@ -6490,12 +6524,13 @@ def load_active_worktree_identity() -> Dict[str, Any]:
         "remote_enabled": False,
     }
 
-    if not ACTIVE_WORKTREE_FILE.exists():
-        return default_identity
-
     try:
-        with open(ACTIVE_WORKTREE_FILE, "r") as f:
-            data = json.load(f)
+        data = _read_active_context_from_daemon()
+        if data is None:
+            if not ACTIVE_WORKTREE_FILE.exists():
+                return default_identity
+            with open(ACTIVE_WORKTREE_FILE, "r") as f:
+                data = json.load(f)
 
         qualified_name = str(data.get("qualified_name", "")).strip()
         remote = data.get("remote")

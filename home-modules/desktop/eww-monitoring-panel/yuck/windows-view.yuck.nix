@@ -116,7 +116,7 @@
                       :spacing 3
                       (eventbox
                         :cursor "pointer"
-                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" \"''${session.focus_project ?: session.window_project ?: session.project ?: ""}\" \"''${session.window_id ?: 0}\" \"''${session.focus_execution_mode ?: session.execution_mode ?: "local"}\" \"''${session.focus_connection_key ?: session.connection_key ?: ""}\" \"''${session.tmux_pane ?: ""}\" \"''${session.tmux_session ?: ""}\" \"''${session.tmux_window ?: ""}\" \"''${session.pty ?: ""}\" \"''${session.finish_marker ?: ""}\" &"
+                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" &"
                         :tooltip {session.display_tool + " · " + (session.stage_label ?: session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
                           + ((session.stage_detail ?: "") != "" ? (" · " + (session.stage_detail ?: "")) : "")
                           + (((session.window_project ?: "") != "" && (session.window_project ?: "") != (session.display_project ?: session.project ?: "")) ? (" · via " + (session.window_project ?: "")) : "")

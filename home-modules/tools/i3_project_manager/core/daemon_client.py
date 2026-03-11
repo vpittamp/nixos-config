@@ -170,6 +170,45 @@ class DaemonClient:
         status = await self.get_status()
         return status.get("active_project")
 
+    async def get_active_context(self) -> Dict[str, Any]:
+        """Get the canonical active runtime context from the daemon."""
+        return await self.call("context.get_active")
+
+    async def focus_window(
+        self,
+        window_id: int,
+        project_name: str = "",
+        target_variant: str = "",
+    ) -> Dict[str, Any]:
+        """Focus a window through the daemon-owned runtime path."""
+        return await self.call(
+            "window.focus",
+            {
+                "window_id": int(window_id),
+                "project_name": project_name,
+                "target_variant": target_variant,
+            },
+        )
+
+    async def window_action(
+        self,
+        window_id: int,
+        action: str,
+        *,
+        project_name: str = "",
+        target_variant: str = "",
+    ) -> Dict[str, Any]:
+        """Execute a daemon-owned window action."""
+        return await self.call(
+            "window.action",
+            {
+                "window_id": int(window_id),
+                "action": action,
+                "project_name": project_name,
+                "target_variant": target_variant,
+            },
+        )
+
     async def get_events(
         self, limit: int = 20, event_type: Optional[str] = None, since_id: Optional[int] = None
     ) -> Dict[str, Any]:

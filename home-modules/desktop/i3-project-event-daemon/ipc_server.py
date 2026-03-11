@@ -26,6 +26,7 @@ from .worktree_utils import parse_mark, parse_qualified_name, is_qualified_name 
 from .constants import ConfigPaths  # Feature 101
 from .config import atomic_write_json  # Feature 137: Atomic file writes
 from .services.window_filter import clear_pid_environ_cache
+from .services.registry_loader import RegistryLoader, RegistryApp
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,11 @@ class IPCServer:
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
+        self.registry_loader = RegistryLoader()
+        try:
+            self.registry_loader.load()
+        except Exception as e:
+            logger.warning(f"Failed to load application registry for IPC launch preparation: {e}")
 
         # Feature 123: Window tree caching for efficient monitoring panel updates
         # Cache invalidated on any Sway event that modifies window/workspace state
@@ -281,6 +287,8 @@ class IPCServer:
                 result = await self._get_status()
             elif method == "get_active_project":
                 result = await self._get_active_project()
+            elif method == "context.get_active":
+                result = await self._context_get_active(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -380,17 +388,18 @@ class IPCServer:
                 result = await self._get_diagnostic_report_full(params)
 
             # Feature 041: IPC Launch Context methods (T010-T012)
-            elif method == "notify_launch":
-                result = await self._notify_launch(params)
+            elif method == "prepare_launch":
+                result = await self._prepare_launch(params)
             elif method == "get_launch_stats":
                 result = await self._get_launch_stats()
             elif method == "get_pending_launches":
                 result = await self._get_pending_launches(params)
-            elif method == "get_window_by_launch_id":
-                # Feature 135: OTEL AI session window correlation
-                result = await self._get_window_by_launch_id(params)
             elif method == "get_terminal_anchor":
                 result = await self._get_terminal_anchor(params)
+            elif method == "window.focus":
+                result = await self._window_focus(params)
+            elif method == "window.action":
+                result = await self._window_action(params)
 
             # Feature 042: Workspace mode navigation methods
             elif method == "workspace_mode.digit":
@@ -447,6 +456,8 @@ class IPCServer:
             # Feature 098: Worktree environment integration methods
             elif method == "worktree.list":
                 result = await self._worktree_list(params)
+            elif method == "worktree.current":
+                result = await self._context_get_active(params)
             elif method == "project.refresh":
                 result = await self._project_refresh(params)
 
@@ -942,6 +953,14 @@ class IPCServer:
             }
 
         return result
+
+    async def _context_get_active(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return the canonical active runtime context owned by the daemon."""
+        active_project = await self.state_manager.get_active_project()
+        return self._build_active_context_response(
+            self._read_active_worktree_context(),
+            active_project=active_project,
+        )
 
     async def _get_projects(self) -> Dict[str, Any]:
         """List all projects with window counts.
@@ -4843,48 +4862,177 @@ class IPCServer:
 
         return report
 
-    async def _notify_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Register a pending application launch for window correlation.
+    def _require_registry_app(self, app_name: str) -> RegistryApp:
+        """Return a registry definition or raise a JSON-RPC-style error."""
+        if not self.registry_loader.is_loaded():
+            self.registry_loader.load()
+        app = self.registry_loader.get(str(app_name or "").strip())
+        if app:
+            return app
+        raise RuntimeError(json.dumps({
+            "code": -32002,
+            "message": f"Application '{app_name}' not found in registry",
+            "data": {"app_name": app_name, "reason": "app_not_found"}
+        }))
 
-        Feature 041 - T010
+    def _build_launch_identity(
+        self,
+        *,
+        app_name: str,
+        project_name: str,
+        launcher_pid: int,
+        app_id_override: str = "",
+    ) -> Dict[str, str]:
+        anchor = str(app_id_override or "").strip()
+        if not anchor:
+            anchor = f"{app_name}-{project_name or 'global'}-{launcher_pid}-{int(time.time())}"
+        return {
+            "app_instance_id": anchor,
+            "terminal_anchor_id": anchor,
+        }
 
-        Args:
-            params: {
-                "app_name": str - Application name from registry,
-                "project_name": str - Project name for this launch,
-                "project_directory": str - Absolute path to project directory,
-                "launcher_pid": int - Process ID of launcher wrapper,
-                "workspace_number": int - Target workspace number (1-70),
-                "timestamp": float - Unix timestamp when launch notification sent
+    def _substitute_launch_parameter(
+        self,
+        value: str,
+        *,
+        project_name: str,
+        project_dir: str,
+        session_name: str,
+        project_display_name: str,
+        project_icon: str,
+        preferred_workspace: Optional[int],
+    ) -> str:
+        rendered = str(value)
+        replacements = {
+            "$PROJECT_DIR": project_dir,
+            "$PROJECT_NAME": project_name,
+            "$SESSION_NAME": session_name,
+            "$HOME": str(Path.home()),
+            "$PROJECT_DISPLAY_NAME": project_display_name,
+            "$PROJECT_ICON": project_icon,
+            "$WORKSPACE": str(preferred_workspace or ""),
+        }
+        for needle, replacement in replacements.items():
+            rendered = rendered.replace(needle, replacement)
+        if "$PROJECT_" in rendered or "$SESSION_NAME" in rendered or "$WORKSPACE" in rendered:
+            raise RuntimeError(json.dumps({
+                "code": -32004,
+                "message": f"Unresolved launch parameter '{value}'",
+                "data": {"parameter": value}
+            }))
+        return rendered
+
+    def _build_launch_env(
+        self,
+        *,
+        app_name: str,
+        scope: str,
+        preferred_workspace: Optional[int],
+        expected_class: str,
+        project_name: str,
+        project_dir: str,
+        local_project_dir: str,
+        project_display_name: str,
+        execution_mode: str,
+        connection_key: str,
+        context_key: str,
+        remote_profile: Optional[Dict[str, Any]],
+        launcher_pid: int,
+        launch_identity: Dict[str, str],
+        restore_mark: str = "",
+        remote_session_name: str = "",
+        worktree_branch: str = "",
+        worktree_account: str = "",
+        worktree_repo: str = "",
+    ) -> Dict[str, str]:
+        env = {
+            "I3PM_APP_ID": launch_identity["app_instance_id"],
+            "I3PM_TERMINAL_ANCHOR_ID": launch_identity["terminal_anchor_id"],
+            "I3PM_APP_NAME": app_name,
+            "I3PM_PROJECT_NAME": project_name,
+            "I3PM_PROJECT_DIR": project_dir,
+            "I3PM_LOCAL_PROJECT_DIR": local_project_dir,
+            "I3PM_PROJECT_DISPLAY_NAME": project_display_name,
+            "I3PM_PROJECT_ICON": "",
+            "I3PM_SCOPE": scope,
+            "I3PM_ACTIVE": "true" if project_name else "false",
+            "I3PM_LAUNCH_TIME": str(int(time.time())),
+            "I3PM_LAUNCHER_PID": str(launcher_pid),
+            "I3PM_TARGET_WORKSPACE": str(preferred_workspace or ""),
+            "I3PM_EXPECTED_CLASS": expected_class,
+            "I3PM_CONTEXT_VARIANT": execution_mode,
+            "I3PM_CONNECTION_KEY": connection_key,
+            "I3PM_CONTEXT_KEY": context_key,
+            "I3PM_REMOTE_ENABLED": "true" if execution_mode == "ssh" else "false",
+            "I3PM_REMOTE_HOST": "",
+            "I3PM_REMOTE_USER": "",
+            "I3PM_REMOTE_PORT": "",
+            "I3PM_REMOTE_DIR": "",
+            "I3PM_REMOTE_SESSION_NAME": remote_session_name,
+            "I3PM_LOCAL_HOST_ALIAS": self._local_host_alias(),
+            "I3PM_WORKTREE_BRANCH": worktree_branch,
+            "I3PM_WORKTREE_ACCOUNT": worktree_account,
+            "I3PM_WORKTREE_REPO": worktree_repo,
+        }
+        if worktree_branch:
+            env["I3PM_IS_WORKTREE"] = "true"
+            env["I3PM_FULL_BRANCH_NAME"] = worktree_branch
+            env["I3PM_GIT_BRANCH"] = worktree_branch
+        if restore_mark:
+            env["I3PM_RESTORE_MARK"] = restore_mark
+        if remote_profile and execution_mode == "ssh":
+            env["I3PM_REMOTE_HOST"] = str(remote_profile.get("host", ""))
+            env["I3PM_REMOTE_USER"] = str(remote_profile.get("user", ""))
+            env["I3PM_REMOTE_PORT"] = str(remote_profile.get("port", 22))
+            env["I3PM_REMOTE_DIR"] = str(remote_profile.get("remote_dir", ""))
+        return env
+
+    async def _register_pending_launch(
+        self,
+        *,
+        app: RegistryApp,
+        project_name: str,
+        project_directory: str,
+        launcher_pid: int,
+        terminal_anchor_id: str,
+        preferred_workspace: Optional[int],
+    ) -> Dict[str, Any]:
+        from .models import PendingLaunch
+
+        if preferred_workspace is None:
+            return {
+                "status": "skipped",
+                "launch_id": "",
+                "terminal_anchor_id": terminal_anchor_id,
+                "expected_class": app.expected_class,
+                "pending_count": self.state_manager.launch_registry.get_stats().total_pending,
             }
 
-        Returns:
-            {
-                "status": "success",
-                "launch_id": str - Unique launch identifier,
-                "expected_class": str - Window class expected from registry,
-                "pending_count": int - Number of pending launches
-            }
+        pending_launch = PendingLaunch(
+            app_name=app.name,
+            project_name=project_name or "global",
+            project_directory=Path(project_directory),
+            launcher_pid=launcher_pid,
+            workspace_number=preferred_workspace,
+            timestamp=time.time(),
+            expected_class=app.expected_class,
+            pwa_match_domains=list(app.pwa_match_domains or []),
+            terminal_anchor_id=terminal_anchor_id,
+            matched=False,
+        )
+        launch_id = await self.state_manager.launch_registry.add(pending_launch)
+        stats = self.state_manager.launch_registry.get_stats()
+        return {
+            "status": "success",
+            "launch_id": launch_id,
+            "terminal_anchor_id": terminal_anchor_id,
+            "expected_class": app.expected_class,
+            "pending_count": stats.total_pending,
+        }
 
-        Raises:
-            RuntimeError: If app not found in registry, invalid workspace, or future timestamp
-        """
-        start_time = time.perf_counter()
-
-        # Extract parameters
-        app_name = params.get("app_name")
-        project_name = params.get("project_name")
-        project_directory = params.get("project_directory")
-        launcher_pid = params.get("launcher_pid")
-        workspace_number = params.get("workspace_number")
-        timestamp = params.get("timestamp")
-        terminal_anchor_id = str(params.get("terminal_anchor_id") or "").strip()
-
-        # Feature 041 T023: Log received launch notification
-        logger.info(f"Received notify_launch: {app_name} → {project_name}")
-
-        # Validate required parameters
+    async def _prepare_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a deterministic launch spec and register pending launch state."""
+        app_name = str(params.get("app_name") or "").strip()
         if not app_name:
             raise RuntimeError(json.dumps({
                 "code": -32602,
@@ -4892,177 +5040,158 @@ class IPCServer:
                 "data": {"param": "app_name"}
             }))
 
-        if not project_name:
-            raise RuntimeError(json.dumps({
-                "code": -32602,
-                "message": "Missing required parameter: project_name",
-                "data": {"param": "project_name"}
-            }))
-
-        if not project_directory:
-            raise RuntimeError(json.dumps({
-                "code": -32602,
-                "message": "Missing required parameter: project_directory",
-                "data": {"param": "project_directory"}
-            }))
-
-        if launcher_pid is None:
+        launcher_pid = int(params.get("launcher_pid") or 0)
+        if launcher_pid <= 0:
             raise RuntimeError(json.dumps({
                 "code": -32602,
                 "message": "Missing required parameter: launcher_pid",
                 "data": {"param": "launcher_pid"}
             }))
 
-        if workspace_number is None:
+        variant_override = str(params.get("context_variant_override") or "").strip().lower()
+        if variant_override and variant_override not in {"local", "ssh"}:
             raise RuntimeError(json.dumps({
                 "code": -32602,
-                "message": "Missing required parameter: workspace_number",
-                "data": {"param": "workspace_number"}
+                "message": "Invalid context_variant_override",
+                "data": {"context_variant_override": variant_override}
             }))
 
-        if timestamp is None:
-            raise RuntimeError(json.dumps({
-                "code": -32602,
-                "message": "Missing required parameter: timestamp",
-                "data": {"param": "timestamp"}
-            }))
+        app = self._require_registry_app(app_name)
+        dry_run = bool(params.get("dry_run", False))
+        active_context = self._read_active_worktree_context() or {}
+        qualified_name = str(active_context.get("qualified_name") or "").strip()
+        local_directory = str(
+            active_context.get("local_directory") or active_context.get("directory") or ""
+        ).strip()
+        remote_profile = dict(active_context.get("remote") or {}) if isinstance(active_context.get("remote"), dict) else None
 
-        if not terminal_anchor_id:
-            raise RuntimeError(json.dumps({
-                "code": -32602,
-                "message": "Missing required parameter: terminal_anchor_id",
-                "data": {"param": "terminal_anchor_id"}
-            }))
-
-        # Get application registry to resolve expected_class
-        registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
-        if not registry_path.exists():
-            raise RuntimeError(json.dumps({
-                "code": -32001,
-                "message": "Application registry not found",
-                "data": {"app_name": app_name, "reason": "registry_file_not_found"}
-            }))
-
-        with open(registry_path, "r") as f:
-            registry = json.load(f)
-
-        # Find app in registry
-        app_def = None
-        for app in registry.get("applications", []):
-            if app.get("name") == app_name:
-                app_def = app
-                break
-
-        if not app_def:
-            raise RuntimeError(json.dumps({
-                "code": -32002,
-                "message": f"Application '{app_name}' not found in registry",
-                "data": {"app_name": app_name, "reason": "app_not_found"}
-            }))
-
-        expected_class = app_def.get("expected_class")
-        if not expected_class:
-            raise RuntimeError(json.dumps({
-                "code": -32003,
-                "message": f"Application '{app_name}' has no expected_class in registry",
-                "data": {"app_name": app_name, "reason": "missing_expected_class"}
-            }))
-        pwa_match_domains = app_def.get("pwa_match_domains", [])
-
-        # Create PendingLaunch using Pydantic model
-        from .models import PendingLaunch
-        try:
-            pending_launch = PendingLaunch(
-                app_name=app_name,
-                project_name=project_name,
-                project_directory=Path(project_directory),
-                launcher_pid=launcher_pid,
-                workspace_number=workspace_number,
-                timestamp=timestamp,
-                expected_class=expected_class,
-                pwa_match_domains=pwa_match_domains,
-                terminal_anchor_id=terminal_anchor_id,
-                matched=False
-            )
-        except Exception as e:
+        if app.scope == "scoped" and not qualified_name:
             raise RuntimeError(json.dumps({
                 "code": -32004,
-                "message": f"Validation error: {str(e)}",
-                "data": {"validation_error": str(e)}
+                "message": f"Scoped application '{app_name}' requires an active worktree context",
+                "data": {"app_name": app_name}
             }))
 
-        # Feature 101: Check for pending app trace and record launch notification
-        from .services.window_tracer import get_tracer
-        tracer = get_tracer()
-        trace_id = None
-        if tracer:
-            trace_id = await tracer.get_pending_trace_for_app(app_name)
-            if trace_id:
-                # Associate trace with this pending launch
-                pending_launch.trace_id = trace_id
+        if variant_override == "local":
+            remote_profile = None
+        elif variant_override == "ssh":
+            remote_profile = self._get_project_remote_profile(qualified_name) if qualified_name else None
+            if not remote_profile:
+                raise RuntimeError(json.dumps({
+                    "code": -32004,
+                    "message": f"Project '{qualified_name}' has no configured SSH profile",
+                    "data": {"project_name": qualified_name}
+                }))
 
-                # Build environment variables that will be injected
-                env_vars = {
-                    "I3PM_APP_NAME": app_name,
-                    "I3PM_TERMINAL_ANCHOR_ID": terminal_anchor_id,
-                    "I3PM_PROJECT_NAME": project_name,
-                    "I3PM_PROJECT_DIR": str(project_directory),
-                    "I3PM_TARGET_WORKSPACE": str(workspace_number),
-                    "I3PM_EXPECTED_CLASS": expected_class,
-                    "I3PM_LAUNCHER_PID": str(launcher_pid),
-                }
+        execution_mode = "ssh" if remote_profile else "local"
+        if qualified_name:
+            identity = self._build_worktree_context_identity(qualified_name, remote_profile)
+            connection_key = identity["connection_key"]
+            context_key = identity["context_key"]
+            parsed = parse_qualified_name(qualified_name)
+            worktree_branch = parsed.branch
+            worktree_account = parsed.account
+            worktree_repo = parsed.repo
+        else:
+            connection_key = self._normalize_connection_key(f"local@{self._local_host_alias()}")
+            context_key = ""
+            worktree_branch = ""
+            worktree_account = ""
+            worktree_repo = ""
 
-                # Record the launch notification in the trace
-                await tracer.record_launch_notification(
-                    trace_id=trace_id,
-                    app_name=app_name,
-                    project_name=project_name,
-                    workspace_number=workspace_number,
-                    expected_class=expected_class,
-                    launcher_pid=launcher_pid,
-                    env_vars=env_vars,
-                )
-                logger.info(f"[Feature 101] Associated launch with trace {trace_id}")
-
-        # Add to launch registry
-        if not hasattr(self.state_manager, 'launch_registry'):
+        project_name = qualified_name if app.scope == "scoped" else ""
+        project_dir = str(remote_profile.get("remote_dir", "")) if remote_profile else local_directory
+        local_project_dir = local_directory if project_name else str(Path.home())
+        if project_name and execution_mode == "local" and not Path(local_project_dir).is_dir():
             raise RuntimeError(json.dumps({
-                "code": -32005,
-                "message": "Launch registry not initialized in daemon state",
-                "data": {"reason": "registry_not_initialized"}
+                "code": -32004,
+                "message": f"Local project directory is unavailable for '{project_name}'",
+                "data": {"project_name": project_name, "project_directory": local_project_dir}
             }))
 
-        launch_id = await self.state_manager.launch_registry.add(pending_launch)
+        session_name = f"{worktree_repo}_{worktree_branch}" if worktree_repo and worktree_branch else ""
+        project_display_name = worktree_branch
+        substitution_project_dir = project_dir if execution_mode == "ssh" else local_project_dir
+        prepared_args = [
+            self._substitute_launch_parameter(
+                parameter,
+                project_name=project_name,
+                project_dir=substitution_project_dir,
+                session_name=session_name,
+                project_display_name=project_display_name,
+                project_icon="",
+                preferred_workspace=app.preferred_workspace,
+            )
+            for parameter in app.parameters
+        ]
 
-        # Get current pending count for response
-        stats = self.state_manager.launch_registry.get_stats()
-
-        duration_ms = (time.perf_counter() - start_time) * 1000
-
-        await self._log_ipc_event(
-            event_type="notify_launch",
-            duration_ms=duration_ms,
-            params={"app_name": app_name, "project_name": project_name}
+        launch_identity = self._build_launch_identity(
+            app_name=app.name,
+            project_name=project_name,
+            launcher_pid=launcher_pid,
+            app_id_override=str(params.get("app_id_override") or "").strip(),
         )
-
-        logger.info(
-            f"Registered launch: {launch_id} for project {project_name} "
-            f"(expected_class={expected_class}, workspace={workspace_number})"
+        environment = self._build_launch_env(
+            app_name=app.name,
+            scope=app.scope,
+            preferred_workspace=app.preferred_workspace,
+            expected_class=app.expected_class,
+            project_name=project_name,
+            project_dir=project_dir if project_name else "",
+            local_project_dir=local_project_dir if project_name else "",
+            project_display_name=project_display_name,
+            execution_mode=execution_mode,
+            connection_key=connection_key,
+            context_key=context_key,
+            remote_profile=remote_profile,
+            launcher_pid=launcher_pid,
+            launch_identity=launch_identity,
+            restore_mark=str(params.get("restore_mark") or "").strip(),
+            remote_session_name=str(params.get("remote_session_name_override") or "").strip(),
+            worktree_branch=worktree_branch,
+            worktree_account=worktree_account,
+            worktree_repo=worktree_repo,
         )
+        if dry_run:
+            launch = {
+                "status": "skipped",
+                "reason": "dry_run",
+                "launch_id": "",
+                "terminal_anchor_id": launch_identity["terminal_anchor_id"],
+                "expected_class": app.expected_class,
+                "pending_count": self.state_manager.launch_registry.get_stats().total_pending,
+            }
+        else:
+            launch = await self._register_pending_launch(
+                app=app,
+                project_name=project_name,
+                project_directory=local_project_dir or str(Path.home()),
+                launcher_pid=launcher_pid,
+                terminal_anchor_id=launch_identity["terminal_anchor_id"],
+                preferred_workspace=app.preferred_workspace,
+            )
 
-        result = {
-            "status": "success",
-            "launch_id": launch_id,
-            "terminal_anchor_id": terminal_anchor_id,
-            "expected_class": expected_class,
-            "pending_count": stats.total_pending
+        return {
+            "app_name": app.name,
+            "command": app.command,
+            "args": prepared_args,
+            "terminal": bool(app.terminal),
+            "scope": app.scope,
+            "expected_class": app.expected_class,
+            "preferred_workspace": app.preferred_workspace,
+            "project_name": project_name,
+            "project_directory": project_dir if project_name else "",
+            "local_project_directory": local_project_dir if project_name else "",
+            "project_display_name": project_display_name,
+            "execution_mode": execution_mode,
+            "connection_key": connection_key,
+            "context_key": context_key,
+            "remote_profile": remote_profile,
+            "environment": environment,
+            "launch": launch,
+            "terminal_anchor_id": launch_identity["terminal_anchor_id"],
+            "app_instance_id": launch_identity["app_instance_id"],
         }
-
-        # Feature 101: Include trace_id if pre-launch tracing is active
-        if trace_id:
-            result["trace_id"] = trace_id
-
-        return result
 
     async def _get_launch_stats(self) -> Dict[str, Any]:
         """
@@ -5154,79 +5283,6 @@ class IPCServer:
         )
 
         return {"launches": launches}
-
-    async def _get_window_by_launch_id(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Find window by correlation launch ID.
-
-        Feature 135 - OTEL AI session window correlation
-
-        This method enables otel-ai-monitor to correlate AI CLI sessions with
-        their terminal windows by matching the I3PM_APP_ID (app_name-timestamp)
-        that was set when the terminal was launched.
-
-        Args:
-            params: {
-                "app_name": str - Application name (e.g., "terminal"),
-                "timestamp": int - Unix timestamp (seconds) from I3PM_APP_ID
-            }
-
-        Returns:
-            {
-                "window_id": int - Sway window ID,
-                "project_name": str - Project associated with the window,
-                "correlation_confidence": float - Match confidence (0.0-1.0),
-                "matched_at": float - Unix timestamp when correlation was made
-            }
-            Or None if no matching window found.
-        """
-        start_time = time.perf_counter()
-
-        app_name = params.get("app_name")
-        timestamp = params.get("timestamp")
-
-        if not app_name or not timestamp:
-            raise ValueError("Both 'app_name' and 'timestamp' are required")
-
-        # Construct the correlation launch ID in the same format used by handlers.py
-        # Format: "{app_name}-{timestamp}"
-        target_launch_id = f"{app_name}-{timestamp}"
-
-        logger.debug(f"Searching for window with correlation_launch_id: {target_launch_id}")
-
-        # Search through tracked windows for matching correlation_launch_id
-        matched_window = None
-        for window_id, window_info in self.state_manager.state.window_map.items():
-            if hasattr(window_info, 'correlation_launch_id'):
-                if window_info.correlation_launch_id == target_launch_id:
-                    matched_window = (window_id, window_info)
-                    logger.debug(f"Found window {window_id} matching launch_id {target_launch_id}")
-                    break
-
-        duration_ms = (time.perf_counter() - start_time) * 1000
-
-        await self._log_ipc_event(
-            event_type="get_window_by_launch_id",
-            duration_ms=duration_ms,
-            params={"app_name": app_name, "timestamp": timestamp, "found": matched_window is not None}
-        )
-
-        if matched_window:
-            window_id, window_info = matched_window
-            return {
-                "window_id": window_id,
-                "project_name": getattr(window_info, 'project_name', None),
-                "correlation_confidence": getattr(window_info, 'correlation_confidence', 1.0),
-                "matched_at": time.time()
-            }
-        else:
-            logger.debug(f"No window found for launch_id: {target_launch_id}")
-            # Return structured response to distinguish from daemon unavailable (None)
-            return {
-                "window_id": None,
-                "error": "not_found",
-                "message": f"No window with correlation_launch_id={target_launch_id}"
-            }
 
     async def _get_terminal_anchor(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve canonical terminal anchor state from daemon-owned window tracking."""
@@ -6964,6 +7020,295 @@ class IPCServer:
         except Exception as e:
             logger.debug(f"Failed to read active-worktree context: {e}")
         return None
+
+    def _build_active_context_response(
+        self,
+        active_context: Optional[Dict[str, Any]],
+        *,
+        active_project: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build a canonical context payload for runtime consumers."""
+        local_connection_key = self._normalize_connection_key(f"local@{self._local_host_alias()}")
+        base = {
+            "qualified_name": "",
+            "project_name": "",
+            "directory": "",
+            "local_directory": "",
+            "execution_mode": "global",
+            "host_alias": "global",
+            "connection_key": "global",
+            "identity_key": "global:global",
+            "context_key": "",
+            "remote_enabled": False,
+            "remote": None,
+            "is_global": True,
+            "active_project": str(active_project or "").strip(),
+        }
+
+        if isinstance(active_context, dict) and active_context.get("qualified_name"):
+            payload = dict(base)
+            payload.update({
+                "qualified_name": str(active_context.get("qualified_name") or "").strip(),
+                "project_name": str(active_context.get("qualified_name") or "").strip(),
+                "directory": str(active_context.get("directory") or "").strip(),
+                "local_directory": str(
+                    active_context.get("local_directory")
+                    or active_context.get("directory")
+                    or ""
+                ).strip(),
+                "execution_mode": str(active_context.get("execution_mode") or "").strip() or "local",
+                "host_alias": str(active_context.get("host_alias") or "").strip(),
+                "connection_key": str(active_context.get("connection_key") or "").strip(),
+                "identity_key": str(active_context.get("identity_key") or "").strip(),
+                "context_key": str(active_context.get("context_key") or "").strip(),
+                "remote": active_context.get("remote"),
+                "remote_enabled": bool(
+                    isinstance(active_context.get("remote"), dict)
+                    and active_context["remote"].get("enabled", False)
+                ),
+                "is_global": False,
+            })
+            if payload["execution_mode"] not in {"local", "ssh"}:
+                payload["execution_mode"] = "local"
+            if not payload["host_alias"]:
+                payload["host_alias"] = (
+                    self._local_host_alias() if payload["execution_mode"] == "local" else "unknown"
+                )
+            if not payload["connection_key"]:
+                payload["connection_key"] = (
+                    local_connection_key if payload["execution_mode"] == "local" else "unknown"
+                )
+            if not payload["identity_key"]:
+                payload["identity_key"] = (
+                    f'{payload["execution_mode"]}:{payload["connection_key"]}'
+                )
+            if not payload["context_key"] and payload["qualified_name"]:
+                payload["context_key"] = (
+                    f'{payload["qualified_name"]}::{payload["execution_mode"]}::{payload["connection_key"]}'
+                )
+            payload["active_project"] = payload["qualified_name"]
+            return payload
+
+        if active_project:
+            identity = self._build_worktree_context_identity(str(active_project), None)
+            return {
+                **base,
+                "qualified_name": str(active_project),
+                "project_name": str(active_project),
+                "execution_mode": identity["execution_mode"],
+                "host_alias": identity["host_alias"],
+                "connection_key": identity["connection_key"],
+                "identity_key": identity["identity_key"],
+                "context_key": identity["context_key"],
+                "is_global": False,
+                "active_project": str(active_project),
+            }
+
+        return base
+
+    @staticmethod
+    def _sway_command_succeeded(result: Any) -> bool:
+        """Return true if any sway command reply indicates success."""
+        if isinstance(result, list):
+            for reply in result:
+                success = getattr(reply, "success", None)
+                if success is None and isinstance(reply, dict):
+                    success = reply.get("success")
+                if success is True:
+                    return True
+        return False
+
+    def _find_tree_node_by_id(self, node: Any, target_id: int) -> Optional[Any]:
+        """Recursively walk a Sway tree node to find a container by id."""
+        if getattr(node, "id", None) == target_id:
+            return node
+        for child in list(getattr(node, "nodes", []) or []):
+            match = self._find_tree_node_by_id(child, target_id)
+            if match is not None:
+                return match
+        for child in list(getattr(node, "floating_nodes", []) or []):
+            match = self._find_tree_node_by_id(child, target_id)
+            if match is not None:
+                return match
+        return None
+
+    async def _is_window_in_regular_state(self, window_id: int) -> bool:
+        """Check whether a container is focused as a normal tiled window."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            return False
+        try:
+            tree = await self.i3_connection.conn.get_tree()
+            node = self._find_tree_node_by_id(tree, int(window_id))
+            if node is None:
+                return False
+            fullscreen_raw = getattr(node, "fullscreen_mode", -1)
+            fullscreen_mode = -1 if fullscreen_raw is None else int(fullscreen_raw)
+            floating_state = str(getattr(node, "floating", "") or "").strip().lower()
+            return fullscreen_mode == 0 and (
+                not floating_state or floating_state.endswith("_off")
+            )
+        except Exception as e:
+            logger.debug("Failed to inspect window %s state: %s", window_id, e)
+            return False
+
+    async def _send_tick_barrier(self, payload: str) -> None:
+        """Flush pending Sway command effects before continuing."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            return
+        try:
+            await self.i3_connection.conn.send_tick(payload)
+        except Exception as e:
+            logger.debug("Tick barrier failed for %s: %s", payload, e)
+
+    async def _switch_runtime_context_if_needed(
+        self,
+        project_name: str,
+        target_variant: str,
+    ) -> Dict[str, Any]:
+        """Align daemon runtime context before a focus/action request."""
+        active = await self._context_get_active({})
+        current_project = str(active.get("qualified_name") or "global").strip() or "global"
+        current_variant = str(active.get("execution_mode") or "global").strip() or "global"
+        desired_project = str(project_name or "").strip()
+        desired_variant = str(target_variant or "").strip().lower()
+        if desired_variant not in {"local", "ssh"}:
+            desired_variant = ""
+        if not desired_project:
+            desired_project = current_project
+
+        needs_switch = desired_project != current_project
+        if desired_variant and desired_variant != current_variant:
+            needs_switch = True
+        if not needs_switch:
+            return {"switched": False, "context": active}
+
+        if desired_project == "global":
+            await self._worktree_clear({})
+        else:
+            await self._worktree_switch({
+                "qualified_name": desired_project,
+                "prefer_local": desired_variant == "local",
+            })
+        await self._send_tick_barrier(f"i3pm:context-switch:{desired_project}:{desired_variant or 'auto'}")
+        return {"switched": True, "context": await self._context_get_active({})}
+
+    async def _focus_window_impl(
+        self,
+        *,
+        window_id: int,
+        project_name: str = "",
+        target_variant: str = "",
+        attempts: int = 3,
+        delay_s: float = 0.12,
+    ) -> Dict[str, Any]:
+        """Project-aware focus flow owned by the daemon."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        switch_result = await self._switch_runtime_context_if_needed(project_name, target_variant)
+        selector = f"[con_id={int(window_id)}]"
+        last_error = ""
+
+        for _ in range(max(int(attempts), 1)):
+            try:
+                await self.i3_connection.conn.command(f"{selector} scratchpad show")
+                focus_result = await self.i3_connection.conn.command(f"{selector} focus")
+                if not self._sway_command_succeeded(focus_result):
+                    last_error = "focus_failed"
+                    await asyncio.sleep(delay_s)
+                    continue
+                await self.i3_connection.conn.command(f"{selector} floating disable")
+                await self.i3_connection.conn.command("floating disable")
+                await self.i3_connection.conn.command(f"{selector} fullscreen disable")
+                await self.i3_connection.conn.command("fullscreen disable")
+                await self.i3_connection.conn.command(f"{selector} focus")
+                await self._send_tick_barrier(f"i3pm:focus-window:{window_id}")
+                if await self._is_window_in_regular_state(window_id):
+                    return {
+                        "success": True,
+                        "window_id": int(window_id),
+                        "project_name": str(project_name or "").strip(),
+                        "target_variant": str(target_variant or "").strip(),
+                        "switched_context": bool(switch_result.get("switched", False)),
+                    }
+                last_error = "window_not_tiled"
+            except Exception as e:
+                last_error = str(e)
+            await asyncio.sleep(delay_s)
+
+        return {
+            "success": False,
+            "window_id": int(window_id),
+            "project_name": str(project_name or "").strip(),
+            "target_variant": str(target_variant or "").strip(),
+            "switched_context": bool(switch_result.get("switched", False)),
+            "error": last_error or "focus_failed",
+        }
+
+    async def _window_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a managed window through the daemon-owned runtime path."""
+        window_id = int(params.get("window_id") or 0)
+        if window_id <= 0:
+            raise ValueError("window_id must be a positive integer")
+        return await self._focus_window_impl(
+            window_id=window_id,
+            project_name=str(params.get("project_name") or "").strip(),
+            target_variant=str(params.get("target_variant") or "").strip().lower(),
+            attempts=int(params.get("attempts") or 3),
+            delay_s=float(params.get("delay_s") or 0.12),
+        )
+
+    async def _window_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a deterministic daemon-owned action against a window."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        window_id = int(params.get("window_id") or 0)
+        if window_id <= 0:
+            raise ValueError("window_id must be a positive integer")
+
+        action = str(params.get("action") or "").strip().lower()
+        if not action:
+            raise ValueError("action is required")
+
+        action_map = {
+            "kill": [f'[con_id={window_id}] kill'],
+            "floating_toggle": [f'[con_id={window_id}] floating toggle'],
+            "fullscreen_toggle": [f'[con_id={window_id}] fullscreen toggle'],
+            "move_scratchpad": [f'[con_id={window_id}] move scratchpad'],
+            "move_left": [f'[con_id={window_id}] move left'],
+            "move_right": [f'[con_id={window_id}] move right'],
+            "move_up": [f'[con_id={window_id}] move up'],
+            "move_down": [f'[con_id={window_id}] move down'],
+            "layout_stacking": [f'[con_id={window_id}] focus', 'layout stacking'],
+            "layout_tabbed": [f'[con_id={window_id}] focus', 'layout tabbed'],
+            "layout_toggle_split": [f'[con_id={window_id}] focus', 'layout toggle split'],
+            "split_h": [f'[con_id={window_id}] focus', 'split h'],
+            "split_v": [f'[con_id={window_id}] focus', 'split v'],
+        }
+        if action == "focus":
+            return await self._focus_window_impl(
+                window_id=window_id,
+                project_name=str(params.get("project_name") or "").strip(),
+                target_variant=str(params.get("target_variant") or "").strip().lower(),
+                attempts=int(params.get("attempts") or 3),
+                delay_s=float(params.get("delay_s") or 0.12),
+            )
+        if action not in action_map:
+            raise ValueError(f"Unsupported window action: {action}")
+
+        for command in action_map[action]:
+            result = await self.i3_connection.conn.command(command)
+            if not self._sway_command_succeeded(result):
+                return {
+                    "success": False,
+                    "window_id": window_id,
+                    "action": action,
+                    "error": f"command_failed:{command}",
+                }
+
+        await self._send_tick_barrier(f"i3pm:window-action:{action}:{window_id}")
+        return {"success": True, "window_id": window_id, "action": action}
 
     def _parse_context_key(self, context_key: str) -> Dict[str, str]:
         """Parse context key into project/variant/connection tuple."""

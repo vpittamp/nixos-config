@@ -49,8 +49,6 @@ class LaunchRegistry:
         self._total_notifications = 0
         self._total_matched = 0
         self._total_expired = 0
-        self._total_failed_correlation = 0
-
         logger.info(f"LaunchRegistry initialized with timeout={timeout}s, max_pending={self.MAX_PENDING_LAUNCHES}")
 
     async def add(self, launch: PendingLaunch) -> str:
@@ -124,120 +122,67 @@ class LaunchRegistry:
                 return launch
         return None
 
-    async def find_match(self, window: LaunchWindowInfo) -> Optional[PendingLaunch]:
-        """
-        Find the best matching pending launch for a window.
+    async def find_by_window_signature(self, window: LaunchWindowInfo) -> Optional[PendingLaunch]:
+        """Match a window to one pending launch using exact managed signatures only."""
+        await self._cleanup_expired()
 
-        Searches through unmatched pending launches and returns the one with
-        highest correlation confidence above threshold. Marks the matched
-        launch to prevent double-matching.
-
-        Feature 041: T027, T028, T029 - Enhanced with rapid launch diagnostics
-
-        Args:
-            window: Window information from i3 window::new event
-
-        Returns:
-            PendingLaunch if match found, None otherwise
-        """
-        # Get unmatched launches
-        candidates = [
-            launch for launch in self._launches.values()
-            if not launch.matched
-        ]
-
+        candidates = [launch for launch in self._launches.values() if not launch.matched]
         if not candidates:
-            logger.debug(f"No pending launches for window {window.window_id} ({window.window_class})")
-            self._total_failed_correlation += 1
             return None
 
-        # T029: Diagnostic logging for rapid launch scenarios
-        app_counts = {}
-        for launch in candidates:
-            app_counts[launch.app_name] = app_counts.get(launch.app_name, 0) + 1
+        matches = [launch for launch in candidates if self._launch_matches_window(launch, window)]
+        if not matches:
+            return None
 
-        logger.debug(f"Searching {len(candidates)} pending launches for window {window.window_id}")
-
-        # Log if multiple launches for same app (rapid launch scenario)
-        for app_name, count in app_counts.items():
-            if count > 1:
-                logger.info(
-                    f"Multiple pending launches for {app_name}: {count} instances "
-                    f"(rapid launch scenario detected)"
-                )
-
-        # Find best match (correlation logic will be in window_correlator.py)
-        # For now, use simple class matching with first-match-wins
-        from .window_correlator import calculate_confidence
-
-        best_match: Optional[PendingLaunch] = None
-        best_confidence = 0.0  # Start at 0.0
-        threshold = 0.6  # MEDIUM threshold
-
-        # T029: Track timing information for diagnostics
-        correlation_start = time.time()
-        candidate_scores = []
-
-        for launch in candidates:
-            # T039: calculate_confidence now returns (confidence, signals) tuple
-            confidence, signals = calculate_confidence(launch, window)
-            time_delta = window.timestamp - launch.timestamp
-
-            # Store for diagnostic logging with signals from correlation
-            candidate_scores.append({
-                "app": launch.app_name,
-                "project": launch.project_name,
-                "confidence": confidence,
-                "time_delta": time_delta,
-                "workspace_match": signals.get("workspace_match", False),
-                "signals": signals,  # T040: Include full signals for diagnostics
-            })
-
-            # Accept if confidence >= threshold and better than current best
-            if confidence >= threshold and confidence > best_confidence:
-                best_match = launch
-                best_confidence = confidence
-                logger.debug(
-                    f"Potential match: {launch.app_name} → {launch.project_name} "
-                    f"(confidence={confidence:.2f})"
-                )
-
-        correlation_time = (time.time() - correlation_start) * 1000  # Convert to ms
-
-        # Mark as matched if found
-        if best_match:
-            best_match.matched = True
-            self._total_matched += 1
-
-            # T029: Enhanced logging with timing and signal details
-            time_delta = window.timestamp - best_match.timestamp
-            workspace_match = best_match.workspace_number == window.workspace_number
-
-            logger.info(
-                f"Matched window {window.window_id} ({window.window_class}) to "
-                f"launch {best_match.app_name} → {best_match.project_name} "
-                f"(confidence={best_confidence:.2f})"
-            )
-
-            # Log detailed correlation info for rapid launch scenarios
-            if len(candidates) > 1:
-                logger.info(
-                    f"Best match: {best_match.app_name} → {best_match.project_name} "
-                    f"with confidence {best_confidence:.2f} "
-                    f"(time_delta={time_delta:.3f}s, workspace_match={workspace_match})"
-                )
-                logger.debug(
-                    f"Correlation candidates: {candidate_scores} "
-                    f"(correlation_time={correlation_time:.2f}ms)"
-                )
+        workspace_matches = [
+            launch for launch in matches
+            if launch.workspace_number == window.workspace_number
+        ]
+        if len(workspace_matches) == 1:
+            matched = workspace_matches[0]
+        elif len(matches) == 1:
+            matched = matches[0]
         else:
-            self._total_failed_correlation += 1
-            logger.warning(
-                f"No matching launch for window {window.window_id} ({window.window_class}). "
-                f"Pending launches: {[f'{l.app_name}[{l.expected_class}]' for l in candidates]}"
+            logger.error(
+                "Ambiguous pending launch match for window %s (%s/%s): %s",
+                window.window_id,
+                window.window_class,
+                window.window_instance,
+                [
+                    {
+                        "app_name": launch.app_name,
+                        "project_name": launch.project_name,
+                        "workspace_number": launch.workspace_number,
+                        "expected_class": launch.expected_class,
+                    }
+                    for launch in matches
+                ],
             )
+            return None
 
-        return best_match
+        matched.matched = True
+        self._total_matched += 1
+        return matched
+
+    def _launch_matches_window(self, launch: PendingLaunch, window: LaunchWindowInfo) -> bool:
+        from .window_identifier import match_pwa_instance, match_window_class
+
+        actual_instance = str(window.window_instance or "")
+        pwa_domains = list(launch.pwa_match_domains or [])
+        if pwa_domains and match_pwa_instance(
+            launch.expected_class,
+            window.window_class,
+            actual_instance,
+            pwa_domains=pwa_domains,
+        ):
+            return True
+
+        matched, _ = match_window_class(
+            launch.expected_class,
+            window.window_class,
+            actual_instance,
+        )
+        return matched
 
     async def _cleanup_expired(self) -> None:
         """Remove launches older than timeout."""
@@ -275,7 +220,7 @@ class LaunchRegistry:
             total_notifications=self._total_notifications,
             total_matched=self._total_matched,
             total_expired=self._total_expired,
-            total_failed_correlation=self._total_failed_correlation,
+            total_failed_correlation=0,
         )
 
     async def get_pending_launches(self, include_matched: bool = False) -> list:
