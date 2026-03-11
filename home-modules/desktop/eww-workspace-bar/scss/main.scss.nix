@@ -48,13 +48,11 @@
     margin-left: 0px;
   }
 
-  .workspace-scroll {
+  .workspace-strip-wrap {
     min-width: 0;
   }
 
-  .workspace-scroll scrollbar {
-    opacity: 0;
-    min-height: 0;
+  .workspace-side-spacer {
     min-width: 0;
   }
 

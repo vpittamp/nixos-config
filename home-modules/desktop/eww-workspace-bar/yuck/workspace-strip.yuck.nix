@@ -34,13 +34,12 @@
       (box :class "separator-line")))
 
   (defwidget workspace-strip [output_label markup_var]
-    (centerbox :class "workspace-bar" :orientation "h" :hexpand true :halign "fill"
+    (box :class "workspace-bar" :orientation "h" :hexpand true :halign "fill"
       (box :class "workspace-side-spacer" :hexpand true)
-      (scroll :class "workspace-scroll" :hscroll true :vscroll false :hexpand true :halign "fill"
-        (box :class "workspace-strip"
-             :orientation "h"
-             :hexpand true
-             :halign "center"
-          (literal :content markup_var)))
+      (box :class "workspace-strip-wrap"
+           :orientation "h"
+           :hexpand false
+           :halign "center"
+        (literal :content markup_var))
       (box :class "workspace-side-spacer" :hexpand true)))
 ''
