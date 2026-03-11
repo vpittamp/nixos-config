@@ -88,14 +88,11 @@
       # --silent: Start minimized to system tray (persists in tray)
       # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
       # --ozone-platform-hint=auto: Auto-detect X11/Wayland
-      # Run with 'onepassword' as primary group so internal IPC peer-credential
-      # checks pass (1Password validates SO_PEERCRED gid == onepassword).
-      # newgrp is setuid root and can change the primary group, then exec 1password.
-      ExecStart = let
-        launcher = pkgs.writeShellScript "1password-launch" ''
-          echo 'exec ${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform' | exec /run/wrappers/bin/newgrp onepassword
-        '';
-      in "${launcher}";
+      # Launch as the normal user session. The upstream NixOS module already
+      # provides setgid wrappers for `op` and `1Password-BrowserSupport`;
+      # forcing the desktop app itself to run under a different primary group
+      # breaks peer-credential checks for browser/CLI lock-state sharing.
+      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
       Restart = "on-failure";
       RestartSec = 5;
       # Ensure 1Password stays running
@@ -125,26 +122,16 @@
     '';
   };
 
-  # Ensure 1Password tray settings are enabled (merged with existing settings)
-  # This runs on every home-manager activation to ensure tray icon works
-  home.activation.onepasswordTraySettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    SETTINGS_FILE="$HOME/.config/1Password/settings/settings.json"
-    if [ -f "$SETTINGS_FILE" ]; then
-      # Merge tray settings into existing settings (preserves user settings)
-      ${pkgs.jq}/bin/jq '. + {
-        "app.keepInTray": true,
-        "app.minimizeToTray": true,
-        "app.useHardwareAcceleration": true
-      }' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    fi
-  '';
+  # Do not mutate ~/.config/1Password/settings/settings.json here.
+  # 1Password authenticates that file, so tray/minimize preferences must be
+  # configured in the app UI and then allowed to persist across rebuilds.
   
   
   # Shell alias for quick checks
   home.shellAliases = {
     "1p-check" = "1password-check";
-    "1p-start" = "1password --silent &";
-    "1p-restart" = "pkill -f 1password; sleep 2; 1password --silent &";
+    "1p-start" = "systemctl --user start onepassword-gui.service";
+    "1p-restart" = "systemctl --user restart onepassword-gui.service";
   };
   
   # Environment variables for 1Password with KDE Wallet

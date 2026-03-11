@@ -10,6 +10,37 @@ let
 
   # Detect if we're in a headless environment (no GUI)
   hasGui = (config.services.xserver.enable or false) || (config.services.sway.enable or false);
+
+  chromeExtensionId = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
+  chromeExtensionOrigin = "chrome-extension://${chromeExtensionId}/";
+  chromePolicyJson = builtins.toJSON {
+    NativeMessagingAllowlist = [
+      "com.1password.1password"
+      "com.1password.browser_support"
+    ];
+    PasswordManagerEnabled = false;
+    AutofillEnabled = true;
+    # Let 1Password extension handle passkeys instead of Chrome's built-in handler.
+    WebAuthnFactors = [ "all" ];
+    PasswordManagerPasskeyEnabled = false;
+    ExtensionSettings = {
+      "${chromeExtensionId}" = {
+        installation_mode = "force_installed";
+        update_url = "https://clients2.google.com/service/update2/crx";
+        runtime_allowed_hosts = [ "*://*" ];
+        toolbar_pin = "force_pinned";
+      };
+    };
+  };
+  mkChromeNativeHost = name: description: {
+    text = builtins.toJSON {
+      inherit name description;
+      type = "stdio";
+      allowed_origins = [ chromeExtensionOrigin ];
+      path = "/run/wrappers/bin/1Password-BrowserSupport";
+    };
+    mode = "0644";
+  };
 in
 {
   options.services.onepassword = {
@@ -127,12 +158,6 @@ in
       # Enable 1Password system integration
       programs._1password.enable = true;
 
-      # User groups
-      users.users.${cfg.user}.extraGroups = [
-        "onepassword"
-        "onepassword-cli"
-      ];
-
       # Create base directories
       systemd.tmpfiles.rules = [
         "d /home/${cfg.user}/.1password 0700 ${cfg.user} users -"
@@ -160,6 +185,12 @@ in
 
       # Chromium integration
       environment.etc = {
+        # Google Chrome requires machine-level policy files on Linux.
+        "opt/chrome/policies/managed/1password-support.json" = {
+          text = chromePolicyJson;
+          mode = "0644";
+        };
+
         # Chromium policy - minimal configuration
         "chromium/policies/recommended/1password-support.json" = {
           text = builtins.toJSON {
@@ -189,6 +220,13 @@ in
           mode = "0644";
         };
 
+        # Native messaging hosts for Google Chrome
+        "opt/chrome/native-messaging-hosts/com.1password.1password.json" =
+          mkChromeNativeHost "com.1password.1password" "1Password Native Messaging Host";
+
+        "opt/chrome/native-messaging-hosts/com.1password.browser_support.json" =
+          mkChromeNativeHost "com.1password.browser_support" "1Password Browser Support";
+
         # Native messaging hosts for Chromium
         "chromium/native-messaging-hosts/com.1password.1password.json" = {
           text = builtins.toJSON {
@@ -196,7 +234,7 @@ in
             description = "1Password Native Messaging Host";
             type = "stdio";
             allowed_origins = [
-              "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
+              chromeExtensionOrigin
             ];
             path = "/run/wrappers/bin/1Password-BrowserSupport";
           };
@@ -209,7 +247,7 @@ in
             description = "1Password Browser Support";
             type = "stdio";
             allowed_origins = [
-              "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
+              chromeExtensionOrigin
             ];
             path = "/run/wrappers/bin/1Password-BrowserSupport";
           };

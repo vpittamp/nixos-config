@@ -43,6 +43,13 @@ in
     "${modifier}+d" = "exec walker";
     "${modifier}+Shift+f" = "exec i3pm run fzf-file-search --force";
 
+    # ========== 1PASSWORD ==========
+    # Chrome's extension popup shortcut (Ctrl+Shift+X) is inconsistent in standalone
+    # PWA windows. Bind the desktop app's global entry points at the compositor level
+    # so they work in both browser windows and Chrome PWAs.
+    "Ctrl+Shift+space" = "exec 1password --quick-access";
+    "Ctrl+backslash" = "exec 1password --fill";
+
     # Run-raise-hide launcher (Feature 051) - example keybindings
     # Uncomment and customize based on your most-used applications
     # Toggle mode (default): Launch if not running, focus if visible, summon to current workspace

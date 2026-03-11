@@ -56,44 +56,14 @@ in
     ++ lib.optionals (pkgs ? google-chrome-beta) [ pkgs.google-chrome-beta ]
     ++ lib.optionals (pkgs ? google-chrome-unstable) [ pkgs.google-chrome-unstable ];
 
-  # Configure Chrome enterprise policies
-  # - Disables built-in password manager (we use 1Password)
-  # - Force installs 1Password extension
-  xdg.configFile."google-chrome/policies/managed/managed_policies.json" = {
-    text = builtins.toJSON {
-      PasswordManagerEnabled = false;
-      BrowserSignin = 0;
-      ExtensionInstallForcelist = [
-        "aeblfdkhhhdcdjpifhhbdiojplfjncoa;https://clients2.google.com/service/update2/crx"
-      ];
-    };
-  };
+  # Chrome's managed policy is configured at the system level in
+  # modules/services/onepassword.nix via /etc/opt/chrome/policies/managed/.
 
-  # Native messaging host manifest for 1Password (Google Chrome)
-  home.file.".config/google-chrome/NativeMessagingHosts/com.1password.1password.json" = {
-    text = builtins.toJSON {
-      name = "com.1password.1password";
-      description = "1Password Native Messaging Host";
-      type = "stdio";
-      allowed_origins = [
-        "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
-      ];
-      path = onePasswordBrowserSupport;
-    };
-  };
-
-  # Additional native messaging host for 1Password browser support
-  home.file.".config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json" = {
-    text = builtins.toJSON {
-      name = "com.1password.browser_support";
-      description = "1Password Browser Support";
-      type = "stdio";
-      allowed_origins = [
-        "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
-      ];
-      path = onePasswordBrowserSupport;
-    };
-  };
+  # Let 1Password manage per-user Chrome native messaging manifests itself.
+  # System-level Chrome manifests are provided in modules/services/onepassword.nix,
+  # and 1Password also attempts to install/update the user-level manifest on Linux.
+  # Managing ~/.config/google-chrome/NativeMessagingHosts with Home Manager makes
+  # that path read-only via Nix store symlinks and breaks 1Password's installer.
 
   # Claude Code manages its own native messaging host file at:
   # ~/.config/google-chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json
@@ -135,7 +105,7 @@ EOF
       "browser.theme" = "system";
       "security.authenticatedUnlock.enabled" = true;
       "security.authenticatedUnlock.method" = "system";
-      "security.autolock.minutes" = 10;
+      "security.autolock.minutes" = 60;
       "security.clipboardClearAfterSeconds" = 90;
     };
   };

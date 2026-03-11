@@ -11,6 +11,7 @@ import logging
 from typing import Dict
 
 from ..models import PendingLaunch, LaunchWindowInfo
+from .window_identifier import match_pwa_instance
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,21 @@ def calculate_confidence(
     if window_class_lower == expected_class_lower:
         confidence = 0.5  # Baseline for class match
         signals["class_match"] = True
+        signals["class_match_type"] = "exact"
         logger.debug(f"Class match: {window.window_class} == {launch.expected_class} (case-insensitive)")
+    elif match_pwa_instance(
+        launch.expected_class,
+        window.window_class,
+        "",
+        pwa_domains=getattr(launch, "pwa_match_domains", []),
+    ):
+        confidence = 0.5
+        signals["class_match"] = True
+        signals["class_match_type"] = "pwa_instance"
+        logger.debug(
+            f"PWA class match: {window.window_class} matched launch {launch.expected_class} "
+            f"via dynamic Chrome app_id"
+        )
     else:
         # No match possible without class alignment
         signals["class_match"] = False

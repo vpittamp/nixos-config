@@ -4957,6 +4957,7 @@ class IPCServer:
                 "message": f"Application '{app_name}' has no expected_class in registry",
                 "data": {"app_name": app_name, "reason": "missing_expected_class"}
             }))
+        pwa_match_domains = app_def.get("pwa_match_domains", [])
 
         # Create PendingLaunch using Pydantic model
         from .models import PendingLaunch
@@ -4969,6 +4970,7 @@ class IPCServer:
                 workspace_number=workspace_number,
                 timestamp=timestamp,
                 expected_class=expected_class,
+                pwa_match_domains=pwa_match_domains,
                 matched=False
             )
         except Exception as e:

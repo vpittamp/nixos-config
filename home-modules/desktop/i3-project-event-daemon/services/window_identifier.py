@@ -202,6 +202,7 @@ def match_pwa_instance(
     actual_class: str,
     actual_instance: str,
     pwa_domain: Optional[str] = None,
+    pwa_domains: Optional[List[str]] = None,
 ) -> bool:
     """
     Match PWA instance using PWA-specific logic.
@@ -241,11 +242,32 @@ def match_pwa_instance(
         if pwa_id_expected == actual_class:
             return True
 
-    # Dynamic Chrome fallback matching via domain
-    if pwa_domain and actual_class and actual_class.startswith("chrome-"):
-        # Format can be chrome-{domain}__-Default or chrome-{domain}-Default depending on the Wayland bridge version
-        if actual_class in [f"chrome-{pwa_domain}__-Default", f"chrome-{pwa_domain}-Default"]:
-            return True
+    # Dynamic Chrome fallback matching via domain.
+    if actual_class and actual_class.startswith("chrome-") and actual_class.endswith("-Default"):
+        dynamic_id = actual_class[len("chrome-"):-len("-Default")]
+        candidate_domains: List[str] = []
+
+        if pwa_domain:
+            candidate_domains.append(pwa_domain.lower())
+
+        for domain in pwa_domains or []:
+            lowered = domain.lower()
+            if lowered not in candidate_domains:
+                candidate_domains.append(lowered)
+
+        for domain in candidate_domains:
+            # Chrome app ids can be:
+            # - chrome-{domain}-Default
+            # - chrome-{domain}__-Default
+            # - chrome-{domain}__mail-Default
+            # - chrome-{domain}__path-segment-Default
+            if (
+                dynamic_id == domain
+                or dynamic_id == f"{domain}__"
+                or dynamic_id.startswith(f"{domain}__")
+                or dynamic_id.startswith(f"{domain}-")
+            ):
+                return True
 
     # Not a PWA or no match
     return False
@@ -276,10 +298,11 @@ def match_with_registry(
         # Get expected class from registry
         expected_class = app_def.get("expected_class", app_name)
         pwa_domain = app_def.get("pwa_domain")
+        pwa_domains = app_def.get("pwa_match_domains", [])
         aliases = app_def.get("aliases", [])
 
         # Try matching using PWA logic first
-        if match_pwa_instance(expected_class, actual_class, actual_instance, pwa_domain):
+        if match_pwa_instance(expected_class, actual_class, actual_instance, pwa_domain, pwa_domains):
             result = app_def.copy()
             result["_match_type"] = "pwa_instance"
             result["_matched_app_name"] = app_name

@@ -479,23 +479,23 @@ let
       routing_domains = [ "argo-workflows-ryzen.tail286401.ts.net" ];
     }
 
-    # Gitea Hub (via Tailscale)
+    # Gitea Ryzen (via Tailscale)
     {
-      name = "Gitea Hub";
-      url = "https://gitea-hub.tail286401.ts.net";
-      domain = "gitea-hub.tail286401.ts.net";
+      name = "Gitea Ryzen";
+      url = "https://gitea-ryzen.tail286401.ts.net";
+      domain = "gitea-ryzen.tail286401.ts.net";
       icon = iconPath "gitea.svg";
-      description = "Gitea Hub - Self-hosted git service hub";
+      description = "Gitea - Self-hosted git service on Ryzen cluster";
       categories = "Development;Network;";
-      keywords = "gitea;hub;git;scm;code;devops;";
-      scope = "https://gitea-hub.tail286401.ts.net/";
+      keywords = "gitea;git;scm;code;devops;ryzen;";
+      scope = "https://gitea-ryzen.tail286401.ts.net/";
       ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 71;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "gitea-hub.tail286401.ts.net" ];
+      routing_domains = [ "gitea-ryzen.tail286401.ts.net" ];
     }
 
     # CVS Pharmacy

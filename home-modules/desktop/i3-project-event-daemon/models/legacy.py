@@ -1041,6 +1041,10 @@ class PendingLaunch(BaseModel):
         ...,
         description="Window class expected for this application (from app registry)"
     )
+    pwa_match_domains: list[str] = Field(
+        default_factory=list,
+        description="Candidate domains for matching dynamic Chrome PWA app_ids"
+    )
 
     # State tracking
     matched: bool = Field(
