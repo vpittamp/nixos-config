@@ -31,7 +31,7 @@
   .workspace-bar {
     background: rgba(30, 30, 46, 0.85);
     padding: 4px 8px;
-    margin: 6px;
+    margin: 6px 0;
     border-radius: 6px;
     border: 1px solid rgba(203, 166, 247, 0.25);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);

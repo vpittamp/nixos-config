@@ -802,6 +802,8 @@ ${if isLaptop then ''
 (defwidget main-bar [is_primary monitor_id]
   (centerbox :class "bar"
              :orientation "h"
+             :hexpand true
+             :halign "fill"
     (box :class "bar-side"
          :hexpand true
          :orientation "h"

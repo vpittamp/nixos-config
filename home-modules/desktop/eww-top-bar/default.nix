@@ -4,6 +4,7 @@ with lib;
 
 let
   cfg = config.programs.eww-top-bar;
+  shared = import ../eww-bar-utils.nix { inherit lib pkgs; };
 
   mocha = {
     base = "#1e1e2e";
@@ -30,19 +31,9 @@ let
   isRyzen = hostname == "ryzen";
   isThinkPad = hostname == "thinkpad";
   isLaptop = isThinkPad;  # Laptops have brightness control
+  knownBarOutputs = shared.getKnownBarOutputs hostname;
 
-  topBarOutputs =
-    if isHeadless then [
-      { name = "HEADLESS-1"; showTray = true; logicalWidth = 1920; }
-    ] else if isRyzen then [
-      { name = "DP-1"; showTray = true; logicalWidth = 3840; }
-      { name = "HDMI-A-1"; showTray = false; logicalWidth = 1920; }
-      { name = "DP-2"; showTray = false; logicalWidth = 1920; }
-      { name = "DP-3"; showTray = false; logicalWidth = 1920; }
-    ] else [
-      # ThinkPad: 1920 physical / 1.25 scale = 1536 logical
-      { name = "eDP-1"; showTray = true; logicalWidth = 1536; }
-    ];
+  topBarOutputs = builtins.filter (output: output.topBar) knownBarOutputs;
 
   sanitizeOutputName = name:
     lib.toLower (
@@ -51,6 +42,14 @@ let
 
   scripts = import ./scripts.nix { inherit pkgs; };
   inherit (scripts) hardwareDetectScript togglePowermenuScript toggleBadgeShelfScript;
+  openActiveWindowsScript = shared.mkOpenActiveEwwWindowsScript {
+    scriptName = "eww-top-bar-open-active";
+    configDir = "eww/eww-top-bar";
+    windowMappings = map (output: {
+      name = output.name;
+      window = "top-bar-${sanitizeOutputName output.name}";
+    }) topBarOutputs;
+  };
 
 in
 {
@@ -106,11 +105,7 @@ in
         Type = "simple";
         ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar kill 2>/dev/null || true'";
         ExecStart = "${pkgs.eww}/bin/eww daemon --no-daemonize --config ${config.xdg.configHome}/eww/eww-top-bar";
-        ExecStartPost = let
-          windowIds = lib.concatMapStringsSep " " (output: "top-bar-${sanitizeOutputName output.name}") topBarOutputs;
-          ewwCmd = "${pkgs.eww}/bin/eww --config ${config.xdg.configHome}/eww/eww-top-bar";
-          timeout = "${pkgs.coreutils}/bin/timeout";
-        in "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 50); do ${timeout} 1s ${ewwCmd} ping >/dev/null 2>&1 && break; sleep 0.2; done; ${ewwCmd} close-all 2>/dev/null || true; ${timeout} 10s ${ewwCmd} open-many ${windowIds} || true'";
+        ExecStartPost = "${openActiveWindowsScript}/bin/eww-top-bar-open-active";
         ExecStop = "${pkgs.eww}/bin/eww kill --config ${config.xdg.configHome}/eww/eww-top-bar";
         Restart = "on-failure";
         RestartSec = 3;

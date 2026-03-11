@@ -7,6 +7,8 @@ let
   hostname = osConfig.networking.hostName or "";
   isHeadless = hostname == "hetzner";
   isRyzen = hostname == "ryzen";
+  shared = import ../eww-bar-utils.nix { inherit lib pkgs; };
+  knownBarOutputs = shared.getKnownBarOutputs hostname;
 
   mocha = {
     base = "#1e1e2e";
@@ -24,22 +26,7 @@ let
     teal = "#94e2d5";
   };
 
-  workspaceOutputs =
-    if isHeadless then [
-      { name = "HEADLESS-1"; label = "Headless 1"; logicalWidth = 1920; }
-      { name = "HEADLESS-2"; label = "Headless 2"; logicalWidth = 1920; }
-      { name = "HEADLESS-3"; label = "Headless 3"; logicalWidth = 1920; }
-    ]
-    else if isRyzen then [
-      { name = "DP-1"; label = "Primary"; logicalWidth = 3840; }
-      { name = "HDMI-A-1"; label = "HDMI"; logicalWidth = 1920; }
-      { name = "DP-2"; label = "DP-2"; logicalWidth = 1920; }
-      { name = "DP-3"; label = "DP-3"; logicalWidth = 1920; }
-    ]
-    else [
-      # ThinkPad: 1920 physical / 1.25 scale = 1536 logical
-      { name = "eDP-1"; label = "Built-in"; logicalWidth = 1536; }
-    ];
+  workspaceOutputs = builtins.filter (output: output.workspaceBar) knownBarOutputs;
 
   sanitize = name:
     lib.toLower (
@@ -91,8 +78,14 @@ let
     ${pkgs.systemd}/bin/systemctl --user restart eww-workspace-bar
   '';
 
-  # Generate window names for all outputs
-  windowNames = map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs;
+  openActiveWindowsScript = shared.mkOpenActiveEwwWindowsScript {
+    scriptName = "eww-workspace-bar-open-active";
+    configDir = ewwConfigDir;
+    windowMappings = map (output: {
+      name = output.name;
+      window = "workspace-bar-" + sanitize output.name;
+    }) workspaceOutputs;
+  };
 
   # Wrapper script that starts daemon and opens all bar windows
   wrapperScript = pkgs.writeShellScriptBin "eww-workspace-bar-wrapper" ''
@@ -120,9 +113,8 @@ let
       ${pkgs.coreutils}/bin/sleep 0.2
     done
 
-    # Open all workspace bar windows
-    # IMPORTANT: Run eww open with timeout - it can hang indefinitely due to IPC issues
-    ${lib.concatMapStringsSep "\n    " (name: ''$TIMEOUT 5s $EWW --config "$CONFIG" open ${name} &'') windowNames}
+    # Open workspace bar windows only for currently active Sway outputs.
+    "${openActiveWindowsScript}/bin/eww-workspace-bar-open-active"
     ${pkgs.coreutils}/bin/sleep 0.5
 
     # Start workspace preview daemon (Feature 057, 072)
