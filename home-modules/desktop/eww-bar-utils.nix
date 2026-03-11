@@ -47,10 +47,10 @@ let
         sleep 0.2
       done
 
-      active_json="$(daemon_outputs_state | $JQ -c '[.outputs[]? | select(.active == true) | {name}]' 2>/dev/null || echo '[]')"
+      active_json="$(daemon_outputs_state | $JQ -c '(.active_outputs // [])' 2>/dev/null || echo '[]')"
       mapfile -t windows < <(
         printf '%s' "$KNOWN_WINDOWS" | "$JQ" -r --argjson outputs "$active_json" '
-          ($outputs | map(select(.active == true) | .name) | INDEX(.)) as $active
+          ($outputs | INDEX(.)) as $active
           | .[]
           | select($active[.name])
           | .window
