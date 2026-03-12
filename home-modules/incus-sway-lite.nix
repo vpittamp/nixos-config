@@ -26,9 +26,8 @@
     ./desktop/python-environment.nix
     ./desktop/sway.nix
     ./desktop/unified-bar-theme.nix
-    ./desktop/eww-workspace-bar.nix
+    ./desktop/quickshell-runtime-shell.nix
     ./desktop/eww-top-bar.nix
-    ./desktop/eww-monitoring-panel.nix
     ./desktop/swaync.nix
     ./desktop/sway-config-manager.nix
 
@@ -41,7 +40,6 @@
     # Launcher + app registry
     ./desktop/walker.nix
     ./desktop/app-registry.nix
-    ./tools/app-launcher.nix
     ./tools/pwa-launcher.nix
 
     # Local AI monitoring stack (lightweight)
@@ -118,7 +116,6 @@
     debounceMs = 500;
   };
 
-  programs.eww-workspace-bar.enable = true;
+  programs.quickshell-runtime-shell.enable = true;
   programs.eww-top-bar.enable = true;
-  programs.eww-monitoring-panel.enable = true;
 }

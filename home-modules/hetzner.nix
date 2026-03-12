@@ -82,10 +82,9 @@ in
     ./desktop/unified-bar-theme.nix  # Feature 057: Unified bar theme (Catppuccin Mocha)
     # ./desktop/swaybar.nix      # Swaybar with event-driven status (DISABLED: replaced by eww-top-bar Feature 060)
     # ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (DISABLED: replaced by eww-top-bar Feature 060)
-    ./desktop/eww-workspace-bar.nix  # SVG workspace bar replacing bottom swaybar
+    ./desktop/quickshell-runtime-shell.nix
     ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (network, apps, system controls)
     ./desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
-    ./desktop/eww-monitoring-panel.nix  # Feature 085: Live window/project monitoring panel
     ./desktop/swaync.nix       # Feature 057: SwayNC notification center
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
@@ -100,7 +99,6 @@ in
     # Application launcher and registry
     ./desktop/walker.nix        # Feature 043: Walker/Elephant launcher (works with software rendering)
     ./desktop/app-registry.nix  # Feature 034: Application registry with desktop files
-    ./tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
     ./tools/pwa-launcher.nix    # Dynamic PWA launcher (queries IDs at runtime)
 
     # Feature 056: Declarative PWA Installation
@@ -176,16 +174,13 @@ in
   #   # Uses default Catppuccin Mocha theme and standard update intervals
   # };
 
-  programs.eww-workspace-bar.enable = true;
+  programs.quickshell-runtime-shell.enable = true;
 
   # eww quick settings panel (Feature 057)
   programs.eww-quick-panel.enable = true;
 
   # Eww top bar with system metrics (Feature 060)
   programs.eww-top-bar.enable = true;
-
-  # Live window/project monitoring panel (Feature 085)
-  programs.eww-monitoring-panel.enable = true;  # Toggle with Mod+m
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

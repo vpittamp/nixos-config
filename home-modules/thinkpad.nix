@@ -13,10 +13,9 @@
     ./desktop/python-environment.nix
     ./desktop/sway.nix
     ./desktop/unified-bar-theme.nix
-    ./desktop/eww-workspace-bar.nix
+    ./desktop/quickshell-runtime-shell.nix
     ./desktop/eww-quick-panel.nix
     ./desktop/eww-top-bar.nix
-    ./desktop/eww-monitoring-panel.nix
     ./desktop/eww-device-controls.nix  # Feature 116: Unified device controls
     ./desktop/swaync.nix
     ./desktop/sway-config-manager.nix
@@ -32,7 +31,6 @@
     # Application launcher and registry
     ./desktop/walker.nix
     ./desktop/app-registry.nix
-    ./tools/app-launcher.nix
     ./tools/pwa-launcher.nix
 
     # Declarative PWA Installation
@@ -82,17 +80,13 @@
   # Declarative PWA Installation
 
 
-  # eww workspace bar with SVG icons
-  programs.eww-workspace-bar.enable = true;
+  programs.quickshell-runtime-shell.enable = true;
 
   # eww quick settings panel
   programs.eww-quick-panel.enable = true;
 
   # eww top bar with system metrics
   programs.eww-top-bar.enable = true;
-
-  # eww monitoring panel
-  programs.eww-monitoring-panel.enable = true;
 
   # eww device controls (Feature 116)
   programs.eww-device-controls.enable = true;
