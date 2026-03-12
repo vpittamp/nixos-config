@@ -14,10 +14,15 @@ let
 import QtQuick
 
 QtObject {
+  readonly property string configName: "${cfg.configName}"
   readonly property int panelWidth: ${toString cfg.panelWidth}
   readonly property int barHeight: ${toString cfg.barHeight}
+  readonly property int dashboardHeartbeatMs: ${toString cfg.dashboardHeartbeatMs}
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
+  readonly property var primaryOutputs: ${builtins.toJSON cfg.primaryOutputs}
+  readonly property bool perMonitorBars: ${if cfg.perMonitorBars then "true" else "false"}
+  readonly property string panelOutputPolicy: "${cfg.panelOutputPolicy}"
   readonly property string codexIcon: "${../../../assets/icons/codex.svg}"
   readonly property string claudeIcon: "${../../../assets/icons/claude.svg}"
   readonly property string geminiIcon: "${../../../assets/icons/gemini.svg}"
@@ -74,6 +79,11 @@ EOF
     set -euo pipefail
     exec ${quickshellBin} -c ${cfg.configName} ipc call shell focusLastSession
   '';
+
+  cycleDisplayLayoutScript = pkgs.writeShellScriptBin "cycle-display-layout" ''
+    set -euo pipefail
+    exec ${config.home.profileDirectory}/bin/i3pm display cycle
+  '';
 in
 {
   options.programs.quickshell-runtime-shell = {
@@ -97,6 +107,33 @@ in
       description = "Height of the bottom workspace bar in pixels.";
     };
 
+    dashboardHeartbeatMs = lib.mkOption {
+      type = lib.types.int;
+      default = 5000;
+      description = "Fallback dashboard refresh cadence in milliseconds for the shell watcher.";
+    };
+
+    primaryOutputs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default =
+        if hostName == "ryzen" then [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]
+        else if hostName == "thinkpad" then [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ]
+        else [ "HEADLESS-1" "eDP-1" "DP-1" "HDMI-A-1" ];
+      description = "Ordered list of preferred output names for the QuickShell primary panel.";
+    };
+
+    perMonitorBars = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Render one QuickShell workspace/status bar per connected monitor.";
+    };
+
+    panelOutputPolicy = lib.mkOption {
+      type = lib.types.enum [ "primary" ];
+      default = "primary";
+      description = "Policy for choosing the monitor that hosts the AI detail panel.";
+    };
+
     toggleKey = lib.mkOption {
       type = lib.types.either lib.types.str (lib.types.listOf lib.types.str);
       default = "$mod+m";
@@ -116,6 +153,7 @@ in
       cycleSessionsScript
       showAiSwitcherScript
       focusLastSessionScript
+      cycleDisplayLayoutScript
     ];
 
     home.activation.migrateQuickshellRuntimeShellConfig = lib.hm.dag.entryBefore ["checkLinkTargets"] ''

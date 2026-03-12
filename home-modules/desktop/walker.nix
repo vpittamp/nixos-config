@@ -1520,41 +1520,33 @@ REMOTE
   # Feature 083: Walker monitor profile list script
   walkerMonitorList = pkgs.writeShellScriptBin "walker-monitor-list" ''
     #!/usr/bin/env bash
-    # List monitor profiles for Walker menu
+    # List daemon-backed display layouts for Walker menu
     set -euo pipefail
 
-    PROFILES_DIR="$HOME/.config/sway/monitor-profiles"
-    CURRENT_FILE="$HOME/.config/sway/monitor-profile.current"
-
-    # Get current profile
-    CURRENT=""
-    if [ -f "$CURRENT_FILE" ]; then
-      CURRENT=$(cat "$CURRENT_FILE" | tr -d '[:space:]')
+    if ! snapshot=$(i3pm display snapshot 2>/dev/null); then
+      exit 1
     fi
 
-    # List all profiles
-    if [ -d "$PROFILES_DIR" ]; then
-      for profile_file in "$PROFILES_DIR"/*.json; do
-        if [ -f "$profile_file" ]; then
-          name=$(basename "$profile_file" .json)
-          desc=$(${pkgs.jq}/bin/jq -r '.description // ""' "$profile_file")
-          outputs=$(${pkgs.jq}/bin/jq -r '.outputs | length' "$profile_file")
+    current=$(${pkgs.jq}/bin/jq -r '.current_layout // ""' <<<"$snapshot")
+    while IFS=$'\t' read -r name; do
+      if [ -z "$name" ]; then
+        continue
+      fi
 
-          # Format display with monitor count and active indicator
-          if [ "$name" = "$CURRENT" ]; then
-            echo "🟢 $name ($outputs monitors) - $desc	$name"
-          else
-            echo "○ $name ($outputs monitors) - $desc	$name"
-          fi
-        fi
-      done
-    fi
+      if [ "$name" = "$current" ]; then
+        echo "🟢 $name	$name"
+      else
+        echo "○ $name	$name"
+      fi
+    done < <(
+      ${pkgs.jq}/bin/jq -r '(.layouts // [])[]' <<<"$snapshot"
+    )
   '';
 
   # Feature 083: Walker monitor profile switch script
   walkerMonitorSwitch = pkgs.writeShellScriptBin "walker-monitor-switch" ''
     #!/usr/bin/env bash
-    # Switch to selected monitor profile from Walker
+    # Switch to selected display layout from Walker
     set -euo pipefail
 
     if [ $# -eq 0 ]; then
@@ -1570,8 +1562,7 @@ REMOTE
       exit 0
     fi
 
-    # Switch profile using set-monitor-profile
-    set-monitor-profile "$PROFILE_NAME"
+    exec i3pm display apply "$PROFILE_NAME"
   '';
 
   walkerMonitorListCmd = lib.getExe walkerMonitorList;

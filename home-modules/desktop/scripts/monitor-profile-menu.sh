@@ -3,9 +3,57 @@
 
 set -euo pipefail
 
+PROMPT="Monitor Profile"
+
+if command -v i3pm >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  if snapshot=$(i3pm display snapshot 2>/dev/null); then
+    current=$(printf '%s\n' "$snapshot" | jq -r '.current_layout // ""')
+    mapfile -t profiles < <(printf '%s\n' "$snapshot" | jq -r '(.layouts // [])[]')
+
+    if [[ ${#profiles[@]} -eq 0 ]]; then
+      echo "monitor-profile-menu: no display layouts found" >&2
+      exit 1
+    fi
+
+    format_entries() {
+      for name in "$@"; do
+        if [[ "$name" == "$current" ]]; then
+          printf '🟢 %s\n' "$name"
+        else
+          printf '○ %s\n' "$name"
+        fi
+      done
+    }
+
+    selection=""
+    if command -v walker >/dev/null 2>&1; then
+      selection=$(format_entries "${profiles[@]}" | walker --dmenu)
+    elif command -v rofi >/dev/null 2>&1; then
+      selection=$(format_entries "${profiles[@]}" | rofi -dmenu -p "$PROMPT")
+    elif command -v wofi >/dev/null 2>&1; then
+      selection=$(format_entries "${profiles[@]}" | wofi --dmenu --prompt "$PROMPT")
+    elif command -v fzf >/dev/null 2>&1; then
+      selection=$(format_entries "${profiles[@]}" | fzf --prompt "$PROMPT> ")
+    else
+      select entry in "${profiles[@]}"; do
+        selection="$entry"
+        break
+      done
+    fi
+
+    selection="${selection#🟢 }"
+    selection="${selection#○ }"
+
+    if [[ -z "$selection" ]]; then
+      exit 0
+    fi
+
+    exec i3pm display apply "$selection"
+  fi
+fi
+
 PROFILE_DIR="${HOME}/.config/sway/monitor-profiles"
 SET_CMD="${HOME}/.local/bin/set-monitor-profile"
-PROMPT="Monitor Profile"
 
 if [[ ! -d "$PROFILE_DIR" ]]; then
   echo "monitor-profile-menu: no profiles directory at $PROFILE_DIR" >&2

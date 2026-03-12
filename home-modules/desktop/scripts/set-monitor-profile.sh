@@ -52,6 +52,11 @@ if [[ -z "$PROFILE_NAME" ]]; then
 fi
 
 PROFILE_NAME="${PROFILE_NAME%.json}"
+
+if (( APPLY_ONLY == 0 )) && command -v i3pm >/dev/null 2>&1; then
+  exec i3pm display apply "$PROFILE_NAME"
+fi
+
 PROFILE_PATH="$PROFILE_DIR/${PROFILE_NAME}.json"
 
 if [[ ! -f "$PROFILE_PATH" ]]; then

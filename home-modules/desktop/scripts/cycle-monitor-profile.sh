@@ -4,6 +4,20 @@
 
 set -euo pipefail
 
+if command -v i3pm >/dev/null 2>&1; then
+  if result=$(i3pm display cycle 2>/dev/null); then
+    if command -v notify-send >/dev/null 2>&1; then
+      if command -v jq >/dev/null 2>&1; then
+        next_profile=$(printf '%s\n' "$result" | jq -r '.current_layout // "unknown"')
+      else
+        next_profile="updated"
+      fi
+      notify-send -t 2000 "Display Layout" "Switched to: $next_profile"
+    fi
+    exit 0
+  fi
+fi
+
 CURRENT_FILE="${HOME}/.config/sway/monitor-profile.current"
 PROFILE_DIR="${HOME}/.config/sway/monitor-profiles"
 

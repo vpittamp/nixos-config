@@ -13,6 +13,21 @@ ShellRoot {
         id: shellConfig
     }
 
+    FileView {
+        id: shellStateFile
+        path: Quickshell.stateDir + "/" + shellConfig.configName + "-state.json"
+        watchChanges: true
+        onFileChanged: reload()
+        onAdapterUpdated: writeAdapter()
+
+        JsonAdapter {
+            id: shellState
+            property bool panelVisible: true
+            property bool dockedMode: true
+            property string selectedSessionKey: ""
+        }
+    }
+
     property var dashboard: ({
         status: "loading",
         active_context: {},
@@ -25,10 +40,12 @@ ShellRoot {
         state_health: {},
         total_windows: 0
     })
-    property bool panelVisible: true
-    property bool dockedMode: true
+    property alias panelVisible: shellState.panelVisible
+    property alias dockedMode: shellState.dockedMode
     property string lastFocusedSessionKey: ""
-    property string selectedSessionKey: ""
+    property alias selectedSessionKey: shellState.selectedSessionKey
+    readonly property var primaryScreen: resolvePrimaryScreen()
+    readonly property string primaryOutputName: screenOutputName(primaryScreen)
 
     readonly property var colors: ({
         bg: "#0d1117",
@@ -58,7 +75,17 @@ ShellRoot {
     })
 
     function arrayOrEmpty(value) {
-        return Array.isArray(value) ? value : [];
+        if (!value) {
+            return [];
+        }
+        if (Array.isArray(value)) {
+            return value;
+        }
+        try {
+            return Array.from(value);
+        } catch (_error) {
+            return [];
+        }
     }
 
     function stringOrEmpty(value) {
@@ -104,6 +131,97 @@ ShellRoot {
 
     function compactSessions() {
         return sessionMru().slice(0, 10);
+    }
+
+    function primaryOutputCandidates() {
+        return arrayOrEmpty(shellConfig.primaryOutputs).map((value) => stringOrEmpty(value)).filter((value) => value);
+    }
+
+    function findScreenByOutputName(outputName) {
+        const target = stringOrEmpty(outputName);
+        if (!target) {
+            return null;
+        }
+
+        const screens = arrayOrEmpty(Quickshell.screens);
+        for (let i = 0; i < screens.length; i += 1) {
+            const screen = screens[i];
+            if (screenOutputName(screen) === target) {
+                return screen;
+            }
+        }
+
+        return null;
+    }
+
+    function monitorForScreen(screen) {
+        if (!screen) {
+            return null;
+        }
+        try {
+            return I3.monitorFor(screen);
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function screenOutputName(screen) {
+        const monitor = monitorForScreen(screen);
+        const monitorName = stringOrEmpty(monitor ? monitor.name : "");
+        if (monitorName) {
+            return monitorName;
+        }
+        return stringOrEmpty(screen ? screen.name : "");
+    }
+
+    function resolvePrimaryScreen() {
+        const screens = arrayOrEmpty(Quickshell.screens);
+        if (!screens.length) {
+            return null;
+        }
+
+        const candidates = primaryOutputCandidates();
+        for (let i = 0; i < candidates.length; i += 1) {
+            const preferredScreen = findScreenByOutputName(candidates[i]);
+            if (preferredScreen) {
+                return preferredScreen;
+            }
+        }
+
+        const focusedMonitor = I3.focusedMonitor;
+        const focusedScreen = findScreenByOutputName(stringOrEmpty(focusedMonitor ? focusedMonitor.name : ""));
+        if (focusedScreen) {
+            return focusedScreen;
+        }
+
+        return screens[0];
+    }
+
+    function workspacesForScreen(screen) {
+        const outputName = screenOutputName(screen);
+        const items = [];
+        const workspaces = arrayOrEmpty(I3.workspaces);
+
+        for (let i = 0; i < workspaces.length; i += 1) {
+            const workspace = workspaces[i];
+            const monitor = workspace && workspace.monitor ? workspace.monitor : null;
+            const workspaceOutput = stringOrEmpty(monitor ? monitor.name : "");
+            if (!outputName || !workspaceOutput || workspaceOutput === outputName) {
+                items.push(workspace);
+            }
+        }
+
+        items.sort((left, right) => Number(left?.num || 0) - Number(right?.num || 0));
+        return items;
+    }
+
+    function currentLayoutLabel() {
+        const displayLayout = dashboard.display_layout || {};
+        const layout = stringOrEmpty(displayLayout.current_layout);
+        if (layout) {
+            return layout;
+        }
+        return primaryOutputName || "Display";
     }
 
     function sessionViewportWidth() {
@@ -693,6 +811,10 @@ ShellRoot {
         runDetached([shellConfig.i3pmBin, "context", "ensure", name]);
     }
 
+    function cycleDisplayLayout() {
+        runDetached([shellConfig.i3pmBin, "display", "cycle"]);
+    }
+
     function parseDashboard(payload) {
         if (!payload || !payload.trim()) {
             return;
@@ -718,7 +840,7 @@ ShellRoot {
 
     Process {
         id: dashboardWatcher
-        command: [shellConfig.i3pmBin, "dashboard", "watch", "--interval", "750"]
+        command: [shellConfig.i3pmBin, "dashboard", "watch", "--interval", String(shellConfig.dashboardHeartbeatMs)]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"
@@ -775,208 +897,246 @@ ShellRoot {
         }
     }
 
-    PanelWindow {
-        id: barWindow
-        visible: true
-        color: "transparent"
-        anchors.left: true
-        anchors.right: true
-        anchors.bottom: true
-        implicitHeight: shellConfig.barHeight
-        exclusiveZone: implicitHeight
-        focusable: false
-        aboveWindows: true
-        WlrLayershell.namespace: "i3pm-runtime-bar"
-        WlrLayershell.layer: WlrLayer.Top
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    Component {
+        id: perScreenBarWindow
 
-        Rectangle {
-            anchors.fill: parent
-            color: colors.bg
-            border.color: colors.border
-            border.width: 1
+        PanelWindow {
+            required property var modelData
+            readonly property var barScreen: modelData
+            readonly property string barOutputName: root.screenOutputName(barScreen)
 
-            RowLayout {
+            screen: barScreen
+            visible: shellConfig.perMonitorBars
+            color: "transparent"
+            anchors.left: true
+            anchors.right: true
+            anchors.bottom: true
+            implicitHeight: shellConfig.barHeight
+            exclusiveZone: implicitHeight
+            focusable: false
+            aboveWindows: true
+            WlrLayershell.namespace: "i3pm-runtime-bar-" + (barOutputName || "screen")
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+            Rectangle {
                 anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                anchors.topMargin: 5
-                anchors.bottomMargin: 5
-                spacing: 8
+                color: colors.bg
+                border.color: colors.border
+                border.width: 1
 
-                Rectangle {
-                    Layout.preferredWidth: 160
-                    Layout.fillHeight: true
-                    radius: 8
-                    color: colors.card
-                    border.color: colors.border
-                    border.width: 1
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.topMargin: 5
+                    anchors.bottomMargin: 5
+                    spacing: 8
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 6
+                    Rectangle {
+                        Layout.preferredWidth: 184
+                        Layout.fillHeight: true
+                        radius: 8
+                        color: colors.card
+                        border.color: colors.border
+                        border.width: 1
 
-                        Rectangle {
-                            width: 7
-                            height: 7
-                            radius: 4
-                            color: stringOrEmpty((dashboard.active_context || {}).execution_mode) === "ssh" ? colors.amber : colors.accent
-                        }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 6
 
-                        Text {
-                            Layout.fillWidth: true
-                            text: root.currentContextTitle()
-                            color: colors.text
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
+                            Rectangle {
+                                width: 7
+                                height: 7
+                                radius: 4
+                                color: stringOrEmpty((dashboard.active_context || {}).execution_mode) === "ssh" ? colors.amber : colors.accent
+                            }
 
-                        Text {
-                            text: root.modeLabel((dashboard.active_context || {}).execution_mode)
-                            color: colors.muted
-                            font.pixelSize: 10
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.currentContextTitle()
+                                color: colors.text
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                text: barOutputName || root.modeLabel((dashboard.active_context || {}).execution_mode)
+                                color: colors.muted
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
                         }
                     }
-                }
 
-                Flickable {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    contentWidth: workspaceRow.implicitWidth
-                    contentHeight: workspaceRow.implicitHeight
+                    Flickable {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        contentWidth: workspaceRow.implicitWidth
+                        contentHeight: workspaceRow.implicitHeight
 
-                    Row {
-                        id: workspaceRow
-                        spacing: 6
+                        Row {
+                            id: workspaceRow
+                            spacing: 6
 
-                        Repeater {
-                            model: I3.workspaces
+                            Repeater {
+                                model: root.workspacesForScreen(barScreen)
 
-                            delegate: Rectangle {
-                                required property I3Workspace modelData
-                                readonly property I3Workspace workspace: modelData
-                                readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))
-                                readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))
-                                width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
-                                height: 28
-                                radius: 8
-                                color: workspace.focused ? colors.blue : (workspace.active ? colors.card : colors.cardAlt)
-                                border.color: workspace.focused ? colors.blue : (workspace.urgent ? colors.red : colors.border)
-                                border.width: 1
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property var workspace: modelData
+                                    readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))
+                                    readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))
+                                    width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
+                                    height: 28
+                                    radius: 8
+                                    color: workspace.focused ? colors.blue : (workspace.active ? colors.card : colors.cardAlt)
+                                    border.color: workspace.focused ? colors.blue : (workspace.urgent ? colors.red : colors.border)
+                                    border.width: 1
 
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 5
-                                    anchors.rightMargin: 5
-                                    spacing: 2
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 5
+                                        anchors.rightMargin: 5
+                                        spacing: 2
 
-                                    Row {
-                                        spacing: -5
-                                        visible: workspaceIcons.length > 0
+                                        Row {
+                                            spacing: -5
+                                            visible: workspaceIcons.length > 0
 
-                                        Repeater {
-                                            model: workspaceIcons
+                                            Repeater {
+                                                model: workspaceIcons
 
-                                            delegate: Rectangle {
-                                                required property var modelData
-                                                width: 18
-                                                height: 18
-                                                radius: 6
-                                                color: colors.bg
-                                                border.color: workspace.focused ? colors.blue : colors.borderStrong
-                                                border.width: 1
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    width: 18
+                                                    height: 18
+                                                    radius: 6
+                                                    color: colors.bg
+                                                    border.color: workspace.focused ? colors.blue : colors.borderStrong
+                                                    border.width: 1
 
-                                                IconImage {
-                                                    anchors.centerIn: parent
-                                                    implicitSize: 14
-                                                    source: String(modelData)
-                                                    visible: source !== ""
-                                                    mipmap: true
+                                                    IconImage {
+                                                        anchors.centerIn: parent
+                                                        implicitSize: 14
+                                                        source: String(modelData)
+                                                        visible: source !== ""
+                                                        mipmap: true
+                                                    }
                                                 }
+                                            }
+                                        }
+
+                                        Text {
+                                            id: workspaceText
+                                            text: root.workspaceLabel(workspace)
+                                            color: workspace.focused ? colors.bg : colors.text
+                                            font.pixelSize: 11
+                                            font.weight: workspace.focused ? Font.DemiBold : Font.Medium
+                                        }
+
+                                        Rectangle {
+                                            visible: workspaceCount > 1
+                                            width: 12
+                                            height: 12
+                                            radius: 4
+                                            color: workspace.focused ? colors.bg : colors.card
+                                            border.color: workspace.focused ? colors.bg : colors.border
+                                            border.width: 1
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: String(workspaceCount)
+                                                color: workspace.focused ? colors.blue : colors.muted
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
                                             }
                                         }
                                     }
 
-                                    Text {
-                                        id: workspaceText
-                                        text: root.workspaceLabel(workspace)
-                                        color: workspace.focused ? colors.bg : colors.text
-                                        font.pixelSize: 11
-                                        font.weight: workspace.focused ? Font.DemiBold : Font.Medium
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: workspace.activate()
                                     }
-
-                                    Rectangle {
-                                        visible: workspaceCount > 1
-                                        width: 12
-                                        height: 12
-                                        radius: 4
-                                        color: workspace.focused ? colors.bg : colors.card
-                                        border.color: workspace.focused ? colors.bg : colors.border
-                                        border.width: 1
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: String(workspaceCount)
-                                            color: workspace.focused ? colors.blue : colors.muted
-                                            font.pixelSize: 8
-                                            font.weight: Font.DemiBold
-                                        }
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: workspace.activate()
                                 }
                             }
                         }
                     }
-                }
 
-                Rectangle {
-                    Layout.preferredWidth: 110
-                    Layout.fillHeight: true
-                    radius: 8
-                    color: colors.card
-                    border.color: colors.border
-                    border.width: 1
+                    Rectangle {
+                        Layout.preferredWidth: 214
+                        Layout.fillHeight: true
+                        radius: 8
+                        color: colors.card
+                        border.color: colors.border
+                        border.width: 1
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 6
-
-                        Text {
-                            text: String(root.activeSessions().length) + " AI"
-                            color: colors.text
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            radius: 7
-                            color: root.panelVisible ? colors.blue : colors.cardAlt
-                            border.color: root.panelVisible ? colors.blue : colors.border
-                            border.width: 1
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 6
 
                             Text {
-                                anchors.centerIn: parent
-                                text: root.panelVisible ? "Hide" : "Open"
-                                color: root.panelVisible ? colors.bg : colors.text
+                                text: root.currentLayoutLabel()
+                                color: colors.muted
                                 font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                width: 38
+                                height: 24
+                                radius: 7
+                                color: colors.cardAlt
+                                border.color: colors.border
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Next"
+                                    color: colors.text
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: root.cycleDisplayLayout()
+                                }
+                            }
+
+                            Text {
+                                text: String(root.activeSessions().length) + " AI"
+                                color: colors.text
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
                             }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.panelVisible = !root.panelVisible
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                radius: 7
+                                color: root.panelVisible ? colors.blue : colors.cardAlt
+                                border.color: root.panelVisible ? colors.blue : colors.border
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.panelVisible ? "Hide" : "Open"
+                                    color: root.panelVisible ? colors.bg : colors.text
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: root.panelVisible = !root.panelVisible
+                                }
                             }
                         }
                     }
@@ -985,9 +1145,15 @@ ShellRoot {
         }
     }
 
+    Variants {
+        model: Quickshell.screens
+        delegate: perScreenBarWindow
+    }
+
     PanelWindow {
         id: panelWindow
-        visible: root.panelVisible
+        screen: root.primaryScreen
+        visible: root.panelVisible && root.primaryScreen !== null
         color: "transparent"
         implicitWidth: shellConfig.panelWidth
         anchors.top: true
@@ -1048,9 +1214,31 @@ ShellRoot {
                                 }
 
                                 Text {
-                                    text: shellConfig.hostName + "  " + root.modeLabel((dashboard.active_context || {}).execution_mode)
+                                    text: shellConfig.hostName + "  " + root.modeLabel((dashboard.active_context || {}).execution_mode) + "  " + root.currentLayoutLabel()
                                     color: colors.muted
                                     font.pixelSize: 10
+                                }
+                            }
+
+                            Rectangle {
+                                width: 52
+                                height: 24
+                                radius: 7
+                                color: colors.card
+                                border.color: colors.border
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Cycle"
+                                    color: colors.text
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: root.cycleDisplayLayout()
                                 }
                             }
 

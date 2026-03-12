@@ -324,6 +324,12 @@ class IPCServer:
 
         # Feature 123: Clients subscribed to state change events (for monitoring panel)
         self.state_change_subscribers: set[asyncio.StreamWriter] = set()
+        self._snapshot_version = 0
+        self._session_generation = 0
+        self._display_generation = 0
+        self._worktree_cache: Optional[List[Dict[str, Any]]] = None
+        self._worktree_cache_time: float = 0.0
+        self._worktree_cache_ttl: float = 10.0
 
     @classmethod
     async def from_systemd_socket(
@@ -521,6 +527,12 @@ class IPCServer:
                 result = await self._runtime_snapshot(params)
             elif method == "dashboard.snapshot":
                 result = await self._dashboard_snapshot(params)
+            elif method == "display.snapshot":
+                result = await self._display_snapshot(params)
+            elif method == "display.apply":
+                result = await self._display_apply(params)
+            elif method == "display.cycle":
+                result = await self._display_cycle(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -2339,6 +2351,11 @@ class IPCServer:
         self._window_tree_cache_time = 0.0
         clear_pid_environ_cache()
 
+    def invalidate_worktree_cache(self) -> None:
+        """Invalidate the cached worktree summary used by dashboard snapshots."""
+        self._worktree_cache = None
+        self._worktree_cache_time = 0.0
+
     async def notify_state_change(self, event_type: str = "state_changed") -> None:
         """Notify subscribed clients that state has changed.
 
@@ -2349,13 +2366,32 @@ class IPCServer:
         Args:
             event_type: Type of state change event (for debugging)
         """
+        self._snapshot_version += 1
+        normalized_type = str(event_type or "state_changed")
+        if normalized_type.startswith("ai_session"):
+            self._session_generation += 1
+        if (
+            normalized_type.startswith("display")
+            or normalized_type.startswith("output")
+            or normalized_type.startswith("profile")
+        ):
+            self._display_generation += 1
+        if normalized_type.startswith("project") or normalized_type.startswith("worktree"):
+            self.invalidate_worktree_cache()
+
         if not self.state_change_subscribers:
             return
 
         notification = json.dumps({
             "jsonrpc": "2.0",
             "method": "state_changed",
-            "params": {"type": event_type, "timestamp": time.time()}
+            "params": {
+                "type": normalized_type,
+                "timestamp": time.time(),
+                "snapshot_version": self._snapshot_version,
+                "session_generation": self._session_generation,
+                "display_generation": self._display_generation,
+            }
         })
 
         dead_clients = set()
@@ -6006,9 +6042,11 @@ class IPCServer:
         )
         return normalized
 
-    async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return daemon-owned AI session data merged from local and remote OTEL sources."""
-        runtime_snapshot = await self._runtime_snapshot({})
+    def _load_session_items(
+        self,
+        runtime_snapshot: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Return normalized AI session items for an existing runtime snapshot."""
         tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
         local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
         local_sessions_raw = [
@@ -6068,6 +6106,12 @@ class IPCServer:
             ),
             reverse=True,
         )
+        return sessions
+
+    async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return daemon-owned AI session data merged from local and remote OTEL sources."""
+        runtime_snapshot = await self._runtime_snapshot({})
+        sessions = self._load_session_items(runtime_snapshot)
         return {
             "sessions": sessions,
             "total": len(sessions),
@@ -6223,6 +6267,10 @@ class IPCServer:
         runtime_snapshot: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Build a compact worktree list for the runtime shell."""
+        now = time.time()
+        if self._worktree_cache is not None and (now - self._worktree_cache_time) < self._worktree_cache_ttl:
+            return [dict(item) for item in self._worktree_cache]
+
         repo_result = await self._repo_list({})
         repositories = list(repo_result.get("repositories", []) or [])
         active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
@@ -6277,13 +6325,118 @@ class IPCServer:
             ),
             reverse=True,
         )
+        self._worktree_cache = [dict(item) for item in worktrees]
+        self._worktree_cache_time = now
         return worktrees
+
+    async def _display_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return current output/layout state for QuickShell and CLI consumers."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        outputs = await self.i3_connection.conn.get_outputs()
+        output_states = None
+        try:
+            from .output_state_manager import load_output_states
+            output_states = load_output_states()
+        except Exception:
+            output_states = None
+
+        profile_name = ""
+        layouts: List[str] = []
+        if getattr(self, "monitor_profile_service", None):
+            try:
+                profile_name = str(self.monitor_profile_service.get_current_profile() or "")
+                layouts = list(self.monitor_profile_service.list_profiles())
+            except Exception:
+                profile_name = ""
+                layouts = []
+
+        active_outputs: List[Dict[str, Any]] = []
+        for output in outputs:
+            if str(getattr(output, "name", "")).startswith("__"):
+                continue
+            name = str(getattr(output, "name", "") or "")
+            active = bool(getattr(output, "active", False))
+            focused = bool(getattr(output, "focused", False))
+            enabled = active
+            if output_states is not None:
+                try:
+                    enabled = bool(output_states.is_output_enabled(name))
+                except Exception:
+                    enabled = active
+            active_outputs.append({
+                "name": name,
+                "active": active,
+                "enabled": enabled,
+                "focused": focused,
+                "primary": focused,
+                "rect": {
+                    "x": int(getattr(getattr(output, "rect", None), "x", 0) or 0),
+                    "y": int(getattr(getattr(output, "rect", None), "y", 0) or 0),
+                    "width": int(getattr(getattr(output, "rect", None), "width", 0) or 0),
+                    "height": int(getattr(getattr(output, "rect", None), "height", 0) or 0),
+                },
+            })
+
+        return {
+            "current_layout": profile_name,
+            "layouts": layouts,
+            "outputs": active_outputs,
+            "display_generation": self._display_generation,
+            "snapshot_version": self._snapshot_version,
+        }
+
+    async def _display_apply(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a named display layout/profile through the daemon."""
+        layout = str(params.get("layout") or params.get("profile") or "").strip()
+        if not layout:
+            raise ValueError("layout is required")
+        if not getattr(self, "monitor_profile_service", None):
+            raise RuntimeError("Monitor profile service is unavailable")
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        applied = await self.monitor_profile_service.handle_profile_change(
+            self.i3_connection.conn,
+            layout,
+        )
+        if not applied:
+            raise RuntimeError(f"Failed to apply display layout: {layout}")
+
+        try:
+            from .monitor_profile_service import CURRENT_PROFILE_FILE
+            CURRENT_PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            CURRENT_PROFILE_FILE.write_text(layout + "\n", encoding="utf-8")
+        except Exception as exc:
+            logger.warning("display.apply persisted layout state incompletely: %s", exc)
+
+        await self.notify_state_change("display_layout_changed")
+        snapshot = await self._display_snapshot({})
+        snapshot["applied"] = True
+        return snapshot
+
+    async def _display_cycle(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Cycle to the next available display layout/profile."""
+        if not getattr(self, "monitor_profile_service", None):
+            raise RuntimeError("Monitor profile service is unavailable")
+
+        layouts = list(self.monitor_profile_service.list_profiles())
+        if not layouts:
+            raise RuntimeError("No display layouts are configured")
+
+        current = str(self.monitor_profile_service.get_current_profile() or "")
+        if current in layouts:
+            next_index = (layouts.index(current) + 1) % len(layouts)
+        else:
+            next_index = 0
+        return await self._display_apply({"layout": layouts[next_index]})
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by EWW/Walker."""
         runtime_snapshot = await self._runtime_snapshot(params or {})
-        session_result = await self._session_list({})
-        sessions = list(session_result.get("sessions", []) or [])
+        sessions = self._load_session_items(runtime_snapshot)
+        display_snapshot = await self._display_snapshot({})
         focused_window_id = next(
             (
                 int(window.get("id") or 0)
@@ -6320,9 +6473,13 @@ class IPCServer:
         return {
             "status": "ok",
             "timestamp": int(time.time()),
+            "snapshot_version": self._snapshot_version,
+            "session_generation": self._session_generation,
+            "display_generation": self._display_generation,
             "active_context": runtime_snapshot.get("active_context", {}),
             "outputs": runtime_snapshot.get("outputs", []),
             "active_outputs": runtime_snapshot.get("active_outputs", []),
+            "display_layout": display_snapshot,
             "total_windows": int(runtime_snapshot.get("total_windows", 0) or 0),
             "window_count": int(runtime_snapshot.get("total_windows", 0) or 0),
             "tracked_windows": runtime_snapshot.get("tracked_windows", []),

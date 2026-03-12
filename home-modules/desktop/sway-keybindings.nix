@@ -142,8 +142,8 @@ in
     # Extract URLs/paths from terminal with urlscan (like VSCode's link detection)
     "${modifier}+u" = "exec urlscan";
 
-    # Monitor profile switcher (use Control modifier for Sway syntax)
-    "${modifier}+Control+m" = "exec sh -c '$HOME/.local/bin/monitor-profile-menu'";
+    # Cycle daemon-backed display layouts
+    "${modifier}+Control+m" = "exec cycle-display-layout";
 
     "${modifier}+Shift+m" = "exec toggle-panel-dock-mode";
     "F10" = "exec toggle-panel-dock-mode";

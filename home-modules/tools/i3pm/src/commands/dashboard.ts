@@ -11,7 +11,7 @@ function showHelp(): void {
 }
 
 async function fetchSnapshot(client: DaemonClient): Promise<unknown> {
-  return await client.request("dashboard.snapshot", {});
+  return await client.getDashboardSnapshot();
 }
 
 export async function dashboardCommand(args: string[], _flags: CommandOptions): Promise<number> {
@@ -38,21 +38,46 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
   }
 
   if (subcommand === "watch") {
-    const intervalMs = Math.max(500, Number(parsed.interval || 2000));
-    const client = new DaemonClient();
+    const intervalMs = Math.max(1500, Number(parsed.interval || 5000));
     let lastPayload = "";
-    try {
-      while (true) {
+
+    while (true) {
+      const client = new DaemonClient();
+      let heartbeat: number | undefined;
+
+      const emitSnapshot = async (): Promise<void> => {
         const snapshot = await fetchSnapshot(client);
         const encoded = JSON.stringify(snapshot);
         if (encoded !== lastPayload) {
           console.log(encoded);
           lastPayload = encoded;
         }
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      };
+
+      try {
+        await client.connect();
+        await emitSnapshot();
+
+        heartbeat = setInterval(() => {
+          void emitSnapshot().catch(() => {
+            // Allow the outer loop to recover on the next stream failure.
+          });
+        }, intervalMs);
+
+        for await (const _event of client.subscribeToStateChanges()) {
+          await emitSnapshot();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[i3pm dashboard watch] reconnecting after error: ${message}`);
+      } finally {
+        if (heartbeat !== undefined) {
+          clearInterval(heartbeat);
+        }
+        client.disconnect();
       }
-    } finally {
-      client.disconnect();
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 

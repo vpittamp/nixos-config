@@ -45,6 +45,7 @@ COMMANDS:
   window           Daemon-owned window focus/action commands
   workspace        Daemon-owned workspace focus commands
   dashboard        Dashboard snapshot and watch commands
+  display          Display layout snapshot/apply/cycle commands
   run              Smart application launcher with run-raise-hide (Feature 051)
   scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
@@ -71,6 +72,7 @@ EXAMPLES:
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
+  i3pm display snapshot               Show display layout state
   i3pm worktree list                   List all worktrees
   i3pm worktree switch account/repo:branch   Switch to worktree
   i3pm worktree remote set account/repo:branch --dir /remote/path
@@ -186,6 +188,14 @@ async function main(): Promise<void> {
       {
         const { dashboardCommand } = await import("./commands/dashboard.ts");
         const exitCode = await dashboardCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "display":
+      {
+        const { displayCommand } = await import("./commands/display.ts");
+        const exitCode = await displayCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
         Deno.exit(exitCode);
       }
       break;

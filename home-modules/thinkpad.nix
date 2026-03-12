@@ -80,7 +80,10 @@
   # Declarative PWA Installation
 
 
-  programs.quickshell-runtime-shell.enable = true;
+  programs.quickshell-runtime-shell = {
+    enable = true;
+    primaryOutputs = [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ];
+  };
 
   # eww quick settings panel
   programs.eww-quick-panel.enable = true;

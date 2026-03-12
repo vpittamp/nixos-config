@@ -241,6 +241,10 @@ export class DaemonClient {
     return await this.request<T>("dashboard.snapshot", {});
   }
 
+  async getDashboardSnapshot<T = unknown>(): Promise<T> {
+    return await this.request<T>("dashboard.snapshot", {});
+  }
+
   /**
    * Close project windows (used before layout restore)
    */
@@ -332,6 +336,56 @@ export class DaemonClient {
         await this.request("subscribe_events", { subscribe: false });
       } catch {
         // Ignore errors during cleanup
+      }
+    }
+  }
+
+  /**
+   * Subscribe to daemon state change notifications.
+   * Yields lightweight invalidation events that consumers can use to refetch
+   * heavier dashboard/session state only when needed.
+   */
+  async *subscribeToStateChanges(): AsyncIterableIterator<{
+    type: string;
+    timestamp: number;
+    snapshot_version?: number;
+    session_generation?: number;
+    display_generation?: number;
+  }> {
+    if (!this.conn) {
+      throw new DaemonError("Not connected to daemon");
+    }
+
+    await this.request("subscribe_state_changes", {});
+
+    const decoder = new TextDecoder();
+    let partialLine = "";
+
+    for await (const chunk of this.conn.readable) {
+      const text = partialLine + decoder.decode(chunk);
+      const lines = text.split("\n");
+      partialLine = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        try {
+          const message = JSON.parse(line);
+          if (message.method !== "state_changed" || !message.params) {
+            continue;
+          }
+
+          const params = message.params as Record<string, unknown>;
+          yield {
+            type: String(params.type || "state_changed"),
+            timestamp: Number(params.timestamp || Date.now()),
+            snapshot_version: params.snapshot_version === undefined ? undefined : Number(params.snapshot_version),
+            session_generation: params.session_generation === undefined ? undefined : Number(params.session_generation),
+            display_generation: params.display_generation === undefined ? undefined : Number(params.display_generation),
+          };
+        } catch {
+          // Ignore malformed notification lines and continue consuming the stream.
+        }
       }
     }
   }
