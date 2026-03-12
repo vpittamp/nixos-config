@@ -3932,6 +3932,12 @@ def _build_active_ai_sessions(
         tmux_pane = str(terminal_context.get("tmux_pane") or "")
         pty = str(terminal_context.get("pty") or "")
         host_name = str(terminal_context.get("host_name") or raw_session.get("host_name") or "")
+        focus_tmux_session = str(
+            window_data.get("remote_session_name")
+            or window_data.get("tmux_session")
+            or tmux_session
+            or ""
+        )
 
         native_session_id = str(raw_session.get("native_session_id") or "")
         session_id = str(raw_session.get("session_id") or "")
@@ -4015,6 +4021,7 @@ def _build_active_ai_sessions(
             "focus_execution_mode": focus_execution_mode,
             "focus_connection_key": focus_connection_key,
             "focus_context_key": focus_context_key,
+            "focus_tmux_session": focus_tmux_session,
             "tmux_session": tmux_session,
             "tmux_window": tmux_window,
             "tmux_pane": tmux_pane,

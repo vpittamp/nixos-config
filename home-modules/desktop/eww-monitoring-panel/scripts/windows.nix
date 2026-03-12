@@ -406,8 +406,12 @@ let
     fi
 
     if [[ ("$TMUX_PANE" != "" || "$TMUX_SESSION" != "" || "$TMUX_WINDOW" != "" || "$TMUX_PTY" != "") && "$TMUX_TARGET_STATUS" != "success" ]]; then
-      FOCUS_OK=false
-      log_stage "tmux_target_required_fail"
+      if [[ "$FOCUS_OK" == "true" ]]; then
+        log_stage "tmux_target_best_effort_fail"
+      else
+        FOCUS_OK=false
+        log_stage "tmux_target_required_fail"
+      fi
     fi
 
     # Final safeguard: tmux targeting can alter focus context; enforce tiled state again.
@@ -566,7 +570,7 @@ let
             ($s.focus_execution_mode // $s.execution_mode // "local"),
             ($s.focus_connection_key // $s.connection_key // ""),
             ($s.tmux_pane // ""),
-            ($s.tmux_session // ""),
+            ($s.focus_tmux_session // $s.tmux_session // ""),
             ($s.tmux_window // ""),
             ($s.pty // ""),
             ($s.finish_marker // "")
