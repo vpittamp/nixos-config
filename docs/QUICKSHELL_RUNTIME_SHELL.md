@@ -37,6 +37,12 @@ The shell is split into two UI surfaces:
 - one `PanelWindow` per screen for the bottom bar
 - one `PanelWindow` for the right-side AI/session panel
 
+Each per-monitor bottom bar now renders:
+- current context + output identity
+- workspace chips for that output
+- output-local window icons/counts inside those workspace chips
+- layout/session controls shared across monitors
+
 Per-monitor bars are instantiated with:
 - `Variants { model: Quickshell.screens }`
 - `screen: modelData`
@@ -46,13 +52,19 @@ The bar uses native QuickShell/i3 integration for workspace rendering:
 - `I3.workspaces`
 - `workspace.activate()`
 
+Per-monitor workspace chips are hydrated from daemon dashboard payloads:
+- workspace icons/counts come from `dashboard.outputs[*].workspaces[*].windows`
+- icons only represent windows that belong to that output/workspace
+- hidden/scratchpad-only windows are excluded from the visible workspace summary
+
 The AI panel is intentionally singular:
 - it is anchored to the preferred primary output
 - it does not follow focus between monitors
 - fallback order is:
-  1. configured `primaryOutputs`
-  2. currently focused i3 monitor
-  3. first available QuickShell screen
+  1. live Sway/display state marked `primary`
+  2. configured `primaryOutputs`
+  3. currently focused i3 monitor
+  4. first available QuickShell screen
 
 ### 2. State ownership
 
@@ -172,7 +184,7 @@ Current host configuration:
 - `thinkpad`
   - `primaryOutputs = [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ]`
 - `ryzen`
-  - `primaryOutputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]`
+  - `primaryOutputs = [ "DP-2" "DP-1" "HDMI-A-1" "DP-3" ]`
 
 ## Issues Encountered
 
@@ -230,7 +242,8 @@ Observed logs included:
 
 Interpretation:
 - the event-driven watch path is an improvement over constant polling, but the stream/reconnect behavior still needs hardening
-- the shell currently tolerates restart/reconnect, but malformed or truncated payload handling should be tightened further
+- the shell now ignores empty, `null`, `undefined`, and non-JSON lines before attempting to parse dashboard frames
+- malformed JSON payloads should still be treated as warnings because they indicate a real watch-path defect
 
 ## Operational Commands
 
@@ -268,7 +281,7 @@ git -C ~/repos/vpittamp/nixos-config/main rev-parse HEAD
 ## Known Gaps
 
 - The historical monitor-profile and `output-states.json` subsystem still exists as a compatibility layer.
-- The shell now renders per-monitor bars, but deeper display-layout unification is still incomplete.
+- The shell now renders per-monitor bars with output-local workspace icons/counts, but deeper display-layout unification is still incomplete.
 - Dashboard stream error handling still needs another pass.
 - A live automated QuickShell multi-monitor smoke test does not yet exist.
 

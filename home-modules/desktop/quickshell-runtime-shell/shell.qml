@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.I3
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Widgets
 
@@ -158,10 +159,34 @@ ShellRoot {
         return stringOrEmpty(screen ? screen.name : "");
     }
 
+    function livePrimaryOutputName() {
+        const displayLayout = dashboard.display_layout || {};
+        const outputs = arrayOrEmpty(displayLayout.outputs);
+
+        for (let i = 0; i < outputs.length; i += 1) {
+            const output = outputs[i];
+            if (!output || !output.primary || !output.active || output.enabled === false) {
+                continue;
+            }
+
+            const name = stringOrEmpty(output.name);
+            if (name) {
+                return name;
+            }
+        }
+
+        return "";
+    }
+
     function resolvePrimaryScreen() {
         const screens = arrayOrEmpty(Quickshell.screens);
         if (!screens.length) {
             return null;
+        }
+
+        const livePrimaryScreen = findScreenByOutputName(livePrimaryOutputName());
+        if (livePrimaryScreen) {
+            return livePrimaryScreen;
         }
 
         const candidates = primaryOutputCandidates();
@@ -197,6 +222,46 @@ ShellRoot {
 
         items.sort((left, right) => Number(left?.num || 0) - Number(right?.num || 0));
         return items;
+    }
+
+    function dashboardWorkspacesForOutput(outputName) {
+        const outputs = arrayOrEmpty(dashboard.outputs);
+        const target = stringOrEmpty(outputName);
+        const items = [];
+
+        for (let i = 0; i < outputs.length; i += 1) {
+            const output = outputs[i];
+            if (stringOrEmpty(output ? output.name : "") !== target) {
+                continue;
+            }
+
+            const currentWorkspace = stringOrEmpty(output.current_workspace);
+            const workspaces = arrayOrEmpty(output.workspaces);
+            for (let j = 0; j < workspaces.length; j += 1) {
+                const workspace = workspaces[j];
+                const name = stringOrEmpty(workspace ? workspace.name : "");
+                items.push({
+                    num: Number(workspace?.number || 0),
+                    name: name,
+                    focused: boolOrFalse(workspace?.focused) || (name !== "" && name === currentWorkspace),
+                    active: boolOrFalse(workspace?.visible) || (name !== "" && name === currentWorkspace),
+                    urgent: boolOrFalse(workspace?.urgent),
+                    output: target
+                });
+            }
+            break;
+        }
+
+        items.sort((left, right) => Number(left?.num || 0) - Number(right?.num || 0));
+        return items;
+    }
+
+    function barWorkspacesForOutput(outputName) {
+        const nativeWorkspaces = workspacesForScreen(findScreenByOutputName(outputName));
+        if (nativeWorkspaces.length > 0) {
+            return nativeWorkspaces;
+        }
+        return dashboardWorkspacesForOutput(outputName);
     }
 
     function currentLayoutLabel() {
@@ -762,6 +827,24 @@ ShellRoot {
         runDetached(command);
     }
 
+    function activateWorkspace(workspace) {
+        if (!workspace) {
+            return;
+        }
+
+        if (typeof workspace.activate === "function") {
+            workspace.activate();
+            return;
+        }
+
+        const workspaceName = stringOrEmpty(workspace.name || workspace.number || workspace.num);
+        if (!workspaceName) {
+            return;
+        }
+
+        runDetached([shellConfig.i3pmBin, "workspace", "focus", workspaceName]);
+    }
+
     function closeWindow(windowData) {
         if (!windowData) {
             return;
@@ -800,18 +883,22 @@ ShellRoot {
     }
 
     function parseDashboard(payload) {
-        if (!payload || !payload.trim()) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (!(raw.indexOf("{") === 0 || raw.indexOf("[") === 0)) {
             return;
         }
 
         try {
-            dashboard = JSON.parse(payload);
+            dashboard = JSON.parse(raw);
             const current = stringOrEmpty(dashboard.current_ai_session_key);
             if (current) {
                 selectedSessionKey = current;
             }
         } catch (error) {
-            console.warn("Failed to parse dashboard payload", error, payload);
+            console.warn("Failed to parse dashboard payload", error, raw);
         }
     }
 
@@ -956,95 +1043,99 @@ ShellRoot {
                         }
                     }
 
-                    Flickable {
+                    Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        clip: true
-                        contentWidth: workspaceRow.implicitWidth
-                        contentHeight: workspaceRow.implicitHeight
 
-                        Row {
-                            id: workspaceRow
-                            spacing: 6
+                        Flickable {
+                            anchors.fill: parent
+                            clip: true
+                            contentWidth: workspaceRow.implicitWidth
+                            contentHeight: workspaceRow.implicitHeight
 
-                            Repeater {
-                                model: root.workspacesForScreen(barScreen)
+                                Row {
+                                    id: workspaceRow
+                                    spacing: 6
 
-                                delegate: Rectangle {
-                                    required property var modelData
-                                    readonly property var workspace: modelData
-                                    readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))
-                                    readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))
-                                    width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
-                                    height: 28
-                                    radius: 8
-                                    color: workspace.focused ? colors.blue : (workspace.active ? colors.card : colors.cardAlt)
-                                    border.color: workspace.focused ? colors.blue : (workspace.urgent ? colors.red : colors.border)
-                                    border.width: 1
+                                Repeater {
+                                    model: root.barWorkspacesForOutput(barOutputName)
 
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 5
-                                        anchors.rightMargin: 5
-                                        spacing: 2
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        readonly property var workspace: modelData
+                                        readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))
+                                        readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))
+                                        width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
+                                        height: 28
+                                        radius: 8
+                                        color: workspace.focused ? colors.blue : (workspace.active ? colors.card : colors.cardAlt)
+                                        border.color: workspace.focused ? colors.blue : (workspace.urgent ? colors.red : colors.border)
+                                        border.width: 1
 
-                                        Row {
-                                            spacing: -5
-                                            visible: workspaceIcons.length > 0
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 5
+                                            anchors.rightMargin: 5
+                                            spacing: 2
 
-                                            Repeater {
-                                                model: workspaceIcons
+                                            Row {
+                                                spacing: -5
+                                                visible: workspaceIcons.length > 0
 
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    width: 18
-                                                    height: 18
-                                                    radius: 6
-                                                    color: colors.bg
-                                                    border.color: workspace.focused ? colors.blue : colors.borderStrong
-                                                    border.width: 1
+                                                Repeater {
+                                                    model: workspaceIcons
 
-                                                    IconImage {
-                                                        anchors.centerIn: parent
-                                                        implicitSize: 14
-                                                        source: String(modelData)
-                                                        visible: source !== ""
-                                                        mipmap: true
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        width: 18
+                                                        height: 18
+                                                        radius: 6
+                                                        color: colors.bg
+                                                        border.color: workspace.focused ? colors.blue : colors.borderStrong
+                                                        border.width: 1
+
+                                                        IconImage {
+                                                            anchors.centerIn: parent
+                                                            implicitSize: 14
+                                                            source: String(modelData)
+                                                            visible: source !== ""
+                                                            mipmap: true
+                                                        }
                                                     }
+                                                }
+                                            }
+
+                                            Text {
+                                                id: workspaceText
+                                                text: root.workspaceLabel(workspace)
+                                                color: workspace.focused ? colors.bg : colors.text
+                                                font.pixelSize: 11
+                                                font.weight: workspace.focused ? Font.DemiBold : Font.Medium
+                                            }
+
+                                            Rectangle {
+                                                visible: workspaceCount > 1
+                                                width: 12
+                                                height: 12
+                                                radius: 4
+                                                color: workspace.focused ? colors.bg : colors.card
+                                                border.color: workspace.focused ? colors.bg : colors.border
+                                                border.width: 1
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: String(workspaceCount)
+                                                    color: workspace.focused ? colors.blue : colors.muted
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
                                                 }
                                             }
                                         }
 
-                                        Text {
-                                            id: workspaceText
-                                            text: root.workspaceLabel(workspace)
-                                            color: workspace.focused ? colors.bg : colors.text
-                                            font.pixelSize: 11
-                                            font.weight: workspace.focused ? Font.DemiBold : Font.Medium
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: root.activateWorkspace(workspace)
                                         }
-
-                                        Rectangle {
-                                            visible: workspaceCount > 1
-                                            width: 12
-                                            height: 12
-                                            radius: 4
-                                            color: workspace.focused ? colors.bg : colors.card
-                                            border.color: workspace.focused ? colors.bg : colors.border
-                                            border.width: 1
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: String(workspaceCount)
-                                                color: workspace.focused ? colors.blue : colors.muted
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        onClicked: workspace.activate()
                                     }
                                 }
                             }
