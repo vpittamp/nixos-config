@@ -240,7 +240,7 @@ ${if isLaptop then ''
 (defpoll monitoring_panel_visible
   :interval "3s"
   :initial "false"
-  `bash -c '${pkgs.systemd}/bin/systemctl --user is-active --quiet eww-monitoring-panel.service && echo true || echo false'`)
+  `bash -c '${pkgs.systemd}/bin/systemctl --user is-active --quiet quickshell-runtime-shell.service && echo true || echo false'`)
 
 ;; Feature 110: Notification center visibility now provided by notification_data.visible
 ;; (deflisten via notification-monitor.py replaces the old polling approach)

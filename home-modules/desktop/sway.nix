@@ -323,8 +323,8 @@ in
       # Modifier key (Mod4 = Super/Command key on Mac)
       modifier = "Mod4";
 
-      # Terminal (Meta+Return) - using app-launcher-wrapper for project context (Feature 046)
-      terminal = "~/.local/bin/app-launcher-wrapper.sh terminal";
+      # Terminal (Meta+Return) - using the daemon-owned launcher for project context
+      terminal = "i3pm launch open terminal";
 
       # Application menu (Meta+D) - walker works with software rendering (GSK_RENDERER=cairo)
       menu = "walker";
@@ -698,11 +698,6 @@ in
           command = "floating enable";
         }
 
-        # Feature 086: Prevent monitoring panel from stealing focus on creation/updates
-        {
-          criteria = { app_id = "eww-monitoring-panel"; };
-          command = "no_focus";
-        }
       ];
 
       # Startup commands (FR-015)

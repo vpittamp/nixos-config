@@ -1841,7 +1841,6 @@ async def on_window_focus(
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
     ipc_server: Optional["IPCServer"] = None,
-    monitoring_panel_publisher: Optional[Any] = None,
 ) -> None:
     """Handle window::focus events - update focus timestamp (T017).
 
@@ -1853,7 +1852,6 @@ async def on_window_focus(
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
         ipc_server: IPC server for badge state access (Feature 095)
-        monitoring_panel_publisher: Publisher for monitoring panel updates (Feature 095)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -1943,10 +1941,6 @@ async def on_window_focus(
                 if age >= BADGE_MIN_AGE_FOR_DISMISS:
                     if delete_badge_file(window_id):
                         logger.info(f"[Feature 117] Cleared stopped badge for window {window_id} on focus (age: {age:.1f}s)")
-                        # Trigger monitoring panel update after badge clear
-                        if monitoring_panel_publisher:
-                            await monitoring_panel_publisher.publish(conn)
-                            logger.debug(f"[Feature 117] Triggered monitoring panel update after badge clear")
                 else:
                     logger.debug(f"[Feature 117] Stopped badge for window {window_id} too young to dismiss (age: {age:.1f}s < {BADGE_MIN_AGE_FOR_DISMISS}s)")
             else:

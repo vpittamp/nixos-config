@@ -4,15 +4,14 @@ let
   modifier = config.wayland.windowManager.sway.config.modifier;
   topBarCfg = config.programs.eww-top-bar or null;
   hasTopBar = topBarCfg != null && (topBarCfg.enable or false);
-  # Conditionally access monitoring panel config (may not be imported)
-  monitoringPanelCfg = config.programs.eww-monitoring-panel or null;
-  hasMonitoringPanel = monitoringPanelCfg != null && (monitoringPanelCfg.enable or false);
-  rawToggleKey = if hasMonitoringPanel then monitoringPanelCfg.toggleKey else "$mod+m";
+  runtimeShellCfg = config.programs.quickshell-runtime-shell or null;
+  hasRuntimeShell = runtimeShellCfg != null && (runtimeShellCfg.enable or false);
+  rawToggleKey = if hasRuntimeShell then runtimeShellCfg.toggleKey else "$mod+m";
   toggleKeyList =
     let keys = if lib.isList rawToggleKey then rawToggleKey else [ rawToggleKey ];
     in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
   monitoringPanelBindings =
-    if hasMonitoringPanel
+    if hasRuntimeShell
     then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList))
     else {};
 in
@@ -39,7 +38,7 @@ in
 
     # ========== APPLICATION LAUNCHERS ==========
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
-    "${modifier}+Shift+Return" = "exec ~/.local/bin/app-launcher-wrapper.sh terminal";
+    "${modifier}+Shift+Return" = "exec i3pm launch open terminal";
     "${modifier}+d" = "exec walker";
     "${modifier}+Shift+f" = "exec i3pm run fzf-file-search --force";
 
@@ -146,32 +145,18 @@ in
     # Monitor profile switcher (use Control modifier for Sway syntax)
     "${modifier}+Control+m" = "exec sh -c '$HOME/.local/bin/monitor-profile-menu'";
 
-    # Feature 125: Toggle between overlay and docked modes
-    # Cycles: overlay → docked → overlay
-    # Replaces Feature 086 focus mode (Forward-Only Development)
     "${modifier}+Shift+m" = "exec toggle-panel-dock-mode";
-
-    # Feature 125: Alternative binding (F10) for VNC users
     "F10" = "exec toggle-panel-dock-mode";
 
-    # Feature 085: Toggle monitoring panel (T017)
-    # Additional bindings injected via monitoringPanelBindings below
-
-    # Feature 085: Monitoring panel view switching (Alt+1-6)
-    # Uses wrapper script to centralize variable name management
-    # Index: 0=windows, 1=projects, 2=tailscale, 3=health, 4=events, 5=traces
+    # Runtime shell view switching
     "Alt+1" = "exec monitor-panel-tab 0";
     "Alt+2" = "exec monitor-panel-tab 1";
     "Alt+3" = "exec monitor-panel-tab 2";
-    "Alt+4" = "exec monitor-panel-tab 3";
-    "Alt+5" = "exec monitor-panel-tab 4";
-    "Alt+6" = "exec monitor-panel-tab 5";
     "Alt+bracketright" = "exec cycle-active-ai-session-action next";
     "Alt+bracketleft" = "exec cycle-active-ai-session-action prev";
     "Alt+Tab" = "exec show-ai-mru-switcher-action next";
     "Alt+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
     "Alt+grave" = "exec toggle-last-ai-session-action";
-    "Alt+Shift+grave" = "exec toggle-selected-ai-session-pin-action";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
