@@ -11,6 +11,7 @@ from i3ipc import aio
 from .models import DaemonState, WindowInfo, WorkspaceInfo
 from .services.launch_registry import LaunchRegistry  # Feature 041: IPC Launch Context - T013
 from .services.focus_tracker import FocusTracker  # Feature 074: Session Management - T021
+from .services.window_filter import parse_window_environment, read_process_environ
 from .worktree_utils import extract_project_from_mark  # Feature 101
 from pathlib import Path
 
@@ -182,44 +183,66 @@ class StateManager:
             def scan_container(container: aio.Con) -> None:
                 nonlocal count
 
-                # Check if this is a window (has window_id)
-                if container.window:
-                    # Look for project marks (format: SCOPE:PROJECT:WINDOW_ID)
-                    project_marks = [
-                        mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")
-                    ]
+                project_marks = [
+                    mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")
+                ]
+                if project_marks and container.id:
+                    tracked_window_id = int(container.id)
 
-                    if project_marks:
-                        # Feature 101: Use centralized mark parser
-                        project_name = extract_project_from_mark(
-                            project_marks[0], container.window
-                        )
+                    # Feature 045 parity: native Wayland windows only expose app_id/con_id.
+                    window_class = (
+                        getattr(container, "app_id", None)
+                        or getattr(container, "window_class", None)
+                        or "unknown"
+                    )
 
-                        # Create WindowInfo
-                        from datetime import datetime
+                    window_env = None
+                    pid = getattr(container, "pid", None)
+                    if pid:
+                        try:
+                            window_env = parse_window_environment(read_process_environ(int(pid)))
+                        except (PermissionError, FileNotFoundError, ProcessLookupError, ValueError):
+                            window_env = None
 
-                        window_info = WindowInfo(
-                            window_id=container.window,
-                            con_id=container.id,
-                            window_class=container.window_class or "unknown",
-                            window_title=container.name or "",
-                            window_instance=container.window_instance or "",
-                            app_identifier=container.window_class
-                            or "unknown",  # Will be refined later
-                            project=project_name,
-                            marks=list(container.marks),
-                            workspace=container.workspace().name if container.workspace() else "",
-                            output=(
-                                container.workspace().ipc_data.get("output", "")
-                                if container.workspace()
-                                else ""
-                            ),
-                            is_floating=container.floating == "user_on",
-                            created=datetime.now(),
-                        )
+                    # Feature 101: Use centralized mark parser against the tracked con_id.
+                    project_name = extract_project_from_mark(
+                        project_marks[0], tracked_window_id
+                    )
 
-                        self.state.window_map[container.window] = window_info
-                        count += 1
+                    # Create WindowInfo
+                    from datetime import datetime
+
+                    workspace = container.workspace()
+                    window_info = WindowInfo(
+                        window_id=tracked_window_id,
+                        con_id=container.id,
+                        window_class=window_class,
+                        window_title=container.name or "",
+                        window_instance=container.window_instance or "",
+                        app_identifier=(
+                            window_env.app_name
+                            if window_env and window_env.app_name
+                            else window_class
+                        ),
+                        project=project_name,
+                        marks=list(container.marks),
+                        workspace=workspace.name if workspace else "",
+                        output=(
+                            workspace.ipc_data.get("output", "")
+                            if workspace and getattr(workspace, "ipc_data", None)
+                            else ""
+                        ),
+                        is_floating=container.floating == "user_on",
+                        created=datetime.now(),
+                        terminal_anchor_id=(
+                            window_env.terminal_anchor_id
+                            if window_env and window_env.terminal_anchor_id
+                            else None
+                        ),
+                    )
+
+                    self.state.window_map[tracked_window_id] = window_info
+                    count += 1
 
                 # Recursively scan children
                 for child in container.nodes + container.floating_nodes:
