@@ -40,7 +40,7 @@ load_remote_context_for_path() {
         return 1
     fi
 
-    project_json=$(i3pm worktree current --json 2>/dev/null || echo '{}')
+    project_json=$(i3pm context current --json 2>/dev/null || echo '{}')
 
     local remote_enabled
     remote_enabled=$(printf '%s\n' "$project_json" | jq -r '.execution_mode == "ssh"' 2>/dev/null || echo "false")

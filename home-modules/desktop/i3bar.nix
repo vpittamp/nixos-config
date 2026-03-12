@@ -240,32 +240,11 @@ in
         case "$name" in
           project)
             if [ "$button" = "1" ]; then
-              # Left click: Open project switcher
-              PROJECT_LIST=$(${i3pmWrapper} project list --json 2>/dev/null)
-
-              if [ -z "$PROJECT_LIST" ] || [ "$PROJECT_LIST" = "[]" ]; then
-                ${pkgs.libnotify}/bin/notify-send "i3pm" "No projects configured"
-                exit 0
-              fi
-
-              # Format for rofi: "icon display_name"
-              FORMATTED=$(echo "$PROJECT_LIST" | ${pkgs.jq}/bin/jq -r '.[] | "\(.icon // "📁") \(.display_name // .name)\t\(.name)"')
-
-              # Show rofi menu
-              SELECTED=$(echo "$FORMATTED" | ${pkgs.coreutils}/bin/cut -f1 | \
-                ${pkgs.rofi}/bin/rofi -dmenu -i -p "Switch Project" -theme-str 'window {width: 400px;}')
-
-              if [ -n "$SELECTED" ]; then
-                # Get the project name corresponding to the selection
-                PROJECT_NAME=$(echo "$FORMATTED" | ${pkgs.gnugrep}/bin/grep -F "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
-
-                if [ -n "$PROJECT_NAME" ]; then
-                  ${i3pmWrapper} project switch "$PROJECT_NAME"
-                fi
-              fi
+              # Left click: Open the canonical worktree switcher.
+              exec ${config.home.profileDirectory}/bin/i3-project-switch
             elif [ "$button" = "3" ]; then
-              # Right click: Clear project
-              ${i3pmWrapper} project clear
+              # Right click: Clear runtime context
+              ${i3pmWrapper} context clear
             fi
             ;;
 

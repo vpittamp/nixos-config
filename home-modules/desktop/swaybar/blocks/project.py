@@ -15,7 +15,7 @@ def get_active_worktree() -> Optional[dict]:
     """Get active worktree from the daemon-backed i3pm CLI."""
     try:
         result = subprocess.run(
-            ["i3pm", "project", "current", "--json"],
+            ["i3pm", "context", "current", "--json"],
             capture_output=True,
             text=True,
             timeout=1.5,
@@ -24,7 +24,7 @@ def get_active_worktree() -> Optional[dict]:
         if result.returncode != 0 or not result.stdout.strip():
             return None
         data = json.loads(result.stdout)
-        if not isinstance(data, dict) or not data.get("name"):
+        if not isinstance(data, dict) or not data.get("qualified_name"):
             return None
         return data
     except Exception as e:
@@ -51,7 +51,7 @@ def create_project_block(config: Config) -> Optional[StatusBlock]:
 
     # Extract display info from worktree data
     branch = str(worktree_data.get("branch") or "")
-    repo_name = str(worktree_data.get("repo_name") or worktree_data.get("display_name") or "")
+    repo_name = str(worktree_data.get("repo_name") or worktree_data.get("qualified_name") or "")
     branch_prefix = branch.split("-", 1)[0]
     branch_number = branch_prefix if branch_prefix.isdigit() else None
 

@@ -130,38 +130,46 @@ export class DaemonClient {
     const encoder = new TextEncoder();
     await this.conn.write(encoder.encode(requestData));
 
-    // Read response with timeout (Feature 137: prevent CLI hangs)
+    // Read one newline-delimited JSON response. Large dashboard payloads routinely
+    // exceed 64KB, so a single fixed-size read is not reliable.
     const decoder = new TextDecoder();
-    const buffer = new Uint8Array(65536); // 64KB buffer
-    const TIMEOUT_MS = 30000; // 30 second timeout
+    const buffer = new Uint8Array(16384);
+    const TIMEOUT_MS = 30000;
+    let responseText = "";
 
-    const readPromise = this.conn.read(buffer);
-    let timeoutHandle: number | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(
-        () => reject(new DaemonError(`Daemon response timeout after ${TIMEOUT_MS}ms`)),
-        TIMEOUT_MS,
-      );
-    });
+    while (true) {
+      const readPromise = this.conn.read(buffer);
+      let timeoutHandle: number | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new DaemonError(`Daemon response timeout after ${TIMEOUT_MS}ms`)),
+          TIMEOUT_MS,
+        );
+      });
 
-    let bytesRead: number | null;
-    try {
-      bytesRead = await Promise.race([readPromise, timeoutPromise]) as number | null;
-    } catch (e) {
-      // On timeout, close connection to prevent stale state
-      await this.close();
-      throw e;
-    } finally {
-      if (timeoutHandle !== null) {
-        clearTimeout(timeoutHandle);
+      let bytesRead: number | null;
+      try {
+        bytesRead = await Promise.race([readPromise, timeoutPromise]) as number | null;
+      } catch (e) {
+        await this.close();
+        throw e;
+      } finally {
+        if (timeoutHandle !== null) {
+          clearTimeout(timeoutHandle);
+        }
+      }
+
+      if (bytesRead === null) {
+        throw new DaemonError("Connection closed by daemon");
+      }
+
+      responseText += decoder.decode(buffer.subarray(0, bytesRead));
+      if (responseText.includes("\n")) {
+        responseText = responseText.split("\n", 1)[0];
+        break;
       }
     }
 
-    if (bytesRead === null) {
-      throw new DaemonError("Connection closed by daemon");
-    }
-
-    const responseText = decoder.decode(buffer.subarray(0, bytesRead));
     const response: JsonRpcResponse = JSON.parse(responseText);
 
     if (isJsonRpcError(response)) {
@@ -216,7 +224,7 @@ export class DaemonClient {
   }
 
   async getActiveContext<T = unknown>(): Promise<T> {
-    return await this.request<T>("worktree.current", {});
+    return await this.request<T>("context.current", {});
   }
 
   async ensureContext<T = unknown>(params: {
@@ -230,7 +238,7 @@ export class DaemonClient {
   }
 
   async getRuntimeSnapshot<T = unknown>(): Promise<T> {
-    return await this.request<T>("runtime.snapshot", {});
+    return await this.request<T>("dashboard.snapshot", {});
   }
 
   /**

@@ -27,6 +27,12 @@ let
 
       # Ensure key worktree command sources are packaged.
       for required in \
+        "$out/share/i3pm/src/commands/context.ts" \
+        "$out/share/i3pm/src/commands/dashboard.ts" \
+        "$out/share/i3pm/src/commands/launch.ts" \
+        "$out/share/i3pm/src/commands/session.ts" \
+        "$out/share/i3pm/src/commands/workspace.ts" \
+        "$out/share/i3pm/src/commands/window.ts" \
         "$out/share/i3pm/src/commands/worktree/remote.ts" \
         "$out/share/i3pm/src/commands/worktree/helpers.ts" \
         "$out/share/i3pm/src/commands/worktree/rename.ts"
@@ -70,7 +76,7 @@ EOF
 
         Commands:
         - i3pm apps list/show - Query application registry
-        - i3pm project create/switch/list/current - Project management
+        - i3pm context current/ensure/clear - Runtime context management
         - i3pm layout save/restore/delete - Window layout persistence
         - i3pm daemon status/events - Monitoring and debugging
         - i3pm windows - Real-time window state visualization
@@ -92,7 +98,7 @@ EOF
   '';
 
   i3-project-clear = pkgs.writeShellScriptBin "i3-project-clear" ''
-    exec i3pm project clear "$@"
+    exec i3pm context clear "$@"
   '';
 in
 {

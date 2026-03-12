@@ -34,22 +34,22 @@ class RunRaiseManager:
         Args:
             sway: Sway IPC connection
             workspace_tracker: WorkspaceTracker instance for state storage
-            app_launcher_path: Path to app-launcher-wrapper (auto-detected if None)
+            app_launcher_path: Path to i3pm CLI (auto-detected if None)
         """
         self.sway = sway
         self.workspace_tracker = workspace_tracker
 
-        # Auto-detect app-launcher-wrapper path if not provided
+        # Auto-detect i3pm path if not provided.
         if app_launcher_path is None:
-            app_launcher_path = shutil.which("app-launcher-wrapper")
+            app_launcher_path = shutil.which("i3pm")
             if app_launcher_path is None:
                 raise RuntimeError(
-                    "app-launcher-wrapper not found in PATH. "
-                    "Ensure home-modules/tools/app-launcher.nix is enabled."
+                    "i3pm not found in PATH. "
+                    "Ensure the CLI is installed in the user profile."
                 )
 
         self.app_launcher_path = app_launcher_path
-        logger.info(f"Using app launcher: {self.app_launcher_path}")
+        logger.info(f"Using app launcher CLI: {self.app_launcher_path}")
         self._window_tracking: Dict[str, int] = {}  # app_name -> window_id mapping
 
     def register_window(self, app_name: str, window_id: int) -> None:
@@ -246,14 +246,11 @@ class RunRaiseManager:
             Response dict
         """
         start_time = time.perf_counter()
-        logger.info(f"Launching {app_name} via app-launcher-wrapper")
+        logger.info(f"Launching {app_name} via i3pm launch open")
 
         try:
-            # Launch via app-launcher-wrapper (non-blocking)
-            # The wrapper script returns immediately after calling swaymsg exec
-            # We use Popen to avoid blocking on script completion
             process = subprocess.Popen(
-                [self.app_launcher_path, app_name],
+                [self.app_launcher_path, "launch", "open", app_name],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -286,8 +283,8 @@ class RunRaiseManager:
             raise RuntimeError(f"Launch timeout after 5 seconds")
 
         except FileNotFoundError:
-            logger.error(f"app-launcher-wrapper.sh not found at {self.app_launcher_path}")
-            raise RuntimeError(f"Launcher script not found: {self.app_launcher_path}")
+            logger.error(f"i3pm not found at {self.app_launcher_path}")
+            raise RuntimeError(f"Launcher CLI not found: {self.app_launcher_path}")
 
     async def _transition_focus(self, window: Con) -> Dict[str, Any]:
         """Focus window.

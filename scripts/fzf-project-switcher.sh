@@ -12,7 +12,7 @@ tput civis  # Hide cursor
 I3PM="i3pm"
 
 # Get active project (suppress warnings)
-ACTIVE_PROJECT=$($I3PM worktree current --json 2>/dev/null | jq -r '.qualified_name // ""' 2>/dev/null || true)
+ACTIVE_PROJECT=$($I3PM context current --json 2>/dev/null | jq -r '.qualified_name // ""' 2>/dev/null || true)
 
 # Build project list
 PROJECT_LIST=""

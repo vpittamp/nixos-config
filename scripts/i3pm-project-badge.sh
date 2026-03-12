@@ -278,7 +278,7 @@ load_context_from_file() {
         (.remote.remote_dir // .directory // "")
       ] | @tsv
       end
-    ' <(i3pm worktree current --json 2>/dev/null || echo '{}') 2>/dev/null || true
+    ' <(i3pm context current --json 2>/dev/null || echo '{}') 2>/dev/null || true
   )"
 
   if [[ -z "$parsed" ]]; then

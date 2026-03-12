@@ -63,7 +63,7 @@ COLOR_SURFACE0="#313244"
 build_project_block() {
     local project_json qualified_name branch repo_name branch_number icon display_name full_text
 
-    project_json="$("$I3PM_BIN" project current --json 2>/dev/null || echo '{}')"
+    project_json="$("$I3PM_BIN" context current --json 2>/dev/null || echo '{}')"
     qualified_name=$(printf '%s\n' "$project_json" | "$JQ_BIN" -r '.name // empty' 2>/dev/null || echo "")
     branch=$(printf '%s\n' "$project_json" | "$JQ_BIN" -r '.branch // empty' 2>/dev/null || echo "")
     repo_name=$(printf '%s\n' "$project_json" | "$JQ_BIN" -r '.repo_name // .display_name // empty' 2>/dev/null || echo "")
@@ -294,8 +294,8 @@ handle_click_event() {
                     fi
                 ) &
             elif [ "$button" = "3" ]; then
-                # Right click: Clear project (global mode)
-                "$I3PM_BIN" project clear >/dev/null 2>&1 &
+                # Right click: Clear runtime context (global mode)
+                "$I3PM_BIN" context clear >/dev/null 2>&1 &
             fi
             ;;
     esac

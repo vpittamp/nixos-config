@@ -56,7 +56,7 @@ class ClickHandler:
             self._launch_command("walker --modules projects")
         elif event.button == MouseButton.RIGHT:
             # FR-008: Right-click to clear active project
-            self._launch_command("i3pm project clear")
+            self._launch_command("i3pm context clear")
 
     def _handle_volume_click(self, event: ClickEvent) -> None:
         """Handle volume block clicks.

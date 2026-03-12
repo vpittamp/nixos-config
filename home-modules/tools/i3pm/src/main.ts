@@ -38,8 +38,13 @@ GLOBAL OPTIONS:
   --debug          Enable debug logging
 
 COMMANDS:
-  project          Project management commands
+  context          Active runtime context commands
   worktree         Git worktree project management (Feature 077)
+  launch           Daemon-owned application launch commands
+  session          AI session inspection and focus commands
+  window           Daemon-owned window focus/action commands
+  workspace        Daemon-owned workspace focus commands
+  dashboard        Dashboard snapshot and watch commands
   run              Smart application launcher with run-raise-hide (Feature 051)
   scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
@@ -60,6 +65,12 @@ COMMANDS:
 Run 'i3pm <command> --help' for more information on a specific command.
 
 EXAMPLES:
+  i3pm context current                 Show active runtime context
+  i3pm launch open terminal           Launch an app through the daemon
+  i3pm session focus <session_key>    Focus an AI session
+  i3pm window focus <window_id>       Focus a managed window
+  i3pm workspace focus 2              Focus a workspace
+  i3pm dashboard snapshot             Show dashboard state
   i3pm worktree list                   List all worktrees
   i3pm worktree switch account/repo:branch   Switch to worktree
   i3pm worktree remote set account/repo:branch --dir /remote/path
@@ -75,7 +86,7 @@ EXAMPLES:
   i3pm monitors reassign               Redistribute workspaces
   i3pm monitor                         Launch monitoring dashboard
   i3pm apps list                       List all applications
-  i3pm apps launch vscode              Launch VS Code with project context
+  i3pm launch open vscode             Launch VS Code with runtime context
   i3pm trace start --class ghostty     Start tracing Ghostty windows
   i3pm trace list                      List active traces
 
@@ -131,10 +142,51 @@ async function main(): Promise<void> {
 
   // Route to command handler
   switch (command) {
-    case "project":
+    case "context":
       {
-        const { projectCommand } = await import("./commands/project.ts");
-        await projectCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const { contextCommand } = await import("./commands/context.ts");
+        const exitCode = await contextCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "launch":
+      {
+        const { launchCommand } = await import("./commands/launch.ts");
+        const exitCode = await launchCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "session":
+      {
+        const { sessionCommand } = await import("./commands/session.ts");
+        const exitCode = await sessionCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "window":
+      {
+        const { windowCommand } = await import("./commands/window.ts");
+        const exitCode = await windowCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "workspace":
+      {
+        const { workspaceCommand } = await import("./commands/workspace.ts");
+        const exitCode = await workspaceCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "dashboard":
+      {
+        const { dashboardCommand } = await import("./commands/dashboard.ts");
+        const exitCode = await dashboardCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
       }
       break;
 

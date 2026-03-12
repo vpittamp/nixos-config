@@ -54,7 +54,7 @@ async function updateActiveContextIfNeeded(
 ): Promise<void> {
   const client = new DaemonClient();
   try {
-    const active = await client.request<{ qualified_name?: string }>("context.get_active", {});
+    const active = await client.request<{ qualified_name?: string }>("context.current", {});
     if (active?.qualified_name !== oldQualified) return;
 
     const switchCmd = new Deno.Command("i3pm", {

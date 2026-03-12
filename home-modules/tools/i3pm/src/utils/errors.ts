@@ -17,8 +17,8 @@ export function formatDaemonUnavailableError(): string {
     `Socket path: ${socketPath}\n` +
     `\n` +
     `The daemon may not be running. Try:\n` +
-    `  systemctl --user status i3-project-event-listener\n` +
-    `  systemctl --user start i3-project-event-listener\n` +
+    `  systemctl --user status i3-project-daemon.service\n` +
+    `  systemctl --user start i3-project-daemon.service\n` +
     `\n` +
     `If the daemon is running, check socket permissions:\n` +
     `  ls -l ${socketPath}`
@@ -35,10 +35,10 @@ export function formatSocketNotFoundError(socketPath: string): string {
     `Socket path: ${socketPath}\n` +
     `\n` +
     `The daemon socket does not exist. Ensure the daemon is running:\n` +
-    `  systemctl --user start i3-project-event-listener\n` +
+    `  systemctl --user start i3-project-daemon.service\n` +
     `\n` +
     `If the problem persists, check the daemon logs:\n` +
-    `  journalctl --user -u i3-project-event-listener -n 50`
+    `  journalctl --user -u i3-project-daemon.service -n 50`
   );
 }
 
@@ -71,7 +71,7 @@ export function formatTimeoutError(method: string, timeoutMs: number): string {
     `\n` +
     `The daemon did not respond within the timeout period.\n` +
     `The daemon may be overloaded or deadlocked. Try restarting:\n` +
-    `  systemctl --user restart i3-project-event-listener`
+    `  systemctl --user restart i3-project-daemon.service`
   );
 }
 
@@ -86,10 +86,10 @@ export function formatConnectionRefusedError(socketPath: string): string {
     `\n` +
     `The daemon is not accepting connections.\n` +
     `Check if the daemon is running:\n` +
-    `  systemctl --user status i3-project-event-listener\n` +
+    `  systemctl --user status i3-project-daemon.service\n` +
     `\n` +
     `If the daemon is stopped, start it:\n` +
-    `  systemctl --user start i3-project-event-listener`
+    `  systemctl --user start i3-project-daemon.service`
   );
 }
 
@@ -98,16 +98,13 @@ export function formatConnectionRefusedError(socketPath: string): string {
  */
 export function formatProjectNotFoundError(projectName: string): string {
   return (
-    `Error: Project not found\n` +
+    `Error: Worktree not found\n` +
     `\n` +
-    `Project: ${projectName}\n` +
+    `Worktree: ${projectName}\n` +
     `\n` +
-    `The specified project does not exist.\n` +
-    `List available projects:\n` +
-    `  i3pm project list\n` +
-    `\n` +
-    `Create a new project:\n` +
-    `  i3pm project create --name ${projectName} --dir /path/to/project`
+    `The specified worktree context does not exist.\n` +
+    `List available worktrees:\n` +
+    `  i3pm worktree list`
   );
 }
 

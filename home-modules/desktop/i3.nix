@@ -103,7 +103,7 @@ in
     # Quick launch (Feature 039: Now uses app-launcher for workspace assignment)
     bindsym $mod+Shift+b exec ${pkgs.ghostty}/bin/ghostty -e bash -c fh
     bindsym $mod+Shift+f exec ${pkgs.xfce.thunar}/bin/thunar
-    bindsym $mod+k exec ~/.local/bin/app-launcher-wrapper.sh k9s
+    bindsym $mod+k exec i3pm launch open k9s
     bindsym $mod+a exec ${pkgs.glib}/bin/gio launch ~/.local/share/applications/FFPWA-01K665SPD8EPMP3JTW02JM1M0Z.desktop
 
     # Split orientation
@@ -125,17 +125,17 @@ in
 
     # Project management keybindings (fzf-based switcher) - Feature 106: portable wrapper
     bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e ${scriptWrappers.fzf-project-switcher}/bin/fzf-project-switcher
-    bindsym $mod+Shift+p exec i3pm project clear
+    bindsym $mod+Shift+p exec i3pm context clear
 
     # Project-aware application launchers (Feature 035: Registry-based with environment injection)
     # All app names must match the "name" field in app-registry-data.nix
-    bindsym $mod+c exec ~/.local/bin/app-launcher-wrapper.sh vscode
+    bindsym $mod+c exec i3pm launch open vscode
     bindsym $mod+Return exec ${pkgs.alacritty}/bin/alacritty
-    bindsym $mod+g exec ~/.local/bin/app-launcher-wrapper.sh lazygit
-    bindsym $mod+y exec ~/.local/bin/app-launcher-wrapper.sh yazi
-    bindsym $mod+b exec ~/.local/bin/app-launcher-wrapper.sh btop
+    bindsym $mod+g exec i3pm launch open lazygit
+    bindsym $mod+y exec i3pm launch open yazi
+    bindsym $mod+b exec i3pm launch open btop
     # Alternative terminal launcher with project context (use Walker or this binding)
-    bindsym $mod+Shift+Return exec ~/.local/bin/app-launcher-wrapper.sh terminal
+    bindsym $mod+Shift+Return exec i3pm launch open terminal
 
     # T042: Monitor detection/workspace reassignment keybinding
     bindsym $mod+Shift+m exec ~/.config/i3/scripts/reassign-workspaces.sh

@@ -249,6 +249,9 @@ in
       # Window close behavior - don't prompt when closing
       confirm-close-surface = false;
 
+      # Keep the daemonized Ghostty process available for +new-window launches.
+      quit-after-last-window-closed = false;
+
       # Allow multiple independent instances (required for i3-projects)
       # "never" = each instance is independent (needed for multiple workspaces)
       # "single-instance" = reuses existing process (default)

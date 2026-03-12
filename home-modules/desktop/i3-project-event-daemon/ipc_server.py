@@ -12,11 +12,24 @@ import json
 import logging
 import os
 import re
+import shlex
 import socket
+import shutil
+import subprocess
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from xdg.DesktopEntry import DesktopEntry
+    from xdg.IconTheme import getIconPath
+except Exception:  # pragma: no cover
+    DesktopEntry = None
+
+    def getIconPath(_icon_name: str, _size: int) -> Optional[str]:
+        return None
 
 from .state import StateManager
 from .window_rules import WindowRule
@@ -30,6 +43,215 @@ from .services.window_filter import clear_pid_environ_cache
 from .services.registry_loader import RegistryLoader, RegistryApp
 
 logger = logging.getLogger(__name__)
+
+ICON_SEARCH_DIRS = [
+    Path.home() / ".local/share/icons",
+    Path.home() / ".icons",
+    Path("/usr/share/icons"),
+    Path("/usr/share/pixmaps"),
+]
+
+DESKTOP_DIRS = [
+    Path.home() / ".local/share/i3pm-applications/applications",
+    Path.home() / ".local/share/applications",
+    Path("/usr/share/applications"),
+]
+
+ICON_EXTENSIONS = (".svg", ".png", ".xpm")
+APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
+PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
+
+
+class DesktopIconIndex:
+    """Index curated app/PWA/desktop icons for stable window lookups."""
+
+    def __init__(self) -> None:
+        self._by_app_id: Dict[str, Dict[str, str]] = {}
+        self._by_pwa_domain: Dict[str, Dict[str, str]] = {}
+        self._by_desktop_id: Dict[str, Dict[str, str]] = {}
+        self._by_startup_wm: Dict[str, Dict[str, str]] = {}
+        self._icon_cache: Dict[str, str] = {}
+        self.reload()
+
+    def reload(self) -> None:
+        self._by_app_id.clear()
+        self._by_pwa_domain.clear()
+        self._by_desktop_id.clear()
+        self._by_startup_wm.clear()
+        self._load_app_registry()
+        self._load_pwa_registry()
+        self._load_desktop_entries()
+
+    def _store_app_payload(self, key: str, payload: Dict[str, str]) -> None:
+        normalized = str(key).strip().lower()
+        if not normalized:
+            return
+        existing = self._by_app_id.get(normalized, {})
+        existing_icon = str(existing.get("icon") or "")
+        next_icon = str(payload.get("icon") or "")
+        if existing_icon and not next_icon:
+            return
+        self._by_app_id[normalized] = payload
+
+    def _load_app_registry(self) -> None:
+        if not APP_REGISTRY_PATH.exists():
+            return
+        try:
+            with open(APP_REGISTRY_PATH, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception:
+            return
+
+        for app in data.get("applications", []):
+            app_name = str(app.get("name", "")).strip().lower()
+            payload = {
+                "icon": self._resolve_icon(app.get("icon", "")) or "",
+                "name": app.get("display_name", app_name),
+            }
+            if app_name:
+                self._store_app_payload(app_name, payload)
+
+    def _load_pwa_registry(self) -> None:
+        if not PWA_REGISTRY_PATH.exists():
+            return
+        try:
+            with open(PWA_REGISTRY_PATH, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception:
+            return
+
+        for pwa in data.get("pwas", []):
+            payload = {
+                "icon": self._resolve_icon(pwa.get("icon", "")) or "",
+                "name": pwa.get("name", ""),
+            }
+            ulid = str(pwa.get("ulid", "")).strip().lower()
+            if ulid:
+                self._by_app_id[f"webapp-{ulid}"] = payload
+
+            domain = str(pwa.get("domain", "")).strip().lower()
+            if domain:
+                for alias in {domain, f"www.{domain}"}:
+                    self._by_pwa_domain[alias] = payload
+
+    def _lookup_dynamic_pwa_icon(self, key: str) -> Dict[str, str]:
+        normalized = str(key).strip().lower()
+        if not normalized.startswith("chrome-") or not normalized.endswith("-default"):
+            return {}
+
+        dynamic_id = normalized[len("chrome-"):-len("-default")].strip()
+        if not dynamic_id:
+            return {}
+
+        candidate_ids = [dynamic_id]
+        if dynamic_id.endswith("__"):
+            candidate_ids.append(dynamic_id[:-2])
+
+        for domain, payload in self._by_pwa_domain.items():
+            for candidate in candidate_ids:
+                if (
+                    candidate == domain
+                    or candidate == f"{domain}__"
+                    or candidate.startswith(f"{domain}__")
+                    or candidate.startswith(f"{domain}-")
+                ):
+                    return payload
+        return {}
+
+    def _load_desktop_entries(self) -> None:
+        if DesktopEntry is None:
+            return
+        for directory in DESKTOP_DIRS:
+            if not directory.exists():
+                continue
+            for entry_path in directory.glob("*.desktop"):
+                try:
+                    entry = DesktopEntry(str(entry_path))
+                except Exception:
+                    continue
+                payload = {
+                    "icon": self._resolve_icon(entry.getIcon()) or "",
+                    "name": entry.getName() or entry_path.stem,
+                }
+                self._by_desktop_id[entry_path.stem.lower()] = payload
+                startup = entry.getStartupWMClass()
+                if startup:
+                    self._by_startup_wm[str(startup).strip().lower()] = payload
+
+    def _resolve_icon(self, icon_name: Optional[str]) -> Optional[str]:
+        if not icon_name:
+            return None
+
+        cache_key = str(icon_name).strip().lower()
+        if cache_key in self._icon_cache:
+            cached = self._icon_cache[cache_key]
+            return cached or None
+
+        candidate = Path(str(icon_name))
+        if candidate.is_absolute() and candidate.exists():
+            resolved = str(candidate)
+            self._icon_cache[cache_key] = resolved
+            return resolved
+
+        themed = getIconPath(str(icon_name), 48)
+        if themed:
+            resolved = str(Path(themed))
+            self._icon_cache[cache_key] = resolved
+            return resolved
+
+        for directory in ICON_SEARCH_DIRS:
+            if not directory.exists():
+                continue
+            for ext in ICON_EXTENSIONS:
+                probe = directory / f"{icon_name}{ext}"
+                if probe.exists():
+                    resolved = str(probe)
+                    self._icon_cache[cache_key] = resolved
+                    return resolved
+
+        self._icon_cache[cache_key] = ""
+        return None
+
+    def lookup(
+        self,
+        *,
+        app_key: Optional[str] = None,
+        app_id: Optional[str],
+        window_class: Optional[str] = None,
+        window_instance: Optional[str] = None,
+        allow_fallback: bool = True,
+    ) -> Dict[str, str]:
+        app_key_normalized = str(app_key).strip().lower()
+        if app_key_normalized and app_key_normalized in self._by_app_id:
+            return self._by_app_id[app_key_normalized]
+
+        if not allow_fallback:
+            return {}
+
+        keys = [
+            str(value).strip().lower()
+            for value in [app_id, window_class, window_instance]
+            if value
+        ]
+        for key in keys:
+            if key in self._by_app_id:
+                return self._by_app_id[key]
+        for key in keys:
+            payload = self._lookup_dynamic_pwa_icon(key)
+            if payload:
+                return payload
+        for key in keys:
+            if key in self._by_desktop_id:
+                return self._by_desktop_id[key]
+        for key in keys:
+            if key in self._by_startup_wm:
+                return self._by_startup_wm[key]
+        return {}
+
+
+def shlex_quote(value: str) -> str:
+    """Shell-quote a runtime value for helper scripts."""
+    return shlex.quote(str(value))
 
 
 # JSON-RPC 2.0 Standard Error Codes
@@ -88,6 +310,7 @@ class IPCServer:
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
         self.registry_loader = RegistryLoader()
+        self.icon_resolver = DesktopIconIndex()
         try:
             self.registry_loader.load()
         except Exception as e:
@@ -290,10 +513,14 @@ class IPCServer:
                 result = await self._get_active_project()
             elif method == "context.get_active":
                 result = await self._context_get_active(params)
+            elif method == "context.current":
+                result = await self._context_get_active(params)
             elif method == "context.ensure":
                 result = await self._context_ensure(params)
             elif method == "runtime.snapshot":
                 result = await self._runtime_snapshot(params)
+            elif method == "dashboard.snapshot":
+                result = await self._dashboard_snapshot(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -395,6 +622,10 @@ class IPCServer:
             # Feature 041: IPC Launch Context methods (T010-T012)
             elif method == "prepare_launch":
                 result = await self._prepare_launch(params)
+            elif method == "launch.preview":
+                result = await self._prepare_launch(params)
+            elif method == "launch.open":
+                result = await self._launch_open(params)
             elif method == "get_launch_stats":
                 result = await self._get_launch_stats()
             elif method == "get_pending_launches":
@@ -405,6 +636,10 @@ class IPCServer:
                 result = await self._window_focus(params)
             elif method == "window.action":
                 result = await self._window_action(params)
+            elif method == "session.list":
+                result = await self._session_list(params)
+            elif method == "session.focus":
+                result = await self._session_focus(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
 
@@ -2342,6 +2577,7 @@ class IPCServer:
 
                     # Read I3PM_APP_ID from environment
                     app_id = i3pm_env.get("I3PM_APP_ID")
+                    app_key = i3pm_env.get("I3PM_APP_NAME") or ""
 
                     # Feature 101: Format workspace field - include workspace 0 for scratchpad home
                     if tracked_workspace is not None and tracked_workspace > 0:
@@ -2356,7 +2592,9 @@ class IPCServer:
                         "id": window.id,
                         "pid": window.pid if hasattr(window, 'pid') else None,
                         "app_id": app_id,
+                        "app_key": app_key,
                         "class": window_class,
+                        "icon_path": "",
                         "instance": window.window_instance if hasattr(window, 'window_instance') else "",
                         "title": window.name or "(no title)",
                         "workspace": workspace_str,
@@ -2389,6 +2627,15 @@ class IPCServer:
                     tracked_window = tracked_windows.get(int(window.id)) or tracked_windows_by_con_id.get(int(window.id))
                     if tracked_window:
                         window_data.update(self._tracked_window_runtime_fields(tracked_window))
+                    if not window_data.get("app_key"):
+                        window_data["app_key"] = str(window_data.get("app_name") or "")
+                    window_data["icon_path"] = self._resolve_window_icon_path(
+                        app_key=str(window_data.get("app_key") or ""),
+                        app_id=app_id,
+                        window_class=window_class,
+                        window_instance=window.window_instance if hasattr(window, "window_instance") else "",
+                        allow_fallback=not bool(app_key),
+                    )
                     scratchpad_windows.append(window_data)
                     total_windows += 1
 
@@ -2429,8 +2676,39 @@ class IPCServer:
             "remote_dir": str(getattr(tracked_window, "remote_dir", "") or ""),
             "remote_session_name": str(getattr(tracked_window, "remote_session_name", "") or ""),
             "terminal_anchor_id": str(getattr(tracked_window, "terminal_anchor_id", "") or ""),
+            "app_key": str(getattr(tracked_window, "app_identifier", "") or ""),
             "app_name": str(getattr(tracked_window, "app_identifier", "") or ""),
         }
+
+    def _resolve_window_icon_path(
+        self,
+        *,
+        app_key: Optional[str],
+        app_id: Optional[str],
+        window_class: Optional[str],
+        window_instance: Optional[str] = None,
+        allow_fallback: bool = True,
+    ) -> str:
+        """Resolve a window icon using the same app/PWA/desktop sources as the workspace bar."""
+        try:
+            icon_info = self.icon_resolver.lookup(
+                app_key=app_key,
+                app_id=app_id,
+                window_class=window_class,
+                window_instance=window_instance,
+                allow_fallback=allow_fallback,
+            )
+        except Exception:
+            logger.debug(
+                "Icon lookup failed for app_key=%s app_id=%s class=%s instance=%s",
+                app_key,
+                app_id,
+                window_class,
+                window_instance,
+                exc_info=True,
+            )
+            return ""
+        return str(icon_info.get("icon") or "")
 
     def _find_workspace_container(self, tree, workspace_name: str):
         """Find workspace container in i3 tree by name.
@@ -2539,6 +2817,7 @@ class IPCServer:
 
                 # Extract app_id and worktree metadata from already-read env
                 app_id = env.get("I3PM_APP_ID")
+                app_key = env.get("I3PM_APP_NAME") or ""
                 if app_id:
                     logger.debug(f"Found I3PM_APP_ID for window {window_id} PID {node.pid}: {app_id}")
                 elif env:
@@ -2549,7 +2828,9 @@ class IPCServer:
                     "id": window_id,
                     "pid": node.pid if hasattr(node, 'pid') else None,
                     "app_id": app_id,  # I3PM_APP_ID from process environment
+                    "app_key": app_key,
                     "class": window_class,
+                    "icon_path": "",
                     "instance": node.window_instance or "",
                     "title": node.name or "",
                     "workspace": workspace_str,
@@ -2591,6 +2872,15 @@ class IPCServer:
                         window_data["project"] = str(getattr(tracked_window, "project", "") or "")
                     if not window_data["scope"]:
                         window_data["scope"] = str(getattr(tracked_window, "scope", "") or "")
+                if not window_data.get("app_key"):
+                    window_data["app_key"] = str(window_data.get("app_name") or "")
+                window_data["icon_path"] = self._resolve_window_icon_path(
+                    app_key=str(window_data.get("app_key") or ""),
+                    app_id=app_id,
+                    window_class=window_class,
+                    window_instance=node.window_instance or "",
+                    allow_fallback=not bool(app_key),
+                )
                 windows.append(window_data)
 
             # Recurse into child nodes
@@ -5182,13 +5472,9 @@ class IPCServer:
                 "data": {"param": "app_name"}
             }))
 
-        launcher_pid = int(params.get("launcher_pid") or 0)
+        launcher_pid = int(params.get("launcher_pid") or os.getpid())
         if launcher_pid <= 0:
-            raise RuntimeError(json.dumps({
-                "code": -32602,
-                "message": "Missing required parameter: launcher_pid",
-                "data": {"param": "launcher_pid"}
-            }))
+            launcher_pid = os.getpid()
 
         variant_override = str(params.get("context_variant_override") or "").strip().lower()
         if variant_override and variant_override not in {"local", "ssh"}:
@@ -5402,6 +5688,839 @@ class IPCServer:
             "launch": launch,
             "terminal_anchor_id": launch_identity["terminal_anchor_id"],
             "app_instance_id": launch_identity["app_instance_id"],
+        }
+
+    def _repo_root(self) -> Path:
+        """Return the repository root that contains runtime helper scripts."""
+        return Path(__file__).resolve().parents[3]
+
+    def _runtime_dir(self) -> Path:
+        """Return the XDG runtime directory used by daemon-owned helpers."""
+        return Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+
+    def _remote_sink_file(self) -> Path:
+        """Return the deterministic remote OTEL sink file path."""
+        return self._runtime_dir() / "eww-monitoring-panel" / "remote-otel-sink.json"
+
+    def _load_json_file(self, path: Path) -> Dict[str, Any]:
+        """Read a JSON object from disk, returning an empty object on failure."""
+        try:
+            with open(path, "r") as f:
+                payload = json.load(f)
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _parse_remote_target(self, remote_target: str, connection_key: str = "") -> Tuple[str, str, int]:
+        """Parse a user@host:port SSH target into user, host, port."""
+        raw = str(remote_target or "").strip() or str(connection_key or "").strip()
+        if not raw:
+            return "", "", 22
+        if raw.startswith("ssh://"):
+            raw = raw[len("ssh://") :]
+        user_part = ""
+        host_port = raw
+        if "@" in raw:
+            user_part, host_port = raw.split("@", 1)
+        host = host_port
+        port = 22
+        if ":" in host_port:
+            host, port_text = host_port.rsplit(":", 1)
+            try:
+                port = int(port_text)
+            except ValueError:
+                port = 22
+        return user_part.strip(), host.strip(), port
+
+    def _select_tmux_target(
+        self,
+        *,
+        execution_mode: str,
+        tmux_session: str,
+        tmux_window: str,
+        tmux_pane: str = "",
+        remote_target: str = "",
+        connection_key: str = "",
+    ) -> Dict[str, Any]:
+        """Select a tmux window/pane locally or over SSH."""
+        if not tmux_session or not tmux_window:
+            return {
+                "success": False,
+                "reason": "missing_tmux_target",
+            }
+
+        tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or str(tmux_window or "").strip()
+        select_script = (
+            f"tmux select-window -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} >/dev/null 2>&1"
+        )
+        if tmux_pane:
+            select_script += f" && tmux select-pane -t {shlex.quote(tmux_pane)} >/dev/null 2>&1"
+
+        if execution_mode == "ssh":
+            remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
+            if not remote_host:
+                return {
+                    "success": False,
+                    "reason": "missing_remote_target",
+                }
+            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=2",
+                    "-p",
+                    str(remote_port),
+                    destination,
+                    f"bash -lc {shlex.quote(select_script)}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return {
+                "success": result.returncode == 0,
+                "reason": "ok" if result.returncode == 0 else "remote_tmux_select_failed",
+                "stderr": str(result.stderr or "").strip(),
+            }
+
+        result = subprocess.run(
+            ["bash", "-lc", select_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            "success": result.returncode == 0,
+            "reason": "ok" if result.returncode == 0 else "local_tmux_select_failed",
+            "stderr": str(result.stderr or "").strip(),
+        }
+
+    def _build_session_key(self, session: Dict[str, Any], source_connection_key: str) -> str:
+        """Create a deterministic key for daemon-owned AI session operations."""
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        tool = str(session.get("tool") or "unknown").strip() or "unknown"
+        native_id = str(session.get("native_session_id") or "").strip()
+        session_id = str(session.get("session_id") or "").strip()
+        surface_key = str(session.get("surface_key") or "").strip()
+        anchor = str(terminal_context.get("terminal_anchor_id") or "").strip()
+        context_key = str(terminal_context.get("context_key") or "").strip()
+        project_name = str(
+            session.get("focus_project")
+            or session.get("window_project")
+            or session.get("display_project")
+            or session.get("project")
+            or ""
+        ).strip()
+        identity = surface_key or native_id or session_id or anchor or project_name or str(session.get("pid") or "unknown")
+        return "|".join([
+            tool,
+            identity,
+            context_key or source_connection_key or "unknown",
+        ])
+
+    def _flatten_runtime_windows(self, runtime_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Flatten dashboard windows from runtime snapshot outputs/workspaces."""
+        flattened: List[Dict[str, Any]] = []
+        for output in runtime_snapshot.get("outputs", []) or []:
+            if not isinstance(output, dict):
+                continue
+            for workspace in output.get("workspaces", []) or []:
+                if not isinstance(workspace, dict):
+                    continue
+                for window in workspace.get("windows", []) or []:
+                    if isinstance(window, dict):
+                        flattened.append(dict(window))
+        return flattened
+
+    def _bind_session_window(
+        self,
+        session: Dict[str, Any],
+        tracked_windows: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Resolve a session onto a locally managed window using exact runtime identity only."""
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+
+        explicit_window_id = int(session.get("window_id") or terminal_context.get("window_id") or 0)
+        tracked_by_id = {
+            int(item.get("window_id") or 0): item
+            for item in tracked_windows
+            if isinstance(item, dict) and int(item.get("window_id") or 0) > 0
+        }
+        if explicit_window_id > 0 and explicit_window_id in tracked_by_id:
+            bound = dict(tracked_by_id[explicit_window_id])
+            bound["window_id"] = explicit_window_id
+            return bound
+
+        anchor = str(terminal_context.get("terminal_anchor_id") or "").strip()
+        if anchor:
+            matches = [
+                item for item in tracked_windows
+                if isinstance(item, dict)
+                and str(item.get("terminal_anchor_id") or "").strip() == anchor
+            ]
+            if len(matches) == 1:
+                return dict(matches[0])
+
+        context_key = str(terminal_context.get("context_key") or "").strip()
+        if context_key:
+            matches = [
+                item for item in tracked_windows
+                if isinstance(item, dict)
+                and str(item.get("context_key") or "").strip() == context_key
+            ]
+            if len(matches) == 1:
+                return dict(matches[0])
+
+        return {}
+
+    def _normalize_session_items(
+        self,
+        sessions: List[Dict[str, Any]],
+        *,
+        source_connection_key: str,
+        source_host_name: str,
+        source_received_at: float = 0.0,
+        tracked_windows: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Normalize local or remote OTEL sessions into the daemon dashboard model."""
+        now = time.time()
+        normalized: List[Dict[str, Any]] = []
+        source_age_seconds = int(max(0, now - source_received_at)) if source_received_at > 0 else 0
+        source_stale = source_received_at > 0 and source_age_seconds > 20
+
+        for raw_session in sessions:
+            if not isinstance(raw_session, dict):
+                continue
+
+            terminal_context = raw_session.get("terminal_context") or {}
+            if not isinstance(terminal_context, dict):
+                terminal_context = {}
+
+            bound_window = self._bind_session_window(raw_session, tracked_windows)
+            bound_window_id = int(bound_window.get("window_id") or 0)
+            execution_mode = str(terminal_context.get("execution_mode") or "local").strip() or "local"
+            connection_key = str(
+                terminal_context.get("connection_key")
+                or source_connection_key
+                or ""
+            ).strip()
+            context_key = str(terminal_context.get("context_key") or "").strip()
+            project_name = str(
+                raw_session.get("focus_project")
+                or raw_session.get("window_project")
+                or raw_session.get("display_project")
+                or raw_session.get("project")
+                or bound_window.get("project")
+                or ""
+            ).strip()
+            display_project = str(raw_session.get("display_project") or project_name or "global").strip() or "global"
+            session_key = self._build_session_key(raw_session, connection_key)
+            stats_source = str(raw_session.get("stats_source") or "missing").strip() or "missing"
+            if source_received_at > 0 and stats_source == "local_process":
+                stats_source = "remote_process"
+            surface_key = str(raw_session.get("surface_key") or "").strip()
+            tmux_session = str(terminal_context.get("tmux_session") or "").strip()
+            tmux_window = str(terminal_context.get("tmux_window") or "").strip()
+            tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
+            pane_title = str(terminal_context.get("pane_title") or "").strip()
+            pane_label = str(raw_session.get("pane_label") or "").strip() or pane_title or tmux_pane
+            normalized.append({
+                "session_key": session_key,
+                "tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
+                "display_tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
+                "project": project_name,
+                "project_name": project_name,
+                "display_project": display_project,
+                "window_project": str(bound_window.get("project") or project_name or "").strip(),
+                "window_id": bound_window_id,
+                "execution_mode": execution_mode,
+                "connection_key": connection_key,
+                "context_key": context_key,
+                "terminal_anchor_id": str(terminal_context.get("terminal_anchor_id") or "").strip(),
+                "terminal_context": dict(terminal_context),
+                "surface_kind": str(raw_session.get("surface_kind") or "terminal-window").strip() or "terminal-window",
+                "surface_key": surface_key,
+                "pane_label": pane_label,
+                "pane_title": pane_title,
+                "pane_pid": terminal_context.get("pane_pid"),
+                "pane_tty": str(terminal_context.get("pty") or "").strip(),
+                "pane_active": bool(terminal_context.get("pane_active", False)),
+                "window_active": bool(terminal_context.get("window_active", False)),
+                "tmux_session": tmux_session,
+                "tmux_window": tmux_window,
+                "tmux_pane": tmux_pane,
+                "conflict_state": str(raw_session.get("conflict_state") or "").strip(),
+                "conflict_detail": str(raw_session.get("conflict_detail") or "").strip(),
+                "updated_at": str(raw_session.get("updated_at") or "").strip(),
+                "stage": str(raw_session.get("stage") or "idle").strip() or "idle",
+                "stage_rank": int(raw_session.get("stage_rank", 0) or 0),
+                "stage_label": str(raw_session.get("stage_label") or raw_session.get("stage") or "Idle").strip() or "Idle",
+                "stage_class": str(raw_session.get("stage_class") or "").strip(),
+                "stage_visual_state": str(raw_session.get("stage_visual_state") or "").strip(),
+                "stage_detail": str(raw_session.get("stage_detail") or "").strip(),
+                "needs_user_action": bool(raw_session.get("needs_user_action", False)),
+                "user_action_reason": str(raw_session.get("user_action_reason") or "").strip(),
+                "output_ready": bool(raw_session.get("output_ready", False)),
+                "output_unseen": bool(raw_session.get("output_unseen", False)),
+                "review_pending": bool(raw_session.get("output_unseen", False)),
+                "is_streaming": bool(raw_session.get("is_streaming", False)),
+                "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
+                "focusable": bool(raw_session.get("focusable", False)) and bound_window_id > 0,
+                "host_name": str(terminal_context.get("host_name") or source_host_name or "").strip(),
+                "identity_source": str(raw_session.get("identity_source") or "").strip(),
+                "native_session_id": str(raw_session.get("native_session_id") or "").strip(),
+                "session_id": str(raw_session.get("session_id") or "").strip(),
+                "trace_id": str(raw_session.get("trace_id") or "").strip(),
+                "process_running": bool(raw_session.get("process_running", False)),
+                "rss_mb": raw_session.get("rss_mb"),
+                "cpu_percent": raw_session.get("cpu_percent"),
+                "uptime_seconds": raw_session.get("uptime_seconds"),
+                "stats_sampled_at": str(raw_session.get("stats_sampled_at") or "").strip(),
+                "stats_source": stats_source,
+                "process_tree_rss_mb": raw_session.get("process_tree_rss_mb"),
+                "process_tree_cpu_percent": raw_session.get("process_tree_cpu_percent"),
+                "process_count": raw_session.get("process_count"),
+                "activity_age_seconds": int(raw_session.get("activity_age_seconds", 0) or 0),
+                "activity_freshness": str(raw_session.get("activity_freshness") or "").strip(),
+                "remote_source_stale": bool(source_stale),
+                "remote_source_age_seconds": int(source_age_seconds),
+                "focus_project": project_name,
+                "focus_execution_mode": execution_mode,
+                "focus_connection_key": connection_key,
+            })
+
+        normalized.sort(
+            key=lambda item: (
+                str(item.get("updated_at") or ""),
+                str(item.get("project_name") or ""),
+                str(item.get("session_key") or ""),
+            ),
+            reverse=True,
+        )
+        return normalized
+
+    async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return daemon-owned AI session data merged from local and remote OTEL sources."""
+        runtime_snapshot = await self._runtime_snapshot({})
+        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
+        local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
+        local_sessions_raw = [
+            item for item in local_payload.get("sessions", [])
+            if isinstance(item, dict)
+        ]
+        local_connection_key = str(
+            runtime_snapshot.get("active_context", {}).get("connection_key")
+            or f"local@{self._local_host_alias()}"
+        )
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in self._flatten_runtime_windows(runtime_snapshot)
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        sessions = self._normalize_session_items(
+            local_sessions_raw,
+            source_connection_key=local_connection_key,
+            source_host_name=self._local_host_alias(),
+            source_received_at=0.0,
+            tracked_windows=tracked_windows,
+        )
+
+        remote_payload = self._load_json_file(self._remote_sink_file())
+        sources = remote_payload.get("sources", {})
+        if isinstance(sources, dict):
+            for source_connection_key, source_data in sources.items():
+                if not isinstance(source_data, dict):
+                    continue
+                source_sessions = [
+                    item for item in source_data.get("sessions", [])
+                    if isinstance(item, dict)
+                ]
+                sessions.extend(self._normalize_session_items(
+                    source_sessions,
+                    source_connection_key=str(source_connection_key or ""),
+                    source_host_name=str(source_data.get("host_name") or "").strip(),
+                    source_received_at=float(source_data.get("received_at", 0.0) or 0.0),
+                    tracked_windows=tracked_windows,
+                ))
+
+        sessions.sort(
+            key=lambda item: (
+                int(item.get("window_id") or 0) == focused_window_id,
+                bool(item.get("needs_user_action", False)),
+                bool(item.get("output_ready", False) or item.get("output_unseen", False)),
+                str(item.get("stage_visual_state") or "") == "working",
+                int(item.get("stage_rank") or 0),
+                bool(item.get("process_running", False)),
+                bool(item.get("pane_active", False)),
+                str(item.get("updated_at") or ""),
+                str(item.get("surface_key") or ""),
+                str(item.get("session_key") or ""),
+            ),
+            reverse=True,
+        )
+        return {
+            "sessions": sessions,
+            "total": len(sessions),
+        }
+
+    async def _session_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus an AI session by its daemon-owned session key."""
+        session_key = str(params.get("session_key") or "").strip()
+        if not session_key:
+            raise ValueError("session_key is required")
+
+        sessions_result = await self._session_list({})
+        sessions = sessions_result.get("sessions", [])
+        session = next(
+            (
+                item for item in sessions
+                if isinstance(item, dict)
+                and str(item.get("session_key") or "").strip() == session_key
+            ),
+            None,
+        )
+        if not isinstance(session, dict):
+            raise RuntimeError(f"Unknown session_key: {session_key}")
+
+        window_id = int(session.get("window_id") or 0)
+        if window_id <= 0:
+            raise RuntimeError(f"Session {session_key} is not bound to a managed window")
+
+        focus_result = await self._window_focus({
+            "window_id": window_id,
+            "project_name": str(session.get("focus_project") or session.get("project_name") or "").strip(),
+            "target_variant": str(session.get("focus_execution_mode") or session.get("execution_mode") or "").strip(),
+        })
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        tmux_result: Dict[str, Any] = {
+            "success": False,
+            "reason": "not_applicable",
+        }
+        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        if tmux_session and tmux_window:
+            tmux_result = self._select_tmux_target(
+                execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
+                tmux_session=tmux_session,
+                tmux_window=tmux_window,
+                tmux_pane=tmux_pane,
+                remote_target=str(terminal_context.get("remote_target") or "").strip(),
+                connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+            )
+        overall_success = bool(focus_result.get("success", False)) and (
+            not (tmux_session and tmux_window) or bool(tmux_result.get("success", False))
+        )
+        return {
+            "success": overall_success,
+            "session_key": session_key,
+            "window_id": window_id,
+            "surface_key": str(session.get("surface_key") or "").strip(),
+            "conflict_state": str(session.get("conflict_state") or "").strip(),
+            "focus": focus_result,
+            "tmux": tmux_result,
+        }
+
+    def _build_dashboard_projects(
+        self,
+        runtime_snapshot: Dict[str, Any],
+        sessions: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Group runtime windows into simple project cards for the monitoring panel."""
+        def workspace_sort_key(value: Any) -> Tuple[int, str]:
+            workspace = str(value or "").strip()
+            if workspace.lower().startswith("scratchpad"):
+                return (1_000_000, workspace)
+            match = re.match(r"^(\d+)", workspace)
+            if match:
+                return (int(match.group(1)), workspace)
+            if not workspace:
+                return (999_999, "")
+            return (500_000, workspace)
+
+        sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            window_id = int(session.get("window_id") or 0)
+            if window_id <= 0:
+                continue
+            sessions_by_window.setdefault(window_id, []).append(session)
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for window in self._flatten_runtime_windows(runtime_snapshot):
+            window_id = int(window.get("id") or 0)
+            project_name = str(window.get("project") or "global").strip() or "global"
+            entry = grouped.setdefault(project_name, {
+                "project": project_name,
+                "display_project": project_name,
+                "execution_mode": str(window.get("execution_mode") or "local").strip() or "local",
+                "focused": False,
+                "windows": [],
+            })
+            entry["focused"] = bool(entry["focused"]) or bool(window.get("focused", False))
+            entry["windows"].append({
+                "id": window_id,
+                "title": str(window.get("title") or "(untitled)"),
+                "app_key": str(window.get("app_key") or ""),
+                "app_name": str(window.get("app_name") or window.get("class") or "window"),
+                "icon_path": str(window.get("icon_path") or "").strip(),
+                "project": project_name,
+                "execution_mode": str(window.get("execution_mode") or "local").strip() or "local",
+                "connection_key": str(window.get("connection_key") or "").strip(),
+                "workspace": str(window.get("workspace") or "").strip(),
+                "output": str(window.get("output") or "").strip(),
+                "focused": bool(window.get("focused", False)),
+                "hidden": bool(window.get("hidden", False)),
+                "floating": bool(window.get("floating", False)),
+                "scope": str(window.get("scope") or "").strip(),
+                "sessions": [
+                    {
+                        "session_key": str(session.get("session_key") or ""),
+                        "tool": str(session.get("tool") or ""),
+                        "stage_label": str(session.get("stage_label") or ""),
+                    }
+                    for session in sessions_by_window.get(window_id, [])
+                ],
+                "ai_session_count": len(sessions_by_window.get(window_id, [])),
+            })
+
+        projects = list(grouped.values())
+        for project in projects:
+            project_windows = list(project.get("windows", []) or [])
+            project_windows.sort(
+                key=lambda item: (
+                    workspace_sort_key(item.get("workspace")),
+                    str(item.get("app_name") or item.get("app_key") or "").casefold(),
+                    str(item.get("title") or "").casefold(),
+                    int(item.get("id") or 0),
+                ),
+            )
+            project["windows"] = project_windows
+            project["window_count"] = len(project.get("windows", []))
+        projects.sort(
+            key=lambda item: (
+                str(item.get("project") or "global").strip().lower() == "global",
+                str(item.get("project") or "").casefold(),
+            ),
+        )
+        return projects
+
+    async def _build_dashboard_worktrees(
+        self,
+        runtime_snapshot: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Build a compact worktree list for the runtime shell."""
+        repo_result = await self._repo_list({})
+        repositories = list(repo_result.get("repositories", []) or [])
+        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
+        active_qualified = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
+        active_mode = str(active_context.get("execution_mode") or "local").strip() or "local"
+
+        worktrees: List[Dict[str, Any]] = []
+        for repo in repositories:
+            if not isinstance(repo, dict):
+                continue
+            account = str(repo.get("account") or "").strip()
+            repo_name = str(repo.get("name") or "").strip()
+            display_name = f"{account}/{repo_name}" if account and repo_name else repo_name or account
+
+            for worktree in list(repo.get("worktrees", []) or []):
+                if not isinstance(worktree, dict):
+                    continue
+                branch = str(worktree.get("branch") or "").strip()
+                qualified_name = f"{account}/{repo_name}:{branch}" if account and repo_name and branch else branch or display_name
+                staged = int(worktree.get("staged_count") or 0)
+                modified = int(worktree.get("modified_count") or 0)
+                untracked = int(worktree.get("untracked_count") or 0)
+                dirty_count = staged + modified + untracked
+                worktrees.append({
+                    "qualified_name": qualified_name,
+                    "repo_display": display_name,
+                    "repo_name": repo_name,
+                    "account": account,
+                    "branch": branch,
+                    "path": str(worktree.get("path") or ""),
+                    "is_main": bool(worktree.get("is_main", False)),
+                    "is_clean": bool(worktree.get("is_clean", False)),
+                    "is_stale": bool(worktree.get("is_stale", False)),
+                    "has_conflicts": bool(worktree.get("has_conflicts", False)),
+                    "ahead": int(worktree.get("ahead") or 0),
+                    "behind": int(worktree.get("behind") or 0),
+                    "staged_count": staged,
+                    "modified_count": modified,
+                    "untracked_count": untracked,
+                    "dirty_count": dirty_count,
+                    "is_active": qualified_name == active_qualified,
+                    "active_mode": active_mode if qualified_name == active_qualified else "",
+                    "last_commit_message": str(worktree.get("last_commit_message") or ""),
+                })
+
+        worktrees.sort(
+            key=lambda item: (
+                bool(item.get("is_active", False)),
+                not bool(item.get("is_clean", False)),
+                str(item.get("repo_display") or ""),
+                str(item.get("branch") or ""),
+            ),
+            reverse=True,
+        )
+        return worktrees
+
+    async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return the daemon-owned dashboard payload consumed by EWW/Walker."""
+        runtime_snapshot = await self._runtime_snapshot(params or {})
+        session_result = await self._session_list({})
+        sessions = list(session_result.get("sessions", []) or [])
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in self._flatten_runtime_windows(runtime_snapshot)
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = next(
+            (
+                str(session.get("session_key") or "")
+                for session in sessions
+                if int(session.get("window_id") or 0) == focused_window_id
+                and bool(session.get("window_active", False))
+                and bool(session.get("pane_active", False))
+            ),
+            next(
+                (
+                    str(session.get("session_key") or "")
+                    for session in sessions
+                    if int(session.get("window_id") or 0) == focused_window_id
+                ),
+                str(sessions[0].get("session_key") or "") if sessions else "",
+            ),
+        )
+        for session in sessions:
+            session["is_current_window"] = (
+                int(session.get("window_id") or 0) == focused_window_id
+                and focused_window_id > 0
+            )
+
+        projects = self._build_dashboard_projects(runtime_snapshot, sessions)
+        worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
+        return {
+            "status": "ok",
+            "timestamp": int(time.time()),
+            "active_context": runtime_snapshot.get("active_context", {}),
+            "outputs": runtime_snapshot.get("outputs", []),
+            "active_outputs": runtime_snapshot.get("active_outputs", []),
+            "total_windows": int(runtime_snapshot.get("total_windows", 0) or 0),
+            "window_count": int(runtime_snapshot.get("total_windows", 0) or 0),
+            "tracked_windows": runtime_snapshot.get("tracked_windows", []),
+            "state_health": runtime_snapshot.get("state_health", {}),
+            "launch_stats": runtime_snapshot.get("launch_stats", {}),
+            "scratchpad": runtime_snapshot.get("scratchpad", {}),
+            "projects": projects,
+            "project_count": len(projects),
+            "worktrees": worktrees,
+            "worktree_count": len(worktrees),
+            "active_ai_sessions": sessions,
+            "active_ai_sessions_mru": sessions,
+            "current_ai_session_key": current_session_key,
+            "ai_monitor_metrics": {
+                "active_sessions": len(sessions),
+                "working_sessions": sum(
+                    1 for session in sessions
+                    if str(session.get("stage") or "") in {"starting", "thinking", "tool_running", "streaming"}
+                ),
+                "attention_sessions": sum(
+                    1 for session in sessions
+                    if bool(session.get("needs_user_action", False))
+                ),
+                "review_pending_sessions": sum(
+                    1 for session in sessions
+                    if bool(session.get("review_pending", False) or session.get("output_unseen", False))
+                ),
+                "stale_source_sessions": sum(
+                    1 for session in sessions
+                    if bool(session.get("remote_source_stale", False))
+                ),
+            },
+        }
+
+    def _build_remote_terminal_helper_script(self, spec: Dict[str, Any]) -> Path:
+        """Create a deterministic helper script for managed SSH terminals."""
+        terminal_launch = spec.get("terminal_launch") or {}
+        remote = terminal_launch.get("remote") or {}
+        if not isinstance(remote, dict):
+            remote = {}
+
+        tmux_session_name = str(terminal_launch.get("tmux_session_name") or "").strip()
+        remote_dir = str(remote.get("remote_dir") or "").strip()
+        remote_user = str(remote.get("user") or "").strip()
+        remote_host = str(remote.get("host") or "").strip()
+        remote_port = int(remote.get("port", 22) or 22)
+        if not (tmux_session_name and remote_dir and remote_user and remote_host):
+            raise RuntimeError("Remote terminal launch requires a complete SSH profile")
+
+        runtime_dir = self._runtime_dir()
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix="i3pm-remote-launch.", suffix=".sh", dir=str(runtime_dir))
+        helper_path = Path(temp_name)
+        env_exports = "\n".join(
+            f"export {key}={shlex_quote(str(value))}"
+            for key, value in (spec.get("environment") or {}).items()
+        )
+        remote_script = f"""#!/usr/bin/env bash
+set -euo pipefail
+{env_exports}
+session_name={shlex_quote(tmux_session_name)}
+remote_dir={shlex_quote(remote_dir)}
+remote_cmd=$(cat <<'EOF_REMOTE'
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "[i3pm] tmux is not installed on remote host."
+  exit 127
+fi
+if tmux has-session -t "$session_name" 2>/dev/null; then
+  :
+else
+  tmux new-session -d -s "$session_name" -c "$remote_dir" -n main "exec ${{SHELL:-/bin/bash}} -l"
+fi
+while IFS='=' read -r name value; do
+  [[ -n "$name" ]] || continue
+  case "$name" in
+    I3PM_*) tmux set-environment -t "$session_name" "$name" "$value" ;;
+  esac
+done < <(env)
+tmux set-option -t "$session_name" -q @i3pm_managed 1
+tmux set-option -t "$session_name" -q @i3pm_terminal_anchor "$I3PM_TERMINAL_ANCHOR_ID"
+tmux set-option -t "$session_name" -q @i3pm_context_key "$I3PM_CONTEXT_KEY"
+tmux set-option -t "$session_name" -q @i3pm_project_name "$I3PM_PROJECT_NAME"
+exec env TMUX= tmux attach-session -t "$session_name"
+EOF_REMOTE
+)
+if ! ssh -t -o BatchMode=yes -o ConnectTimeout=2 -p {remote_port} {shlex_quote(f"{remote_user}@{remote_host}")} "bash -lc $(printf '%q' \"$remote_cmd\")"; then
+  echo
+  echo "[i3pm] Remote terminal launch failed."
+  echo "[i3pm] Press Enter to close..."
+  read -r
+fi
+rm -f -- "$0" >/dev/null 2>&1 || true
+"""
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(remote_script)
+            helper_path.chmod(0o700)
+        except Exception:
+            try:
+                helper_path.unlink()
+            except OSError:
+                pass
+            raise
+        return helper_path
+
+    def _execute_launch_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a daemon-prepared launch spec via systemd-run."""
+        app_name = str(spec.get("app_name") or "").strip()
+        command = str(spec.get("command") or "").strip()
+        args = [str(arg) for arg in (spec.get("args") or [])]
+        execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
+        local_project_dir = str(spec.get("local_project_directory") or "").strip()
+        environment = {
+            str(key): str(value)
+            for key, value in (spec.get("environment") or {}).items()
+        }
+        repo_root = self._repo_root()
+
+        if app_name == "k9s":
+            kubeconfig_path = Path.home() / ".kube" / "stacks" / "config"
+            if not kubeconfig_path.is_file():
+                sync_cmd = shutil.which("sync-stacks-kubeconfigs")
+                if not sync_cmd:
+                    raise RuntimeError("Expected kubeconfig not found and sync-stacks-kubeconfigs is unavailable")
+                subprocess.run([sync_cmd], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if not kubeconfig_path.is_file():
+                    raise RuntimeError("Expected kubeconfig not found after sync")
+            environment["KUBECONFIG"] = str(kubeconfig_path)
+
+        if app_name == "terminal" and execution_mode == "local":
+            if not local_project_dir:
+                raise RuntimeError("Managed local terminal launch requires local_project_directory")
+            launch_script = (
+                repo_root / "scripts" / "devenv-terminal-launch.sh"
+                if (Path(local_project_dir) / "devenv.nix").exists()
+                else repo_root / "scripts" / "project-terminal-launch.sh"
+            )
+            command = spec.get("command") or command
+            args = ["+new-window", "-e", str(launch_script), local_project_dir]
+        elif app_name == "terminal" and execution_mode == "ssh":
+            helper_script = self._build_remote_terminal_helper_script(spec)
+            args = ["+new-window", "-e", str(helper_script)]
+        elif execution_mode == "ssh":
+            raise RuntimeError("Remote project execution only supports managed terminal launches")
+
+        if not command:
+            raise RuntimeError("Launch spec is missing command")
+        if shutil.which(command) is None and not Path(command).exists():
+            raise RuntimeError(f"Command not found: {command}")
+
+        workdir = Path.home()
+        if execution_mode == "local" and local_project_dir:
+            workdir = Path(local_project_dir)
+
+        unit_name = f"i3pm-launch-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', app_name or 'app')}-{os.getpid()}-{int(time.time())}"
+        systemd_cmd = [
+            "systemd-run",
+            "--user",
+            "--quiet",
+            "--collect",
+            "--unit",
+            unit_name,
+            "--working-directory",
+            str(workdir),
+        ]
+        for key, value in environment.items():
+            systemd_cmd.extend(["--setenv", f"{key}={value}"])
+        systemd_cmd.append(command)
+        systemd_cmd.extend(args)
+
+        result = subprocess.run(systemd_cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"Detached launch failed: {detail or 'systemd-run error'}")
+
+        return {
+            "success": True,
+            "unit_name": unit_name,
+        }
+
+    async def _launch_open(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Prepare and execute an application launch entirely inside the daemon."""
+        payload = dict(params or {})
+        payload.setdefault("launcher_pid", os.getpid())
+        spec = await self._prepare_launch(payload)
+        launch_result = self._execute_launch_spec(spec)
+        return {
+            "success": True,
+            "launch": launch_result,
+            "spec": {
+                "app_name": spec.get("app_name"),
+                "execution_mode": spec.get("execution_mode"),
+                "project_name": spec.get("project_name"),
+                "context_key": spec.get("context_key"),
+                "launch_strategy": spec.get("launch_strategy"),
+                "terminal_anchor_id": spec.get("terminal_anchor_id"),
+                "preferred_workspace": spec.get("preferred_workspace"),
+            },
         }
 
     async def _get_launch_stats(self) -> Dict[str, Any]:
@@ -7562,6 +8681,16 @@ class IPCServer:
         ssh_tracked_window_count = 0
         scoped_tracked_window_count = 0
         for window_info in tracked_windows.values():
+            app_key = str(getattr(window_info, "app_identifier", "") or "")
+            window_class = str(getattr(window_info, "window_class", "") or "")
+            window_instance = str(getattr(window_info, "window_instance", "") or "")
+            icon_path = self._resolve_window_icon_path(
+                app_key=app_key,
+                app_id=app_key,
+                window_class=window_class,
+                window_instance=window_instance,
+                allow_fallback=(not app_key or app_key == window_class),
+            )
             if str(getattr(window_info, "execution_mode", "") or "") == "ssh":
                 ssh_tracked_window_count += 1
             if str(getattr(window_info, "scope", "") or "") == "scoped":
@@ -7574,8 +8703,10 @@ class IPCServer:
                     "scope": str(getattr(window_info, "scope", "") or ""),
                     "workspace": str(getattr(window_info, "workspace", "") or ""),
                     "output": str(getattr(window_info, "output", "") or ""),
-                    "window_class": str(getattr(window_info, "window_class", "") or ""),
-                    "app_name": str(getattr(window_info, "app_identifier", "") or ""),
+                    "window_class": window_class,
+                    "app_key": app_key,
+                    "app_name": app_key,
+                    "icon_path": icon_path,
                     "marks": list(getattr(window_info, "marks", []) or []),
                     "execution_mode": str(getattr(window_info, "execution_mode", "") or ""),
                     "connection_key": str(getattr(window_info, "connection_key", "") or ""),
@@ -9425,8 +10556,8 @@ class IPCServer:
             # Set active project to the full qualified name
             await self.state_manager.set_active_project(full_qualified_name)
 
-            # Store the project directory for app launcher context
-            # This is used by the app-launcher-wrapper.sh to set I3PM_PROJECT_DIR
+            # Store the project directory for launcher context
+            # This is consumed by the daemon-owned launch surface as I3PM_PROJECT_DIR
             from .config import save_active_project
             from .models import ActiveProjectState
 

@@ -172,7 +172,7 @@ class DaemonClient:
 
     async def get_active_context(self) -> Dict[str, Any]:
         """Get the canonical active runtime context from the daemon."""
-        return await self.call("context.get_active")
+        return await self.call("context.current")
 
     async def focus_window(
         self,

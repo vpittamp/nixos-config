@@ -75,7 +75,7 @@ async function daemonSnapshot(flags: Record<string, unknown>): Promise<number> {
         match_rate: number;
         expiration_rate: number;
       };
-    }>("runtime.snapshot", {});
+    }>("dashboard.snapshot", {});
 
     if (flags.json) {
       console.log(JSON.stringify(snapshot, null, 2));

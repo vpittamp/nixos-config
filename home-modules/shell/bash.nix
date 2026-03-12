@@ -234,21 +234,11 @@ in
       plasma-diff = "${scriptWrappers.plasma-diff}/bin/plasma-diff";
       plasma-diff-summary = "${scriptWrappers.plasma-diff}/bin/plasma-diff --summary";
 
-      # i3 Project Management (integrated with i3blocks status bar)
-      # These replace the old i3-project command system
-      project-switch = "~/.config/i3/scripts/project-switch.sh";
-      project-clear = "~/.config/i3/scripts/project-clear.sh";
-      project-list = "~/.config/i3/scripts/project-list.sh";
-      project-current = "~/.config/i3/scripts/project-current.sh";
-      project-create = "~/.config/i3/scripts/project-create.sh";
-      project-edit = "~/.config/i3/scripts/project-edit.sh";
-      project-delete = "~/.config/i3/scripts/project-delete.sh";
-
       # Short aliases for common commands (Feature 027: Using Deno CLI)
       pswitch = "i3pm worktree switch";
-      pclear = "i3pm project clear";  # Still uses project clear to return to global mode
+      pclear = "i3pm context clear";
       plist = "i3pm worktree list";
-      pcurrent = "i3pm project current --json 2>/dev/null | jq -r '.name // \"global\"' 2>/dev/null || echo global";
+      pcurrent = "i3pm context current --json 2>/dev/null | jq -r '.qualified_name // \"global\"' 2>/dev/null || echo global";
 
       # Additional i3pm aliases
       iwin = "i3pm windows";

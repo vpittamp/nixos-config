@@ -46,7 +46,7 @@ let
       Type=Application
       Name=${app.display_name}
       Comment=${comment}
-      Exec=${config.home.homeDirectory}/.local/bin/app-launcher-wrapper.sh ${app.name}
+      Exec=${config.home.profileDirectory}/bin/i3pm launch open ${app.name}
       Icon=${if app ? icon then app.icon else "application-x-executable"}
       Terminal=false
       NoDisplay=false

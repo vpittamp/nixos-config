@@ -219,7 +219,7 @@ PY
     fi
 
     # Query daemon-owned worktree context directly.
-    CONTEXT_JSON=$(i3pm worktree current --json 2>/dev/null || echo '{}')
+    CONTEXT_JSON=$(i3pm context current --json 2>/dev/null || echo '{}')
     PROJECT_NAME=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '.qualified_name // ""')
     PROJECT_DIR=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '.local_directory // .directory // ""')
     PROJECT_DISPLAY_NAME=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '
@@ -228,7 +228,7 @@ PY
     ')
     PROJECT_ICON=""
 
-    # Generate app instance ID (like app-launcher-wrapper does)
+    # Generate app instance ID using the same metadata shape as the managed launcher.
     TIMESTAMP=$(date +%s)
     APP_INSTANCE_ID="nvim-''${PROJECT_NAME:-global}-$$-$TIMESTAMP"
 
@@ -251,7 +251,7 @@ PY
       NVIM_CMD="${pkgs.neovim-unwrapped}/bin/nvim '$TARGET_PATH'"
     fi
 
-    # Use systemd-run for proper process isolation (like app-launcher-wrapper)
+    # Use systemd-run for proper process isolation, matching the managed launcher.
     if command -v systemd-run &>/dev/null; then
       exec systemd-run --user --scope \
         --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
@@ -294,7 +294,7 @@ PY
       exit 0
     fi
 
-    ACTIVE_PROJECT=$("$I3PM" worktree current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
+    ACTIVE_PROJECT=$("$I3PM" context current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
 
     # Add "Clear Project" option if a project is active
     if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
@@ -471,7 +471,7 @@ PY
       exit 0
     fi
 
-    ACTIVE_QUALIFIED=$("${config.home.profileDirectory}/bin/i3pm" worktree current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
+    ACTIVE_QUALIFIED=$("${config.home.profileDirectory}/bin/i3pm" context current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
 
     LOCAL_REPOS=()
     LOCAL_WORKTREES=()
@@ -1670,10 +1670,10 @@ in
       # Feature 034: Enhanced application launching with project context
       providers.actions = {
         # Desktop applications actions
-        # Default action uses .desktop Exec command (already points to app-launcher-wrapper.sh)
+        # Default action uses .desktop Exec command, which now routes through i3pm launch.
         desktopapplications = [
           {
-            action = "open";           # Default action: Launch via app-launcher-wrapper
+            action = "open";           # Default action: Launch via daemon-owned i3pm entrypoint
             default = true;
             bind = "Return";
             label = "launch";
@@ -2828,7 +2828,7 @@ in
       # Fix: Add PATH for program launching (GitHub issue #69)
       # Feature 034/035 (Feature 050): XDG_DATA_DIRS set to ONLY curated apps (no system duplicates)
       # NOTE: XDG_DATA_HOME must NOT be overridden - apps like Firefox PWA need default location
-      # IMPORTANT: Include ~/.local/bin in PATH so Elephant can find app-launcher-wrapper.sh
+      # IMPORTANT: Include the user and profile bin dirs so Elephant can find i3pm helpers.
       Environment = [
         "PATH=${config.home.homeDirectory}/.local/bin:${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
         # Elephant's 1Password provider shells out to `op`, which needs the user

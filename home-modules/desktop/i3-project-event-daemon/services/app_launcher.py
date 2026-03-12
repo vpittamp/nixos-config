@@ -3,13 +3,14 @@
 Feature 074: Session Management
 Tasks T015B-T015G: AppLauncher service for Feature 057 integration
 
-Ensures all app launches (Walker, restore, daemon, CLI) use the same
-wrapper system with I3PM_* environment variable injection.
+Ensures all app launches (Walker, restore, daemon, CLI) use the daemon-owned
+launch surface with I3PM_* environment injection.
 """
 
 import json
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -96,16 +97,8 @@ class AppLauncher:
 
         logger.debug(f"Launching app: {app_name} (project: {project}, cwd: {cwd})")
 
-        # Feature 074: Use unified app launcher wrapper (replaces direct command execution)
-        # The wrapper handles:
-        # - Loading app from registry
-        # - Building command with parameter substitution
-        # - Injecting all I3PM_* environment variables
-        # - Sending launch notification to daemon
-        # - systemd-run process isolation
-        import os
-        wrapper_path = os.path.expanduser("~/.local/bin/app-launcher-wrapper.sh")
-        command = [wrapper_path, app_name]
+        i3pm_path = shutil.which("i3pm") or os.path.expanduser("~/.local/bin/i3pm")
+        command = [i3pm_path, "launch", "open", app_name]
 
         # Build environment with restoration context
         env = dict(os.environ)  # Inherit current environment
@@ -123,7 +116,7 @@ class AppLauncher:
         launch_cwd = self._resolve_cwd(app_info, project, cwd)
 
         try:
-            # Launch via unified wrapper
+            # Launch via daemon-owned launch surface
             process = subprocess.Popen(
                 command,
                 env=env,
@@ -134,13 +127,13 @@ class AppLauncher:
             )
 
             logger.info(
-                f"Launched {app_name} via wrapper (PID: {process.pid}, cwd: {launch_cwd})"
+                f"Launched {app_name} via daemon-owned launcher (PID: {process.pid}, cwd: {launch_cwd})"
             )
 
             return process
 
         except Exception as e:
-            logger.error(f"Failed to launch {app_name} via wrapper: {e}", exc_info=True)
+            logger.error(f"Failed to launch {app_name} via daemon-owned launcher: {e}", exc_info=True)
             return None
 
     def _resolve_cwd(
@@ -164,7 +157,7 @@ class AppLauncher:
             return cwd
 
         # Fall back to home directory for terminals only.
-        # Project-aware directory resolution happens in app-launcher-wrapper.sh.
+        # Project-aware directory resolution happens in the daemon-owned launch path.
         if app_info.get("terminal"):
             return Path.home()
 

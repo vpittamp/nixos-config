@@ -113,7 +113,7 @@ def main() -> int:
     last_state: str | None = None
     while True:
         try:
-            context = rpc_call("context.get_active")
+            context = rpc_call("context.current")
             state = build_state(context)
         except Exception:
             state = build_state({})

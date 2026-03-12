@@ -146,14 +146,14 @@ let
       name = "terminal";
       display_name = "Terminal";
       command = "ghostty";
-      # app-launcher-wrapper.sh replaces this with a deterministic managed tmux
-      # launcher for local project terminals.
+      # The daemon-owned launcher replaces this with a deterministic managed tmux
+      # launch flow for local project terminals.
       parameters = "-e bash -lc true";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
       preferred_monitor_role = "primary";
-      icon = iconPath "tmux-original.svg";
+      icon = iconPath "ghostty.svg";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -513,7 +513,7 @@ let
       scope = "global";
       expected_class = "1password";
       preferred_workspace = 22;
-      icon = "1password";
+      icon = iconPath "1password.svg";
       nix_package = "pkgs._1password-gui";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -539,7 +539,7 @@ let
       # Used for deterministic tracking - scratchpad windows always have workspace_number=0
       preferred_workspace = 0;
       scratchpad = true;  # Feature 101: Mark as scratchpad-managed app
-      icon = "com.mitchellh.ghostty";
+      icon = iconPath "ghostty.svg";
       nix_package = "pkgs.ghostty";
       multi_instance = false;  # Feature 101: One per worktree, toggle focuses existing
       fallback_behavior = "use_home";
