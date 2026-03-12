@@ -24,7 +24,7 @@
           (for session in {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) <= 6 ? (monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []) : jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[:6]")}
             (eventbox
               :cursor "pointer"
-              :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" &"
+              :onclick {"${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"" + (session.session_key ?: "") + "\" &"}
               :tooltip {"Focus " + (session.display_project ?: session.project ?: "unknown")}
               (box
                 :class {"active-ai-mru-chip"
@@ -80,11 +80,11 @@
               :spacing 2
               :hexpand true
               :halign "fill"
-              (eventbox
-                :cursor "pointer"
-                :onclick "${toggleAiGroupCollapseScript}/bin/toggle-ai-group-collapse-action \"''${group.project ?: "unknown"}\" &"
-                :tooltip "Collapse/expand project AI sessions"
-                (box
+            (eventbox
+              :cursor "pointer"
+              :onclick {"${toggleAiGroupCollapseScript}/bin/toggle-ai-group-collapse-action \"" + (group.project ?: "unknown") + "\" &"}
+              :tooltip "Collapse/expand project AI sessions"
+              (box
                   :class "active-ai-group-row"
                   :orientation "h"
                   :space-evenly false
@@ -118,10 +118,10 @@
                       :orientation "h"
                       :space-evenly false
                       :spacing 3
-                      (eventbox
-                        :cursor "pointer"
-                        :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" &"
-                        :tooltip {session.display_tool + " · " + (session.stage_label ?: session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick {"${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"" + (session.session_key ?: "") + "\" &"}
+                      :tooltip {session.display_tool + " · " + (session.stage_label ?: session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
                           + ((session.stage_detail ?: "") != "" ? (" · " + (session.stage_detail ?: "")) : "")
                           + (((session.window_project ?: "") != "" && (session.window_project ?: "") != (session.display_project ?: session.project ?: "")) ? (" · via " + (session.window_project ?: "")) : "")
                           + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
@@ -188,7 +188,7 @@
                             :text "New")))
                       (eventbox
                         :cursor "pointer"
-                        :onclick "${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action \"''${session.session_key ?: ""}\" &"
+                        :onclick {"${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action \"" + (session.session_key ?: "") + "\" &"}
                         :tooltip {(session.pinned ?: false) ? "Unpin session" : "Pin session"}
                         (label
                           :class {"active-ai-pin-btn" + ((session.pinned ?: false) ? " pinned" : "")}
