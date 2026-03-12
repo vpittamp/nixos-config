@@ -16,8 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from .models import SessionList, SessionUpdate
-from .sway_helper import tmux_target_exists
-
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -83,13 +81,6 @@ class OutputWriter:
                 or terminal_context.get("tmux_window")
                 or terminal_context.get("tmux_pane")
                 or terminal_context.get("pty")
-            ):
-                continue
-            if tmux_target_exists(
-                tmux_session=terminal_context.get("tmux_session"),
-                tmux_window=terminal_context.get("tmux_window"),
-                tmux_pane=terminal_context.get("tmux_pane"),
-                pty=terminal_context.get("pty"),
             ):
                 continue
             terminal_context["tmux_session"] = None
