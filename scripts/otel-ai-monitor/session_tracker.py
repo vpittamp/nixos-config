@@ -43,6 +43,7 @@ from .sway_helper import (
     get_all_window_ids,
     get_tmux_context_for_pid,
     get_process_i3pm_env,
+    tmux_target_exists,
     get_window_context_by_id,
     query_daemon_for_terminal_anchor,
 )
@@ -3288,6 +3289,27 @@ class SessionTracker:
                 if s.identity_confidence == IdentityConfidence.NATIVE or s.native_session_id
                 else "process"
             )
+            terminal_context = s.terminal_context
+            if (
+                str(getattr(terminal_context, "execution_mode", "") or "").strip().lower() == "ssh"
+                and (
+                    terminal_context.tmux_session
+                    or terminal_context.tmux_window
+                    or terminal_context.tmux_pane
+                    or terminal_context.pty
+                )
+                and not tmux_target_exists(
+                    tmux_session=terminal_context.tmux_session,
+                    tmux_window=terminal_context.tmux_window,
+                    tmux_pane=terminal_context.tmux_pane,
+                    pty=terminal_context.pty,
+                )
+            ):
+                terminal_context = terminal_context.model_copy(deep=True)
+                terminal_context.tmux_session = None
+                terminal_context.tmux_window = None
+                terminal_context.tmux_pane = None
+                terminal_context.pty = None
             item = SessionListItem(
                 session_id=s.session_id,
                 native_session_id=s.native_session_id,
@@ -3306,7 +3328,7 @@ class SessionTracker:
                 project_source=project_labels["project_source"],
                 project_path=s.project_path,
                 window_id=s.window_id,
-                terminal_context=s.terminal_context,
+                terminal_context=terminal_context,
                 focusable=s.focusable,
                 invalid_reason=s.invalid_reason,
                 pid=s.pid,

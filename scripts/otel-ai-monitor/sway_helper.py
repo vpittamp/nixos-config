@@ -716,6 +716,65 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
     return context
 
 
+def tmux_target_exists(
+    *,
+    tmux_session: Optional[str] = None,
+    tmux_window: Optional[str] = None,
+    tmux_pane: Optional[str] = None,
+    pty: Optional[str] = None,
+) -> bool:
+    """Return whether the claimed tmux target exists in the live tmux server."""
+    if not (tmux_session or tmux_window or tmux_pane or pty):
+        return False
+
+    try:
+        proc = subprocess.run(
+            [
+                "tmux",
+                "list-panes",
+                "-a",
+                "-F",
+                "#{session_name}\t#{window_index}:#{window_name}\t#{pane_id}\t#{pane_tty}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+    if proc.returncode != 0:
+        return False
+
+    expected_session = str(tmux_session or "").strip()
+    expected_window = str(tmux_window or "").strip()
+    expected_pane = str(tmux_pane or "").strip()
+    expected_pty = str(pty or "").strip()
+
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 4:
+            continue
+        live_session, live_window, live_pane, live_pty = (
+            str(parts[0] or "").strip(),
+            str(parts[1] or "").strip(),
+            str(parts[2] or "").strip(),
+            str(parts[3] or "").strip(),
+        )
+        if expected_session and live_session != expected_session:
+            continue
+        if expected_window and live_window != expected_window:
+            continue
+        if expected_pane and live_pane != expected_pane:
+            continue
+        if expected_pty and live_pty != expected_pty:
+            continue
+        return True
+
+    return False
+
+
 def _get_all_sway_pids(tree: dict) -> dict[int, int]:
     """Get mapping of all PIDs to window IDs in Sway tree.
 
@@ -922,4 +981,3 @@ async def find_window_via_tmux_client(
     except Exception as e:
         logger.debug(f"find_window_via_tmux_client failed: {e}")
         return None
-
