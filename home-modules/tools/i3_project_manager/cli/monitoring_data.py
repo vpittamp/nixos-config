@@ -3039,6 +3039,28 @@ def _resolve_otel_session_window_id(
                         preferred_window_id = candidate_window_id
                 if preferred_window_id is not None:
                     return preferred_window_id
+            scoped_focusable_candidates: List[Dict[str, Any]] = []
+            for candidate in identity_candidates:
+                candidate_window_id = _safe_int(candidate.get("id"), 0)
+                if candidate_window_id <= 0:
+                    continue
+                if tmux_hint_exact or tmux_hint_prefixes:
+                    candidate_project = str(candidate.get("project") or "").strip()
+                    if not candidate_project:
+                        continue
+                    in_scope = (
+                        candidate_project in tmux_hint_exact
+                        or any(
+                            candidate_project == prefix
+                            or candidate_project.startswith(prefix + ":")
+                            for prefix in tmux_hint_prefixes
+                        )
+                    )
+                    if not in_scope:
+                        continue
+                scoped_focusable_candidates.append(candidate)
+            if len(scoped_focusable_candidates) == 1:
+                return _safe_int(scoped_focusable_candidates[0].get("id"), 0) or None
             return None
         # Synthetic remote-session rows (negative IDs) cannot be focused directly,
         # but when they are the only tmux metadata source they can still provide
