@@ -1001,6 +1001,23 @@
     padding: 2px 5px;
   }
 
+  .active-ai-mru-chip-button,
+  .active-ai-chip-button {
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .active-ai-mru-chip-button:hover,
+  .active-ai-mru-chip-button:focus,
+  .active-ai-chip-button:hover,
+  .active-ai-chip-button:focus {
+    background: transparent;
+    box-shadow: none;
+  }
+
   .active-ai-mru-chip.selected {
     border-color: rgba(137, 180, 250, 0.66);
     background: rgba(69, 71, 90, 0.84);

@@ -25,30 +25,32 @@
             (eventbox
               :cursor "pointer"
               :onclick {"${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"" + (session.session_key ?: "") + "\" &"}
-              :tooltip {"Focus " + (session.display_project ?: session.project ?: "unknown")}
-              (box
-                :class {"active-ai-mru-chip"
-                  + ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")
-                  + ((session.is_current_window ?: false) ? " current-window" : "")}
-                :orientation "h"
-                :space-evenly false
-                :spacing 3
-                (image
-                  :class "active-ai-chip-icon"
-                  :path {(session.tool ?: "unknown") == "claude-code"
-                    ? "${iconPaths.claude}"
-                    : ((session.tool ?: "unknown") == "codex"
-                      ? "${iconPaths.codex}"
-                      : ((session.tool ?: "unknown") == "gemini"
-                        ? "${iconPaths.gemini}"
-                        : "${iconPaths.anthropic}"))}
-                  :image-width 13
-                  :image-height 13)
-                (label
-                  :class "active-ai-mru-chip-text"
-                  :text {session.display_project ?: session.project ?: "unknown"}
-                  :limit-width 14
-                  :truncate true))))))
+              (button
+                :class "active-ai-mru-chip-button"
+                :tooltip {"Focus " + (session.display_project ?: session.project ?: "unknown")}
+                (box
+                  :class {"active-ai-mru-chip"
+                    + ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")
+                    + ((session.is_current_window ?: false) ? " current-window" : "")}
+                  :orientation "h"
+                  :space-evenly false
+                  :spacing 3
+                  (image
+                    :class "active-ai-chip-icon"
+                    :path {(session.tool ?: "unknown") == "claude-code"
+                      ? "${iconPaths.claude}"
+                      : ((session.tool ?: "unknown") == "codex"
+                        ? "${iconPaths.codex}"
+                        : ((session.tool ?: "unknown") == "gemini"
+                          ? "${iconPaths.gemini}"
+                          : "${iconPaths.anthropic}"))}
+                    :image-width 13
+                    :image-height 13)
+                  (label
+                    :class "active-ai-mru-chip-text"
+                    :text {session.display_project ?: session.project ?: "unknown"}
+                    :limit-width 14
+                    :truncate true)))))))
       (box
         :class "active-ai-rail"
         :orientation "v"
@@ -121,17 +123,19 @@
                     (eventbox
                       :cursor "pointer"
                       :onclick {"${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"" + (session.session_key ?: "") + "\" &"}
-                      :tooltip {session.display_tool + " · " + (session.stage_label ?: session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
-                          + ((session.stage_detail ?: "") != "" ? (" · " + (session.stage_detail ?: "")) : "")
-                          + (((session.window_project ?: "") != "" && (session.window_project ?: "") != (session.display_project ?: session.project ?: "")) ? (" · via " + (session.window_project ?: "")) : "")
-                          + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
-                          + ((session.host_name ?: "") != "" ? ("@" + (session.host_name ?: "")) : "")
-                          + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
-                          + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
-                          + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
-                          + ((session.output_unseen ?: session.review_pending ?: false) ? " · Unseen output" : "")
-                          + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
-                          + " · Click to focus"}
+                      (button
+                        :class "active-ai-chip-button"
+                        :tooltip {session.display_tool + " · " + (session.stage_label ?: session.otel_state ?: "idle") + " · " + (session.display_project ?: session.project ?: "unknown")
+                            + ((session.stage_detail ?: "") != "" ? (" · " + (session.stage_detail ?: "")) : "")
+                            + (((session.window_project ?: "") != "" && (session.window_project ?: "") != (session.display_project ?: session.project ?: "")) ? (" · via " + (session.window_project ?: "")) : "")
+                            + " · " + ((session.execution_mode ?: "local") == "ssh" ? "remote" : "local")
+                            + ((session.host_name ?: "") != "" ? ("@" + (session.host_name ?: "")) : "")
+                            + ((session.native_session_id ?: "") != "" ? " · SID " + session.native_session_id : ((session.session_id ?: "") != "" ? " · SID " + session.session_id : ""))
+                            + ((session.tmux_pane ?: "") != "" ? " · pane " + session.tmux_pane : ((session.display_target ?: "") != "" ? " · " + session.display_target : ""))
+                            + ((session.confidence_level ?: "") != "" ? " · confidence " + session.confidence_level : "")
+                            + ((session.output_unseen ?: session.review_pending ?: false) ? " · Unseen output" : "")
+                            + ((session.stale ?: false) ? (" · stale " + (session.stale_age_seconds ?: 0) + "s") : "")
+                            + " · Click to focus"}
                         (box
                           :class {"active-ai-chip " +
                             (session.stage_class ?: ("stage-" + (session.otel_state ?: "idle"))) + " " +
@@ -185,7 +189,7 @@
                           (label
                             :class "active-ai-chip-marker unread"
                             :visible {session.output_unseen ?: session.review_pending ?: false}
-                            :text "New")))
+                            :text "New"))))
                       (eventbox
                         :cursor "pointer"
                         :onclick {"${toggleAiSessionPinScript}/bin/toggle-ai-session-pin-action \"" + (session.session_key ?: "") + "\" &"}
