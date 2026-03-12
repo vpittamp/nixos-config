@@ -218,12 +218,15 @@ PY
       fi
     fi
 
-    # Query i3pm daemon for project context (integrates with project management)
-    PROJECT_JSON=$(i3pm project current --json 2>/dev/null || echo '{}')
-    PROJECT_NAME=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.name // ""')
-    PROJECT_DIR=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.directory // ""')
-    PROJECT_DISPLAY_NAME=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.display_name // ""')
-    PROJECT_ICON=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.icon // ""')
+    # Query daemon-owned worktree context directly.
+    CONTEXT_JSON=$(i3pm worktree current --json 2>/dev/null || echo '{}')
+    PROJECT_NAME=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '.qualified_name // ""')
+    PROJECT_DIR=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '.local_directory // .directory // ""')
+    PROJECT_DISPLAY_NAME=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '
+      (.qualified_name // "") as $q
+      | if $q == "" then "" else (($q | split("/") | last) | split(":") | if length == 2 then .[1] else .[0] end) end
+    ')
+    PROJECT_ICON=""
 
     # Generate app instance ID (like app-launcher-wrapper does)
     TIMESTAMP=$(date +%s)
@@ -291,7 +294,7 @@ PY
       exit 0
     fi
 
-    ACTIVE_PROJECT=$("$I3PM" project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.name // ""' 2>/dev/null || echo "")
+    ACTIVE_PROJECT=$("$I3PM" worktree current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
 
     # Add "Clear Project" option if a project is active
     if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
@@ -343,7 +346,7 @@ PY
 
     # Handle special cases
     if [ "$QUALIFIED_NAME" = "__CLEAR__" ]; then
-      $I3PM project clear >/dev/null 2>&1
+      $I3PM worktree clear >/dev/null 2>&1
     else
       # Feature 101: Local project list should always enter local context.
       $I3PM worktree switch --local "$QUALIFIED_NAME" >/dev/null 2>&1
@@ -468,7 +471,7 @@ PY
       exit 0
     fi
 
-    ACTIVE_QUALIFIED=$("${config.home.profileDirectory}/bin/i3pm" project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.name // ""' 2>/dev/null || echo "")
+    ACTIVE_QUALIFIED=$("${config.home.profileDirectory}/bin/i3pm" worktree current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
 
     LOCAL_REPOS=()
     LOCAL_WORKTREES=()

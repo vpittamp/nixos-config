@@ -6479,7 +6479,7 @@ def _read_active_context_from_daemon(timeout_s: float = 0.15) -> Optional[Dict[s
 
     request = {
         "jsonrpc": "2.0",
-        "method": "context.get_active",
+        "method": "runtime.snapshot",
         "params": {},
         "id": 1,
     }
@@ -6499,7 +6499,10 @@ def _read_active_context_from_daemon(timeout_s: float = 0.15) -> Optional[Dict[s
             return None
         payload = json.loads(response.decode("utf-8").strip())
         if isinstance(payload, dict) and isinstance(payload.get("result"), dict):
-            return payload["result"]
+            result = payload["result"]
+            if isinstance(result.get("active_context"), dict):
+                return result["active_context"]
+            return result
     except Exception as e:
         logger.debug("Failed to read active context from daemon: %s", e)
     return None

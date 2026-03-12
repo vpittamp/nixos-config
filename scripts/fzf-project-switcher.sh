@@ -12,7 +12,7 @@ tput civis  # Hide cursor
 I3PM="i3pm"
 
 # Get active project (suppress warnings)
-ACTIVE_PROJECT=$($I3PM project current 2>&1 | grep -v '^Warning:' | tr -d '\n')
+ACTIVE_PROJECT=$($I3PM worktree current --json 2>/dev/null | jq -r '.qualified_name // ""' 2>/dev/null || true)
 
 # Build project list
 PROJECT_LIST=""
@@ -106,7 +106,7 @@ if [ $INDEX -lt ${#PROJECT_KEYS[@]} ]; then
 
     # Handle selection (redirect output to suppress success messages)
     if [ "$SELECTED_NAME" = "__CLEAR__" ]; then
-        $I3PM project clear >/dev/null 2>&1
+        $I3PM worktree clear >/dev/null 2>&1
     else
         $I3PM worktree switch "$SELECTED_NAME" >/dev/null 2>&1
     fi

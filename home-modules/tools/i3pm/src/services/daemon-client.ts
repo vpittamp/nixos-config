@@ -215,6 +215,24 @@ export class DaemonClient {
     return status.active_project;
   }
 
+  async getActiveContext<T = unknown>(): Promise<T> {
+    return await this.request<T>("worktree.current", {});
+  }
+
+  async ensureContext<T = unknown>(params: {
+    qualified_name?: string;
+    project_name?: string;
+    target_variant?: "local" | "ssh";
+    prefer_local?: boolean;
+    clear?: boolean;
+  }): Promise<T> {
+    return await this.request<T>("context.ensure", params);
+  }
+
+  async getRuntimeSnapshot<T = unknown>(): Promise<T> {
+    return await this.request<T>("runtime.snapshot", {});
+  }
+
   /**
    * Close project windows (used before layout restore)
    */

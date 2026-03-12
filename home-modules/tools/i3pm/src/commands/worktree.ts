@@ -32,6 +32,8 @@ SUBCOMMANDS:
   rename <old> <new>    Rename worktree and branch via git gtr
   list [repo]           List worktrees for a repository (Feature 100)
   current               Show active daemon worktree context
+  clear                 Clear active daemon worktree context
+  ensure <name>         Ensure daemon runtime context
   diagnose [name]       Diagnose SSH/runtime readiness for a worktree
   switch <name>         Switch to a worktree by qualified name (Feature 101)
   remote <subcommand>   Manage SSH remote profiles for worktrees (Feature 087)
@@ -53,6 +55,8 @@ EXAMPLES:
   i3pm worktree remove 100-feature --force
   i3pm worktree rename 100-feature 100-feature-v2
   i3pm worktree current
+  i3pm worktree clear
+  i3pm worktree ensure vpittamp/nixos-config:main
   i3pm worktree diagnose vpittamp/nixos-config:main
   i3pm worktree remote set vpittamp/nixos-config:main --dir /home/vpittamp/repos/vpittamp/nixos-config/main
 
@@ -308,6 +312,121 @@ OPTIONS:
   }
 }
 
+async function worktreeEnsure(args: string[]): Promise<number> {
+  const parsed = parseArgs(args, {
+    boolean: ["help", "json", "local"],
+    string: ["variant"],
+    alias: { h: "help" },
+    stopEarly: false,
+  });
+
+  if (parsed.help) {
+    console.log(`
+i3pm worktree ensure - Ensure daemon runtime context for a worktree
+
+USAGE:
+  i3pm worktree ensure <qualified_name> [OPTIONS]
+
+OPTIONS:
+  -h, --help        Show this help message
+  --json            Output the raw result as JSON
+  --local           Force local context
+  --variant <name>  Explicit variant (local|ssh)
+`);
+    return 0;
+  }
+
+  const qualifiedName = parsed._[0]?.toString() || "";
+  if (!qualifiedName) {
+    console.error("Error: qualified_name is required");
+    return 1;
+  }
+
+  let targetVariant = String(parsed.variant || "").trim().toLowerCase();
+  if (parsed.local) {
+    targetVariant = "local";
+  }
+  if (targetVariant && !["local", "ssh"].includes(targetVariant)) {
+    console.error("Error: --variant must be 'local' or 'ssh'");
+    return 1;
+  }
+
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      switched: boolean;
+      context: {
+        qualified_name: string;
+        execution_mode: string;
+        connection_key: string;
+        context_key: string;
+      };
+    }>("context.ensure", {
+      qualified_name: qualifiedName,
+      target_variant: targetVariant,
+    });
+
+    if (parsed.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    }
+
+    console.log(`Context ensure: ${result.switched ? green("switched") : yellow("already aligned")}`);
+    console.log(`  Worktree: ${cyan(result.context.qualified_name || qualifiedName)}`);
+    console.log(`  Mode: ${magenta(result.context.execution_mode || "local")}`);
+    if (result.context.connection_key) {
+      console.log(`  Connection: ${result.context.connection_key}`);
+    }
+    if (result.context.context_key) {
+      console.log(`  Context key: ${dim(result.context.context_key)}`);
+    }
+    return 0;
+  } finally {
+    client.disconnect();
+  }
+}
+
+async function worktreeClear(args: string[]): Promise<number> {
+  const parsed = parseArgs(args, {
+    boolean: ["help", "json"],
+    alias: { h: "help" },
+    stopEarly: false,
+  });
+
+  if (parsed.help) {
+    console.log(`
+i3pm worktree clear - Clear the active daemon worktree context
+
+USAGE:
+  i3pm worktree clear [OPTIONS]
+
+OPTIONS:
+  -h, --help        Show this help message
+  --json            Output the raw result as JSON
+`);
+    return 0;
+  }
+
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      success: boolean;
+      previous_project: string | null;
+      duration_ms?: number;
+    }>("worktree.clear", {});
+
+    if (parsed.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    }
+
+    console.log(`Cleared worktree context${result.previous_project ? ` (was ${cyan(result.previous_project)})` : ""}`);
+    return 0;
+  } finally {
+    client.disconnect();
+  }
+}
+
 /**
  * Main worktree command handler
  */
@@ -350,6 +469,14 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       exitCode = await worktreeCurrent(subcommandArgs);
       break;
 
+    case "clear":
+      exitCode = await worktreeClear(subcommandArgs);
+      break;
+
+    case "ensure":
+      exitCode = await worktreeEnsure(subcommandArgs);
+      break;
+
     case "diagnose":
       exitCode = await worktreeDiagnose(subcommandArgs);
       break;
@@ -366,7 +493,7 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
       console.error(
-        "Available subcommands: create, remove, rename, list, current, diagnose, switch, remote",
+        "Available subcommands: create, remove, rename, list, current, clear, ensure, diagnose, switch, remote",
       );
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);

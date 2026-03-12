@@ -290,6 +290,10 @@ class IPCServer:
                 result = await self._get_active_project()
             elif method == "context.get_active":
                 result = await self._context_get_active(params)
+            elif method == "context.ensure":
+                result = await self._context_ensure(params)
+            elif method == "runtime.snapshot":
+                result = await self._runtime_snapshot(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -990,6 +994,62 @@ class IPCServer:
             self._read_active_worktree_context(),
             active_project=active_project,
         )
+
+    async def _context_ensure(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Public RPC for daemon-owned context alignment."""
+        params = params or {}
+        desired_project = str(
+            params.get("qualified_name")
+            or params.get("project_name")
+            or ""
+        ).strip()
+        target_variant = str(
+            params.get("target_variant")
+            or params.get("execution_mode")
+            or ""
+        ).strip().lower()
+
+        if bool(params.get("prefer_local")) and not target_variant:
+            target_variant = "local"
+
+        if target_variant not in {"", "local", "ssh"}:
+            raise ValueError("target_variant must be one of: local, ssh")
+
+        if bool(params.get("clear")) or desired_project == "global":
+            clear_result = await self._worktree_clear({})
+            return {
+                "success": True,
+                "switched": True,
+                "cleared": True,
+                "requested_project": "global",
+                "requested_variant": target_variant,
+                "context": await self._context_get_active({}),
+                "previous_project": clear_result.get("previous_project"),
+            }
+
+        if not desired_project:
+            return {
+                "success": True,
+                "switched": False,
+                "cleared": False,
+                "requested_project": "",
+                "requested_variant": target_variant,
+                "context": await self._context_get_active({}),
+            }
+
+        switch_result = await self._switch_runtime_context_if_needed(desired_project, target_variant)
+        context = switch_result.get("context") if isinstance(switch_result, dict) else None
+        if not isinstance(context, dict):
+            context = await self._context_get_active({})
+
+        return {
+            "success": True,
+            "switched": bool(switch_result.get("switched", False)) if isinstance(switch_result, dict) else False,
+            "cleared": False,
+            "requested_project": desired_project,
+            "requested_variant": target_variant,
+            "context": context,
+        }
 
     async def _get_projects(self) -> Dict[str, Any]:
         """List all projects with window counts.
@@ -7378,6 +7438,52 @@ class IPCServer:
 
         await self._send_tick_barrier(f"i3pm:window-action:{action}:{window_id}")
         return {"success": True, "window_id": window_id, "action": action}
+
+    async def _runtime_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return a compact daemon-owned runtime snapshot for UI consumers."""
+        params = params or {}
+        tree_result = await self._get_window_tree(params)
+        active_context = await self._context_get_active({})
+        outputs = tree_result.get("outputs", []) if isinstance(tree_result, dict) else []
+        active_outputs = [
+            output.get("name")
+            for output in outputs
+            if isinstance(output, dict) and output.get("active") and output.get("name")
+        ]
+
+        scratchpad_summary: Dict[str, Any] = {
+            "available": False,
+            "count": 0,
+            "context_key": str(active_context.get("context_key") or ""),
+        }
+        if self.scratchpad_manager:
+            try:
+                scratchpad_status = await self._scratchpad_status(
+                    {"context_key": active_context.get("context_key") or ""}
+                )
+                terminals = scratchpad_status.get("terminals", [])
+                scratchpad_summary = {
+                    "available": bool(terminals),
+                    "count": int(scratchpad_status.get("count", 0) or 0),
+                    "context_key": str(
+                        scratchpad_status.get("context_key")
+                        or active_context.get("context_key")
+                        or ""
+                    ),
+                    "terminal": terminals[0] if terminals else None,
+                }
+            except Exception as e:
+                logger.debug("runtime.snapshot scratchpad status failed: %s", e)
+
+        return {
+            "active_context": active_context,
+            "outputs": outputs,
+            "active_outputs": active_outputs,
+            "total_windows": int(tree_result.get("total_windows", 0) or 0) if isinstance(tree_result, dict) else 0,
+            "cached_window_tree": bool(tree_result.get("cached", False)) if isinstance(tree_result, dict) else False,
+            "scratchpad": scratchpad_summary,
+            "launch_stats": await self._get_launch_stats(),
+        }
 
     async def _session_exit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Exit the current Sway session through the daemon-owned IPC connection."""

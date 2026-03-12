@@ -41,60 +41,27 @@ let
     get_current_variant() {
       local context_json variant
       context_json=$(get_current_context_json)
-      variant=$(printf '%s\n' "$context_json" | ${pkgs.jq}/bin/jq -r '
-        if ((.execution_mode // "") == "local") or ((.execution_mode // "") == "ssh") then (.execution_mode // "")
-        elif (.is_global // false) then "local"
-        else "local"
-        end
-      ' 2>/dev/null || echo "local")
+      variant=$(printf '%s\n' "$context_json" | ${pkgs.jq}/bin/jq -r '.execution_mode // "global"' 2>/dev/null || echo "global")
 
       case "$variant" in
         local|ssh)
           printf '%s\n' "$variant"
           ;;
         *)
-          printf 'local\n'
+          printf 'global\n'
           ;;
       esac
     }
 
-    switch_project_variant() {
+    ensure_project_variant() {
       local project_name="$1"
       local variant="$2"
-      local switch_cmd=("${i3pm}" worktree switch)
-
-      if [[ "$variant" == "local" ]]; then
-        switch_cmd+=(--local)
-      fi
-      switch_cmd+=("$project_name")
-      "''${switch_cmd[@]}"
-    }
-
-    wait_for_project_variant() {
-      local expected_project="$1"
-      local expected_variant="''${2:-}"
-      local timeout_seconds="''${3:-4}"
-      local start_ts now_ts current_project current_variant context_json
-
-      start_ts=$(date +%s)
-      while true; do
-        context_json=$(get_current_context_json)
-        current_project=$(printf '%s\n' "$context_json" | ${pkgs.jq}/bin/jq -r '.qualified_name // "global"' 2>/dev/null || echo "global")
-        current_variant=$(get_current_variant)
-
-        if [[ "$current_project" == "$expected_project" ]]; then
-          if [[ -z "$expected_variant" || "$current_variant" == "$expected_variant" ]]; then
-            return 0
-          fi
-        fi
-
-        now_ts=$(date +%s)
-        if [[ $((now_ts - start_ts)) -ge "$timeout_seconds" ]]; then
-          return 1
-        fi
-
-        sleep 0.1
-      done
+      local params
+      params=$(${pkgs.jq}/bin/jq -nc \
+        --arg qualified_name "$project_name" \
+        --arg target_variant "$variant" \
+        '{qualified_name:$qualified_name, target_variant:$target_variant}')
+      rpc_request "context.ensure" "$params"
     }
   '';
 
@@ -1010,13 +977,8 @@ let
     fi
 
     if [[ "$NEEDS_SWITCH" == "true" ]]; then
-      if ! switch_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" >/dev/null 2>&1; then
+      if ! ensure_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" >/dev/null 2>&1; then
         ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" "Failed to switch to $PROJECT_NAME"
-        exit 1
-      fi
-      if ! wait_for_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" 4; then
-        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Timeout" \
-          "Context did not converge to $PROJECT_NAME ($TARGET_VARIANT)"
         exit 1
       fi
     fi
@@ -1100,7 +1062,7 @@ let
     fi
 
     # Execute project switch (T020)
-    if switch_project_variant "$PROJECT_NAME" "$TARGET_VARIANT"; then
+    if ensure_project_variant "$PROJECT_NAME" "$TARGET_VARIANT" >/dev/null; then
         ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME''${TARGET_VARIANT:+ ($TARGET_VARIANT)}"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &

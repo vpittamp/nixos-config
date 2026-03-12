@@ -20,7 +20,7 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
 
   try {
     if (mergedFlags.help || !subcommand) {
-      console.error("Usage: i3pm daemon <status|events|ping|apps> [options]");
+      console.error("Usage: i3pm daemon <status|events|ping|apps|snapshot> [options]");
       console.error("");
       console.error("Common options:");
       console.error("  --json            Output JSON");
@@ -42,13 +42,65 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
         return await daemonPing(mergedFlags);
       case "apps":
         return await daemonApps(subArgs, mergedFlags);
+      case "snapshot":
+        return await daemonSnapshot(mergedFlags);
       default:
-        console.error("Usage: i3pm daemon <status|events|ping|apps>");
+        console.error("Usage: i3pm daemon <status|events|ping|apps|snapshot>");
         return 1;
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
+  }
+}
+
+async function daemonSnapshot(flags: Record<string, unknown>): Promise<number> {
+  const client = new DaemonClient();
+  try {
+    const snapshot = await client.request<{
+      active_context: {
+        qualified_name: string;
+        execution_mode: string;
+        connection_key: string;
+        is_global: boolean;
+      };
+      active_outputs: string[];
+      total_windows: number;
+      cached_window_tree: boolean;
+      scratchpad: {
+        available: boolean;
+        count: number;
+      };
+      launch_stats: {
+        match_rate: number;
+        expiration_rate: number;
+      };
+    }>("runtime.snapshot", {});
+
+    if (flags.json) {
+      console.log(JSON.stringify(snapshot, null, 2));
+      return 0;
+    }
+
+    const contextLabel = snapshot.active_context.is_global
+      ? "global"
+      : snapshot.active_context.qualified_name || "unknown";
+    console.log(`Runtime context: ${cyan(contextLabel)}`);
+    console.log(`  Mode: ${magenta(snapshot.active_context.execution_mode || "global")}`);
+    if (snapshot.active_context.connection_key) {
+      console.log(`  Connection: ${snapshot.active_context.connection_key}`);
+    }
+    console.log(`  Active outputs: ${snapshot.active_outputs.join(", ") || "none"}`);
+    console.log(`  Windows: ${snapshot.total_windows}${snapshot.cached_window_tree ? " (cached)" : ""}`);
+    console.log(`  Scratchpad: ${snapshot.scratchpad.available ? green(String(snapshot.scratchpad.count)) : dim("none")}`);
+    console.log(
+      `  Launch correlation: match ${snapshot.launch_stats.match_rate.toFixed(1)}% / expire ${
+        snapshot.launch_stats.expiration_rate.toFixed(1)
+      }%`,
+    );
+    return 0;
+  } finally {
+    client.disconnect();
   }
 }
 

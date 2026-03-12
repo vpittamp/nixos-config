@@ -264,10 +264,13 @@ load_context_from_file() {
   parsed="$(
     jq -r '
       if type != "object" then empty else
+      (.qualified_name // "") as $qualified_name |
+      ($qualified_name | split("/") | last) as $leaf |
+      ($leaf | split(":")) as $parts |
       [
-        (.repo_name // ""),
-        (.branch // ""),
-        (.name // ""),
+        (if ($parts | length) > 0 then $parts[0] else "" end),
+        (if ($parts | length) > 1 then $parts[1] else "" end),
+        $qualified_name,
         ((.execution_mode // "local") == "ssh" | tostring),
         (.remote.host // ""),
         (.remote.user // ""),
@@ -275,7 +278,7 @@ load_context_from_file() {
         (.remote.remote_dir // .directory // "")
       ] | @tsv
       end
-    ' <(i3pm project current --json 2>/dev/null || echo '{}') 2>/dev/null || true
+    ' <(i3pm worktree current --json 2>/dev/null || echo '{}') 2>/dev/null || true
   )"
 
   if [[ -z "$parsed" ]]; then
