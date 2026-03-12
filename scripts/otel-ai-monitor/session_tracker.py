@@ -2524,6 +2524,42 @@ class SessionTracker:
             if pid:
                 for session_id, session in self._sessions.items():
                     if session.tool == tool and session.pid == pid:
+                        if resolved_window_id is not None:
+                            session.window_id = resolved_window_id
+                            session.terminal_context.window_id = resolved_window_id
+                        if resolved_project:
+                            session.project = resolved_project
+                        resolved_tmux_target = bool(
+                            resolved_terminal_context.get("tmux_session")
+                            or resolved_terminal_context.get("tmux_window")
+                        )
+                        for key in (
+                            "terminal_anchor_id",
+                            "anchor_lookup",
+                            "pty",
+                            "host_name",
+                            "execution_mode",
+                            "connection_key",
+                            "context_key",
+                            "remote_target",
+                        ):
+                            value = resolved_terminal_context.get(key)
+                            if value:
+                                setattr(session.terminal_context, key, value)
+                        if resolved_tmux_target:
+                            session.terminal_context.tmux_session = resolved_terminal_context.get(
+                                "tmux_session"
+                            )
+                            session.terminal_context.tmux_window = resolved_terminal_context.get(
+                                "tmux_window"
+                            )
+                            session.terminal_context.tmux_pane = resolved_terminal_context.get(
+                                "tmux_pane"
+                            )
+                        else:
+                            session.terminal_context.tmux_session = None
+                            session.terminal_context.tmux_window = None
+                            session.terminal_context.tmux_pane = None
                         if session.state == SessionState.WORKING and self._heartbeat_should_extend_working(session):
                             session.last_event_at = now
                             self._reset_quiet_timer(session_id)
