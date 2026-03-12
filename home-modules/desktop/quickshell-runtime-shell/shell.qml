@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.I3
-import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Widgets
 
@@ -11,21 +10,6 @@ ShellRoot {
 
     ShellConfig {
         id: shellConfig
-    }
-
-    FileView {
-        id: shellStateFile
-        path: Quickshell.stateDir + "/" + shellConfig.configName + "-state.json"
-        watchChanges: true
-        onFileChanged: reload()
-        onAdapterUpdated: writeAdapter()
-
-        JsonAdapter {
-            id: shellState
-            property bool panelVisible: true
-            property bool dockedMode: true
-            property string selectedSessionKey: ""
-        }
     }
 
     property var dashboard: ({
@@ -40,10 +24,10 @@ ShellRoot {
         state_health: {},
         total_windows: 0
     })
-    property alias panelVisible: shellState.panelVisible
-    property alias dockedMode: shellState.dockedMode
+    property bool panelVisible: true
+    property bool dockedMode: true
     property string lastFocusedSessionKey: ""
-    property alias selectedSessionKey: shellState.selectedSessionKey
+    property string selectedSessionKey: ""
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
 

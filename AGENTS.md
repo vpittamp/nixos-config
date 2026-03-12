@@ -1,6 +1,6 @@
 # Window Management System Summary (Sway + i3pm)
 
-Last updated: 2026-02-22
+Last updated: 2026-03-12
 
 ## Objective
 
@@ -16,10 +16,14 @@ Provide reliable project-scoped window management on Sway with:
 - `home-modules/desktop/i3-project-event-daemon/`
   - Python user-session daemon listening to Sway IPC and serving JSON-RPC.
   - Owns project/window state, filtering, monitor/profile logic, scratchpad lifecycle, launch registry, and event buffer.
+- `home-modules/desktop/quickshell-runtime-shell/`
+  - QuickShell-based runtime UI.
+  - Renders one bar per active monitor plus one AI/session detail panel on the configured primary output.
+  - Uses native `Quickshell.screens` and `Quickshell.I3` monitor/workspace state for rendering.
 - `home-modules/tools/i3pm/`
   - Deno CLI (`i3pm`) that talks to daemon over Unix socket:
     - default socket: `$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock`
-  - Commands: `worktree`, `project`, `scratchpad`, `windows`, `daemon`, `monitors`, etc.
+  - Commands: `worktree`, `project`, `scratchpad`, `windows`, `daemon`, `display`, etc.
 - `home-modules/services/i3-project-daemon.nix`
   - Home-manager user service definition (`i3-project-daemon.service`) with Sway-bound lifecycle.
 - `home-modules/tools/sway-tree-monitor/`
@@ -71,9 +75,31 @@ Notes:
   - `laptop-only.json`
   - `mirror.json`
   - `extended.json`
+- QuickShell runtime rendering no longer depends on those files directly.
+- The current direction is:
+  - QuickShell owns multi-monitor rendering
+  - daemon-owned `display.*` IPC owns display mutation
+  - legacy profile scripts are compatibility adapters only
+
+See:
+- `docs/QUICKSHELL_RUNTIME_SHELL.md`
 
 ## Recent System Updates (this cycle)
 
+- QuickShell runtime shell migrated to native multi-monitor rendering:
+  - one bar per monitor via `Quickshell.screens`
+  - one AI/session panel anchored to host-configured primary output
+- Dashboard updates are now event-driven instead of fixed 750ms polling:
+  - daemon emits `state_changed`
+  - `i3pm dashboard watch` refetches on invalidation with slower heartbeat fallback
+- Added daemon-backed display CLI/API:
+  - `display.snapshot`
+  - `display.apply`
+  - `display.cycle`
+- Added OTEL/session runtime file watchers so AI session UI updates are not tied only to sway window events
+- Documented a deployment pitfall on `ryzen`:
+  - system generation and Home Manager generation can diverge operationally
+  - always verify activated generations before assuming a QML/runtime bug
 - Unified and cleaned i3pm TypeScript surface:
   - full `deno check` pass
   - removed stale/unreferenced legacy modules
@@ -92,9 +118,11 @@ Notes:
 
 Validated in live Sway session after rebuild/restart:
 - `sudo nixos-rebuild switch --flake .#thinkpad`
+- `sudo nixos-rebuild switch --flake .#ryzen`
 - `systemctl --user restart i3-project-daemon.service sway-tree-monitor.service`
 - `i3pm daemon ping` => healthy
 - `i3pm daemon status --json` => valid JSON
+- `i3pm display snapshot` => valid JSON
 - `i3pm worktree switch --local ...` and SSH switch => both work
 - `i3pm scratchpad toggle` in local and SSH modes => both work with isolated context keys
 

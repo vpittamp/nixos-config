@@ -173,6 +173,7 @@ nix flake lock --update-input nixpkgs
 
 - **[CLAUDE.md](./CLAUDE.md)** - LLM-optimized navigation guide
 - **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Detailed architecture documentation
+- **[docs/QUICKSHELL_RUNTIME_SHELL.md](./docs/QUICKSHELL_RUNTIME_SHELL.md)** - QuickShell runtime shell architecture, deployment model, and troubleshooting
 - **[docs/M1_SETUP.md](./docs/M1_SETUP.md)** - Apple Silicon setup guide and troubleshooting
 - **[docs/ONEPASSWORD.md](./docs/ONEPASSWORD.md)** - 1Password integration guide
 - **[docs/HETZNER_NIXOS_INSTALL.md](./docs/HETZNER_NIXOS_INSTALL.md)** - Hetzner installation guide
