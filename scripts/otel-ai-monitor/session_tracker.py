@@ -517,13 +517,13 @@ class SessionTracker:
             else {}
         )
         metadata = self._load_pid_metadata(pid)
+        live_tmux_target = bool(
+            terminal_context.get("tmux_session")
+            or terminal_context.get("tmux_window")
+        )
 
         for key in (
             "terminal_anchor_id",
-            "tmux_session",
-            "tmux_window",
-            "tmux_pane",
-            "pty",
             "host_name",
             "execution_mode",
             "connection_key",
@@ -535,6 +535,11 @@ class SessionTracker:
             value = metadata.get(key)
             if value:
                 terminal_context[key] = value
+
+        if not live_tmux_target:
+            terminal_context["tmux_session"] = None
+            terminal_context["tmux_window"] = None
+            terminal_context["tmux_pane"] = None
 
         project = str(metadata.get("project") or "").strip() or resolved_project
         project_path = str(metadata.get("project_path") or "").strip() or None

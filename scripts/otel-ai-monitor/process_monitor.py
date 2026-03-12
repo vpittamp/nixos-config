@@ -225,9 +225,17 @@ class ProcessMonitor:
                     )
 
             else:
-                # Existing process - keep session alive
-                session_id = self._process_sessions[pid]
-                await self._keepalive_session(session_id, pid)
+                # Existing process - refresh session context, then keep session alive.
+                refreshed_session_id = await self.tracker._ensure_process_session_for_pid(
+                    tool,
+                    pid,
+                )
+                if refreshed_session_id:
+                    self._process_sessions[pid] = refreshed_session_id
+                    await self._keepalive_session(refreshed_session_id, pid)
+                else:
+                    session_id = self._process_sessions[pid]
+                    await self._keepalive_session(session_id, pid)
 
         # Find terminated processes
         terminated_pids = set(self._process_sessions.keys()) - set(current_pids.keys())
@@ -276,7 +284,11 @@ class ProcessMonitor:
                 return
 
             # Update last event time
+            dirty = False
             session.last_event_at = now
+            if session.status_reason != "process_keepalive":
+                session.status_reason = "process_keepalive"
+                dirty = True
 
             # Ensure still in WORKING state
             if session.state != SessionState.WORKING:
@@ -286,6 +298,8 @@ class ProcessMonitor:
                 session.state_seq += 1
                 session.status_reason = "process_keepalive"
                 logger.info(f"Process monitor: session {resolved_session_id} {old_state} → WORKING")
+                dirty = True
+            if dirty:
                 self.tracker._mark_dirty_unlocked()
 
     async def _complete_session(self, session_id: str, pid: int) -> None:
