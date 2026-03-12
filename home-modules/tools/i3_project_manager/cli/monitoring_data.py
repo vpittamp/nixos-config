@@ -5911,6 +5911,16 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
                         )
                         session.pop("window_id", None)
                         terminal_context.pop("window_id", None)
+                        window_id_int = 0
+            if window_id_int == 0:
+                resolved_window_id = _resolve_otel_session_window_id(
+                    session,
+                    outputs,
+                    window_candidates=window_candidates,
+                )
+                if resolved_window_id is not None:
+                    session["window_id"] = resolved_window_id
+                    terminal_context["window_id"] = resolved_window_id
             resolved_otel_sessions.append(session)
 
         otel_sessions_runtime = dict(otel_sessions)

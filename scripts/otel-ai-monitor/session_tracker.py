@@ -1433,6 +1433,9 @@ class SessionTracker:
             )
             return
         if session.window_id is None:
+            if self._session_is_remote_projection_candidate(session):
+                self._set_session_diagnostic_unlocked(session, None)
+                return
             anchor_lookup = str(getattr(session.terminal_context, "anchor_lookup", "") or "").strip()
             reason = "unknown_terminal_anchor" if anchor_lookup in {"not_found", "daemon_unavailable"} else "anchor_window_unbound"
             self._set_session_diagnostic_unlocked(
@@ -1453,6 +1456,30 @@ class SessionTracker:
             )
             return
         self._set_session_diagnostic_unlocked(session, None)
+
+    @staticmethod
+    def _session_is_remote_projection_candidate(session: Session) -> bool:
+        """Allow SSH sessions to be exported before local UI binds them to a window."""
+        terminal_context = session.terminal_context
+        execution_mode = str(getattr(terminal_context, "execution_mode", "") or "").strip().lower()
+        connection_key = str(getattr(terminal_context, "connection_key", "") or "").strip()
+        context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
+        has_project = bool(str(session.project or "").strip() or str(session.project_path or "").strip())
+        has_terminal_identity = bool(
+            str(getattr(terminal_context, "tmux_session", "") or "").strip()
+            or str(getattr(terminal_context, "tmux_window", "") or "").strip()
+            or str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+            or str(getattr(terminal_context, "pty", "") or "").strip()
+        )
+        return bool(
+            execution_mode == "ssh"
+            and has_project
+            and has_terminal_identity
+            and (
+                context_key
+                or (connection_key and not connection_key.startswith("local@"))
+            )
+        )
 
     @staticmethod
     def _project_from_path(path_value: Optional[str]) -> Optional[str]:
@@ -1821,12 +1848,34 @@ class SessionTracker:
         terminal_anchor_id = str(
             getattr(terminal_context, "terminal_anchor_id", "") or ""
         ).strip()
+        execution_mode = str(
+            getattr(terminal_context, "execution_mode", "") or ""
+        ).strip().lower()
+        connection_key = str(
+            getattr(terminal_context, "connection_key", "") or ""
+        ).strip()
+        context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
+        has_terminal_identity = bool(
+            str(getattr(terminal_context, "tmux_session", "") or "").strip()
+            or str(getattr(terminal_context, "tmux_window", "") or "").strip()
+            or str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+            or str(getattr(terminal_context, "pty", "") or "").strip()
+        )
         has_project = bool(str(session.project or "").strip() or str(session.project_path or "").strip())
+        has_window_binding = session.window_id is not None
+        has_remote_projection = bool(
+            execution_mode == "ssh"
+            and has_terminal_identity
+            and (
+                context_key
+                or (connection_key and not connection_key.startswith("local@"))
+            )
+        )
         return bool(
             session.focusable
             and not session.invalid_reason
             and terminal_anchor_id
-            and session.window_id is not None
+            and (has_window_binding or has_remote_projection)
             and has_project
         )
 
