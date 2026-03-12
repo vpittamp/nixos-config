@@ -44,6 +44,13 @@ let
     PROFILE_DIR="$HOME/.local/share/webapps/${app.wmClass}"
     mkdir -p "$PROFILE_DIR/Default"
 
+    # Ensure 1Password native messaging hosts are available in the PWA profile
+    NMH_DIR="$PROFILE_DIR/NativeMessagingHosts"
+    mkdir -p "$NMH_DIR"
+    for host_json in /etc/opt/chrome/native-messaging-hosts/com.1password.*.json; do
+      [ -f "$host_json" ] && ln -sf "$host_json" "$NMH_DIR/$(basename "$host_json")"
+    done
+
     # Launch Chromium/Chrome in app mode with custom WM_CLASS for i3wm targeting
     exec ${browserPkg}/bin/${browserBin} \
       --user-data-dir="$PROFILE_DIR" \

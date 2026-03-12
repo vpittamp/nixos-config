@@ -76,6 +76,14 @@ let
     PROFILE_DIR="$HOME/.local/share/webapps/webapp-$PWA_ID"
     mkdir -p "$PROFILE_DIR/Default"
 
+    # Ensure 1Password native messaging hosts are available in the PWA profile
+    # Chrome with --user-data-dir looks for user-level hosts here
+    NMH_DIR="$PROFILE_DIR/NativeMessagingHosts"
+    mkdir -p "$NMH_DIR"
+    for host_json in /etc/opt/chrome/native-messaging-hosts/com.1password.*.json; do
+      [ -f "$host_json" ] && ln -sf "$host_json" "$NMH_DIR/$(basename "$host_json")"
+    done
+
     # Ensure Wayland variables are available
     export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
 

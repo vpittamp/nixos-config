@@ -157,6 +157,70 @@ let
     fi
   '';
 
+  pwa1passwordInit = pkgs.writeShellScriptBin "pwa-1password-init" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Batch initialize 1Password in all PWA profiles
+    # 1. Ensures NativeMessagingHosts symlinks exist in every PWA profile
+    # 2. Opens un-initialized profiles in normal Chrome mode (with toolbar)
+    #    so 1Password can complete its one-time pairing handshake
+    # 3. Creates .1password-initialized marker after setup
+
+    WEBAPPS_DIR="$HOME/.local/share/webapps"
+    CHROME="${pkgs.google-chrome}/bin/google-chrome-stable"
+
+    if [[ ! -d "$WEBAPPS_DIR" ]]; then
+      echo "No PWA profiles found at $WEBAPPS_DIR"
+      exit 0
+    fi
+
+    initialized=0
+    skipped=0
+
+    for profile_dir in "$WEBAPPS_DIR"/webapp-* "$WEBAPPS_DIR"/WebApp-*; do
+      [[ -d "$profile_dir" ]] || continue
+
+      profile_name="$(basename "$profile_dir")"
+
+      # Step 1: Ensure NativeMessagingHosts symlinks
+      nmh_dir="$profile_dir/NativeMessagingHosts"
+      mkdir -p "$nmh_dir"
+      for host_json in /etc/opt/chrome/native-messaging-hosts/com.1password.*.json; do
+        [ -f "$host_json" ] && ln -sf "$host_json" "$nmh_dir/$(basename "$host_json")"
+      done
+
+      # Step 2: Check if already initialized
+      if [[ -f "$profile_dir/.1password-initialized" ]]; then
+        echo "  skip: $profile_name (already initialized)"
+        ((skipped++)) || true
+        continue
+      fi
+
+      # Step 3: Open in normal Chrome mode (with toolbar) for pairing
+      echo "  init: $profile_name — opening Chrome for 1Password pairing..."
+      echo "        Please unlock 1Password in the browser, then close the window."
+      "$CHROME" \
+        --user-data-dir="$profile_dir" \
+        --no-first-run \
+        --no-default-browser-check \
+        --password-store=basic \
+        "chrome://extensions" &
+      CHROME_PID=$!
+
+      # Wait for user to close the window
+      wait "$CHROME_PID" 2>/dev/null || true
+
+      # Mark as initialized
+      touch "$profile_dir/.1password-initialized"
+      echo "  done: $profile_name"
+      ((initialized++)) || true
+    done
+
+    echo ""
+    echo "1Password PWA init complete: $initialized initialized, $skipped skipped"
+  '';
+
   onePasswordPwaFix = pkgs.writeShellScriptBin "1password-pwa-fix" ''
     #!/usr/bin/env bash
     set -euo pipefail
@@ -301,6 +365,7 @@ in
   home.packages = [
     onePasswordPwaAudit
     onePasswordPwaFix
+    pwa1passwordInit
   ];
 
   # Create 1Password settings directory structure
