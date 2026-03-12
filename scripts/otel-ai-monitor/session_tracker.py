@@ -2123,6 +2123,15 @@ class SessionTracker:
                 event_terminal_context[key] = value
                 resolved_context_keys.add(key)
 
+        resolved_tmux_target = bool(
+            resolved_terminal_context.get("tmux_session")
+            or resolved_terminal_context.get("tmux_window")
+        )
+        if client_pid is not None and not resolved_tmux_target:
+            for key in ("tmux_session", "tmux_window", "tmux_pane"):
+                event_terminal_context[key] = None
+                resolved_context_keys.add(key)
+
         explicit_anchor_id = str(
             event_terminal_context.get("terminal_anchor_id") or ""
         ).strip()
@@ -2380,6 +2389,13 @@ class SessionTracker:
                 "remote_target",
             ):
                 value = event_terminal_context.get(key)
+                if (
+                    key in {"tmux_session", "tmux_window", "tmux_pane"}
+                    and key in resolved_context_keys
+                    and not value
+                ):
+                    setattr(session.terminal_context, key, None)
+                    continue
                 if not value:
                     continue
                 has_explicit_key = bool(event_terminal_context_raw.get(key))
