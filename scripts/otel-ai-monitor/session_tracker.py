@@ -796,6 +796,25 @@ class SessionTracker:
                     value = terminal_context_raw.get(key)
                     if value is not None:
                         setattr(session.terminal_context, key, value)
+                if (
+                    str(getattr(session.terminal_context, "execution_mode", "") or "").strip().lower() == "ssh"
+                    and (
+                        session.terminal_context.tmux_session
+                        or session.terminal_context.tmux_window
+                        or session.terminal_context.tmux_pane
+                        or session.terminal_context.pty
+                    )
+                    and not tmux_target_exists(
+                        tmux_session=session.terminal_context.tmux_session,
+                        tmux_window=session.terminal_context.tmux_window,
+                        tmux_pane=session.terminal_context.tmux_pane,
+                        pty=session.terminal_context.pty,
+                    )
+                ):
+                    session.terminal_context.tmux_session = None
+                    session.terminal_context.tmux_window = None
+                    session.terminal_context.tmux_pane = None
+                    session.terminal_context.pty = None
 
                 self._sessions[session_id] = session
                 self._apply_tracking_contract_unlocked(session)
