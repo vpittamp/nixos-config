@@ -21,6 +21,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
+import psutil
+
 from .models import (
     ActivityFreshness,
     AITool,
@@ -32,6 +34,7 @@ from .models import (
     SessionListItem,
     SessionStage,
     SessionState,
+    TerminalContext,
     SessionUpdate,
     TelemetryEvent,
     TOOL_PROVIDER,
@@ -43,6 +46,7 @@ from .sway_helper import (
     get_all_window_ids,
     get_tmux_context_for_pid,
     get_process_i3pm_env,
+    list_tmux_panes_sync,
     tmux_target_exists,
     get_window_context_by_id,
     query_daemon_for_terminal_anchor,
@@ -64,6 +68,7 @@ _BOOTSTRAP_RESTOREABLE_STATES = {
     SessionState.ATTENTION,
     SessionState.COMPLETED,
 }
+_PROCESS_STATS_CACHE_TTL_SEC = 2.0
 
 # Feature 137: Maximum session count to prevent memory exhaustion
 MAX_SESSIONS = 100
@@ -369,6 +374,8 @@ class SessionTracker:
             "suppressed_non_native": 0,
         }
         self._session_diagnostics: dict[str, dict[str, object]] = {}
+        self._process_stats_cache: dict[int, tuple[float, dict[str, object]]] = {}
+        self._process_tree_stats_cache: dict[int, tuple[float, dict[str, object]]] = {}
 
     def _refresh_metadata_cache(self) -> None:
         """Fully reload the session metadata cache."""
@@ -428,6 +435,94 @@ class SessionTracker:
 
         except OSError as e:
             logger.debug(f"Failed to scan metadata files: {e}")
+
+    def _collect_process_stats(self, pid: Optional[int], now_ts: float) -> dict[str, object]:
+        """Collect lightweight process stats for the session rail."""
+        default_stats: dict[str, object] = {
+            "process_running": False,
+            "rss_mb": None,
+            "cpu_percent": None,
+            "uptime_seconds": None,
+            "stats_sampled_at": None,
+            "stats_source": "missing",
+        }
+        if pid is None or int(pid) <= 0:
+            return dict(default_stats)
+
+        pid_int = int(pid)
+        cached = self._process_stats_cache.get(pid_int)
+        if cached and (now_ts - cached[0]) < _PROCESS_STATS_CACHE_TTL_SEC:
+            return dict(cached[1])
+
+        try:
+            process = psutil.Process(pid_int)
+            with process.oneshot():
+                running = process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+                stats = dict(default_stats)
+                stats["process_running"] = bool(running)
+                if running:
+                    stats["rss_mb"] = round(process.memory_info().rss / (1024 * 1024), 1)
+                    stats["cpu_percent"] = round(float(process.cpu_percent(interval=None)), 1)
+                    stats["uptime_seconds"] = max(0, int(now_ts - process.create_time()))
+                    stats["stats_sampled_at"] = datetime.fromtimestamp(now_ts, timezone.utc).isoformat()
+                    stats["stats_source"] = "local_process"
+                self._process_stats_cache[pid_int] = (now_ts, stats)
+                return dict(stats)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError, ValueError):
+            pass
+
+        self._process_stats_cache[pid_int] = (now_ts, default_stats)
+        return dict(default_stats)
+
+    def _collect_process_tree_stats(self, root_pid: Optional[int], now_ts: float) -> dict[str, object]:
+        """Collect aggregate process-tree stats for a tmux pane/session surface."""
+        default_stats: dict[str, object] = {
+            "process_tree_rss_mb": None,
+            "process_tree_cpu_percent": None,
+            "process_count": None,
+        }
+        if root_pid is None or int(root_pid) <= 0:
+            return dict(default_stats)
+
+        pid_int = int(root_pid)
+        cached = self._process_tree_stats_cache.get(pid_int)
+        if cached and (now_ts - cached[0]) < _PROCESS_STATS_CACHE_TTL_SEC:
+            return dict(cached[1])
+
+        try:
+            root_process = psutil.Process(pid_int)
+            processes = [root_process]
+            try:
+                processes.extend(root_process.children(recursive=True))
+            except (psutil.Error, OSError):
+                pass
+
+            live_processes: list[psutil.Process] = []
+            rss_bytes = 0
+            cpu_percent = 0.0
+            for process in processes:
+                try:
+                    with process.oneshot():
+                        if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+                            continue
+                        live_processes.append(process)
+                        rss_bytes += int(process.memory_info().rss)
+                        cpu_percent += float(process.cpu_percent(interval=None))
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError, ValueError):
+                    continue
+
+            stats = {
+                "process_tree_rss_mb": round(rss_bytes / (1024 * 1024), 1) if live_processes else None,
+                "process_tree_cpu_percent": round(cpu_percent, 1) if live_processes else None,
+                "process_count": len(live_processes) if live_processes else None,
+            }
+            self._process_tree_stats_cache[pid_int] = (now_ts, stats)
+            return dict(stats)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError, ValueError):
+            pass
+
+        self._process_tree_stats_cache[pid_int] = (now_ts, default_stats)
+        return dict(default_stats)
 
     async def _metadata_watch_loop(self) -> None:
         """Watch the runtime directory for changes to session metadata files."""
@@ -669,6 +764,10 @@ class SessionTracker:
             session.terminal_context.tmux_session = terminal_context.get("tmux_session")
             session.terminal_context.tmux_window = terminal_context.get("tmux_window")
             session.terminal_context.tmux_pane = terminal_context.get("tmux_pane")
+            session.terminal_context.pane_pid = terminal_context.get("pane_pid")
+            session.terminal_context.pane_title = terminal_context.get("pane_title")
+            session.terminal_context.pane_active = terminal_context.get("pane_active")
+            session.terminal_context.window_active = terminal_context.get("window_active")
             session.terminal_context.pty = terminal_context.get("pty")
             session.terminal_context.host_name = terminal_context.get("host_name")
             session.terminal_context.execution_mode = terminal_context.get("execution_mode")
@@ -814,6 +913,10 @@ class SessionTracker:
                     session.terminal_context.tmux_session = None
                     session.terminal_context.tmux_window = None
                     session.terminal_context.tmux_pane = None
+                    session.terminal_context.pane_pid = None
+                    session.terminal_context.pane_title = None
+                    session.terminal_context.pane_active = None
+                    session.terminal_context.window_active = None
                     session.terminal_context.pty = None
 
                 self._sessions[session_id] = session
@@ -1060,6 +1163,50 @@ class SessionTracker:
 
         raw = "|".join(parts)
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+    @staticmethod
+    def _build_surface_key(
+        terminal_context: TerminalContext,
+        *,
+        window_id: Optional[int],
+    ) -> tuple[str, Optional[str], Optional[str]]:
+        """Build canonical tracked surface identity for exported sessions."""
+        context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
+        anchor = str(getattr(terminal_context, "terminal_anchor_id", "") or "").strip()
+        tmux_session = str(getattr(terminal_context, "tmux_session", "") or "").strip()
+        tmux_window = str(getattr(terminal_context, "tmux_window", "") or "").strip()
+        tmux_pane = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+        pane_tty = str(getattr(terminal_context, "pty", "") or "").strip()
+
+        if tmux_pane:
+            parts = [
+                context_key or "unknown-context",
+                anchor or "unknown-anchor",
+                tmux_session or "unknown-session",
+                tmux_window or "unknown-window",
+                tmux_pane,
+            ]
+            if pane_tty:
+                parts.append(pane_tty)
+            pane_label = " ".join(
+                part
+                for part in (
+                    tmux_window or None,
+                    tmux_pane or None,
+                )
+                if part
+            ) or tmux_pane
+            return "tmux-pane", "::".join(parts), pane_label
+
+        if anchor or window_id is not None:
+            identity = anchor or (f"window-{int(window_id)}" if window_id is not None else "")
+            parts = [
+                context_key or "unknown-context",
+                identity or "unknown-window",
+            ]
+            return "terminal-window", "::".join(parts), None
+
+        return "unresolved", None, None
 
     def _register_native_session_unlocked(self, group_id: str, session_id: str) -> None:
         bucket = self._native_session_map.setdefault(group_id, set())
@@ -1310,6 +1457,10 @@ class SessionTracker:
             "tmux_session": None,
             "tmux_window": None,
             "tmux_pane": None,
+            "pane_pid": None,
+            "pane_title": None,
+            "pane_active": None,
+            "window_active": None,
             "pty": None,
             "execution_mode": None,
             "connection_key": None,
@@ -2279,6 +2430,10 @@ class SessionTracker:
                 session.terminal_context.tmux_pane = event_terminal_context.get(
                     "tmux_pane"
                 )
+                session.terminal_context.pane_pid = event_terminal_context.get("pane_pid")
+                session.terminal_context.pane_title = event_terminal_context.get("pane_title")
+                session.terminal_context.pane_active = event_terminal_context.get("pane_active")
+                session.terminal_context.window_active = event_terminal_context.get("window_active")
                 session.terminal_context.pty = event_terminal_context.get("pty")
                 session.terminal_context.host_name = event_terminal_context.get("host_name")
                 session.terminal_context.execution_mode = event_terminal_context.get("execution_mode")
@@ -2576,10 +2731,18 @@ class SessionTracker:
                             session.terminal_context.tmux_pane = resolved_terminal_context.get(
                                 "tmux_pane"
                             )
+                            session.terminal_context.pane_pid = resolved_terminal_context.get("pane_pid")
+                            session.terminal_context.pane_title = resolved_terminal_context.get("pane_title")
+                            session.terminal_context.pane_active = resolved_terminal_context.get("pane_active")
+                            session.terminal_context.window_active = resolved_terminal_context.get("window_active")
                         else:
                             session.terminal_context.tmux_session = None
                             session.terminal_context.tmux_window = None
                             session.terminal_context.tmux_pane = None
+                            session.terminal_context.pane_pid = None
+                            session.terminal_context.pane_title = None
+                            session.terminal_context.pane_active = None
+                            session.terminal_context.window_active = None
                         if session.state == SessionState.WORKING and self._heartbeat_should_extend_working(session):
                             session.last_event_at = now
                             self._reset_quiet_timer(session_id)
@@ -3300,6 +3463,17 @@ class SessionTracker:
         diagnostics = []
         fingerprint_source = []
         snapshot_now = datetime.now(timezone.utc)
+        live_tmux_panes = list_tmux_panes_sync()
+        live_tmux_by_pane = {
+            str(pane.get("tmux_pane") or "").strip(): pane
+            for pane in live_tmux_panes
+            if str(pane.get("tmux_pane") or "").strip()
+        }
+        live_tmux_by_pty = {
+            str(pane.get("pty") or "").strip(): pane
+            for pane in live_tmux_panes
+            if str(pane.get("pty") or "").strip()
+        }
         for s in active_sessions:
             project_labels = self._resolve_export_project_labels(s)
             stage_fields = _derive_session_stage(s, now=snapshot_now)
@@ -3309,6 +3483,23 @@ class SessionTracker:
                 else "process"
             )
             terminal_context = s.terminal_context
+            live_tmux_entry = None
+            pane_id = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+            pane_tty = str(getattr(terminal_context, "pty", "") or "").strip()
+            if pane_id:
+                live_tmux_entry = live_tmux_by_pane.get(pane_id)
+            if live_tmux_entry is None and pane_tty:
+                live_tmux_entry = live_tmux_by_pty.get(pane_tty)
+            if isinstance(live_tmux_entry, dict):
+                terminal_context = terminal_context.model_copy(deep=True)
+                terminal_context.tmux_session = str(live_tmux_entry.get("tmux_session") or "").strip() or terminal_context.tmux_session
+                terminal_context.tmux_window = str(live_tmux_entry.get("tmux_window") or "").strip() or terminal_context.tmux_window
+                terminal_context.tmux_pane = str(live_tmux_entry.get("tmux_pane") or "").strip() or terminal_context.tmux_pane
+                terminal_context.pane_pid = live_tmux_entry.get("pane_pid") or terminal_context.pane_pid
+                terminal_context.pane_title = str(live_tmux_entry.get("pane_title") or "").strip() or terminal_context.pane_title
+                terminal_context.pane_active = bool(live_tmux_entry.get("pane_active", False))
+                terminal_context.window_active = bool(live_tmux_entry.get("window_active", False))
+                terminal_context.pty = str(live_tmux_entry.get("pty") or "").strip() or terminal_context.pty
             if (
                 str(getattr(terminal_context, "execution_mode", "") or "").strip().lower() == "ssh"
                 and (
@@ -3328,7 +3519,24 @@ class SessionTracker:
                 terminal_context.tmux_session = None
                 terminal_context.tmux_window = None
                 terminal_context.tmux_pane = None
+                terminal_context.pane_pid = None
+                terminal_context.pane_title = None
+                terminal_context.pane_active = None
+                terminal_context.window_active = None
                 terminal_context.pty = None
+            process_stats = self._collect_process_stats(s.pid, now_ts)
+            surface_kind, surface_key, pane_label = self._build_surface_key(
+                terminal_context,
+                window_id=s.window_id,
+            )
+            process_tree_root = (
+                int(getattr(terminal_context, "pane_pid", 0) or 0)
+                or int(s.pid or 0)
+            )
+            process_tree_stats = self._collect_process_tree_stats(
+                process_tree_root if process_tree_root > 0 else None,
+                now_ts,
+            )
             item = SessionListItem(
                 session_id=s.session_id,
                 native_session_id=s.native_session_id,
@@ -3348,10 +3556,22 @@ class SessionTracker:
                 project_path=s.project_path,
                 window_id=s.window_id,
                 terminal_context=terminal_context,
+                surface_kind=surface_kind,
+                surface_key=surface_key,
+                pane_label=pane_label or str(getattr(terminal_context, "pane_title", "") or "").strip() or None,
                 focusable=s.focusable,
                 invalid_reason=s.invalid_reason,
                 pid=s.pid,
                 trace_id=s.trace_id,
+                process_running=bool(process_stats["process_running"]),
+                rss_mb=process_stats["rss_mb"],
+                cpu_percent=process_stats["cpu_percent"],
+                uptime_seconds=process_stats["uptime_seconds"],
+                stats_sampled_at=process_stats["stats_sampled_at"],
+                stats_source=str(process_stats["stats_source"]),
+                process_tree_rss_mb=process_tree_stats["process_tree_rss_mb"],
+                process_tree_cpu_percent=process_tree_stats["process_tree_cpu_percent"],
+                process_count=process_tree_stats["process_count"],
                 pending_tools=s.pending_tools,
                 is_streaming=s.is_streaming,
                 state_seq=s.state_seq,
@@ -3392,12 +3612,22 @@ class SessionTracker:
                     s.terminal_context.tmux_session,
                     s.terminal_context.tmux_window,
                     s.terminal_context.tmux_pane,
+                    s.terminal_context.pane_pid,
+                    s.terminal_context.pane_title,
+                    s.terminal_context.pane_active,
+                    s.terminal_context.window_active,
                     s.terminal_context.execution_mode,
                     s.terminal_context.connection_key,
                     s.terminal_context.context_key,
                     s.terminal_context.remote_target,
+                    surface_kind,
+                    surface_key,
+                    pane_label,
                     s.pid,
                     s.trace_id,
+                    process_tree_stats["process_tree_rss_mb"],
+                    process_tree_stats["process_tree_cpu_percent"],
+                    process_tree_stats["process_count"],
                     s.pending_tools,
                     s.is_streaming,
                     s.state_seq,
@@ -3418,8 +3648,35 @@ class SessionTracker:
                     str(stage_fields["lifecycle_source"]),
                     bool(s.focusable),
                     str(s.invalid_reason or ""),
+                    bool(process_stats["process_running"]),
+                    process_stats["rss_mb"],
+                    process_stats["cpu_percent"],
+                    process_stats["uptime_seconds"],
+                    process_stats["stats_sampled_at"],
+                    str(process_stats["stats_source"]),
                 )
             )
+
+        pane_conflicts: dict[str, list[SessionListItem]] = {}
+        for item in items:
+            if item.surface_kind != "tmux-pane":
+                continue
+            surface_key = str(item.surface_key or "").strip()
+            if not surface_key:
+                continue
+            pane_conflicts.setdefault(surface_key, []).append(item)
+
+        for surface_key, bucket in pane_conflicts.items():
+            if len(bucket) < 2:
+                continue
+            for item in bucket:
+                item.conflict_state = "conflict_same_pane"
+                item.conflict_detail = (
+                    "Multiple AI sessions are running in the same tmux pane. "
+                    "Track one session per pane to keep focus deterministic."
+                )
+                item.focusable = False
+            fingerprint_source.append(("pane_conflict", surface_key, len(bucket)))
 
         for diagnostic in sorted(
             self._session_diagnostics.values(),

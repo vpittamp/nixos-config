@@ -100,6 +100,18 @@ class TerminalContext(BaseModel):
     tmux_pane: Optional[str] = Field(
         default=None, description="Tmux pane identifier"
     )
+    pane_pid: Optional[int] = Field(
+        default=None, description="Root PID reported by tmux for the pane"
+    )
+    pane_title: Optional[str] = Field(
+        default=None, description="Current tmux pane title"
+    )
+    pane_active: Optional[bool] = Field(
+        default=None, description="True when the pane is currently active in its tmux window"
+    )
+    window_active: Optional[bool] = Field(
+        default=None, description="True when the tmux window is currently selected"
+    )
     pty: Optional[str] = Field(
         default=None, description="Controlling terminal PTY path (e.g. /dev/pts/3)"
     )
@@ -382,6 +394,26 @@ class SessionListItem(BaseModel):
     terminal_context: TerminalContext = Field(
         default_factory=TerminalContext, description="Terminal/tmux correlation context"
     )
+    surface_kind: str = Field(
+        default="terminal-window",
+        description="Canonical tracked interaction surface kind",
+    )
+    surface_key: Optional[str] = Field(
+        default=None,
+        description="Deterministic surface identity used for pane/window tracking",
+    )
+    pane_label: Optional[str] = Field(
+        default=None,
+        description="User-facing tmux pane label when pane tracking is available",
+    )
+    conflict_state: Optional[str] = Field(
+        default=None,
+        description="Conflict classification for unsupported multi-session layouts",
+    )
+    conflict_detail: Optional[str] = Field(
+        default=None,
+        description="Human-readable explanation for the conflict state",
+    )
     focusable: bool = Field(
         default=True, description="True when the session can be focused deterministically"
     )
@@ -390,6 +422,24 @@ class SessionListItem(BaseModel):
     )
     pid: Optional[int] = Field(default=None, description="Process ID for debugging/correlation")
     trace_id: Optional[str] = Field(default=None, description="OTLP trace ID for Langfuse link")
+    process_running: bool = Field(default=False, description="True when the session PID is currently alive")
+    rss_mb: Optional[float] = Field(default=None, description="Resident memory usage in MB")
+    cpu_percent: Optional[float] = Field(default=None, description="Recent CPU usage percent for the session process")
+    uptime_seconds: Optional[int] = Field(default=None, description="Approximate process uptime in seconds")
+    stats_sampled_at: Optional[str] = Field(default=None, description="RFC3339 timestamp of the latest process sample")
+    stats_source: str = Field(default="missing", description="Process stats source classification")
+    process_tree_rss_mb: Optional[float] = Field(
+        default=None,
+        description="Resident memory usage aggregated over the tracked pane process tree in MB",
+    )
+    process_tree_cpu_percent: Optional[float] = Field(
+        default=None,
+        description="CPU usage aggregated over the tracked pane process tree in percent",
+    )
+    process_count: Optional[int] = Field(
+        default=None,
+        description="Number of processes currently visible in the tracked pane process tree",
+    )
     # Feature 136: Additional fields for multi-indicator support
     pending_tools: int = Field(default=0, description="Count of active tool executions")
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
@@ -427,7 +477,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="6", description="Session payload schema version")
+    schema_version: str = Field(default="7", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

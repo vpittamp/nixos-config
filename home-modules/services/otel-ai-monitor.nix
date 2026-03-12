@@ -22,6 +22,7 @@ let
     aiohttp
     pydantic
     protobuf  # For OTLP protobuf parsing
+    psutil
     pip       # For installing opentelemetry-proto at build time
   ]);
 

@@ -6,15 +6,15 @@ particularly for correlating AI sessions with their originating terminal windows
 Feature 135: Added PID-based window correlation via I3PM_* environment variables.
 """
 
+import asyncio
 import json
 import logging
 import os
 import socket
 import subprocess
-import asyncio
 from glob import glob
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,11 @@ _DISCOVERED_TMUX_PROJECT_HINT_CACHE = {
     "size": None,
     "mapping": {},
 }
+
+_TMUX_LIST_PANES_FORMAT = (
+    "#{pane_tty}\t#{session_name}\t#{window_index}:#{window_name}\t"
+    "#{pane_id}\t#{pane_index}\t#{pane_pid}\t#{pane_title}\t#{pane_active}\t#{window_active}"
+)
 
 
 def get_sway_socket() -> Optional[str]:
@@ -657,25 +662,54 @@ def get_process_tty_path(pid: int) -> Optional[str]:
     return None
 
 
-async def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
+async def get_tmux_context_for_pid(pid: int) -> dict[str, Any]:
     """Return tmux session/window/pane metadata for a process when available."""
     tty_path = get_process_tty_path(pid)
     context = {
         "tmux_session": None,
         "tmux_window": None,
         "tmux_pane": None,
+        "pane_pid": None,
+        "pane_title": None,
+        "pane_active": None,
+        "window_active": None,
         "pty": tty_path,
     }
     if not tty_path:
         return context
 
     try:
+        panes = await list_tmux_panes()
+        for pane in panes:
+            pane_tty = str(pane.get("pty") or "").strip()
+            if pane_tty != tty_path:
+                continue
+
+            context["tmux_session"] = pane.get("tmux_session")
+            context["tmux_window"] = pane.get("tmux_window")
+            context["tmux_pane"] = pane.get("tmux_pane")
+            context["pane_pid"] = pane.get("pane_pid")
+            context["pane_title"] = pane.get("pane_title")
+            context["pane_active"] = pane.get("pane_active")
+            context["window_active"] = pane.get("window_active")
+            return context
+    except FileNotFoundError:
+        return context
+    except Exception as e:
+        logger.debug(f"get_tmux_context_for_pid failed: {e}")
+
+    return context
+
+
+async def list_tmux_panes() -> list[dict[str, Any]]:
+    """Return live tmux pane metadata keyed by tmux-native pane identity."""
+    try:
         proc = await asyncio.create_subprocess_exec(
             "tmux",
             "list-panes",
             "-a",
             "-F",
-            "#{pane_tty}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_id}\t#{pane_index}",
+            _TMUX_LIST_PANES_FORMAT,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -684,36 +718,67 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Optional[str]]:
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()
-            logger.debug("get_tmux_context_for_pid: tmux list-panes timed out")
-            return context
-
+            logger.debug("list_tmux_panes: tmux list-panes timed out")
+            return []
         if proc.returncode != 0:
-            return context
-
-        stdout_text = stdout.decode('utf-8')
-        for line in stdout_text.strip().split("\n"):
-            if not line:
-                continue
-            parts = line.split("\t")
-            if len(parts) != 6:
-                continue
-            pane_tty, session_name, window_index, window_name, pane_id, pane_index = parts
-            if pane_tty != tty_path:
-                continue
-
-            context["tmux_session"] = session_name or None
-            if window_index or window_name:
-                context["tmux_window"] = (
-                    f"{window_index}:{window_name}" if window_name else window_index
-                )
-            context["tmux_pane"] = pane_id or pane_index or None
-            return context
+            return []
     except FileNotFoundError:
-        return context
-    except Exception as e:
-        logger.debug(f"get_tmux_context_for_pid failed: {e}")
+        return []
+    except Exception as exc:
+        logger.debug("list_tmux_panes failed: %s", exc)
+        return []
 
-    return context
+    return _parse_tmux_panes_output(stdout.decode("utf-8"))
+
+
+def list_tmux_panes_sync() -> list[dict[str, Any]]:
+    """Return live tmux pane metadata synchronously for hot UI/export paths."""
+    try:
+        proc = subprocess.run(
+            ["tmux", "list-panes", "-a", "-F", _TMUX_LIST_PANES_FORMAT],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    except Exception as exc:
+        logger.debug("list_tmux_panes_sync failed: %s", exc)
+        return []
+    if proc.returncode != 0:
+        return []
+    return _parse_tmux_panes_output(proc.stdout)
+
+
+def _parse_tmux_panes_output(stdout_text: str) -> list[dict[str, Any]]:
+    """Parse `tmux list-panes` output into normalized pane dictionaries."""
+    panes: list[dict[str, Any]] = []
+    for line in stdout_text.strip().splitlines():
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) != 9:
+            continue
+        pane_tty, session_name, window_ref, pane_id, pane_index, pane_pid_raw, pane_title, pane_active_raw, window_active_raw = parts
+        try:
+            pane_pid = int(str(pane_pid_raw or "").strip()) if str(pane_pid_raw or "").strip() else None
+        except ValueError:
+            pane_pid = None
+        pane_active = str(pane_active_raw or "").strip() == "1"
+        window_active = str(window_active_raw or "").strip() == "1"
+        panes.append({
+            "tmux_session": str(session_name or "").strip() or None,
+            "tmux_window": str(window_ref or "").strip() or None,
+            "tmux_pane": str(pane_id or pane_index or "").strip() or None,
+            "pane_index": str(pane_index or "").strip() or None,
+            "pane_pid": pane_pid,
+            "pane_title": str(pane_title or "").strip() or None,
+            "pane_active": pane_active,
+            "window_active": window_active,
+            "pty": str(pane_tty or "").strip() or None,
+        })
+    return panes
 
 
 def tmux_target_exists(

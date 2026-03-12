@@ -68,25 +68,6 @@ class OutputWriter:
             return
 
         data = session_list.model_dump()
-        for item in data.get("sessions", []):
-            if not isinstance(item, dict):
-                continue
-            terminal_context = item.get("terminal_context") or {}
-            if not isinstance(terminal_context, dict):
-                continue
-            if str(terminal_context.get("execution_mode") or "").strip().lower() != "ssh":
-                continue
-            if not (
-                terminal_context.get("tmux_session")
-                or terminal_context.get("tmux_window")
-                or terminal_context.get("tmux_pane")
-                or terminal_context.get("pty")
-            ):
-                continue
-            terminal_context["tmux_session"] = None
-            terminal_context["tmux_window"] = None
-            terminal_context["tmux_pane"] = None
-            terminal_context["pty"] = None
         json_content = json.dumps(data, separators=(",", ":"), sort_keys=True)
         payload_hash = hashlib.sha256(json_content.encode("utf-8")).hexdigest()
 
