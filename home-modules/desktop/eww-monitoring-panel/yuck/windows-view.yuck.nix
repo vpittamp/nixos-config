@@ -22,29 +22,33 @@
           :spacing 4
           (label :class "active-ai-mru-title" :text "Recent")
           (for session in {arraylength((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: [])) <= 6 ? (monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []) : jq((monitoring_data.active_ai_sessions_mru ?: monitoring_data.active_ai_sessions ?: []), ".[:6]")}
-            (box
-              :class {"active-ai-mru-chip"
-                + ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")
-                + ((session.is_current_window ?: false) ? " current-window" : "")}
-              :orientation "h"
-              :space-evenly false
-              :spacing 3
-              (image
-                :class "active-ai-chip-icon"
-                :path {(session.tool ?: "unknown") == "claude-code"
-                  ? "${iconPaths.claude}"
-                  : ((session.tool ?: "unknown") == "codex"
-                    ? "${iconPaths.codex}"
-                    : ((session.tool ?: "unknown") == "gemini"
-                      ? "${iconPaths.gemini}"
-                      : "${iconPaths.anthropic}"))}
-                :image-width 13
-                :image-height 13)
-              (label
-                :class "active-ai-mru-chip-text"
-                :text {session.display_project ?: session.project ?: "unknown"}
-                :limit-width 14
-                :truncate true)))))
+            (eventbox
+              :cursor "pointer"
+              :onclick "${focusActiveAiSessionScript}/bin/focus-active-ai-session-action \"''${session.session_key ?: ""}\" &"
+              :tooltip {"Focus " + (session.display_project ?: session.project ?: "unknown")}
+              (box
+                :class {"active-ai-mru-chip"
+                  + ((ai_sessions_selected_key == (session.session_key ?: "")) ? " selected" : "")
+                  + ((session.is_current_window ?: false) ? " current-window" : "")}
+                :orientation "h"
+                :space-evenly false
+                :spacing 3
+                (image
+                  :class "active-ai-chip-icon"
+                  :path {(session.tool ?: "unknown") == "claude-code"
+                    ? "${iconPaths.claude}"
+                    : ((session.tool ?: "unknown") == "codex"
+                      ? "${iconPaths.codex}"
+                      : ((session.tool ?: "unknown") == "gemini"
+                        ? "${iconPaths.gemini}"
+                        : "${iconPaths.anthropic}"))}
+                  :image-width 13
+                  :image-height 13)
+                (label
+                  :class "active-ai-mru-chip-text"
+                  :text {session.display_project ?: session.project ?: "unknown"}
+                  :limit-width 14
+                  :truncate true))))))
       (box
         :class "active-ai-rail"
         :orientation "v"
