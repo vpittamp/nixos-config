@@ -2226,6 +2226,13 @@ class IPCServer:
                 else:
                     raise Exception(f"Failed to query i3 window tree after {max_retries} attempts: {last_error}")
 
+        tracked_windows = await self.state_manager.get_window_map_snapshot()
+        tracked_windows_by_con_id = {
+            int(window_info.con_id): window_info
+            for window_info in tracked_windows.values()
+            if getattr(window_info, "con_id", 0)
+        }
+
         # Build outputs structure
         outputs = []
         total_windows = 0
@@ -2268,7 +2275,13 @@ class IPCServer:
                 # Find windows in this workspace
                 ws_con = self._find_workspace_container(tree, ws.name)
                 if ws_con:
-                    windows = self._extract_windows_from_container(ws_con, ws.num, output.name)
+                    windows = self._extract_windows_from_container(
+                        ws_con,
+                        ws.num,
+                        output.name,
+                        tracked_windows=tracked_windows,
+                        tracked_windows_by_con_id=tracked_windows_by_con_id,
+                    )
                     workspace_node["windows"] = windows
                     total_windows += len(windows)
 
@@ -2373,6 +2386,9 @@ class IPCServer:
                         "remote_dir": i3pm_env.get("I3PM_REMOTE_DIR", ""),
                         "remote_session_name": i3pm_env.get("I3PM_REMOTE_SESSION_NAME", ""),
                     }
+                    tracked_window = tracked_windows.get(int(window.id)) or tracked_windows_by_con_id.get(int(window.id))
+                    if tracked_window:
+                        window_data.update(self._tracked_window_runtime_fields(tracked_window))
                     scratchpad_windows.append(window_data)
                     total_windows += 1
 
@@ -2398,6 +2414,24 @@ class IPCServer:
 
         return {**result, "cached": False}
 
+    def _tracked_window_runtime_fields(self, tracked_window) -> Dict[str, Any]:
+        """Serialize daemon-tracked window runtime fields for tree/snapshot output."""
+        return {
+            "project": str(getattr(tracked_window, "project", "") or ""),
+            "scope": str(getattr(tracked_window, "scope", "") or ""),
+            "execution_mode": str(getattr(tracked_window, "execution_mode", "") or ""),
+            "connection_key": str(getattr(tracked_window, "connection_key", "") or ""),
+            "context_key": str(getattr(tracked_window, "context_key", "") or ""),
+            "remote_enabled": "true" if bool(getattr(tracked_window, "remote_enabled", False)) else "",
+            "remote_user": str(getattr(tracked_window, "remote_user", "") or ""),
+            "remote_host": str(getattr(tracked_window, "remote_host", "") or ""),
+            "remote_port": str(getattr(tracked_window, "remote_port", "") or ""),
+            "remote_dir": str(getattr(tracked_window, "remote_dir", "") or ""),
+            "remote_session_name": str(getattr(tracked_window, "remote_session_name", "") or ""),
+            "terminal_anchor_id": str(getattr(tracked_window, "terminal_anchor_id", "") or ""),
+            "app_name": str(getattr(tracked_window, "app_identifier", "") or ""),
+        }
+
     def _find_workspace_container(self, tree, workspace_name: str):
         """Find workspace container in i3 tree by name.
 
@@ -2419,7 +2453,15 @@ class IPCServer:
 
         return search(tree)
 
-    def _extract_windows_from_container(self, container, workspace_num: int, output_name: str) -> list:
+    def _extract_windows_from_container(
+        self,
+        container,
+        workspace_num: int,
+        output_name: str,
+        *,
+        tracked_windows: Optional[Dict[int, Any]] = None,
+        tracked_windows_by_con_id: Optional[Dict[int, Any]] = None,
+    ) -> list:
         """Extract all windows from container recursively.
 
         Args:
@@ -2431,6 +2473,8 @@ class IPCServer:
             List of window dicts with WindowState-compatible structure
         """
         windows = []
+        tracked_windows = tracked_windows or {}
+        tracked_windows_by_con_id = tracked_windows_by_con_id or {}
 
         def extract(node, depth=0):
             # Check if this is an actual window (has X11 window ID or Wayland app_id)
@@ -2455,13 +2499,14 @@ class IPCServer:
                 window_class = node.window_class if hasattr(node, 'window_class') and node.window_class else (node.app_id if hasattr(node, 'app_id') else "")
 
                 # Read I3PM_* environment for app_id and worktree metadata.
-                # Uses PID-level cache to avoid redundant /proc reads across windows
-                # sharing the same parent process.
+                # Read directly from the window process when available. Runtime
+                # identity for managed windows comes from daemon state, not
+                # parent-process traversal.
                 env = {}
                 if hasattr(node, 'pid') and node.pid:
                     try:
-                        from .services.window_filter import read_process_environ_with_fallback
-                        env = read_process_environ_with_fallback(node.pid)
+                        from .services.window_filter import read_process_environ
+                        env = read_process_environ(node.pid)
                     except (FileNotFoundError, PermissionError) as e:
                         # Process may have exited or we don't have permission
                         logger.debug(f"Failed to read environ for window {node.id if hasattr(node,'id') else node.window} PID {node.pid}: {e}")
@@ -2490,6 +2535,7 @@ class IPCServer:
 
                 # Use node.id for Wayland windows (unique identifier), node.window for X11
                 window_id = node.window if is_x11_window else node.id
+                tracked_window = tracked_windows.get(int(window_id)) or tracked_windows_by_con_id.get(int(node.id))
 
                 # Extract app_id and worktree metadata from already-read env
                 app_id = env.get("I3PM_APP_ID")
@@ -2509,6 +2555,7 @@ class IPCServer:
                     "workspace": workspace_str,
                     "output": output_name,
                     "project": project,
+                    "scope": classification,
                     # Worktree metadata (Feature 079)
                     "is_worktree": env.get("I3PM_IS_WORKTREE", "false").lower() == "true",
                     "parent_project": env.get("I3PM_PARENT_PROJECT") or None,
@@ -2538,6 +2585,12 @@ class IPCServer:
                     "remote_dir": env.get("I3PM_REMOTE_DIR", ""),
                     "remote_session_name": env.get("I3PM_REMOTE_SESSION_NAME", ""),
                 }
+                if tracked_window:
+                    window_data.update(self._tracked_window_runtime_fields(tracked_window))
+                    if not window_data["project"]:
+                        window_data["project"] = str(getattr(tracked_window, "project", "") or "")
+                    if not window_data["scope"]:
+                        window_data["scope"] = str(getattr(tracked_window, "scope", "") or "")
                 windows.append(window_data)
 
             # Recurse into child nodes
@@ -5148,17 +5201,46 @@ class IPCServer:
         app = self._require_registry_app(app_name)
         dry_run = bool(params.get("dry_run", False))
         active_context = self._read_active_worktree_context() or {}
-        qualified_name = str(active_context.get("qualified_name") or "").strip()
-        local_directory = str(
-            active_context.get("local_directory") or active_context.get("directory") or ""
-        ).strip()
-        remote_profile = dict(active_context.get("remote") or {}) if isinstance(active_context.get("remote"), dict) else None
+        scoped_launch = app.scope == "scoped"
+        qualified_name = (
+            str(active_context.get("qualified_name") or "").strip()
+            if scoped_launch
+            else ""
+        )
+        local_directory = (
+            str(
+                active_context.get("local_directory")
+                or active_context.get("directory")
+                or ""
+            ).strip()
+            if scoped_launch
+            else ""
+        )
+        remote_profile = (
+            dict(active_context.get("remote") or {})
+            if scoped_launch and isinstance(active_context.get("remote"), dict)
+            else None
+        )
 
         if app.scope == "scoped" and not qualified_name:
             raise RuntimeError(json.dumps({
                 "code": -32004,
                 "message": f"Scoped application '{app_name}' requires an active worktree context",
                 "data": {"app_name": app_name}
+            }))
+
+        if not scoped_launch and variant_override == "ssh":
+            raise RuntimeError(json.dumps({
+                "code": -32004,
+                "message": (
+                    f"Global application '{app_name}' cannot be launched in SSH mode; "
+                    "global apps always run locally"
+                ),
+                "data": {
+                    "app_name": app_name,
+                    "scope": app.scope,
+                    "context_variant_override": variant_override,
+                }
             }))
 
         if variant_override == "local":
@@ -7444,6 +7526,7 @@ class IPCServer:
         params = params or {}
         tree_result = await self._get_window_tree(params)
         active_context = await self._context_get_active({})
+        tracked_windows = await self.state_manager.get_window_map_snapshot()
         outputs = tree_result.get("outputs", []) if isinstance(tree_result, dict) else []
         active_outputs = [
             output.get("name")
@@ -7475,12 +7558,44 @@ class IPCServer:
             except Exception as e:
                 logger.debug("runtime.snapshot scratchpad status failed: %s", e)
 
+        tracked_window_list = []
+        ssh_tracked_window_count = 0
+        scoped_tracked_window_count = 0
+        for window_info in tracked_windows.values():
+            if str(getattr(window_info, "execution_mode", "") or "") == "ssh":
+                ssh_tracked_window_count += 1
+            if str(getattr(window_info, "scope", "") or "") == "scoped":
+                scoped_tracked_window_count += 1
+            tracked_window_list.append(
+                {
+                    "window_id": int(getattr(window_info, "window_id", 0) or 0),
+                    "con_id": int(getattr(window_info, "con_id", 0) or 0),
+                    "project": str(getattr(window_info, "project", "") or ""),
+                    "scope": str(getattr(window_info, "scope", "") or ""),
+                    "workspace": str(getattr(window_info, "workspace", "") or ""),
+                    "output": str(getattr(window_info, "output", "") or ""),
+                    "window_class": str(getattr(window_info, "window_class", "") or ""),
+                    "app_name": str(getattr(window_info, "app_identifier", "") or ""),
+                    "marks": list(getattr(window_info, "marks", []) or []),
+                    "execution_mode": str(getattr(window_info, "execution_mode", "") or ""),
+                    "connection_key": str(getattr(window_info, "connection_key", "") or ""),
+                    "context_key": str(getattr(window_info, "context_key", "") or ""),
+                    "terminal_anchor_id": str(getattr(window_info, "terminal_anchor_id", "") or ""),
+                }
+            )
+
         return {
             "active_context": active_context,
             "outputs": outputs,
             "active_outputs": active_outputs,
             "total_windows": int(tree_result.get("total_windows", 0) or 0) if isinstance(tree_result, dict) else 0,
             "cached_window_tree": bool(tree_result.get("cached", False)) if isinstance(tree_result, dict) else False,
+            "tracked_windows": tracked_window_list,
+            "state_health": {
+                "tracked_window_count": len(tracked_window_list),
+                "scoped_tracked_window_count": scoped_tracked_window_count,
+                "ssh_tracked_window_count": ssh_tracked_window_count,
+            },
             "scratchpad": scratchpad_summary,
             "launch_stats": await self._get_launch_stats(),
         }

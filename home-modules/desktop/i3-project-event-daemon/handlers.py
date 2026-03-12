@@ -878,7 +878,17 @@ async def on_window_new(
             app_identifier=window_env.app_name if window_env else (matched_launch.app_name if matched_launch else window_class),
             project=actual_project,  # May be None for global windows
             marks=marks_list,
+            scope=(
+                window_env.scope
+                if window_env and window_env.scope in {"scoped", "global"}
+                else ("global" if actual_project == "global" else ("scoped" if actual_project else "global"))
+            ),
             workspace=container.workspace().name if container.workspace() else "",
+            output=(
+                container.workspace().ipc_data.get("output", "")
+                if container.workspace() and getattr(container.workspace(), "ipc_data", None)
+                else ""
+            ),
             created=datetime.now(),
             # Feature 041 T022: Store correlation metadata if matched via launch
             # T040: Now using full signals from calculate_confidence including workspace details
@@ -888,6 +898,18 @@ async def on_window_new(
             correlation_confidence_level=confidence_level if matched_launch else None,
             correlation_signals=correlation_signals if matched_launch else None,
             terminal_anchor_id=terminal_anchor_id,
+            execution_mode=(
+                "ssh"
+                if window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@")
+                else "local"
+            ),
+            connection_key=str(window_env.connection_key or "") if window_env else "",
+            context_key=str(window_env.context_key or "") if window_env else "",
+            remote_enabled=bool(
+                window_env
+                and str(window_env.connection_key or "").strip()
+                and not str(window_env.connection_key or "").startswith("local@")
+            ),
         )
         await state_manager.add_window(window_info)
 

@@ -37,6 +37,7 @@ class WindowInfo:
     # Project association
     project: Optional[str] = None  # Associated project name (from mark)
     marks: List[str] = field(default_factory=list)  # All i3 marks on this window
+    scope: str = "global"  # Canonical daemon scope ("scoped" or "global")
 
     # Position
     workspace: str = ""  # Current workspace name
@@ -54,6 +55,15 @@ class WindowInfo:
     correlation_confidence_level: Optional[str] = None  # Confidence level: EXACT, HIGH, MEDIUM, LOW
     correlation_signals: Optional[Dict[str, Any]] = None  # Signals used in correlation
     terminal_anchor_id: Optional[str] = None  # Canonical terminal/session anchor issued at launch
+    execution_mode: str = "local"  # Canonical execution mode ("local" or "ssh")
+    connection_key: str = ""  # Host-aware connection identity
+    context_key: str = ""  # <qualified_name>::<variant>::<connection_key>
+    remote_enabled: bool = False  # Whether the window belongs to an SSH execution context
+    remote_user: str = ""
+    remote_host: str = ""
+    remote_port: str = ""
+    remote_dir: str = ""
+    remote_session_name: str = ""
 
     def __post_init__(self) -> None:
         """Validate window information."""

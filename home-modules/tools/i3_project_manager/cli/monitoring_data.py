@@ -2404,7 +2404,6 @@ def _resolve_window_execution_identity(
     window: Dict[str, Any],
     *,
     remote_profile: Optional[Dict[str, Any]] = None,
-    remote_env_cache: Optional[Dict[int, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """
     Resolve canonical execution identity for a daemon window payload.
@@ -2412,7 +2411,6 @@ def _resolve_window_execution_identity(
     Priority:
       1) Explicit daemon metadata (execution_mode/connection_key/context_key/remote_*)
       2) ctx:<context_key> sway mark
-      3) Compatibility fallback via /proc I3PM_REMOTE_* (cached)
     """
     remote_profile = remote_profile or {}
 
@@ -2469,27 +2467,6 @@ def _resolve_window_execution_identity(
         or remote_user
         or remote_port
     )
-
-    if not has_direct_identity_hint and remote_env_cache is not None:
-        pid_int = _safe_int(window.get("pid"), 0)
-        if pid_int > 0:
-            env = remote_env_cache.get(pid_int)
-            if env is None:
-                env = _read_window_remote_env(pid_int)
-                remote_env_cache[pid_int] = env
-            if env:
-                if remote_enabled_raw is None:
-                    remote_enabled_raw = env.get("I3PM_REMOTE_ENABLED")
-                if not remote_user:
-                    remote_user = str(env.get("I3PM_REMOTE_USER") or "").strip()
-                if not remote_host:
-                    remote_host = str(env.get("I3PM_REMOTE_HOST") or "").strip()
-                if not remote_port:
-                    remote_port = env.get("I3PM_REMOTE_PORT")
-                if not remote_dir:
-                    remote_dir = str(env.get("I3PM_REMOTE_DIR") or "").strip()
-                if not remote_session_name:
-                    remote_session_name = str(env.get("I3PM_REMOTE_SESSION_NAME") or "").strip()
 
     profile_target = _format_remote_target(
         remote_profile.get("user", ""),
@@ -2623,7 +2600,6 @@ def _resolve_session_execution_identity(
 def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Collect normalized window candidates for OTEL session window-id resolution."""
     candidates: List[Dict[str, Any]] = []
-    remote_env_cache: Dict[int, Dict[str, str]] = {}
 
     for output in outputs:
         for workspace in output.get("workspaces", []):
@@ -2635,7 +2611,6 @@ def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dic
 
                 identity = _resolve_window_execution_identity(
                     window,
-                    remote_env_cache=remote_env_cache,
                 )
                 candidates.append(
                     {
@@ -5680,7 +5655,6 @@ def transform_to_project_view(
     # Group windows by project
     projects_dict: Dict[str, Dict[str, Any]] = {}
     global_windows = []
-    remote_env_cache: Dict[int, Dict[str, str]] = {}
 
     for window in all_windows:
         if window["scope"] == "scoped" and window["project"]:
@@ -5700,7 +5674,6 @@ def transform_to_project_view(
             identity = _resolve_window_execution_identity(
                 window,
                 remote_profile=remote_profile if isinstance(remote_profile, dict) else None,
-                remote_env_cache=remote_env_cache,
             )
             window_remote_enabled = bool(identity.get("remote_enabled", False))
             window_remote_target = str(identity.get("remote_target") or "")

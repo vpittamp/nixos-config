@@ -208,6 +208,25 @@ class StateManager:
                     project_name = extract_project_from_mark(
                         project_marks[0], tracked_window_id
                     )
+                    context_key = next(
+                        (
+                            str(mark).split("ctx:", 1)[1]
+                            for mark in container.marks
+                            if str(mark).startswith("ctx:")
+                        ),
+                        "",
+                    )
+                    parsed_context = context_key.split("::", 2) if context_key else []
+                    parsed_execution_mode = (
+                        parsed_context[1]
+                        if len(parsed_context) == 3 and parsed_context[1] in {"local", "ssh"}
+                        else ""
+                    )
+                    parsed_connection_key = (
+                        parsed_context[2]
+                        if len(parsed_context) == 3
+                        else ""
+                    )
 
                     # Create WindowInfo
                     from datetime import datetime
@@ -226,6 +245,11 @@ class StateManager:
                         ),
                         project=project_name,
                         marks=list(container.marks),
+                        scope=(
+                            window_env.scope
+                            if window_env and window_env.scope in {"scoped", "global"}
+                            else ("global" if project_name == "global" else ("scoped" if project_name else "global"))
+                        ),
                         workspace=workspace.name if workspace else "",
                         output=(
                             workspace.ipc_data.get("output", "")
@@ -238,6 +262,24 @@ class StateManager:
                             window_env.terminal_anchor_id
                             if window_env and window_env.terminal_anchor_id
                             else None
+                        ),
+                        execution_mode=(
+                            parsed_execution_mode
+                            or (
+                                "ssh"
+                                if window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@")
+                                else "local"
+                            )
+                        ),
+                        connection_key=(
+                            str(window_env.connection_key or "")
+                            if window_env and str(window_env.connection_key or "").strip()
+                            else parsed_connection_key
+                        ),
+                        context_key=str(window_env.context_key or "") if window_env and str(window_env.context_key or "").strip() else context_key,
+                        remote_enabled=bool(
+                            (window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@"))
+                            or parsed_execution_mode == "ssh"
                         ),
                     )
 
@@ -279,6 +321,11 @@ class StateManager:
                 "active_project": self.state.active_project,
                 "uptime_seconds": uptime,
             }
+
+    async def get_window_map_snapshot(self) -> Dict[int, WindowInfo]:
+        """Return a shallow copy of the tracked window map."""
+        async with self._lock:
+            return dict(self.state.window_map)
 
     async def update_app_classification(self, classification: "ApplicationClassification") -> None:
         """Update application classification (scoped/global classes).

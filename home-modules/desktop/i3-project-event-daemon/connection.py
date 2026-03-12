@@ -617,6 +617,7 @@ class ResilientI3Connection:
                 app_identifier=window_class,  # Feature 045: Use computed window_class
                 project=project_name,
                 marks=([mark, f"ctx:{context_key}"] if context_key else [mark]) + list(container.marks),
+                scope="global" if project_name == "global" else ("scoped" if project_name else "global"),
                 workspace=container.workspace().name if container.workspace() else "",
                 output=(
                     container.workspace().ipc_data.get("output", "")
@@ -625,6 +626,7 @@ class ResilientI3Connection:
                 ),
                 is_floating=container.floating == "user_on",
                 created=datetime.now(),
+                context_key=context_key,
             )
 
             await self.state_manager.add_window(window_info)
