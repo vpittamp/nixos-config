@@ -502,6 +502,179 @@ class SessionTracker:
         entry = self._pid_metadata_cache.get(pid)
         return dict(entry) if isinstance(entry, dict) else {}
 
+    async def _ensure_process_session_for_pid(
+        self,
+        tool: AITool,
+        pid: int,
+    ) -> Optional[str]:
+        """Bootstrap or refresh a live session from an already-running AI process."""
+        self._refresh_metadata_cache()
+
+        resolved_window_id, resolved_project, resolved_terminal_context = await self._resolve_window_context(pid)
+        terminal_context = (
+            dict(resolved_terminal_context)
+            if isinstance(resolved_terminal_context, dict)
+            else {}
+        )
+        metadata = self._load_pid_metadata(pid)
+
+        for key in (
+            "terminal_anchor_id",
+            "tmux_session",
+            "tmux_window",
+            "tmux_pane",
+            "pty",
+            "host_name",
+            "execution_mode",
+            "connection_key",
+            "context_key",
+            "remote_target",
+        ):
+            if terminal_context.get(key):
+                continue
+            value = metadata.get(key)
+            if value:
+                terminal_context[key] = value
+
+        project = str(metadata.get("project") or "").strip() or resolved_project
+        project_path = str(metadata.get("project_path") or "").strip() or None
+        if not project and project_path:
+            project = self._project_from_path(project_path)
+
+        native_session_id = str(metadata.get("session_id") or "").strip() or None
+        terminal_anchor_id = str(terminal_context.get("terminal_anchor_id") or "").strip()
+        if not terminal_anchor_id:
+            return None
+        if not project and not project_path:
+            return None
+
+        context_fingerprint = self._build_context_fingerprint(
+            pid,
+            resolved_window_id,
+            terminal_context,
+            project,
+            project_path,
+        )
+        native_group_id = self._build_native_group_id(tool, native_session_id)
+        desired_session_id = (
+            self._compose_native_session_key(native_group_id, context_fingerprint)
+            if native_group_id
+            else f"{tool.value}:pid:{pid}"
+        )
+        provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
+        now = datetime.now(timezone.utc)
+
+        async with self._lock:
+            canonical_session_id = desired_session_id
+            session: Optional[Session] = None
+
+            if native_group_id:
+                resolved_native_key = self._resolve_native_session_key_unlocked(
+                    native_group_id=native_group_id,
+                    context_fingerprint=context_fingerprint,
+                    client_pid=pid,
+                    terminal_context=terminal_context,
+                    window_id=resolved_window_id,
+                    preferred_project=project,
+                )
+                if resolved_native_key:
+                    canonical_session_id = resolved_native_key
+                    session = self._sessions.get(canonical_session_id)
+
+            if session is None:
+                session = self._sessions.get(canonical_session_id)
+
+            if session is None:
+                if len(self._sessions) >= MAX_SESSIONS:
+                    self._evict_oldest_idle_session()
+                session = Session(
+                    session_id=canonical_session_id,
+                    native_session_id=native_session_id,
+                    context_fingerprint=context_fingerprint if native_session_id else None,
+                    collision_group_id=native_group_id if native_session_id else None,
+                    identity_confidence=(
+                        IdentityConfidence.NATIVE
+                        if native_session_id
+                        else IdentityConfidence.PID
+                    ),
+                    tool=tool,
+                    provider=provider,
+                    state=SessionState.WORKING,
+                    project=project,
+                    project_path=project_path,
+                    window_id=resolved_window_id,
+                    pid=pid,
+                    trace_id=None,
+                    created_at=now,
+                    last_event_at=now,
+                    state_changed_at=now,
+                    state_seq=1,
+                    status_reason="process_detected",
+                )
+                self._sessions[canonical_session_id] = session
+                logger.info(
+                    "Bootstrapped live session %s for %s (pid=%s, window_id=%s, project=%s)",
+                    canonical_session_id,
+                    tool.value,
+                    pid,
+                    resolved_window_id,
+                    project,
+                )
+
+            if native_session_id and native_group_id:
+                desired_native_session_id = self._compose_native_session_key(
+                    native_group_id,
+                    context_fingerprint,
+                )
+                if (
+                    desired_native_session_id != session.session_id
+                    and desired_native_session_id not in self._sessions
+                ):
+                    rekeyed = self._rekey_session_unlocked(
+                        session.session_id,
+                        desired_native_session_id,
+                    )
+                    if rekeyed:
+                        session = rekeyed
+                session.native_session_id = native_session_id
+                session.collision_group_id = native_group_id
+                if context_fingerprint:
+                    session.context_fingerprint = context_fingerprint
+                self._register_native_session_unlocked(native_group_id, session.session_id)
+                self._session_pids[native_group_id] = pid
+                self._session_pids[native_session_id] = pid
+
+            session.pid = pid
+            session.project = project or session.project
+            session.project_path = project_path or session.project_path
+            session.window_id = resolved_window_id if resolved_window_id is not None else session.window_id
+            session.last_event_at = now
+            if session.state != SessionState.WORKING:
+                session.state = SessionState.WORKING
+                session.state_changed_at = now
+                session.state_seq += 1
+            session.status_reason = "process_detected"
+            if not native_session_id and session.identity_confidence != IdentityConfidence.NATIVE:
+                session.identity_confidence = IdentityConfidence.PID
+
+            session.terminal_context.window_id = session.window_id
+            session.terminal_context.terminal_anchor_id = terminal_context.get("terminal_anchor_id")
+            session.terminal_context.anchor_lookup = terminal_context.get("anchor_lookup")
+            session.terminal_context.tmux_session = terminal_context.get("tmux_session")
+            session.terminal_context.tmux_window = terminal_context.get("tmux_window")
+            session.terminal_context.tmux_pane = terminal_context.get("tmux_pane")
+            session.terminal_context.pty = terminal_context.get("pty")
+            session.terminal_context.host_name = terminal_context.get("host_name")
+            session.terminal_context.execution_mode = terminal_context.get("execution_mode")
+            session.terminal_context.connection_key = terminal_context.get("connection_key")
+            session.terminal_context.context_key = terminal_context.get("context_key")
+            session.terminal_context.remote_target = terminal_context.get("remote_target")
+
+            self._session_pids[session.session_id] = pid
+            self._apply_tracking_contract_unlocked(session)
+            self._mark_dirty_unlocked()
+            return session.session_id
+
     @staticmethod
     def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
         raw = str(value or "").strip()

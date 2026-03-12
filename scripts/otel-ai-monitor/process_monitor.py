@@ -210,6 +210,11 @@ class ProcessMonitor:
                     f"{tool.value}:pid:{pid}",
                     pid,
                 )
+                if not resolved_session_id:
+                    resolved_session_id = await self.tracker._ensure_process_session_for_pid(
+                        tool,
+                        pid,
+                    )
                 if resolved_session_id:
                     self._process_sessions[pid] = resolved_session_id
                 else:
