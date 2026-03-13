@@ -81,13 +81,12 @@
 
   programs.quickshell-runtime-shell = {
     enable = true;
-    primaryOutputs = [ "DP-2" "DP-1" "HDMI-A-1" "DP-3" ];
   };
 
-  # eww quick settings panel
+  # QuickShell owns the bars/runtime panel; quick settings still use the legacy Eww panel.
   programs.eww-quick-panel.enable = true;
 
-  # QuickShell now owns the active top bar
+  # Keep the legacy Eww top bar disabled while QuickShell renders the active bars.
   programs.eww-top-bar.enable = false;
 
   # sway-easyfocus - Keyboard-driven window hints

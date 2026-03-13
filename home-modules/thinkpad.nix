@@ -16,7 +16,6 @@
     ./desktop/quickshell-runtime-shell.nix
     ./desktop/eww-quick-panel.nix
     ./desktop/eww-top-bar.nix
-    ./desktop/eww-device-controls.nix  # Feature 116: Unified device controls
     ./desktop/swaync.nix
     ./desktop/sway-config-manager.nix
 
@@ -82,17 +81,13 @@
 
   programs.quickshell-runtime-shell = {
     enable = true;
-    primaryOutputs = [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ];
   };
 
-  # eww quick settings panel
+  # QuickShell owns the bars/runtime panel; quick settings still use the legacy Eww panel.
   programs.eww-quick-panel.enable = true;
 
-  # QuickShell now owns the active top bar
+  # Keep the legacy Eww top bar disabled while QuickShell renders the active bars.
   programs.eww-top-bar.enable = false;
-
-  # eww device controls (Feature 116)
-  programs.eww-device-controls.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {
