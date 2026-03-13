@@ -283,22 +283,23 @@ class ProcessMonitor:
             if not session:
                 return
 
-            # Update last event time
+            # A running process proves liveness, not active model work. Keep the
+            # session correlated and prevent expiry, but do not force it back into
+            # WORKING when telemetry has already moved it to completed/idle/review.
             dirty = False
             session.last_event_at = now
-            if session.status_reason != "process_keepalive":
-                session.status_reason = "process_keepalive"
-                dirty = True
-
-            # Ensure still in WORKING state
-            if session.state != SessionState.WORKING:
-                old_state = session.state
-                session.state = SessionState.WORKING
-                session.state_changed_at = now
-                session.state_seq += 1
-                session.status_reason = "process_keepalive"
-                logger.info(f"Process monitor: session {resolved_session_id} {old_state} → WORKING")
-                dirty = True
+            if not session.native_session_id:
+                if session.status_reason != "process_keepalive":
+                    session.status_reason = "process_keepalive"
+                    dirty = True
+                if session.state != SessionState.WORKING:
+                    old_state = session.state
+                    session.state = SessionState.WORKING
+                    session.state_changed_at = now
+                    session.state_seq += 1
+                    session.status_reason = "process_keepalive"
+                    logger.info(f"Process monitor: session {resolved_session_id} {old_state} → WORKING")
+                    dirty = True
             if dirty:
                 self.tracker._mark_dirty_unlocked()
 

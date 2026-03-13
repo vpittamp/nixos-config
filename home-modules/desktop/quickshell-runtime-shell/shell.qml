@@ -51,6 +51,7 @@ ShellRoot {
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool worktreePickerVisible: false
+    property var expandedSessionGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
     readonly property var primaryScreen: resolvePrimaryScreen()
@@ -328,10 +329,8 @@ ShellRoot {
             return false;
         }
 
-        if (sessionNeedsAttention(session)
-            || boolOrFalse(session.output_ready)
-            || boolOrFalse(session.output_unseen)
-            || sessionIsActivelyProcessing(session)) {
+        const phase = sessionPhase(session);
+        if (phase === "working" || phase === "needs_attention" || phase === "done") {
             return true;
         }
 
@@ -339,17 +338,7 @@ ShellRoot {
     }
 
     function stableSessionCompare(left, right) {
-        let result = compareDescending(sessionIsCurrent(left) ? 1 : 0, sessionIsCurrent(right) ? 1 : 0);
-        if (result !== 0) {
-            return result;
-        }
-
-        result = compareDescending(sessionIsCurrentHost(left) ? 1 : 0, sessionIsCurrentHost(right) ? 1 : 0);
-        if (result !== 0) {
-            return result;
-        }
-
-        result = compareDescending(boolOrFalse(left && left.pane_active) ? 1 : 0, boolOrFalse(right && right.pane_active) ? 1 : 0);
+        let result = compareDescending(sessionIsCurrentHost(left) ? 1 : 0, sessionIsCurrentHost(right) ? 1 : 0);
         if (result !== 0) {
             return result;
         }
@@ -1303,25 +1292,44 @@ ShellRoot {
         return value ? value.toUpperCase() : "";
     }
 
-    function hostChipFill(hostGroup) {
-        if (boolOrFalse(hostGroup && hostGroup.is_current_host)) {
-            return colors.blueWash;
+    function sessionProjectBadgeFill(projectGroup) {
+        const project = stringOrEmpty(projectGroup && projectGroup.project_name);
+        return project && project === activeContextProjectName() ? colors.blueBg : colors.cardAlt;
+    }
+
+    function sessionProjectBadgeText(projectGroup) {
+        const project = stringOrEmpty(projectGroup && projectGroup.project_name);
+        return project && project === activeContextProjectName() ? colors.text : colors.textDim;
+    }
+
+    function sessionGroupFill(group) {
+        if (boolOrFalse(group && group.is_current_host)) {
+            return colors.panelAlt;
         }
         return colors.cardAlt;
     }
 
-    function hostChipBorder(hostGroup) {
-        if (boolOrFalse(hostGroup && hostGroup.is_current_host)) {
-            return colors.blueMuted;
+    function sessionGroupHeaderFill(group, hovered, expanded) {
+        if (boolOrFalse(group && group.is_current_host)) {
+            return expanded ? colors.blueWash : "#13202d";
         }
-        return colors.lineSoft;
+        return hovered ? colors.card : (expanded ? colors.card : colors.bg);
     }
 
-    function hostChipText(hostGroup) {
-        if (boolOrFalse(hostGroup && hostGroup.is_current_host)) {
-            return colors.blue;
+    function sessionGroupHeaderTextColor(group) {
+        return boolOrFalse(group && group.is_current_host) ? colors.text : colors.textDim;
+    }
+
+    function sessionGroupChevronColor(group) {
+        return boolOrFalse(group && group.is_current_host) ? colors.blue : colors.subtle;
+    }
+
+    function sessionGroupMetaLabel(group) {
+        const projectCount = arrayOrEmpty(group && group.project_groups).length;
+        if (projectCount <= 0) {
+            return "";
         }
-        return colors.textDim;
+        return String(projectCount) + (projectCount === 1 ? " repo" : " repos");
     }
 
     function titleCaseWord(value) {
@@ -1373,30 +1381,60 @@ ShellRoot {
         return active ? colors.blueWash : colors.panel;
     }
 
-    function sessionAccentColor(session) {
-        if (sessionNeedsAttention(session)) {
-            return stageState(session) === "attention" ? colors.red : colors.amber;
+    function sessionPhase(session) {
+        const phase = stringOrEmpty(session && session.session_phase).toLowerCase();
+        if (phase.length > 0) {
+            if (phase === "done" && !sessionIsCurrent(session)) {
+                return "needs_attention";
+            }
+            return phase;
         }
-        if (boolOrFalse(session.output_unseen) || boolOrFalse(session.output_ready)) {
+        if (boolOrFalse(session && session.output_unseen)
+            || boolOrFalse(session && session.review_pending)
+            || boolOrFalse(session && session.needs_user_action)) {
+            return "needs_attention";
+        }
+        if (boolOrFalse(session && session.output_ready)) {
+            return sessionIsCurrent(session) ? "done" : "needs_attention";
+        }
+        if (boolOrFalse(session && session.remote_source_stale)) {
+            return "stale";
+        }
+        if (stringOrEmpty(session && session.stage_visual_state) === "working") {
+            return "working";
+        }
+        if (boolOrFalse(session && session.process_running)) {
+            return "idle";
+        }
+        return "inactive";
+    }
+
+    function sessionAccentColor(session) {
+        const phase = sessionPhase(session);
+        if (phase === "needs_attention") {
+            return colors.amber;
+        }
+        if (phase === "done") {
             return colors.accent;
         }
-        if (stringOrEmpty(session.stage_visual_state) === "working") {
+        if (phase === "working") {
             return stageColor(session);
         }
-        if (boolOrFalse(session.remote_source_stale)) {
+        if (phase === "stale") {
             return colors.subtle;
         }
         return colors.blueMuted;
     }
 
     function sessionTint(session) {
-        if (sessionNeedsAttention(session)) {
-            return stageState(session) === "attention" ? colors.redBg : colors.amberBg;
+        const phase = sessionPhase(session);
+        if (phase === "needs_attention") {
+            return colors.amberBg;
         }
-        if (boolOrFalse(session.output_unseen) || boolOrFalse(session.output_ready)) {
+        if (phase === "done") {
             return colors.accentBg;
         }
-        if (stringOrEmpty(session.stage_visual_state) === "working") {
+        if (phase === "working") {
             return stageBackground(session);
         }
         return colors.panelAlt;
@@ -1421,14 +1459,19 @@ ShellRoot {
     }
 
     function sessionNeedsAttention(session) {
-        return boolOrFalse(session.needs_user_action) || stageState(session) === "attention" || stageState(session) === "waiting";
+        return sessionPhase(session) === "needs_attention";
     }
 
     function sessionIsActivelyProcessing(session) {
+        if (sessionPhase(session) === "working") {
+            return true;
+        }
         const stage = stringOrEmpty(session && session.stage).toLowerCase();
         const ageSeconds = Number(session && session.activity_age_seconds);
         const freshness = stringOrEmpty(session && session.activity_freshness).toLowerCase();
         const pendingTools = Number(session && session.pending_tools);
+        const statusReason = stringOrEmpty(session && session.status_reason).toLowerCase();
+        const lastActivityAt = stringOrEmpty(session && session.last_activity_at);
 
         if (boolOrFalse(session && session.needs_user_action)
             || boolOrFalse(session && session.output_ready)
@@ -1443,6 +1486,9 @@ ShellRoot {
             || (Number.isFinite(pendingTools) && pendingTools > 0)) {
             return true;
         }
+        if (statusReason === "process_keepalive" && !lastActivityAt.length) {
+            return false;
+        }
 
         return ["starting", "thinking", "tool_running", "streaming"].indexOf(stage) >= 0
             && (!Number.isFinite(ageSeconds) || ageSeconds <= 15)
@@ -1453,45 +1499,23 @@ ShellRoot {
         return sessionIsActivelyProcessing(session);
     }
 
-    function sessionActivityState(session) {
-        if (sessionNeedsAttention(session)) {
-            return stageState(session) === "attention" ? "attention" : "waiting";
-        }
-        if (boolOrFalse(session && session.output_unseen) || boolOrFalse(session && session.output_ready)) {
-            return "ready";
-        }
-        if (boolOrFalse(session && session.remote_source_stale)
-            || stringOrEmpty(session && session.activity_freshness).toLowerCase() === "stale") {
-            return "stale";
-        }
-        if (sessionIsActivelyProcessing(session)) {
-            const stage = stringOrEmpty(session && session.stage).toLowerCase();
-            if (stage === "tool_running") {
-                return "tool";
-            }
-            if (stage === "streaming") {
-                return "streaming";
-            }
-            return "active";
-        }
-        if (boolOrFalse(session && session.process_running)) {
-            return "idle";
-        }
-        return "inactive";
+    function sessionNeedsReview(session) {
+        return sessionPhase(session) === "needs_attention";
     }
 
-    function sessionActivityColor(session) {
-        const state = sessionActivityState(session);
-        if (state === "attention") {
-            return colors.red;
-        }
-        if (state === "waiting") {
+    function sessionBadgeState(session) {
+        return sessionPhase(session);
+    }
+
+    function sessionBadgeColor(session) {
+        const state = sessionBadgeState(session);
+        if (state === "needs_attention") {
             return colors.amber;
         }
-        if (state === "ready") {
+        if (state === "done") {
             return colors.accent;
         }
-        if (state === "tool" || state === "streaming" || state === "active") {
+        if (state === "working") {
             return root.sessionAccentColor(session);
         }
         if (state === "stale") {
@@ -1500,18 +1524,15 @@ ShellRoot {
         return colors.muted;
     }
 
-    function sessionActivityBackground(session) {
-        const state = sessionActivityState(session);
-        if (state === "attention") {
-            return colors.redBg;
-        }
-        if (state === "waiting") {
+    function sessionBadgeBackground(session) {
+        const state = sessionBadgeState(session);
+        if (state === "needs_attention") {
             return colors.amberBg;
         }
-        if (state === "ready") {
+        if (state === "done") {
             return colors.accentBg;
         }
-        if (state === "tool" || state === "streaming" || state === "active") {
+        if (state === "working") {
             return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
         }
         if (state === "stale") {
@@ -1540,26 +1561,33 @@ ShellRoot {
         return String(Math.floor(ageSeconds / 86400)) + "d";
     }
 
-    function sessionActivityLabel(session) {
+    function sessionBadgeLabel(session) {
+        const state = sessionBadgeState(session);
+        if (state === "working") {
+            return "Working";
+        }
+        if (state === "needs_attention") {
+            return "Needs attention";
+        }
+        if (state === "done") {
+            return "Done";
+        }
         return sessionAgeCompactLabel(session);
     }
 
-    function sessionGlyph(session) {
-        const stage = stageState(session);
-        if (stage === "attention") {
+    function sessionBadgeSymbol(session) {
+        const state = sessionBadgeState(session);
+        if (state === "needs_attention") {
             return "!";
         }
-        if (stage === "waiting") {
-            return "⌨";
-        }
-        if (stage === "ready") {
+        if (state === "done") {
             return "✓";
         }
-        if (stringOrEmpty(session.stage).toLowerCase() === "streaming") {
-            return "⋯";
+        if (state === "working") {
+            return "◔";
         }
-        if (stringOrEmpty(session.stage).toLowerCase() === "tool_running") {
-            return "↺";
+        if (state === "stale") {
+            return "◌";
         }
         return "•";
     }
@@ -1622,50 +1650,15 @@ ShellRoot {
         return "Pane " + paneId;
     }
 
-    function sessionStateSymbol(session) {
-        const activityState = sessionActivityState(session);
-        if (activityState === "attention") {
-            return "!";
-        }
-        if (activityState === "waiting") {
-            return "⌨";
-        }
-        if (activityState === "ready") {
-            return "✓";
-        }
-        if (activityState === "streaming") {
-            return "⋯";
-        }
-        if (activityState === "tool") {
-            return "↺";
-        }
-        if (activityState === "active") {
-            return "◔";
-        }
-        if (activityState === "stale") {
-            return "◌";
-        }
-        return "•";
-    }
-
     function compactSessionStateLabel(session) {
-        const stage = stageState(session);
-        if (stage === "attention") {
-            return "Attention";
+        const badgeState = sessionBadgeState(session);
+        if (badgeState === "needs_attention") {
+            return "Needs attention";
         }
-        if (stage === "waiting") {
-            return "Waiting";
+        if (badgeState === "done") {
+            return "Done";
         }
-        if (stage === "ready") {
-            return "Ready";
-        }
-        if (stringOrEmpty(session.stage).toLowerCase() === "streaming") {
-            return "Streaming";
-        }
-        if (stringOrEmpty(session.stage).toLowerCase() === "tool_running") {
-            return "Tool";
-        }
-        if (stringOrEmpty(session.stage_visual_state) === "working") {
+        if (badgeState === "working") {
             return "Working";
         }
         return "Idle";
@@ -1775,30 +1768,35 @@ ShellRoot {
         for (let i = 0; i < sessions.length; i += 1) {
             const session = sessions[i];
             const project = stringOrEmpty(session.project_name || session.project || "global");
-            const groupKey = project || "global";
+            const hostKey = stringOrEmpty(session.connection_key || session.host_name || "unknown");
+            const groupKey = hostKey || "unknown";
 
             let group = index[groupKey];
             if (!group) {
                 group = {
                     group_key: groupKey,
-                    project_name: project,
+                    host_name: sessionHostLabel(session),
+                    raw_host_name: stringOrEmpty(session.host_name),
+                    execution_mode: stringOrEmpty(session.execution_mode),
+                    is_current_host: sessionIsCurrentHost(session),
+                    focus_mode: stringOrEmpty(session.focus_mode),
                     sessions: [],
-                    host_groups: []
+                    project_groups: []
                 };
-                group.host_index = {};
+                group.project_index = {};
                 index[groupKey] = group;
                 groups.push(group);
             }
 
             group.sessions.push(session);
-            const hostKey = stringOrEmpty(session.connection_key || session.host_name || "unknown");
-            let hostGroup = group.host_index[hostKey];
-            if (!hostGroup) {
+            const projectKey = project || "global";
+            let projectGroup = group.project_index[projectKey];
+            if (!projectGroup) {
                 const parentWindow = findWindowById(Number(session.window_id || 0));
-                hostGroup = {
-                    host_key: hostKey,
-                    host_name: sessionHostLabel(session),
-                    raw_host_name: stringOrEmpty(session.host_name),
+                projectGroup = {
+                    project_key: projectKey,
+                    display_name: shortProject(project || "global"),
+                    project_name: project,
                     execution_mode: stringOrEmpty(session.execution_mode),
                     is_current_host: sessionIsCurrentHost(session),
                     focus_mode: stringOrEmpty(session.focus_mode),
@@ -1806,25 +1804,20 @@ ShellRoot {
                     window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : "",
                     sessions: []
                 };
-                group.host_index[hostKey] = hostGroup;
-                group.host_groups.push(hostGroup);
+                group.project_index[projectKey] = projectGroup;
+                group.project_groups.push(projectGroup);
             }
-            hostGroup.sessions.push(session);
+            projectGroup.sessions.push(session);
         }
 
         for (let i = 0; i < groups.length; i += 1) {
             groups[i].sessions = stableSortedSessions(groups[i].sessions);
-            const hostGroups = arrayOrEmpty(groups[i].host_groups);
-            for (let j = 0; j < hostGroups.length; j += 1) {
-                hostGroups[j].sessions = stableSortedSessions(hostGroups[j].sessions);
+            const projectGroups = arrayOrEmpty(groups[i].project_groups);
+            for (let j = 0; j < projectGroups.length; j += 1) {
+                projectGroups[j].sessions = stableSortedSessions(projectGroups[j].sessions);
             }
-            hostGroups.sort((left, right) => {
-                let result = compareDescending(boolOrFalse(left && left.is_current_host) ? 1 : 0, boolOrFalse(right && right.is_current_host) ? 1 : 0);
-                if (result !== 0) {
-                    return result;
-                }
-
-                result = compareAscending(stringOrEmpty(left && left.host_name), stringOrEmpty(right && right.host_name));
+            projectGroups.sort((left, right) => {
+                let result = compareAscending(stringOrEmpty(left && left.project_name), stringOrEmpty(right && right.project_name));
                 if (result !== 0) {
                     return result;
                 }
@@ -1834,28 +1827,23 @@ ShellRoot {
                     return result;
                 }
 
-                return compareAscending(stringOrEmpty(left && left.host_key), stringOrEmpty(right && right.host_key));
+                return compareAscending(stringOrEmpty(left && left.project_key), stringOrEmpty(right && right.project_key));
             });
-            delete groups[i].host_index;
+            delete groups[i].project_index;
         }
 
         groups.sort((left, right) => {
-            const leftCurrent = groupHasCurrentSession(left) ? 1 : 0;
-            const rightCurrent = groupHasCurrentSession(right) ? 1 : 0;
-            let result = compareDescending(leftCurrent, rightCurrent);
+            let result = compareDescending(boolOrFalse(left && left.is_current_host) ? 1 : 0, boolOrFalse(right && right.is_current_host) ? 1 : 0);
             if (result !== 0) {
                 return result;
             }
 
-            result = compareDescending(
-                arrayOrEmpty(left && left.host_groups).some((hostGroup) => boolOrFalse(hostGroup && hostGroup.is_current_host)) ? 1 : 0,
-                arrayOrEmpty(right && right.host_groups).some((hostGroup) => boolOrFalse(hostGroup && hostGroup.is_current_host)) ? 1 : 0
-            );
+            result = compareAscending(stringOrEmpty(left && left.host_name), stringOrEmpty(right && right.host_name));
             if (result !== 0) {
                 return result;
             }
 
-            result = compareAscending(stringOrEmpty(left && left.project_name), stringOrEmpty(right && right.project_name));
+            result = compareAscending(stringOrEmpty(left && left.execution_mode), stringOrEmpty(right && right.execution_mode));
             if (result !== 0) {
                 return result;
             }
@@ -1867,22 +1855,28 @@ ShellRoot {
     }
 
     function sessionGroupTitle(group) {
-        return shortProject(group.project_name || "global");
+        return displayHostName(group.host_name || group.raw_host_name || "Unknown");
     }
 
-    function sessionGroupSubtitle(group) {
-        const bits = [];
-        const title = stringOrEmpty(group.window_title);
-        const host = stringOrEmpty(group.host_name);
-
-        if (title) {
-            bits.push(title);
+    function sessionGroupExpanded(group) {
+        const key = stringOrEmpty(group && group.group_key);
+        if (!key.length) {
+            return true;
         }
-        if (host) {
-            bits.push(host);
+        if (expandedSessionGroups[key] !== undefined) {
+            return !!expandedSessionGroups[key];
         }
+        return boolOrFalse(group && group.is_current_host);
+    }
 
-        return bits.join(" • ");
+    function toggleSessionGroup(group) {
+        const key = stringOrEmpty(group && group.group_key);
+        if (!key.length) {
+            return;
+        }
+        const next = Object.assign({}, expandedSessionGroups);
+        next[key] = !sessionGroupExpanded(group);
+        expandedSessionGroups = next;
     }
 
     function windowSessionIcons(windowData) {
@@ -3437,316 +3431,439 @@ ShellRoot {
                         boundsBehavior: Flickable.StopAtBounds
 
                         delegate: Rectangle {
+                            id: sessionGroupCard
                             required property var modelData
                             readonly property var group: modelData
+                            readonly property bool expanded: root.sessionGroupExpanded(group)
                             width: sessionGroupList.width
-                            readonly property int hostRowCount: Math.max(1, root.arrayOrEmpty(group.host_groups).length)
-                            height: 44 + (hostRowCount * 52) + (Math.max(0, hostRowCount - 1) * 8)
+                            implicitHeight: groupCardContent.implicitHeight + 16
+                            height: implicitHeight
                             radius: 12
-                            color: colors.card
-                            border.color: colors.border
-                            border.width: 1
+                            color: root.sessionGroupFill(group)
+                            border.color: "transparent"
+                            border.width: 0
 
                             ColumnLayout {
-                                anchors.fill: parent
+                                id: groupCardContent
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
                                 anchors.topMargin: 8
-                                anchors.bottomMargin: 8
                                 spacing: 8
 
-                                RowLayout {
+                                Rectangle {
+                                    id: groupHeaderSurface
                                     Layout.fillWidth: true
-                                    spacing: 6
+                                    implicitHeight: 30
+                                    radius: 9
+                                    color: root.sessionGroupHeaderFill(group, groupHeaderMouse.containsMouse, sessionGroupCard.expanded)
+                                    border.color: "transparent"
+                                    border.width: 0
 
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: root.sessionGroupTitle(group)
-                                        color: colors.text
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-
-                                    Rectangle {
-                                        width: sessionGroupCountText.implicitWidth + 10
-                                        height: 18
-                                        radius: 6
-                                        color: colors.bg
-                                        border.color: colors.lineSoft
-                                        border.width: 1
+                                    RowLayout {
+                                        id: groupHeaderRow
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 10
+                                        anchors.rightMargin: 10
+                                        spacing: 8
 
                                         Text {
-                                            id: sessionGroupCountText
-                                            anchors.centerIn: parent
-                                            text: String(root.arrayOrEmpty(group.sessions).length)
-                                            color: colors.muted
-                                            font.pixelSize: 8
+                                            text: sessionGroupCard.expanded ? "▾" : "▸"
+                                            color: root.sessionGroupChevronColor(group)
+                                            font.pixelSize: 12
                                             font.weight: Font.DemiBold
                                         }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.sessionGroupTitle(group)
+                                            color: root.sessionGroupHeaderTextColor(group)
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            visible: !sessionGroupCard.expanded && root.sessionGroupMetaLabel(group).length > 0
+                                            text: root.sessionGroupMetaLabel(group)
+                                            color: colors.subtle
+                                            font.pixelSize: 8
+                                            font.weight: Font.Medium
+                                        }
+
+                                        Rectangle {
+                                            width: sessionGroupCountText.implicitWidth + 10
+                                            height: 18
+                                            radius: 6
+                                            color: colors.bg
+                                            border.color: "transparent"
+                                            border.width: 0
+
+                                            Text {
+                                                id: sessionGroupCountText
+                                                anchors.centerIn: parent
+                                                text: String(root.arrayOrEmpty(group.sessions).length)
+                                                color: colors.muted
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: groupHeaderMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleSessionGroup(group)
                                     }
                                 }
 
-                                Repeater {
-                                    model: root.arrayOrEmpty(group.host_groups)
+                                ColumnLayout {
+                                    visible: sessionGroupCard.expanded
+                                    Layout.fillWidth: true
+                                    spacing: 8
 
-                                    delegate: ColumnLayout {
-                                        required property var modelData
-                                        readonly property var hostGroup: modelData
-                                        Layout.fillWidth: true
-                                        spacing: 6
+                                    Repeater {
+                                        model: root.arrayOrEmpty(group.project_groups)
 
-                                        RowLayout {
+                                        delegate: ColumnLayout {
+                                            required property var modelData
+                                            readonly property var projectGroup: modelData
                                             Layout.fillWidth: true
                                             spacing: 6
 
-                                            Rectangle {
-                                                height: 18
-                                                radius: 6
-                                                color: root.hostChipFill(hostGroup)
-                                                border.color: root.hostChipBorder(hostGroup)
-                                                border.width: 1
-                                                Layout.preferredWidth: hostGroupLabel.implicitWidth + 14
-
-                                                Text {
-                                                    id: hostGroupLabel
-                                                    anchors.centerIn: parent
-                                                    text: root.stringOrEmpty(hostGroup.host_name) || shellConfig.hostName
-                                                    color: root.hostChipText(hostGroup)
-                                                    font.pixelSize: 8
-                                                    font.weight: Font.DemiBold
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                visible: root.stringOrEmpty(hostGroup.execution_mode).toLowerCase() === "ssh"
-                                                height: 18
-                                                radius: 6
-                                                color: colors.tealBg
-                                                border.color: colors.lineSoft
-                                                border.width: 1
-                                                Layout.preferredWidth: hostModeText.implicitWidth + 12
-
-                                                Text {
-                                                    id: hostModeText
-                                                    anchors.centerIn: parent
-                                                    text: "SSH"
-                                                    color: colors.teal
-                                                    font.pixelSize: 8
-                                                    font.weight: Font.DemiBold
-                                                }
-                                            }
-
-                                            Text {
+                                            RowLayout {
                                                 Layout.fillWidth: true
-                                                visible: root.stringOrEmpty(hostGroup.window_title).length > 0
-                                                text: root.stringOrEmpty(hostGroup.window_title)
-                                                color: colors.subtle
-                                                font.pixelSize: 8
-                                                font.weight: Font.Medium
-                                                elide: Text.ElideRight
-                                            }
+                                                spacing: 6
 
-                                            Rectangle {
-                                                height: 18
-                                                radius: 6
-                                                color: colors.bg
-                                                border.color: colors.lineSoft
-                                                border.width: 1
-                                                Layout.preferredWidth: hostSessionCountText.implicitWidth + 10
+                                                Rectangle {
+                                                    height: 18
+                                                    radius: 6
+                                                    color: root.sessionProjectBadgeFill(projectGroup)
+                                                    border.width: 0
+                                                    Layout.preferredWidth: projectGroupLabel.implicitWidth + 12
+
+                                                    Text {
+                                                        id: projectGroupLabel
+                                                        anchors.centerIn: parent
+                                                        text: root.stringOrEmpty(projectGroup.display_name) || "Global"
+                                                        color: root.sessionProjectBadgeText(projectGroup)
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    visible: root.stringOrEmpty(projectGroup.execution_mode).toLowerCase() === "ssh"
+                                                    height: 18
+                                                    radius: 6
+                                                    color: colors.tealBg
+                                                    border.color: colors.lineSoft
+                                                    border.width: 1
+                                                    Layout.preferredWidth: sessionProjectModeText.implicitWidth + 12
+
+                                                    Text {
+                                                        id: sessionProjectModeText
+                                                        anchors.centerIn: parent
+                                                        text: "SSH"
+                                                        color: colors.teal
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
 
                                                 Text {
-                                                    id: hostSessionCountText
-                                                    anchors.centerIn: parent
-                                                    text: String(root.arrayOrEmpty(hostGroup.sessions).length)
-                                                    color: colors.muted
+                                                    Layout.fillWidth: true
+                                                    visible: root.stringOrEmpty(projectGroup.window_title).length > 0
+                                                    text: root.stringOrEmpty(projectGroup.window_title)
+                                                    color: colors.subtle
                                                     font.pixelSize: 8
-                                                    font.weight: Font.DemiBold
+                                                    font.weight: Font.Medium
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Rectangle {
+                                                    height: 18
+                                                    radius: 6
+                                                    color: colors.bg
+                                                    border.color: colors.lineSoft
+                                                    border.width: 1
+                                                    Layout.preferredWidth: sessionProjectCountText.implicitWidth + 10
+
+                                                    Text {
+                                                        id: sessionProjectCountText
+                                                        anchors.centerIn: parent
+                                                        text: String(root.arrayOrEmpty(projectGroup.sessions).length)
+                                                        color: colors.muted
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
                                                 }
                                             }
-                                        }
 
-                                        ListView {
-                                            id: groupedSessionRow
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 40
-                                            orientation: ListView.Horizontal
-                                            spacing: 8
-                                            clip: true
-                                            interactive: contentWidth > width
-                                            boundsBehavior: Flickable.StopAtBounds
-                                            model: root.arrayOrEmpty(hostGroup.sessions)
+                                            ListView {
+                                                id: groupedSessionRow
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 40
+                                                orientation: ListView.Horizontal
+                                                spacing: 8
+                                                clip: true
+                                                interactive: contentWidth > width
+                                                boundsBehavior: Flickable.StopAtBounds
+                                                model: root.arrayOrEmpty(projectGroup.sessions)
 
-                                            delegate: Rectangle {
-                                                required property var modelData
-                                                readonly property var session: modelData
-                                                readonly property string primaryLabel: root.sessionPrimaryLabel(session)
-                                                readonly property string secondaryLabel: root.sessionSecondaryLabel(session)
-                                                readonly property string activityLabel: root.sessionActivityLabel(session)
-                                                readonly property real contentWidth: Math.max(primaryText.implicitWidth, secondaryText.implicitWidth) + trailingBadges.implicitWidth + 84
-                                                readonly property real maxPillWidth: Math.max(176, groupedSessionRow.width - 18)
-                                                width: Math.max(172, Math.min(contentWidth, maxPillWidth))
-                                                height: 40
-                                                radius: 10
-                                                color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
-                                                    ? colors.cardAlt
-                                                    : root.sessionCardFill(session)
-                                                border.color: root.sessionCardBorder(session)
-                                                border.width: 0
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var session: modelData
+                                                    readonly property string primaryLabel: root.sessionPrimaryLabel(session)
+                                                    readonly property string secondaryLabel: root.sessionSecondaryLabel(session)
+                                                    readonly property string activityLabel: root.sessionBadgeLabel(session)
+                                                    property bool hasMotion: root.sessionHasMotion(session)
+                                                    readonly property real contentWidth: Math.max(primaryText.implicitWidth, secondaryText.implicitWidth) + trailingBadges.implicitWidth + 84
+                                                    readonly property real maxPillWidth: Math.max(176, groupedSessionRow.width - 18)
+                                                    width: Math.max(172, Math.min(contentWidth, maxPillWidth))
+                                                    height: 40
+                                                    radius: 10
+                                                    color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
+                                                        ? colors.cardAlt
+                                                        : root.sessionCardFill(session)
+                                                    border.color: root.sessionCardBorder(session)
+                                                    border.width: 0
 
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 8
-                                                    anchors.rightMargin: 8
-                                                    spacing: 8
-
-                                                    Item {
-                                                        width: 24
-                                                        height: 24
-
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 22
-                                                            height: 22
-                                                            radius: 7
-                                                            color: root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt
-                                                            border.color: "transparent"
-                                                            border.width: 0
-                                                        }
-
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 22
-                                                            height: 22
-                                                            radius: 7
-                                                            color: "transparent"
-                                                            border.color: "transparent"
-                                                            border.width: 0
-                                                            opacity: root.sessionHasMotion(session) ? 0.18 : 0
-                                                            scale: root.sessionHasMotion(session) ? 0.92 : 1
-
-                                                            SequentialAnimation on scale {
-                                                                running: root.sessionHasMotion(session)
-                                                                loops: Animation.Infinite
-                                                                NumberAnimation { from: 0.94; to: 1.08; duration: 900; easing.type: Easing.InOutQuad }
-                                                                NumberAnimation { from: 1.08; to: 0.94; duration: 900; easing.type: Easing.InOutQuad }
-                                                            }
-
-                                                            SequentialAnimation on opacity {
-                                                                running: root.sessionHasMotion(session)
-                                                                loops: Animation.Infinite
-                                                                NumberAnimation { from: 0.18; to: 0.06; duration: 900; easing.type: Easing.InOutQuad }
-                                                                NumberAnimation { from: 0.06; to: 0.18; duration: 900; easing.type: Easing.InOutQuad }
-                                                            }
-                                                        }
-
-                                                        IconImage {
-                                                            anchors.centerIn: parent
-                                                            implicitSize: 15
-                                                            source: root.toolIconSource(session)
-                                                            mipmap: true
-                                                            opacity: 0.92
-                                                        }
-
-                                                        Rectangle {
-                                                            anchors.right: parent.right
-                                                            anchors.bottom: parent.bottom
-                                                            width: 6
-                                                            height: 6
-                                                            radius: 3
-                                                            color: root.sessionAccentColor(session)
-                                                            opacity: 0.72
-                                                        }
+                                                    function resetMotionVisuals() {
+                                                        workingHalo.opacity = hasMotion ? 0.05 : 0;
+                                                        workingHalo.scale = 1;
+                                                        toolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
+                                                        toolIconWrap.scale = 1;
                                                     }
 
-                                                    ColumnLayout {
-                                                        Layout.fillWidth: true
-                                                        spacing: 1
+                                                    onHasMotionChanged: resetMotionVisuals()
+                                                    Component.onCompleted: resetMotionVisuals()
 
-                                                        Text {
-                                                            id: primaryText
-                                                            Layout.fillWidth: true
-                                                            text: primaryLabel
-                                                            color: colors.text
-                                                            font.pixelSize: 10
-                                                            font.weight: Font.DemiBold
-                                                            elide: Text.ElideRight
-                                                        }
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 8
+                                                        anchors.rightMargin: 8
+                                                        spacing: 8
 
-                                                        Text {
-                                                            id: secondaryText
-                                                            Layout.fillWidth: true
-                                                            text: secondaryLabel
-                                                            color: root.sessionTextColor(session)
-                                                            font.pixelSize: 8
-                                                            font.weight: Font.Medium
-                                                            elide: Text.ElideRight
-                                                        }
-                                                    }
-
-                                                    ColumnLayout {
-                                                        id: trailingBadges
-                                                        spacing: 3
-
-                                                        Rectangle {
-                                                            Layout.alignment: Qt.AlignRight
+                                                        Item {
                                                             width: 24
                                                             height: 24
-                                                            radius: 8
-                                                            color: root.sessionActivityBackground(session)
-                                                            border.color: "transparent"
-                                                            border.width: 0
 
-                                                            Text {
+                                                            Rectangle {
                                                                 anchors.centerIn: parent
-                                                                text: root.sessionStateSymbol(session)
-                                                                color: root.sessionActivityColor(session)
-                                                                font.pixelSize: 14
-                                                                font.weight: Font.DemiBold
+                                                                width: 20
+                                                                height: 20
+                                                                radius: 7
+                                                                color: root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt
+                                                                border.color: "transparent"
+                                                                border.width: 0
+                                                            }
+
+                                                            Rectangle {
+                                                                id: workingHalo
+                                                                anchors.centerIn: parent
+                                                                width: 24
+                                                                height: 24
+                                                                radius: 8
+                                                                color: root.sessionAccentColor(session)
+                                                                border.color: "transparent"
+                                                                border.width: 0
+                                                                visible: hasMotion
+                                                                opacity: hasMotion ? 0.05 : 0
+                                                                scale: 1
+
+                                                                ParallelAnimation {
+                                                                    running: hasMotion
+                                                                    loops: Animation.Infinite
+
+                                                                    SequentialAnimation {
+                                                                        OpacityAnimator {
+                                                                            target: workingHalo
+                                                                            from: 0.03
+                                                                            to: 0.08
+                                                                            duration: 800
+                                                                        }
+                                                                        OpacityAnimator {
+                                                                            target: workingHalo
+                                                                            from: 0.08
+                                                                            to: 0.03
+                                                                            duration: 800
+                                                                        }
+                                                                    }
+
+                                                                    SequentialAnimation {
+                                                                        ScaleAnimator {
+                                                                            target: workingHalo
+                                                                            from: 0.96
+                                                                            to: 1.05
+                                                                            duration: 800
+                                                                        }
+                                                                        ScaleAnimator {
+                                                                            target: workingHalo
+                                                                            from: 1.05
+                                                                            to: 0.96
+                                                                            duration: 800
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Item {
+                                                                id: toolIconWrap
+                                                                anchors.centerIn: parent
+                                                                width: 15
+                                                                height: 15
+                                                                scale: 1
+                                                                opacity: hasMotion ? 0.96 : 0.92
+
+                                                                ParallelAnimation {
+                                                                    running: hasMotion
+                                                                    loops: Animation.Infinite
+
+                                                                    SequentialAnimation {
+                                                                        ScaleAnimator {
+                                                                            target: toolIconWrap
+                                                                            from: 0.94
+                                                                            to: 1.12
+                                                                            duration: 800
+                                                                        }
+                                                                        ScaleAnimator {
+                                                                            target: toolIconWrap
+                                                                            from: 1.12
+                                                                            to: 0.94
+                                                                            duration: 800
+                                                                        }
+                                                                    }
+
+                                                                    SequentialAnimation {
+                                                                        OpacityAnimator {
+                                                                            target: toolIconWrap
+                                                                            from: 0.82
+                                                                            to: 1
+                                                                            duration: 800
+                                                                        }
+                                                                        OpacityAnimator {
+                                                                            target: toolIconWrap
+                                                                            from: 1
+                                                                            to: 0.82
+                                                                            duration: 800
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                IconImage {
+                                                                    anchors.centerIn: parent
+                                                                    implicitSize: 15
+                                                                    source: root.toolIconSource(session)
+                                                                    mipmap: true
+                                                                    opacity: 1
+                                                                }
+                                                            }
+
+                                                            Rectangle {
+                                                                anchors.right: parent.right
+                                                                anchors.bottom: parent.bottom
+                                                                width: 6
+                                                                height: 6
+                                                                radius: 3
+                                                                color: root.sessionBadgeColor(session)
+                                                                opacity: 0.8
                                                             }
                                                         }
 
-                                                        Rectangle {
-                                                            Layout.alignment: Qt.AlignRight
-                                                            visible: activityLabel.length > 0
-                                                            width: visible ? activityText.implicitWidth + 12 : 0
-                                                            height: 16
-                                                            radius: 6
-                                                            color: root.sessionActivityBackground(session)
-                                                            border.color: "transparent"
-                                                            border.width: 0
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 1
 
-                                                            RowLayout {
-                                                                anchors.fill: parent
-                                                                anchors.leftMargin: 5
-                                                                anchors.rightMargin: 5
-                                                                spacing: 4
+                                                            Text {
+                                                                id: primaryText
+                                                                Layout.fillWidth: true
+                                                                text: primaryLabel
+                                                                color: colors.text
+                                                                font.pixelSize: 10
+                                                                font.weight: Font.DemiBold
+                                                                elide: Text.ElideRight
+                                                            }
 
-                                                                Rectangle {
-                                                                    width: 5
-                                                                    height: 5
-                                                                    radius: 3
-                                                                    color: root.sessionActivityColor(session)
-                                                                }
+                                                            Text {
+                                                                id: secondaryText
+                                                                Layout.fillWidth: true
+                                                                text: secondaryLabel
+                                                                color: root.sessionTextColor(session)
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.Medium
+                                                                elide: Text.ElideRight
+                                                            }
+                                                        }
+
+                                                        ColumnLayout {
+                                                            id: trailingBadges
+                                                            spacing: 3
+
+                                                            Rectangle {
+                                                                Layout.alignment: Qt.AlignRight
+                                                                width: 24
+                                                                height: 24
+                                                                radius: 8
+                                                                color: root.sessionBadgeBackground(session)
+                                                                border.color: "transparent"
+                                                                border.width: 0
 
                                                                 Text {
-                                                                    id: activityText
-                                                                    text: activityLabel
-                                                                    color: root.sessionActivityColor(session)
-                                                                    font.pixelSize: 7
+                                                                    anchors.centerIn: parent
+                                                                    text: root.sessionBadgeSymbol(session)
+                                                                    color: root.sessionBadgeColor(session)
+                                                                    font.pixelSize: 14
                                                                     font.weight: Font.DemiBold
                                                                 }
                                                             }
+
+                                                            Rectangle {
+                                                                Layout.alignment: Qt.AlignRight
+                                                                visible: activityLabel.length > 0
+                                                                width: visible ? activityText.implicitWidth + 12 : 0
+                                                                height: 16
+                                                                radius: 6
+                                                                color: root.sessionBadgeBackground(session)
+                                                                border.color: "transparent"
+                                                                border.width: 0
+
+                                                                RowLayout {
+                                                                    anchors.fill: parent
+                                                                    anchors.leftMargin: 5
+                                                                    anchors.rightMargin: 5
+                                                                    spacing: 4
+
+                                                                    Rectangle {
+                                                                        width: 5
+                                                                        height: 5
+                                                                        radius: 3
+                                                                        color: root.sessionBadgeColor(session)
+                                                                    }
+
+                                                                    Text {
+                                                                        id: activityText
+                                                                        text: activityLabel
+                                                                        color: root.sessionBadgeColor(session)
+                                                                        font.pixelSize: 7
+                                                                        font.weight: Font.DemiBold
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
-                                                }
 
-                                                MouseArea {
-                                                    id: sessionPillMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                                    MouseArea {
+                                                        id: sessionPillMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                                    }
                                                 }
                                             }
                                         }

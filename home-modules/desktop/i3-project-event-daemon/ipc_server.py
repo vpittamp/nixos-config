@@ -5937,6 +5937,26 @@ class IPCServer:
         """Return the deterministic remote OTEL sink file path."""
         return self._runtime_dir() / "eww-monitoring-panel" / "remote-otel-sink.json"
 
+    def _ai_session_seen_events_file(self) -> Path:
+        """Return the review acknowledgement queue consumed by monitoring_data."""
+        return self._runtime_dir() / "eww-monitoring-panel" / "ai-session-seen-events.jsonl"
+
+    def _record_ai_session_seen(self, session_key: str) -> None:
+        """Append an explicit session-seen acknowledgement for review retention."""
+        key = str(session_key or "").strip()
+        if not key:
+            return
+        path = self._ai_session_seen_events_file()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "session_key": key,
+                    "timestamp": int(time.time()),
+                }, separators=(",", ":")) + "\n")
+        except OSError as exc:
+            logger.debug("Failed to record AI session seen event for %s: %s", key, exc)
+
     def _load_json_file(self, path: Path) -> Dict[str, Any]:
         """Read a JSON object from disk, returning an empty object on failure."""
         try:
@@ -6216,7 +6236,9 @@ class IPCServer:
                 "user_action_reason": str(raw_session.get("user_action_reason") or "").strip(),
                 "output_ready": bool(raw_session.get("output_ready", False)),
                 "output_unseen": bool(raw_session.get("output_unseen", False)),
-                "review_pending": bool(raw_session.get("output_unseen", False)),
+                "review_pending": bool(raw_session.get("review_pending", raw_session.get("output_unseen", False))),
+                "session_phase": str(raw_session.get("session_phase") or "").strip(),
+                "session_phase_label": str(raw_session.get("session_phase_label") or "").strip(),
                 "is_streaming": bool(raw_session.get("is_streaming", False)),
                 "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
                 "focusable": focus_mode != "unfocusable",
@@ -6239,6 +6261,7 @@ class IPCServer:
                 "process_tree_cpu_percent": raw_session.get("process_tree_cpu_percent"),
                 "process_count": raw_session.get("process_count"),
                 "pulse_working": bool(raw_session.get("pulse_working", False)),
+                "last_activity_at": str(raw_session.get("last_activity_at") or "").strip(),
                 "activity_age_seconds": int(raw_session.get("activity_age_seconds", 0) or 0),
                 "activity_age_label": str(raw_session.get("activity_age_label") or "").strip(),
                 "activity_freshness": str(raw_session.get("activity_freshness") or "").strip(),
@@ -6283,9 +6306,7 @@ class IPCServer:
     def _session_item_preference_key(self, session: Dict[str, Any]) -> Tuple[Any, ...]:
         """Return a comparison key that prefers the newest, richest session snapshot."""
         return (
-            bool(session.get("needs_user_action", False)),
-            bool(session.get("output_ready", False) or session.get("output_unseen", False)),
-            bool(session.get("pulse_working", False) or session.get("is_streaming", False)),
+            self._session_phase_priority(str(session.get("session_phase") or "")),
             int(session.get("pending_tools", 0) or 0),
             bool(session.get("process_running", False)),
             bool(session.get("pane_active", False)),
@@ -6294,6 +6315,18 @@ class IPCServer:
             str(session.get("updated_at") or ""),
             bool(session.get("native_session_id")),
         )
+
+    @staticmethod
+    def _session_phase_priority(phase: str) -> int:
+        mapping = {
+            "needs_attention": 4,
+            "working": 3,
+            "done": 2,
+            "idle": 1,
+            "stale": 0,
+            "inactive": -1,
+        }
+        return mapping.get(str(phase or "").strip().lower(), -1)
 
     def _dedupe_session_items(
         self,
@@ -6311,6 +6344,37 @@ class IPCServer:
             if existing is None or self._session_item_preference_key(session) > self._session_item_preference_key(existing):
                 deduped[identity_key] = session
         return list(deduped.values())
+
+    def _apply_session_attention_state(
+        self,
+        sessions: List[Dict[str, Any]],
+        *,
+        focused_window_id: int,
+        current_session_key: str,
+    ) -> None:
+        """Promote completed background sessions into a retained needs-attention state."""
+        current_key = str(current_session_key or "").strip()
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            phase = str(session.get("session_phase") or "").strip().lower()
+            if phase != "done":
+                continue
+            session_key = str(session.get("session_key") or "").strip()
+            is_current = (
+                session_key == current_key
+                or (
+                    int(session.get("window_id") or 0) == focused_window_id
+                    and focused_window_id > 0
+                    and bool(session.get("pane_active", False))
+                )
+            )
+            if is_current:
+                session["session_phase"] = "done"
+                session["session_phase_label"] = "Done"
+            else:
+                session["session_phase"] = "needs_attention"
+                session["session_phase_label"] = "Needs attention"
 
     def _load_session_items(
         self,
@@ -6365,9 +6429,7 @@ class IPCServer:
         sessions.sort(
             key=lambda item: (
                 int(item.get("window_id") or 0) == focused_window_id,
-                bool(item.get("needs_user_action", False)),
-                bool(item.get("output_ready", False) or item.get("output_unseen", False)),
-                str(item.get("stage_visual_state") or "") == "working",
+                self._session_phase_priority(str(item.get("session_phase") or "")),
                 int(item.get("stage_rank") or 0),
                 bool(item.get("process_running", False)),
                 bool(item.get("pane_active", False)),
@@ -6383,6 +6445,29 @@ class IPCServer:
         """Return daemon-owned AI session data merged from local and remote OTEL sources."""
         runtime_snapshot = await self._runtime_snapshot({})
         sessions = self._load_session_items(runtime_snapshot)
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in self._flatten_runtime_windows(runtime_snapshot)
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = next(
+            (
+                str(session.get("session_key") or "")
+                for session in sessions
+                if int(session.get("window_id") or 0) == focused_window_id
+                and bool(session.get("window_active", False))
+                and bool(session.get("pane_active", False))
+            ),
+            "",
+        )
+        self._apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
         return {
             "sessions": sessions,
             "total": len(sessions),
@@ -6406,6 +6491,8 @@ class IPCServer:
         )
         if not isinstance(session, dict):
             raise RuntimeError(f"Unknown session_key: {session_key}")
+
+        self._record_ai_session_seen(session_key)
 
         window_id = int(session.get("window_id") or 0)
         focus_mode = str(session.get("focus_mode") or "").strip() or "unfocusable"
@@ -6563,6 +6650,8 @@ class IPCServer:
                     "stage": str(session.get("stage") or "").strip(),
                     "stage_label": str(session.get("stage_label") or ""),
                     "stage_visual_state": str(session.get("stage_visual_state") or "").strip(),
+                    "session_phase": str(session.get("session_phase") or "").strip(),
+                    "session_phase_label": str(session.get("session_phase_label") or "").strip(),
                     "needs_user_action": bool(session.get("needs_user_action", False)),
                     "conflict_state": str(session.get("conflict_state") or "").strip(),
                     "is_current_window": bool(session.get("is_current_window", False)),
@@ -6576,8 +6665,7 @@ class IPCServer:
                 key=lambda item: (
                     bool(item.get("is_current_window", False)),
                     bool(item.get("pane_active", False)),
-                    bool(item.get("needs_user_action", False)),
-                    str(item.get("stage_visual_state") or "") == "working",
+                    self._session_phase_priority(str(item.get("session_phase") or "")),
                     str(item.get("pane_label") or ""),
                     str(item.get("session_key") or ""),
                 ),
@@ -6738,10 +6826,9 @@ class IPCServer:
 
         worktrees.sort(
             key=lambda item: (
-                0 if bool(item.get("is_active", False)) else 1,
-                -int(item.get("last_used_at", 0) or 0),
+                str(item.get("repo_display") or "").casefold(),
+                str(item.get("qualified_name") or "").casefold(),
                 0 if not bool(item.get("is_clean", False)) else 1,
-                str(item.get("repo_display") or ""),
                 str(item.get("branch") or ""),
             ),
         )
@@ -6888,6 +6975,12 @@ class IPCServer:
                 and focused_window_id > 0
             )
 
+        self._apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
+
         projects = self._build_dashboard_projects(runtime_snapshot, sessions)
         worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
         return {
@@ -6918,11 +7011,15 @@ class IPCServer:
                 "active_sessions": len(sessions),
                 "working_sessions": sum(
                     1 for session in sessions
-                    if str(session.get("stage") or "") in {"starting", "thinking", "tool_running", "streaming"}
+                    if str(session.get("session_phase") or "").strip().lower() == "working"
                 ),
                 "attention_sessions": sum(
                     1 for session in sessions
-                    if bool(session.get("needs_user_action", False))
+                    if str(session.get("session_phase") or "").strip().lower() == "needs_attention"
+                ),
+                "done_sessions": sum(
+                    1 for session in sessions
+                    if str(session.get("session_phase") or "").strip().lower() == "done"
                 ),
                 "review_pending_sessions": sum(
                     1 for session in sessions

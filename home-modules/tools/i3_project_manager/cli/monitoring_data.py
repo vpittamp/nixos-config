@@ -1941,6 +1941,8 @@ def _session_status_detail(session: Dict[str, Any]) -> str:
         event_name = lowered.split("event:", 1)[1]
         if "permission" in event_name:
             detail = "Waiting on permission"
+        elif "response.completed" in event_name:
+            detail = "Response finished"
         elif "tool_start" in event_name:
             detail = "Tool started"
         elif "tool_complete" in event_name or "tool_result" in event_name:
@@ -1971,6 +1973,56 @@ def _format_activity_age(seconds: int) -> str:
     return f"{age // 86400}d ago"
 
 
+_SESSION_PHASE_LABELS = {
+    "working": "Working",
+    "needs_attention": "Needs attention",
+    "done": "Done",
+    "idle": "Idle",
+    "stale": "Stale",
+    "inactive": "Inactive",
+}
+
+
+def _status_reason_is_heartbeat_like(status_reason: str) -> bool:
+    lowered = str(status_reason or "").strip().lower()
+    if lowered in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
+        return True
+    return lowered.startswith("event:codex.sse_event:response.completed")
+
+
+def _derive_session_phase(
+    *,
+    review_pending: bool,
+    needs_user_action: bool,
+    output_ready: bool,
+    pulse_working: bool,
+    is_streaming: bool,
+    pending_tools: int,
+    stage: str,
+    activity_freshness: str,
+    status_reason: str,
+    remote_source_stale: bool,
+    process_running: bool,
+) -> str:
+    if review_pending or needs_user_action:
+        return "needs_attention"
+    if output_ready:
+        return "done"
+    if remote_source_stale or activity_freshness == "stale":
+        return "stale" if not process_running else "idle"
+    if pulse_working or is_streaming or pending_tools > 0:
+        return "working"
+    if (
+        stage in {"starting", "thinking", "tool_running", "streaming"}
+        and activity_freshness == "fresh"
+        and not _status_reason_is_heartbeat_like(status_reason)
+    ):
+        return "working"
+    if process_running:
+        return "idle"
+    return "inactive"
+
+
 def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[float] = None) -> Dict[str, Any]:
     """Return canonical stage fields from exporter payloads or local fallback derivation."""
     now_epoch = time.time() if now_epoch is None else now_epoch
@@ -1980,7 +2032,9 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     is_streaming = bool(session.get("is_streaming", False))
     status_reason = str(session.get("status_reason") or "").strip().lower()
     updated_epoch = _parse_timestamp_to_epoch(str(session.get("updated_at") or "")) or now_epoch
-    activity_age_seconds = max(0, int(now_epoch - updated_epoch))
+    last_activity_epoch = _parse_timestamp_to_epoch(str(session.get("last_activity_at") or ""))
+    activity_epoch = last_activity_epoch or updated_epoch
+    activity_age_seconds = max(0, int(now_epoch - activity_epoch))
     if bool(session.get("remote_source_stale", False)):
         activity_age_seconds = max(
             activity_age_seconds,
@@ -2027,23 +2081,38 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     stage_class = str(session.get("stage_class") or f"stage-{stage}")
     stage_visual_state = str(session.get("stage_visual_state") or _AI_STAGE_VISUAL_STATES.get(stage, "idle"))
     stage_rank = int(session.get("stage_rank", _AI_STAGE_RANKS.get(stage, 0)) or 0)
+    process_running = bool(session.get("process_running", False))
     pulse_working = False
     if stage in {"thinking", "tool_running", "streaming"}:
         if pending_tools > 0 or is_streaming:
             pulse_working = True
         elif status_reason.startswith("event:"):
             event_name = status_reason.split("event:", 1)[1]
-            pulse_working = any(
-                marker in event_name
-                for marker in (
-                    "tool_start",
-                    "stream_start",
-                    "stream_token",
-                    "api_request",
-                    "response",
-                    "completion",
+            if "response.completed" in event_name:
+                pulse_working = False
+            else:
+                pulse_working = any(
+                    marker in event_name
+                    for marker in (
+                        "tool_start",
+                        "stream_start",
+                        "stream_token",
+                        "api_request",
+                        "response",
+                        "completion",
+                    )
                 )
-            )
+    # Process heartbeats refresh the snapshot timestamp even when the tool is idle.
+    # Do not treat those lifecycle updates as fresh model activity unless we have an
+    # explicit last_activity_at from telemetry or stronger activity signals above.
+    if (
+        status_reason == "process_keepalive"
+        and last_activity_epoch is None
+        and not pulse_working
+        and not is_streaming
+        and pending_tools <= 0
+    ):
+        activity_age_seconds = max(activity_age_seconds, 16)
     activity_freshness = str(session.get("activity_freshness") or "").strip().lower()
     if activity_freshness not in {"fresh", "warm", "stale"}:
         if (
@@ -2056,6 +2125,22 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
             activity_freshness = "warm"
         else:
             activity_freshness = "fresh"
+
+    session_phase = str(session.get("session_phase") or "").strip().lower()
+    if session_phase not in _SESSION_PHASE_LABELS:
+        session_phase = _derive_session_phase(
+            review_pending=review_pending,
+            needs_user_action=needs_user_action,
+            output_ready=output_ready,
+            pulse_working=pulse_working,
+            is_streaming=is_streaming,
+            pending_tools=pending_tools,
+            stage=stage,
+            activity_freshness=activity_freshness,
+            status_reason=status_reason,
+            remote_source_stale=bool(session.get("remote_source_stale", False)),
+            process_running=process_running,
+        )
 
     identity_source = str(session.get("identity_source") or "").strip().lower()
     if not identity_source:
@@ -2095,6 +2180,8 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
         "user_action_reason": user_action_reason,
         "output_ready": output_ready,
         "output_unseen": output_unseen,
+        "session_phase": session_phase,
+        "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
         "activity_freshness": activity_freshness,
         "activity_age_seconds": activity_age_seconds,
         "activity_age_label": _format_activity_age(activity_age_seconds),
@@ -3781,6 +3868,7 @@ def _build_otel_badges(
             "project_path": str(session.get("project_path") or ""),
             "pid": session.get("pid"),
             "trace_id": session.get("trace_id"),
+            "last_activity_at": str(session.get("last_activity_at") or ""),
             "pending_tools": session.get("pending_tools", 0),
             "is_streaming": session.get("is_streaming", False),
             "state_seq": _safe_int(session.get("state_seq"), 0),
@@ -3796,6 +3884,8 @@ def _build_otel_badges(
             "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
             "output_ready": bool(stage_fields.get("output_ready", False)),
             "output_unseen": bool(stage_fields.get("output_unseen", False)),
+            "session_phase": str(stage_fields.get("session_phase") or "idle"),
+            "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
             "activity_freshness": str(stage_fields.get("activity_freshness") or "fresh"),
             "activity_age_seconds": int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
             "activity_age_label": str(stage_fields.get("activity_age_label") or _format_activity_age(stale_age_seconds)),
@@ -4013,6 +4103,7 @@ def _build_active_ai_sessions(
             "identity_confidence": identity_raw,
             "confidence_level": confidence_level,
             "trace_id": str(raw_session.get("trace_id") or ""),
+            "last_activity_at": str(raw_session.get("last_activity_at") or ""),
             "pending_tools": pending_tools,
             "is_streaming": is_streaming,
             "state_seq": _safe_int(raw_session.get("state_seq"), 0),
@@ -4028,6 +4119,8 @@ def _build_active_ai_sessions(
             "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
             "output_ready": bool(stage_fields.get("output_ready", False)),
             "output_unseen": bool(stage_fields.get("output_unseen", False)),
+            "session_phase": str(stage_fields.get("session_phase") or "idle"),
+            "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
             "activity_freshness": str(stage_fields.get("activity_freshness") or "fresh"),
             "activity_age_seconds": int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
             "activity_age_label": str(stage_fields.get("activity_age_label") or _format_activity_age(stale_age_seconds)),
@@ -4257,40 +4350,6 @@ def _apply_review_lifecycle(
         entry, entry_changed = _update_review_entry_from_session(entry, session, now_epoch)
         review_sessions[key] = entry
         changed = changed or entry_changed
-
-    # Passive "seen" detection for manual focus navigation.
-    if focused_window_id is not None:
-        focused_window = window_lookup.get(focused_window_id, {})
-        focused_candidates = [
-            (key, entry)
-            for key, entry in review_sessions.items()
-            if _review_entry_is_pending(entry)
-            and _safe_int(entry.get("window_id"), 0) == focused_window_id
-            and isinstance(focused_window, dict)
-            and _window_matches_session_binding(focused_window, entry)
-        ]
-        if focused_candidates:
-            for _, entry in focused_candidates:
-                finish_marker = str(entry.get("finish_marker") or "")
-                if not finish_marker:
-                    continue
-                target_pane = str(entry.get("tmux_pane") or "")
-                if target_pane:
-                    session_name = str(entry.get("tmux_session") or "")
-                    connection_key = str(
-                        entry.get("focus_connection_key")
-                        or entry.get("connection_key")
-                        or ""
-                    ).strip()
-                    if not session_name:
-                        continue
-                    tmux_active_by_session = _list_tmux_active_panes_by_session(connection_key)
-                    if tmux_active_by_session.get(session_name) != target_pane:
-                        continue
-                entry["seen_marker"] = finish_marker
-                entry["seen_at"] = now_epoch
-                entry["updated_at"] = now_epoch
-                changed = True
 
     # If a session disappears without a terminal completion event, preserve it
     # as finished-unseen after a short grace period.
@@ -4564,6 +4623,8 @@ def _merge_review_state_into_window_badges(
                 "stage_visual_state",
                 "stage_rank",
                 "stage_glyph",
+                "session_phase",
+                "session_phase_label",
                 "needs_user_action",
                 "user_action_reason",
                 "output_ready",
@@ -4601,6 +4662,8 @@ def _merge_review_state_into_window_badges(
                 "stage_visual_state": str(session.get("stage_visual_state") or "completed"),
                 "stage_rank": int(session.get("stage_rank") or _AI_STAGE_RANKS["output_ready"]),
                 "stage_glyph": str(session.get("stage_glyph") or _AI_STAGE_GLYPHS["output_ready"]),
+                "session_phase": str(session.get("session_phase") or "needs_attention"),
+                "session_phase_label": str(session.get("session_phase_label") or "Needs attention"),
                 "needs_user_action": False,
                 "user_action_reason": "",
                 "output_ready": True,
@@ -4657,9 +4720,9 @@ def _merge_review_state_into_window_badges(
 
         badges.sort(
             key=lambda b: (
-                int(bool(b.get("review_pending", False))),
-                _OTEL_STATE_PRIORITY.get(str(b.get("otel_state") or "idle"), 0),
+                _active_ai_session_sort_rank(b),
                 _safe_int(b.get("finished_at"), 0),
+                _OTEL_STATE_PRIORITY.get(str(b.get("otel_state") or "idle"), 0),
             ),
             reverse=True,
         )
@@ -4668,17 +4731,22 @@ def _merge_review_state_into_window_badges(
 
 def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
     """Sort rank for active AI rail with finished-unseen support."""
-    return int(session.get("stage_rank", 0) or 0)
+    phase = str(session.get("session_phase") or "").strip().lower()
+    if phase == "needs_attention":
+        return 3
+    if phase == "working":
+        return 2
+    if phase == "done":
+        return 1
+    return 0
 
 
 def _should_render_ai_session(session: Dict[str, Any]) -> bool:
     """Visible rail sessions: active work, pending review, or pinned."""
     if _is_tmux_discovered_process_ghost(session):
         return False
-    stage = str(session.get("stage") or "").strip().lower()
-    if stage in {"starting", "thinking", "tool_running", "streaming", "waiting_input", "attention"}:
-        return True
-    if bool(session.get("output_unseen", False) or session.get("review_pending", False)):
+    phase = str(session.get("session_phase") or "").strip().lower()
+    if phase in {"working", "needs_attention", "done"}:
         return True
     if bool(session.get("pinned", False)):
         return True
@@ -4689,8 +4757,8 @@ def _should_render_otel_badge(badge: Dict[str, Any]) -> bool:
     """Visible window badges: active work or pending review."""
     if _is_tmux_discovered_process_ghost(badge):
         return False
-    stage = str(badge.get("stage") or "").strip().lower()
-    if stage in {"starting", "thinking", "tool_running", "streaming", "waiting_input", "attention"}:
+    phase = str(badge.get("session_phase") or "").strip().lower()
+    if phase in {"working", "needs_attention", "done"}:
         return True
     return bool(badge.get("output_unseen", False) or badge.get("review_pending", False))
 
@@ -6108,8 +6176,9 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         otel_diagnostics = otel_sessions_runtime.get("diagnostics", []) if isinstance(otel_sessions_runtime, dict) else []
         ai_metrics.update({
             "active_sessions": len(active_ai_sessions),
-            "working_sessions": sum(1 for s in active_ai_sessions if str(s.get("stage")) in {"starting", "thinking", "tool_running", "streaming"}),
-            "attention_sessions": sum(1 for s in active_ai_sessions if str(s.get("stage")) in {"waiting_input", "attention"}),
+            "working_sessions": sum(1 for s in active_ai_sessions if str(s.get("session_phase") or "").strip().lower() == "working"),
+            "attention_sessions": sum(1 for s in active_ai_sessions if str(s.get("session_phase") or "").strip().lower() == "needs_attention"),
+            "done_sessions": sum(1 for s in active_ai_sessions if str(s.get("session_phase") or "").strip().lower() == "done"),
             "review_pending_sessions": sum(1 for s in active_ai_sessions if bool(s.get("output_unseen") or s.get("review_pending"))),
             "stale_sessions": sum(1 for s in active_ai_sessions if bool(s.get("stale"))),
             "pinned_sessions": sum(1 for s in active_ai_sessions if bool(s.get("pinned"))),

@@ -69,6 +69,7 @@ _BOOTSTRAP_RESTOREABLE_STATES = {
     SessionState.COMPLETED,
 }
 _PROCESS_STATS_CACHE_TTL_SEC = 2.0
+_MIN_VALID_SESSION_TIMESTAMP_YEAR = 2020
 
 # Feature 137: Maximum session count to prevent memory exhaustion
 MAX_SESSIONS = 100
@@ -79,7 +80,6 @@ _HEARTBEAT_ACTIVE_STATUS_REASONS = {
     f"event:{EventNames.CLAUDE_STREAM_START}",
     f"event:{EventNames.CLAUDE_STREAM_TOKEN}",
     f"event:{EventNames.CODEX_API_REQUEST}",
-    f"event:{EventNames.CODEX_SSE_EVENT}",
     f"event:{EventNames.CODEX_TOOL_DECISION}",
     f"event:{EventNames.CODEX_TOOL_RESULT}",
     f"event:{EventNames.GEMINI_API_REQUEST}",
@@ -87,6 +87,51 @@ _HEARTBEAT_ACTIVE_STATUS_REASONS = {
     f"event:{EventNames.GEMINI_API_RESPONSE}",
     f"event:{EventNames.GEMINI_API_RESPONSE_DOT}",
 }
+
+
+def _normalized_codex_sse_kind(event: TelemetryEvent) -> str:
+    if not event or event.event_name != EventNames.CODEX_SSE_EVENT:
+        return ""
+    raw = event.attributes.get("event.kind") or event.attributes.get("event_kind") or ""
+    return str(raw).strip().lower()
+
+
+def _codex_sse_counts_as_activity(kind: str) -> bool:
+    normalized = str(kind or "").strip().lower()
+    if not normalized:
+        return True
+    if normalized in {
+        "response.completed",
+        "response.failed",
+        "response.cancelled",
+        "response.canceled",
+        "response.incomplete",
+    }:
+        return False
+    return True
+
+
+def _event_status_reason(event: TelemetryEvent) -> str:
+    if not event or not event.event_name:
+        return ""
+    if event.event_name == EventNames.CODEX_SSE_EVENT:
+        kind = _normalized_codex_sse_kind(event)
+        if kind:
+            return f"event:{event.event_name}:{kind}"
+    return f"event:{event.event_name}"
+
+
+def _event_counts_as_activity(event: TelemetryEvent) -> bool:
+    """Return True when an incoming event represents real model/tool activity."""
+    if not event or not event.event_name:
+        return False
+    if event.event_name == EventNames.CODEX_SSE_EVENT:
+        return _codex_sse_counts_as_activity(_normalized_codex_sse_kind(event))
+    if event.event_name in EventNames.WORKING_TRIGGERS:
+        return True
+    if event.event_name in EventNames.ACTIVITY_EVENTS:
+        return True
+    return False
 
 
 def state_priority(state: SessionState) -> int:
@@ -235,10 +280,61 @@ def _lifecycle_source(session: Session) -> str:
     return "process"
 
 
+_SESSION_PHASE_LABELS: dict[str, str] = {
+    "working": "Working",
+    "needs_attention": "Needs attention",
+    "done": "Done",
+    "idle": "Idle",
+}
+
+
+def _status_reason_is_heartbeat_like(status_reason: Optional[str]) -> bool:
+    """Return whether a status reason is only a liveness heartbeat."""
+    lowered = str(status_reason or "").strip().lower()
+    if not lowered:
+        return False
+    if lowered in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
+        return True
+    return lowered.startswith("event:codex.sse_event:response.completed")
+
+
+def _derive_session_phase(
+    *,
+    stage: SessionStage,
+    output_ready: bool,
+    output_unseen: bool,
+    needs_user_action: bool,
+    is_streaming: bool,
+    pending_tools: int,
+    last_activity_at: Optional[datetime],
+    status_reason: Optional[str],
+) -> str:
+    """Collapse raw session data into the canonical UI phase."""
+    if output_unseen or needs_user_action or stage in {SessionStage.WAITING_INPUT, SessionStage.ATTENTION}:
+        return "needs_attention"
+    if output_ready or stage == SessionStage.OUTPUT_READY:
+        return "done"
+    if is_streaming or pending_tools > 0:
+        return "working"
+    if stage in {SessionStage.STARTING, SessionStage.THINKING, SessionStage.TOOL_RUNNING, SessionStage.STREAMING}:
+        if last_activity_at is not None and not _status_reason_is_heartbeat_like(status_reason):
+            return "working"
+        return "idle"
+    return "idle"
+
+
 def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> dict[str, object]:
     """Compute canonical user-facing stage fields from raw session state."""
     now = now or datetime.now(timezone.utc)
-    activity_age_seconds = max(0, int((now - session.last_event_at).total_seconds()))
+    activity_timestamp = session.last_activity_at or session.last_event_at
+    activity_age_seconds = max(0, int((now - activity_timestamp).total_seconds()))
+    if (
+        str(session.status_reason or "").strip().lower() == "process_keepalive"
+        and session.last_activity_at is None
+        and not session.is_streaming
+        and session.pending_tools <= 0
+    ):
+        activity_age_seconds = max(activity_age_seconds, 16)
     freshness = _activity_freshness(activity_age_seconds)
     user_action_reason = _classify_user_action_reason(session)
     output_ready = session.state == SessionState.COMPLETED
@@ -265,6 +361,17 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
     else:
         stage = SessionStage.IDLE
 
+    session_phase = _derive_session_phase(
+        stage=stage,
+        output_ready=output_ready,
+        output_unseen=output_unseen,
+        needs_user_action=stage in {SessionStage.WAITING_INPUT, SessionStage.ATTENTION},
+        is_streaming=session.is_streaming,
+        pending_tools=session.pending_tools,
+        last_activity_at=session.last_activity_at,
+        status_reason=session.status_reason,
+    )
+
     return {
         "stage": stage,
         "stage_label": _STAGE_LABELS[stage],
@@ -276,8 +383,11 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         "user_action_reason": user_action_reason,
         "output_ready": output_ready,
         "output_unseen": output_unseen,
+        "session_phase": session_phase,
+        "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
         "activity_freshness": freshness,
         "activity_age_seconds": activity_age_seconds,
+        "last_activity_at": session.last_activity_at.isoformat() if session.last_activity_at else None,
         "identity_source": _identity_source(session),
         "lifecycle_source": _lifecycle_source(session),
     }
@@ -708,6 +818,7 @@ class SessionTracker:
                     trace_id=None,
                     created_at=now,
                     last_event_at=now,
+                    last_activity_at=None,
                     state_changed_at=now,
                     state_seq=1,
                     status_reason="process_detected",
@@ -750,11 +861,12 @@ class SessionTracker:
             session.project_path = project_path or session.project_path
             session.window_id = resolved_window_id if resolved_window_id is not None else session.window_id
             session.last_event_at = now
-            if session.state != SessionState.WORKING:
-                session.state = SessionState.WORKING
-                session.state_changed_at = now
-                session.state_seq += 1
-            session.status_reason = "process_detected"
+            if not session.native_session_id and not native_session_id:
+                if session.state != SessionState.WORKING:
+                    session.state = SessionState.WORKING
+                    session.state_changed_at = now
+                    session.state_seq += 1
+                session.status_reason = "process_detected"
             if not native_session_id and session.identity_confidence != IdentityConfidence.NATIVE:
                 session.identity_confidence = IdentityConfidence.PID
 
@@ -790,8 +902,12 @@ class SessionTracker:
         except ValueError:
             return None
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        else:
+            parsed = parsed.astimezone(timezone.utc)
+        if parsed.year < _MIN_VALID_SESSION_TIMESTAMP_YEAR:
+            return None
+        return parsed
 
     async def _restore_previous_snapshot(self) -> None:
         """Best-effort bootstrap from the last emitted live session snapshot.
@@ -834,6 +950,7 @@ class SessionTracker:
                     continue
 
                 updated_at = self._parse_datetime(raw.get("updated_at")) or now
+                last_activity_at = self._parse_datetime(raw.get("last_activity_at"))
                 age_seconds = max(0.0, (now - updated_at).total_seconds())
                 if state == SessionState.COMPLETED:
                     if age_seconds > self.completed_timeout_sec:
@@ -872,6 +989,7 @@ class SessionTracker:
                     trace_id=str(raw.get("trace_id") or "").strip() or None,
                     created_at=updated_at,
                     last_event_at=updated_at,
+                    last_activity_at=last_activity_at,
                     state_changed_at=updated_at,
                     state_seq=int(raw.get("state_seq", 1) or 1),
                     status_reason=str(raw.get("status_reason") or "").strip() or "restored_snapshot",
@@ -2410,6 +2528,7 @@ class SessionTracker:
                     trace_id=event.trace_id,
                     created_at=now,
                     last_event_at=now,
+                    last_activity_at=event.timestamp if _event_counts_as_activity(event) else None,
                     state_changed_at=now,
                     state_seq=1,
                     status_reason="created",
@@ -2590,6 +2709,13 @@ class SessionTracker:
                 session.trace_id = event.trace_id
                 session.status_reason = "trace_correlated"
 
+            event_status_reason = _event_status_reason(event)
+            if _event_counts_as_activity(event):
+                session.last_activity_at = event.timestamp
+                session.status_reason = event_status_reason
+            elif event_status_reason:
+                session.status_reason = event_status_reason
+
             if self._has_tmux_context(event_terminal_context) and session.identity_confidence not in (
                 IdentityConfidence.NATIVE,
                 IdentityConfidence.PID,
@@ -2608,7 +2734,8 @@ class SessionTracker:
                 session.state = new_state
                 session.state_changed_at = now
                 session.state_seq += 1
-                session.status_reason = f"event:{event.event_name}"
+                if not _event_counts_as_activity(event) and event_status_reason:
+                    session.status_reason = event_status_reason
                 logger.info(
                     "Session %s: %s -> %s",
                     session.session_id,
@@ -2617,7 +2744,14 @@ class SessionTracker:
                 )
                 await self._handle_state_change(session, old_state, new_state)
 
-            if session.state == SessionState.WORKING:
+            if (
+                session.state == SessionState.WORKING
+                and (
+                    _event_counts_as_activity(event)
+                    or session.pending_tools > 0
+                    or session.is_streaming
+                )
+            ):
                 self._reset_quiet_timer(session.session_id)
 
             self._mark_dirty_unlocked()
@@ -2630,6 +2764,9 @@ class SessionTracker:
         if session.is_streaming:
             return True
         status_reason = str(session.status_reason or "").strip().lower()
+        if status_reason.startswith(f"event:{EventNames.CODEX_SSE_EVENT}:"):
+            kind = status_reason.split(f"event:{EventNames.CODEX_SSE_EVENT}:", 1)[1]
+            return _codex_sse_counts_as_activity(kind)
         return status_reason in _HEARTBEAT_ACTIVE_STATUS_REASONS
 
     async def process_heartbeat(self, session_id: str) -> None:
@@ -2848,9 +2985,8 @@ class SessionTracker:
 
         # Events that keep WORKING state (activity)
         # Feature 136: Any event from the same tool counts as activity
-        if current == SessionState.WORKING:
-            if event.tool == session.tool or event_name in EventNames.ACTIVITY_EVENTS:
-                return SessionState.WORKING
+        if current == SessionState.WORKING and _event_counts_as_activity(event):
+            return SessionState.WORKING
 
         # COMPLETED → WORKING on new prompt
         if current == SessionState.COMPLETED and event_name in EventNames.WORKING_TRIGGERS:
@@ -3586,8 +3722,11 @@ class SessionTracker:
                 user_action_reason=stage_fields["user_action_reason"],
                 output_ready=bool(stage_fields["output_ready"]),
                 output_unseen=bool(stage_fields["output_unseen"]),
+                session_phase=str(stage_fields["session_phase"]),
+                session_phase_label=str(stage_fields["session_phase_label"]),
                 activity_freshness=stage_fields["activity_freshness"],
                 activity_age_seconds=int(stage_fields["activity_age_seconds"]),
+                last_activity_at=stage_fields["last_activity_at"],
                 identity_source=str(stage_fields["identity_source"]),
                 lifecycle_source=str(stage_fields["lifecycle_source"]),
                 updated_at=s.last_event_at.isoformat(),
@@ -3642,8 +3781,11 @@ class SessionTracker:
                     str(stage_fields["user_action_reason"]),
                     bool(stage_fields["output_ready"]),
                     bool(stage_fields["output_unseen"]),
+                    str(stage_fields["session_phase"]),
+                    str(stage_fields["session_phase_label"]),
                     str(stage_fields["activity_freshness"]),
                     int(stage_fields["activity_age_seconds"]),
+                    str(stage_fields["last_activity_at"] or ""),
                     str(stage_fields["identity_source"]),
                     str(stage_fields["lifecycle_source"]),
                     bool(s.focusable),

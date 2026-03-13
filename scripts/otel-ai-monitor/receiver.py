@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_REQUEST_MIB = 32
+_MIN_VALID_TELEMETRY_YEAR = 2020
 
 # Feature 132: Check if Langfuse enrichment is enabled
 LANGFUSE_ENABLED = os.environ.get("LANGFUSE_ENABLED", "0") == "1"
@@ -98,6 +99,49 @@ def _any_value_to_python(av: Any) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _parse_telemetry_timestamp(
+    raw_nanos: Any,
+    attr_timestamp: Any = None,
+) -> datetime:
+    """Return a sane event timestamp from OTLP fields.
+
+    Some Codex OTLP log records arrive with `timeUnixNano=0` while carrying a
+    valid ISO 8601 `event.timestamp` attribute. Prefer the explicit attribute
+    whenever the OTLP timestamp is missing/invalid so activity does not collapse
+    to the Unix epoch.
+    """
+    timestamp: Optional[datetime] = None
+
+    try:
+        nanos = int(raw_nanos or 0)
+    except (TypeError, ValueError):
+        nanos = 0
+
+    if nanos > 0:
+        try:
+            candidate = datetime.fromtimestamp(nanos / 1e9, tz=timezone.utc)
+            if candidate.year >= _MIN_VALID_TELEMETRY_YEAR:
+                timestamp = candidate
+        except (OverflowError, OSError, ValueError):
+            timestamp = None
+
+    if timestamp is None and attr_timestamp:
+        raw = str(attr_timestamp).strip()
+        if raw:
+            try:
+                candidate = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if candidate.tzinfo is None:
+                    candidate = candidate.replace(tzinfo=timezone.utc)
+                else:
+                    candidate = candidate.astimezone(timezone.utc)
+                if candidate.year >= _MIN_VALID_TELEMETRY_YEAR:
+                    timestamp = candidate
+            except ValueError:
+                timestamp = None
+
+    return timestamp or datetime.now(tz=timezone.utc)
 
 
 def enrich_span_for_langfuse(
@@ -1179,13 +1223,12 @@ class OTLPReceiver:
         if not tool:
             tool = tool_hint
 
-        # Parse timestamp (nanoseconds since epoch)
-        try:
-            timestamp = datetime.fromtimestamp(
-                log_record.time_unix_nano / 1e9, tz=timezone.utc
-            )
-        except Exception:
-            timestamp = datetime.now(tz=timezone.utc)
+        # Codex sometimes leaves OTLP log timestamps at 0 and instead carries
+        # the real event time in the `event.timestamp` attribute.
+        timestamp = _parse_telemetry_timestamp(
+            getattr(log_record, "time_unix_nano", 0),
+            attributes.get("event.timestamp"),
+        )
 
         # Extract trace context
         trace_id = None
@@ -1280,9 +1323,12 @@ class OTLPReceiver:
         tool_hint = self._infer_tool_from_service_name(service_name)
         event_name = self._normalize_log_event_name(event_name, tool_hint)
 
-        # Parse timestamp (nanoseconds since epoch as string)
-        time_str = log_record.get("timeUnixNano", "0")
-        timestamp = datetime.fromtimestamp(int(time_str) / 1e9, tz=timezone.utc)
+        # Codex sometimes leaves OTLP log timestamps at 0 and instead carries
+        # the real event time in the `event.timestamp` attribute.
+        timestamp = _parse_telemetry_timestamp(
+            log_record.get("timeUnixNano", "0"),
+            attributes.get("event.timestamp"),
+        )
 
         # Determine AI tool from event name or service name
         tool = EventNames.get_tool_from_event(event_name)

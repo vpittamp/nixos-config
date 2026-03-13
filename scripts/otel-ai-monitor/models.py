@@ -260,6 +260,10 @@ class Session(BaseModel):
     # Timestamps
     created_at: datetime = Field(description="When session was first detected")
     last_event_at: datetime = Field(description="When last telemetry event was received")
+    last_activity_at: Optional[datetime] = Field(
+        default=None,
+        description="When last real AI work activity was observed",
+    )
     state_changed_at: datetime = Field(description="When state last transitioned")
 
     # Metrics (optional, for P3 user story)
@@ -458,11 +462,23 @@ class SessionListItem(BaseModel):
     )
     output_ready: bool = Field(default=False, description="True when the session has a completed result")
     output_unseen: bool = Field(default=False, description="True when output is ready but still unseen")
+    session_phase: str = Field(
+        default="idle",
+        description="Collapsed session phase used by downstream UIs (working, needs_attention, done, idle)",
+    )
+    session_phase_label: str = Field(
+        default="Idle",
+        description="User-facing label for the collapsed session phase",
+    )
     activity_freshness: ActivityFreshness = Field(
         default=ActivityFreshness.FRESH,
         description="Freshness bucket for last activity",
     )
     activity_age_seconds: int = Field(default=0, description="Age of last activity in seconds")
+    last_activity_at: Optional[str] = Field(
+        default=None,
+        description="RFC3339 timestamp for the last real activity event",
+    )
     identity_source: str = Field(default="heuristic", description="How identity was established for display")
     lifecycle_source: str = Field(default="trace", description="Primary source of lifecycle state")
     updated_at: str = Field(description="RFC3339 timestamp when session was last updated")
