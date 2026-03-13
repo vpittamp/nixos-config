@@ -1,6 +1,6 @@
 # QuickShell Runtime Shell
 
-Last updated: 2026-03-12
+Last updated: 2026-03-13
 
 ## Purpose
 
@@ -158,6 +158,39 @@ Current user entrypoints:
 
 Those older wrapper scripts now defer to daemon-backed display actions when available.
 
+### 5. Application and workspace registry model
+
+The runtime shell no longer depends on launcher-specific ownership logic.
+
+The declarative application registry now has three explicit partitions in:
+- `home-modules/desktop/app-registry-data.nix`
+
+Those are:
+- `workspaceOwningApplications`
+- `nonOwningLaunchables`
+- `applications`
+
+Runtime consequences:
+- `workspace-assignments.json` is generated only from `workspaceOwningApplications`
+- `application-registry.json` is generated from the combined `applications` list
+- PWAs are normal registry entries and participate in workspace ownership through the same path as native apps
+- scratchpad and floating utilities remain launchable without polluting workspace ownership
+
+### 6. Terminal and SSH launch path
+
+Managed terminal launches are daemon-owned.
+
+Current model:
+- scoped terminal launches flow through daemon `launch.open`
+- local terminals use the managed project terminal flow
+- SSH terminals use `project-terminal-launch.sh`
+- remote helper scripts are installed into the user profile so the remote host can resolve them on `PATH`
+- remote shell execution uses `bash -c`, not `bash -lc`
+
+Important runtime consequence:
+- helper lookup is deterministic across `thinkpad` and `ryzen`
+- remote SSH terminal startup no longer depends on login-shell side effects
+
 ## AI Session Improvements
 
 ### Reliability
@@ -169,6 +202,24 @@ The daemon now invalidates session state when OTEL-derived runtime files change:
   - `$XDG_RUNTIME_DIR/eww-monitoring-panel/remote-otel-sink.json`
 
 This means the shell no longer depends only on sway/window events to notice AI session updates.
+
+### Pane-first session model
+
+The active AI session list is now pane-oriented where tmux pane identity exists.
+
+The intended identity boundary is:
+- one tracked AI session surface per tmux pane
+
+The dashboard/session payloads now carry pane-oriented fields such as:
+- `surface_kind`
+- `surface_key`
+- tmux session/window/pane identity
+- pane/process-tree metrics
+
+This allows:
+- separate AI session rows for multiple panes in the same terminal window
+- deterministic session focus through daemon `session.focus`
+- per-session CPU and RSS metrics in QuickShell without guessing from a whole window
 
 ### Performance
 

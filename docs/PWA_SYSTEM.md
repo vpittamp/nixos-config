@@ -1,380 +1,260 @@
-# NixOS PWA (Progressive Web App) System Documentation
+# NixOS PWA System Documentation
+
+Last updated: 2026-03-13
 
 ## Overview
 
-This document describes the declarative PWA management system for NixOS with KDE Plasma integration. The system provides automated installation, icon management, and taskbar pinning for web applications as desktop apps using Firefox PWA.
+This repository uses a declarative Google Chrome PWA system integrated with:
+- the i3pm application registry
+- daemon-owned launch planning
+- Sway workspace assignment
+- Walker launcher discovery
+- Quickshell runtime UI icon and window rendering
+
+The active system no longer uses Firefox PWA or KDE panel integration.
 
 ## Architecture
 
-### Core Components
+### Source of truth
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  firefox-pwas-declarative.nix  (PWA Declaration)        │
-│  - Defines PWAs to install                              │
-│  - Provides helper commands                             │
-│  - Manages desktop integration                          │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│  firefoxpwa (Runtime)                                   │
-│  - Installs PWAs with generated ULIDs                   │
-│  - Creates desktop files                                │
-│  - Manages PWA profiles                                 │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│  panels.nix (KDE Integration)                           │
-│  - Pins PWAs to taskbar                                 │
-│  - Configures multi-monitor panels                      │
-│  - Manages activity-based desktops                      │
-└─────────────────────────────────────────────────────────┘
-```
+The canonical PWA definitions live in:
+- `shared/pwa-sites.nix`
 
-### File Structure
+Each entry defines the declarative PWA identity and routing metadata:
+- `name`
+- `url`
+- `domain`
+- `icon`
+- `description`
+- `categories`
+- `keywords`
+- `scope`
+- `ulid`
+- `app_scope`
+- `preferred_workspace`
+- optional `preferred_monitor_role`
+- `routing_domains`
+- optional `routing_paths`
+- optional `auth_domains`
 
-```
-/etc/nixos/
-├── home-modules/
-│   ├── tools/
-│   │   └── firefox-pwas-declarative.nix  # PWA declarations & automation
-│   └── desktop/
-│       └── project-activities/
-│           └── panels.nix                 # KDE panel configuration with PWA pins
-├── scripts/
-│   ├── pwa-update-panels-fixed.sh        # Safe panel status checker
-│   └── fix-pwa-icons.sh                  # Icon processing script
-├── assets/
-│   └── pwa-icons/                        # Custom PWA icons (512x512 PNG)
-│       ├── google-ai.png
-│       ├── youtube.png
-│       ├── gitea.png
-│       ├── backstage.png
-│       ├── kargo.png
-│       ├── argocd.png
-│       └── headlamp.png
-└── docs/
-    └── PWA_SYSTEM.md                      # This documentation
-```
+`ulid` is declarative and stable. It is not generated at install time.
 
-## PWA Declaration Format
+### Registry generation
 
-PWAs are declared in `/etc/nixos/home-modules/tools/firefox-pwas-declarative.nix`:
+PWAs are converted into i3pm application entries in:
+- `home-modules/desktop/app-registry-data.nix`
 
-```nix
-{
-  name = "AppName";           # Display name (required)
-  url = "https://app.com";    # Base URL (required)
-  icon = "file:///etc/nixos/assets/pwa-icons/app.png";  # Icon path (required)
-  description = "App description";  # Desktop file comment
-  categories = "Network;";         # XDG categories
-  keywords = "app;web;";           # Search keywords
-}
-```
+That file now exports three explicit partitions:
+- `workspaceOwningApplications`
+- `nonOwningLaunchables`
+- `applications`
 
-## Available Commands
+Runtime consequences:
+- `workspace-assignments.json` is generated only from `workspaceOwningApplications`
+- `application-registry.json` is generated from the combined `applications` list
+- PWAs are normal registry entries and participate in workspace ownership through the same path as native apps
+- scratchpad and floating utilities remain launchable without owning a workspace
 
-### Installation Commands
+The generated runtime files are:
+- `~/.config/i3/application-registry.json`
+- `~/.config/i3/pwa-registry.json`
+- `~/.local/share/i3pm-applications/applications/*.desktop`
 
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `pwa-install-all` | Install all declared PWAs (idempotent) | Run after adding new PWAs to configuration |
-| `pwa-list` | List configured and installed PWAs | Check installation status |
-| `pwa-get-ids` | Get PWA IDs for panels.nix | Extract IDs for permanent pinning |
+Generation happens during Home Manager activation as part of a rebuild.
 
-### Panel Management
+### Launch path
 
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `pwa-update-panels` | Check PWA panel status and show required updates | Shows IDs for manual panels.nix update |
-| `plasmashell --replace` | Restart Plasma shell | Apply panel changes |
+PWA launch flows are:
+- `i3pm launch open <slug>-pwa`
+- `launch-pwa-by-name "<Display Name>"`
+- Walker launching the generated desktop entry
 
-### Maintenance Commands
+The browser runtime is Google Chrome, launched with:
+- `--user-data-dir="$HOME/.local/share/webapps/webapp-$ULID"`
+- `--class="WebApp-$ULID"`
+- `--app="$URL"`
 
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `/etc/nixos/scripts/fix-pwa-icons.sh` | Process and fix PWA icons | Run if icons don't display |
-| `firefoxpwa profile list` | List installed PWA profiles | Debug PWA issues |
-| `kbuildsycoca6 --noincremental` | Rebuild KDE cache | Fix icon visibility |
+This gives deterministic Wayland/XWayland window identity that the daemon can match to the declarative registry entry.
+
+### UI integration
+
+PWAs appear in:
+- Walker search results through generated desktop entries
+- Quickshell bottom bar workspace icon summaries
+- Quickshell window and session panel rows
+- daemon window identification and icon resolution
+
+The icon source is the curated path from the declarative entry, not a theme guess.
+
+## File Map
+
+- `shared/pwa-sites.nix`
+  - canonical PWA metadata
+- `home-modules/desktop/app-registry-data.nix`
+  - converts PWA definitions into app-registry entries
+- `home-modules/desktop/app-registry.nix`
+  - writes `application-registry.json`, `pwa-registry.json`, and generated desktop entries
+- `home-modules/tools/pwa-launcher.nix`
+  - `launch-pwa-by-name` helper
+- `assets/icons/`
+  - curated PWA and app icons
+- `home-modules/desktop/sway.nix`
+  - generates `workspace-assignments.json` from `workspaceOwningApplications`
 
 ## Standard Workflow
 
-### 1. Adding a New PWA
+### Add a new PWA
+
+1. Add or reuse a curated icon in `assets/icons/`.
+2. Add the PWA entry in `shared/pwa-sites.nix`.
+3. Rebuild the target host:
 
 ```bash
-# Step 1: Edit PWA declaration
-vim /etc/nixos/home-modules/tools/firefox-pwas-declarative.nix
-
-# Add your PWA to the list:
-{
-  name = "Claude";
-  url = "https://claude.ai";
-  icon = "file:///etc/nixos/assets/pwa-icons/claude-symbol.png";
-  description = "AI Assistant";
-  categories = "Network;Office;";
-  keywords = "ai;chat;";
-}
-
-# Step 2: Add icon (if using custom)
-wget https://commons.wikimedia.org/wiki/Special:FilePath/Claude_AI_symbol.svg -O /tmp/claude.svg
-convert /tmp/claude.svg -resize 512x512 /etc/nixos/assets/pwa-icons/claude-symbol.png
-
-# Step 3: Rebuild configuration
-sudo nixos-rebuild switch --flake .#hetzner
-
-# Step 4: Install PWA
-pwa-install-all
-
-# Step 5: Update panels for permanent pinning
-pwa-update-panels  # Shows current status and IDs
-# Copy the suggested panel configuration
-vim /etc/nixos/home-modules/desktop/project-activities/panels.nix
-# Update the appropriate machine's IDs (hetznerIds or m1Ids)
-sudo nixos-rebuild switch --flake .#hetzner
+sudo nixos-rebuild switch --flake .#thinkpad
 ```
 
-### 2. Removing a PWA
+4. Verify generated outputs:
 
 ```bash
-# Step 1: Uninstall PWA
-firefoxpwa site uninstall <PWA_ID>
-
-# Step 2: Remove from declaration
-vim /etc/nixos/home-modules/tools/firefox-pwas-declarative.nix
-# Remove the PWA entry
-
-# Step 3: Update panels.nix
-vim /etc/nixos/home-modules/desktop/project-activities/panels.nix
-# Remove the PWA ID and launcher entry
-
-# Step 4: Rebuild
-sudo nixos-rebuild switch --flake .#hetzner
+jq -r '.pwas[] | select(.ulid == "YOUR_ULID")' ~/.config/i3/pwa-registry.json
+jq -r '.applications[] | select(.name == "your-slug-pwa")' ~/.config/i3/application-registry.json
+ls ~/.local/share/i3pm-applications/applications/your-slug-pwa.desktop
 ```
 
-### 3. Updating PWA Icons
+5. Test launch:
 
 ```bash
-# Replace icon file
-cp new-icon.png /etc/nixos/assets/pwa-icons/app.png
-
-# Process icons
-/etc/nixos/scripts/fix-pwa-icons.sh
-
-# Rebuild KDE cache
-kbuildsycoca6 --noincremental
-
-# Restart plasma if needed
-plasmashell --replace
+launch-pwa-by-name "Your PWA Name"
+# or
+i3pm launch open your-slug-pwa
 ```
 
-## Technical Details
+### Remove a PWA
 
-### PWA ID System
+1. Remove the entry from `shared/pwa-sites.nix`.
+2. Rebuild the target host.
+3. Verify the generated registry and desktop entry no longer contain the app.
 
-- IDs are ULIDs (Universally Unique Lexicographically Sortable Identifiers)
-- Format: 26-character string (e.g., `01K65QHPR1G9PYP1FTNPV7XJ8B`)
-- Generated when PWA is installed
-- Stable per installation but unique across machines
-- Used in desktop files: `FFPWA-{ID}.desktop`
+### Update a PWA icon
 
-### Desktop File Locations
+1. Replace the asset in `assets/icons/`.
+2. Rebuild the target host.
+3. Verify the generated registry still points to the correct icon path.
 
-- **User desktop files**: `~/.local/share/applications/FFPWA-*.desktop`
-- **Icon directories**: `~/.local/share/icons/hicolor/{size}x{size}/apps/FFPWA-*.png`
-- **PWA profiles**: `~/.local/share/firefoxpwa/profiles/`
-- **KDE panel config**: `~/.config/plasma-org.kde.plasma.desktop-appletsrc`
+No extra browser-specific reinstall step is required.
 
-### Panel Configuration Structure
+## Naming and identity
 
-The `panels.nix` file defines:
+### Registry app name
 
-1. **Primary Panel** (Containment 410, Screen 0):
-   - Application launcher
-   - Task manager with pinned apps
-   - System tray
-   - Clock
+The runtime application name is derived from the display name:
+- lowercase
+- spaces replaced with `-`
+- suffixed with `-pwa`
 
-2. **Secondary Panels** (Containments 429/431, Screens 1/2):
-   - Task manager (current screen only)
-   - Activity switcher
+Example:
+- `Google Calendar` -> `google-calendar-pwa`
 
-### Icon Requirements
+### Window class
 
-- **Format**: PNG (preferred) or SVG
-- **Size**: 512x512 pixels minimum
-- **Location**: `/etc/nixos/assets/pwa-icons/`
-- **Processing**: Automatically resized to multiple sizes (16-512px)
+The expected window class for a declarative PWA is:
+- `WebApp-<ULID>`
+
+Example:
+- `WebApp-01K666N2V6BQMDSBMX3AY74TY7`
+
+### Profile path
+
+Each PWA gets its own Chrome profile directory:
+- `~/.local/share/webapps/webapp-<ULID>`
+
+## Verification commands
+
+### Check the declarative PWA registry
+
+```bash
+jq -r '.pwas[] | "\(.name) [\(.ulid)] -> \(.url)"' ~/.config/i3/pwa-registry.json
+```
+
+### Check the runtime app registry
+
+```bash
+jq -r '.applications[] | select(.name | endswith("-pwa")) | "\(.name) -> \(.expected_class)"' ~/.config/i3/application-registry.json
+```
+
+### Check generated desktop entry
+
+```bash
+sed -n '1,160p' ~/.local/share/i3pm-applications/applications/your-slug-pwa.desktop
+```
+
+### Check live window identity
+
+```bash
+swaymsg -t get_tree | grep -F "WebApp-YOUR_ULID"
+```
 
 ## Troubleshooting
 
-### Common Issues
+### PWA does not appear in Walker
 
-#### PWAs Not Installing
-```bash
-# Check firefoxpwa is available
-which firefoxpwa
+Check:
+- the rebuild completed successfully
+- the desktop file exists under `~/.local/share/i3pm-applications/applications/`
+- Walker is reading `~/.local/share/i3pm-applications` through `XDG_DATA_DIRS`
 
-# Check for errors
-pwa-install-all 2>&1 | grep -i error
-
-# Manual install attempt
-firefoxpwa site install <manifest_url>
-```
-
-#### Icons Not Displaying
-```bash
-# Fix icon processing
-/etc/nixos/scripts/fix-pwa-icons.sh
-
-# Clear caches
-rm -rf ~/.cache/icon-cache.kcache
-kbuildsycoca6 --noincremental
-
-# Check desktop file
-cat ~/.local/share/applications/FFPWA-*.desktop | grep Icon
-```
-
-#### Taskbar Pins Lost
-```bash
-# Check current status and get IDs
-pwa-update-panels
-
-# The command will show the exact panel configuration needed
-# Copy the suggested IDs to panels.nix
-vim /etc/nixos/home-modules/desktop/project-activities/panels.nix
-
-# Rebuild to apply permanent pins
-sudo nixos-rebuild switch --flake .#hetzner
-```
-
-#### Panel Configuration Corrupted
-```bash
-# Stop plasma
-kquitapp5 plasmashell
-
-# Restore from home-manager
-rm ~/.config/plasma-org.kde.plasma.desktop-appletsrc
-sudo nixos-rebuild switch --flake .#hetzner
-
-# Restart plasma
-plasmashell --replace
-```
-
-### Debug Commands
+Useful check:
 
 ```bash
-# List all PWA desktop files
-ls -la ~/.local/share/applications/FFPWA-*.desktop
-
-# Check PWA profiles
-firefoxpwa profile list
-
-# View panel configuration
-grep "launchers=" ~/.config/plasma-org.kde.plasma.desktop-appletsrc
-
-# Check systemd service
-systemctl --user status manage-pwas.service
-
-# View installation logs
-journalctl --user -u manage-pwas.service
+ls ~/.local/share/i3pm-applications/applications/*-pwa.desktop
 ```
 
-## Configuration Reference
+### PWA missing from the registries
 
-### Currently Configured PWAs
+Check the source-of-truth entry first:
 
-| Name | URL | Purpose |
-|------|-----|---------|
-| Google AI | https://www.google.com/search?udm=50 | Google AI mode search |
-| YouTube | https://www.youtube.com | Video platform |
-| Gitea | https://gitea.cnoe.localtest.me:8443 | Git repository |
-| Backstage | https://backstage-dev.cnoe.localtest.me:8443 | Developer portal |
-| Kargo | https://kargo.cnoe.localtest.me:8443 | GitOps promotion |
-| ArgoCD | https://argocd.cnoe.localtest.me:8443 | Continuous delivery |
-| Headlamp | https://headlamp.cnoe.localtest.me:8443 | Kubernetes dashboard |
+```bash
+rg -n 'name = "Your PWA Name"' shared/pwa-sites.nix
+```
 
-### Environment Variables
+Then verify the generated outputs:
 
-The system respects standard XDG variables:
-- `XDG_DATA_HOME` (default: `~/.local/share`)
-- `XDG_CONFIG_HOME` (default: `~/.config`)
-- `XDG_CACHE_HOME` (default: `~/.cache`)
+```bash
+jq -r '.pwas[] | select(.ulid == "YOUR_ULID")' ~/.config/i3/pwa-registry.json
+jq -r '.applications[] | select(.name == "your-slug-pwa")' ~/.config/i3/application-registry.json
+```
 
-## Multi-Machine Configuration
+### Window launches but is not matched correctly
 
-Since PWA IDs are unique per machine installation, the system supports different IDs for Hetzner and M1:
+Check:
+- `ulid` is correct in `shared/pwa-sites.nix`
+- generated app entry has `expected_class = "WebApp-<ULID>"`
+- Chrome launched with the matching `--class`
 
-### Setting Up PWAs on Multiple Machines
+Useful checks:
 
-1. **Install PWAs on Hetzner**:
-   ```bash
-   ssh nixos-hetzner
-   pwa-install-all
-   pwa-get-ids  # Copy these IDs
-   ```
+```bash
+jq -r '.applications[] | select(.name == "your-slug-pwa") | .expected_class' ~/.config/i3/application-registry.json
+swaymsg -t get_tree | grep -F "WebApp-YOUR_ULID"
+```
 
-2. **Update panels.nix with Hetzner IDs**:
-   ```nix
-   hetznerIds = {
-     googleId = "01K665SPD8EPMP3JTW02JM1M0Z";
-     # ... paste other IDs
-   };
-   ```
+### Icon does not appear
 
-3. **Install PWAs on M1**:
-   ```bash
-   ssh nixos-m1
-   pwa-install-all
-   pwa-get-ids  # Copy these IDs
-   ```
+Check:
+- the icon file exists in `assets/icons/`
+- the PWA entry points to that icon
+- the generated registry entry includes the same path
 
-4. **Update panels.nix with M1 IDs**:
-   ```nix
-   m1Ids = {
-     googleId = "01K6XXXXXXXXXXXXXXXXXX";  # M1's unique ID
-     # ... paste other IDs
-   };
-   ```
+Useful checks:
 
-5. **Rebuild both systems**:
-   ```bash
-   sudo nixos-rebuild switch --flake .#hetzner  # On Hetzner
-   sudo nixos-rebuild switch --flake .#m1       # On M1
-   ```
+```bash
+ls -lh assets/icons/your-icon.svg
+jq -r '.pwas[] | select(.ulid == "YOUR_ULID") | .icon' ~/.config/i3/pwa-registry.json
+jq -r '.applications[] | select(.name == "your-slug-pwa") | .icon' ~/.config/i3/application-registry.json
+```
 
-The configuration automatically detects the hostname and uses the appropriate IDs.
+## Notes
 
-## Best Practices
-
-1. **Always use custom icons** - Default favicons are often low quality
-2. **Test PWA installation** - Run `pwa-install-all` before rebuilding panels
-3. **Keep machine IDs separate** - Don't mix Hetzner and M1 PWA IDs
-4. **Document both sets of IDs** - Update panels.nix when installing on new machines
-5. **Use meaningful names** - PWA names should be clear and consistent
-6. **Regular maintenance** - Run `pwa-list` periodically to check status
-7. **Use safe panel updates** - The `pwa-update-panels` command only shows status, never modifies read-only files
-8. **Always rebuild after panel changes** - Panel configuration is managed by home-manager and requires rebuild
-
-## Migration from Old System
-
-If migrating from the old imperative PWA system:
-
-1. **Remove old PWAs**: `firefoxpwa profile remove 00000000000000000000000000`
-2. **Clean desktop files**: `rm ~/.local/share/applications/pwa-*.desktop`
-3. **Clear old scripts**: Remove any manual PWA installation scripts
-4. **Install fresh**: Run `pwa-install-all` with new system
-
-## Related Documentation
-
-- [Firefox PWA Documentation](https://github.com/filips123/PWAsForFirefox)
-- [KDE Panel Configuration](https://userbase.kde.org/Plasma/Panels)
-- [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry-spec/latest/)
-- [NixOS Home Manager](https://github.com/nix-community/home-manager)
-
----
-
-*System Version: 2.1 (Declarative with safe panel updates)*
-*Last Updated: 2025-09-27*
-*Maintainer: NixOS Configuration*
+- PWAs are normal app-registry entries now; there is no separate browser-install step.
+- Workspace ownership is explicit through the app-registry partitions, not inferred from launcher metadata.
+- Quickshell and the daemon consume the generated registries directly; do not edit `application-registry.json` or `pwa-registry.json` by hand.

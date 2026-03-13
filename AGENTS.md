@@ -1,6 +1,6 @@
 # Window Management System Summary (Sway + i3pm)
 
-Last updated: 2026-03-12
+Last updated: 2026-03-13
 
 ## Objective
 
@@ -36,8 +36,11 @@ Provide reliable project-scoped window management on Sway with:
   - `execution_mode`: `local` or `ssh`
   - `connection_key`: e.g. `local@thinkpad`, `vpittamp@ryzen:22`
   - `context_key`: `<qualified_worktree>::<mode>::<connection>`
+- `active-worktree.json` is persistence, not the primary runtime authority; the daemon's in-memory active context is authoritative during runtime.
 - Scratchpad terminals are keyed by `context_key`, not only project name.
   - This allows independent local and SSH scratchpad terminals for the same worktree.
+- Managed AI sessions are pane-first when tmux pane identity is available.
+  - One tracked AI surface per tmux pane is the intended model.
 
 ## Project/Worktree Switching Flow
 
@@ -52,6 +55,7 @@ QuickShell runtime-shell notes:
 - shell actions should prefer `context.ensure` / `context.clear` as the canonical switch surface
 - the shell renders a daemon-provided `dashboard.worktrees` model rather than inferring worktree state locally
 - the shell uses native `Quickshell.I3` for monitor/workspace awareness, but never owns window filtering rules
+- terminal launches should prefer explicit context-carrying `i3pm launch open` flows rather than ambient implicit state where possible
 
 Notes:
 - `--local` on switch forces local context even if remote profile exists.
@@ -89,6 +93,27 @@ Notes:
 
 See:
 - `docs/QUICKSHELL_RUNTIME_SHELL.md`
+
+## Application and PWA Registry
+
+- `shared/pwa-sites.nix`
+  - canonical declarative PWA definitions
+- `home-modules/desktop/app-registry-data.nix`
+  - canonical runtime application registry source
+  - exports:
+    - `workspaceOwningApplications`
+    - `nonOwningLaunchables`
+    - `applications`
+- `home-modules/desktop/app-registry.nix`
+  - generates:
+    - `~/.config/i3/application-registry.json`
+    - `~/.config/i3/pwa-registry.json`
+    - `~/.local/share/i3pm-applications/applications/*.desktop`
+
+Implications:
+- workspace ownership is explicit and generated only from the owning set
+- PWAs are Google Chrome apps with deterministic `WebApp-<ULID>` identity
+- generated registry JSON is runtime output; edit the source Nix files, not the generated JSON
 
 ## Recent System Updates (this cycle)
 

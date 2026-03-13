@@ -1,25 +1,24 @@
 { config, lib, pkgs, ... }:
 
-# PWA Launcher - Thin wrapper for Firefox PWAs
-# Routes PWA launches through unified app-launcher-wrapper for i3pm integration
+# PWA Launcher - Declarative Google Chrome PWA launcher
+# Resolves declarative PWA entries from pwa-registry.json and launches them
+# with deterministic Chrome profile/class settings for i3pm integration.
 #
 # This launcher:
 # 1. Resolves PWA display name → app registry name (e.g., "Claude" → "claude-pwa")
-# 2. Delegates to app-launcher-wrapper.sh for unified launch logic
-# 3. Falls back to desktop file search if PWA not in registry
+# 2. Uses the declarative ULID as the profile and class identity
+# 3. Launches Chrome directly with WebApp-<ULID> window identity
 # 4. Feature 113: Optionally accepts a URL argument for deep linking
 #
-# Benefits of unified approach:
-# - Consistent I3PM_* environment variable injection
-# - Launch notifications to daemon for Tier 0 window correlation
-# - Workspace assignment via I3PM_TARGET_WORKSPACE
-# - Project context propagation
-# - Deterministic class matching (FFPWA-{ULID})
+# Benefits of current approach:
+# - Deterministic Wayland/XWayland class matching (WebApp-<ULID>)
+# - Stable per-PWA Chrome profile directories
+# - Compatibility with i3pm launch/open and generated desktop entries
 
 let
   launch-pwa-by-name = pkgs.writeShellScriptBin "launch-pwa-by-name" ''
     #!/usr/bin/env bash
-    # PWA Launcher - Routes to unified app-launcher-wrapper
+    # PWA Launcher - Resolves declarative PWA metadata and launches Chrome directly
     # Usage: launch-pwa-by-name <PWA Name or ULID> [URL]
     # Feature 113: Optional URL argument for deep linking
 

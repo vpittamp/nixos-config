@@ -66,7 +66,7 @@ For each service, verify the source icon exists:
 
 ```bash
 for icon in dapr.svg grafana.svg keycloak.svg langfuse.svg loki.svg mcp-inspector.svg mimir.svg phoenix-azire.svg redis-insights.svg ai-workflow-builder.svg; do
-  [ -f "/etc/nixos/assets/icons/$icon" ] && echo "✓ $icon" || echo "✗ MISSING: $icon"
+  [ -f "assets/icons/$icon" ] && echo "✓ $icon" || echo "✗ MISSING: $icon"
 done
 ```
 
@@ -79,15 +79,15 @@ Use the existing badge generation scripts to create environment-specific icon va
 ### Single Service Icon
 
 ```bash
-/etc/nixos/scripts/generate-env-icon.sh <source-icon> <env> <output-path>
+scripts/generate-env-icon.sh <source-icon> <env> <output-path>
 # Example:
-/etc/nixos/scripts/generate-env-icon.sh /etc/nixos/assets/icons/grafana.svg dev /etc/nixos/assets/icons/grafana-dev.png
+scripts/generate-env-icon.sh assets/icons/grafana.svg dev assets/icons/grafana-dev.png
 ```
 
 ### Batch Generation (All Services)
 
 ```bash
-/etc/nixos/scripts/generate-all-env-icons.sh
+scripts/generate-all-env-icons.sh
 ```
 
 This generates all icon variants for all configured services. Output naming: `{service}-{env}.png`
@@ -105,7 +105,7 @@ The badge system overlays a colored circle with an environment letter onto the b
 If adding a service not in the current `generate-all-env-icons.sh` mapping, edit the script:
 
 ```bash
-# Add to the ICON_MAP associative array in /etc/nixos/scripts/generate-all-env-icons.sh
+# Add to the ICON_MAP associative array in scripts/generate-all-env-icons.sh
 [new-service]="new-service-icon.svg"
 
 # Add to ALL_ENV_SERVICES or NO_RYZEN_SERVICES array depending on whether it has a Ryzen deployment
@@ -117,7 +117,7 @@ Generate one ULID per new PWA entry:
 
 ```bash
 # Generate N ULIDs (one per service × environment combination)
-for i in $(seq 1 N); do /etc/nixos/scripts/generate-ulid.sh; done
+for i in $(seq 1 N); do scripts/generate-ulid.sh; done
 ```
 
 ## ME-Step 4: Add Entries to pwa-sites.nix
@@ -192,7 +192,7 @@ If the user has mentioned a PWA name in the conversation:
 
 ```bash
 # Check if name already exists in pwa-sites.nix
-grep -i "name = \"$PROPOSED_NAME\"" /etc/nixos/shared/pwa-sites.nix
+grep -i "name = \"$PROPOSED_NAME\"" shared/pwa-sites.nix
 ```
 
 **If name exists:**
@@ -301,7 +301,7 @@ Before searching externally, check if a suitable icon already exists:
 # Search for existing icons matching the PWA name
 echo "Checking for existing icons..."
 LOWERCASE_NAME=$(echo "{name}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
-ls /etc/nixos/assets/icons/ 2>/dev/null | grep -i "$LOWERCASE_NAME" || echo "No matching icons found"
+ls assets/icons/ 2>/dev/null | grep -i "$LOWERCASE_NAME" || echo "No matching icons found"
 ```
 
 **If matching icon(s) found:**
@@ -310,8 +310,8 @@ Found existing icon(s):
 {list each matching icon with full path}
 
 Examples:
-- /etc/nixos/assets/icons/notion.svg
-- /etc/nixos/assets/icons/notion-alt.png
+- assets/icons/notion.svg
+- assets/icons/notion-alt.png
 
 Options:
 1. Use existing icon: {most_relevant_match}
@@ -447,18 +447,18 @@ curl -L -o "/tmp/{filename}" "{icon_url}"
 ls -lh "/tmp/{filename}"
 
 # Create icons directory if needed
-mkdir -p /etc/nixos/assets/icons
+mkdir -p assets/icons
 
 # Move to assets
-mv "/tmp/{filename}" "/etc/nixos/assets/icons/{filename}"
+mv "/tmp/{filename}" "assets/icons/{filename}"
 
 # Verify final location
-ls -lh "/etc/nixos/assets/icons/{filename}"
+ls -lh "assets/icons/{filename}"
 ```
 
 **Icon path for configuration:**
 ```nix
-icon = "/etc/nixos/assets/icons/{filename}";
+icon = iconPath "{filename}";
 ```
 
 ## Step 4: Generate ULID
@@ -466,7 +466,7 @@ icon = "/etc/nixos/assets/icons/{filename}";
 Generate a new ULID identifier for the PWA:
 
 ```bash
-/etc/nixos/scripts/generate-ulid.sh
+scripts/generate-ulid.sh
 ```
 
 **Validation:**
@@ -496,7 +496,7 @@ echo "{url}/" | sed 's|//$|/|'
 ## Step 7: Find Next Available Workspace
 
 ```bash
-grep "preferred_workspace" /etc/nixos/shared/pwa-sites.nix | grep -oE '[0-9]+' | sort -n | tail -1
+grep "preferred_workspace" shared/pwa-sites.nix | grep -oE '[0-9]+' | sort -n | tail -1
 ```
 
 Add 1 to the highest number found (or use 50 if no PWAs exist).
@@ -511,7 +511,7 @@ timeout 2 curl -s {url} >/dev/null 2>&1 && echo "✓ Service is running" || echo
 
 ## Step 9: Add Entry to pwa-sites.nix
 
-Read `/etc/nixos/shared/pwa-sites.nix` and add the new entry before the closing `];`:
+Read `shared/pwa-sites.nix` and add the new entry before the closing list:
 
 ```nix
     # {Name}
@@ -519,7 +519,7 @@ Read `/etc/nixos/shared/pwa-sites.nix` and add the new entry before the closing 
       name = "{Name}";
       url = "{URL}";
       domain = "{domain}";
-      icon = "{icon_path}";
+      icon = iconPath "{filename}";
       description = "{description}";
       categories = "{categories}";
       keywords = "{keywords}";
@@ -529,8 +529,14 @@ Read `/etc/nixos/shared/pwa-sites.nix` and add the new entry before the closing 
       app_scope = "{app_scope}";
       preferred_workspace = {workspace_number};
       {only_if_specified: preferred_monitor_role = "{role}";}
+      routing_domains = [ "{domain}" ];
     }
 ```
+
+Important:
+- edit the source file only: `shared/pwa-sites.nix`
+- do not edit generated files such as `~/.config/i3/application-registry.json` or `~/.config/i3/pwa-registry.json`
+- the runtime app name will be derived from the display name as lowercase-with-dashes plus `-pwa`
 
 ## Step 10: Detect Current Host and Validate Configuration
 
@@ -585,24 +591,31 @@ sudo nixos-rebuild switch --flake .#$FLAKE_TARGET $IMPURE_FLAG
 ```
 
 This will:
-1. Generate PWA manifest JSON in /nix/store
-2. Update application registry at `~/.config/i3/application-registry.json`
-3. Update PWA registry at `~/.config/i3/pwa-registry.json`
-4. Create desktop entry at `~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop`
-5. Register PWA with i3pm daemon
+1. Rebuild the declarative PWA source into the app registry
+2. Update `~/.config/i3/application-registry.json`
+3. Update `~/.config/i3/pwa-registry.json`
+4. Create a desktop entry under `~/.local/share/i3pm-applications/applications/`
+5. Make the PWA available to Walker, `i3pm launch open`, and `launch-pwa-by-name`
 
-## Step 12: Wait for Home-Manager Activation
+## Step 12: Wait for Home Manager activation
 
 ```bash
 echo "⏳ Waiting for home-manager activation to complete..."
 sleep 10
 ```
 
-## Step 13: Verify Desktop Entry and Registries
+## Step 13: Verify generated outputs
+
+Derive the runtime app slug:
+
+```bash
+APP_SLUG=$(printf '%s' "{PWA Name}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+APP_NAME="${APP_SLUG}-pwa"
+```
 
 ```bash
 # 1. Check desktop entry exists
-if [ -f ~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop ]; then
+if [ -f "$HOME/.local/share/i3pm-applications/applications/${APP_NAME}.desktop" ]; then
   echo "✓ Desktop entry exists"
 else
   echo "✗ Desktop entry NOT found"
@@ -611,28 +624,24 @@ fi
 # 2. Check PWA registry
 cat ~/.config/i3/pwa-registry.json | jq -r '.pwas[] | select(.ulid == "{ULID}") | "✓ PWA registry: \(.name)"' || echo "✗ Not in PWA registry"
 
-# 3. Check app registry
-cat ~/.config/i3/application-registry.json | jq -r '.applications[] | select(.display_name == "{PWA Name}") | "✓ App registry: \(.display_name)"' || echo "✗ Not in app registry"
+# 3. Check app registry by runtime app name
+cat ~/.config/i3/application-registry.json | jq -r --arg app "$APP_NAME" '.applications[] | select(.name == $app) | "✓ App registry: \(.name) [\(.display_name)]"' || echo "✗ Not in app registry"
 ```
 
-## Step 15: Reload Services and Test Launch
+## Step 14: Test launch
+
+Do not restart old launcher services or reload Sway unless there is a separate issue. The rebuild-generated desktop entry and registry are the intended integration path.
 
 ```bash
-# Reload Sway
-swaymsg reload
-
-# Restart Walker/Elephant
-systemctl --user restart elephant
-
-# Wait for services
-sleep 2
-
-# Test launch
+# Test via display-name helper
 launch-pwa-by-name "{PWA Name}" 2>&1 &
 sleep 3
 
 # Verify window appeared
-swaymsg -t get_tree | grep -q "FFPWA-{ULID}" && echo "✓ PWA launched successfully!" || echo "✗ PWA did not launch"
+swaymsg -t get_tree | grep -q "WebApp-{ULID}" && echo "✓ PWA launched successfully!" || echo "✗ PWA did not launch"
+
+# Optional: verify daemon-backed launch path too
+i3pm launch preview "$APP_NAME" --json
 ```
 
 ## Success Criteria
@@ -641,7 +650,7 @@ Confirm all of these before marking as complete:
 
 - ✅ Icon found/validated (colored, icon-only)
 - ✅ PWA entry added to pwa-sites.nix
-- ✅ Desktop entry exists at `~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop`
+- ✅ Desktop entry exists at `~/.local/share/i3pm-applications/applications/{slug}-pwa.desktop`
 - ✅ PWA appears in registries
 - ✅ PWA searchable in Walker (Meta+D)
 - ✅ PWA launches successfully
@@ -656,7 +665,7 @@ Confirm all of these before marking as complete:
 | "Duplicate ULID detected" | ULID already used | Generate new ULID |
 | "Icon file not found" | Icon path doesn't exist | Re-run icon discovery |
 | "Icon is monochrome" | Single-color icon | Find colored version |
-| "PWA not appearing in Walker" | Desktop entry not cached | `systemctl --user restart elephant` |
+| "PWA not appearing in Walker" | Desktop entry missing or rebuild not activated | Check `~/.local/share/i3pm-applications/applications/*.desktop` and rerun rebuild |
 | "Service not running" | localhost service down | Start service |
 | "Syntax error" | Invalid Nix syntax | Check brackets, semicolons, quotes |
 | "Unknown host" | Hostname not in flake | Specify correct flake target |
@@ -667,16 +676,16 @@ Confirm all of these before marking as complete:
 ## Files Modified/Created
 
 ### Modified:
-- `/etc/nixos/shared/pwa-sites.nix` - Added new PWA entry/entries
-- `/etc/nixos/assets/icons/{filename}` - New icon (if downloaded)
+- `shared/pwa-sites.nix` - Added new PWA entry/entries
+- `assets/icons/{filename}` - New icon (if downloaded)
 
 ### Multi-environment additions:
-- `/etc/nixos/assets/icons/{service}-{env}.png` - Badge icons (generated by `generate-env-icon.sh`)
-- `/etc/nixos/scripts/generate-env-icon.sh` - Single icon badge generator
-- `/etc/nixos/scripts/generate-all-env-icons.sh` - Batch icon generator (update ICON_MAP for new services)
+- `assets/icons/{service}-{env}.png` - Badge icons (generated by `generate-env-icon.sh`)
+- `scripts/generate-env-icon.sh` - Single icon badge generator
+- `scripts/generate-all-env-icons.sh` - Batch icon generator (update ICON_MAP for new services)
 
 ### Auto-generated (during rebuild):
-- `~/.local/share/i3pm-applications/applications/{PWA Name}-pwa.desktop`
+- `~/.local/share/i3pm-applications/applications/{slug}-pwa.desktop`
 - `~/.config/i3/application-registry.json`
 - `~/.config/i3/pwa-registry.json`
 
@@ -693,6 +702,7 @@ After completing all steps, provide the user with:
 2. **How to launch:**
    - Via Walker: `Meta+D` → type name → Enter
    - Via CLI: `launch-pwa-by-name "{Name}"`
+   - Via daemon-backed launch: `i3pm launch open {slug}-pwa`
 
 3. **Next steps:**
    - Test the PWA by launching it
@@ -700,10 +710,10 @@ After completing all steps, provide the user with:
 
 ## References
 
-- PWA System Docs: `/etc/nixos/docs/PWA_SYSTEM.md`
-- Feature 056 Quickstart: `/etc/nixos/specs/056-declarative-pwa-installation/quickstart.md`
-- PWA Sites Config: `/etc/nixos/shared/pwa-sites.nix`
-- App Registry Data: `/etc/nixos/home-modules/desktop/app-registry-data.nix`
-- Icon Badge Generator: `/etc/nixos/scripts/generate-env-icon.sh`
-- Batch Icon Generator: `/etc/nixos/scripts/generate-all-env-icons.sh`
-- Icon Assets: `/etc/nixos/assets/icons/` (base SVGs and generated `*-{env}.png` variants)
+- PWA System Docs: `docs/PWA_SYSTEM.md`
+- PWA Sites Config: `shared/pwa-sites.nix`
+- App Registry Data: `home-modules/desktop/app-registry-data.nix`
+- PWA Launcher: `home-modules/tools/pwa-launcher.nix`
+- Icon Badge Generator: `scripts/generate-env-icon.sh`
+- Batch Icon Generator: `scripts/generate-all-env-icons.sh`
+- Icon Assets: `assets/icons/`
