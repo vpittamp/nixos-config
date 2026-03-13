@@ -81,6 +81,11 @@ let
 
     # Generate trace token for exact identity correlation
     export I3PM_AI_TRACE_TOKEN="$(date +%s%N)-$RANDOM"
+    export I3PM_AI_HOST_ALIAS="''${I3PM_LOCAL_HOST_ALIAS:-''${HOSTNAME:-}}"
+    export I3PM_AI_PANE_KEY=""
+    if [ -n "''${I3PM_CONNECTION_KEY:-}" ] && [ -n "''${TMUX_SESSION:-}" ] && [ -n "''${TMUX_WINDOW:-}" ] && [ -n "''${TMUX_PANE:-}" ]; then
+      export I3PM_AI_PANE_KEY="''${I3PM_CONNECTION_KEY}::''${TMUX_SESSION}::''${TMUX_WINDOW}::''${TMUX_PANE}"
+    fi
     I3PM_OTEL_REMOTE_TARGET=""
     if [ -n "''${I3PM_REMOTE_HOST:-}" ]; then
       I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_HOST}:''${I3PM_REMOTE_PORT:-22}"
@@ -113,8 +118,13 @@ let
     append_otel_resource_attr "project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"
     append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"
     append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"
+    append_otel_resource_attr "i3pm.ai.tool" "codex"
+    append_otel_resource_attr "i3pm.ai.host_alias" "''${I3PM_AI_HOST_ALIAS:-}"
+    append_otel_resource_attr "i3pm.ai.connection_key" "''${I3PM_CONNECTION_KEY:-}"
+    append_otel_resource_attr "i3pm.ai.context_key" "''${I3PM_CONTEXT_KEY:-}"
     append_otel_resource_attr "terminal.anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"
     append_otel_resource_attr "i3pm.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"
+    append_otel_resource_attr "i3pm.ai.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"
     append_otel_resource_attr "terminal.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"
     append_otel_resource_attr "i3pm.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"
     append_otel_resource_attr "terminal.connection_key" "''${I3PM_CONNECTION_KEY:-}"
@@ -126,6 +136,10 @@ let
     append_otel_resource_attr "terminal.tmux.session" "''${TMUX_SESSION:-}"
     append_otel_resource_attr "terminal.tmux.window" "''${TMUX_WINDOW:-}"
     append_otel_resource_attr "terminal.tmux.pane" "''${TMUX_PANE:-}"
+    append_otel_resource_attr "i3pm.ai.tmux_session" "''${TMUX_SESSION:-}"
+    append_otel_resource_attr "i3pm.ai.tmux_window" "''${TMUX_WINDOW:-}"
+    append_otel_resource_attr "i3pm.ai.tmux_pane" "''${TMUX_PANE:-}"
+    append_otel_resource_attr "i3pm.ai.pane_key" "''${I3PM_AI_PANE_KEY:-}"
     append_otel_resource_attr "terminal.pty" "''${TTY:-}"
     append_otel_resource_attr "host.name" "''${HOSTNAME:-}"
 

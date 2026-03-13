@@ -6137,6 +6137,8 @@ class IPCServer:
             terminal_context = raw_session.get("terminal_context") or {}
             if not isinstance(terminal_context, dict):
                 terminal_context = {}
+            if not self._session_has_tracking_identity(terminal_context):
+                continue
 
             bound_window = self._bind_session_window(raw_session, tracked_windows)
             bound_window_id = int(bound_window.get("window_id") or 0)
@@ -6166,6 +6168,16 @@ class IPCServer:
             tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
             pane_title = str(terminal_context.get("pane_title") or "").strip()
             pane_label = str(raw_session.get("pane_label") or "").strip() or pane_title or tmux_pane
+            host_name = str(terminal_context.get("host_name") or source_host_name or "").strip().lower()
+            is_current_host = self._session_is_current_host(
+                host_name=host_name,
+                connection_key=connection_key,
+            )
+            focus_mode = self._session_focus_mode(
+                window_id=bound_window_id,
+                is_current_host=is_current_host,
+                remote_source_stale=source_stale,
+            )
             normalized.append({
                 "session_key": session_key,
                 "tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
@@ -6207,12 +6219,16 @@ class IPCServer:
                 "review_pending": bool(raw_session.get("output_unseen", False)),
                 "is_streaming": bool(raw_session.get("is_streaming", False)),
                 "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
-                "focusable": bool(raw_session.get("focusable", False)) and bound_window_id > 0,
-                "host_name": str(terminal_context.get("host_name") or source_host_name or "").strip(),
+                "focusable": focus_mode != "unfocusable",
+                "host_name": host_name,
+                "is_current_host": is_current_host,
+                "focus_mode": focus_mode,
+                "focus_target_host": "" if is_current_host else host_name,
                 "identity_source": str(raw_session.get("identity_source") or "").strip(),
                 "native_session_id": str(raw_session.get("native_session_id") or "").strip(),
                 "session_id": str(raw_session.get("session_id") or "").strip(),
                 "trace_id": str(raw_session.get("trace_id") or "").strip(),
+                "pid": raw_session.get("pid"),
                 "process_running": bool(raw_session.get("process_running", False)),
                 "rss_mb": raw_session.get("rss_mb"),
                 "cpu_percent": raw_session.get("cpu_percent"),
@@ -6222,8 +6238,11 @@ class IPCServer:
                 "process_tree_rss_mb": raw_session.get("process_tree_rss_mb"),
                 "process_tree_cpu_percent": raw_session.get("process_tree_cpu_percent"),
                 "process_count": raw_session.get("process_count"),
+                "pulse_working": bool(raw_session.get("pulse_working", False)),
                 "activity_age_seconds": int(raw_session.get("activity_age_seconds", 0) or 0),
+                "activity_age_label": str(raw_session.get("activity_age_label") or "").strip(),
                 "activity_freshness": str(raw_session.get("activity_freshness") or "").strip(),
+                "status_reason": str(raw_session.get("status_reason") or "").strip(),
                 "remote_source_stale": bool(source_stale),
                 "remote_source_age_seconds": int(source_age_seconds),
                 "focus_project": project_name,
@@ -6240,6 +6259,58 @@ class IPCServer:
             reverse=True,
         )
         return normalized
+
+    def _session_item_identity_key(self, session: Dict[str, Any]) -> str:
+        """Return the logical identity for a rendered AI session item."""
+        session_key = str(session.get("session_key") or "").strip()
+        if session_key:
+            return session_key
+
+        surface_key = str(session.get("surface_key") or "").strip()
+        if surface_key:
+            return surface_key
+
+        return "|".join([
+            str(session.get("tool") or "").strip(),
+            str(session.get("connection_key") or "").strip(),
+            str(session.get("context_key") or "").strip(),
+            str(session.get("window_id") or "").strip(),
+            str(session.get("pid") or "").strip(),
+            str(session.get("pane_pid") or "").strip(),
+            str(session.get("pane_label") or "").strip(),
+        ])
+
+    def _session_item_preference_key(self, session: Dict[str, Any]) -> Tuple[Any, ...]:
+        """Return a comparison key that prefers the newest, richest session snapshot."""
+        return (
+            bool(session.get("needs_user_action", False)),
+            bool(session.get("output_ready", False) or session.get("output_unseen", False)),
+            bool(session.get("pulse_working", False) or session.get("is_streaming", False)),
+            int(session.get("pending_tools", 0) or 0),
+            bool(session.get("process_running", False)),
+            bool(session.get("pane_active", False)),
+            bool(session.get("window_active", False)),
+            int(session.get("stage_rank", 0) or 0),
+            str(session.get("updated_at") or ""),
+            bool(session.get("native_session_id")),
+        )
+
+    def _dedupe_session_items(
+        self,
+        sessions: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Collapse duplicate snapshots that represent the same logical session."""
+        deduped: Dict[str, Dict[str, Any]] = {}
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            identity_key = self._session_item_identity_key(session)
+            if not identity_key:
+                continue
+            existing = deduped.get(identity_key)
+            if existing is None or self._session_item_preference_key(session) > self._session_item_preference_key(existing):
+                deduped[identity_key] = session
+        return list(deduped.values())
 
     def _load_session_items(
         self,
@@ -6290,6 +6361,7 @@ class IPCServer:
                     tracked_windows=tracked_windows,
                 ))
 
+        sessions = self._dedupe_session_items(sessions)
         sessions.sort(
             key=lambda item: (
                 int(item.get("window_id") or 0) == focused_window_id,
@@ -6336,8 +6408,65 @@ class IPCServer:
             raise RuntimeError(f"Unknown session_key: {session_key}")
 
         window_id = int(session.get("window_id") or 0)
-        if window_id <= 0:
-            raise RuntimeError(f"Session {session_key} is not bound to a managed window")
+        focus_mode = str(session.get("focus_mode") or "").strip() or "unfocusable"
+        if window_id <= 0 and focus_mode != "remote_handoff":
+            raise RuntimeError(f"Session {session_key} is not focusable")
+
+        if focus_mode == "remote_handoff":
+            remote_user, remote_host, remote_port = self._remote_focus_target(session)
+            if not remote_host:
+                raise RuntimeError(f"Session {session_key} has no remote focus target")
+
+            remote_command = [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=3",
+                "-p",
+                str(remote_port),
+                f"{remote_user}@{remote_host}" if remote_user else remote_host,
+                "bash",
+                "-lc",
+                shlex.quote(f"i3pm session focus --json {shlex.quote(session_key)}"),
+            ]
+            result = subprocess.run(
+                remote_command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            remote_handoff: Dict[str, Any] = {
+                "success": result.returncode == 0,
+                "reason": "ok" if result.returncode == 0 else "remote_focus_failed",
+                "stdout": str(result.stdout or "").strip(),
+                "stderr": str(result.stderr or "").strip(),
+            }
+            stdout = str(result.stdout or "").strip()
+            if stdout.startswith("{"):
+                try:
+                    remote_handoff["result"] = json.loads(stdout)
+                except Exception:
+                    remote_handoff["result"] = None
+
+            return {
+                "success": result.returncode == 0,
+                "session_key": session_key,
+                "window_id": 0,
+                "surface_key": str(session.get("surface_key") or "").strip(),
+                "conflict_state": str(session.get("conflict_state") or "").strip(),
+                "focus_mode": "remote_handoff",
+                "focus_target_host": remote_host,
+                "focus": {
+                    "success": result.returncode == 0,
+                    "reason": "remote_handoff",
+                },
+                "tmux": {
+                    "success": True,
+                    "reason": "delegated_to_remote_host",
+                },
+                "remote_handoff": remote_handoff,
+            }
 
         focus_result = await self._window_focus({
             "window_id": window_id,
@@ -6372,6 +6501,8 @@ class IPCServer:
             "window_id": window_id,
             "surface_key": str(session.get("surface_key") or "").strip(),
             "conflict_state": str(session.get("conflict_state") or "").strip(),
+            "focus_mode": "local",
+            "focus_target_host": "",
             "focus": focus_result,
             "tmux": tmux_result,
         }
@@ -6436,6 +6567,8 @@ class IPCServer:
                     "conflict_state": str(session.get("conflict_state") or "").strip(),
                     "is_current_window": bool(session.get("is_current_window", False)),
                     "pane_active": bool(session.get("pane_active", False)),
+                    "pid": session.get("pid"),
+                    "pulse_working": bool(session.get("pulse_working", False)),
                     "execution_mode": str(session.get("execution_mode") or execution_mode).strip() or execution_mode,
                 })
 
@@ -11009,6 +11142,66 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             or socket.gethostname()
         )
         return str(host).strip().lower() or "localhost"
+
+    def _session_host_name(self, session: Dict[str, Any]) -> str:
+        """Return a normalized source host name for a session payload."""
+        host_name = str(session.get("host_name") or "").strip().lower()
+        if host_name:
+            return host_name
+
+        connection_key = str(session.get("connection_key") or "").strip().lower()
+        if connection_key.startswith("local@"):
+            return connection_key.split("@", 1)[1].strip()
+
+        return ""
+
+    def _session_has_tracking_identity(self, terminal_context: Dict[str, Any]) -> bool:
+        """Return whether a session can be tracked deterministically."""
+        terminal_anchor_id = str(terminal_context.get("terminal_anchor_id") or "").strip()
+        if terminal_anchor_id:
+            return True
+
+        tmux_session = str(terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
+        return bool(tmux_session and tmux_window and tmux_pane)
+
+    def _session_is_current_host(
+        self,
+        *,
+        host_name: str,
+        connection_key: str,
+    ) -> bool:
+        """Return whether a session belongs to the current host."""
+        local_host = self._local_host_alias()
+        if str(host_name or "").strip().lower() == local_host:
+            return True
+
+        normalized_connection = self._normalize_connection_key(connection_key)
+        return normalized_connection == self._normalize_connection_key(f"local@{local_host}")
+
+    def _session_focus_mode(
+        self,
+        *,
+        window_id: int,
+        is_current_host: bool,
+        remote_source_stale: bool,
+    ) -> str:
+        """Return how a session should be focused."""
+        if window_id > 0 and is_current_host:
+            return "local"
+        if not is_current_host and not remote_source_stale:
+            return "remote_handoff"
+        return "unfocusable"
+
+    def _remote_focus_target(self, session: Dict[str, Any]) -> Tuple[str, str, int]:
+        """Return the SSH destination used for remote session handoff."""
+        host_name = self._session_host_name(session)
+        if not host_name:
+            return "", "", 22
+
+        user = str(os.environ.get("USER") or "").strip() or "vpittamp"
+        return user, host_name, 22
 
     def _build_worktree_context_identity(
         self,

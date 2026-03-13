@@ -215,16 +215,192 @@ ShellRoot {
     }
 
     function activeSessions() {
-        return arrayOrEmpty(dashboard.active_ai_sessions);
+        return uniqueSessions(arrayOrEmpty(dashboard.active_ai_sessions));
     }
 
     function sessionMru() {
-        const mru = arrayOrEmpty(dashboard.active_ai_sessions_mru);
+        const mru = uniqueSessions(arrayOrEmpty(dashboard.active_ai_sessions_mru));
         return mru.length ? mru : activeSessions();
     }
 
     function panelSessions() {
-        return sessionMru();
+        return stableSortedSessions(activeSessions().filter((session) => sessionIsDisplayEligible(session)));
+    }
+
+    function sessionIdentityKey(session) {
+        const sessionKey = stringOrEmpty(session && session.session_key);
+        if (sessionKey) {
+            return sessionKey;
+        }
+
+        const surfaceKey = stringOrEmpty(session && session.surface_key);
+        if (surfaceKey) {
+            return surfaceKey;
+        }
+
+        return [
+            stringOrEmpty(session && session.tool),
+            stringOrEmpty(session && session.connection_key),
+            stringOrEmpty(session && session.context_key),
+            String(Number(session && session.window_id || 0)),
+            String(Number(session && session.pid || 0)),
+            String(Number(session && session.pane_pid || 0)),
+            stringOrEmpty(session && session.pane_label)
+        ].join("::");
+    }
+
+    function uniqueSessions(items) {
+        const list = arrayOrEmpty(items);
+        const unique = [];
+        const seen = {};
+
+        for (let i = 0; i < list.length; i += 1) {
+            const session = list[i];
+            const identityKey = sessionIdentityKey(session);
+            if (!identityKey || seen[identityKey]) {
+                continue;
+            }
+            seen[identityKey] = true;
+            unique.push(session);
+        }
+
+        return unique;
+    }
+
+    function firstNumber(value, fallback) {
+        const match = stringOrEmpty(value).match(/-?\d+/);
+        if (!match || !match.length) {
+            return fallback;
+        }
+        const parsed = Number(match[0]);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function compareAscending(left, right) {
+        if (left < right) {
+            return -1;
+        }
+        if (left > right) {
+            return 1;
+        }
+        return 0;
+    }
+
+    function compareDescending(left, right) {
+        if (left > right) {
+            return -1;
+        }
+        if (left < right) {
+            return 1;
+        }
+        return 0;
+    }
+
+    function sessionWindowSlot(session) {
+        return firstNumber(session && session.tmux_window, 1000000);
+    }
+
+    function sessionPaneSlot(session) {
+        return firstNumber(
+            session && session.tmux_pane,
+            firstNumber(session && session.pane_label, 1000000)
+        );
+    }
+
+    function sessionIsCurrentHost(session) {
+        return boolOrFalse(session && session.is_current_host);
+    }
+
+    function sessionIsDisplayEligible(session) {
+        if (!session || typeof session !== "object") {
+            return false;
+        }
+
+        const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
+        const hasTmuxIdentity = stringOrEmpty(session.tmux_session)
+            && stringOrEmpty(session.tmux_window)
+            && stringOrEmpty(session.tmux_pane);
+        if (!terminalAnchor && !hasTmuxIdentity) {
+            return false;
+        }
+
+        if (boolOrFalse(session.remote_source_stale)) {
+            return false;
+        }
+
+        if (sessionNeedsAttention(session)
+            || boolOrFalse(session.output_ready)
+            || boolOrFalse(session.output_unseen)
+            || sessionIsActivelyProcessing(session)) {
+            return true;
+        }
+
+        return boolOrFalse(session.process_running);
+    }
+
+    function stableSessionCompare(left, right) {
+        let result = compareDescending(sessionIsCurrent(left) ? 1 : 0, sessionIsCurrent(right) ? 1 : 0);
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareDescending(sessionIsCurrentHost(left) ? 1 : 0, sessionIsCurrentHost(right) ? 1 : 0);
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareDescending(boolOrFalse(left && left.pane_active) ? 1 : 0, boolOrFalse(right && right.pane_active) ? 1 : 0);
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareAscending(sessionWindowSlot(left), sessionWindowSlot(right));
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareAscending(sessionPaneSlot(left), sessionPaneSlot(right));
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareAscending(stringOrEmpty(left && left.tmux_session), stringOrEmpty(right && right.tmux_session));
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareAscending(stringOrEmpty(left && left.host_name), stringOrEmpty(right && right.host_name));
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareAscending(stringOrEmpty(left && left.pane_label), stringOrEmpty(right && right.pane_label));
+        if (result !== 0) {
+            return result;
+        }
+
+        result = compareAscending(stringOrEmpty(left && left.tool), stringOrEmpty(right && right.tool));
+        if (result !== 0) {
+            return result;
+        }
+
+        return compareAscending(sessionIdentityKey(left), sessionIdentityKey(right));
+    }
+
+    function stableSortedSessions(items) {
+        const sessions = uniqueSessions(items).slice();
+        sessions.sort((left, right) => stableSessionCompare(left, right));
+        return sessions;
+    }
+
+    function groupHasCurrentSession(group) {
+        const sessions = arrayOrEmpty(group && group.sessions);
+        for (let i = 0; i < sessions.length; i += 1) {
+            if (sessionIsCurrent(sessions[i])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function projectGroupFor(projectName, executionMode) {
@@ -324,17 +500,17 @@ ShellRoot {
             return null;
         }
 
-        const livePrimaryScreen = findScreenByOutputName(livePrimaryOutputName());
-        if (livePrimaryScreen) {
-            return livePrimaryScreen;
-        }
-
         const candidates = primaryOutputCandidates();
         for (let i = 0; i < candidates.length; i += 1) {
             const preferredScreen = findScreenByOutputName(candidates[i]);
             if (preferredScreen) {
                 return preferredScreen;
             }
+        }
+
+        const livePrimaryScreen = findScreenByOutputName(livePrimaryOutputName());
+        if (livePrimaryScreen) {
+            return livePrimaryScreen;
         }
 
         const focusedMonitor = I3.focusedMonitor;
@@ -461,9 +637,9 @@ ShellRoot {
             return colors.blueWash;
         }
         if (hovered) {
-            return boolOrFalse(windowData && windowData.hidden) ? colors.card : colors.panelAlt;
+            return boolOrFalse(windowData && windowData.hidden) ? colors.cardAlt : colors.card;
         }
-        return boolOrFalse(windowData && windowData.hidden) ? colors.panelAlt : colors.cardAlt;
+        return boolOrFalse(windowData && windowData.hidden) ? colors.cardAlt : colors.bg;
     }
 
     function sidebarRowBorder(windowData, hovered) {
@@ -1112,14 +1288,61 @@ ShellRoot {
         return "file://" + shellConfig.aiFallbackIcon;
     }
 
-    function modeIconSource(mode) {
-        return "file://" + (stringOrEmpty(mode).toLowerCase() === "ssh"
-            ? shellConfig.sshIcon
-            : shellConfig.localIcon);
-    }
-
     function modeAccentColor(mode) {
         return stringOrEmpty(mode).toLowerCase() === "ssh" ? colors.teal : colors.blueMuted;
+    }
+
+    function modeChipLabel(mode) {
+        const value = stringOrEmpty(mode).toLowerCase();
+        if (value === "ssh") {
+            return "SSH";
+        }
+        if (value === "local") {
+            return "Local";
+        }
+        return value ? value.toUpperCase() : "";
+    }
+
+    function hostChipFill(hostGroup) {
+        if (boolOrFalse(hostGroup && hostGroup.is_current_host)) {
+            return colors.blueWash;
+        }
+        return colors.cardAlt;
+    }
+
+    function hostChipBorder(hostGroup) {
+        if (boolOrFalse(hostGroup && hostGroup.is_current_host)) {
+            return colors.blueMuted;
+        }
+        return colors.lineSoft;
+    }
+
+    function hostChipText(hostGroup) {
+        if (boolOrFalse(hostGroup && hostGroup.is_current_host)) {
+            return colors.blue;
+        }
+        return colors.textDim;
+    }
+
+    function titleCaseWord(value) {
+        const text = stringOrEmpty(value).trim();
+        if (!text.length) {
+            return "";
+        }
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    function displayHostName(value) {
+        const host = stringOrEmpty(value).trim().toLowerCase();
+        if (!host.length) {
+            return "";
+        }
+
+        const pieces = host.split(/[^a-z0-9]+/).filter((part) => part.length > 0);
+        if (!pieces.length) {
+            return titleCaseWord(host);
+        }
+        return pieces.map((part) => titleCaseWord(part)).join(" ");
     }
 
     function projectCardFill(projectGroup) {
@@ -1131,7 +1354,7 @@ ShellRoot {
             return active ? colors.panelAlt : colors.cardAlt;
         }
         if (mode === "ssh") {
-            return active ? "#11242c" : "#0d1a21";
+            return active ? "#101c24" : colors.cardAlt;
         }
         return active ? colors.panelAlt : colors.cardAlt;
     }
@@ -1145,7 +1368,7 @@ ShellRoot {
             return active ? colors.blueWash : colors.panel;
         }
         if (mode === "ssh") {
-            return active ? "#163340" : "#11262f";
+            return active ? "#14232b" : colors.panel;
         }
         return active ? colors.blueWash : colors.panel;
     }
@@ -1201,45 +1424,77 @@ ShellRoot {
         return boolOrFalse(session.needs_user_action) || stageState(session) === "attention" || stageState(session) === "waiting";
     }
 
-    function sessionHasMotion(session) {
-        return stringOrEmpty(session.stage_visual_state) === "working";
+    function sessionIsActivelyProcessing(session) {
+        const stage = stringOrEmpty(session && session.stage).toLowerCase();
+        const ageSeconds = Number(session && session.activity_age_seconds);
+        const freshness = stringOrEmpty(session && session.activity_freshness).toLowerCase();
+        const pendingTools = Number(session && session.pending_tools);
+
+        if (boolOrFalse(session && session.needs_user_action)
+            || boolOrFalse(session && session.output_ready)
+            || boolOrFalse(session && session.output_unseen)) {
+            return false;
+        }
+        if (boolOrFalse(session && session.remote_source_stale) || freshness === "stale") {
+            return false;
+        }
+        if (boolOrFalse(session && session.pulse_working)
+            || boolOrFalse(session && session.is_streaming)
+            || (Number.isFinite(pendingTools) && pendingTools > 0)) {
+            return true;
+        }
+
+        return ["starting", "thinking", "tool_running", "streaming"].indexOf(stage) >= 0
+            && (!Number.isFinite(ageSeconds) || ageSeconds <= 15)
+            && freshness !== "stale";
     }
 
-    function sessionActivityPercent(session) {
-        const treeCpu = Number(session && session.process_tree_cpu_percent);
-        if (Number.isFinite(treeCpu) && treeCpu >= 0) {
-            return treeCpu;
-        }
-        const processCpu = Number(session && session.cpu_percent);
-        if (Number.isFinite(processCpu) && processCpu >= 0) {
-            return processCpu;
-        }
-        return null;
+    function sessionHasMotion(session) {
+        return sessionIsActivelyProcessing(session);
     }
 
     function sessionActivityState(session) {
-        const cpu = sessionActivityPercent(session);
-        if (cpu === null) {
-            return "missing";
+        if (sessionNeedsAttention(session)) {
+            return stageState(session) === "attention" ? "attention" : "waiting";
         }
-        if (cpu >= 20) {
-            return "hot";
+        if (boolOrFalse(session && session.output_unseen) || boolOrFalse(session && session.output_ready)) {
+            return "ready";
         }
-        if (cpu >= 4) {
-            return "warm";
+        if (boolOrFalse(session && session.remote_source_stale)
+            || stringOrEmpty(session && session.activity_freshness).toLowerCase() === "stale") {
+            return "stale";
         }
-        return "idle";
+        if (sessionIsActivelyProcessing(session)) {
+            const stage = stringOrEmpty(session && session.stage).toLowerCase();
+            if (stage === "tool_running") {
+                return "tool";
+            }
+            if (stage === "streaming") {
+                return "streaming";
+            }
+            return "active";
+        }
+        if (boolOrFalse(session && session.process_running)) {
+            return "idle";
+        }
+        return "inactive";
     }
 
     function sessionActivityColor(session) {
         const state = sessionActivityState(session);
-        if (state === "hot") {
+        if (state === "attention") {
+            return colors.red;
+        }
+        if (state === "waiting") {
+            return colors.amber;
+        }
+        if (state === "ready") {
             return colors.accent;
         }
-        if (state === "warm") {
-            return colors.blue;
+        if (state === "tool" || state === "streaming" || state === "active") {
+            return root.sessionAccentColor(session);
         }
-        if (state === "idle") {
+        if (state === "stale") {
             return colors.subtle;
         }
         return colors.muted;
@@ -1247,24 +1502,46 @@ ShellRoot {
 
     function sessionActivityBackground(session) {
         const state = sessionActivityState(session);
-        if (state === "hot") {
+        if (state === "attention") {
+            return colors.redBg;
+        }
+        if (state === "waiting") {
+            return colors.amberBg;
+        }
+        if (state === "ready") {
             return colors.accentBg;
         }
-        if (state === "warm") {
-            return colors.blueBg;
+        if (state === "tool" || state === "streaming" || state === "active") {
+            return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
         }
-        if (state === "idle") {
+        if (state === "stale") {
             return colors.bg;
         }
-        return colors.card;
+        return colors.cardAlt;
+    }
+
+    function sessionAgeCompactLabel(session) {
+        const ageSeconds = Number(session && session.activity_age_seconds);
+        if (!Number.isFinite(ageSeconds) || ageSeconds < 0) {
+            return "";
+        }
+        if (ageSeconds <= 1) {
+            return "now";
+        }
+        if (ageSeconds < 60) {
+            return String(Math.round(ageSeconds)) + "s";
+        }
+        if (ageSeconds < 3600) {
+            return String(Math.floor(ageSeconds / 60)) + "m";
+        }
+        if (ageSeconds < 86400) {
+            return String(Math.floor(ageSeconds / 3600)) + "h";
+        }
+        return String(Math.floor(ageSeconds / 86400)) + "d";
     }
 
     function sessionActivityLabel(session) {
-        const cpu = sessionActivityPercent(session);
-        if (cpu === null) {
-            return "";
-        }
-        return String(Math.round(cpu)) + "%";
+        return sessionAgeCompactLabel(session);
     }
 
     function sessionGlyph(session) {
@@ -1302,7 +1579,7 @@ ShellRoot {
     }
 
     function sessionHostLabel(session) {
-        const host = stringOrEmpty(session.host_name);
+        const host = displayHostName(session && session.host_name);
         if (!host) {
             return root.modeLabel(session.execution_mode);
         }
@@ -1321,22 +1598,52 @@ ShellRoot {
         return "";
     }
 
+    function sessionPidLabel(session) {
+        const processPid = Number(session && session.pid);
+        if (Number.isFinite(processPid) && processPid > 0) {
+            return "PID " + String(Math.trunc(processPid));
+        }
+        const panePid = Number(session && session.pane_pid);
+        if (Number.isFinite(panePid) && panePid > 0) {
+            return "PID " + String(Math.trunc(panePid));
+        }
+        return "";
+    }
+
+    function sessionPaneLocatorLabel(session) {
+        const paneId = stringOrEmpty(session && session.tmux_pane).trim();
+        if (!paneId) {
+            return "";
+        }
+        const pane = sessionPaneLabel(session);
+        if (pane && pane.indexOf(paneId) >= 0) {
+            return "";
+        }
+        return "Pane " + paneId;
+    }
+
     function sessionStateSymbol(session) {
-        const stage = stageState(session);
-        if (stage === "attention") {
+        const activityState = sessionActivityState(session);
+        if (activityState === "attention") {
             return "!";
         }
-        if (stage === "waiting") {
+        if (activityState === "waiting") {
             return "⌨";
         }
-        if (stage === "ready") {
+        if (activityState === "ready") {
             return "✓";
         }
-        if (stringOrEmpty(session.stage).toLowerCase() === "streaming") {
+        if (activityState === "streaming") {
             return "⋯";
         }
-        if (stringOrEmpty(session.stage).toLowerCase() === "tool_running") {
+        if (activityState === "tool") {
             return "↺";
+        }
+        if (activityState === "active") {
+            return "◔";
+        }
+        if (activityState === "stale") {
+            return "◌";
         }
         return "•";
     }
@@ -1364,11 +1671,25 @@ ShellRoot {
         return "Idle";
     }
 
+    function toolLabel(session) {
+        const tool = stringOrEmpty(session.tool).toLowerCase();
+        if (tool === "codex") {
+            return "Codex";
+        }
+        if (tool === "claude-code" || tool === "claude") {
+            return "Claude";
+        }
+        if (tool === "gemini") {
+            return "Gemini";
+        }
+        return "AI";
+    }
+
     function sessionCardFill(session) {
         if (sessionIsCurrent(session)) {
             return sessionTint(session);
         }
-        return colors.cardAlt;
+        return colors.panelAlt;
     }
 
     function sessionCardBorder(session) {
@@ -1396,6 +1717,37 @@ ShellRoot {
         return compactSessionStateLabel(session);
     }
 
+    function sessionPrimaryLabel(session) {
+        const pane = sessionPaneLabel(session);
+        if (pane) {
+            return pane;
+        }
+        const tool = toolLabel(session);
+        return tool ? tool + " Session" : "AI Session";
+    }
+
+    function sessionSecondaryLabel(session) {
+        const bits = [];
+        const pane = sessionPaneLabel(session);
+        const paneLocator = sessionPaneLocatorLabel(session);
+        const pid = sessionPidLabel(session);
+
+        if (!pane) {
+            const tool = toolLabel(session);
+            if (tool) {
+                bits.push(tool);
+            }
+        }
+        if (paneLocator) {
+            bits.push(paneLocator);
+        }
+        if (pid) {
+            bits.push(pid);
+        }
+
+        return bits.join(" • ");
+    }
+
     function findWindowById(windowId) {
         const target = Number(windowId || 0);
         if (target <= 0) {
@@ -1416,35 +1768,100 @@ ShellRoot {
     }
 
     function groupedSessionBands() {
-        const sessions = compactSessions();
+        const sessions = panelSessions();
         const groups = [];
         const index = {};
 
         for (let i = 0; i < sessions.length; i += 1) {
             const session = sessions[i];
             const project = stringOrEmpty(session.project_name || session.project || "global");
-            const windowId = Number(session.window_id || 0);
-            const contextKey = stringOrEmpty(session.context_key);
-            const groupKey = [project, String(windowId), contextKey].join("::");
+            const groupKey = project || "global";
 
             let group = index[groupKey];
             if (!group) {
-                const parentWindow = findWindowById(windowId);
                 group = {
                     group_key: groupKey,
                     project_name: project,
-                    execution_mode: stringOrEmpty(session.execution_mode),
-                    host_name: sessionHostLabel(session),
-                    window_id: windowId,
-                    window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : "",
-                    sessions: []
+                    sessions: [],
+                    host_groups: []
                 };
+                group.host_index = {};
                 index[groupKey] = group;
                 groups.push(group);
             }
 
             group.sessions.push(session);
+            const hostKey = stringOrEmpty(session.connection_key || session.host_name || "unknown");
+            let hostGroup = group.host_index[hostKey];
+            if (!hostGroup) {
+                const parentWindow = findWindowById(Number(session.window_id || 0));
+                hostGroup = {
+                    host_key: hostKey,
+                    host_name: sessionHostLabel(session),
+                    raw_host_name: stringOrEmpty(session.host_name),
+                    execution_mode: stringOrEmpty(session.execution_mode),
+                    is_current_host: sessionIsCurrentHost(session),
+                    focus_mode: stringOrEmpty(session.focus_mode),
+                    workspace_name: parentWindow ? stringOrEmpty(parentWindow.workspace) : "",
+                    window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : "",
+                    sessions: []
+                };
+                group.host_index[hostKey] = hostGroup;
+                group.host_groups.push(hostGroup);
+            }
+            hostGroup.sessions.push(session);
         }
+
+        for (let i = 0; i < groups.length; i += 1) {
+            groups[i].sessions = stableSortedSessions(groups[i].sessions);
+            const hostGroups = arrayOrEmpty(groups[i].host_groups);
+            for (let j = 0; j < hostGroups.length; j += 1) {
+                hostGroups[j].sessions = stableSortedSessions(hostGroups[j].sessions);
+            }
+            hostGroups.sort((left, right) => {
+                let result = compareDescending(boolOrFalse(left && left.is_current_host) ? 1 : 0, boolOrFalse(right && right.is_current_host) ? 1 : 0);
+                if (result !== 0) {
+                    return result;
+                }
+
+                result = compareAscending(stringOrEmpty(left && left.host_name), stringOrEmpty(right && right.host_name));
+                if (result !== 0) {
+                    return result;
+                }
+
+                result = compareAscending(stringOrEmpty(left && left.execution_mode), stringOrEmpty(right && right.execution_mode));
+                if (result !== 0) {
+                    return result;
+                }
+
+                return compareAscending(stringOrEmpty(left && left.host_key), stringOrEmpty(right && right.host_key));
+            });
+            delete groups[i].host_index;
+        }
+
+        groups.sort((left, right) => {
+            const leftCurrent = groupHasCurrentSession(left) ? 1 : 0;
+            const rightCurrent = groupHasCurrentSession(right) ? 1 : 0;
+            let result = compareDescending(leftCurrent, rightCurrent);
+            if (result !== 0) {
+                return result;
+            }
+
+            result = compareDescending(
+                arrayOrEmpty(left && left.host_groups).some((hostGroup) => boolOrFalse(hostGroup && hostGroup.is_current_host)) ? 1 : 0,
+                arrayOrEmpty(right && right.host_groups).some((hostGroup) => boolOrFalse(hostGroup && hostGroup.is_current_host)) ? 1 : 0
+            );
+            if (result !== 0) {
+                return result;
+            }
+
+            result = compareAscending(stringOrEmpty(left && left.project_name), stringOrEmpty(right && right.project_name));
+            if (result !== 0) {
+                return result;
+            }
+
+            return compareAscending(stringOrEmpty(left && left.group_key), stringOrEmpty(right && right.group_key));
+        });
 
         return groups;
     }
@@ -2953,19 +3370,19 @@ ShellRoot {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    visible: root.compactSessions().length > 0
+                    visible: root.panelSessions().length > 0
                     spacing: 8
 
                     Text {
                         text: "AI Sessions"
                         color: colors.text
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                     }
 
                     Rectangle {
                         width: sessionSectionCount.implicitWidth + 12
-                        height: 18
+                        height: 20
                         radius: 6
                         color: colors.cardAlt
                         border.color: colors.lineSoft
@@ -2974,9 +3391,9 @@ ShellRoot {
                         Text {
                             id: sessionSectionCount
                             anchors.centerIn: parent
-                            text: String(root.compactSessions().length)
+                            text: String(root.panelSessions().length)
                             color: colors.muted
-                            font.pixelSize: 8
+                            font.pixelSize: 9
                             font.weight: Font.DemiBold
                         }
                     }
@@ -2992,10 +3409,10 @@ ShellRoot {
 
                 Rectangle {
                     readonly property int visibleGroupRows: Math.min(4, Math.max(1, root.groupedSessionBands().length))
-                    implicitHeight: 16 + (visibleGroupRows * 66) + (Math.max(0, visibleGroupRows - 1) * 8)
+                    implicitHeight: 18 + (visibleGroupRows * 146) + (Math.max(0, visibleGroupRows - 1) * 10)
                     Layout.preferredHeight: implicitHeight
                     Layout.fillWidth: true
-                    visible: root.compactSessions().length > 0
+                    visible: root.panelSessions().length > 0
                     radius: 12
                     color: colors.panel
                     border.color: colors.border
@@ -3010,12 +3427,12 @@ ShellRoot {
                     ListView {
                         id: sessionGroupList
                         anchors.fill: parent
-                        anchors.leftMargin: 6
-                        anchors.rightMargin: 6
-                        anchors.topMargin: 6
-                        anchors.bottomMargin: 6
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        anchors.topMargin: 8
+                        anchors.bottomMargin: 8
                         clip: true
-                        spacing: 6
+                        spacing: 8
                         model: sessionGroupsModel
                         boundsBehavior: Flickable.StopAtBounds
 
@@ -3023,65 +3440,38 @@ ShellRoot {
                             required property var modelData
                             readonly property var group: modelData
                             width: sessionGroupList.width
-                            height: 60
-                            radius: 10
-                            color: colors.cardAlt
-                            border.color: colors.lineSoft
+                            readonly property int hostRowCount: Math.max(1, root.arrayOrEmpty(group.host_groups).length)
+                            height: 44 + (hostRowCount * 52) + (Math.max(0, hostRowCount - 1) * 8)
+                            radius: 12
+                            color: colors.card
+                            border.color: colors.border
                             border.width: 1
-
-                            ScriptModel {
-                                id: groupedSessionsModel
-                                values: root.arrayOrEmpty(group.sessions)
-                                objectProp: "modelData"
-                            }
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 6
-                                anchors.topMargin: 6
-                                anchors.bottomMargin: 6
-                                spacing: 4
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                anchors.topMargin: 8
+                                anchors.bottomMargin: 8
+                                spacing: 8
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 5
-
-                                    Rectangle {
-                                        width: 17
-                                        height: 17
-                                        radius: 6
-                                        color: colors.bg
-                                        border.color: root.modeAccentColor(group.execution_mode)
-                                        border.width: 1
-
-                                        IconImage {
-                                            anchors.centerIn: parent
-                                            implicitSize: 12
-                                            source: root.modeIconSource(group.execution_mode)
-                                            mipmap: true
-                                        }
-                                    }
-
-                                    Text {
-                                        text: root.sessionGroupTitle(group)
-                                        color: colors.text
-                                        font.pixelSize: 10
-                                        font.weight: Font.DemiBold
-                                    }
+                                    spacing: 6
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: root.sessionGroupSubtitle(group)
-                                        color: colors.subtle
-                                        font.pixelSize: 8
+                                        text: root.sessionGroupTitle(group)
+                                        color: colors.text
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                     }
 
                                     Rectangle {
-                                        width: sessionGroupCountText.implicitWidth + 8
-                                        height: 14
-                                        radius: 5
+                                        width: sessionGroupCountText.implicitWidth + 10
+                                        height: 18
+                                        radius: 6
                                         color: colors.bg
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -3091,154 +3481,274 @@ ShellRoot {
                                             anchors.centerIn: parent
                                             text: String(root.arrayOrEmpty(group.sessions).length)
                                             color: colors.muted
-                                            font.pixelSize: 7
+                                            font.pixelSize: 8
                                             font.weight: Font.DemiBold
                                         }
                                     }
                                 }
 
-                                ListView {
-                                    id: groupedSessionRow
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 24
-                                    Layout.fillHeight: true
-                                    orientation: ListView.Horizontal
-                                    spacing: 5
-                                    clip: true
-                                    interactive: contentWidth > width
-                                    boundsBehavior: Flickable.StopAtBounds
-                                    model: groupedSessionsModel
+                                Repeater {
+                                    model: root.arrayOrEmpty(group.host_groups)
 
-                                    delegate: Rectangle {
+                                    delegate: ColumnLayout {
                                         required property var modelData
-                                        readonly property var session: modelData
-                                        readonly property real maxPillWidth: Math.max(
-                                            92,
-                                            (groupedSessionRow.width - Math.max(0, groupedSessionRow.count - 1) * groupedSessionRow.spacing)
-                                            / Math.max(1, groupedSessionRow.count)
-                                        )
-                                        width: Math.max(80, Math.min(pillText.implicitWidth + 40, maxPillWidth))
-                                        height: 22
-                                        radius: 7
-                                        color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
-                                            ? colors.panelAlt
-                                            : root.sessionCardFill(session)
-                                        border.color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
-                                            ? colors.borderStrong
-                                            : root.sessionCardBorder(session)
-                                        border.width: 1
+                                        readonly property var hostGroup: modelData
+                                        Layout.fillWidth: true
+                                        spacing: 6
 
                                         RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 5
-                                            anchors.rightMargin: 5
-                                            spacing: 4
+                                            Layout.fillWidth: true
+                                            spacing: 6
 
-                                            Item {
-                                                width: 15
-                                                height: 15
+                                            Rectangle {
+                                                height: 18
+                                                radius: 6
+                                                color: root.hostChipFill(hostGroup)
+                                                border.color: root.hostChipBorder(hostGroup)
+                                                border.width: 1
+                                                Layout.preferredWidth: hostGroupLabel.implicitWidth + 14
 
-                                                Rectangle {
+                                                Text {
+                                                    id: hostGroupLabel
                                                     anchors.centerIn: parent
-                                                    width: 15
-                                                    height: 15
-                                                    radius: 5
-                                                    color: colors.bg
-                                                    border.color: root.sessionAccentColor(session)
-                                                    border.width: 1
+                                                    text: root.stringOrEmpty(hostGroup.host_name) || shellConfig.hostName
+                                                    color: root.hostChipText(hostGroup)
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
                                                 }
+                                            }
 
-                                                Rectangle {
+                                            Rectangle {
+                                                visible: root.stringOrEmpty(hostGroup.execution_mode).toLowerCase() === "ssh"
+                                                height: 18
+                                                radius: 6
+                                                color: colors.tealBg
+                                                border.color: colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: hostModeText.implicitWidth + 12
+
+                                                Text {
+                                                    id: hostModeText
                                                     anchors.centerIn: parent
-                                                    width: 15
-                                                    height: 15
-                                                    radius: 5
-                                                    color: "transparent"
-                                                    border.color: root.sessionAccentColor(session)
-                                                    border.width: 1
-                                                    opacity: root.sessionHasMotion(session) ? 0.22 : 0
-                                                    scale: root.sessionHasMotion(session) ? 0.92 : 1
-
-                                                    SequentialAnimation on scale {
-                                                        running: root.sessionHasMotion(session)
-                                                        loops: Animation.Infinite
-                                                        NumberAnimation { from: 0.94; to: 1.1; duration: 900; easing.type: Easing.InOutQuad }
-                                                        NumberAnimation { from: 1.1; to: 0.94; duration: 900; easing.type: Easing.InOutQuad }
-                                                    }
-
-                                                    SequentialAnimation on opacity {
-                                                        running: root.sessionHasMotion(session)
-                                                        loops: Animation.Infinite
-                                                        NumberAnimation { from: 0.24; to: 0.08; duration: 900; easing.type: Easing.InOutQuad }
-                                                        NumberAnimation { from: 0.08; to: 0.24; duration: 900; easing.type: Easing.InOutQuad }
-                                                    }
-                                                }
-
-                                                IconImage {
-                                                    anchors.centerIn: parent
-                                                    implicitSize: 11
-                                                    source: root.toolIconSource(session)
-                                                    mipmap: true
+                                                    text: "SSH"
+                                                    color: colors.teal
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
                                                 }
                                             }
 
                                             Text {
-                                                id: pillText
                                                 Layout.fillWidth: true
-                                                text: root.sessionPillLabel(session)
-                                                color: root.sessionTextColor(session)
+                                                visible: root.stringOrEmpty(hostGroup.window_title).length > 0
+                                                text: root.stringOrEmpty(hostGroup.window_title)
+                                                color: colors.subtle
                                                 font.pixelSize: 8
-                                                font.weight: Font.DemiBold
+                                                font.weight: Font.Medium
                                                 elide: Text.ElideRight
                                             }
 
                                             Rectangle {
-                                                visible: root.sessionActivityLabel(session).length > 0
-                                                width: visible ? activityText.implicitWidth + 10 : 0
-                                                height: 14
-                                                radius: 5
-                                                color: root.sessionActivityBackground(session)
-                                                border.color: "transparent"
+                                                height: 18
+                                                radius: 6
+                                                color: colors.bg
+                                                border.color: colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: hostSessionCountText.implicitWidth + 10
+
+                                                Text {
+                                                    id: hostSessionCountText
+                                                    anchors.centerIn: parent
+                                                    text: String(root.arrayOrEmpty(hostGroup.sessions).length)
+                                                    color: colors.muted
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+                                        }
+
+                                        ListView {
+                                            id: groupedSessionRow
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 40
+                                            orientation: ListView.Horizontal
+                                            spacing: 8
+                                            clip: true
+                                            interactive: contentWidth > width
+                                            boundsBehavior: Flickable.StopAtBounds
+                                            model: root.arrayOrEmpty(hostGroup.sessions)
+
+                                            delegate: Rectangle {
+                                                required property var modelData
+                                                readonly property var session: modelData
+                                                readonly property string primaryLabel: root.sessionPrimaryLabel(session)
+                                                readonly property string secondaryLabel: root.sessionSecondaryLabel(session)
+                                                readonly property string activityLabel: root.sessionActivityLabel(session)
+                                                readonly property real contentWidth: Math.max(primaryText.implicitWidth, secondaryText.implicitWidth) + trailingBadges.implicitWidth + 84
+                                                readonly property real maxPillWidth: Math.max(176, groupedSessionRow.width - 18)
+                                                width: Math.max(172, Math.min(contentWidth, maxPillWidth))
+                                                height: 40
+                                                radius: 10
+                                                color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
+                                                    ? colors.cardAlt
+                                                    : root.sessionCardFill(session)
+                                                border.color: root.sessionCardBorder(session)
                                                 border.width: 0
 
                                                 RowLayout {
                                                     anchors.fill: parent
-                                                    anchors.leftMargin: 4
-                                                    anchors.rightMargin: 4
-                                                    spacing: 3
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 8
+                                                    spacing: 8
 
-                                                    Rectangle {
-                                                        width: 5
-                                                        height: 5
-                                                        radius: 3
-                                                        color: root.sessionActivityColor(session)
+                                                    Item {
+                                                        width: 24
+                                                        height: 24
+
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 22
+                                                            height: 22
+                                                            radius: 7
+                                                            color: root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt
+                                                            border.color: "transparent"
+                                                            border.width: 0
+                                                        }
+
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 22
+                                                            height: 22
+                                                            radius: 7
+                                                            color: "transparent"
+                                                            border.color: "transparent"
+                                                            border.width: 0
+                                                            opacity: root.sessionHasMotion(session) ? 0.18 : 0
+                                                            scale: root.sessionHasMotion(session) ? 0.92 : 1
+
+                                                            SequentialAnimation on scale {
+                                                                running: root.sessionHasMotion(session)
+                                                                loops: Animation.Infinite
+                                                                NumberAnimation { from: 0.94; to: 1.08; duration: 900; easing.type: Easing.InOutQuad }
+                                                                NumberAnimation { from: 1.08; to: 0.94; duration: 900; easing.type: Easing.InOutQuad }
+                                                            }
+
+                                                            SequentialAnimation on opacity {
+                                                                running: root.sessionHasMotion(session)
+                                                                loops: Animation.Infinite
+                                                                NumberAnimation { from: 0.18; to: 0.06; duration: 900; easing.type: Easing.InOutQuad }
+                                                                NumberAnimation { from: 0.06; to: 0.18; duration: 900; easing.type: Easing.InOutQuad }
+                                                            }
+                                                        }
+
+                                                        IconImage {
+                                                            anchors.centerIn: parent
+                                                            implicitSize: 15
+                                                            source: root.toolIconSource(session)
+                                                            mipmap: true
+                                                            opacity: 0.92
+                                                        }
+
+                                                        Rectangle {
+                                                            anchors.right: parent.right
+                                                            anchors.bottom: parent.bottom
+                                                            width: 6
+                                                            height: 6
+                                                            radius: 3
+                                                            color: root.sessionAccentColor(session)
+                                                            opacity: 0.72
+                                                        }
                                                     }
 
-                                                    Text {
-                                                        id: activityText
-                                                        text: root.sessionActivityLabel(session)
-                                                        color: root.sessionActivityColor(session)
-                                                        font.pixelSize: 7
-                                                        font.weight: Font.DemiBold
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 1
+
+                                                        Text {
+                                                            id: primaryText
+                                                            Layout.fillWidth: true
+                                                            text: primaryLabel
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        Text {
+                                                            id: secondaryText
+                                                            Layout.fillWidth: true
+                                                            text: secondaryLabel
+                                                            color: root.sessionTextColor(session)
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.Medium
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
+
+                                                    ColumnLayout {
+                                                        id: trailingBadges
+                                                        spacing: 3
+
+                                                        Rectangle {
+                                                            Layout.alignment: Qt.AlignRight
+                                                            width: 24
+                                                            height: 24
+                                                            radius: 8
+                                                            color: root.sessionActivityBackground(session)
+                                                            border.color: "transparent"
+                                                            border.width: 0
+
+                                                            Text {
+                                                                anchors.centerIn: parent
+                                                                text: root.sessionStateSymbol(session)
+                                                                color: root.sessionActivityColor(session)
+                                                                font.pixelSize: 14
+                                                                font.weight: Font.DemiBold
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            Layout.alignment: Qt.AlignRight
+                                                            visible: activityLabel.length > 0
+                                                            width: visible ? activityText.implicitWidth + 12 : 0
+                                                            height: 16
+                                                            radius: 6
+                                                            color: root.sessionActivityBackground(session)
+                                                            border.color: "transparent"
+                                                            border.width: 0
+
+                                                            RowLayout {
+                                                                anchors.fill: parent
+                                                                anchors.leftMargin: 5
+                                                                anchors.rightMargin: 5
+                                                                spacing: 4
+
+                                                                Rectangle {
+                                                                    width: 5
+                                                                    height: 5
+                                                                    radius: 3
+                                                                    color: root.sessionActivityColor(session)
+                                                                }
+
+                                                                Text {
+                                                                    id: activityText
+                                                                    text: activityLabel
+                                                                    color: root.sessionActivityColor(session)
+                                                                    font.pixelSize: 7
+                                                                    font.weight: Font.DemiBold
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
-                                            }
 
-                                            Text {
-                                                visible: !root.sessionActivityLabel(session).length
-                                                text: root.sessionStateSymbol(session)
-                                                color: root.sessionAccentColor(session)
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
+                                                MouseArea {
+                                                    id: sessionPillMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                                }
                                             }
-                                        }
-
-                                        MouseArea {
-                                            id: sessionPillMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
                                         }
                                     }
                                 }
@@ -3254,13 +3764,13 @@ ShellRoot {
                     Text {
                         text: "Windows"
                         color: colors.text
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                     }
 
                     Rectangle {
                         width: windowsSectionCount.implicitWidth + 12
-                        height: 18
+                        height: 20
                         radius: 6
                         color: colors.cardAlt
                         border.color: colors.lineSoft
@@ -3271,7 +3781,7 @@ ShellRoot {
                             anchors.centerIn: parent
                             text: String(Number(dashboard.total_windows || 0))
                             color: colors.muted
-                            font.pixelSize: 8
+                            font.pixelSize: 9
                             font.weight: Font.DemiBold
                         }
                     }
@@ -3307,8 +3817,8 @@ ShellRoot {
                         readonly property var projectGroup: modelData
                         readonly property var projectWindows: root.arrayOrEmpty(projectGroup.windows)
                         width: windowsList.width
-                        implicitHeight: 44 + (projectWindows.length * 36) + (Math.max(0, projectWindows.length - 1) * 4) + 8
-                        radius: 10
+                        implicitHeight: 52 + (projectWindows.length * 44) + (Math.max(0, projectWindows.length - 1) * 6) + 10
+                        radius: 12
                         color: root.projectCardFill(projectGroup)
                         border.color: "transparent"
                         border.width: 0
@@ -3327,74 +3837,71 @@ ShellRoot {
                             opacity: projectGroup.is_active ? 0.95 : 0.72
                         }
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 6
-                            anchors.topMargin: 6
-                            anchors.bottomMargin: 6
-                            spacing: 6
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 8
+                                anchors.topMargin: 8
+                                anchors.bottomMargin: 8
+                                spacing: 8
 
-                            Rectangle {
-                                Layout.fillWidth: true
-                                implicitHeight: 24
-                                radius: 8
-                                color: root.projectHeaderFill(projectGroup)
-                                border.color: "transparent"
-                                border.width: 0
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 30
+                                    radius: 10
+                                    color: root.projectHeaderFill(projectGroup)
+                                    border.color: "transparent"
+                                    border.width: 0
 
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 6
-                                    anchors.rightMargin: 6
-                                    spacing: 6
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 8
 
-                                    Rectangle {
-                                        width: 16
-                                        height: 16
-                                        radius: 5
-                                        color: root.stringOrEmpty(projectGroup.project) === "global"
-                                            ? colors.card
-                                            : (projectGroup.is_active ? colors.blueBg : colors.bg)
-                                        border.color: "transparent"
-                                        border.width: 0
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: root.stringOrEmpty(projectGroup.project) === "global"
-                                                ? "G"
-                                                : root.shortProject(projectGroup.project).slice(0, 1).toUpperCase()
+                                        Rectangle {
+                                            width: 20
+                                            height: 20
+                                            radius: 7
                                             color: root.stringOrEmpty(projectGroup.project) === "global"
-                                                ? colors.subtle
-                                                : (projectGroup.is_active ? colors.blue : colors.muted)
-                                            font.pixelSize: 9
-                                            font.weight: Font.DemiBold
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        visible: root.stringOrEmpty(projectGroup.project) !== "global"
-                                        width: visible ? 18 : 0
-                                        height: 18
-                                        radius: 5
-                                        color: root.stringOrEmpty(projectGroup.execution_mode) === "ssh"
-                                            ? colors.tealBg
-                                            : colors.blueBg
+                                                ? colors.card
+                                                : (projectGroup.is_active ? colors.blueBg : colors.bg)
                                         border.color: "transparent"
                                         border.width: 0
 
-                                        IconImage {
-                                            anchors.centerIn: parent
-                                            implicitSize: 11
-                                            source: root.modeIconSource(projectGroup.execution_mode)
-                                            mipmap: true
-                                            opacity: 0.92
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: root.stringOrEmpty(projectGroup.project) === "global"
+                                                    ? "G"
+                                                : root.shortProject(projectGroup.project).slice(0, 1).toUpperCase()
+                                                color: root.stringOrEmpty(projectGroup.project) === "global"
+                                                    ? colors.subtle
+                                                    : (projectGroup.is_active ? colors.blue : colors.muted)
+                                                font.pixelSize: 10
+                                                font.weight: Font.DemiBold
+                                            }
                                         }
-                                    }
 
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 0
+                                        Rectangle {
+                                            visible: root.stringOrEmpty(projectGroup.project) !== "global"
+                                            width: visible ? projectModeText.implicitWidth + 12 : 0
+                                            height: 18
+                                            radius: 6
+                                            color: root.stringOrEmpty(projectGroup.execution_mode) === "ssh"
+                                                ? colors.tealBg
+                                                : colors.blueBg
+                                            border.color: root.modeAccentColor(projectGroup.execution_mode)
+                                            border.width: 1
+
+                                            Text {
+                                                id: projectModeText
+                                                anchors.centerIn: parent
+                                                text: root.modeChipLabel(projectGroup.execution_mode)
+                                                color: root.modeAccentColor(projectGroup.execution_mode)
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
 
                                         Text {
                                             Layout.fillWidth: true
@@ -3404,21 +3911,49 @@ ShellRoot {
                                             color: projectGroup.is_active
                                                 ? (root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.teal : colors.text)
                                                 : colors.textDim
-                                            font.pixelSize: 10
+                                            font.pixelSize: 12
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideRight
                                         }
 
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: root.windowSectionSubtitle(projectGroup)
-                                            color: colors.subtle
-                                            font.pixelSize: 7
-                                            elide: Text.ElideRight
+                                        Rectangle {
+                                            width: projectWindowCountText.implicitWidth + 12
+                                            height: 18
+                                            radius: 6
+                                            color: colors.bg
+                                            border.color: colors.lineSoft
+                                            border.width: 1
+
+                                            Text {
+                                                id: projectWindowCountText
+                                                anchors.centerIn: parent
+                                                text: String(projectWindows.length) + (projectWindows.length === 1 ? " window" : " windows")
+                                                color: colors.muted
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: Number(projectGroup.ai_session_count || 0) > 0
+                                            width: visible ? projectSessionCountText.implicitWidth + 12 : 0
+                                            height: 18
+                                            radius: 6
+                                            color: colors.cardAlt
+                                            border.color: colors.lineSoft
+                                            border.width: 1
+
+                                            Text {
+                                                id: projectSessionCountText
+                                                anchors.centerIn: parent
+                                                text: String(Number(projectGroup.ai_session_count || 0)) + " AI"
+                                                color: colors.subtle
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
                                         }
                                     }
                                 }
-                            }
 
                             Repeater {
                                 model: projectWindows
@@ -3429,8 +3964,8 @@ ShellRoot {
                                     Layout.fillWidth: true
                                     Layout.leftMargin: 12
                                     Layout.rightMargin: 2
-                                    implicitHeight: 36
-                                    radius: 6
+                                    implicitHeight: 44
+                                    radius: 8
                                     color: root.sidebarRowFill(windowData, windowMouse.containsMouse)
                                     border.color: "transparent"
                                     border.width: 0
@@ -3452,20 +3987,20 @@ ShellRoot {
                                     RowLayout {
                                         anchors.fill: parent
                                         anchors.leftMargin: windowData.focused ? 16 : 12
-                                        anchors.rightMargin: 6
-                                        spacing: 6
+                                        anchors.rightMargin: 8
+                                        spacing: 8
 
                                         Rectangle {
-                                            width: 24
-                                            height: 24
-                                            radius: 5
+                                            width: 28
+                                            height: 28
+                                            radius: 7
                                             color: colors.bg
                                             border.color: "transparent"
                                             border.width: 0
 
                                             IconImage {
                                                 anchors.centerIn: parent
-                                                implicitSize: 18
+                                                implicitSize: 20
                                                 source: root.iconSourceFor(windowData)
                                                 visible: source !== ""
                                                 mipmap: true
@@ -3477,37 +4012,24 @@ ShellRoot {
                                                 visible: root.iconSourceFor(windowData) === ""
                                                 text: root.appLabel(windowData).slice(0, 1).toUpperCase()
                                                 color: windowData.focused ? colors.text : colors.textDim
-                                                font.pixelSize: 11
+                                                font.pixelSize: 12
                                                 font.weight: Font.DemiBold
                                             }
                                         }
 
-                                        ColumnLayout {
+                                        Text {
                                             Layout.fillWidth: true
-                                            spacing: 0
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: root.displayTitle(windowData)
-                                                color: root.sidebarRowText(windowData, windowMouse.containsMouse)
-                                                font.pixelSize: 11
-                                                font.weight: Font.DemiBold
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: root.displayMeta(windowData)
-                                                visible: text.length > 0
-                                                color: windowData.focused ? colors.muted : colors.subtle
-                                                font.pixelSize: 8
-                                                elide: Text.ElideRight
-                                            }
+                                            text: root.displayTitle(windowData)
+                                            color: root.sidebarRowText(windowData, windowMouse.containsMouse)
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
                                         }
 
                                         RowLayout {
                                             visible: Number(windowData.ai_session_count || 0) > 0
-                                            spacing: 3
+                                            spacing: 4
 
                                             Repeater {
                                                 model: root.windowSessionIcons(windowData)
@@ -3515,9 +4037,9 @@ ShellRoot {
                                                 delegate: Rectangle {
                                                     required property var modelData
                                                     readonly property var session: modelData
-                                                    width: 17
-                                                    height: 17
-                                                    radius: 5
+                                                    width: 20
+                                                    height: 20
+                                                    radius: 6
                                                     color: root.sessionTint(session)
                                                     border.color: "transparent"
                                                     border.width: 0
@@ -3527,9 +4049,9 @@ ShellRoot {
                                                         anchors.bottom: parent.bottom
                                                         anchors.rightMargin: -1
                                                         anchors.bottomMargin: -1
-                                                        width: 8
-                                                        height: 8
-                                                        radius: 4
+                                                        width: 9
+                                                        height: 9
+                                                        radius: 5
                                                         color: root.sessionAccentColor(session)
                                                         border.color: "transparent"
                                                         border.width: 0
@@ -3538,7 +4060,7 @@ ShellRoot {
 
                                                     IconImage {
                                                         anchors.centerIn: parent
-                                                        implicitSize: 11
+                                                        implicitSize: 13
                                                         source: root.toolIconSource(session)
                                                         mipmap: true
                                                         opacity: root.sessionIsCurrent(session) ? 1 : 0.94
@@ -3558,9 +4080,9 @@ ShellRoot {
 
                                             Rectangle {
                                                 visible: root.windowSessionOverflowCount(windowData) > 0
-                                                width: visible ? overflowText.implicitWidth + 8 : 0
-                                                height: 16
-                                                radius: 5
+                                                width: visible ? overflowText.implicitWidth + 10 : 0
+                                                height: 18
+                                                radius: 6
                                                 color: colors.bg
                                                 border.color: "transparent"
                                                 border.width: 0
@@ -3570,35 +4092,16 @@ ShellRoot {
                                                     anchors.centerIn: parent
                                                     text: "+" + String(root.windowSessionOverflowCount(windowData))
                                                     color: colors.subtle
-                                                    font.pixelSize: 7
+                                                    font.pixelSize: 8
                                                     font.weight: Font.DemiBold
                                                 }
                                             }
                                         }
 
                                         Rectangle {
-                                            width: 16
-                                            height: 16
-                                            radius: 5
-                                            color: root.stringOrEmpty(windowData.execution_mode) === "ssh"
-                                                ? colors.tealBg
-                                                : colors.blueBg
-                                            border.color: "transparent"
-                                            border.width: 0
-
-                                            IconImage {
-                                                anchors.centerIn: parent
-                                                implicitSize: 11
-                                                source: root.modeIconSource(windowData.execution_mode)
-                                                mipmap: true
-                                                opacity: 0.92
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            width: 16
-                                            height: 16
-                                            radius: 5
+                                            width: 18
+                                            height: 18
+                                            radius: 6
                                             color: closeMouse.containsMouse ? colors.redBg : colors.bg
                                             border.color: "transparent"
                                             border.width: 0
@@ -3607,7 +4110,7 @@ ShellRoot {
                                                 anchors.centerIn: parent
                                                 text: "×"
                                                 color: closeMouse.containsMouse ? colors.red : (windowData.focused ? colors.muted : colors.subtle)
-                                                font.pixelSize: 9
+                                                font.pixelSize: 10
                                                 font.weight: Font.DemiBold
                                             }
 

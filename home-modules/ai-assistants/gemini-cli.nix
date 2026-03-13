@@ -25,24 +25,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-03-01, using v0.31.0.
+  # As of 2026-03-13, using v0.33.1.
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.32.1";
+    version = "0.33.1";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-2vi4bYWdiwTdGVXgOwq31sgly0mL3cBALTXbR0bGSh8=";
+      hash = "sha256-dDP+UcIuajyad0tZz6/jqJ9AMERUtyn0z2ohkGiSSj0=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-xmKoVMrwItuCNi6Te+EzGnbmO7nWL7JetNNaQQWnYgw=";
+    npmDepsHash = "sha256-Frne1xZoMqcJowMzhGrBpTYcjqQuUgbP2ak63NYbHlY=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 
@@ -184,7 +184,7 @@ let
       # - OTEL_SERVICE_NAME identifies this process in OTEL payloads
       wrapProgram $out/bin/gemini \
         --run 'export I3PM_AI_TRACE_TOKEN="''$(date +%s%N)-''$RANDOM"' \
-        --run 'append_otel_resource_attr() { local key="''${1:-}"; local value="''${2:-}"; [ -n "$key" ] && [ -n "$value" ] || return 0; local pair="''${key}=''${value}"; if [ -n "''${OTEL_RESOURCE_ATTRIBUTES:-}" ]; then export OTEL_RESOURCE_ATTRIBUTES="''${OTEL_RESOURCE_ATTRIBUTES},''${pair}"; else export OTEL_RESOURCE_ATTRIBUTES="''${pair}"; fi; }; I3PM_OTEL_REMOTE_TARGET=""; if [ -n "''${I3PM_REMOTE_HOST:-}" ]; then I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_HOST}:''${I3PM_REMOTE_PORT:-22}"; if [ -n "''${I3PM_REMOTE_USER:-}" ]; then I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_USER}@''${I3PM_OTEL_REMOTE_TARGET}"; fi; fi; append_otel_resource_attr "process.pid" "$$"; append_otel_resource_attr "working_directory" "''${PWD:-}"; append_otel_resource_attr "i3pm.project_name" "''${I3PM_PROJECT_NAME:-}"; append_otel_resource_attr "project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"; append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"; append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"; append_otel_resource_attr "terminal.anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "i3pm.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "terminal.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"; append_otel_resource_attr "i3pm.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"; append_otel_resource_attr "terminal.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "i3pm.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "terminal.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "i3pm.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "terminal.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"; append_otel_resource_attr "i3pm.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"; append_otel_resource_attr "terminal.tmux.session" "''${TMUX_SESSION:-}"; append_otel_resource_attr "terminal.tmux.window" "''${TMUX_WINDOW:-}"; append_otel_resource_attr "terminal.tmux.pane" "''${TMUX_PANE:-}"; append_otel_resource_attr "terminal.pty" "''${TTY:-}"; append_otel_resource_attr "host.name" "''${HOSTNAME:-}"' \
+        --run 'append_otel_resource_attr() { local key="''${1:-}"; local value="''${2:-}"; [ -n "$key" ] && [ -n "$value" ] || return 0; local pair="''${key}=''${value}"; if [ -n "''${OTEL_RESOURCE_ATTRIBUTES:-}" ]; then export OTEL_RESOURCE_ATTRIBUTES="''${OTEL_RESOURCE_ATTRIBUTES},''${pair}"; else export OTEL_RESOURCE_ATTRIBUTES="''${pair}"; fi; }; I3PM_OTEL_REMOTE_TARGET=""; I3PM_AI_HOST_ALIAS="''${I3PM_LOCAL_HOST_ALIAS:-''${HOSTNAME:-}}"; I3PM_AI_PANE_KEY=""; if [ -n "''${I3PM_REMOTE_HOST:-}" ]; then I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_HOST}:''${I3PM_REMOTE_PORT:-22}"; if [ -n "''${I3PM_REMOTE_USER:-}" ]; then I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_USER}@''${I3PM_OTEL_REMOTE_TARGET}"; fi; fi; if [ -n "''${I3PM_CONNECTION_KEY:-}" ] && [ -n "''${TMUX_SESSION:-}" ] && [ -n "''${TMUX_WINDOW:-}" ] && [ -n "''${TMUX_PANE:-}" ]; then I3PM_AI_PANE_KEY="''${I3PM_CONNECTION_KEY}::''${TMUX_SESSION}::''${TMUX_WINDOW}::''${TMUX_PANE}"; fi; append_otel_resource_attr "process.pid" "$$"; append_otel_resource_attr "working_directory" "''${PWD:-}"; append_otel_resource_attr "i3pm.project_name" "''${I3PM_PROJECT_NAME:-}"; append_otel_resource_attr "project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"; append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"; append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"; append_otel_resource_attr "i3pm.ai.tool" "gemini"; append_otel_resource_attr "i3pm.ai.host_alias" "''${I3PM_AI_HOST_ALIAS:-}"; append_otel_resource_attr "i3pm.ai.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "i3pm.ai.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "terminal.anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "i3pm.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "i3pm.ai.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "terminal.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"; append_otel_resource_attr "i3pm.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"; append_otel_resource_attr "terminal.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "i3pm.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "terminal.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "i3pm.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "terminal.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"; append_otel_resource_attr "i3pm.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"; append_otel_resource_attr "terminal.tmux.session" "''${TMUX_SESSION:-}"; append_otel_resource_attr "terminal.tmux.window" "''${TMUX_WINDOW:-}"; append_otel_resource_attr "terminal.tmux.pane" "''${TMUX_PANE:-}"; append_otel_resource_attr "i3pm.ai.tmux_session" "''${TMUX_SESSION:-}"; append_otel_resource_attr "i3pm.ai.tmux_window" "''${TMUX_WINDOW:-}"; append_otel_resource_attr "i3pm.ai.tmux_pane" "''${TMUX_PANE:-}"; append_otel_resource_attr "i3pm.ai.pane_key" "''${I3PM_AI_PANE_KEY:-}"; append_otel_resource_attr "terminal.pty" "''${TTY:-}"; append_otel_resource_attr "host.name" "''${HOSTNAME:-}"' \
         --unset NODE_OPTIONS \
         --set NODE_OPTIONS "--dns-result-order=ipv4first" \
         --set OTEL_SERVICE_NAME "gemini-cli" \

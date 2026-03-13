@@ -30,8 +30,6 @@ QtObject {
   readonly property string codexIcon: "${../../../assets/icons/codex.svg}"
   readonly property string claudeIcon: "${../../../assets/icons/claude.svg}"
   readonly property string geminiIcon: "${../../../assets/icons/gemini.svg}"
-  readonly property string localIcon: "${../../../assets/icons/local.svg}"
-  readonly property string sshIcon: "${../../../assets/icons/ssh.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
 }
 EOF
@@ -173,7 +171,7 @@ in
     primaryOutputs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default =
-        if hostName == "ryzen" then [ "DP-2" "DP-1" "HDMI-A-1" "DP-3" ]
+        if hostName == "ryzen" then [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]
         else if hostName == "thinkpad" then [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ]
         else [ "HEADLESS-1" "eDP-1" "DP-1" "HDMI-A-1" ];
       description = "Ordered list of preferred output names for the QuickShell primary panel.";
