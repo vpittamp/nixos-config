@@ -15,7 +15,7 @@ let
 
   # Import validated application definitions from shared data file
   # Feature 106: Pass assetsPackage for portable icon paths
-  validated = import ./app-registry-data.nix { inherit lib assetsPackage hostName; };
+  registryData = import ./app-registry-data.nix { inherit lib assetsPackage hostName; };
 
   # Import PWA sites configuration
   # Feature 106: Pass assetsPackage for portable icon paths
@@ -65,7 +65,7 @@ let
   desktopFileEntries = builtins.listToAttrs (map (app: {
     name = ".local/share/i3pm-applications/applications/${app.name}.desktop";
     value.text = mkDesktopFile app;
-  }) validated);
+  }) registryData.applications);
 
 in
 {
@@ -73,7 +73,7 @@ in
   home.file = {
     ".config/i3/application-registry.json".text = builtins.toJSON {
       version = "1.0.0";
-      applications = validated;
+      applications = registryData.applications;
     };
 
     # Generate PWA registry for sway-test framework (Feature 070)

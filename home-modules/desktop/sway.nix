@@ -267,12 +267,8 @@ let
     };
 
     assignableApps = builtins.filter (
-      app:
-        app ? workspace_assignment
-        && app.workspace_assignment
-        && app ? preferred_workspace
-        && app.preferred_workspace > 0
-    ) appRegistryData;
+      app: app ? preferred_workspace && app.preferred_workspace > 0
+    ) appRegistryData.workspaceOwningApplications;
   in {
     version = "1.0";
     # Feature 001: Explicit output preferences to ensure deterministic role→output mapping

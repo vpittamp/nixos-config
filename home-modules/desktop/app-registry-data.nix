@@ -27,10 +27,10 @@
 #    - Match uses I3PM_APP_NAME (not window class or aliases)
 #    - Result: 15-27x faster, 100% deterministic, zero race conditions
 #
-# 4. `workspace_assignment` field:
-#    - Explicitly controls whether an app participates in workspace-to-output assignment
-#    - This avoids inferring ownership from unrelated UI/runtime attributes
-#    - Scratchpads and floating utilities should set this to false
+# 4. Registry structure:
+#    - `workspaceOwningApplications`: apps that participate in workspace-to-output assignment
+#    - `nonOwningLaunchables`: launchable apps that should never own a workspace assignment
+#    - `applications`: combined validated list used for the runtime application registry
 
 let
   # Feature 106: Helper to get icon path from Nix store or fallback to legacy path
@@ -113,8 +113,6 @@ let
       # Feature 101: Scratchpad flag - apps with scratchpad=true use workspace 0
       # and are managed by the scratchpad system (one per worktree)
       scratchpad = if attrs ? scratchpad then attrs.scratchpad else false;
-      # Explicit workspace ownership for monitor assignment generation.
-      workspace_assignment = if attrs ? workspace_assignment then attrs.workspace_assignment else true;
     };
 
   # Helper to convert PWA site definition → app registry entry (Feature 056)
@@ -141,7 +139,7 @@ let
     preferred_monitor_role = pwa.preferred_monitor_role;
   });
 
-  applications = [
+  workspaceOwningApplications = [
     # TERMINAL APPLICATIONS OVERVIEW:
     # 1. Regular terminals (name="terminal", "ghostty"): Use deterministic anchor-keyed tmux session management
     # 2. Scratchpad terminal (name="scratchpad-terminal"): Uses tmux directly with scratchpad-{project} naming
@@ -527,6 +525,13 @@ let
       description = "Password and passkey manager";
     })
 
+  ]
+  # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
+  # All PWAs will have correct expected_class with declarative ULIDs
+  # This provides workspace assignments and window rules for i3pm
+  ++ (builtins.map mkPWAApp pwas);
+
+  nonOwningLaunchables = [
     # Scratchpad Terminal (Feature 062, Feature 101)
     # Special floating terminal for quick project access
     # NOTE: Launched by daemon via Sway IPC, not through wrapper
@@ -546,7 +551,6 @@ let
       # Used for deterministic tracking - scratchpad windows always have workspace_number=0
       preferred_workspace = 0;
       scratchpad = true;  # Feature 101: Mark as scratchpad-managed app
-      workspace_assignment = false;
       icon = iconPath "ghostty.svg";
       nix_package = "pkgs.ghostty";
       multi_instance = false;  # Feature 101: One per worktree, toggle focuses existing
@@ -567,18 +571,15 @@ let
       expected_class = "com.mitchellh.ghostty";  # Ghostty's app_id, matched by title
       preferred_workspace = 1;  # Floating, doesn't matter
       floating = true;
-      workspace_assignment = false;
       icon = "system-search";
       nix_package = "pkgs.fzf";
       multi_instance = true;  # Allow multiple search windows
       fallback_behavior = "skip";
       description = "Floating fuzzy file finder with preview that opens files in nvim";
     })
-  ]
-  # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
-  # All PWAs will have correct expected_class with declarative ULIDs
-  # This provides workspace assignments and window rules for i3pm
-  ++ (builtins.map mkPWAApp pwas);
+  ];
+
+  applications = workspaceOwningApplications ++ nonOwningLaunchables;
 
   # Additional validation: check for duplicate names
   appNames = map (app: app.name) applications;
@@ -607,13 +608,6 @@ let
       false
   ) applications;
 
-  invalidWorkspaceAssignments = lib.filter (app:
-    let
-      scratchpadManaged = if app ? scratchpad then app.scratchpad else false;
-      workspaceAssignment = if app ? workspace_assignment then app.workspace_assignment else true;
-    in scratchpadManaged && workspaceAssignment
-  ) applications;
-
   # Additional validation: check name format (kebab-case or reverse-domain notation)
   # Allows: kebab-case (foo-bar) and reverse-domain (com.example.app)
   invalidNames = lib.filter (app:
@@ -640,13 +634,15 @@ let
         ) invalidWorkspaces;
       in
         throw "Invalid workspace numbers:\n  ${builtins.concatStringsSep "\n  " invalidList}"
-    else if invalidWorkspaceAssignments != [] then
-      throw "Scratchpad apps cannot participate in workspace assignment: ${builtins.concatStringsSep ", " (map (app: app.name) invalidWorkspaceAssignments)}"
     else if invalidNames != [] then
       throw "Invalid application names (must be kebab-case or reverse-domain): ${builtins.concatStringsSep ", " (map (app: app.name) invalidNames)}"
     else
-      applications;
+      {
+        applications = applications;
+        workspaceOwningApplications = workspaceOwningApplications;
+        nonOwningLaunchables = nonOwningLaunchables;
+      };
 
 in
-# Export just the validated applications list
+# Export validated registry partitions.
 validated
