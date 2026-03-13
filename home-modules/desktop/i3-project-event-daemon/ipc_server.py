@@ -6843,7 +6843,7 @@ fi
 exec "$remote_helper" "$remote_dir"
 EOF_REMOTE
 )
-if ! ssh -t -o BatchMode=yes -o ConnectTimeout=2 -p {remote_port} {shlex_quote(f"{remote_user}@{remote_host}")} "bash -lc $(printf '%q' \"$remote_cmd\")"; then
+if ! ssh -t -o BatchMode=yes -o ConnectTimeout=2 -p {remote_port} {shlex_quote(f"{remote_user}@{remote_host}")} "bash -c $(printf '%q' \"$remote_cmd\")"; then
   echo
   echo "[i3pm] Remote terminal launch failed."
   echo "[i3pm] Press Enter to close..."

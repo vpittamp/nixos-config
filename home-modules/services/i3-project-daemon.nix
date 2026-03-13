@@ -21,6 +21,14 @@ with lib;
 let
   cfg = config.programs.i3-project-daemon;
 
+  terminalHelpersPackage = pkgs.runCommand "i3pm-terminal-helpers" {} ''
+    mkdir -p "$out/bin"
+    cp ${../../scripts/project-terminal-launch.sh} "$out/bin/project-terminal-launch.sh"
+    cp ${../../scripts/managed-tmux-session.sh} "$out/bin/managed-tmux-session.sh"
+    chmod 0555 "$out/bin/project-terminal-launch.sh"
+    chmod 0444 "$out/bin/managed-tmux-session.sh"
+  '';
+
   # Python dependencies for the daemon (same as system service)
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     i3ipc        # i3 IPC library
@@ -47,8 +55,8 @@ let
       mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon
       mkdir -p $out/scripts
       cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon/
-      cp ${../../scripts/project-terminal-launch.sh} $out/scripts/project-terminal-launch.sh
-      cp ${../../scripts/managed-tmux-session.sh} $out/scripts/managed-tmux-session.sh
+      cp ${terminalHelpersPackage}/bin/project-terminal-launch.sh $out/scripts/project-terminal-launch.sh
+      cp ${terminalHelpersPackage}/bin/managed-tmux-session.sh $out/scripts/managed-tmux-session.sh
       chmod 0555 $out/scripts/project-terminal-launch.sh
       chmod 0444 $out/scripts/managed-tmux-session.sh
     '';
@@ -102,6 +110,8 @@ in
   };
 
   config = mkIf cfg.enable {
+    home.packages = [ terminalHelpersPackage ];
+
     # User service for the daemon
     # Feature 117: Direct Python invocation without wrapper script
     systemd.user.services.i3-project-daemon = {
