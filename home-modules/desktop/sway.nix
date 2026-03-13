@@ -268,9 +268,10 @@ let
 
     assignableApps = builtins.filter (
       app:
-        app ? preferred_workspace
+        app ? workspace_assignment
+        && app.workspace_assignment
+        && app ? preferred_workspace
         && app.preferred_workspace > 0
-        && !(app ? floating && app.floating && app ? scope && app.scope == "global")
     ) appRegistryData;
   in {
     version = "1.0";
