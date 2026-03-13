@@ -42,20 +42,45 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
     let lastPayload = "";
 
     while (true) {
-      const client = new DaemonClient();
+      const snapshotClient = new DaemonClient();
+      const subscriptionClient = new DaemonClient();
       let heartbeat: number | undefined;
+      let snapshotInFlight = false;
+      let snapshotQueued = false;
 
       const emitSnapshot = async (): Promise<void> => {
-        const snapshot = await fetchSnapshot(client);
-        const encoded = JSON.stringify(snapshot);
-        if (encoded !== lastPayload) {
-          console.log(encoded);
-          lastPayload = encoded;
+        if (snapshotInFlight) {
+          snapshotQueued = true;
+          return;
+        }
+
+        snapshotInFlight = true;
+        try {
+          do {
+            snapshotQueued = false;
+            const snapshot = await fetchSnapshot(snapshotClient);
+            if (snapshot === undefined || snapshot === null) {
+              continue;
+            }
+
+            const encoded = JSON.stringify(snapshot);
+            if (!encoded || encoded === "undefined") {
+              continue;
+            }
+
+            if (encoded !== lastPayload) {
+              console.log(encoded);
+              lastPayload = encoded;
+            }
+          } while (snapshotQueued);
+        } finally {
+          snapshotInFlight = false;
         }
       };
 
       try {
-        await client.connect();
+        await snapshotClient.connect();
+        await subscriptionClient.connect();
         await emitSnapshot();
 
         heartbeat = setInterval(() => {
@@ -64,7 +89,7 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
           });
         }, intervalMs);
 
-        for await (const _event of client.subscribeToStateChanges()) {
+        for await (const _event of subscriptionClient.subscribeToStateChanges()) {
           await emitSnapshot();
         }
       } catch (error) {
@@ -74,7 +99,8 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
         if (heartbeat !== undefined) {
           clearInterval(heartbeat);
         }
-        client.disconnect();
+        subscriptionClient.disconnect();
+        snapshotClient.disconnect();
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000));

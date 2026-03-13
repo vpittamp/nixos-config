@@ -15,23 +15,66 @@ import QtQuick
 
 QtObject {
   readonly property string configName: "${cfg.configName}"
+  readonly property int topBarHeight: ${toString cfg.topBarHeight}
+  readonly property bool topBarShowSeconds: ${if cfg.topBarShowSeconds then "true" else "false"}
   readonly property int panelWidth: ${toString cfg.panelWidth}
   readonly property int barHeight: ${toString cfg.barHeight}
   readonly property int dashboardHeartbeatMs: ${toString cfg.dashboardHeartbeatMs}
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
+  readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
+  readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property var primaryOutputs: ${builtins.toJSON cfg.primaryOutputs}
   readonly property bool perMonitorBars: ${if cfg.perMonitorBars then "true" else "false"}
   readonly property string panelOutputPolicy: "${cfg.panelOutputPolicy}"
   readonly property string codexIcon: "${../../../assets/icons/codex.svg}"
   readonly property string claudeIcon: "${../../../assets/icons/claude.svg}"
   readonly property string geminiIcon: "${../../../assets/icons/gemini.svg}"
+  readonly property string localIcon: "${../../../assets/icons/local.svg}"
+  readonly property string sshIcon: "${../../../assets/icons/ssh.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
 }
 EOF
   '';
 
   quickshellBin = lib.getExe pkgs.quickshell;
+
+  notificationMonitorScript = pkgs.writeShellScriptBin "quickshell-notification-monitor" ''
+    set -euo pipefail
+    exec ${lib.getExe pkgs.python3} ${../eww-top-bar/scripts/notification-monitor.py}
+  '';
+
+  networkStatusScript = pkgs.writeShellScriptBin "quickshell-network-status" ''
+    set -euo pipefail
+
+    if ! command -v nmcli >/dev/null 2>&1; then
+      echo '{"connected":false,"kind":"offline","label":"Offline","signal":null}'
+      exit 0
+    fi
+
+    active_line="$(nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$3=="connected" { print; exit }')"
+
+    if [ -z "$active_line" ]; then
+      echo '{"connected":false,"kind":"offline","label":"Offline","signal":null}'
+      exit 0
+    fi
+
+    IFS=: read -r device type _state connection <<<"$active_line"
+
+    if [ "$type" = "wifi" ]; then
+      signal="$(nmcli -t -f IN-USE,SIGNAL dev wifi list ifname "$device" 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$1=="*" { print $2; exit }')"
+      if [ -z "$signal" ]; then
+        signal=null
+      fi
+      printf '{"connected":true,"kind":"wifi","label":%s,"signal":%s}\n' \
+        "$(${lib.getExe pkgs.jq} -Rn --arg value "$connection" '$value')" \
+        "$signal"
+      exit 0
+    fi
+
+    printf '{"connected":true,"kind":"ethernet","label":%s,"signal":null}\n' \
+      "$(${lib.getExe pkgs.jq} -Rn --arg value "$connection" '$value')"
+  '';
 
   mkIpcScript = name: functionName: extraBody:
     pkgs.writeShellScriptBin name ''
@@ -49,6 +92,8 @@ EOF
     set -euo pipefail
     exec ${quickshellBin} -c ${cfg.configName} ipc call shell toggleDockMode
   '';
+
+  togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
 
   monitorPanelTabScript = pkgs.writeShellScriptBin "monitor-panel-tab" ''
     set -euo pipefail
@@ -101,6 +146,18 @@ in
       description = "Width of the right-side monitoring panel in pixels.";
     };
 
+    topBarHeight = lib.mkOption {
+      type = lib.types.int;
+      default = 30;
+      description = "Height of the top QuickShell system bar in pixels.";
+    };
+
+    topBarShowSeconds = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether the top QuickShell bar clock should show seconds.";
+    };
+
     barHeight = lib.mkOption {
       type = lib.types.int;
       default = 38;
@@ -116,7 +173,7 @@ in
     primaryOutputs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default =
-        if hostName == "ryzen" then [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]
+        if hostName == "ryzen" then [ "DP-2" "DP-1" "HDMI-A-1" "DP-3" ]
         else if hostName == "thinkpad" then [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ]
         else [ "HEADLESS-1" "eDP-1" "DP-1" "HDMI-A-1" ];
       description = "Ordered list of preferred output names for the QuickShell primary panel.";
@@ -149,11 +206,14 @@ in
       pkgs.qt6.qtdeclarative
       togglePanelScript
       toggleDockScript
+      togglePowerMenuScript
       monitorPanelTabScript
       cycleSessionsScript
       showAiSwitcherScript
       focusLastSessionScript
       cycleDisplayLayoutScript
+      notificationMonitorScript
+      networkStatusScript
     ];
 
     home.activation.migrateQuickshellRuntimeShellConfig = lib.hm.dag.entryBefore ["checkLinkTargets"] ''

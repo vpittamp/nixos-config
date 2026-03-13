@@ -48,6 +48,8 @@ class WindowEnvironment:
 
     app_id: str  # I3PM_APP_ID - unique instance identifier
     terminal_anchor_id: str  # I3PM_TERMINAL_ANCHOR_ID - canonical anchor for managed terminals
+    terminal_role: str  # I3PM_TERMINAL_ROLE - logical managed terminal role
+    tmux_session_name: str  # I3PM_TMUX_SESSION_NAME - stable tmux session identity
     app_name: str  # I3PM_APP_NAME - registry application name
     project_name: str  # I3PM_PROJECT_NAME - project name or empty string
     project_dir: str  # I3PM_PROJECT_DIR - project directory or empty string
@@ -93,7 +95,6 @@ def read_process_environ(pid: int) -> Dict[str, str]:
                     logger.debug(f"Skipping env var with invalid UTF-8 in PID {pid}")
                     continue
 
-        logger.debug(f"Read {len(env_dict)} environment variables from PID {pid}")
         return env_dict
 
     except PermissionError as e:
@@ -285,6 +286,8 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
         return WindowEnvironment(
             app_id=env["I3PM_APP_ID"],
             terminal_anchor_id=env.get("I3PM_TERMINAL_ANCHOR_ID", env["I3PM_APP_ID"]),
+            terminal_role=env.get("I3PM_TERMINAL_ROLE", ""),
+            tmux_session_name=env.get("I3PM_TMUX_SESSION_NAME", ""),
             app_name=env["I3PM_APP_NAME"],
             project_name=env.get("I3PM_PROJECT_NAME", ""),
             project_dir=env.get("I3PM_PROJECT_DIR", ""),

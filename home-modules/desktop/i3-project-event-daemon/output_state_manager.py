@@ -60,7 +60,6 @@ def load_output_states(path: Optional[Path] = None) -> OutputStatesFile:
             data["outputs"] = converted_outputs
 
         states = OutputStatesFile(**data)
-        logger.debug(f"Loaded output states: {[n for n, s in states.outputs.items() if s.enabled]}")
         return states
 
     except json.JSONDecodeError as e:

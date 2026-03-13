@@ -898,6 +898,8 @@ async def on_window_new(
             correlation_confidence_level=confidence_level if matched_launch else None,
             correlation_signals=correlation_signals if matched_launch else None,
             terminal_anchor_id=terminal_anchor_id,
+            terminal_role=str(window_env.terminal_role or "") if window_env else "",
+            tmux_session_name=str(window_env.tmux_session_name or "") if window_env else "",
             execution_mode=(
                 "ssh"
                 if window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@")

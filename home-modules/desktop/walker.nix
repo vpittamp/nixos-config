@@ -766,18 +766,26 @@ PY
       exit 1
     fi
 
-    log_step "switch qualified=$qualified_name"
-    if ! i3pm worktree switch "$qualified_name" >/tmp/walker-ssh-switch.log 2>&1; then
+    log_step "ensure-context qualified=$qualified_name variant=ssh"
+    if ! i3pm context ensure "$qualified_name" --variant ssh >/tmp/walker-ssh-switch.log 2>&1; then
       # Fast path: avoid expensive discover unless switch cannot resolve worktree.
       if [[ "$repos_refreshed" != "true" ]]; then
         log_step "refresh-repo-index"
         i3pm discover --quiet >/dev/null 2>&1 || true
         repos_refreshed="true"
       fi
-      if ! i3pm worktree switch "$qualified_name" >/tmp/walker-ssh-switch.log 2>&1; then
+      if ! i3pm context ensure "$qualified_name" --variant ssh >/tmp/walker-ssh-switch.log 2>&1; then
         notify "Failed to switch to $qualified_name (see /tmp/walker-ssh-switch.log)"
         exit 1
       fi
+    fi
+
+    context_json=$(i3pm context current --json 2>/dev/null || echo '{}')
+    context_project=$(echo "$context_json" | ${pkgs.jq}/bin/jq -r '.qualified_name // ""')
+    context_mode=$(echo "$context_json" | ${pkgs.jq}/bin/jq -r '.execution_mode // ""')
+    if [[ "$context_project" != "$qualified_name" || "$context_mode" != "ssh" ]]; then
+      notify "Context verification failed for $qualified_name (got ''${context_project:-<none>} / ''${context_mode:-<none>})"
+      exit 1
     fi
 
     notify "Ready: $qualified_name on $host"

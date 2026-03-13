@@ -22,6 +22,7 @@ EWW_CONFIG_DIR = Path.home() / ".config" / "eww" / "eww-top-bar"
 
 # Eww variable name for monitor state
 MONITOR_STATE_VAR = "monitor_state"
+_MISSING_CONFIG_WARNED = False
 
 
 def update_eww_variable(variable: str, value: str, config_dir: Optional[Path] = None) -> bool:
@@ -38,6 +39,13 @@ def update_eww_variable(variable: str, value: str, config_dir: Optional[Path] = 
         True if update succeeded
     """
     eww_config = config_dir or EWW_CONFIG_DIR
+    global _MISSING_CONFIG_WARNED
+
+    if not eww_config.exists():
+        if not _MISSING_CONFIG_WARNED:
+            logger.info("Skipping Eww monitor publish because config directory is absent: %s", eww_config)
+            _MISSING_CONFIG_WARNED = True
+        return False
 
     try:
         result = subprocess.run(

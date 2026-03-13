@@ -263,6 +263,16 @@ class StateManager:
                             if window_env and window_env.terminal_anchor_id
                             else None
                         ),
+                        terminal_role=(
+                            str(window_env.terminal_role or "")
+                            if window_env and str(window_env.terminal_role or "").strip()
+                            else ""
+                        ),
+                        tmux_session_name=(
+                            str(window_env.tmux_session_name or "")
+                            if window_env and str(window_env.tmux_session_name or "").strip()
+                            else ""
+                        ),
                         execution_mode=(
                             parsed_execution_mode
                             or (

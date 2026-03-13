@@ -4,10 +4,10 @@ Last updated: 2026-03-12
 
 ## Purpose
 
-This document describes the current QuickShell-based runtime shell that replaces the older Eww workspace bar and monitoring-panel path.
+This document describes the current QuickShell-based runtime shell that replaces the older Eww top bar, workspace bar, and monitoring-panel path.
 
 The goals of the QuickShell runtime shell are:
-- render one native bar per active monitor
+- render one native top bar and one native bottom bar per active monitor
 - keep a single AI/session detail panel on the configured primary monitor
 - use the i3pm daemon as the authority for context, launch, session, and display mutations
 - reduce polling and duplicate work in the AI session dashboard path
@@ -16,10 +16,10 @@ The goals of the QuickShell runtime shell are:
 ## Components
 
 - `home-modules/desktop/quickshell-runtime-shell/default.nix`
-  - Home Manager module that installs QuickShell, generates `ShellConfig.qml`, wires keybindings/scripts, and defines the `quickshell-runtime-shell.service`.
+  - Home Manager module that installs QuickShell, generates `ShellConfig.qml`, wires keybindings/helper scripts, and defines the `quickshell-runtime-shell.service`.
 - `home-modules/desktop/quickshell-runtime-shell/shell.qml`
   - QuickShell UI implementation.
-  - Owns per-monitor bars, the single right-side AI panel, shell-local view state, and daemon-driven actions.
+  - Owns per-monitor top/bottom bars, the single right-side AI panel, shell-local view state, native system-status modules, and daemon-driven actions.
 - `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
   - Exposes the daemon dashboard and display APIs consumed by the shell.
 - `home-modules/desktop/i3-project-event-daemon/daemon.py`
@@ -33,15 +33,38 @@ The goals of the QuickShell runtime shell are:
 
 ### 1. UI structure
 
-The shell is split into two UI surfaces:
+The shell is split into three UI surfaces:
+- one `PanelWindow` per screen for the top bar
 - one `PanelWindow` per screen for the bottom bar
 - one `PanelWindow` for the right-side AI/session panel
+
+Each per-monitor top bar now renders:
+- top-level display and monitoring-panel controls
+- native QuickShell system status where available:
+  - `SystemClock`
+  - `Pipewire`
+  - `UPower`
+  - `SystemTray`
+- a thin compatibility layer for notification state and network summary
+
+Design rule:
+- only use native QuickShell services that are also present declaratively on the host
+- we explicitly backed out `PowerProfiles` for now because the DBus service was not enabled uniformly and only added runtime warnings/drift
 
 Each per-monitor bottom bar now renders:
 - current context + output identity
 - workspace chips for that output
 - output-local window icons/counts inside those workspace chips
 - layout/session controls shared across monitors
+
+The right-side panel is now context-oriented rather than project-group-oriented:
+- a `Global` row clears scoped context while leaving shared windows visible
+- a recency-sorted worktree switcher comes from `dashboard.worktrees`
+- Local / SSH variant actions call daemon-owned `context.ensure`
+- the window list only shows the current context plus shared/global windows
+- clicking an already-active worktree row focuses an existing visible window in that context instead of reissuing the same switch
+- the panel header shows the active mode/host summary and exposes direct `Focus` / `Global` actions for the current context
+- the full worktree list now lives behind a compact `Browse` popup so the normal panel state does not spend permanent vertical space on switching UI
 
 Per-monitor bars are instantiated with:
 - `Variants { model: Quickshell.screens }`
@@ -76,6 +99,7 @@ State is intentionally split by authority:
   - AI session list and current-session selection
   - launch/session/window actions
   - display layout snapshot and layout apply/cycle
+  - worktree ranking and shell-ready worktree metadata
 
 - QuickShell-owned:
   - panel visibility
@@ -99,6 +123,14 @@ Current CLI/daemon model:
 - then subscribes to daemon `state_changed` notifications
 - then refetches only on invalidation events
 - a slower heartbeat remains as a fallback recovery path
+- the dashboard payload includes a shell-oriented `worktrees` list with:
+  - `qualified_name`
+  - `remote_available`
+  - `is_active`
+  - `active_execution_mode`
+  - `visible_window_count`
+  - `scoped_window_count`
+  - usage/ranking metadata
 
 This replaced the earlier fixed polling loop:
 - old behavior: `i3pm dashboard watch --interval 750`
@@ -114,6 +146,7 @@ Current daemon display methods:
 - `display.cycle`
 
 Current user entrypoints:
+- top-bar layout pill
 - shell layout-cycle button
 - `cycle-display-layout`
 - `i3pm display cycle`
@@ -179,6 +212,7 @@ The intended runtime model is:
 - i3pm daemon owns display/layout mutation
 - host Nix config defines preferred primary outputs
 - compatibility scripts remain only as thin adapters
+- top-bar surfaces are created from live `Quickshell.screens`, not hardcoded output windows
 
 Current host configuration:
 - `thinkpad`
@@ -233,7 +267,17 @@ Conclusion:
 - shell-local persistence is acceptable only for explicitly non-declarative preferences
 - the default architecture should remain declarative and reproducible
 
-### 3. Dashboard stream parse failures
+### 3. Eww top-bar parity was the wrong goal
+
+Observed issue:
+- the old top bar bundled system metrics, overlay menus, device controls, and monitor widgets into one Eww-specific surface
+- carrying those features forward verbatim would keep too much polling and too many Eww-era assumptions
+
+Conclusion:
+- the QuickShell top bar should use native services first
+- Eww-only overlay behaviors should be dropped unless they remain clearly worth the complexity
+
+### 4. Dashboard stream parse failures
 
 Observed logs included:
 - broken pipe
@@ -281,7 +325,7 @@ git -C ~/repos/vpittamp/nixos-config/main rev-parse HEAD
 ## Known Gaps
 
 - The historical monitor-profile and `output-states.json` subsystem still exists as a compatibility layer.
-- The shell now renders per-monitor bars with output-local workspace icons/counts, but deeper display-layout unification is still incomplete.
+- The shell now renders per-monitor top and bottom bars with output-local workspace icons/counts, but deeper display-layout unification is still incomplete.
 - Dashboard stream error handling still needs another pass.
 - A live automated QuickShell multi-monitor smoke test does not yet exist.
 

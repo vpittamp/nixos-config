@@ -7,13 +7,15 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm launch <open|preview> <app_name> [--local|--variant <local|ssh>] [--json]`);
+  console.log(
+    `i3pm launch <open|preview> <app_name> [--local|--variant <local|ssh>] [--project <qualified_name>] [--json]`,
+  );
 }
 
 export async function launchCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json", "local"],
-    string: ["variant"],
+    string: ["project", "qualified-name", "variant"],
     alias: { h: "help" },
   });
   const subcommand = String(parsed._[0] || "");
@@ -37,6 +39,7 @@ export async function launchCommand(args: string[], _flags: CommandOptions): Pro
     const result = await client.request(method, {
       app_name: appName,
       context_variant_override: parsed.variant || (parsed.local ? "local" : ""),
+      qualified_name: parsed.project || parsed["qualified-name"] || "",
     });
     console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
     return 0;

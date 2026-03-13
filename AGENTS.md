@@ -18,8 +18,8 @@ Provide reliable project-scoped window management on Sway with:
   - Owns project/window state, filtering, monitor/profile logic, scratchpad lifecycle, launch registry, and event buffer.
 - `home-modules/desktop/quickshell-runtime-shell/`
   - QuickShell-based runtime UI.
-  - Renders one bar per active monitor plus one AI/session detail panel on the configured primary output.
-  - Uses native `Quickshell.screens` and `Quickshell.I3` monitor/workspace state for rendering.
+  - Renders one top bar and one bottom bar per active monitor plus one AI/session detail panel on the configured primary output.
+  - Uses native `Quickshell.screens`, `Quickshell.I3`, `Pipewire`, `UPower`, and `SystemTray` where available.
 - `home-modules/tools/i3pm/`
   - Deno CLI (`i3pm`) that talks to daemon over Unix socket:
     - default socket: `$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock`
@@ -46,6 +46,12 @@ Provide reliable project-scoped window management on Sway with:
 3. Active context is updated (`active-worktree.json`).
 4. Window filtering/reassignment runs using project + context identity.
 5. Subsequent launches/scratchpad operations use the active context.
+
+QuickShell runtime-shell notes:
+- the right-side panel is the primary native context switcher UI
+- shell actions should prefer `context.ensure` / `context.clear` as the canonical switch surface
+- the shell renders a daemon-provided `dashboard.worktrees` model rather than inferring worktree state locally
+- the shell uses native `Quickshell.I3` for monitor/workspace awareness, but never owns window filtering rules
 
 Notes:
 - `--local` on switch forces local context even if remote profile exists.
@@ -87,8 +93,11 @@ See:
 ## Recent System Updates (this cycle)
 
 - QuickShell runtime shell migrated to native multi-monitor rendering:
-  - one bar per monitor via `Quickshell.screens`
+  - one top bar and one bottom bar per monitor via `Quickshell.screens`
   - one AI/session panel anchored to host-configured primary output
+- Replaced the active `eww-top-bar` on `thinkpad` and `ryzen` with a QuickShell top bar:
+  - native audio, battery, tray, and clock modules
+  - thin compatibility helpers only for notification state and network summary
 - Dashboard updates are now event-driven instead of fixed 750ms polling:
   - daemon emits `state_changed`
   - `i3pm dashboard watch` refetches on invalidation with slower heartbeat fallback

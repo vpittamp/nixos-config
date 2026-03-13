@@ -88,8 +88,8 @@
   # eww quick settings panel
   programs.eww-quick-panel.enable = true;
 
-  # eww top bar with system metrics
-  programs.eww-top-bar.enable = true;
+  # QuickShell now owns the active top bar
+  programs.eww-top-bar.enable = false;
 
   # eww device controls (Feature 116)
   programs.eww-device-controls.enable = true;

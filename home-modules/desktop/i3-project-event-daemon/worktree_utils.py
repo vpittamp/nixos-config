@@ -183,11 +183,6 @@ def parse_mark(mark: str, window_id_hint: Optional[int] = None) -> Optional[Pars
         )
         return None
 
-    logger.debug(
-        f"[Feature 103] Parsed unified mark (window {window_id_hint}): "
-        f"scope={scope}, app={app_name}, project={project_name}, window_id={window_id}"
-    )
-
     return ParsedMark(scope=scope, app_name=app_name, project_name=project_name, window_id=window_id)
 
 

@@ -1,8 +1,12 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.I3
 import Quickshell.Io
+import Quickshell.Services.Pipewire
+import Quickshell.Services.SystemTray
+import Quickshell.Services.UPower
 import Quickshell.Wayland
 import Quickshell.Widgets
 
@@ -16,17 +20,37 @@ ShellRoot {
     property var dashboard: ({
         status: "loading",
         active_context: {},
+        active_terminal: {},
         active_ai_sessions: [],
         active_ai_sessions_mru: [],
         current_ai_session_key: "",
+        display_layout: {},
         outputs: [],
         projects: [],
+        worktrees: [],
         scratchpad: {},
         state_health: {},
         total_windows: 0
     })
+    property var notificationState: ({
+        count: 0,
+        dnd: false,
+        visible: false,
+        inhibited: false,
+        has_unread: false,
+        display_count: "0",
+        error: false
+    })
+    property var networkState: ({
+        connected: false,
+        kind: "offline",
+        label: "Offline",
+        signal: null
+    })
     property bool panelVisible: true
     property bool dockedMode: true
+    property bool powerMenuVisible: false
+    property bool worktreePickerVisible: false
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
     readonly property var primaryScreen: resolvePrimaryScreen()
@@ -55,9 +79,12 @@ ShellRoot {
         amberBg: "#3a2912",
         red: "#fda4af",
         redBg: "#3b1820",
+        teal: "#67e8f9",
+        tealBg: "#102a33",
         violet: "#c4b5fd",
         violetBg: "#241b43"
     })
+    readonly property int fastColorMs: 90
 
     function arrayOrEmpty(value) {
         if (!value) {
@@ -105,6 +132,88 @@ ShellRoot {
         return qualified ? shortProject(qualified) : "Global";
     }
 
+    function activeContextProjectName() {
+        const context = dashboard.active_context || {};
+        return stringOrEmpty(context.qualified_name || context.project_name);
+    }
+
+    function activeContextExecutionMode() {
+        const context = dashboard.active_context || {};
+        return stringOrEmpty(context.execution_mode || "local") || "local";
+    }
+
+    function isGlobalContext() {
+        const project = activeContextProjectName();
+        return !project || project === "global";
+    }
+
+    function activeContextHostName() {
+        const context = dashboard.active_context || {};
+        const remote = context.remote || {};
+        const executionMode = stringOrEmpty(context.execution_mode || "local");
+
+        if (executionMode === "ssh") {
+            return stringOrEmpty(
+                remote.host_alias
+                || remote.host
+                || context.host_alias
+                || context.connection_key
+            );
+        }
+
+        return stringOrEmpty(context.host_alias || shellConfig.hostName);
+    }
+
+    function activeContextSummaryLabel() {
+        if (isGlobalContext()) {
+            return "Shared  " + currentLayoutLabel();
+        }
+
+        const hostName = activeContextHostName();
+        const parts = [modeLabel(activeContextExecutionMode())];
+        if (hostName) {
+            parts.push(hostName);
+        }
+        parts.push(currentLayoutLabel());
+        return parts.join("  ");
+    }
+
+    function activeTerminal() {
+        const terminal = dashboard.active_terminal || {};
+        return terminal && typeof terminal === "object" ? terminal : {};
+    }
+
+    function activeTerminalAvailable() {
+        return boolOrFalse(activeTerminal().available);
+    }
+
+    function activeTerminalChipLabel() {
+        if (isGlobalContext()) {
+            return "";
+        }
+        return activeTerminalAvailable() ? "Focus shell" : "Open shell";
+    }
+
+    function activeTerminalMetaLabel() {
+        if (isGlobalContext()) {
+            return "";
+        }
+
+        const terminal = activeTerminal();
+        const sessionName = stringOrEmpty(terminal.tmux_session_name);
+        if (sessionName) {
+            return activeTerminalAvailable() ? "Live tmux session" : "Reusable tmux session";
+        }
+        return activeTerminalAvailable() ? "Shell available" : "Shell not started";
+    }
+
+    function openActiveTerminal() {
+        if (isGlobalContext()) {
+            return;
+        }
+        runDetached([shellConfig.i3pmBin, "launch", "open", "terminal"]);
+    }
+
     function activeSessions() {
         return arrayOrEmpty(dashboard.active_ai_sessions);
     }
@@ -114,8 +223,39 @@ ShellRoot {
         return mru.length ? mru : activeSessions();
     }
 
+    function panelSessions() {
+        return sessionMru();
+    }
+
+    function projectGroupFor(projectName, executionMode) {
+        const projects = arrayOrEmpty(dashboard.projects);
+        const project = stringOrEmpty(projectName);
+        const mode = stringOrEmpty(executionMode || "local") || "local";
+
+        return projects.find((projectGroup) =>
+            stringOrEmpty(projectGroup.project) === project
+            && stringOrEmpty(projectGroup.execution_mode || "local") === mode
+        ) || null;
+    }
+
+    function focusPreferredWindowForContext(projectName, executionMode) {
+        const projectGroup = projectGroupFor(projectName, executionMode);
+        if (!projectGroup) {
+            return false;
+        }
+
+        const windows = arrayOrEmpty(projectGroup.windows).filter((windowData) => !boolOrFalse(windowData.hidden));
+        if (!windows.length) {
+            return false;
+        }
+
+        const focusedWindow = windows.find((windowData) => boolOrFalse(windowData.focused));
+        focusWindow(focusedWindow || windows[0]);
+        return true;
+    }
+
     function compactSessions() {
-        return sessionMru().slice(0, 10);
+        return panelSessions().slice(0, 10);
     }
 
     function primaryOutputCandidates() {
@@ -273,6 +413,366 @@ ShellRoot {
         return primaryOutputName || "Display";
     }
 
+    function focusedOutputName() {
+        return stringOrEmpty(I3.focusedMonitor ? I3.focusedMonitor.name : "");
+    }
+
+    function isPrimaryOutput(outputName) {
+        return stringOrEmpty(outputName) !== "" && stringOrEmpty(outputName) === primaryOutputName;
+    }
+
+    function isFocusedOutput(outputName) {
+        return stringOrEmpty(outputName) !== "" && stringOrEmpty(outputName) === focusedOutputName();
+    }
+
+    function topBarTimeText() {
+        return Qt.formatDateTime(
+            clock.date,
+            shellConfig.topBarShowSeconds ? "ddd MMM d  h:mm:ss AP" : "ddd MMM d  h:mm AP"
+        );
+    }
+
+    function neutralChipFill(hovered) {
+        return hovered ? colors.card : colors.cardAlt;
+    }
+
+    function neutralChipBorder(hovered) {
+        return hovered ? colors.borderStrong : colors.border;
+    }
+
+    function neutralChipText(hovered) {
+        return hovered ? colors.text : colors.textDim;
+    }
+
+    function stateChipFill(active, hovered, activeFill) {
+        return active ? activeFill : neutralChipFill(hovered);
+    }
+
+    function stateChipBorder(active, hovered, activeBorder) {
+        return active ? activeBorder : neutralChipBorder(hovered);
+    }
+
+    function stateChipText(active, hovered, activeText) {
+        return active ? activeText : neutralChipText(hovered);
+    }
+
+    function sidebarRowFill(windowData, hovered) {
+        if (boolOrFalse(windowData && windowData.focused)) {
+            return colors.blueWash;
+        }
+        if (hovered) {
+            return boolOrFalse(windowData && windowData.hidden) ? colors.card : colors.panelAlt;
+        }
+        return boolOrFalse(windowData && windowData.hidden) ? colors.panelAlt : colors.cardAlt;
+    }
+
+    function sidebarRowBorder(windowData, hovered) {
+        if (boolOrFalse(windowData && windowData.focused)) {
+            return colors.blueMuted;
+        }
+        return hovered ? colors.borderStrong : "transparent";
+    }
+
+    function sidebarRowText(windowData, hovered) {
+        return boolOrFalse(windowData && windowData.focused) || hovered ? colors.text : colors.textDim;
+    }
+
+    function chooserRowFill(hovered) {
+        return hovered ? colors.panelAlt : colors.cardAlt;
+    }
+
+    function chooserRowBorder(hovered) {
+        return hovered ? colors.borderStrong : colors.lineSoft;
+    }
+
+    function workspaceChipFill(workspace, hovered) {
+        if (boolOrFalse(workspace && workspace.focused)) {
+            return colors.blue;
+        }
+        if (hovered) {
+            return colors.card;
+        }
+        return boolOrFalse(workspace && workspace.active) ? colors.card : colors.cardAlt;
+    }
+
+    function workspaceChipBorder(workspace, hovered) {
+        if (boolOrFalse(workspace && workspace.focused)) {
+            return colors.blue;
+        }
+        if (boolOrFalse(workspace && workspace.urgent)) {
+            return colors.red;
+        }
+        return hovered ? colors.borderStrong : colors.border;
+    }
+
+    function workspaceChipText(workspace, hovered) {
+        if (boolOrFalse(workspace && workspace.focused)) {
+            return colors.bg;
+        }
+        return hovered ? colors.text : colors.textDim;
+    }
+
+    function audioNode() {
+        return Pipewire.ready ? Pipewire.defaultAudioSink : null;
+    }
+
+    function audioReady() {
+        const node = audioNode();
+        return !!(node && node.ready && node.audio);
+    }
+
+    function volumePercent() {
+        const node = audioNode();
+        if (!(node && node.audio)) {
+            return 0;
+        }
+        return Math.round(Math.max(0, Number(node.audio.volume || 0)) * 100);
+    }
+
+    function audioLabel() {
+        if (!audioReady()) {
+            return "Audio --";
+        }
+        const node = audioNode();
+        if (boolOrFalse(node.audio.muted) || volumePercent() === 0) {
+            return "Muted";
+        }
+        return "Vol " + String(volumePercent()) + "%";
+    }
+
+    function audioDetail() {
+        const node = audioNode();
+        if (!(node && node.ready)) {
+            return "PipeWire unavailable";
+        }
+        return stringOrEmpty(node.description || node.nickname || node.name || "Default audio");
+    }
+
+    function changeVolume(delta) {
+        const node = audioNode();
+        if (!(node && node.audio)) {
+            return;
+        }
+
+        const current = Math.max(0, Number(node.audio.volume || 0));
+        node.audio.volume = Math.max(0, Math.min(1.5, current + delta));
+    }
+
+    function toggleMute() {
+        const node = audioNode();
+        if (!(node && node.audio)) {
+            return;
+        }
+        node.audio.muted = !boolOrFalse(node.audio.muted);
+    }
+
+    function batteryDevice() {
+        return UPower.displayDevice;
+    }
+
+    function batteryReady() {
+        const device = batteryDevice();
+        return !!(device && device.ready && device.isPresent && device.isLaptopBattery);
+    }
+
+    function batteryLabel() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+
+        const percentage = Math.round(Number(device.percentage || 0));
+        if (device.state === UPowerDeviceState.Charging) {
+            return "Charging " + String(percentage) + "%";
+        }
+        if (device.state === UPowerDeviceState.FullyCharged) {
+            return "Full " + String(percentage) + "%";
+        }
+        return "Battery " + String(percentage) + "%";
+    }
+
+    function batteryPercentValue() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return 0;
+        }
+        return Math.round(Number(device.percentage || 0));
+    }
+
+    function batteryIsDischarging() {
+        const device = batteryDevice();
+        return batteryReady() && device.state === UPowerDeviceState.Discharging;
+    }
+
+    function batteryCritical() {
+        return batteryIsDischarging() && batteryPercentValue() <= 15;
+    }
+
+    function batteryLow() {
+        return batteryIsDischarging() && batteryPercentValue() <= 30;
+    }
+
+    function batteryTooltip() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+
+        const bits = [batteryLabel()];
+        if (Number(device.timeToEmpty || 0) > 0 && device.state === UPowerDeviceState.Discharging) {
+            bits.push(Math.round(Number(device.timeToEmpty || 0) / 60) + " min left");
+        } else if (Number(device.timeToFull || 0) > 0 && device.state === UPowerDeviceState.Charging) {
+            bits.push(Math.round(Number(device.timeToFull || 0) / 60) + " min to full");
+        }
+        return bits.join(" • ");
+    }
+
+    function batteryIconSource() {
+        const device = batteryDevice();
+        const iconName = stringOrEmpty(device ? device.iconName : "");
+        return iconName ? Quickshell.iconPath(iconName, true) : "";
+    }
+
+    function networkLabel() {
+        if (!boolOrFalse(networkState.connected)) {
+            return "Offline";
+        }
+        if (stringOrEmpty(networkState.kind) === "wifi" && networkState.signal !== null && networkState.signal !== undefined) {
+            return "Wi-Fi " + String(networkState.signal) + "%";
+        }
+        if (stringOrEmpty(networkState.kind) === "ethernet") {
+            return "Ethernet";
+        }
+        return stringOrEmpty(networkState.label || "Connected");
+    }
+
+    function networkDetail() {
+        if (!boolOrFalse(networkState.connected)) {
+            return "No active NetworkManager connection";
+        }
+        return stringOrEmpty(networkState.label || "Connected");
+    }
+
+    function networkChipText(hovered) {
+        if (!boolOrFalse(networkState.connected)) {
+            return hovered ? colors.amber : colors.subtle;
+        }
+        return neutralChipText(hovered);
+    }
+
+    function notificationChipFill(hovered) {
+        const dnd = boolOrFalse(notificationState.dnd);
+        const visible = boolOrFalse(notificationState.visible);
+        if (dnd) {
+            return stateChipFill(true, hovered, colors.amberBg);
+        }
+        if (visible) {
+            return stateChipFill(true, hovered, colors.blueBg);
+        }
+        return neutralChipFill(hovered);
+    }
+
+    function notificationChipBorder(hovered) {
+        const dnd = boolOrFalse(notificationState.dnd);
+        const visible = boolOrFalse(notificationState.visible);
+        const unread = boolOrFalse(notificationState.has_unread);
+        if (dnd) {
+            return stateChipBorder(true, hovered, colors.amber);
+        }
+        if (visible) {
+            return stateChipBorder(true, hovered, colors.blue);
+        }
+        if (unread) {
+            return colors.blue;
+        }
+        return neutralChipBorder(hovered);
+    }
+
+    function notificationChipText(hovered) {
+        const dnd = boolOrFalse(notificationState.dnd);
+        const visible = boolOrFalse(notificationState.visible);
+        if (dnd) {
+            return stateChipText(true, hovered, colors.amber);
+        }
+        if (visible) {
+            return stateChipText(true, hovered, colors.blue);
+        }
+        return neutralChipText(hovered);
+    }
+
+    function audioMuted() {
+        return boolOrFalse(audioNode() && audioNode().audio && audioNode().audio.muted);
+    }
+
+    function audioChipBorder(hovered) {
+        if (audioMuted()) {
+            return colors.red;
+        }
+        return neutralChipBorder(hovered);
+    }
+
+    function audioChipText(hovered) {
+        if (audioMuted()) {
+            return colors.red;
+        }
+        return neutralChipText(hovered);
+    }
+
+    function batteryChipBorder(hovered) {
+        if (batteryCritical()) {
+            return colors.red;
+        }
+        if (batteryLow()) {
+            return colors.amber;
+        }
+        return neutralChipBorder(hovered);
+    }
+
+    function batteryChipText(hovered) {
+        if (batteryCritical()) {
+            return colors.red;
+        }
+        if (batteryLow()) {
+            return colors.amber;
+        }
+        return neutralChipText(hovered);
+    }
+
+    function powerChipFill(hovered) {
+        return root.powerMenuVisible ? colors.redBg : neutralChipFill(hovered);
+    }
+
+    function powerChipBorder(hovered) {
+        return root.powerMenuVisible ? colors.red : neutralChipBorder(hovered);
+    }
+
+    function powerChipText(hovered) {
+        return root.powerMenuVisible ? colors.red : neutralChipText(hovered);
+    }
+
+    function notificationLabel() {
+        if (boolOrFalse(notificationState.dnd)) {
+            return "DND";
+        }
+        if (boolOrFalse(notificationState.has_unread)) {
+            return "Notif " + stringOrEmpty(notificationState.display_count || "0");
+        }
+        return "Notif";
+    }
+
+    function notificationDetail() {
+        if (boolOrFalse(notificationState.dnd)) {
+            return "Do not disturb enabled";
+        }
+        if (boolOrFalse(notificationState.visible)) {
+            return "Notification center open";
+        }
+        if (boolOrFalse(notificationState.has_unread)) {
+            return stringOrEmpty(notificationState.display_count || "0") + " unread notifications";
+        }
+        return "No unread notifications";
+    }
+
     function sessionViewportWidth() {
         return Math.max(0, panelWindow.width - 44);
     }
@@ -301,37 +801,116 @@ ShellRoot {
         return 16 + (visibleRows * cardHeight) + (Math.max(0, visibleRows - 1) * spacing);
     }
 
-    function flatWindowItems() {
+    function dashboardWorktrees() {
+        return arrayOrEmpty(dashboard.worktrees);
+    }
+
+    function activeWorktreeItem() {
+        const items = worktreeItems();
+        for (let i = 0; i < items.length; i += 1) {
+            if (boolOrFalse(items[i].is_active)) {
+                return items[i];
+            }
+        }
+        return items.length ? items[0] : null;
+    }
+
+    function worktreePickerSummaryTitle() {
+        const activeItem = activeWorktreeItem();
+        return worktreeDisplayName(activeItem);
+    }
+
+    function inactiveWorktreeItems() {
+        const items = worktreeItems();
+        const filtered = [];
+        for (let i = 0; i < items.length; i += 1) {
+            const item = items[i];
+            if (!item || boolOrFalse(item.is_active) || stringOrEmpty(item.kind) === "global") {
+                continue;
+            }
+            filtered.push(item);
+        }
+        return filtered;
+    }
+
+    function worktreeItems() {
+        const items = [{
+            kind: "global",
+            qualified_name: "global",
+            is_active: root.isGlobalContext(),
+            active_execution_mode: root.activeContextExecutionMode(),
+            remote_available: false,
+            visible_window_count: 0,
+            scoped_window_count: 0,
+            is_clean: true,
+            dirty_count: 0,
+            last_used_at: 0,
+            use_count: 0
+        }];
+
+        const worktrees = dashboardWorktrees();
+        for (let i = 0; i < worktrees.length; i += 1) {
+            const worktree = worktrees[i];
+            items.push({
+                kind: "worktree",
+                qualified_name: stringOrEmpty(worktree.qualified_name),
+                repo_display: stringOrEmpty(worktree.repo_display),
+                repo_name: stringOrEmpty(worktree.repo_name),
+                account: stringOrEmpty(worktree.account),
+                branch: stringOrEmpty(worktree.branch),
+                path: stringOrEmpty(worktree.path),
+                is_main: boolOrFalse(worktree.is_main),
+                is_clean: boolOrFalse(worktree.is_clean),
+                is_stale: boolOrFalse(worktree.is_stale),
+                has_conflicts: boolOrFalse(worktree.has_conflicts),
+                ahead: Number(worktree.ahead || 0),
+                behind: Number(worktree.behind || 0),
+                dirty_count: Number(worktree.dirty_count || 0),
+                is_active: boolOrFalse(worktree.is_active),
+                active_execution_mode: stringOrEmpty(worktree.active_execution_mode),
+                remote_available: boolOrFalse(worktree.remote_available),
+                visible_window_count: Number(worktree.visible_window_count || 0),
+                scoped_window_count: Number(worktree.scoped_window_count || 0),
+                last_used_at: Number(worktree.last_used_at || 0),
+                use_count: Number(worktree.use_count || 0),
+                last_commit_message: stringOrEmpty(worktree.last_commit_message)
+            });
+        }
+
+        return items;
+    }
+
+    function panelWindowItems() {
         const items = [];
         const projects = arrayOrEmpty(dashboard.projects);
 
-        for (let i = 0; i < projects.length; i += 1) {
-            const projectGroup = projects[i];
-            const windows = arrayOrEmpty(projectGroup.windows);
+        const addGroup = function(sectionTitle, projectGroup, emphasize) {
+            if (!projectGroup) {
+                return;
+            }
 
-            if (i > 0) {
-                items.push({ kind: "gap" });
+            const windows = arrayOrEmpty(projectGroup.windows);
+            if (!windows.length) {
+                return;
             }
 
             items.push({
-                kind: "project",
-                project: projectGroup.project,
-                execution_mode: projectGroup.execution_mode,
+                kind: "section",
+                title: sectionTitle,
+                project: stringOrEmpty(projectGroup.project),
+                execution_mode: stringOrEmpty(projectGroup.execution_mode),
                 focused: !!projectGroup.focused,
-                window_count: Number(projectGroup.window_count || 0),
-                has_windows: windows.length > 0
+                window_count: Number(projectGroup.window_count || windows.length),
+                visible_window_count: Number(projectGroup.visible_window_count || 0),
+                hidden_window_count: Number(projectGroup.hidden_window_count || 0),
+                ai_session_count: Number(projectGroup.ai_session_count || 0),
+                emphasized: !!emphasize
             });
 
             for (let j = 0; j < windows.length; j += 1) {
                 const windowData = windows[j];
                 items.push({
                     kind: "window",
-                    group_project: projectGroup.project,
-                    group_execution_mode: projectGroup.execution_mode,
-                    group_focused: !!projectGroup.focused,
-                    group_window_count: windows.length,
-                    is_first_window: j === 0,
-                    is_last_window: j === windows.length - 1,
                     id: windowData.id,
                     title: windowData.title,
                     app_key: windowData.app_key,
@@ -343,6 +922,7 @@ ShellRoot {
                     workspace: windowData.workspace,
                     output: windowData.output,
                     focused: !!windowData.focused,
+                    visible: !!windowData.visible,
                     hidden: !!windowData.hidden,
                     floating: !!windowData.floating,
                     scope: windowData.scope,
@@ -350,36 +930,144 @@ ShellRoot {
                     ai_session_count: Number(windowData.ai_session_count || 0)
                 });
             }
+
+            items.push({
+                kind: "spacer"
+            });
+        };
+
+        for (let i = 0; i < projects.length; i += 1) {
+            const projectGroup = projects[i];
+            if (!projectGroup) {
+                continue;
+            }
+            const project = stringOrEmpty(projectGroup.project);
+            addGroup(
+                project === "global" ? "Shared Windows" : shortProject(project),
+                projectGroup,
+                !!projectGroup.is_active
+            );
+        }
+
+        if (!items.length) {
+            items.push({
+                kind: "empty",
+                title: "No tracked project windows"
+            });
+        } else if (items[items.length - 1].kind === "spacer") {
+            items.pop();
         }
 
         return items;
+    }
+
+    function panelProjects() {
+        const projects = arrayOrEmpty(dashboard.projects);
+        return projects.filter((projectGroup) => arrayOrEmpty(projectGroup && projectGroup.windows).length > 0);
+    }
+
+    function panelWindowCount() {
+        let count = 0;
+        const projects = panelProjects();
+        for (let i = 0; i < projects.length; i += 1) {
+            count += arrayOrEmpty(projects[i].windows).length;
+        }
+        return count;
     }
 
     function currentSessionKey() {
         return stringOrEmpty(dashboard.current_ai_session_key || selectedSessionKey);
     }
 
-    function projectDisplayName(projectName) {
-        const project = stringOrEmpty(projectName);
-        if (!project || project === "global") {
-            return "Global Apps";
-        }
-        return shortProject(project);
-    }
-
-    function projectSubtitle(item) {
+    function windowSectionSubtitle(item) {
         if (!item) {
             return "";
         }
-
-        const count = Number(item.window_count || 0);
-        const countLabel = count === 1 ? "1 window" : String(count) + " windows";
 
         if (stringOrEmpty(item.project) === "global") {
             return "Shared across contexts";
         }
 
-        return modeLabel(item.execution_mode) + "  " + countLabel;
+        const visibleCount = Number(item.visible_window_count || 0);
+        const sessionCount = Number(item.ai_session_count || 0);
+        const bits = [];
+        bits.push(String(visibleCount) + (visibleCount === 1 ? " window" : " windows"));
+        if (sessionCount > 0) {
+            bits.push(String(sessionCount) + (sessionCount === 1 ? " session" : " sessions"));
+        }
+        return bits.join(" • ");
+    }
+
+    function worktreeDisplayName(item) {
+        if (!item || stringOrEmpty(item.kind) === "global") {
+            return "Global";
+        }
+        return shortProject(stringOrEmpty(item.qualified_name));
+    }
+
+    function worktreeSubtitle(item) {
+        if (!item) {
+            return "";
+        }
+        if (stringOrEmpty(item.kind) === "global") {
+            return "Clear context and keep shared windows visible";
+        }
+
+        const bits = [];
+        const branch = stringOrEmpty(item.branch);
+        if (branch) {
+            bits.push(branch);
+        }
+        if (Number(item.dirty_count || 0) > 0) {
+            bits.push(String(Number(item.dirty_count || 0)) + " changed");
+        }
+        if (Number(item.ahead || 0) > 0) {
+            bits.push("↑" + String(Number(item.ahead || 0)));
+        }
+        if (Number(item.behind || 0) > 0) {
+            bits.push("↓" + String(Number(item.behind || 0)));
+        }
+        if (Number(item.visible_window_count || 0) > 0) {
+            bits.push(String(Number(item.visible_window_count || 0)) + " visible");
+        } else if (Number(item.scoped_window_count || 0) > 0) {
+            bits.push(String(Number(item.scoped_window_count || 0)) + " scoped");
+        }
+        if (boolOrFalse(item.remote_available)) {
+            bits.push("SSH ready");
+        }
+        return bits.join("  •  ");
+    }
+
+    function worktreeStatusLabel(item) {
+        if (!item || stringOrEmpty(item.kind) === "global") {
+            return "";
+        }
+        if (boolOrFalse(item.has_conflicts)) {
+            return "Conflict";
+        }
+        if (!boolOrFalse(item.is_clean)) {
+            return "Dirty";
+        }
+        if (boolOrFalse(item.is_stale)) {
+            return "Stale";
+        }
+        return "Clean";
+    }
+
+    function worktreeStatusColor(item) {
+        if (!item || stringOrEmpty(item.kind) === "global") {
+            return colors.subtle;
+        }
+        if (boolOrFalse(item.has_conflicts)) {
+            return colors.red;
+        }
+        if (!boolOrFalse(item.is_clean)) {
+            return colors.amber;
+        }
+        if (boolOrFalse(item.is_stale)) {
+            return colors.blue;
+        }
+        return colors.accent;
     }
 
     function stageColor(session) {
@@ -422,6 +1110,44 @@ ShellRoot {
             return "file://" + shellConfig.geminiIcon;
         }
         return "file://" + shellConfig.aiFallbackIcon;
+    }
+
+    function modeIconSource(mode) {
+        return "file://" + (stringOrEmpty(mode).toLowerCase() === "ssh"
+            ? shellConfig.sshIcon
+            : shellConfig.localIcon);
+    }
+
+    function modeAccentColor(mode) {
+        return stringOrEmpty(mode).toLowerCase() === "ssh" ? colors.teal : colors.blueMuted;
+    }
+
+    function projectCardFill(projectGroup) {
+        const project = stringOrEmpty(projectGroup && projectGroup.project);
+        const mode = stringOrEmpty(projectGroup && projectGroup.execution_mode).toLowerCase();
+        const active = !!(projectGroup && projectGroup.is_active);
+
+        if (project === "global") {
+            return active ? colors.panelAlt : colors.cardAlt;
+        }
+        if (mode === "ssh") {
+            return active ? "#11242c" : "#0d1a21";
+        }
+        return active ? colors.panelAlt : colors.cardAlt;
+    }
+
+    function projectHeaderFill(projectGroup) {
+        const project = stringOrEmpty(projectGroup && projectGroup.project);
+        const mode = stringOrEmpty(projectGroup && projectGroup.execution_mode).toLowerCase();
+        const active = !!(projectGroup && projectGroup.is_active);
+
+        if (project === "global") {
+            return active ? colors.blueWash : colors.panel;
+        }
+        if (mode === "ssh") {
+            return active ? "#163340" : "#11262f";
+        }
+        return active ? colors.blueWash : colors.panel;
     }
 
     function sessionAccentColor(session) {
@@ -479,6 +1205,68 @@ ShellRoot {
         return stringOrEmpty(session.stage_visual_state) === "working";
     }
 
+    function sessionActivityPercent(session) {
+        const treeCpu = Number(session && session.process_tree_cpu_percent);
+        if (Number.isFinite(treeCpu) && treeCpu >= 0) {
+            return treeCpu;
+        }
+        const processCpu = Number(session && session.cpu_percent);
+        if (Number.isFinite(processCpu) && processCpu >= 0) {
+            return processCpu;
+        }
+        return null;
+    }
+
+    function sessionActivityState(session) {
+        const cpu = sessionActivityPercent(session);
+        if (cpu === null) {
+            return "missing";
+        }
+        if (cpu >= 20) {
+            return "hot";
+        }
+        if (cpu >= 4) {
+            return "warm";
+        }
+        return "idle";
+    }
+
+    function sessionActivityColor(session) {
+        const state = sessionActivityState(session);
+        if (state === "hot") {
+            return colors.accent;
+        }
+        if (state === "warm") {
+            return colors.blue;
+        }
+        if (state === "idle") {
+            return colors.subtle;
+        }
+        return colors.muted;
+    }
+
+    function sessionActivityBackground(session) {
+        const state = sessionActivityState(session);
+        if (state === "hot") {
+            return colors.accentBg;
+        }
+        if (state === "warm") {
+            return colors.blueBg;
+        }
+        if (state === "idle") {
+            return colors.bg;
+        }
+        return colors.card;
+    }
+
+    function sessionActivityLabel(session) {
+        const cpu = sessionActivityPercent(session);
+        if (cpu === null) {
+            return "";
+        }
+        return String(Math.round(cpu)) + "%";
+    }
+
     function sessionGlyph(session) {
         const stage = stageState(session);
         if (stage === "attention") {
@@ -533,63 +1321,45 @@ ShellRoot {
         return "";
     }
 
-    function sessionDetailLine(session) {
-        const bits = [];
-        const host = sessionHostLabel(session);
-        const pane = sessionPaneLabel(session);
-        const detail = stringOrEmpty(session.stage_detail);
-        if (host) {
-            bits.push(host);
+    function sessionStateSymbol(session) {
+        const stage = stageState(session);
+        if (stage === "attention") {
+            return "!";
         }
-        if (pane) {
-            bits.push(pane);
+        if (stage === "waiting") {
+            return "⌨";
         }
-        if (detail) {
-            bits.push(detail);
+        if (stage === "ready") {
+            return "✓";
         }
-        return bits.join(" • ");
+        if (stringOrEmpty(session.stage).toLowerCase() === "streaming") {
+            return "⋯";
+        }
+        if (stringOrEmpty(session.stage).toLowerCase() === "tool_running") {
+            return "↺";
+        }
+        return "•";
     }
 
-    function metricMemoryLabel(session) {
-        const raw = session.process_tree_rss_mb !== undefined && session.process_tree_rss_mb !== null
-            ? session.process_tree_rss_mb
-            : session.rss_mb;
-        if (raw === undefined || raw === null) {
-            return "RAM --";
+    function compactSessionStateLabel(session) {
+        const stage = stageState(session);
+        if (stage === "attention") {
+            return "Attention";
         }
-        const value = Number(raw);
-        if (!isFinite(value) || value <= 0) {
-            return "RAM --";
+        if (stage === "waiting") {
+            return "Waiting";
         }
-        return "RAM " + Math.round(value) + "M";
-    }
-
-    function metricCpuLabel(session) {
-        const raw = session.process_tree_cpu_percent !== undefined && session.process_tree_cpu_percent !== null
-            ? session.process_tree_cpu_percent
-            : session.cpu_percent;
-        if (raw === undefined || raw === null) {
-            return "CPU --";
+        if (stage === "ready") {
+            return "Ready";
         }
-        const value = Number(raw);
-        if (!isFinite(value) || value < 0) {
-            return "CPU --";
+        if (stringOrEmpty(session.stage).toLowerCase() === "streaming") {
+            return "Streaming";
         }
-        return "CPU " + Math.round(value) + "%";
-    }
-
-    function metricProcessLabel(session) {
-        const count = Number(session.process_count || 0);
-        if (!count) {
-            return "P --";
+        if (stringOrEmpty(session.stage).toLowerCase() === "tool_running") {
+            return "Tool";
         }
-        return "P " + String(count);
-    }
-
-    function sessionStageChipLabel(session) {
-        const label = stringOrEmpty(session.stage_label);
-        if (label) {
-            return label;
+        if (stringOrEmpty(session.stage_visual_state) === "working") {
+            return "Working";
         }
         return "Idle";
     }
@@ -602,13 +1372,7 @@ ShellRoot {
     }
 
     function sessionCardBorder(session) {
-        if (sessionIsCurrent(session)) {
-            return sessionAccentColor(session);
-        }
-        if (sessionNeedsAttention(session)) {
-            return colors.lineSoft;
-        }
-        return colors.border;
+        return "transparent";
     }
 
     function sessionTextColor(session) {
@@ -622,6 +1386,94 @@ ShellRoot {
 
     function sessionHasConflict(session) {
         return stringOrEmpty(session.conflict_state).length > 0;
+    }
+
+    function sessionPillLabel(session) {
+        const pane = sessionPaneLabel(session);
+        if (pane) {
+            return pane;
+        }
+        return compactSessionStateLabel(session);
+    }
+
+    function findWindowById(windowId) {
+        const target = Number(windowId || 0);
+        if (target <= 0) {
+            return null;
+        }
+
+        const projects = arrayOrEmpty(dashboard.projects);
+        for (let i = 0; i < projects.length; i += 1) {
+            const windows = arrayOrEmpty(projects[i].windows);
+            for (let j = 0; j < windows.length; j += 1) {
+                const windowData = windows[j];
+                if (Number(windowData.id || 0) === target) {
+                    return windowData;
+                }
+            }
+        }
+        return null;
+    }
+
+    function groupedSessionBands() {
+        const sessions = compactSessions();
+        const groups = [];
+        const index = {};
+
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            const project = stringOrEmpty(session.project_name || session.project || "global");
+            const windowId = Number(session.window_id || 0);
+            const contextKey = stringOrEmpty(session.context_key);
+            const groupKey = [project, String(windowId), contextKey].join("::");
+
+            let group = index[groupKey];
+            if (!group) {
+                const parentWindow = findWindowById(windowId);
+                group = {
+                    group_key: groupKey,
+                    project_name: project,
+                    execution_mode: stringOrEmpty(session.execution_mode),
+                    host_name: sessionHostLabel(session),
+                    window_id: windowId,
+                    window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : "",
+                    sessions: []
+                };
+                index[groupKey] = group;
+                groups.push(group);
+            }
+
+            group.sessions.push(session);
+        }
+
+        return groups;
+    }
+
+    function sessionGroupTitle(group) {
+        return shortProject(group.project_name || "global");
+    }
+
+    function sessionGroupSubtitle(group) {
+        const bits = [];
+        const title = stringOrEmpty(group.window_title);
+        const host = stringOrEmpty(group.host_name);
+
+        if (title) {
+            bits.push(title);
+        }
+        if (host) {
+            bits.push(host);
+        }
+
+        return bits.join(" • ");
+    }
+
+    function windowSessionIcons(windowData) {
+        return arrayOrEmpty(windowData.sessions).slice(0, 4);
+    }
+
+    function windowSessionOverflowCount(windowData) {
+        return Math.max(0, arrayOrEmpty(windowData.sessions).length - 4);
     }
 
     function workspaceLabel(workspace) {
@@ -699,32 +1551,13 @@ ShellRoot {
 
     function displayMeta(windowData) {
         const bits = [];
-        const project = stringOrEmpty(windowData.project);
         const workspace = stringOrEmpty(windowData.workspace);
-
-        if (project && project !== "global") {
-            bits.push(shortProject(project));
-        }
 
         if (workspace && workspace.indexOf("scratchpad") !== 0) {
             bits.push("WS " + workspace);
-        } else if (windowData.hidden) {
-            bits.push("Hidden");
         }
 
         return bits.join(" • ");
-    }
-
-    function sessionBadge(windowData) {
-        const sessions = arrayOrEmpty(windowData.sessions);
-        if (!sessions.length) {
-            return "";
-        }
-
-        const session = sessions[0];
-        const tool = stringOrEmpty(session.display_tool || session.tool).toUpperCase();
-        const stage = stringOrEmpty(session.stage_label || session.stage);
-        return stage ? tool + " " + stage : tool;
     }
 
     function iconSourceFor(windowData) {
@@ -775,7 +1608,7 @@ ShellRoot {
     }
 
     function cycleSessions(direction) {
-        const sessions = sessionMru();
+        const sessions = panelSessions();
         if (!sessions.length) {
             return;
         }
@@ -797,7 +1630,7 @@ ShellRoot {
             return;
         }
 
-        const sessions = sessionMru();
+        const sessions = panelSessions();
         if (sessions.length) {
             focusSession(stringOrEmpty(sessions[0].session_key));
         }
@@ -869,17 +1702,60 @@ ShellRoot {
         runDetached(command);
     }
 
-    function ensureProject(projectName) {
+    function clearContext() {
+        root.worktreePickerVisible = false;
+        runDetached([shellConfig.i3pmBin, "context", "clear"]);
+    }
+
+    function switchContext(projectName, variant) {
         const name = stringOrEmpty(projectName);
+        const mode = stringOrEmpty(variant);
         if (!name || name === "global") {
-            runDetached([shellConfig.i3pmBin, "context", "clear"]);
+            clearContext();
             return;
         }
-        runDetached([shellConfig.i3pmBin, "context", "ensure", name]);
+
+        root.worktreePickerVisible = false;
+        const command = [shellConfig.i3pmBin, "context", "ensure", name];
+        if (mode) {
+            command.push("--variant", mode);
+        }
+        runDetached(command);
+    }
+
+    function activateWorktree(item, variant) {
+        if (!item) {
+            return;
+        }
+
+        const kind = stringOrEmpty(item.kind);
+        if (kind === "global") {
+            if (!isGlobalContext()) {
+                clearContext();
+            }
+            return;
+        }
+
+        const projectName = stringOrEmpty(item.qualified_name);
+        const requestedMode = stringOrEmpty(variant || "local") || "local";
+        const activeProject = activeContextProjectName();
+        const activeMode = activeContextExecutionMode();
+
+        if (projectName === activeProject && requestedMode === activeMode) {
+            focusPreferredWindowForContext(projectName, requestedMode);
+            return;
+        }
+
+        switchContext(projectName, requestedMode);
     }
 
     function cycleDisplayLayout() {
         runDetached([shellConfig.i3pmBin, "display", "cycle"]);
+    }
+
+    function triggerPowerAction(command) {
+        root.powerMenuVisible = false;
+        runDetached(command);
     }
 
     function parseDashboard(payload) {
@@ -902,11 +1778,62 @@ ShellRoot {
         }
     }
 
+    function parseNotification(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            notificationState = JSON.parse(raw);
+        } catch (error) {
+            console.warn("Failed to parse notification payload", error, raw);
+        }
+    }
+
+    function parseNetwork(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            networkState = JSON.parse(raw);
+        } catch (error) {
+            console.warn("Failed to parse network payload", error, raw);
+        }
+    }
+
+    SystemClock {
+        id: clock
+        precision: shellConfig.topBarShowSeconds ? SystemClock.Seconds : SystemClock.Minutes
+    }
+
     Timer {
         id: dashboardRestartTimer
         interval: 1000
         repeat: false
         onTriggered: dashboardWatcher.running = true
+    }
+
+    Timer {
+        id: notificationRestartTimer
+        interval: 2000
+        repeat: false
+        onTriggered: notificationWatcher.running = true
+    }
+
+    Timer {
+        id: networkRefreshTimer
+        interval: 15000
+        repeat: false
+        onTriggered: networkWatcher.running = true
     }
 
     Process {
@@ -929,6 +1856,52 @@ ShellRoot {
         }
         onExited: function() {
             dashboardRestartTimer.restart();
+        }
+    }
+
+    Process {
+        id: notificationWatcher
+        command: [shellConfig.notificationMonitorBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function(data) {
+                root.parseNotification(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function(data) {
+                if (data && data.trim()) {
+                    console.warn("notification.watch:", data);
+                }
+            }
+        }
+        onExited: function() {
+            notificationRestartTimer.restart();
+        }
+    }
+
+    Process {
+        id: networkWatcher
+        command: [shellConfig.networkStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function(data) {
+                root.parseNetwork(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function(data) {
+                if (data && data.trim()) {
+                    console.warn("network.watch:", data);
+                }
+            }
+        }
+        onExited: function() {
+            networkRefreshTimer.restart();
         }
     }
 
@@ -965,6 +1938,535 @@ ShellRoot {
 
         function focusLastSession() {
             root.focusLastSession();
+        }
+
+        function togglePowerMenu() {
+            root.powerMenuVisible = !root.powerMenuVisible;
+        }
+    }
+
+    Component {
+        id: perScreenTopBarWindow
+
+        PanelWindow {
+            id: topBarWindow
+            required property var modelData
+            readonly property var topBarScreen: modelData
+            readonly property string topOutputName: root.screenOutputName(topBarScreen)
+            readonly property bool isPrimaryBar: root.isPrimaryOutput(topOutputName)
+            readonly property bool isFocusedBar: root.isFocusedOutput(topOutputName)
+
+            screen: topBarScreen
+            visible: topBarScreen !== null
+            color: "transparent"
+            anchors.left: true
+            anchors.right: true
+            anchors.top: true
+            implicitHeight: shellConfig.topBarHeight
+            exclusiveZone: implicitHeight
+            focusable: false
+            aboveWindows: true
+            WlrLayershell.namespace: "i3pm-runtime-top-bar-" + (topOutputName || "screen")
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+            Rectangle {
+                id: topBarBackground
+                anchors.fill: parent
+                color: topBarWindow.isFocusedBar ? colors.panel : colors.bg
+                border.color: topBarWindow.isFocusedBar ? colors.blueMuted : colors.border
+                border.width: 1
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    anchors.topMargin: 4
+                    anchors.bottomMargin: 4
+                    spacing: 4
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Rectangle {
+                            radius: 8
+                            color: colors.card
+                            border.color: topBarWindow.isFocusedBar ? colors.blueMuted : colors.border
+                            border.width: 1
+                            implicitWidth: outputLabel.implicitWidth + 16
+                            implicitHeight: parent.height
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 6
+
+                                Rectangle {
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    color: topBarWindow.isFocusedBar ? colors.blue : colors.muted
+                                }
+
+                                Text {
+                                    id: outputLabel
+                                    text: topBarWindow.topOutputName || shellConfig.hostName
+                                    color: colors.text
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: layoutChip
+                            radius: 8
+                            color: root.neutralChipFill(layoutMouse.containsMouse)
+                            border.color: root.neutralChipBorder(layoutMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: layoutLabel.implicitWidth + 20
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Text {
+                                id: layoutLabel
+                                anchors.centerIn: parent
+                                text: root.currentLayoutLabel()
+                                color: root.neutralChipText(layoutMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: layoutMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.cycleDisplayLayout()
+                            }
+                        }
+
+                        Rectangle {
+                            id: panelToggleChip
+                            radius: 8
+                            color: root.stateChipFill(root.panelVisible, panelToggleMouse.containsMouse, colors.blueBg)
+                            border.color: root.stateChipBorder(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
+                            border.width: 1
+                            implicitWidth: panelToggleLabel.implicitWidth + 20
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Text {
+                                id: panelToggleLabel
+                                anchors.centerIn: parent
+                                text: root.panelVisible ? "Hide Panel" : "Show Panel"
+                                color: root.stateChipText(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: panelToggleMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.panelVisible = !root.panelVisible
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignHCenter
+                        radius: 9
+                        color: colors.card
+                        border.color: colors.border
+                        border.width: 1
+                        implicitWidth: clockLabel.implicitWidth + 26
+                        implicitHeight: parent.height
+
+                        Text {
+                            id: clockLabel
+                            anchors.centerIn: parent
+                            text: root.topBarTimeText()
+                            color: colors.text
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignRight
+                        spacing: 6
+
+                        Rectangle {
+                            id: networkChip
+                            radius: 8
+                            color: root.neutralChipFill(networkMouse.containsMouse)
+                            border.color: root.neutralChipBorder(networkMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: networkLabel.implicitWidth + 18
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Text {
+                                id: networkLabel
+                                anchors.centerIn: parent
+                                text: root.networkLabel()
+                                color: root.networkChipText(networkMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                            }
+
+                            ToolTip.visible: networkMouse.containsMouse
+                            ToolTip.text: root.networkDetail()
+
+                            MouseArea {
+                                id: networkMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.runDetached(["toggle-quick-panel"])
+                            }
+                        }
+
+                        Rectangle {
+                            id: notificationChip
+                            radius: 8
+                            color: root.notificationChipFill(notificationMouse.containsMouse)
+                            border.color: root.notificationChipBorder(notificationMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: notificationLabel.implicitWidth + 18
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Text {
+                                id: notificationLabel
+                                anchors.centerIn: parent
+                                text: root.notificationLabel()
+                                color: root.notificationChipText(notificationMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                            }
+
+                            ToolTip.visible: notificationMouse.containsMouse
+                            ToolTip.text: root.notificationDetail()
+
+                            MouseArea {
+                                id: notificationMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: function(mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root.runDetached(["swaync-client", "-d", "-sw"]);
+                                        return;
+                                    }
+                                    root.runDetached(["toggle-swaync"]);
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: audioChip
+                            radius: 8
+                            color: root.neutralChipFill(audioMouse.containsMouse)
+                            border.color: root.audioChipBorder(audioMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: audioLabel.implicitWidth + 18
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Text {
+                                id: audioLabel
+                                anchors.centerIn: parent
+                                text: root.audioLabel()
+                                color: root.audioChipText(audioMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                            }
+
+                            ToolTip.visible: audioMouse.containsMouse
+                            ToolTip.text: root.audioDetail()
+
+                            MouseArea {
+                                id: audioMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                acceptedButtons: Qt.LeftButton
+                                onClicked: root.toggleMute()
+                                onWheel: function(wheel) {
+                                    root.changeVolume(wheel.angleDelta.y > 0 ? 0.05 : -0.05);
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: batteryChip
+                            visible: root.batteryReady()
+                            radius: 8
+                            color: root.neutralChipFill(batteryMouse.containsMouse)
+                            border.color: root.batteryChipBorder(batteryMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: batteryRow.implicitWidth + 16
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            RowLayout {
+                                id: batteryRow
+                                anchors.centerIn: parent
+                                spacing: 5
+
+                                IconImage {
+                                    implicitSize: 14
+                                    source: root.batteryIconSource()
+                                    visible: source !== ""
+                                    mipmap: true
+                                }
+
+                                Text {
+                                    text: root.batteryLabel()
+                                    color: root.batteryChipText(batteryMouse.containsMouse)
+                                    font.pixelSize: 10
+                                    font.weight: Font.Medium
+                                }
+                            }
+
+                            ToolTip.visible: batteryMouse.containsMouse
+                            ToolTip.text: root.batteryTooltip()
+
+                            MouseArea {
+                                id: batteryMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                            }
+                        }
+
+                        RowLayout {
+                            visible: topBarWindow.isPrimaryBar && root.arrayOrEmpty(SystemTray.items ? SystemTray.items.values : []).length > 0
+                            spacing: 4
+
+                            Repeater {
+                                model: SystemTray.items
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property var trayItem: modelData
+                                    visible: trayItem.status !== Status.Passive
+                                    width: 24
+                                    height: 22
+                                    radius: 7
+                                    color: root.neutralChipFill(trayMouse.containsMouse)
+                                    border.color: root.neutralChipBorder(trayMouse.containsMouse)
+                                    border.width: 1
+
+                                    Behavior on color {
+                                        ColorAnimation { duration: root.fastColorMs }
+                                    }
+
+                                    Behavior on border.color {
+                                        ColorAnimation { duration: root.fastColorMs }
+                                    }
+
+                                    IconImage {
+                                        anchors.centerIn: parent
+                                        implicitSize: 14
+                                        source: {
+                                            const iconName = root.stringOrEmpty(trayItem.icon);
+                                            return iconName ? Quickshell.iconPath(iconName, true) : "";
+                                        }
+                                        visible: source !== ""
+                                        mipmap: true
+                                    }
+
+                                    MouseArea {
+                                        id: trayMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                                        onClicked: function(mouse) {
+                                            if (mouse.button === Qt.RightButton) {
+                                                trayItem.secondaryActivate();
+                                                return;
+                                            }
+
+                                            if (trayItem.onlyMenu || trayItem.hasMenu) {
+                                                const point = parent.mapToItem(topBarBackground, parent.width / 2, parent.height);
+                                                trayItem.display(topBarWindow, point.x, point.y);
+                                                return;
+                                            }
+
+                                            trayItem.activate();
+                                        }
+                                        onWheel: function(wheel) {
+                                            trayItem.scroll(wheel.angleDelta.y > 0 ? 1 : -1, false);
+                                        }
+                                    }
+
+                                    ToolTip.visible: trayMouse.containsMouse
+                                    ToolTip.text: root.stringOrEmpty(trayItem.tooltipTitle || trayItem.title || trayItem.id)
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: powerChip
+                            visible: topBarWindow.isPrimaryBar
+                            radius: 8
+                            color: root.powerChipFill(powerMouse.containsMouse)
+                            border.color: root.powerChipBorder(powerMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: powerLabel.implicitWidth + 18
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation { duration: root.fastColorMs }
+                            }
+
+                            Text {
+                                id: powerLabel
+                                anchors.centerIn: parent
+                                text: "Power"
+                                color: root.powerChipText(powerMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: powerMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.powerMenuVisible = !root.powerMenuVisible
+                            }
+                        }
+                    }
+                }
+            }
+
+            PopupWindow {
+                visible: topBarWindow.isPrimaryBar && root.powerMenuVisible
+                color: "transparent"
+                implicitWidth: 188
+                implicitHeight: powerMenuContent.implicitHeight + 16
+                anchor.window: topBarWindow
+                anchor.item: powerChip
+                anchor.edges: Edges.Bottom | Edges.Right
+                anchor.gravity: Edges.Bottom | Edges.Left
+                anchor.margins.top: 6
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 12
+                    color: colors.panel
+                    border.color: colors.borderStrong
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: powerMenuContent
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        anchors.topMargin: 10
+                        anchors.bottomMargin: 10
+                        spacing: 6
+
+                        Repeater {
+                            model: [
+                                { label: "Lock", command: ["swaylock", "-f"] },
+                                { label: "Suspend", command: ["systemctl", "suspend"] },
+                                { label: "Exit Sway", command: ["swaymsg", "exit"] },
+                                { label: "Reboot", command: ["systemctl", "reboot"] },
+                                { label: "Shutdown", command: ["systemctl", "poweroff"] }
+                            ]
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                implicitHeight: 30
+                                radius: 8
+                                color: root.neutralChipFill(powerActionMouse.containsMouse)
+                                border.color: root.neutralChipBorder(powerActionMouse.containsMouse)
+                                border.width: 1
+
+                                Behavior on color {
+                                    ColorAnimation { duration: root.fastColorMs }
+                                }
+
+                                Behavior on border.color {
+                                    ColorAnimation { duration: root.fastColorMs }
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.label
+                                    color: root.neutralChipText(powerActionMouse.containsMouse)
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    id: powerActionMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.triggerPowerAction(modelData.command)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1022,7 +2524,7 @@ ShellRoot {
                                 width: 7
                                 height: 7
                                 radius: 4
-                                color: stringOrEmpty((dashboard.active_context || {}).execution_mode) === "ssh" ? colors.amber : colors.accent
+                                color: stringOrEmpty((dashboard.active_context || {}).execution_mode) === "ssh" ? colors.teal : colors.accent
                             }
 
                             Text {
@@ -1068,8 +2570,8 @@ ShellRoot {
                                         width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
                                         height: 28
                                         radius: 8
-                                        color: workspace.focused ? colors.blue : (workspace.active ? colors.card : colors.cardAlt)
-                                        border.color: workspace.focused ? colors.blue : (workspace.urgent ? colors.red : colors.border)
+                                        color: root.workspaceChipFill(workspace, workspaceMouse.containsMouse)
+                                        border.color: root.workspaceChipBorder(workspace, workspaceMouse.containsMouse)
                                         border.width: 1
 
                                         RowLayout {
@@ -1091,7 +2593,7 @@ ShellRoot {
                                                         height: 18
                                                         radius: 6
                                                         color: colors.bg
-                                                        border.color: workspace.focused ? colors.blue : colors.borderStrong
+                                                        border.color: workspace.focused ? colors.blue : (workspaceMouse.containsMouse ? colors.borderStrong : colors.borderStrong)
                                                         border.width: 1
 
                                                         IconImage {
@@ -1108,7 +2610,7 @@ ShellRoot {
                                             Text {
                                                 id: workspaceText
                                                 text: root.workspaceLabel(workspace)
-                                                color: workspace.focused ? colors.bg : colors.text
+                                                color: root.workspaceChipText(workspace, workspaceMouse.containsMouse)
                                                 font.pixelSize: 11
                                                 font.weight: workspace.focused ? Font.DemiBold : Font.Medium
                                             }
@@ -1133,7 +2635,10 @@ ShellRoot {
                                         }
 
                                         MouseArea {
+                                            id: workspaceMouse
                                             anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
                                             onClicked: root.activateWorkspace(workspace)
                                         }
                                     }
@@ -1164,11 +2669,12 @@ ShellRoot {
                             }
 
                             Rectangle {
+                                id: cycleLayoutButton
                                 width: 38
                                 height: 24
                                 radius: 7
-                                color: colors.cardAlt
-                                border.color: colors.border
+                                color: cycleLayoutMouse.containsMouse ? colors.card : colors.cardAlt
+                                border.color: cycleLayoutMouse.containsMouse ? colors.borderStrong : colors.border
                                 border.width: 1
 
                                 Text {
@@ -1180,7 +2686,10 @@ ShellRoot {
                                 }
 
                                 MouseArea {
+                                    id: cycleLayoutMouse
                                     anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
                                     onClicked: root.cycleDisplayLayout()
                                 }
                             }
@@ -1196,8 +2705,12 @@ ShellRoot {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 radius: 7
-                                color: root.panelVisible ? colors.blue : colors.cardAlt
-                                border.color: root.panelVisible ? colors.blue : colors.border
+                                color: root.panelVisible
+                                    ? (bottomPanelToggleMouse.containsMouse ? colors.blue : colors.blue)
+                                    : (bottomPanelToggleMouse.containsMouse ? colors.card : colors.cardAlt)
+                                border.color: root.panelVisible
+                                    ? colors.blue
+                                    : (bottomPanelToggleMouse.containsMouse ? colors.borderStrong : colors.border)
                                 border.width: 1
 
                                 Text {
@@ -1209,7 +2722,10 @@ ShellRoot {
                                 }
 
                                 MouseArea {
+                                    id: bottomPanelToggleMouse
                                     anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
                                     onClicked: root.panelVisible = !root.panelVisible
                                 }
                             }
@@ -1218,6 +2734,11 @@ ShellRoot {
                 }
             }
         }
+    }
+
+    Variants {
+        model: Quickshell.screens
+        delegate: perScreenTopBarWindow
     }
 
     Variants {
@@ -1257,159 +2778,221 @@ ShellRoot {
                 spacing: 10
 
                 Rectangle {
-                    implicitHeight: headerContent.implicitHeight + 16
+                    id: worktreeSummaryCard
+                    implicitHeight: 78
+                    Layout.preferredHeight: implicitHeight
                     Layout.fillWidth: true
                     radius: 12
                     color: colors.panel
-                    border.color: colors.border
+                    border.color: root.worktreePickerVisible ? colors.blueMuted : colors.border
                     border.width: 1
 
-                    ColumnLayout {
-                        id: headerContent
+                    ScriptModel {
+                        id: worktreeItemsModel
+                        values: root.worktreeItems()
+                        objectProp: "modelData"
+                    }
+
+                    RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 11
-                        anchors.rightMargin: 11
-                        anchors.topMargin: 9
-                        anchors.bottomMargin: 9
-                        spacing: 7
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 8
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
+                        Rectangle {
+                            width: 24
+                            height: 24
+                            radius: 8
+                            color: root.isGlobalContext() ? colors.bg : colors.blueBg
+                            border.color: root.isGlobalContext() ? colors.lineSoft : colors.blue
+                            border.width: 1
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 1
-
-                                Text {
-                                    text: root.currentContextTitle()
-                                    color: colors.text
-                                    font.pixelSize: 14
-                                    font.weight: Font.DemiBold
-                                }
-
-                                Text {
-                                    text: shellConfig.hostName + "  " + root.modeLabel((dashboard.active_context || {}).execution_mode) + "  " + root.currentLayoutLabel()
-                                    color: colors.muted
-                                    font.pixelSize: 10
-                                }
-                            }
-
-                            Rectangle {
-                                width: 52
-                                height: 24
-                                radius: 7
-                                color: colors.card
-                                border.color: colors.border
-                                border.width: 1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Cycle"
-                                    color: colors.text
-                                    font.pixelSize: 10
-                                    font.weight: Font.DemiBold
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: root.cycleDisplayLayout()
-                                }
-                            }
-
-                            Rectangle {
-                                width: 58
-                                height: 24
-                                radius: 7
-                                color: root.dockedMode ? colors.blueBg : colors.card
-                                border.color: root.dockedMode ? colors.blue : colors.border
-                                border.width: 1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: root.dockedMode ? "Dock" : "Float"
-                                    color: root.dockedMode ? colors.blue : colors.text
-                                    font.pixelSize: 10
-                                    font.weight: Font.DemiBold
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: root.dockedMode = !root.dockedMode
-                                }
-                            }
-
-                            Rectangle {
-                                width: 24
-                                height: 24
-                                radius: 7
-                                color: colors.card
-                                border.color: colors.border
-                                border.width: 1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "×"
-                                    color: colors.text
-                                    font.pixelSize: 13
-                                    font.weight: Font.DemiBold
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: root.panelVisible = false
-                                }
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.isGlobalContext() ? "G" : root.worktreePickerSummaryTitle().slice(0, 1).toUpperCase()
+                                color: root.isGlobalContext() ? colors.textDim : colors.blue
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
                             }
                         }
 
-                        RowLayout {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 6
+                            spacing: 2
 
-                            Repeater {
-                                model: [
-                                    { label: "Projects", value: String(arrayOrEmpty(dashboard.projects).length) },
-                                    { label: "Windows", value: String(Number(dashboard.total_windows || 0)) },
-                                    { label: "AI", value: String(root.activeSessions().length) }
-                                ]
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.activeContextSummaryLabel()
+                                color: colors.subtle
+                                font.pixelSize: 8
+                                elide: Text.ElideRight
+                            }
 
-                                delegate: Rectangle {
-                                    required property var modelData
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+
+                                Text {
                                     Layout.fillWidth: true
-                                    height: 26
-                                    radius: 8
-                                    color: colors.card
-                                    border.color: colors.border
+                                    text: root.worktreePickerSummaryTitle()
+                                    color: colors.text
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+
+                                Rectangle {
+                                    visible: !root.isGlobalContext()
+                                    height: 16
+                                    radius: 5
+                                    color: colors.blueBg
+                                    border.color: colors.blue
                                     border.width: 1
+                                    Layout.preferredWidth: activeContextModeText.implicitWidth + 10
 
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        spacing: 6
-
-                                        Text {
-                                            text: modelData.value
-                                            color: colors.text
-                                            font.pixelSize: 11
-                                            font.weight: Font.DemiBold
-                                        }
-
-                                        Text {
-                                            text: modelData.label
-                                            color: colors.muted
-                                            font.pixelSize: 10
-                                        }
+                                    Text {
+                                        id: activeContextModeText
+                                        anchors.centerIn: parent
+                                        text: root.modeLabel(root.activeContextExecutionMode())
+                                        color: colors.blue
+                                        font.pixelSize: 7
+                                        font.weight: Font.DemiBold
                                     }
                                 }
                             }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                visible: !root.isGlobalContext()
+
+                                Rectangle {
+                                    height: 18
+                                    radius: 6
+                                    color: root.activeTerminalAvailable()
+                                        ? colors.accentBg
+                                        : (activeTerminalMouse.containsMouse ? colors.cardAlt : colors.card)
+                                    border.color: root.activeTerminalAvailable()
+                                        ? colors.accent
+                                        : (activeTerminalMouse.containsMouse ? colors.borderStrong : colors.border)
+                                    border.width: 1
+                                    Layout.preferredWidth: shellStatusText.implicitWidth + 14
+
+                                    Text {
+                                        id: shellStatusText
+                                        anchors.centerIn: parent
+                                        text: root.activeTerminalChipLabel()
+                                        color: root.activeTerminalAvailable() ? colors.accent : colors.text
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    MouseArea {
+                                        id: activeTerminalMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.openActiveTerminal()
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.activeTerminalMetaLabel()
+                                    color: colors.muted
+                                    font.pixelSize: 8
+                                    elide: Text.ElideRight
+                                }
+                            }
                         }
+
+                        Rectangle {
+                            id: worktreeBrowseChip
+                            height: 24
+                            radius: 7
+                            color: root.worktreePickerVisible
+                                ? colors.blueBg
+                                : (worktreeBrowseMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.worktreePickerVisible
+                                ? colors.blue
+                                : (worktreeBrowseMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+                            Layout.preferredWidth: worktreeBrowseText.implicitWidth + 18
+
+                            Text {
+                                id: worktreeBrowseText
+                                anchors.centerIn: parent
+                                text: root.worktreePickerVisible ? "Close" : "Browse"
+                                color: root.worktreePickerVisible ? colors.blue : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: worktreeBrowseMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.worktreePickerVisible = !root.worktreePickerVisible
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.rightMargin: worktreeBrowseChip.width + 8
+                        acceptedButtons: Qt.LeftButton
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.worktreePickerVisible = !root.worktreePickerVisible
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.compactSessions().length > 0
+                    spacing: 8
+
+                    Text {
+                        text: "AI Sessions"
+                        color: colors.text
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                    }
+
+                    Rectangle {
+                        width: sessionSectionCount.implicitWidth + 12
+                        height: 18
+                        radius: 6
+                        color: colors.cardAlt
+                        border.color: colors.lineSoft
+                        border.width: 1
+
+                        Text {
+                            id: sessionSectionCount
+                            anchors.centerIn: parent
+                            text: String(root.compactSessions().length)
+                            color: colors.muted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        radius: 1
+                        color: colors.lineSoft
+                        opacity: 0.9
                     }
                 }
 
                 Rectangle {
-                    readonly property int visibleSessionRows: Math.min(4, Math.max(1, root.compactSessions().length))
-                    implicitHeight: 16 + (visibleSessionRows * 42) + (Math.max(0, visibleSessionRows - 1) * 6)
+                    readonly property int visibleGroupRows: Math.min(4, Math.max(1, root.groupedSessionBands().length))
+                    implicitHeight: 16 + (visibleGroupRows * 66) + (Math.max(0, visibleGroupRows - 1) * 8)
                     Layout.preferredHeight: implicitHeight
                     Layout.fillWidth: true
                     visible: root.compactSessions().length > 0
@@ -1419,99 +3002,856 @@ ShellRoot {
                     border.width: 1
 
                     ScriptModel {
-                        id: sessionCardsModel
-                        values: root.compactSessions()
+                        id: sessionGroupsModel
+                        values: root.groupedSessionBands()
                         objectProp: "modelData"
                     }
 
                     ListView {
-                        id: sessionGrid
+                        id: sessionGroupList
                         anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        anchors.topMargin: 8
-                        anchors.bottomMargin: 8
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        anchors.topMargin: 6
+                        anchors.bottomMargin: 6
                         clip: true
                         spacing: 6
-                        model: sessionCardsModel
+                        model: sessionGroupsModel
                         boundsBehavior: Flickable.StopAtBounds
 
                         delegate: Rectangle {
                             required property var modelData
-                            readonly property var session: modelData
-                            width: sessionGrid.width
+                            readonly property var group: modelData
+                            width: sessionGroupList.width
+                            height: 60
+                            radius: 10
+                            color: colors.cardAlt
+                            border.color: colors.lineSoft
+                            border.width: 1
+
+                            ScriptModel {
+                                id: groupedSessionsModel
+                                values: root.arrayOrEmpty(group.sessions)
+                                objectProp: "modelData"
+                            }
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                anchors.topMargin: 6
+                                anchors.bottomMargin: 6
+                                spacing: 4
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Rectangle {
+                                        width: 17
+                                        height: 17
+                                        radius: 6
+                                        color: colors.bg
+                                        border.color: root.modeAccentColor(group.execution_mode)
+                                        border.width: 1
+
+                                        IconImage {
+                                            anchors.centerIn: parent
+                                            implicitSize: 12
+                                            source: root.modeIconSource(group.execution_mode)
+                                            mipmap: true
+                                        }
+                                    }
+
+                                    Text {
+                                        text: root.sessionGroupTitle(group)
+                                        color: colors.text
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.sessionGroupSubtitle(group)
+                                        color: colors.subtle
+                                        font.pixelSize: 8
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        width: sessionGroupCountText.implicitWidth + 8
+                                        height: 14
+                                        radius: 5
+                                        color: colors.bg
+                                        border.color: colors.lineSoft
+                                        border.width: 1
+
+                                        Text {
+                                            id: sessionGroupCountText
+                                            anchors.centerIn: parent
+                                            text: String(root.arrayOrEmpty(group.sessions).length)
+                                            color: colors.muted
+                                            font.pixelSize: 7
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+                                }
+
+                                ListView {
+                                    id: groupedSessionRow
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 24
+                                    Layout.fillHeight: true
+                                    orientation: ListView.Horizontal
+                                    spacing: 5
+                                    clip: true
+                                    interactive: contentWidth > width
+                                    boundsBehavior: Flickable.StopAtBounds
+                                    model: groupedSessionsModel
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        readonly property var session: modelData
+                                        readonly property real maxPillWidth: Math.max(
+                                            92,
+                                            (groupedSessionRow.width - Math.max(0, groupedSessionRow.count - 1) * groupedSessionRow.spacing)
+                                            / Math.max(1, groupedSessionRow.count)
+                                        )
+                                        width: Math.max(80, Math.min(pillText.implicitWidth + 40, maxPillWidth))
+                                        height: 22
+                                        radius: 7
+                                        color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
+                                            ? colors.panelAlt
+                                            : root.sessionCardFill(session)
+                                        border.color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
+                                            ? colors.borderStrong
+                                            : root.sessionCardBorder(session)
+                                        border.width: 1
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 5
+                                            anchors.rightMargin: 5
+                                            spacing: 4
+
+                                            Item {
+                                                width: 15
+                                                height: 15
+
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: 15
+                                                    height: 15
+                                                    radius: 5
+                                                    color: colors.bg
+                                                    border.color: root.sessionAccentColor(session)
+                                                    border.width: 1
+                                                }
+
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: 15
+                                                    height: 15
+                                                    radius: 5
+                                                    color: "transparent"
+                                                    border.color: root.sessionAccentColor(session)
+                                                    border.width: 1
+                                                    opacity: root.sessionHasMotion(session) ? 0.22 : 0
+                                                    scale: root.sessionHasMotion(session) ? 0.92 : 1
+
+                                                    SequentialAnimation on scale {
+                                                        running: root.sessionHasMotion(session)
+                                                        loops: Animation.Infinite
+                                                        NumberAnimation { from: 0.94; to: 1.1; duration: 900; easing.type: Easing.InOutQuad }
+                                                        NumberAnimation { from: 1.1; to: 0.94; duration: 900; easing.type: Easing.InOutQuad }
+                                                    }
+
+                                                    SequentialAnimation on opacity {
+                                                        running: root.sessionHasMotion(session)
+                                                        loops: Animation.Infinite
+                                                        NumberAnimation { from: 0.24; to: 0.08; duration: 900; easing.type: Easing.InOutQuad }
+                                                        NumberAnimation { from: 0.08; to: 0.24; duration: 900; easing.type: Easing.InOutQuad }
+                                                    }
+                                                }
+
+                                                IconImage {
+                                                    anchors.centerIn: parent
+                                                    implicitSize: 11
+                                                    source: root.toolIconSource(session)
+                                                    mipmap: true
+                                                }
+                                            }
+
+                                            Text {
+                                                id: pillText
+                                                Layout.fillWidth: true
+                                                text: root.sessionPillLabel(session)
+                                                color: root.sessionTextColor(session)
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Rectangle {
+                                                visible: root.sessionActivityLabel(session).length > 0
+                                                width: visible ? activityText.implicitWidth + 10 : 0
+                                                height: 14
+                                                radius: 5
+                                                color: root.sessionActivityBackground(session)
+                                                border.color: "transparent"
+                                                border.width: 0
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 4
+                                                    anchors.rightMargin: 4
+                                                    spacing: 3
+
+                                                    Rectangle {
+                                                        width: 5
+                                                        height: 5
+                                                        radius: 3
+                                                        color: root.sessionActivityColor(session)
+                                                    }
+
+                                                    Text {
+                                                        id: activityText
+                                                        text: root.sessionActivityLabel(session)
+                                                        color: root.sessionActivityColor(session)
+                                                        font.pixelSize: 7
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: !root.sessionActivityLabel(session).length
+                                                text: root.sessionStateSymbol(session)
+                                                color: root.sessionAccentColor(session)
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: sessionPillMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: "Windows"
+                        color: colors.text
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                    }
+
+                    Rectangle {
+                        width: windowsSectionCount.implicitWidth + 12
+                        height: 18
+                        radius: 6
+                        color: colors.cardAlt
+                        border.color: colors.lineSoft
+                        border.width: 1
+
+                        Text {
+                            id: windowsSectionCount
+                            anchors.centerIn: parent
+                            text: String(Number(dashboard.total_windows || 0))
+                            color: colors.muted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        radius: 1
+                        color: colors.lineSoft
+                        opacity: 0.9
+                    }
+                }
+
+                ScriptModel {
+                    id: windowProjectsModel
+                    values: root.panelProjects()
+                    objectProp: "modelData"
+                }
+
+                ListView {
+                    id: windowsList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 8
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: windowProjectsModel
+                    cacheBuffer: 1200
+                    visible: root.panelProjects().length > 0
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        readonly property var projectGroup: modelData
+                        readonly property var projectWindows: root.arrayOrEmpty(projectGroup.windows)
+                        width: windowsList.width
+                        implicitHeight: 44 + (projectWindows.length * 36) + (Math.max(0, projectWindows.length - 1) * 4) + 8
+                        radius: 10
+                        color: root.projectCardFill(projectGroup)
+                        border.color: "transparent"
+                        border.width: 0
+
+                        Rectangle {
+                            visible: root.stringOrEmpty(projectGroup.project) !== "global"
+                            width: 3
+                            radius: 1
+                            color: root.modeAccentColor(projectGroup.execution_mode)
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            anchors.leftMargin: 2
+                            anchors.topMargin: 8
+                            anchors.bottomMargin: 8
+                            opacity: projectGroup.is_active ? 0.95 : 0.72
+                        }
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 6
+                            anchors.topMargin: 6
+                            anchors.bottomMargin: 6
+                            spacing: 6
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 24
+                                radius: 8
+                                color: root.projectHeaderFill(projectGroup)
+                                border.color: "transparent"
+                                border.width: 0
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    spacing: 6
+
+                                    Rectangle {
+                                        width: 16
+                                        height: 16
+                                        radius: 5
+                                        color: root.stringOrEmpty(projectGroup.project) === "global"
+                                            ? colors.card
+                                            : (projectGroup.is_active ? colors.blueBg : colors.bg)
+                                        border.color: "transparent"
+                                        border.width: 0
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: root.stringOrEmpty(projectGroup.project) === "global"
+                                                ? "G"
+                                                : root.shortProject(projectGroup.project).slice(0, 1).toUpperCase()
+                                            color: root.stringOrEmpty(projectGroup.project) === "global"
+                                                ? colors.subtle
+                                                : (projectGroup.is_active ? colors.blue : colors.muted)
+                                            font.pixelSize: 9
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        visible: root.stringOrEmpty(projectGroup.project) !== "global"
+                                        width: visible ? 18 : 0
+                                        height: 18
+                                        radius: 5
+                                        color: root.stringOrEmpty(projectGroup.execution_mode) === "ssh"
+                                            ? colors.tealBg
+                                            : colors.blueBg
+                                        border.color: "transparent"
+                                        border.width: 0
+
+                                        IconImage {
+                                            anchors.centerIn: parent
+                                            implicitSize: 11
+                                            source: root.modeIconSource(projectGroup.execution_mode)
+                                            mipmap: true
+                                            opacity: 0.92
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 0
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.stringOrEmpty(projectGroup.project) === "global"
+                                                ? "Shared Windows"
+                                                : root.shortProject(projectGroup.project)
+                                            color: projectGroup.is_active
+                                                ? (root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.teal : colors.text)
+                                                : colors.textDim
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.windowSectionSubtitle(projectGroup)
+                                            color: colors.subtle
+                                            font.pixelSize: 7
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+
+                            Repeater {
+                                model: projectWindows
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property var windowData: modelData
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 12
+                                    Layout.rightMargin: 2
+                                    implicitHeight: 36
+                                    radius: 6
+                                    color: root.sidebarRowFill(windowData, windowMouse.containsMouse)
+                                    border.color: "transparent"
+                                    border.width: 0
+                                    opacity: windowData.focused ? 1 : (windowData.hidden ? 0.72 : 0.94)
+
+                                    Rectangle {
+                                        visible: !!windowData.focused
+                                        width: 3
+                                        radius: 1
+                                        color: colors.blue
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        anchors.leftMargin: 5
+                                        anchors.topMargin: 7
+                                        anchors.bottomMargin: 7
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: windowData.focused ? 16 : 12
+                                        anchors.rightMargin: 6
+                                        spacing: 6
+
+                                        Rectangle {
+                                            width: 24
+                                            height: 24
+                                            radius: 5
+                                            color: colors.bg
+                                            border.color: "transparent"
+                                            border.width: 0
+
+                                            IconImage {
+                                                anchors.centerIn: parent
+                                                implicitSize: 18
+                                                source: root.iconSourceFor(windowData)
+                                                visible: source !== ""
+                                                mipmap: true
+                                                opacity: windowData.focused ? 1 : 0.9
+                                            }
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                visible: root.iconSourceFor(windowData) === ""
+                                                text: root.appLabel(windowData).slice(0, 1).toUpperCase()
+                                                color: windowData.focused ? colors.text : colors.textDim
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 0
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: root.displayTitle(windowData)
+                                                color: root.sidebarRowText(windowData, windowMouse.containsMouse)
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: root.displayMeta(windowData)
+                                                visible: text.length > 0
+                                                color: windowData.focused ? colors.muted : colors.subtle
+                                                font.pixelSize: 8
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            visible: Number(windowData.ai_session_count || 0) > 0
+                                            spacing: 3
+
+                                            Repeater {
+                                                model: root.windowSessionIcons(windowData)
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var session: modelData
+                                                    width: 17
+                                                    height: 17
+                                                    radius: 5
+                                                    color: root.sessionTint(session)
+                                                    border.color: "transparent"
+                                                    border.width: 0
+
+                                                    Rectangle {
+                                                        anchors.right: parent.right
+                                                        anchors.bottom: parent.bottom
+                                                        anchors.rightMargin: -1
+                                                        anchors.bottomMargin: -1
+                                                        width: 8
+                                                        height: 8
+                                                        radius: 4
+                                                        color: root.sessionAccentColor(session)
+                                                        border.color: "transparent"
+                                                        border.width: 0
+                                                        opacity: root.sessionHasMotion(session) ? 1 : 0.85
+                                                    }
+
+                                                    IconImage {
+                                                        anchors.centerIn: parent
+                                                        implicitSize: 11
+                                                        source: root.toolIconSource(session)
+                                                        mipmap: true
+                                                        opacity: root.sessionIsCurrent(session) ? 1 : 0.94
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            mouse.accepted = true;
+                                                            root.focusSession(root.stringOrEmpty(session.session_key));
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: root.windowSessionOverflowCount(windowData) > 0
+                                                width: visible ? overflowText.implicitWidth + 8 : 0
+                                                height: 16
+                                                radius: 5
+                                                color: colors.bg
+                                                border.color: "transparent"
+                                                border.width: 0
+
+                                                Text {
+                                                    id: overflowText
+                                                    anchors.centerIn: parent
+                                                    text: "+" + String(root.windowSessionOverflowCount(windowData))
+                                                    color: colors.subtle
+                                                    font.pixelSize: 7
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16
+                                            height: 16
+                                            radius: 5
+                                            color: root.stringOrEmpty(windowData.execution_mode) === "ssh"
+                                                ? colors.tealBg
+                                                : colors.blueBg
+                                            border.color: "transparent"
+                                            border.width: 0
+
+                                            IconImage {
+                                                anchors.centerIn: parent
+                                                implicitSize: 11
+                                                source: root.modeIconSource(windowData.execution_mode)
+                                                mipmap: true
+                                                opacity: 0.92
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16
+                                            height: 16
+                                            radius: 5
+                                            color: closeMouse.containsMouse ? colors.redBg : colors.bg
+                                            border.color: "transparent"
+                                            border.width: 0
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "×"
+                                                color: closeMouse.containsMouse ? colors.red : (windowData.focused ? colors.muted : colors.subtle)
+                                                font.pixelSize: 9
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            MouseArea {
+                                                id: closeMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    mouse.accepted = true;
+                                                    root.closeWindow(windowData);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: windowMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.focusWindow(windowData)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    visible: root.panelProjects().length === 0
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 12
+                    color: colors.cardAlt
+                    border.color: "transparent"
+                    border.width: 0
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "No tracked project windows"
+                        color: colors.subtle
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                    }
+                }
+            }
+
+            Rectangle {
+                id: worktreePickerOverlay
+                visible: root.worktreePickerVisible
+                z: 20
+                x: panelColumn.x
+                y: panelColumn.y + worktreeSummaryCard.y + worktreeSummaryCard.height + 8
+                width: panelColumn.width
+                readonly property int listRows: Math.min(6, Math.max(1, root.inactiveWorktreeItems().length))
+                height: Math.min(
+                    372,
+                    Math.max(
+                        176,
+                        parent.height - y - 12
+                    )
+                )
+                radius: 12
+                color: colors.card
+                border.color: colors.blueMuted
+                border.width: 1
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    anchors.topMargin: 10
+                    anchors.bottomMargin: 10
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+
+                            Text {
+                                text: "Switch Context"
+                                color: colors.text
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                            }
+
+                            Text {
+                                text: "Recent worktrees and variants"
+                                color: colors.subtle
+                                font.pixelSize: 8
+                            }
+                        }
+
+                        Rectangle {
+                            width: 20
+                            height: 20
+                            radius: 6
+                            color: chooserCloseMouse.containsMouse ? colors.card : colors.bg
+                            border.color: chooserCloseMouse.containsMouse ? colors.borderStrong : colors.lineSoft
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: colors.textDim
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: chooserCloseMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.worktreePickerVisible = false
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 42
+                        radius: 10
+                        color: colors.panelAlt
+                        border.color: colors.blueMuted
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            spacing: 8
+
+                            Rectangle {
+                                width: 22
+                                height: 22
+                                radius: 7
+                                color: root.isGlobalContext() ? colors.bg : colors.blueBg
+                                border.color: root.isGlobalContext() ? colors.lineSoft : colors.blue
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.isGlobalContext() ? "G" : root.worktreePickerSummaryTitle().slice(0, 1).toUpperCase()
+                                    color: root.isGlobalContext() ? colors.textDim : colors.blue
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 1
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.worktreePickerSummaryTitle()
+                                    color: colors.text
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.activeContextSummaryLabel()
+                                    color: colors.muted
+                                    font.pixelSize: 8
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                visible: !root.isGlobalContext()
+                                height: 18
+                                radius: 6
+                                color: colors.blueBg
+                                border.color: colors.blue
+                                border.width: 1
+                                Layout.preferredWidth: currentBadgeText.implicitWidth + 12
+
+                                Text {
+                                    id: currentBadgeText
+                                    anchors.centerIn: parent
+                                    text: "Current"
+                                    color: colors.blue
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+                    }
+
+                    ScriptModel {
+                        id: chooserWorktreeItemsModel
+                        values: root.inactiveWorktreeItems()
+                        objectProp: "modelData"
+                    }
+
+                    ListView {
+                        id: worktreeList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.preferredHeight: (worktreePickerOverlay.listRows * 42) + (Math.max(0, worktreePickerOverlay.listRows - 1) * 6)
+                        clip: true
+                        spacing: 6
+                        boundsBehavior: Flickable.StopAtBounds
+                        model: chooserWorktreeItemsModel
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property bool hasRemoteVariant: !!modelData.remote_available
+                            width: worktreeList.width
                             height: 42
                             radius: 10
-                            color: root.sessionCardFill(session)
-                            border.color: root.sessionCardBorder(session)
+                            color: root.chooserRowFill(chooserRowMouse.containsMouse)
+                            border.color: root.chooserRowBorder(chooserRowMouse.containsMouse)
                             border.width: 1
-                            opacity: root.sessionIsCurrent(session) ? 1 : 0.92
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 8
+                                anchors.leftMargin: 10
                                 anchors.rightMargin: 8
-                                spacing: 7
+                                spacing: 8
 
-                                Item {
-                                    width: 24
-                                    height: 24
+                                Rectangle {
+                                    width: 22
+                                    height: 22
+                                    radius: 7
+                                    color: colors.bg
+                                    border.color: colors.lineSoft
+                                    border.width: 1
 
-                                    Rectangle {
+                                    Text {
                                         anchors.centerIn: parent
-                                        width: 22
-                                        height: 22
-                                        radius: 7
-                                        color: colors.bg
-                                        border.color: root.sessionIsCurrent(session) ? root.sessionAccentColor(session) : colors.lineSoft
-                                        border.width: 1
-                                    }
-
-                                    Rectangle {
-                                        anchors.centerIn: parent
-                                        width: 22
-                                        height: 22
-                                        radius: 7
-                                        color: "transparent"
-                                        border.color: root.sessionAccentColor(session)
-                                        border.width: 1
-                                        opacity: root.sessionHasMotion(session) ? 0.24 : 0
-                                        scale: root.sessionHasMotion(session) ? 0.92 : 1
-
-                                        SequentialAnimation on scale {
-                                            running: root.sessionHasMotion(session)
-                                            loops: Animation.Infinite
-                                            NumberAnimation { from: 0.94; to: 1.08; duration: 900; easing.type: Easing.InOutQuad }
-                                            NumberAnimation { from: 1.08; to: 0.94; duration: 900; easing.type: Easing.InOutQuad }
-                                        }
-
-                                        SequentialAnimation on opacity {
-                                            running: root.sessionHasMotion(session)
-                                            loops: Animation.Infinite
-                                            NumberAnimation { from: 0.26; to: 0.08; duration: 900; easing.type: Easing.InOutQuad }
-                                            NumberAnimation { from: 0.08; to: 0.26; duration: 900; easing.type: Easing.InOutQuad }
-                                        }
-                                    }
-
-                                    IconImage {
-                                        anchors.centerIn: parent
-                                        implicitSize: 13
-                                        source: root.toolIconSource(session)
-                                        mipmap: true
-                                    }
-
-                                    Rectangle {
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        anchors.rightMargin: -1
-                                        anchors.bottomMargin: -1
-                                        width: 10
-                                        height: 10
-                                        radius: 5
-                                        color: root.sessionAccentColor(session)
-                                        border.color: colors.bg
-                                        border.width: 1
-                                        opacity: root.sessionHasMotion(session) ? 1 : 0.8
+                                        text: root.worktreeDisplayName(modelData).slice(0, 1).toUpperCase()
+                                        color: colors.textDim
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
                                     }
                                 }
 
@@ -1525,475 +3865,121 @@ ShellRoot {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            text: root.shortProject(session.project_name || session.project)
-                                            color: root.sessionTextColor(session)
-                                            font.pixelSize: 10
+                                            text: root.worktreeDisplayName(modelData)
+                                            color: colors.textDim
+                                            font.pixelSize: 11
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideRight
                                         }
 
                                         Rectangle {
-                                            visible: root.sessionPaneLabel(session).length > 0
-                                            height: 15
+                                            height: 16
                                             radius: 5
                                             color: colors.bg
-                                            border.color: colors.lineSoft
+                                            border.color: root.worktreeStatusColor(modelData)
                                             border.width: 1
-                                            Layout.preferredWidth: paneLabelText.implicitWidth + 10
+                                            Layout.preferredWidth: chooserWorktreeStatusText.implicitWidth + 10
 
                                             Text {
-                                                id: paneLabelText
+                                                id: chooserWorktreeStatusText
                                                 anchors.centerIn: parent
-                                                text: root.sessionPaneLabel(session)
-                                                color: colors.subtle
+                                                text: root.worktreeStatusLabel(modelData)
+                                                color: root.worktreeStatusColor(modelData)
                                                 font.pixelSize: 7
-                                                font.weight: Font.Medium
-                                                elide: Text.ElideRight
+                                                font.weight: Font.DemiBold
                                             }
                                         }
                                     }
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: root.sessionDetailLine(session)
-                                        color: root.sessionIsCurrent(session) ? colors.muted : colors.subtle
+                                        text: root.worktreeSubtitle(modelData)
+                                        color: colors.subtle
                                         font.pixelSize: 8
                                         elide: Text.ElideRight
                                     }
                                 }
 
                                 Rectangle {
-                                    height: 16
-                                    radius: 5
-                                    color: root.sessionTint(session)
-                                    border.color: root.sessionAccentColor(session)
+                                    visible: hasRemoteVariant
+                                    height: 18
+                                    radius: 6
+                                    color: colors.tealBg
+                                    border.color: colors.teal
                                     border.width: 1
-                                    Layout.preferredWidth: stageChipText.implicitWidth + 12
+                                    Layout.preferredWidth: chooserSshVariantText.implicitWidth + 12
 
                                     Text {
-                                        id: stageChipText
-                                        anchors.centerIn: parent
-                                        text: root.sessionStageChipLabel(session)
-                                        color: root.sessionAccentColor(session)
-                                        font.pixelSize: 7
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-
-                                Rectangle {
-                                    height: 16
-                                    radius: 5
-                                    color: colors.bg
-                                    border.color: colors.lineSoft
-                                    border.width: 1
-                                    Layout.preferredWidth: memChipText.implicitWidth + 12
-
-                                    Text {
-                                        id: memChipText
-                                        anchors.centerIn: parent
-                                        text: root.metricMemoryLabel(session)
-                                        color: root.sessionIsCurrent(session) ? colors.textDim : colors.subtle
-                                        font.pixelSize: 7
-                                        font.weight: Font.Medium
-                                    }
-                                }
-
-                                Rectangle {
-                                    height: 16
-                                    radius: 5
-                                    color: colors.bg
-                                    border.color: colors.lineSoft
-                                    border.width: 1
-                                    Layout.preferredWidth: cpuChipText.implicitWidth + 12
-
-                                    Text {
-                                        id: cpuChipText
-                                        anchors.centerIn: parent
-                                        text: root.metricCpuLabel(session)
-                                        color: root.sessionIsCurrent(session) ? colors.textDim : colors.subtle
-                                        font.pixelSize: 7
-                                        font.weight: Font.Medium
-                                    }
-                                }
-
-                                Rectangle {
-                                    height: 16
-                                    radius: 5
-                                    color: colors.bg
-                                    border.color: colors.lineSoft
-                                    border.width: 1
-                                    Layout.preferredWidth: procChipText.implicitWidth + 12
-
-                                    Text {
-                                        id: procChipText
-                                        anchors.centerIn: parent
-                                        text: root.metricProcessLabel(session)
-                                        color: root.sessionIsCurrent(session) ? colors.textDim : colors.subtle
-                                        font.pixelSize: 7
-                                        font.weight: Font.Medium
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: root.sessionIsCurrent(session)
-                                    width: visible ? currentSessionChip.implicitWidth + 10 : 0
-                                    height: 16
-                                    radius: 5
-                                    color: colors.blueBg
-                                    border.color: colors.blueMuted
-                                    border.width: 1
-
-                                    Text {
-                                        id: currentSessionChip
-                                        anchors.centerIn: parent
-                                        text: "Now"
-                                        color: colors.blue
-                                        font.pixelSize: 7
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: root.sessionHasConflict(session)
-                                    width: visible ? conflictChipText.implicitWidth + 10 : 0
-                                    height: 16
-                                    radius: 5
-                                    color: colors.redBg
-                                    border.color: colors.lineSoft
-                                    border.width: 1
-
-                                    Text {
-                                        id: conflictChipText
-                                        anchors.centerIn: parent
-                                        text: "Conflict"
-                                        color: colors.red
-                                        font.pixelSize: 7
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: root.stringOrEmpty(session.execution_mode) === "ssh"
-                                    width: visible ? sshChipText.implicitWidth + 10 : 0
-                                    height: 16
-                                    radius: 5
-                                    color: colors.amberBg
-                                    border.color: colors.lineSoft
-                                    border.width: 1
-
-                                    Text {
-                                        id: sshChipText
+                                        id: chooserSshVariantText
                                         anchors.centerIn: parent
                                         text: "SSH"
-                                        color: colors.amber
-                                        font.pixelSize: 7
+                                        color: colors.teal
+                                        font.pixelSize: 8
                                         font.weight: Font.DemiBold
+                                    }
+
+                                    MouseArea {
+                                        id: chooserSshMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.activateWorktree(modelData, "ssh")
                                     }
                                 }
                             }
 
                             MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                id: chooserRowMouse
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.rightMargin: hasRemoteVariant ? 42 : 0
+                                acceptedButtons: Qt.LeftButton
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.activateWorktree(modelData, "local")
                             }
                         }
                     }
-                }
 
-                ScriptModel {
-                    id: windowItemsModel
-                    values: root.flatWindowItems()
-                    objectProp: "modelData"
-                }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 34
+                        radius: 9
+                        color: colors.bg
+                        border.color: clearContextMouse.containsMouse && !root.isGlobalContext() ? colors.borderStrong : colors.lineSoft
+                        border.width: 1
+                        opacity: root.isGlobalContext() ? 0.78 : 1
 
-                ListView {
-                    id: windowsList
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: 3
-                    boundsBehavior: Flickable.StopAtBounds
-                    model: windowItemsModel
-                    cacheBuffer: 1200
-
-                    delegate: Item {
-                        required property var modelData
-                        width: windowsList.width
-                        height: modelData.kind === "gap" ? 14 : (modelData.kind === "project" ? 42 : 38)
-
-                        Item {
-                            visible: modelData.kind === "gap"
+                        RowLayout {
                             anchors.fill: parent
-                        }
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: 8
 
-                        Rectangle {
-                            visible: modelData.kind === "project"
-                            anchors.fill: parent
-                            radius: 12
-                            color: modelData.focused ? colors.panelAlt : colors.cardAlt
-                            border.color: modelData.focused ? colors.blueMuted : colors.lineSoft
-                            border.width: 1
-                            opacity: modelData.focused ? 1 : 0.9
-
-                            Rectangle {
-                                visible: !!modelData.focused
-                                width: 3
-                                radius: 2
-                                color: colors.blue
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                anchors.leftMargin: 6
-                                anchors.topMargin: 6
-                                anchors.bottomMargin: 6
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Clear to Global"
+                                color: colors.textDim
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
                             }
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: modelData.focused ? 14 : 10
-                                anchors.rightMargin: 10
-                                spacing: 8
-
-                                Rectangle {
-                                    visible: root.stringOrEmpty(modelData.project) !== "global"
-                                    width: visible ? modeChipText.implicitWidth + 12 : 0
-                                    height: 18
-                                    radius: 6
-                                    color: root.stringOrEmpty(modelData.execution_mode) === "ssh" ? colors.amberBg : colors.cardAlt
-                                    border.color: root.stringOrEmpty(modelData.execution_mode) === "ssh" ? colors.amber : colors.lineSoft
-                                    border.width: 1
-
-                                    Text {
-                                        id: modeChipText
-                                        anchors.centerIn: parent
-                                        text: root.modeLabel(modelData.execution_mode)
-                                        color: root.stringOrEmpty(modelData.execution_mode) === "ssh" ? colors.amber : colors.subtle
-                                        font.pixelSize: 9
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: root.projectDisplayName(modelData.project)
-                                        color: modelData.focused ? colors.text : colors.textDim
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: root.stringOrEmpty(root.projectSubtitle(modelData))
-                                        color: modelData.focused ? colors.muted : colors.subtle
-                                        font.pixelSize: 8
-                                        elide: Text.ElideRight
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: !!modelData.focused
-                                    width: visible ? currentProjectText.implicitWidth + 14 : 0
-                                    height: 17
-                                    radius: 6
-                                    color: colors.blueBg
-                                    border.color: colors.blue
-                                    border.width: 1
-
-                                    Text {
-                                        id: currentProjectText
-                                        anchors.centerIn: parent
-                                        text: "Current"
-                                        color: colors.blue
-                                        font.pixelSize: 8
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-
-                                Rectangle {
-                                    width: projectCountText.implicitWidth + 14
-                                    height: 17
-                                    radius: 6
-                                    color: colors.bg
-                                    border.color: colors.lineSoft
-                                    border.width: 1
-
-                                    Text {
-                                        id: projectCountText
-                                        anchors.centerIn: parent
-                                        text: String(Number(modelData.window_count || 0))
-                                        color: modelData.focused ? colors.muted : colors.subtle
-                                        font.pixelSize: 8
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.ensureProject(modelData.project)
+                            Text {
+                                text: "Shared windows only"
+                                color: colors.subtle
+                                font.pixelSize: 8
                             }
                         }
 
-                        Item {
-                            visible: modelData.kind === "window"
+                        MouseArea {
+                            id: clearContextMouse
                             anchors.fill: parent
-
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.leftMargin: 4
-                                anchors.right: parent.right
-                                anchors.rightMargin: 1
-                                anchors.verticalCenter: parent.verticalCenter
-                                height: 34
-                                radius: 10
-                                color: modelData.focused ? colors.blueWash : colors.cardAlt
-                                border.color: modelData.focused ? colors.blueMuted : colors.lineSoft
-                                border.width: 1
-                                opacity: modelData.focused ? 1 : 0.82
-
-                                Rectangle {
-                                    visible: !!modelData.focused
-                                    width: 2
-                                    radius: 1
-                                    color: colors.blue
-                                    anchors.left: parent.left
-                                    anchors.top: parent.top
-                                    anchors.bottom: parent.bottom
-                                    anchors.leftMargin: 6
-                                    anchors.topMargin: 7
-                                    anchors.bottomMargin: 7
-                                }
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: modelData.focused ? 14 : 12
-                                    anchors.rightMargin: 7
-                                    spacing: 8
-
-                                    Rectangle {
-                                        width: 24
-                                        height: 24
-                                        radius: 7
-                                        color: colors.bg
-                                        border.color: modelData.focused ? colors.blueMuted : colors.lineSoft
-                                        border.width: 1
-
-                                        IconImage {
-                                            anchors.centerIn: parent
-                                            implicitSize: 16
-                                            source: root.iconSourceFor(modelData)
-                                            visible: source !== ""
-                                            mipmap: true
-                                            opacity: modelData.focused ? 1 : 0.9
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            visible: root.iconSourceFor(modelData) === ""
-                                            text: root.appLabel(modelData).slice(0, 1).toUpperCase()
-                                            color: modelData.focused ? colors.text : colors.textDim
-                                            font.pixelSize: 10
-                                            font.weight: Font.DemiBold
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 0
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: root.displayTitle(modelData)
-                                            color: modelData.focused ? colors.text : colors.textDim
-                                            font.pixelSize: 10
-                                            font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: root.displayMeta(modelData)
-                                            visible: text.length > 0
-                                            color: modelData.focused ? colors.muted : colors.subtle
-                                            font.pixelSize: 8
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        visible: Number(modelData.ai_session_count || 0) > 0
-                                        width: visible ? Math.min(84, aiText.implicitWidth + 12) : 0
-                                        height: 16
-                                        radius: 6
-                                        color: colors.violetBg
-                                        border.color: modelData.focused ? colors.violet : colors.lineSoft
-                                        border.width: 1
-
-                                        Text {
-                                            id: aiText
-                                            anchors.centerIn: parent
-                                            text: root.sessionBadge(modelData) || (String(Number(modelData.ai_session_count || 0)) + " AI")
-                                            color: colors.violet
-                                            font.pixelSize: 8
-                                            font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        visible: root.stringOrEmpty(modelData.execution_mode) === "ssh"
-                                        width: visible ? 30 : 0
-                                        height: 16
-                                        radius: 6
-                                        color: colors.amberBg
-                                        border.color: modelData.focused ? colors.amber : colors.lineSoft
-                                        border.width: 1
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "SSH"
-                                            color: colors.amber
-                                            font.pixelSize: 8
-                                            font.weight: Font.DemiBold
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        width: 16
-                                        height: 16
-                                        radius: 6
-                                        color: colors.bg
-                                        border.color: colors.lineSoft
-                                        border.width: 1
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "×"
-                                            color: modelData.focused ? colors.muted : colors.subtle
-                                            font.pixelSize: 9
-                                            font.weight: Font.DemiBold
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            onClicked: {
-                                                mouse.accepted = true;
-                                                root.closeWindow(modelData);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: root.focusWindow(modelData)
-                                }
-                            }
+                            enabled: !root.isGlobalContext()
+                            hoverEnabled: true
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: root.clearContext()
                         }
                     }
                 }

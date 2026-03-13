@@ -143,7 +143,6 @@ class DaemonHealthMonitor:
             # Suppress stderr warnings from systemd.daemon.notify() at FD level
             with _suppress_stderr_fd():
                 sd_daemon.notify("WATCHDOG=1")
-            logger.debug("Sent WATCHDOG=1 ping")
 
     def notify_stopping(self) -> None:
         """Send STOPPING=1 signal to systemd."""
@@ -610,12 +609,13 @@ class I3ProjectDaemon:
             # Feature 083: Publish to Eww for real-time top bar updates
             if self.eww_publisher:
                 profile_name = self.monitor_profile_service.get_current_profile() if self.monitor_profile_service else "unknown"
-                await self.eww_publisher.publish_from_conn(
+                published = await self.eww_publisher.publish_from_conn(
                     self.connection.conn,
                     profile_name or "unknown",
                     enabled_names
                 )
-                logger.info(f"[Feature 083] Published monitor state to Eww: profile={profile_name}, outputs={enabled_names}")
+                if published:
+                    logger.info(f"[Feature 083] Published monitor state to Eww: profile={profile_name}, outputs={enabled_names}")
 
             # Log event
             if self.event_buffer:
@@ -922,12 +922,13 @@ class I3ProjectDaemon:
                     if o.active and states.is_output_enabled(o.name)
                 ]
                 profile_name = self.monitor_profile_service.get_current_profile() if self.monitor_profile_service else "unknown"
-                await self.eww_publisher.publish_from_conn(
+                published = await self.eww_publisher.publish_from_conn(
                     self.connection.conn,
                     profile_name or "unknown",
                     enabled_outputs
                 )
-                logger.info(f"[Feature 083] Published initial monitor state to Eww: profile={profile_name}, outputs={enabled_outputs}")
+                if published:
+                    logger.info(f"[Feature 083] Published initial monitor state to Eww: profile={profile_name}, outputs={enabled_outputs}")
             except Exception as e:
                 logger.warning(f"[Feature 083] Failed to publish initial monitor state: {e}")
 
@@ -1124,6 +1125,9 @@ def setup_logging() -> None:
     )
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)
+    logging.getLogger("watchdog").setLevel(logging.WARNING)
+    logging.getLogger("watchdog.observers.inotify_buffer").setLevel(logging.WARNING)
+    logging.getLogger("watchdog.observers.inotify").setLevel(logging.WARNING)
 
     logger.info(f"Logging configured: level={log_level}")
 

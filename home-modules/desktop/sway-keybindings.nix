@@ -107,7 +107,10 @@ in
 
     # ========== SYSTEM ==========
     "${modifier}+Shift+c" = "reload";
-    "${modifier}+Shift+e" = if hasTopBar then "exec toggle-topbar-powermenu" else "exec swaymsg exit";
+    "${modifier}+Shift+e" =
+      if hasRuntimeShell then "exec toggle-runtime-power-menu"
+      else if hasTopBar then "exec toggle-topbar-powermenu"
+      else "exec swaymsg exit";
     "${modifier}+Ctrl+Shift+e" = "exec swaymsg exit";
     "${modifier}+Shift+r" = "mode resize";
 

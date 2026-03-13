@@ -55,6 +55,8 @@ class WindowInfo:
     correlation_confidence_level: Optional[str] = None  # Confidence level: EXACT, HIGH, MEDIUM, LOW
     correlation_signals: Optional[Dict[str, Any]] = None  # Signals used in correlation
     terminal_anchor_id: Optional[str] = None  # Canonical terminal/session anchor issued at launch
+    terminal_role: str = ""  # Logical terminal role (for example project-main)
+    tmux_session_name: str = ""  # Stable tmux session name for managed terminals
     execution_mode: str = "local"  # Canonical execution mode ("local" or "ssh")
     connection_key: str = ""  # Host-aware connection identity
     context_key: str = ""  # <qualified_name>::<variant>::<connection_key>

@@ -44,25 +44,57 @@ managed_tmux_set_metadata() {
     tmux set-option -t "$session_name" -q @i3pm_terminal_anchor "${I3PM_TERMINAL_ANCHOR_ID}"
     tmux set-option -t "$session_name" -q @i3pm_context_key "${I3PM_CONTEXT_KEY}"
     tmux set-option -t "$session_name" -q @i3pm_project_name "${I3PM_PROJECT_NAME:-}"
+    tmux set-option -t "$session_name" -q @i3pm_terminal_role "${I3PM_TERMINAL_ROLE:-}"
     tmux set-option -t "$session_name" -q @i3pm_tmux_session_name "${I3PM_TMUX_SESSION_NAME:-$session_name}"
 }
 
 managed_tmux_validate_metadata() {
     local session_name="$1"
-    local existing_managed existing_anchor existing_context
+    local existing_managed existing_context existing_role
     existing_managed="$(tmux show-options -t "$session_name" -qv @i3pm_managed || true)"
-    existing_anchor="$(tmux show-options -t "$session_name" -qv @i3pm_terminal_anchor || true)"
     existing_context="$(tmux show-options -t "$session_name" -qv @i3pm_context_key || true)"
+    existing_role="$(tmux show-options -t "$session_name" -qv @i3pm_terminal_role || true)"
 
     if [[ "$existing_managed" != "1" ]]; then
         echo "managed-tmux: refusing to attach unmanaged tmux session '$session_name'" >&2
         exit 1
     fi
 
-    if [[ "$existing_anchor" != "${I3PM_TERMINAL_ANCHOR_ID}" || "$existing_context" != "${I3PM_CONTEXT_KEY}" ]]; then
-        echo "managed-tmux: refusing to attach stale tmux session '$session_name' (context='$existing_context' anchor='$existing_anchor'; expected context='${I3PM_CONTEXT_KEY}' anchor='${I3PM_TERMINAL_ANCHOR_ID}')" >&2
+    if [[ "$existing_context" != "${I3PM_CONTEXT_KEY}" ]]; then
+        echo "managed-tmux: refusing to attach stale tmux session '$session_name' (context='$existing_context'; expected context='${I3PM_CONTEXT_KEY}')" >&2
         exit 1
     fi
+
+    if [[ -n "${I3PM_TERMINAL_ROLE:-}" && -n "$existing_role" && "$existing_role" != "${I3PM_TERMINAL_ROLE}" ]]; then
+        echo "managed-tmux: refusing to attach mismatched terminal role for '$session_name' (role='$existing_role'; expected='${I3PM_TERMINAL_ROLE}')" >&2
+        exit 1
+    fi
+}
+
+managed_tmux_recreate_reason() {
+    local session_name="$1"
+    local existing_managed existing_context existing_role
+
+    existing_managed="$(tmux show-options -t "$session_name" -qv @i3pm_managed || true)"
+    existing_context="$(tmux show-options -t "$session_name" -qv @i3pm_context_key || true)"
+    existing_role="$(tmux show-options -t "$session_name" -qv @i3pm_terminal_role || true)"
+
+    if [[ "$existing_managed" != "1" ]]; then
+        printf 'unmanaged'
+        return 0
+    fi
+
+    if [[ "$existing_context" != "${I3PM_CONTEXT_KEY}" ]]; then
+        printf 'context_mismatch:%s' "$existing_context"
+        return 0
+    fi
+
+    if [[ -n "${I3PM_TERMINAL_ROLE:-}" && -n "$existing_role" && "$existing_role" != "${I3PM_TERMINAL_ROLE}" ]]; then
+        printf 'role_mismatch:%s' "$existing_role"
+        return 0
+    fi
+
+    return 1
 }
 
 managed_tmux_prepare_env() {

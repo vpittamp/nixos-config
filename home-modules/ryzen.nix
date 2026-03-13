@@ -87,8 +87,8 @@
   # eww quick settings panel
   programs.eww-quick-panel.enable = true;
 
-  # eww top bar with system metrics
-  programs.eww-top-bar.enable = true;
+  # QuickShell now owns the active top bar
+  programs.eww-top-bar.enable = false;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {
