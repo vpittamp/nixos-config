@@ -84,7 +84,7 @@ class MonitorRoleConfig(BaseModel):
 
     app_name: str = Field(..., description="Application identifier")
     preferred_workspace: int = Field(
-        ..., ge=1, le=70, description="Workspace number (1-70)"
+        ..., ge=1, description="Workspace number (1+)"
     )
     preferred_monitor_role: Optional[MonitorRole] = Field(
         None, description="Desired monitor role (nullable)"
@@ -139,7 +139,7 @@ class WorkspaceAssignment(BaseModel):
     Immutable after creation (frozen).
     """
 
-    workspace_num: int = Field(..., ge=1, le=70, description="Workspace number (1-70)")
+    workspace_num: int = Field(..., ge=1, description="Workspace number (1+)")
     output: str = Field(..., description="Assigned output name")
     monitor_role: MonitorRole = Field(..., description="Resolved monitor role")
     app_name: Optional[str] = Field(None, description="Application owning workspace")

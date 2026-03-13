@@ -558,6 +558,7 @@ let
       scope = "global";
       expected_class = "com.mitchellh.ghostty";  # Ghostty's app_id, matched by title
       preferred_workspace = 1;  # Floating, doesn't matter
+      floating = true;
       icon = "system-search";
       nix_package = "pkgs.fzf";
       multi_instance = true;  # Allow multiple search windows

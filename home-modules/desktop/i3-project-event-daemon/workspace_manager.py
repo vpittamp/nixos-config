@@ -284,7 +284,10 @@ async def assign_workspaces_with_monitor_roles(
     for item in assignments_data:
         try:
             # Support both "workspace" (legacy) and "workspace_number" (current) formats
-            workspace = item.get("workspace_number") or item.get("workspace")
+            if "workspace_number" in item:
+                workspace = item.get("workspace_number")
+            else:
+                workspace = item.get("workspace")
             if workspace is None:
                 logger.error(f"[Feature 001] Missing workspace for {item.get('app_name')}")
                 continue
@@ -353,6 +356,49 @@ async def assign_workspaces_with_monitor_roles(
         f"[Feature 001] Found {len(outputs)} active output(s): "
         f"{', '.join([o.name for o in outputs])}"
     )
+
+    if len(outputs) == 1:
+        sole_output = outputs[0].name
+        logger.info(
+            f"[Feature 001] Single active output '{sole_output}' detected; "
+            f"assigning all configured workspaces directly without monitor-role fallback"
+        )
+
+        workspace_to_config: Dict[int, MonitorRoleConfig] = {}
+        for config in configs:
+            ws_num = config.preferred_workspace
+
+            if ws_num in workspace_to_config:
+                existing = workspace_to_config[ws_num]
+                logger.warning(
+                    f"[Feature 001] Workspace {ws_num} conflict detected: "
+                    f"'{existing.app_name}' (source: {existing.source}) "
+                    f"→ OVERRIDDEN BY '{config.app_name}' (source: {config.source})"
+                )
+
+                if config.source == "pwa-sites" and existing.source == "app-registry":
+                    logger.info(
+                        f"[Feature 001] PWA preference applied: '{config.app_name}' "
+                        f"overrides '{existing.app_name}' on workspace {ws_num}"
+                    )
+
+            workspace_to_config[ws_num] = config
+
+        assignments_applied = 0
+        for ws_num, config in sorted(workspace_to_config.items()):
+            try:
+                await i3.command(f"workspace number {ws_num} output {sole_output}")
+                assignments_applied += 1
+            except Exception as e:
+                logger.error(
+                    f"[Feature 001] Failed to assign workspace {ws_num} to {sole_output}: {e}"
+                )
+
+        logger.info(
+            f"[Feature 001] Applied {assignments_applied} workspace assignments "
+            f"to single output {sole_output}"
+        )
+        return
 
     # Initialize MonitorRoleResolver with output preferences for deterministic mapping
     resolver = MonitorRoleResolver(output_preferences=output_preferences)

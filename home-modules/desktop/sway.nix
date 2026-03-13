@@ -225,9 +225,6 @@ let
   # Feature 001: Import validated application definitions with monitor role preferences
   appRegistryData = import ./app-registry-data.nix { inherit lib hostName; };
 
-  # Feature 001 US3: Import PWA site definitions with monitor role preferences
-  pwaSitesData = import ../../shared/pwa-sites.nix { inherit lib hostName; };
-
   # Feature 001: Generate workspace-to-monitor assignments from app registry
   # This creates the declarative workspace-assignments.json that the daemon reads
   # to determine which monitor role (primary/secondary/tertiary) each workspace should use
@@ -268,6 +265,13 @@ let
       auto_reassign = true;
       source = "nix";
     };
+
+    assignableApps = builtins.filter (
+      app:
+        app ? preferred_workspace
+        && app.preferred_workspace > 0
+        && !(app ? floating && app.floating && app ? scope && app.scope == "global")
+    ) appRegistryData;
   in {
     version = "1.0";
     # Feature 001: Explicit output preferences to ensure deterministic role→output mapping
@@ -286,10 +290,7 @@ let
       };
     assignments =
       # App registry assignments
-      (map (app: mkAssignment app.name app) appRegistryData)
-      ++
-      # PWA site assignments (Feature 001 US3: PWA-specific monitor preferences)
-      (map (pwa: mkAssignment "${pwa.name}-pwa" pwa) pwaSitesData.pwaSites);
+      (map (app: mkAssignment app.name app) assignableApps);
   };
 in
 {
