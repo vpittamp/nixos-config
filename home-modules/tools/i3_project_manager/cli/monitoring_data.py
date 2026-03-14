@@ -2392,6 +2392,14 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _first_sort_number(value: Any, default: int = 1_000_000) -> int:
+    """Extract the first integer from a string for stable slot ordering."""
+    match = re.search(r"\d+", str(value or ""))
+    if not match:
+        return default
+    return _safe_int(match.group(0), default)
+
+
 def _normalize_execution_mode(value: Any, default: str = "local") -> str:
     """Normalize execution mode to local/ssh/global with configurable fallback."""
     mode = str(value or "").strip().lower()
@@ -3685,20 +3693,19 @@ def _sort_active_ai_sessions_for_display(
     focused_window_id: Optional[int],
     active_project_name: str = "",
 ) -> None:
-    """Apply canonical display ordering for the active AI rail."""
+    """Apply stable identity ordering for the active AI rail."""
     active_sessions.sort(
         key=lambda session: (
-            int(bool(session.get("is_current_window", False))),
-            int(focused_window_id is not None and session.get("window_id") == focused_window_id),
-            int(
-                bool(active_project_name)
-                and str(session.get("display_project") or session.get("project") or "").strip() == active_project_name
-            ),
-            int(session.get("stage_rank", 0) or 0),
-            str(session.get("updated_at") or ""),
+            _normalize_execution_mode(session.get("execution_mode"), "local"),
+            str(session.get("connection_key") or ""),
+            str(session.get("display_project") or session.get("project") or ""),
+            str(session.get("tmux_session") or ""),
+            _first_sort_number(session.get("tmux_window")),
+            _first_sort_number(session.get("tmux_pane"), _first_sort_number(session.get("pane_label"))),
+            str(session.get("pane_label") or ""),
+            str(session.get("tool") or ""),
             str(session.get("session_key") or ""),
         ),
-        reverse=True,
     )
 
 
@@ -4225,12 +4232,30 @@ def _update_review_entry_from_session(
     entry: Dict[str, Any],
     session: Dict[str, Any],
     now_epoch: int,
+    focused_window_id: Optional[int],
 ) -> tuple[Dict[str, Any], bool]:
     """Apply current session metadata to review ledger entry."""
     changed = False
     state = str(session.get("otel_state") or "idle")
     marker = _build_review_finish_marker(session)
     finished_at = _session_updated_epoch(session, now_epoch)
+    status_reason = str(session.get("status_reason") or "").strip().lower()
+    stage = str(session.get("stage") or "").strip().lower()
+    output_ready = bool(session.get("output_ready", False))
+    output_unseen = bool(session.get("output_unseen", False))
+    review_pending = bool(session.get("review_pending", False) or output_unseen)
+    completion_visible = bool(
+        state == "completed"
+        or output_ready
+        or review_pending
+        or stage == "output_ready"
+        or status_reason in {"quiet_period_expired", "finished_unseen_retained"}
+    )
+    session_window_id = _safe_int(session.get("window_id"), 0)
+    is_current_window = bool(
+        session.get("is_current_window", False)
+        or (focused_window_id is not None and focused_window_id > 0 and session_window_id == focused_window_id)
+    )
 
     def _assign(key: str, value: Any) -> None:
         nonlocal changed
@@ -4262,11 +4287,10 @@ def _update_review_entry_from_session(
     _assign("display_target", str(session.get("display_target") or ""))
     previous_state = str(entry.get("last_state") or "").strip().lower()
     _assign("last_state", state)
-    if state == "completed" and marker:
+    if completion_visible and marker:
         if str(entry.get("finish_marker") or "") != marker:
             _assign("finish_marker", marker)
             _assign("finished_at", finished_at)
-            # New completion cycle should require fresh acknowledgement.
             if str(entry.get("seen_marker") or "") == marker:
                 _assign("seen_at", finished_at)
             _assign("expires_at", finished_at + _AI_SESSION_REVIEW_TTL_SECONDS)
@@ -4275,7 +4299,13 @@ def _update_review_entry_from_session(
         # not create review work. Initialize finish markers on idle only when this
         # session was previously active/completing and we do not already have a
         # completion marker.
-        if not str(entry.get("finish_marker") or "") and previous_state in {"working", "attention", "completed"}:
+        if (
+            not str(entry.get("finish_marker") or "")
+            and (
+                previous_state in {"working", "attention", "completed"}
+                or status_reason == "completed_timeout"
+            )
+        ):
             _assign("finish_marker", marker)
             _assign("finished_at", finished_at)
             _assign("expires_at", finished_at + _AI_SESSION_REVIEW_TTL_SECONDS)
@@ -4347,7 +4377,12 @@ def _apply_review_lifecycle(
         if state not in _OTEL_ACTIVE_SESSION_STATES:
             continue
         entry = dict(review_sessions.get(key, {}))
-        entry, entry_changed = _update_review_entry_from_session(entry, session, now_epoch)
+        entry, entry_changed = _update_review_entry_from_session(
+            entry,
+            session,
+            now_epoch,
+            focused_window_id,
+        )
         review_sessions[key] = entry
         changed = changed or entry_changed
 
@@ -4537,6 +4572,9 @@ def _apply_review_lifecycle(
         session["finished_at"] = finished_at if finished_at > 0 else None
         seen_at = _safe_int(entry.get("seen_at"), 0) if isinstance(entry, dict) else 0
         session["seen_at"] = seen_at if seen_at > 0 else None
+        if finished_at > 0:
+            session["output_ready"] = True
+            session["output_unseen"] = pending
         stage_fields = _normalize_stage_fields(session, now_epoch=float(now_epoch))
         session.update(stage_fields)
         session["priority_score"] = int(stage_fields.get("stage_rank") or session.get("priority_score") or 0)
@@ -6124,14 +6162,16 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         )
         review_enriched_ai_sessions.sort(
             key=lambda session: (
-                int(bool(session.get("is_current_window", False))),
-                int(focused_window_id is not None and session.get("window_id") == focused_window_id),
-                int(bool(active_qualified_name) and str(session.get("project", "")).strip() == active_qualified_name),
-                _active_ai_session_sort_rank(session),
-                str(session.get("updated_at") or ""),
+                _normalize_execution_mode(session.get("execution_mode"), "local"),
+                str(session.get("connection_key") or ""),
+                str(session.get("display_project") or session.get("project") or ""),
+                str(session.get("tmux_session") or ""),
+                _first_sort_number(session.get("tmux_window")),
+                _first_sort_number(session.get("tmux_pane"), _first_sort_number(session.get("pane_label"))),
+                str(session.get("pane_label") or ""),
+                str(session.get("tool") or ""),
                 str(session.get("session_key") or ""),
             ),
-            reverse=True,
         )
         _merge_review_state_into_window_badges(all_windows, review_enriched_ai_sessions)
         pinned_session_keys = load_ai_session_pins()
@@ -6149,16 +6189,10 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             focused_window_id,
             previous_session_key=previous_current_ai_session_key,
         )
-        active_ai_sessions.sort(
-            key=lambda session: (
-                int(bool(session.get("is_current_window", False))),
-                int(focused_window_id is not None and session.get("window_id") == focused_window_id),
-                int(bool(active_qualified_name) and str(session.get("project", "")).strip() == active_qualified_name),
-                _active_ai_session_sort_rank(session),
-                str(session.get("updated_at") or ""),
-                str(session.get("session_key") or ""),
-            ),
-            reverse=True,
+        _sort_active_ai_sessions_for_display(
+            active_ai_sessions,
+            focused_window_id=focused_window_id,
+            active_project_name=active_qualified_name,
         )
         active_ai_sessions = [
             session
@@ -6166,11 +6200,13 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             if _session_tracking_contract_ok(session) and _should_render_ai_session(session)
         ]
         active_ai_sessions = _apply_pinned_session_order(active_ai_sessions, pinned_session_keys)
+        _set_current_window_marker(active_ai_sessions, current_ai_session_key)
         active_ai_sessions_mru = _apply_ai_session_mru_order(
             active_ai_sessions,
             load_ai_session_mru(),
         )
         active_ai_sessions_mru = _apply_pinned_session_order(active_ai_sessions_mru, pinned_session_keys)
+        _set_current_window_marker(active_ai_sessions_mru, current_ai_session_key)
         emit_ai_state_transition_notifications(active_ai_sessions)
         ai_metrics = load_ai_monitor_metrics()
         otel_diagnostics = otel_sessions_runtime.get("diagnostics", []) if isinstance(otel_sessions_runtime, dict) else []

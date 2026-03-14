@@ -2520,6 +2520,75 @@ class TestAiReviewLifecycle:
         assert sessions[0]["is_current_window"] is True
         assert sessions[1]["is_current_window"] is False
 
+    def test_set_current_window_marker_clears_multiple_existing_true_flags(self):
+        sessions = [
+            {
+                "session_key": "first",
+                "window_id": 171,
+                "is_current_window": True,
+            },
+            {
+                "session_key": "second",
+                "window_id": 171,
+                "is_current_window": True,
+            },
+            {
+                "session_key": "third",
+                "window_id": 172,
+                "is_current_window": True,
+            },
+        ]
+
+        changed = monitoring_data._set_current_window_marker(sessions, "second")
+
+        assert changed is True
+        assert sessions[0]["is_current_window"] is False
+        assert sessions[1]["is_current_window"] is True
+        assert sessions[2]["is_current_window"] is False
+
+    def test_sort_active_ai_sessions_for_display_uses_stable_identity_not_current_or_recency(self):
+        sessions = [
+            {
+                "session_key": "later-pane",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "display_project": "PittampalliOrg/workflow-builder:main",
+                "project": "PittampalliOrg/workflow-builder:main",
+                "tmux_session": "i3pm-workflow",
+                "tmux_window": "2:main",
+                "tmux_pane": "%9",
+                "pane_label": "2:main %9",
+                "tool": "codex",
+                "is_current_window": True,
+                "updated_at": "2026-03-13T18:00:09+00:00",
+            },
+            {
+                "session_key": "earlier-pane",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "display_project": "PittampalliOrg/workflow-builder:main",
+                "project": "PittampalliOrg/workflow-builder:main",
+                "tmux_session": "i3pm-workflow",
+                "tmux_window": "2:main",
+                "tmux_pane": "%2",
+                "pane_label": "2:main %2",
+                "tool": "codex",
+                "is_current_window": False,
+                "updated_at": "2026-03-13T18:00:01+00:00",
+            },
+        ]
+
+        monitoring_data._sort_active_ai_sessions_for_display(
+            sessions,
+            focused_window_id=35,
+            active_project_name="PittampalliOrg/workflow-builder:main",
+        )
+
+        assert [session["session_key"] for session in sessions] == [
+            "earlier-pane",
+            "later-pane",
+        ]
+
     def test_payload_requires_fast_tmux_focus_tracking_only_for_ambiguous_focused_tmux_sessions(self):
         payload = {
             "focused_window_id": 171,
@@ -2594,9 +2663,10 @@ class TestAiReviewLifecycle:
 
         assert changed is True
         assert payload["current_ai_session_key"] == "second"
-        assert payload["active_ai_sessions"][0]["session_key"] == "second"
-        assert payload["active_ai_sessions"][0]["is_current_window"] is True
-        assert payload["active_ai_sessions"][1]["is_current_window"] is False
+        assert payload["active_ai_sessions"][0]["session_key"] == "first"
+        assert payload["active_ai_sessions"][0]["is_current_window"] is False
+        assert payload["active_ai_sessions"][1]["session_key"] == "second"
+        assert payload["active_ai_sessions"][1]["is_current_window"] is True
         assert payload["active_ai_sessions_mru"][0]["is_current_window"] is True
         assert payload["active_ai_sessions_mru"][1]["is_current_window"] is False
 
@@ -3449,11 +3519,11 @@ class TestAiReviewLifecycle:
             "status_reason": "completed_timeout",
         }
 
-        entry, changed_first = monitoring_data._update_review_entry_from_session({}, session, 1000)
+        entry, changed_first = monitoring_data._update_review_entry_from_session({}, session, 1000, None)
         assert changed_first is True
         first_updated_at = entry["updated_at"]
 
-        entry_again, changed_second = monitoring_data._update_review_entry_from_session(dict(entry), session, 1010)
+        entry_again, changed_second = monitoring_data._update_review_entry_from_session(dict(entry), session, 1010, None)
         assert changed_second is False
         assert entry_again["updated_at"] == first_updated_at
 
@@ -3477,7 +3547,7 @@ class TestAiReviewLifecycle:
             "status_reason": "window_correlated_process_candidate",
         }
 
-        entry, _ = monitoring_data._update_review_entry_from_session({}, session_idle, 1000)
+        entry, _ = monitoring_data._update_review_entry_from_session({}, session_idle, 1000, None)
         assert str(entry.get("finish_marker") or "") == ""
         assert int(entry.get("finished_at") or 0) == 0
 
@@ -3511,16 +3581,74 @@ class TestAiReviewLifecycle:
             "status_reason": "completed_timeout",
         }
 
-        entry, _ = monitoring_data._update_review_entry_from_session({}, completed, 1000)
+        entry, _ = monitoring_data._update_review_entry_from_session({}, completed, 1000, None)
         marker = str(entry.get("finish_marker") or "")
         assert marker
 
         entry["seen_marker"] = marker
         entry["seen_at"] = 1001
-        entry_after_idle, _ = monitoring_data._update_review_entry_from_session(dict(entry), idle, 1031)
+        entry_after_idle, _ = monitoring_data._update_review_entry_from_session(dict(entry), idle, 1031, None)
 
         assert str(entry_after_idle.get("finish_marker") or "") == marker
         assert str(entry_after_idle.get("seen_marker") or "") == marker
+
+    def test_completed_session_in_focused_window_stays_unseen_until_explicit_ack(self):
+        session = {
+            "session_key": "tool=codex|project=proj|window=10|pane=%1",
+            "otel_state": "completed",
+            "project": "proj",
+            "display_project": "proj",
+            "window_id": 10,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "pty": "/dev/pts/1",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %1",
+            "updated_at": "2026-02-23T16:31:00+00:00",
+            "state_seq": 5,
+            "status_reason": "quiet_period_expired",
+            "is_current_window": True,
+        }
+
+        entry, changed = monitoring_data._update_review_entry_from_session({}, session, 1000, 10)
+
+        assert changed is True
+        assert str(entry.get("finish_marker") or "")
+        assert str(entry.get("seen_marker") or "") == ""
+        assert entry.get("seen_at") in (None, 0)
+
+    def test_output_ready_idle_session_still_creates_review_marker(self):
+        session = {
+            "session_key": "tool=codex|project=proj|window=10|pane=%1",
+            "otel_state": "idle",
+            "project": "proj",
+            "display_project": "proj",
+            "window_id": 10,
+            "execution_mode": "local",
+            "tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "pty": "/dev/pts/1",
+            "tool": "codex",
+            "display_tool": "Codex CLI",
+            "display_target": "pane %1",
+            "updated_at": "2026-02-23T16:31:31+00:00",
+            "state_seq": 6,
+            "status_reason": "quiet_period_expired",
+            "stage": "output_ready",
+            "output_ready": True,
+            "output_unseen": False,
+            "review_pending": False,
+        }
+
+        entry, changed = monitoring_data._update_review_entry_from_session({}, session, 1031, None)
+
+        assert changed is True
+        assert str(entry.get("finish_marker") or "")
+        assert int(entry.get("finished_at") or 0) > 0
 
 
 class TestAiNotificationState:

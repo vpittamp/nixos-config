@@ -6,6 +6,9 @@ Last updated: 2026-03-13
 
 This document describes the current QuickShell-based runtime shell that replaces the older Eww top bar, workspace bar, and monitoring-panel path.
 
+For the AI session tracking and lifecycle model itself, see:
+- `docs/AI_SESSION_SYSTEM.md`
+
 The goals of the QuickShell runtime shell are:
 - render one native top bar and one native bottom bar per active monitor
 - keep a single AI/session detail panel on the configured primary monitor

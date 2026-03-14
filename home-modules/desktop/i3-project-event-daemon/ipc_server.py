@@ -6317,6 +6317,35 @@ class IPCServer:
         )
 
     @staticmethod
+    def _first_session_sort_number(value: Any, default: int = 1_000_000) -> int:
+        """Extract the first integer from a tmux/window label for stable ordering."""
+        match = re.search(r"\d+", str(value or ""))
+        if not match:
+            return default
+        try:
+            return int(match.group(0))
+        except (TypeError, ValueError):
+            return default
+
+    def _session_item_sort_key(self, session: Dict[str, Any]) -> Tuple[Any, ...]:
+        """Return a stable identity-based order for rendered sessions."""
+        return (
+            int(not bool(session.get("is_current_host", False))),
+            str(session.get("host_name") or ""),
+            str(session.get("connection_key") or ""),
+            str(session.get("display_project") or session.get("project_name") or ""),
+            str(session.get("tmux_session") or ""),
+            self._first_session_sort_number(session.get("tmux_window")),
+            self._first_session_sort_number(
+                session.get("tmux_pane"),
+                self._first_session_sort_number(session.get("pane_label")),
+            ),
+            str(session.get("pane_label") or ""),
+            str(session.get("tool") or ""),
+            str(session.get("session_key") or ""),
+        )
+
+    @staticmethod
     def _session_phase_priority(phase: str) -> int:
         mapping = {
             "needs_attention": 4,
@@ -6344,6 +6373,53 @@ class IPCServer:
             if existing is None or self._session_item_preference_key(session) > self._session_item_preference_key(existing):
                 deduped[identity_key] = session
         return list(deduped.values())
+
+    def _select_current_session_key(
+        self,
+        sessions: List[Dict[str, Any]],
+        *,
+        focused_window_id: int,
+    ) -> str:
+        """Return the single session key that owns current focus in the dashboard."""
+        if focused_window_id <= 0:
+            return ""
+
+        window_sessions = [
+            session for session in sessions
+            if int(session.get("window_id") or 0) == focused_window_id
+        ]
+        if not window_sessions:
+            return ""
+
+        exact_match = next(
+            (
+                str(session.get("session_key") or "")
+                for session in window_sessions
+                if bool(session.get("window_active", False))
+                and bool(session.get("pane_active", False))
+            ),
+            "",
+        )
+        if exact_match:
+            return exact_match
+
+        return str(window_sessions[0].get("session_key") or "")
+
+    def _mark_current_session(
+        self,
+        sessions: List[Dict[str, Any]],
+        *,
+        current_session_key: str,
+    ) -> None:
+        """Normalize is_current_window so exactly one rendered session is current."""
+        current_key = str(current_session_key or "").strip()
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            session["is_current_window"] = bool(
+                current_key
+                and str(session.get("session_key") or "").strip() == current_key
+            )
 
     def _apply_session_attention_state(
         self,
@@ -6426,19 +6502,7 @@ class IPCServer:
                 ))
 
         sessions = self._dedupe_session_items(sessions)
-        sessions.sort(
-            key=lambda item: (
-                int(item.get("window_id") or 0) == focused_window_id,
-                self._session_phase_priority(str(item.get("session_phase") or "")),
-                int(item.get("stage_rank") or 0),
-                bool(item.get("process_running", False)),
-                bool(item.get("pane_active", False)),
-                str(item.get("updated_at") or ""),
-                str(item.get("surface_key") or ""),
-                str(item.get("session_key") or ""),
-            ),
-            reverse=True,
-        )
+        sessions.sort(key=self._session_item_sort_key)
         return sessions
 
     async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -6461,7 +6525,14 @@ class IPCServer:
                 and bool(session.get("window_active", False))
                 and bool(session.get("pane_active", False))
             ),
-            "",
+            self._select_current_session_key(
+                sessions,
+                focused_window_id=focused_window_id,
+            ),
+        )
+        self._mark_current_session(
+            sessions,
+            current_session_key=current_session_key,
         )
         self._apply_session_attention_state(
             sessions,
@@ -6952,28 +7023,14 @@ class IPCServer:
             ),
             0,
         )
-        current_session_key = next(
-            (
-                str(session.get("session_key") or "")
-                for session in sessions
-                if int(session.get("window_id") or 0) == focused_window_id
-                and bool(session.get("window_active", False))
-                and bool(session.get("pane_active", False))
-            ),
-            next(
-                (
-                    str(session.get("session_key") or "")
-                    for session in sessions
-                    if int(session.get("window_id") or 0) == focused_window_id
-                ),
-                str(sessions[0].get("session_key") or "") if sessions else "",
-            ),
+        current_session_key = self._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
         )
-        for session in sessions:
-            session["is_current_window"] = (
-                int(session.get("window_id") or 0) == focused_window_id
-                and focused_window_id > 0
-            )
+        self._mark_current_session(
+            sessions,
+            current_session_key=current_session_key,
+        )
 
         self._apply_session_attention_state(
             sessions,

@@ -1694,8 +1694,7 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
-        return (boolOrFalse(session.is_current_window) && boolOrFalse(session.pane_active))
-            || currentSessionKey() === stringOrEmpty(session.session_key);
+        return currentSessionKey() === stringOrEmpty(session.session_key);
     }
 
     function sessionHasConflict(session) {
@@ -3403,7 +3402,9 @@ ShellRoot {
 
                 Rectangle {
                     readonly property int visibleGroupRows: Math.min(4, Math.max(1, root.groupedSessionBands().length))
-                    implicitHeight: 18 + (visibleGroupRows * 146) + (Math.max(0, visibleGroupRows - 1) * 10)
+                    readonly property real maxContentHeight: (visibleGroupRows * 176) + (Math.max(0, visibleGroupRows - 1) * 10)
+                    readonly property real resolvedContentHeight: Math.max(72, sessionGroupList.contentHeight)
+                    implicitHeight: 16 + Math.min(resolvedContentHeight, maxContentHeight)
                     Layout.preferredHeight: implicitHeight
                     Layout.fillWidth: true
                     visible: root.panelSessions().length > 0
@@ -3544,7 +3545,8 @@ ShellRoot {
                                                     radius: 6
                                                     color: root.sessionProjectBadgeFill(projectGroup)
                                                     border.width: 0
-                                                    Layout.preferredWidth: projectGroupLabel.implicitWidth + 12
+                                                    Layout.maximumWidth: Math.max(108, groupedSessionRow.width * 0.34)
+                                                    Layout.preferredWidth: Math.min(Layout.maximumWidth, projectGroupLabel.implicitWidth + 12)
 
                                                     Text {
                                                         id: projectGroupLabel
@@ -3553,6 +3555,8 @@ ShellRoot {
                                                         color: root.sessionProjectBadgeText(projectGroup)
                                                         font.pixelSize: 9
                                                         font.weight: Font.DemiBold
+                                                        elide: Text.ElideRight
+                                                        width: Math.max(0, parent.width - 12)
                                                     }
                                                 }
 
@@ -3561,9 +3565,9 @@ ShellRoot {
                                                     height: 18
                                                     radius: 6
                                                     color: colors.tealBg
-                                                    border.color: colors.lineSoft
-                                                    border.width: 1
-                                                    Layout.preferredWidth: sessionProjectModeText.implicitWidth + 12
+                                                    border.color: "transparent"
+                                                    border.width: 0
+                                                    Layout.preferredWidth: sessionProjectModeText.implicitWidth + 10
 
                                                     Text {
                                                         id: sessionProjectModeText
@@ -3575,23 +3579,13 @@ ShellRoot {
                                                     }
                                                 }
 
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    visible: root.stringOrEmpty(projectGroup.window_title).length > 0
-                                                    text: root.stringOrEmpty(projectGroup.window_title)
-                                                    color: colors.subtle
-                                                    font.pixelSize: 8
-                                                    font.weight: Font.Medium
-                                                    elide: Text.ElideRight
-                                                }
-
                                                 Rectangle {
                                                     height: 18
                                                     radius: 6
                                                     color: colors.bg
-                                                    border.color: colors.lineSoft
-                                                    border.width: 1
-                                                    Layout.preferredWidth: sessionProjectCountText.implicitWidth + 10
+                                                    border.color: "transparent"
+                                                    border.width: 0
+                                                    Layout.preferredWidth: Math.max(20, sessionProjectCountText.implicitWidth + 10)
 
                                                     Text {
                                                         id: sessionProjectCountText
@@ -3604,265 +3598,274 @@ ShellRoot {
                                                 }
                                             }
 
-                                            ListView {
+                                            Flickable {
                                                 id: groupedSessionRow
                                                 Layout.fillWidth: true
-                                                Layout.preferredHeight: 40
-                                                orientation: ListView.Horizontal
-                                                spacing: 8
+                                                Layout.preferredHeight: 44
                                                 clip: true
+                                                contentWidth: groupedSessionPillRow.implicitWidth
+                                                contentHeight: groupedSessionPillRow.implicitHeight
                                                 interactive: contentWidth > width
                                                 boundsBehavior: Flickable.StopAtBounds
-                                                model: root.arrayOrEmpty(projectGroup.sessions)
 
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    readonly property var session: modelData
-                                                    readonly property string primaryLabel: root.sessionPrimaryLabel(session)
-                                                    readonly property string secondaryLabel: root.sessionSecondaryLabel(session)
-                                                    readonly property string activityLabel: root.sessionBadgeLabel(session)
-                                                    property bool hasMotion: root.sessionHasMotion(session)
-                                                    readonly property real contentWidth: Math.max(primaryText.implicitWidth, secondaryText.implicitWidth) + trailingBadges.implicitWidth + 84
-                                                    readonly property real maxPillWidth: Math.max(176, groupedSessionRow.width - 18)
-                                                    width: Math.max(172, Math.min(contentWidth, maxPillWidth))
-                                                    height: 40
-                                                    radius: 10
-                                                    color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
-                                                        ? colors.cardAlt
-                                                        : root.sessionCardFill(session)
-                                                    border.color: root.sessionCardBorder(session)
-                                                    border.width: 0
+                                                Row {
+                                                    id: groupedSessionPillRow
+                                                    spacing: 8
 
-                                                    function resetMotionVisuals() {
-                                                        workingHalo.opacity = hasMotion ? 0.05 : 0;
-                                                        workingHalo.scale = 1;
-                                                        toolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
-                                                        toolIconWrap.scale = 1;
-                                                    }
+                                                    Repeater {
+                                                        model: root.arrayOrEmpty(projectGroup.sessions)
 
-                                                    onHasMotionChanged: resetMotionVisuals()
-                                                    Component.onCompleted: resetMotionVisuals()
+                                                        delegate: Rectangle {
+                                                            required property var modelData
+                                                            readonly property var session: modelData
+                                                            readonly property string primaryLabel: root.sessionPrimaryLabel(session)
+                                                            readonly property string secondaryLabel: root.sessionSecondaryLabel(session)
+                                                            readonly property string activityLabel: root.sessionBadgeLabel(session)
+                                                            property bool hasMotion: root.sessionHasMotion(session)
+                                                            readonly property real contentWidth: Math.max(primaryText.implicitWidth, secondaryText.implicitWidth) + trailingBadges.implicitWidth + 84
+                                                            readonly property real maxPillWidth: Math.max(164, groupedSessionRow.width - 18)
+                                                            width: Math.max(156, Math.min(contentWidth, maxPillWidth))
+                                                            implicitHeight: 40
+                                                            height: implicitHeight
+                                                            radius: 10
+                                                            color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
+                                                                ? colors.cardAlt
+                                                                : root.sessionCardFill(session)
+                                                            border.color: root.sessionCardBorder(session)
+                                                            border.width: 0
 
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 8
-                                                        anchors.rightMargin: 8
-                                                        spacing: 8
-
-                                                        Item {
-                                                            width: 24
-                                                            height: 24
-
-                                                            Rectangle {
-                                                                anchors.centerIn: parent
-                                                                width: 20
-                                                                height: 20
-                                                                radius: 7
-                                                                color: root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt
-                                                                border.color: "transparent"
-                                                                border.width: 0
+                                                            function resetMotionVisuals() {
+                                                                workingHalo.opacity = hasMotion ? 0.05 : 0;
+                                                                workingHalo.scale = 1;
+                                                                toolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
+                                                                toolIconWrap.scale = 1;
                                                             }
 
-                                                            Rectangle {
-                                                                id: workingHalo
-                                                                anchors.centerIn: parent
-                                                                width: 24
-                                                                height: 24
-                                                                radius: 8
-                                                                color: root.sessionAccentColor(session)
-                                                                border.color: "transparent"
-                                                                border.width: 0
-                                                                visible: hasMotion
-                                                                opacity: hasMotion ? 0.05 : 0
-                                                                scale: 1
+                                                            onHasMotionChanged: resetMotionVisuals()
+                                                            Component.onCompleted: resetMotionVisuals()
 
-                                                                ParallelAnimation {
-                                                                    running: hasMotion
-                                                                    loops: Animation.Infinite
+                                                            RowLayout {
+                                                                anchors.fill: parent
+                                                                anchors.leftMargin: 8
+                                                                anchors.rightMargin: 8
+                                                                spacing: 8
 
-                                                                    SequentialAnimation {
-                                                                        OpacityAnimator {
-                                                                            target: workingHalo
-                                                                            from: 0.03
-                                                                            to: 0.08
-                                                                            duration: 800
-                                                                        }
-                                                                        OpacityAnimator {
-                                                                            target: workingHalo
-                                                                            from: 0.08
-                                                                            to: 0.03
-                                                                            duration: 800
-                                                                        }
-                                                                    }
-
-                                                                    SequentialAnimation {
-                                                                        ScaleAnimator {
-                                                                            target: workingHalo
-                                                                            from: 0.96
-                                                                            to: 1.05
-                                                                            duration: 800
-                                                                        }
-                                                                        ScaleAnimator {
-                                                                            target: workingHalo
-                                                                            from: 1.05
-                                                                            to: 0.96
-                                                                            duration: 800
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            Item {
-                                                                id: toolIconWrap
-                                                                anchors.centerIn: parent
-                                                                width: 15
-                                                                height: 15
-                                                                scale: 1
-                                                                opacity: hasMotion ? 0.96 : 0.92
-
-                                                                ParallelAnimation {
-                                                                    running: hasMotion
-                                                                    loops: Animation.Infinite
-
-                                                                    SequentialAnimation {
-                                                                        ScaleAnimator {
-                                                                            target: toolIconWrap
-                                                                            from: 0.94
-                                                                            to: 1.12
-                                                                            duration: 800
-                                                                        }
-                                                                        ScaleAnimator {
-                                                                            target: toolIconWrap
-                                                                            from: 1.12
-                                                                            to: 0.94
-                                                                            duration: 800
-                                                                        }
-                                                                    }
-
-                                                                    SequentialAnimation {
-                                                                        OpacityAnimator {
-                                                                            target: toolIconWrap
-                                                                            from: 0.82
-                                                                            to: 1
-                                                                            duration: 800
-                                                                        }
-                                                                        OpacityAnimator {
-                                                                            target: toolIconWrap
-                                                                            from: 1
-                                                                            to: 0.82
-                                                                            duration: 800
-                                                                        }
-                                                                    }
-                                                                }
-
-                                                                IconImage {
-                                                                    anchors.centerIn: parent
-                                                                    implicitSize: 15
-                                                                    source: root.toolIconSource(session)
-                                                                    mipmap: true
-                                                                    opacity: 1
-                                                                }
-                                                            }
-
-                                                            Rectangle {
-                                                                anchors.right: parent.right
-                                                                anchors.bottom: parent.bottom
-                                                                width: 6
-                                                                height: 6
-                                                                radius: 3
-                                                                color: root.sessionBadgeColor(session)
-                                                                opacity: 0.8
-                                                            }
-                                                        }
-
-                                                        ColumnLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 1
-
-                                                            Text {
-                                                                id: primaryText
-                                                                Layout.fillWidth: true
-                                                                text: primaryLabel
-                                                                color: colors.text
-                                                                font.pixelSize: 10
-                                                                font.weight: Font.DemiBold
-                                                                elide: Text.ElideRight
-                                                            }
-
-                                                            Text {
-                                                                id: secondaryText
-                                                                Layout.fillWidth: true
-                                                                text: secondaryLabel
-                                                                color: root.sessionTextColor(session)
-                                                                font.pixelSize: 8
-                                                                font.weight: Font.Medium
-                                                                elide: Text.ElideRight
-                                                            }
-                                                        }
-
-                                                        ColumnLayout {
-                                                            id: trailingBadges
-                                                            spacing: 3
-
-                                                            Rectangle {
-                                                                Layout.alignment: Qt.AlignRight
-                                                                width: 24
-                                                                height: 24
-                                                                radius: 8
-                                                                color: root.sessionBadgeBackground(session)
-                                                                border.color: "transparent"
-                                                                border.width: 0
-
-                                                                Text {
-                                                                    anchors.centerIn: parent
-                                                                    text: root.sessionBadgeSymbol(session)
-                                                                    color: root.sessionBadgeColor(session)
-                                                                    font.pixelSize: 14
-                                                                    font.weight: Font.DemiBold
-                                                                }
-                                                            }
-
-                                                            Rectangle {
-                                                                Layout.alignment: Qt.AlignRight
-                                                                visible: activityLabel.length > 0
-                                                                width: visible ? activityText.implicitWidth + 12 : 0
-                                                                height: 16
-                                                                radius: 6
-                                                                color: root.sessionBadgeBackground(session)
-                                                                border.color: "transparent"
-                                                                border.width: 0
-
-                                                                RowLayout {
-                                                                    anchors.fill: parent
-                                                                    anchors.leftMargin: 5
-                                                                    anchors.rightMargin: 5
-                                                                    spacing: 4
+                                                                Item {
+                                                                    width: 24
+                                                                    height: 24
 
                                                                     Rectangle {
-                                                                        width: 5
-                                                                        height: 5
+                                                                        anchors.centerIn: parent
+                                                                        width: 20
+                                                                        height: 20
+                                                                        radius: 7
+                                                                        color: root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt
+                                                                        border.color: "transparent"
+                                                                        border.width: 0
+                                                                    }
+
+                                                                    Rectangle {
+                                                                        id: workingHalo
+                                                                        anchors.centerIn: parent
+                                                                        width: 24
+                                                                        height: 24
+                                                                        radius: 8
+                                                                        color: root.sessionAccentColor(session)
+                                                                        border.color: "transparent"
+                                                                        border.width: 0
+                                                                        visible: hasMotion
+                                                                        opacity: hasMotion ? 0.05 : 0
+                                                                        scale: 1
+
+                                                                        ParallelAnimation {
+                                                                            running: hasMotion
+                                                                            loops: Animation.Infinite
+
+                                                                            SequentialAnimation {
+                                                                                OpacityAnimator {
+                                                                                    target: workingHalo
+                                                                                    from: 0.03
+                                                                                    to: 0.08
+                                                                                    duration: 800
+                                                                                }
+                                                                                OpacityAnimator {
+                                                                                    target: workingHalo
+                                                                                    from: 0.08
+                                                                                    to: 0.03
+                                                                                    duration: 800
+                                                                                }
+                                                                            }
+
+                                                                            SequentialAnimation {
+                                                                                ScaleAnimator {
+                                                                                    target: workingHalo
+                                                                                    from: 0.96
+                                                                                    to: 1.05
+                                                                                    duration: 800
+                                                                                }
+                                                                                ScaleAnimator {
+                                                                                    target: workingHalo
+                                                                                    from: 1.05
+                                                                                    to: 0.96
+                                                                                    duration: 800
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+
+                                                                    Item {
+                                                                        id: toolIconWrap
+                                                                        anchors.centerIn: parent
+                                                                        width: 15
+                                                                        height: 15
+                                                                        scale: 1
+                                                                        opacity: hasMotion ? 0.96 : 0.92
+
+                                                                        ParallelAnimation {
+                                                                            running: hasMotion
+                                                                            loops: Animation.Infinite
+
+                                                                            SequentialAnimation {
+                                                                                ScaleAnimator {
+                                                                                    target: toolIconWrap
+                                                                                    from: 0.94
+                                                                                    to: 1.12
+                                                                                    duration: 800
+                                                                                }
+                                                                                ScaleAnimator {
+                                                                                    target: toolIconWrap
+                                                                                    from: 1.12
+                                                                                    to: 0.94
+                                                                                    duration: 800
+                                                                                }
+                                                                            }
+
+                                                                            SequentialAnimation {
+                                                                                OpacityAnimator {
+                                                                                    target: toolIconWrap
+                                                                                    from: 0.82
+                                                                                    to: 1
+                                                                                    duration: 800
+                                                                                }
+                                                                                OpacityAnimator {
+                                                                                    target: toolIconWrap
+                                                                                    from: 1
+                                                                                    to: 0.82
+                                                                                    duration: 800
+                                                                                }
+                                                                            }
+                                                                        }
+
+                                                                        IconImage {
+                                                                            anchors.centerIn: parent
+                                                                            implicitSize: 15
+                                                                            source: root.toolIconSource(session)
+                                                                            mipmap: true
+                                                                            opacity: 1
+                                                                        }
+                                                                    }
+
+                                                                    Rectangle {
+                                                                        anchors.right: parent.right
+                                                                        anchors.bottom: parent.bottom
+                                                                        width: 6
+                                                                        height: 6
                                                                         radius: 3
                                                                         color: root.sessionBadgeColor(session)
+                                                                        opacity: 0.8
+                                                                    }
+                                                                }
+
+                                                                ColumnLayout {
+                                                                    Layout.fillWidth: true
+                                                                    spacing: 1
+
+                                                                    Text {
+                                                                        id: primaryText
+                                                                        Layout.fillWidth: true
+                                                                        text: primaryLabel
+                                                                        color: colors.text
+                                                                        font.pixelSize: 10
+                                                                        font.weight: Font.DemiBold
+                                                                        elide: Text.ElideRight
                                                                     }
 
                                                                     Text {
-                                                                        id: activityText
-                                                                        text: activityLabel
-                                                                        color: root.sessionBadgeColor(session)
-                                                                        font.pixelSize: 7
-                                                                        font.weight: Font.DemiBold
+                                                                        id: secondaryText
+                                                                        Layout.fillWidth: true
+                                                                        text: secondaryLabel
+                                                                        color: root.sessionTextColor(session)
+                                                                        font.pixelSize: 8
+                                                                        font.weight: Font.Medium
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                }
+
+                                                                ColumnLayout {
+                                                                    id: trailingBadges
+                                                                    spacing: 3
+
+                                                                    Rectangle {
+                                                                        Layout.alignment: Qt.AlignRight
+                                                                        width: 24
+                                                                        height: 24
+                                                                        radius: 8
+                                                                        color: root.sessionBadgeBackground(session)
+                                                                        border.color: "transparent"
+                                                                        border.width: 0
+
+                                                                        Text {
+                                                                            anchors.centerIn: parent
+                                                                            text: root.sessionBadgeSymbol(session)
+                                                                            color: root.sessionBadgeColor(session)
+                                                                            font.pixelSize: 14
+                                                                            font.weight: Font.DemiBold
+                                                                        }
+                                                                    }
+
+                                                                    Rectangle {
+                                                                        Layout.alignment: Qt.AlignRight
+                                                                        visible: activityLabel.length > 0
+                                                                        width: visible ? activityText.implicitWidth + 12 : 0
+                                                                        height: 16
+                                                                        radius: 6
+                                                                        color: root.sessionBadgeBackground(session)
+                                                                        border.color: "transparent"
+                                                                        border.width: 0
+
+                                                                        RowLayout {
+                                                                            anchors.fill: parent
+                                                                            anchors.leftMargin: 5
+                                                                            anchors.rightMargin: 5
+                                                                            spacing: 4
+
+                                                                            Rectangle {
+                                                                                width: 5
+                                                                                height: 5
+                                                                                radius: 3
+                                                                                color: root.sessionBadgeColor(session)
+                                                                            }
+
+                                                                            Text {
+                                                                                id: activityText
+                                                                                text: activityLabel
+                                                                                color: root.sessionBadgeColor(session)
+                                                                                font.pixelSize: 7
+                                                                                font.weight: Font.DemiBold
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
-                                                        }
-                                                    }
 
-                                                    MouseArea {
-                                                        id: sessionPillMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                                            MouseArea {
+                                                                id: sessionPillMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: root.focusSession(root.stringOrEmpty(session.session_key))
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -4038,13 +4041,13 @@ ShellRoot {
                                             height: 18
                                             radius: 6
                                             color: colors.bg
-                                            border.color: colors.lineSoft
-                                            border.width: 1
+                                            border.color: "transparent"
+                                            border.width: 0
 
                                             Text {
                                                 id: projectWindowCountText
                                                 anchors.centerIn: parent
-                                                text: String(projectWindows.length) + (projectWindows.length === 1 ? " window" : " windows")
+                                                text: String(projectWindows.length)
                                                 color: colors.muted
                                                 font.pixelSize: 8
                                                 font.weight: Font.DemiBold
@@ -4057,13 +4060,13 @@ ShellRoot {
                                             height: 18
                                             radius: 6
                                             color: colors.cardAlt
-                                            border.color: colors.lineSoft
-                                            border.width: 1
+                                            border.color: "transparent"
+                                            border.width: 0
 
                                             Text {
                                                 id: projectSessionCountText
                                                 anchors.centerIn: parent
-                                                text: String(Number(projectGroup.ai_session_count || 0)) + " AI"
+                                                text: String(Number(projectGroup.ai_session_count || 0))
                                                 color: colors.subtle
                                                 font.pixelSize: 8
                                                 font.weight: Font.DemiBold
