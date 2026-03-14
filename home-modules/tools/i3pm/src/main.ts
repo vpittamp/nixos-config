@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-net --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER
+#!/usr/bin/env -S deno run --allow-net --allow-run=tmux --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER
 
 /**
  * i3pm Deno CLI - Main Entry Point
@@ -69,6 +69,7 @@ EXAMPLES:
   i3pm context current                 Show active runtime context
   i3pm launch open terminal           Launch an app through the daemon
   i3pm session focus <session_key>    Focus an AI session
+  i3pm session preview <session_key> --follow --jsonl
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
@@ -147,7 +148,10 @@ async function main(): Promise<void> {
     case "context":
       {
         const { contextCommand } = await import("./commands/context.ts");
-        const exitCode = await contextCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await contextCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -155,7 +159,10 @@ async function main(): Promise<void> {
     case "launch":
       {
         const { launchCommand } = await import("./commands/launch.ts");
-        const exitCode = await launchCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await launchCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -163,7 +170,10 @@ async function main(): Promise<void> {
     case "session":
       {
         const { sessionCommand } = await import("./commands/session.ts");
-        const exitCode = await sessionCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await sessionCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -171,7 +181,10 @@ async function main(): Promise<void> {
     case "window":
       {
         const { windowCommand } = await import("./commands/window.ts");
-        const exitCode = await windowCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await windowCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -179,7 +192,10 @@ async function main(): Promise<void> {
     case "workspace":
       {
         const { workspaceCommand } = await import("./commands/workspace.ts");
-        const exitCode = await workspaceCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await workspaceCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -187,7 +203,10 @@ async function main(): Promise<void> {
     case "dashboard":
       {
         const { dashboardCommand } = await import("./commands/dashboard.ts");
-        const exitCode = await dashboardCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await dashboardCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -195,7 +214,10 @@ async function main(): Promise<void> {
     case "display":
       {
         const { displayCommand } = await import("./commands/display.ts");
-        const exitCode = await displayCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await displayCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;
@@ -231,7 +253,10 @@ async function main(): Promise<void> {
     case "daemon":
       {
         const { daemonCommand } = await import("./commands/daemon.ts");
-        const exitCode = await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await daemonCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
         Deno.exit(exitCode);
       }
       break;

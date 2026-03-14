@@ -81,8 +81,8 @@ in
     # FZF fallbacks for specific use cases (Feature 106: portable wrappers)
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-launcher}/bin/fzf-launcher
     bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-send-to-window}/bin/fzf-send-to-window
-    # Walker alternative keybinding (Alt+Space for muscle memory)
-    bindsym Mod1+space ${walkerCommand}
+    # Alternative launcher keybinding (Alt+Space for muscle memory)
+    bindsym Mod1+space ${primaryLauncherCommand}
 
     # Sesh tmux session switcher (Meta+Shift+s)
     # Opens Walker in dmenu mode to select and launch tmux sessions

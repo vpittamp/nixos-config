@@ -401,36 +401,36 @@ in
 
     # Enforced defaults
     defaultApplications = {
-      "text/html" = "google-chrome.desktop";
-      "application/xhtml+xml" = "google-chrome.desktop";
-      "x-scheme-handler/http" = "google-chrome.desktop";
-      "x-scheme-handler/https" = "google-chrome.desktop";
-      "x-scheme-handler/about" = "google-chrome.desktop";
-      "x-scheme-handler/unknown" = "google-chrome.desktop";
+      "text/html" = "google-chrome-i3pm.desktop";
+      "application/xhtml+xml" = "google-chrome-i3pm.desktop";
+      "x-scheme-handler/http" = "google-chrome-i3pm.desktop";
+      "x-scheme-handler/https" = "google-chrome-i3pm.desktop";
+      "x-scheme-handler/about" = "google-chrome-i3pm.desktop";
+      "x-scheme-handler/unknown" = "google-chrome-i3pm.desktop";
     };
 
     # Additional associations - preferences, not enforced defaults
     associations.added = {
       # Web browsers - additional file types
-      "x-scheme-handler/ftp" = [ "google-chrome.desktop" ];
-      "x-scheme-handler/chrome" = [ "google-chrome.desktop" ];
-      "application/x-extension-htm" = [ "google-chrome.desktop" ];
-      "application/x-extension-html" = [ "google-chrome.desktop" ];
-      "application/x-extension-shtml" = [ "google-chrome.desktop" ];
-      "application/x-extension-xhtml" = [ "google-chrome.desktop" ];
-      "application/x-extension-xht" = [ "google-chrome.desktop" ];
-      "application/pdf" = [ "google-chrome.desktop" "okularApplication_pdf.desktop" ];
+      "x-scheme-handler/ftp" = [ "google-chrome-i3pm.desktop" ];
+      "x-scheme-handler/chrome" = [ "google-chrome-i3pm.desktop" ];
+      "application/x-extension-htm" = [ "google-chrome-i3pm.desktop" ];
+      "application/x-extension-html" = [ "google-chrome-i3pm.desktop" ];
+      "application/x-extension-shtml" = [ "google-chrome-i3pm.desktop" ];
+      "application/x-extension-xhtml" = [ "google-chrome-i3pm.desktop" ];
+      "application/x-extension-xht" = [ "google-chrome-i3pm.desktop" ];
+      "application/pdf" = [ "google-chrome-i3pm.desktop" "okularApplication_pdf.desktop" ];
 
       # Web content
-      "x-scheme-handler/webcal" = [ "google-chrome.desktop" ];
-      "x-scheme-handler/mailto" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/webcal" = [ "google-chrome-i3pm.desktop" ];
+      "x-scheme-handler/mailto" = [ "google-chrome-i3pm.desktop" ];
     };
   };
 
   # Set environment variables for default browser
   home.sessionVariables = {
-    DEFAULT_BROWSER = "${pkgs.google-chrome}/bin/google-chrome-stable";
-    BROWSER = "${pkgs.google-chrome}/bin/google-chrome-stable";
+    DEFAULT_BROWSER = "${config.home.profileDirectory}/bin/google-chrome-i3pm";
+    BROWSER = "${config.home.profileDirectory}/bin/google-chrome-i3pm";
   };
 
 }

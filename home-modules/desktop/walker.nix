@@ -6,6 +6,33 @@ let
   remoteWorktreeUser = "vpittamp";
   onePasswordCacheTtlSeconds = 43200;
   onePasswordRetryDelaySeconds = 1800;
+  elephantDefaultSnippets = [
+    {
+      name = "rebuild ryzen";
+      snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if sudo nixos-rebuild switch --flake .#ryzen; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen switch failed (exit $status)\"; exit $status; fi";
+      description = "Rebuild the ryzen system from this nixos-config checkout";
+    }
+    {
+      name = "rebuild ryzen (nh)";
+      snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if nh os switch --hostname ryzen -- --option eval-cache false; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen nh switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen nh switch failed (exit $status)\"; exit $status; fi";
+      description = "Rebuild the ryzen system with nh from this nixos-config checkout";
+    }
+  ];
+  elephantSnippetsTemplate = pkgs.writeText "elephant-snippets.toml" ''
+    # Elephant Snippets Provider Configuration
+    icon = "insert-text"
+    min_score = 30
+
+    [[snippets]]
+    name = "rebuild ryzen"
+    snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if sudo nixos-rebuild switch --flake .#ryzen; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen switch failed (exit $status)\"; exit $status; fi"
+    description = "Rebuild the ryzen system from this nixos-config checkout"
+
+    [[snippets]]
+    name = "rebuild ryzen (nh)"
+    snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if nh os switch --hostname ryzen -- --option eval-cache false; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen nh switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen nh switch failed (exit $status)\"; exit $status; fi"
+    description = "Rebuild the ryzen system with nh from this nixos-config checkout"
+  '';
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
   isWaylandMode = config.wayland.windowManager.sway.enable or false;
@@ -1773,53 +1800,27 @@ in
     # walker-history-list: Lists recent browser history entries
     (pkgs.writeShellScriptBin "walker-history-list" ''
       #!/usr/bin/env bash
-      # Feature 113: Firefox browser history provider for Walker
+      # Chrome URL provider for Walker compatibility
       # Outputs tab-separated: icon\ttitle\turl
       set -euo pipefail
 
-      FIREFOX_PROFILE="$HOME/.mozilla/firefox/default"
-      PLACES_DB="$FIREFOX_PROFILE/places.sqlite"
-      CACHE_DIR="$HOME/.cache/walker-history"
-      CACHE_DB="$CACHE_DIR/places_copy.sqlite"
       MAX_ENTRIES="''${1:-100}"
-
-      # Ensure cache directory exists
-      mkdir -p "$CACHE_DIR"
-
-      # Copy places.sqlite to avoid locking issues with Firefox
-      # Only copy if source is newer than cache (or cache doesn't exist)
-      if [[ ! -f "$CACHE_DB" ]] || [[ "$PLACES_DB" -nt "$CACHE_DB" ]]; then
-        cp "$PLACES_DB" "$CACHE_DB" 2>/dev/null || {
-          echo "ERROR: Cannot access Firefox history database" >&2
-          exit 1
-        }
-      fi
-
-      # Query recent history, excluding:
-      # - Internal Firefox pages (about:, moz-extension:)
-      # - OAuth/auth redirects (long query strings)
-      # - Duplicate Google searches
-      ${pkgs.sqlite}/bin/sqlite3 -separator $'\t' "$CACHE_DB" "
-        SELECT DISTINCT
-          '🌐',
-          COALESCE(NULLIF(title, ''''''), url),
-          url
-        FROM moz_places
-        WHERE visit_count > 0
-          AND url LIKE 'http%'
-          AND url NOT LIKE '%accounts.google.com%'
-          AND url NOT LIKE '%oauth%'
-          AND url NOT LIKE '%/authorize?%'
-          AND length(url) < 500
-        ORDER BY last_visit_date DESC
-        LIMIT $MAX_ENTRIES
-      " 2>/dev/null || echo "ERROR: Query failed" >&2
+      chrome-url-list "" "$MAX_ENTRIES" 2>/dev/null | ${pkgs.jq}/bin/jq -r '
+        .[]
+        | select((.source // "") == "history" or (.state // [] | index("history")))
+        | [
+            "🌐",
+            (.text // .url // ""),
+            (.url // "")
+          ]
+        | @tsv
+      '
     '')
 
     # walker-history-open: Opens a URL via xdg-open (routes to default browser)
     (pkgs.writeShellScriptBin "walker-history-open" ''
       #!/usr/bin/env bash
-      # Open browser history URL via xdg-open (routes to default browser)
+      # Open browser history URL with the shared Chrome/PWA router
       set -euo pipefail
 
       URL="$1"
@@ -1829,7 +1830,7 @@ in
         exit 1
       fi
 
-      exec ${pkgs.xdg-utils}/bin/xdg-open "$URL"
+      exec chrome-url-open preferred "$URL"
     '')
   ];
 
@@ -2298,13 +2299,6 @@ in
   xdg.configFile."elephant/todo.toml".text = ''
     # Elephant Todo Provider Configuration
     icon = "view-task"
-    min_score = 30
-  '';
-
-  # Snippets provider configuration
-  xdg.configFile."elephant/snippets.toml".text = ''
-    # Elephant Snippets Provider Configuration
-    icon = "insert-text"
     min_score = 30
   '';
 
@@ -2836,6 +2830,155 @@ in
   # Walker/Elephant won't see any system applications
   # NOTE: This only affects Walker/Elephant service, not the entire session
   # (Elephant service has its own isolated XDG_DATA_DIRS below)
+
+  home.activation.ensureMutableElephantSnippets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    set -euo pipefail
+
+    SNIPPETS_PATH="$HOME/.config/elephant/snippets.toml"
+    TEMPLATE_PATH="${elephantSnippetsTemplate}"
+
+    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/elephant"
+
+    if [ -L "$SNIPPETS_PATH" ]; then
+      TARGET="$(${pkgs.coreutils}/bin/readlink -f "$SNIPPETS_PATH" || true)"
+      case "$TARGET" in
+        /nix/store/*)
+          TMP_FILE="$(${pkgs.coreutils}/bin/mktemp)"
+          ${pkgs.coreutils}/bin/cp "$SNIPPETS_PATH" "$TMP_FILE"
+          ${pkgs.coreutils}/bin/rm -f "$SNIPPETS_PATH"
+          ${pkgs.coreutils}/bin/mv "$TMP_FILE" "$SNIPPETS_PATH"
+          ;;
+      esac
+    fi
+
+    if [ ! -e "$SNIPPETS_PATH" ]; then
+      ${pkgs.coreutils}/bin/cp "$TEMPLATE_PATH" "$SNIPPETS_PATH"
+    fi
+
+    if [ -e "$SNIPPETS_PATH" ]; then
+      ${pkgs.coreutils}/bin/chmod u+rw "$SNIPPETS_PATH"
+    fi
+
+    export ELEPHANT_SNIPPETS_PATH="$SNIPPETS_PATH"
+    export ELEPHANT_DEFAULT_SNIPPETS_JSON='${builtins.toJSON elephantDefaultSnippets}'
+
+    ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib
+
+path = Path(os.environ["ELEPHANT_SNIPPETS_PATH"])
+defaults = json.loads(os.environ.get("ELEPHANT_DEFAULT_SNIPPETS_JSON", "[]"))
+
+
+def toml_escape(value: str) -> str:
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def format_value(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return toml_escape(value)
+    if isinstance(value, list) and all(isinstance(item, (str, bool, int, float)) for item in value):
+        return "[" + ", ".join(format_value(item) for item in value) + "]"
+    return None
+
+
+def write_data(data: dict) -> None:
+    lines = [
+        "# Elephant Snippets Provider Configuration",
+        "",
+    ]
+    top_level_preferred_keys = ["icon", "min_score", "name_pretty", "hide_from_providerlist"]
+    for key in top_level_preferred_keys:
+        if key in data and key != "snippets":
+            rendered = format_value(data.get(key))
+            if rendered is not None:
+                lines.append(f"{key} = {rendered}")
+    for key in sorted(data.keys()):
+        if key in top_level_preferred_keys or key == "snippets":
+            continue
+        rendered = format_value(data.get(key))
+        if rendered is not None:
+            lines.append(f"{key} = {rendered}")
+    if len(lines) > 2:
+        lines.append("")
+    preferred_keys = ["name", "snippet", "description"]
+    entries = [dict(item) for item in data.get("snippets", []) if isinstance(item, dict)]
+    for index, entry in enumerate(entries):
+        if index > 0:
+            lines.append("")
+        lines.append("[[snippets]]")
+        for key in preferred_keys:
+            if key in entry:
+                rendered = format_value(entry.get(key))
+                if rendered is not None:
+                    lines.append(f"{key} = {rendered}")
+        for key in sorted(entry.keys()):
+            if key in preferred_keys:
+                continue
+            rendered = format_value(entry.get(key))
+            if rendered is not None:
+                lines.append(f"{key} = {rendered}")
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+try:
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+except Exception:
+    raise SystemExit(0)
+
+if not isinstance(data, dict):
+    raise SystemExit(0)
+
+entries = [dict(item) for item in data.get("snippets", []) if isinstance(item, dict)]
+existing_names = {
+    str(entry.get("name", "") or "").strip()
+    for entry in entries
+    if str(entry.get("name", "") or "").strip()
+}
+changed = False
+for item in defaults:
+    name = str(item.get("name", "") or "").strip()
+    if not name or name in existing_names:
+        continue
+    entries.append(dict(item))
+    existing_names.add(name)
+    changed = True
+
+if "icon" not in data:
+    data["icon"] = "insert-text"
+    changed = True
+if "min_score" not in data:
+    data["min_score"] = 30
+    changed = True
+
+if changed:
+    data["snippets"] = entries
+    write_data(data)
+PY
+  '';
 
   # Feature 035/046: Elephant service - conditional for Wayland (Sway) vs X11 (i3)
   # Uses standard Elephant binary instead of isolated wrapper

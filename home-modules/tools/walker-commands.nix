@@ -28,10 +28,10 @@ let
       walker-cmd edit
       walker-cmd reload
 
-    Usage in Walker:
-      Meta+D → type "$" → type command name → Return
+    Usage in the launcher:
+      Meta+D or Alt+Space → type "$" → type command name → Return
 
-    Note: Commands are stored in $SNIPPETS_FILE as snippets ($ prefix in Walker)
+    Note: Commands are stored in $SNIPPETS_FILE as snippets ($ prefix in the launcher)
     EOF
     }
 
@@ -42,7 +42,7 @@ let
           echo "# Elephant Snippets Configuration"
           echo "# Managed by walker-cmd CLI tool"
           echo "# Usage: walker-cmd add \"name\" \"command\" \"description\""
-          echo "# Access in Walker: Meta+D → type '\$' → type command name"
+          echo "# Access in QuickShell launcher: Meta+D or Alt+Space → type '\$' → type command name"
           echo ""
           echo "[[snippets]]"
           echo "name = \"reload sway\""
@@ -61,7 +61,7 @@ let
         } > "$SNIPPETS_FILE"
         echo "✓ Created snippets file with examples: $SNIPPETS_FILE"
         echo "  Run 'walker-cmd list' to see all snippets"
-        echo "  Use Meta+D then '#' prefix to access snippets in Walker"
+        echo "  Use Meta+D or Alt+Space, then '$' to access snippets in the launcher"
       fi
     }
 
@@ -107,7 +107,7 @@ let
       echo "✓ Added snippet: $name"
       echo "  Command: $cmd"
       echo "  Description: $desc"
-      echo "  Access: Meta+D → type '\$$name'"
+      echo "  Access: Meta+D or Alt+Space → type '\$$name'"
 
       # Reload Elephant
       systemctl --user restart elephant 2>/dev/null && echo "✓ Elephant reloaded" || echo "⚠ Failed to reload Elephant"
@@ -173,7 +173,7 @@ let
       fi
 
       echo "Command Snippets in $SNIPPETS_FILE:"
-      echo "(Use Meta+D → '#' prefix to access in Walker)"
+      echo "(Use Meta+D or Alt+Space → '$' to access in the launcher)"
       echo ""
 
       # Extract snippets from TOML

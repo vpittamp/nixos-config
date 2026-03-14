@@ -61,7 +61,7 @@
 
         # Interaction
         dmenu = "${pkgs.rofi}/bin/rofi -dmenu -p dunst";
-        browser = "${pkgs.firefox}/bin/firefox";
+        browser = "${config.home.profileDirectory}/bin/google-chrome-i3pm";
         mouse_left_click = "do_action, close_current";
         mouse_middle_click = "close_current";
         mouse_right_click = "close_all";

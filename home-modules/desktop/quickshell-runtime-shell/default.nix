@@ -26,6 +26,12 @@ QtObject {
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-elephant-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
+  readonly property string urlListBin: "${config.home.profileDirectory}/bin/chrome-url-list"
+  readonly property string urlOpenBin: "${config.home.profileDirectory}/bin/chrome-url-open"
+  readonly property string runnerListBin: "${runnerListScript}/bin/quickshell-runner-list"
+  readonly property string snippetsListBin: "${snippetsListScript}/bin/quickshell-snippets-list"
+  readonly property string snippetsManageBin: "${snippetsManageScript}/bin/quickshell-snippets-manage"
+  readonly property string launcherCommandActionBin: "${launcherCommandActionScript}/bin/quickshell-launcher-command-action"
   readonly property string onePasswordListBin: "${onePasswordListScript}/bin/quickshell-onepassword-list"
   readonly property string onePasswordActionBin: "${onePasswordActionScript}/bin/quickshell-onepassword-action"
   readonly property string clipboardListBin: "${clipboardListScript}/bin/quickshell-clipboard-list"
@@ -154,6 +160,474 @@ EOF
     exec ${pkgs.gtk3}/bin/gtk-launch "''${identifier%.desktop}"
   '';
 
+  runnerListScript = pkgs.writeShellScriptBin "quickshell-runner-list" ''
+    set -euo pipefail
+
+    query="''${1:-}"
+    trimmed=$(${pkgs.coreutils}/bin/printf '%s' "$query" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+    if [[ -z "$trimmed" ]]; then
+      printf '[]\n'
+      exit 0
+    fi
+
+    context_json=$("${config.home.profileDirectory}/bin/i3pm" context current --json 2>/dev/null || printf '{}')
+    context_dir=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.local_directory // .directory // ""' 2>/dev/null || true)
+
+    if [[ -z "$context_dir" || ! -d "$context_dir" ]]; then
+      context_dir="$HOME"
+    fi
+
+    display_dir="$context_dir"
+    if [[ "$display_dir" == "$HOME" ]]; then
+      display_dir="~"
+    elif [[ "$display_dir" == "$HOME/"* ]]; then
+      display_dir="~''${display_dir#$HOME}"
+    fi
+
+    ${lib.getExe pkgs.jq} -cn \
+      --arg identifier "$trimmed" \
+      --arg text "$trimmed" \
+      --arg subtext "Run in $display_dir" \
+      '[{
+        kind: "runner",
+        identifier: $identifier,
+        text: $text,
+        subtext: $subtext,
+        icon: "utilities-terminal"
+      }]'
+  '';
+
+  snippetsListScript = pkgs.writeShellScriptBin "quickshell-snippets-list" ''
+    set -euo pipefail
+
+    query="''${1:-}"
+    limit="''${2:-40}"
+
+    if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+      limit=40
+    fi
+
+    export QUICKSHELL_SNIPPETS_QUERY="$query"
+    export QUICKSHELL_SNIPPETS_LIMIT="$limit"
+
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib
+
+query = os.environ.get("QUICKSHELL_SNIPPETS_QUERY", "").strip().lower()
+tokens = [token for token in query.split() if token]
+limit = int(os.environ.get("QUICKSHELL_SNIPPETS_LIMIT", "40") or "40")
+path = Path.home() / ".config" / "elephant" / "snippets.toml"
+
+if not path.exists():
+    print("[]")
+    raise SystemExit(0)
+
+try:
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+except Exception:
+    print("[]")
+    raise SystemExit(0)
+
+entries = []
+for index, item in enumerate(data.get("snippets", [])):
+    if not isinstance(item, dict):
+        continue
+
+    name = str(item.get("name", "") or "").strip()
+    command = str(item.get("snippet", "") or "").strip()
+    description = str(item.get("description", "") or "").strip()
+
+    if not name and not command:
+        continue
+
+    haystack = " ".join(part for part in [name, description, command] if part).lower()
+    if tokens and not all(token in haystack for token in tokens):
+        continue
+
+    subtitle_parts = []
+    if description:
+        subtitle_parts.append(description)
+    if command:
+        subtitle_parts.append(command)
+
+    entries.append(
+        {
+            "kind": "snippet",
+            "index": index,
+            "identifier": name or command,
+            "text": name or command,
+            "subtext": "  •  ".join(subtitle_parts),
+            "description": description,
+            "command": command,
+            "icon": "insert-text",
+        }
+    )
+
+print(json.dumps(entries[:limit]))
+PY
+  '';
+
+  snippetsManageScript = pkgs.writeShellScriptBin "quickshell-snippets-manage" ''
+    set -euo pipefail
+
+    action="''${1:-}"
+    shift || true
+
+    case "$action" in
+      upsert)
+        export QUICKSHELL_SNIPPETS_ACTION="$action"
+        export QUICKSHELL_SNIPPETS_INDEX="''${1:--1}"
+        export QUICKSHELL_SNIPPETS_NAME="''${2:-}"
+        export QUICKSHELL_SNIPPETS_COMMAND="''${3:-}"
+        export QUICKSHELL_SNIPPETS_DESCRIPTION="''${4:-}"
+        ;;
+      remove)
+        export QUICKSHELL_SNIPPETS_ACTION="$action"
+        export QUICKSHELL_SNIPPETS_INDEX="''${1:-}"
+        ;;
+      move)
+        export QUICKSHELL_SNIPPETS_ACTION="$action"
+        export QUICKSHELL_SNIPPETS_INDEX="''${1:-}"
+        export QUICKSHELL_SNIPPETS_DIRECTION="''${2:-}"
+        ;;
+      *)
+        echo "unsupported snippets action: $action" >&2
+        exit 1
+        ;;
+    esac
+
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib
+
+path = Path.home() / ".config" / "elephant" / "snippets.toml"
+
+
+def fail(message: str) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def load_data() -> dict:
+    if not path.exists():
+        return {}
+    try:
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except Exception as exc:
+        fail(f"unable to parse snippets file: {exc}")
+    return dict(data) if isinstance(data, dict) else {}
+
+
+def toml_escape(value: str) -> str:
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def format_value(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return toml_escape(value)
+    if isinstance(value, list) and all(isinstance(item, (str, bool, int, float)) for item in value):
+        return "[" + ", ".join(format_value(item) for item in value) + "]"
+    return None
+
+
+def write_data(data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Elephant Snippets Provider Configuration",
+        "# Managed by QuickShell command settings",
+        "",
+    ]
+    top_level_preferred_keys = ["icon", "min_score", "name_pretty", "hide_from_providerlist"]
+    for key in top_level_preferred_keys:
+        if key in data and key != "snippets":
+            rendered = format_value(data.get(key))
+            if rendered is not None:
+                lines.append(f"{key} = {rendered}")
+    for key in sorted(data.keys()):
+        if key in top_level_preferred_keys or key == "snippets":
+            continue
+        rendered = format_value(data.get(key))
+        if rendered is not None:
+            lines.append(f"{key} = {rendered}")
+    if len(lines) > 3:
+        lines.append("")
+    preferred_keys = ["name", "snippet", "description"]
+    entries = [dict(item) for item in data.get("snippets", []) if isinstance(item, dict)]
+    for index, entry in enumerate(entries):
+        if index > 0:
+            lines.append("")
+        lines.append("[[snippets]]")
+        for key in preferred_keys:
+            if key in entry:
+                rendered = format_value(entry.get(key))
+                if rendered is not None:
+                    lines.append(f"{key} = {rendered}")
+        for key in sorted(entry.keys()):
+            if key in preferred_keys:
+                continue
+            rendered = format_value(entry.get(key))
+            if rendered is not None:
+                lines.append(f"{key} = {rendered}")
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def reload_elephant() -> None:
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "restart", "elephant"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+action = os.environ.get("QUICKSHELL_SNIPPETS_ACTION", "").strip()
+data = load_data()
+entries = [dict(item) for item in data.get("snippets", []) if isinstance(item, dict)]
+if "icon" not in data:
+    data["icon"] = "insert-text"
+if "min_score" not in data:
+    data["min_score"] = 30
+
+if action == "upsert":
+    raw_index = os.environ.get("QUICKSHELL_SNIPPETS_INDEX", "-1").strip() or "-1"
+    try:
+        index = int(raw_index)
+    except ValueError:
+        fail(f"invalid snippets index: {raw_index}")
+    name = os.environ.get("QUICKSHELL_SNIPPETS_NAME", "").strip()
+    command = os.environ.get("QUICKSHELL_SNIPPETS_COMMAND", "").strip()
+    description = os.environ.get("QUICKSHELL_SNIPPETS_DESCRIPTION", "").strip()
+
+    if not name:
+        fail("command name is required")
+    if not command:
+        fail("command text is required")
+
+    next_entry = dict(entries[index]) if 0 <= index < len(entries) else {}
+    next_entry["name"] = name
+    next_entry["snippet"] = command
+    if description:
+        next_entry["description"] = description
+    else:
+        next_entry.pop("description", None)
+
+    if 0 <= index < len(entries):
+        entries[index] = next_entry
+        result_index = index
+        message = f"Updated curated command '{name}'"
+    else:
+        entries.append(next_entry)
+        result_index = len(entries) - 1
+        message = f"Added curated command '{name}'"
+
+    data["snippets"] = entries
+    write_data(data)
+    reload_elephant()
+    print(json.dumps({"ok": True, "action": action, "index": result_index, "identifier": name, "message": message}))
+    raise SystemExit(0)
+
+if action == "remove":
+    raw_index = os.environ.get("QUICKSHELL_SNIPPETS_INDEX", "").strip()
+    try:
+        index = int(raw_index)
+    except ValueError:
+        fail(f"invalid snippets index: {raw_index}")
+    if index < 0 or index >= len(entries):
+        fail("curated command not found")
+    removed = entries.pop(index)
+    data["snippets"] = entries
+    write_data(data)
+    reload_elephant()
+    next_index = max(0, min(index, len(entries) - 1))
+    print(json.dumps({"ok": True, "action": action, "index": next_index, "identifier": str(removed.get("name") or removed.get("snippet") or ""), "message": f"Removed curated command '{removed.get('name') or removed.get('snippet') or 'entry'}'"}))
+    raise SystemExit(0)
+
+if action == "move":
+    raw_index = os.environ.get("QUICKSHELL_SNIPPETS_INDEX", "").strip()
+    direction = os.environ.get("QUICKSHELL_SNIPPETS_DIRECTION", "").strip().lower()
+    try:
+        index = int(raw_index)
+    except ValueError:
+        fail(f"invalid snippets index: {raw_index}")
+    if direction not in {"up", "down"}:
+        fail(f"invalid move direction: {direction}")
+    if index < 0 or index >= len(entries):
+        fail("curated command not found")
+    target = index - 1 if direction == "up" else index + 1
+    if target < 0 or target >= len(entries):
+        fail(f"cannot move command {direction}")
+    entries[index], entries[target] = entries[target], entries[index]
+    data["snippets"] = entries
+    write_data(data)
+    reload_elephant()
+    moved = entries[target]
+    print(json.dumps({"ok": True, "action": action, "index": target, "identifier": str(moved.get("name") or moved.get("snippet") or ""), "message": f"Moved curated command {direction}"}))
+    raise SystemExit(0)
+
+fail(f"unsupported snippets action: {action}")
+PY
+  '';
+
+  launcherCommandActionScript = pkgs.writeShellScriptBin "quickshell-launcher-command-action" ''
+    set -euo pipefail
+
+    mode="''${1:-background}"
+    command="''${2:-}"
+
+    case "$mode" in
+      background|terminal) ;;
+      *)
+        echo "unsupported launcher command mode: $mode" >&2
+        exit 1
+        ;;
+    esac
+
+    if [[ -z "$command" ]]; then
+      echo "missing launcher command" >&2
+      exit 1
+    fi
+
+    context_json=$("${config.home.profileDirectory}/bin/i3pm" context current --json 2>/dev/null || printf '{}')
+    context_dir=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.local_directory // .directory // ""' 2>/dev/null || true)
+
+    if [[ -z "$context_dir" || ! -d "$context_dir" ]]; then
+      context_dir="$HOME"
+    fi
+
+    run_in_context() {
+      cd "$context_dir"
+      exec ${pkgs.bash}/bin/bash -lc "$command"
+    }
+
+    shell_quote() {
+      ${lib.getExe pkgs.jq} -Rn --arg value "$1" '$value | @sh'
+    }
+
+    resolve_terminal() {
+      local candidate=""
+      for candidate in "''${TERMINAL:-}" ${pkgs.ghostty}/bin/ghostty ${pkgs.alacritty}/bin/alacritty ${pkgs.xterm}/bin/xterm; do
+        [[ -n "$candidate" ]] || continue
+        if command -v "$candidate" >/dev/null 2>&1; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+        if [[ -x "$candidate" ]]; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+      done
+      return 1
+    }
+
+    if [[ "$mode" == "background" ]]; then
+      run_in_context
+    fi
+
+    launch_in_scratchpad() {
+      local context_key execution_mode remote_host remote_user remote_port remote_dir
+      local terminal_json tmux_session state shell_payload tmux_command
+
+      context_key=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.context_key // ""' 2>/dev/null || true)
+      execution_mode=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.execution_mode // "local"' 2>/dev/null || true)
+      remote_host=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.host // ""' 2>/dev/null || true)
+      remote_user=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.user // ""' 2>/dev/null || true)
+      remote_port=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.port // 22' 2>/dev/null || true)
+      remote_dir=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.remote_dir // .directory // ""' 2>/dev/null || true)
+
+      if [[ -z "$context_key" ]]; then
+        return 1
+      fi
+
+      terminal_json=$("${config.home.profileDirectory}/bin/i3pm" scratchpad status --context-key "$context_key" --json 2>/dev/null || printf '{"terminals":[],"count":0}')
+      tmux_session=$(printf '%s\n' "$terminal_json" | ${lib.getExe pkgs.jq} -r '.terminals[0].tmux_session_name // ""' 2>/dev/null || true)
+      state=$(printf '%s\n' "$terminal_json" | ${lib.getExe pkgs.jq} -r '.terminals[0].state // ""' 2>/dev/null || true)
+
+      if [[ -z "$tmux_session" ]]; then
+        terminal_json=$("${config.home.profileDirectory}/bin/i3pm" scratchpad launch --context-key "$context_key" --json 2>/dev/null || printf '{}')
+        tmux_session=$(printf '%s\n' "$terminal_json" | ${lib.getExe pkgs.jq} -r '.tmux_session_name // ""' 2>/dev/null || true)
+        state="visible"
+      elif [[ "$state" != "visible" ]]; then
+        "${config.home.profileDirectory}/bin/i3pm" scratchpad toggle --context-key "$context_key" --json >/dev/null 2>&1 || true
+      fi
+
+      if [[ -z "$tmux_session" ]]; then
+        return 1
+      fi
+
+      shell_payload="${pkgs.bash}/bin/bash -lc $(shell_quote "$command; exec ${pkgs.bash}/bin/bash -l")"
+
+      if [[ "$execution_mode" == "ssh" && -n "$remote_host" && -n "$remote_user" ]]; then
+        tmux_command="tmux new-window -t $(shell_quote "$tmux_session") -c $(shell_quote "$remote_dir") $(shell_quote "$shell_payload")"
+        if [[ -n "$remote_port" && "$remote_port" != "22" ]]; then
+          ssh -p "$remote_port" "$remote_user@$remote_host" "$tmux_command"
+          return $?
+        fi
+        ssh "$remote_user@$remote_host" "$tmux_command"
+        return $?
+      fi
+
+      ${pkgs.tmux}/bin/tmux new-window -t "$tmux_session" -c "$context_dir" "$shell_payload"
+    }
+
+    if launch_in_scratchpad; then
+      exit 0
+    fi
+
+    if ! terminal=$(resolve_terminal); then
+      echo "no supported terminal found" >&2
+      exit 1
+    fi
+
+    case "$terminal" in
+      *ghostty)
+        exec "$terminal" --working-directory="$context_dir" -e ${pkgs.bash}/bin/bash -lc "$command"
+        ;;
+      *xterm)
+        exec "$terminal" -e ${pkgs.bash}/bin/bash -lc "cd \"$context_dir\" && $command"
+        ;;
+      *)
+        exec "$terminal" --working-directory "$context_dir" -e ${pkgs.bash}/bin/bash -lc "$command"
+        ;;
+    esac
+  '';
+
   onePasswordListScript = pkgs.writeShellScriptBin "quickshell-onepassword-list" ''
     set -euo pipefail
 
@@ -277,6 +751,7 @@ EOF
 
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
+  toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
 
   monitorPanelTabScript = pkgs.writeShellScriptBin "monitor-panel-tab" ''
     set -euo pipefail
@@ -391,6 +866,7 @@ in
       toggleDockScript
       togglePowerMenuScript
       toggleLauncherScript
+      toggleSettingsScript
       monitorPanelTabScript
       cycleSessionsScript
       showAiSwitcherScript
@@ -400,6 +876,9 @@ in
       networkStatusScript
       launcherQueryScript
       launcherLaunchScript
+      runnerListScript
+      snippetsListScript
+      launcherCommandActionScript
     ];
 
     home.activation.migrateQuickshellRuntimeShellConfig = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
@@ -442,6 +921,7 @@ in
         After = [ "sway-session.target" "i3-project-daemon.service" ];
         PartOf = [ "sway-session.target" ];
         BindsTo = [ "sway-session.target" ];
+        X-Restart-Triggers = [ shellConfigDir ];
       };
       Service = {
         Type = "simple";

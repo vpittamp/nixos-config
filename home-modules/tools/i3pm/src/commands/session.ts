@@ -6,8 +6,324 @@ interface CommandOptions {
   debug?: boolean;
 }
 
+interface SessionPreviewInfo {
+  success: boolean;
+  session_key: string;
+  preview_mode: string;
+  preview_reason: string;
+  lines: number;
+  is_live: boolean;
+  is_remote: boolean;
+  tool: string;
+  project_name: string;
+  host_name: string;
+  connection_key: string;
+  execution_mode: string;
+  focus_mode: string;
+  window_id: number;
+  pane_label: string;
+  pane_title: string;
+  tmux_session: string;
+  tmux_window: string;
+  tmux_pane: string;
+  surface_key: string;
+  session_phase: string;
+  session_phase_label: string;
+  status_reason: string;
+}
+
 function showHelp(): void {
-  console.log(`i3pm session <list|focus> [session_key] [--json]`);
+  console.log(`i3pm session <list|focus|preview> [session_key] [--json]
+
+  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl]`);
+}
+
+function emitPreviewFrame(frame: Record<string, unknown>): void {
+  console.log(JSON.stringify(frame));
+}
+
+function buildPreviewFrame(
+  info: SessionPreviewInfo,
+  {
+    status,
+    kind,
+    content = "",
+    message = "",
+    isLive = false,
+  }: {
+    status: string;
+    kind: string;
+    content?: string;
+    message?: string;
+    isLive?: boolean;
+  },
+): Record<string, unknown> {
+  return {
+    kind,
+    status,
+    session_key: info.session_key,
+    preview_mode: info.preview_mode,
+    preview_reason: info.preview_reason,
+    is_live: isLive,
+    is_remote: info.is_remote,
+    tool: info.tool,
+    project_name: info.project_name,
+    host_name: info.host_name,
+    connection_key: info.connection_key,
+    execution_mode: info.execution_mode,
+    focus_mode: info.focus_mode,
+    window_id: info.window_id,
+    pane_label: info.pane_label,
+    pane_title: info.pane_title,
+    tmux_session: info.tmux_session,
+    tmux_window: info.tmux_window,
+    tmux_pane: info.tmux_pane,
+    surface_key: info.surface_key,
+    session_phase: info.session_phase,
+    session_phase_label: info.session_phase_label,
+    status_reason: info.status_reason,
+    content,
+    message,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function normalizeLines(text: string, limit: number): string[] {
+  const normalized = text.replace(/\r\n?/g, "\n");
+  const trimmed = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
+  if (!trimmed) {
+    return [];
+  }
+  const lines = trimmed.split("\n");
+  return lines.slice(Math.max(0, lines.length - limit));
+}
+
+async function* readLines(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += value;
+      const parts = buffer.split("\n");
+      buffer = parts.pop() ?? "";
+      for (const line of parts) {
+        yield line;
+      }
+    }
+
+    if (buffer.length > 0) {
+      yield buffer;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function capturePaneContent(info: SessionPreviewInfo): Promise<string> {
+  if (!info.tmux_pane) {
+    return "";
+  }
+
+  const result = await new Deno.Command("tmux", {
+    args: ["capture-pane", "-p", "-J", "-S", `-${info.lines}`, "-t", info.tmux_pane],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+
+  if (!result.success) {
+    const error = new TextDecoder().decode(result.stderr).trim();
+    throw new Error(error || `tmux capture-pane failed for ${info.tmux_pane}`);
+  }
+
+  return normalizeLines(new TextDecoder().decode(result.stdout), info.lines).join("\n");
+}
+
+async function emitSnapshot(info: SessionPreviewInfo): Promise<void> {
+  const content = await capturePaneContent(info);
+  emitPreviewFrame(buildPreviewFrame(info, {
+    kind: "snapshot",
+    status: "live",
+    content,
+    isLive: true,
+  }));
+}
+
+function previewFallbackMessage(info: SessionPreviewInfo): string {
+  if (info.preview_mode === "remote_fallback") {
+    const host = info.host_name || info.connection_key || "remote host";
+    return `Live preview is not available for ${host} in the launcher yet. Focus the session to hand off to that host.`;
+  }
+  if (info.preview_reason === "missing_tmux_identity") {
+    return "This session has no tmux pane identity, so there is nothing stable to preview.";
+  }
+  return "Preview is unavailable for this session.";
+}
+
+async function runPreview(client: DaemonClient, subArgs: string[]): Promise<number> {
+  const parsed = parseArgs(subArgs, {
+    boolean: ["help", "json"],
+    string: ["lines"],
+    alias: { h: "help" },
+  });
+
+  const sessionKey = String(parsed._[0] || "");
+  const follow = subArgs.includes("--follow");
+  const jsonl = subArgs.includes("--jsonl");
+  const lineCount = Math.max(20, Math.min(200, Number(parsed.lines || 100) || 100));
+
+  if (parsed.help || !sessionKey) {
+    showHelp();
+    return 0;
+  }
+
+  const info = await client.request<SessionPreviewInfo>("session.preview", {
+    session_key: sessionKey,
+    lines: lineCount,
+  });
+
+  if (parsed.json && !follow && !jsonl) {
+    console.log(JSON.stringify(info, null, 2));
+    return 0;
+  }
+
+  if (info.preview_mode !== "local_stream") {
+    emitPreviewFrame(buildPreviewFrame(info, {
+      kind: "status",
+      status: "fallback",
+      message: previewFallbackMessage(info),
+      isLive: false,
+    }));
+    return 0;
+  }
+
+  try {
+    await emitSnapshot(info);
+  } catch (error) {
+    emitPreviewFrame(buildPreviewFrame(info, {
+      kind: "error",
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+      isLive: false,
+    }));
+    return 1;
+  }
+
+  if (!follow) {
+    return 0;
+  }
+
+  const child = new Deno.Command("tmux", {
+    args: [
+      "-C",
+      "attach-session",
+      "-t",
+      info.tmux_session,
+      "-f",
+      "read-only,ignore-size,pause-after=1",
+    ],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+
+  let pendingSnapshot: number | null = null;
+
+  const scheduleSnapshot = () => {
+    if (pendingSnapshot !== null) {
+      return;
+    }
+    pendingSnapshot = setTimeout(async () => {
+      pendingSnapshot = null;
+      try {
+        await emitSnapshot(info);
+      } catch (error) {
+        emitPreviewFrame(buildPreviewFrame(info, {
+          kind: "error",
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          isLive: false,
+        }));
+      }
+    }, 90);
+  };
+
+  const handleControlLine = (line: string) => {
+    if (!line) {
+      return;
+    }
+    if (
+      line.startsWith(`%output ${info.tmux_pane} `) ||
+      line.startsWith(`%extended-output ${info.tmux_pane} `)
+    ) {
+      scheduleSnapshot();
+      return;
+    }
+    if (line.startsWith("%exit")) {
+      emitPreviewFrame(buildPreviewFrame(info, {
+        kind: "status",
+        status: "closed",
+        message: "Pane preview ended.",
+        isLive: false,
+      }));
+    }
+  };
+
+  const stdoutTask = (async () => {
+    if (!child.stdout) {
+      return;
+    }
+    for await (const line of readLines(child.stdout)) {
+      handleControlLine(line);
+    }
+  })();
+
+  const stderrTask = (async () => {
+    if (!child.stderr) {
+      return;
+    }
+    for await (const line of readLines(child.stderr)) {
+      const message = line.trim();
+      if (!message) {
+        continue;
+      }
+      emitPreviewFrame(buildPreviewFrame(info, {
+        kind: "error",
+        status: "error",
+        message,
+        isLive: false,
+      }));
+    }
+  })();
+
+  try {
+    const [, , status] = await Promise.all([stdoutTask, stderrTask, child.status]);
+    if (!status.success) {
+      emitPreviewFrame(buildPreviewFrame(info, {
+        kind: "error",
+        status: "error",
+        message: "tmux control-mode preview exited unexpectedly.",
+        isLive: false,
+      }));
+      return 1;
+    }
+  } finally {
+    if (pendingSnapshot !== null) {
+      clearTimeout(pendingSnapshot);
+    }
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // Ignore cleanup failures for already-exited control clients.
+    }
+  }
+
+  return 0;
 }
 
 export async function sessionCommand(args: string[], _flags: CommandOptions): Promise<number> {
@@ -37,6 +353,9 @@ export async function sessionCommand(args: string[], _flags: CommandOptions): Pr
       const result = await client.request("session.focus", { session_key: sessionKey });
       console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
       return 0;
+    }
+    if (subcommand === "preview") {
+      return await runPreview(client, args.slice(1));
     }
     showHelp();
     return 1;

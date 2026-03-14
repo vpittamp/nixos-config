@@ -54,20 +54,71 @@ ShellRoot {
     property bool launcherVisible: false
     property bool launcherLoading: false
     property bool launcherNormalizingInput: false
+    property bool settingsVisible: false
+    property string settingsSection: "commands"
+    property string settingsCommandQuery: ""
+    property bool settingsCommandNormalizingInput: false
+    property bool settingsCommandLoading: false
+    property string settingsCommandError: ""
+    property int settingsCommandSelectedIndex: 0
+    property var settingsCommandEntries: []
     property string launcherMode: "apps"
     property string launcherQuery: ""
     property string launcherError: ""
     property int launcherSelectedIndex: 0
     property var launcherEntries: []
+    property bool snippetEditorBusy: false
+    property string snippetEditorError: ""
+    property string snippetEditorMessage: ""
+    property int snippetEditorIndex: -1
+    property int snippetEditorSelectionHint: -1
+    property bool snippetEditorNewDraft: false
+    property bool snippetEditorDirty: false
+    property bool snippetEditorSyncing: false
+    property string snippetEditorLoadedIdentity: ""
+    property string snippetEditorName: ""
+    property string snippetEditorCommand: ""
+    property string snippetEditorDescription: ""
     property var onePasswordEntriesCache: []
     property var expandedSessionGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
+    property string sessionPreviewTargetKey: ""
+    property bool sessionPreviewStopExpected: false
+    property var sessionPreview: ({
+            status: "idle",
+            kind: "status",
+            session_key: "",
+            preview_mode: "",
+            preview_reason: "",
+            is_live: false,
+            is_remote: false,
+            tool: "",
+            project_name: "",
+            host_name: "",
+            connection_key: "",
+            execution_mode: "",
+            focus_mode: "",
+            window_id: 0,
+            pane_label: "",
+            pane_title: "",
+            tmux_session: "",
+            tmux_window: "",
+            tmux_pane: "",
+            surface_key: "",
+            session_phase: "",
+            session_phase_label: "",
+            status_reason: "",
+            content: "",
+            message: "",
+            updated_at: ""
+        })
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
 
     onLauncherVisibleChanged: {
         if (launcherVisible) {
+            settingsVisible = false;
             launcherMode = "apps";
             launcherQuery = "";
             launcherError = "";
@@ -78,6 +129,7 @@ ShellRoot {
             launcherNormalizingInput = false;
             launcherQueryDebounce.restart();
             launcherFocusTimer.restart();
+            sessionPreviewDebounce.restart();
             return;
         }
 
@@ -85,9 +137,11 @@ ShellRoot {
         launcherError = "";
         launcherEntries = [];
         launcherSelectedIndex = 0;
+        resetSnippetEditor();
         launcherNormalizingInput = true;
         launcherField.text = "";
         launcherNormalizingInput = false;
+        clearSessionPreview();
         if (launcherQueryProcess.running) {
             launcherQueryProcess.running = false;
         }
@@ -96,9 +150,15 @@ ShellRoot {
     onLauncherModeChanged: {
         launcherError = "";
         launcherSelectedIndex = 0;
+        if (launcherMode !== "sessions") {
+            clearSessionPreview();
+        }
         if (launcherVisible) {
             launcherQueryDebounce.restart();
             launcherFocusTimer.restart();
+            if (launcherMode === "sessions") {
+                sessionPreviewDebounce.restart();
+            }
         }
     }
 
@@ -111,6 +171,57 @@ ShellRoot {
     onLauncherSelectedIndexChanged: {
         if (launcherVisible && launcherEntries.length && launcherSelectedIndex >= 0) {
             launcherList.positionViewAtIndex(launcherSelectedIndex, ListView.Contain);
+        }
+        if (launcherVisible && launcherMode === "sessions") {
+            ensureSessionPreviewForSelection();
+        }
+    }
+
+    onSettingsVisibleChanged: {
+        if (settingsVisible) {
+            launcherVisible = false;
+            settingsSection = "commands";
+            settingsCommandQuery = "";
+            settingsCommandNormalizingInput = true;
+            settingsCommandQueryField.text = "";
+            settingsCommandNormalizingInput = false;
+            settingsCommandError = "";
+            settingsCommandEntries = [];
+            settingsCommandSelectedIndex = 0;
+            resetSnippetEditor();
+            settingsCommandQueryDebounce.restart();
+            settingsFocusTimer.restart();
+            return;
+        }
+
+        settingsCommandLoading = false;
+        settingsCommandError = "";
+        settingsCommandEntries = [];
+        settingsCommandSelectedIndex = 0;
+        resetSnippetEditor();
+        settingsCommandNormalizingInput = true;
+        settingsCommandQueryField.text = "";
+        settingsCommandNormalizingInput = false;
+        if (settingsCommandQueryProcess.running) {
+            settingsCommandQueryProcess.running = false;
+        }
+        if (snippetEditorProcess.running) {
+            snippetEditorProcess.running = false;
+        }
+    }
+
+    onSettingsCommandQueryChanged: {
+        if (settingsVisible && settingsSection === "commands") {
+            settingsCommandQueryDebounce.restart();
+        }
+    }
+
+    onSettingsCommandSelectedIndexChanged: {
+        if (settingsVisible && settingsCommandEntries.length && settingsCommandSelectedIndex >= 0) {
+            settingsCommandsList.positionViewAtIndex(settingsCommandSelectedIndex, ListView.Contain);
+        }
+        if (settingsVisible && settingsSection === "commands") {
+            syncSnippetEditorFromSelection();
         }
     }
 
@@ -1084,8 +1195,17 @@ ShellRoot {
 
     function normalizeLauncherMode(mode) {
         const value = stringOrEmpty(mode).toLowerCase();
+        if (value === "urls") {
+            return "urls";
+        }
         if (value === "projects") {
             return "projects";
+        }
+        if (value === "runner") {
+            return "runner";
+        }
+        if (value === "snippets") {
+            return "snippets";
         }
         if (value === "sessions") {
             return "sessions";
@@ -1103,7 +1223,7 @@ ShellRoot {
     }
 
     function launcherModeOrder() {
-        return ["apps", "projects", "onepassword", "clipboard", "sessions", "windows"];
+        return ["apps", "urls", "projects", "runner", "snippets", "onepassword", "clipboard", "sessions", "windows"];
     }
 
     function setLauncherMode(mode) {
@@ -1124,8 +1244,17 @@ ShellRoot {
     }
 
     function launcherTitle() {
+        if (launcherMode === "urls") {
+            return "Open URL";
+        }
         if (launcherMode === "projects") {
             return "Switch Project";
+        }
+        if (launcherMode === "runner") {
+            return "Run Command";
+        }
+        if (launcherMode === "snippets") {
+            return "Curated Commands";
         }
         if (launcherMode === "sessions") {
             return "AI Sessions";
@@ -1143,8 +1272,17 @@ ShellRoot {
     }
 
     function launcherPlaceholderText() {
+        if (launcherMode === "urls") {
+            return "Search Chrome URLs, bookmarks, tabs, or paste a link";
+        }
         if (launcherMode === "projects") {
             return "Filter projects";
+        }
+        if (launcherMode === "runner") {
+            return "Type a shell command";
+        }
+        if (launcherMode === "snippets") {
+            return "Search curated commands";
         }
         if (launcherMode === "sessions") {
             return "Filter AI sessions";
@@ -1158,12 +1296,21 @@ ShellRoot {
         if (launcherMode === "clipboard") {
             return "Search clipboard history";
         }
-        return "Search apps or type ;p, ;s, ;w, *, or :";
+        return "Search apps or type ;u, ;p, >, $, ;s, ;w, *, or :";
     }
 
     function launcherHelpText() {
+        if (launcherMode === "urls") {
+            return "Enter open  •  Shift+Enter browser  •  Ctrl+Enter copy  •  Ctrl+3 Projects";
+        }
         if (launcherMode === "projects") {
-            return "Tab modes  •  Up/Down results  •  Ctrl+1 Apps";
+            return "Tab modes  •  Up/Down results  •  Ctrl+1 Apps  •  Ctrl+2 URLs";
+        }
+        if (launcherMode === "runner") {
+            return "Tab modes  •  Enter run  •  Shift+Enter terminal  •  Ctrl+9 Snippets";
+        }
+        if (launcherMode === "snippets") {
+            return "Enter run  •  Shift+Enter scratchpad  •  Manage via toggle-runtime-settings";
         }
         if (launcherMode === "sessions") {
             return "Tab modes  •  Up/Down sessions  •  Enter focus  •  Ctrl+6 Windows";
@@ -1177,21 +1324,39 @@ ShellRoot {
         if (launcherMode === "clipboard") {
             return "Tab modes  •  Enter smart paste  •  Ctrl+D remove";
         }
-        return "Tab modes  •  Up/Down results  •  Ctrl+2 Projects";
+        return "Tab modes  •  Up/Down results  •  Ctrl+2 URLs";
     }
 
     function launcherStatusText() {
         if (launcherLoading) {
+            if (launcherMode === "urls") {
+                return "Loading Chrome URLs";
+            }
             if (launcherMode === "onepassword") {
                 return "Loading 1Password items";
             }
             if (launcherMode === "clipboard") {
                 return "Loading clipboard history";
             }
+            if (launcherMode === "runner") {
+                return "Preparing command";
+            }
+            if (launcherMode === "snippets") {
+                return "Loading curated commands";
+            }
             return "Searching with Elephant";
+        }
+        if (launcherMode === "urls") {
+            return launcherEntries.length ? launcherEntries.length + " URL result" + (launcherEntries.length === 1 ? "" : "s") : "No matching URLs";
         }
         if (launcherMode === "projects") {
             return launcherEntries.length ? launcherEntries.length + " project context" + (launcherEntries.length === 1 ? "" : "s") : "No matching projects";
+        }
+        if (launcherMode === "runner") {
+            return launcherEntries.length ? launcherEntries.length + " command ready" : "Type a command to run";
+        }
+        if (launcherMode === "snippets") {
+            return launcherEntries.length ? launcherEntries.length + " curated command" + (launcherEntries.length === 1 ? "" : "s") : "No matching curated commands";
         }
         if (launcherMode === "sessions") {
             return launcherEntries.length ? launcherEntries.length + " AI session" + (launcherEntries.length === 1 ? "" : "s") : "No matching AI sessions";
@@ -1212,8 +1377,17 @@ ShellRoot {
         if (launcherError) {
             return launcherError;
         }
+        if (launcherMode === "urls") {
+            return "No Chrome URLs or PWAs match the current query";
+        }
         if (launcherMode === "projects") {
             return "No projects match the current query";
+        }
+        if (launcherMode === "runner") {
+            return "Type a command to run from the current context";
+        }
+        if (launcherMode === "snippets") {
+            return "No curated commands match the current query";
         }
         if (launcherMode === "sessions") {
             return "No AI sessions match the current query";
@@ -1234,9 +1408,18 @@ ShellRoot {
         let nextMode = launcherMode;
         let nextQuery = stringOrEmpty(rawInput);
 
-        if (nextQuery.indexOf(";p") === 0) {
+        if (nextQuery.indexOf(";u") === 0) {
+            nextMode = "urls";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";p") === 0) {
             nextMode = "projects";
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery === ">" || nextQuery.indexOf(">") === 0) {
+            nextMode = "runner";
+            nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
+        } else if (nextQuery === "$" || nextQuery.indexOf("$") === 0) {
+            nextMode = "snippets";
+            nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
         } else if (nextQuery.indexOf(";s") === 0) {
             nextMode = "sessions";
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
@@ -1487,6 +1670,173 @@ ShellRoot {
         return stringOrEmpty(entry.preview) || stringOrEmpty(entry.text);
     }
 
+    function emptySessionPreview() {
+        return {
+            status: "idle",
+            kind: "status",
+            session_key: "",
+            preview_mode: "",
+            preview_reason: "",
+            is_live: false,
+            is_remote: false,
+            tool: "",
+            project_name: "",
+            host_name: "",
+            connection_key: "",
+            execution_mode: "",
+            focus_mode: "",
+            window_id: 0,
+            pane_label: "",
+            pane_title: "",
+            tmux_session: "",
+            tmux_window: "",
+            tmux_pane: "",
+            surface_key: "",
+            session_phase: "",
+            session_phase_label: "",
+            status_reason: "",
+            content: "",
+            message: "",
+            updated_at: ""
+        };
+    }
+
+    function activeLauncherSessionEntry() {
+        const entry = activeLauncherEntry();
+        if (stringOrEmpty(entry && entry.kind) !== "session") {
+            return null;
+        }
+        return entry;
+    }
+
+    function clearSessionPreview() {
+        sessionPreviewTargetKey = "";
+        sessionPreview = emptySessionPreview();
+        if (sessionPreviewProcess.running) {
+            sessionPreviewStopExpected = true;
+            sessionPreviewProcess.running = false;
+        }
+    }
+
+    function parseSessionPreview(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null" || raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            sessionPreview = Object.assign(emptySessionPreview(), JSON.parse(raw));
+        } catch (error) {
+            console.warn("session.preview.parse:", raw, error);
+        }
+    }
+
+    function restartSessionPreview() {
+        const entry = activeLauncherSessionEntry();
+        if (!launcherVisible || launcherMode !== "sessions" || !entry) {
+            clearSessionPreview();
+            return;
+        }
+
+        const sessionKey = stringOrEmpty(entry.session_key || entry.identifier);
+        if (!sessionKey) {
+            clearSessionPreview();
+            return;
+        }
+
+        sessionPreviewTargetKey = sessionKey;
+        sessionPreview = Object.assign(emptySessionPreview(), {
+            status: "loading",
+            kind: "status",
+            session_key: sessionKey,
+            tool: toolLabel(entry),
+            project_name: stringOrEmpty(entry.project_name || entry.project),
+            host_name: stringOrEmpty(entry.host_name),
+            pane_label: sessionPaneLabel(entry),
+            message: "Loading live pane preview..."
+        });
+
+        if (sessionPreviewProcess.running) {
+            sessionPreviewStopExpected = true;
+            sessionPreviewProcess.running = false;
+        }
+        sessionPreviewProcess.command = [shellConfig.i3pmBin, "session", "preview", sessionKey, "--follow", "--jsonl", "--lines", "100"];
+        sessionPreviewProcess.running = true;
+    }
+
+    function ensureSessionPreviewForSelection() {
+        const entry = activeLauncherSessionEntry();
+        if (!launcherVisible || launcherMode !== "sessions" || !entry) {
+            clearSessionPreview();
+            return;
+        }
+
+        const sessionKey = stringOrEmpty(entry.session_key || entry.identifier);
+        if (!sessionKey) {
+            clearSessionPreview();
+            return;
+        }
+
+        if (sessionPreviewTargetKey === sessionKey && sessionPreviewProcess.running) {
+            return;
+        }
+
+        if (sessionPreviewTargetKey === sessionKey && !sessionPreviewProcess.running && stringOrEmpty(sessionPreview.status) === "live") {
+            return;
+        }
+
+        sessionPreviewDebounce.restart();
+    }
+
+    function sessionPreviewTitle() {
+        const label = stringOrEmpty(sessionPreview.pane_label || sessionPreview.pane_title || sessionPreview.tmux_pane);
+        if (label) {
+            return label;
+        }
+        const entry = activeLauncherSessionEntry();
+        return entry ? sessionPrimaryLabel(entry) : "Session Preview";
+    }
+
+    function sessionPreviewSubtitle() {
+        const bits = [];
+        const host = stringOrEmpty(sessionPreview.host_name);
+        const project = shortProject(stringOrEmpty(sessionPreview.project_name));
+        if (host) {
+            bits.push(displayHostName(host));
+        }
+        if (project && project !== "Global") {
+            bits.push(project);
+        }
+        if (stringOrEmpty(sessionPreview.tmux_session)) {
+            bits.push(stringOrEmpty(sessionPreview.tmux_session));
+        }
+        return bits.join("  •  ");
+    }
+
+    function sessionPreviewBody() {
+        const content = stringOrEmpty(sessionPreview.content);
+        if (content) {
+            return content;
+        }
+        return stringOrEmpty(sessionPreview.message);
+    }
+
+    function sessionPreviewBadgeText() {
+        if (stringOrEmpty(sessionPreview.status) === "loading") {
+            return "Loading";
+        }
+        if (boolOrFalse(sessionPreview.is_live)) {
+            return "Live";
+        }
+        if (boolOrFalse(sessionPreview.is_remote)) {
+            return "Remote";
+        }
+        if (stringOrEmpty(sessionPreview.status) === "error") {
+            return "Error";
+        }
+        return "Info";
+    }
+
     function sessionLauncherEntry(session) {
         const parentWindow = findWindowById(Number(session && session.window_id || 0));
         return Object.assign({}, session, {
@@ -1614,16 +1964,20 @@ ShellRoot {
 
     function launcherEntryIdentity(entry) {
         const kind = stringOrEmpty(entry && entry.kind);
-        if (!kind) {
-            return "";
-        }
         if (kind === "session") {
             return "session::" + stringOrEmpty(entry && entry.session_key);
         }
         if (kind === "window") {
             return "window::" + String(Number(entry && (entry.id || entry.window_id) || 0));
         }
-        return kind + "::" + stringOrEmpty(entry && (entry.identifier || entry.qualified_name || entry.text));
+        const identityValue = stringOrEmpty(entry && (entry.identifier || entry.qualified_name || entry.text || entry.subtext));
+        if (!identityValue) {
+            return "";
+        }
+        if (!kind) {
+            return "app::" + identityValue;
+        }
+        return kind + "::" + identityValue;
     }
 
     function setLauncherEntries(entries) {
@@ -1633,6 +1987,9 @@ ShellRoot {
 
         if (!nextEntries.length) {
             launcherSelectedIndex = 0;
+            if (launcherMode === "sessions") {
+                clearSessionPreview();
+            }
             return;
         }
 
@@ -1642,11 +1999,332 @@ ShellRoot {
             });
             if (previousIndex >= 0) {
                 launcherSelectedIndex = previousIndex;
+                if (launcherMode === "sessions") {
+                    ensureSessionPreviewForSelection();
+                }
                 return;
             }
         }
 
         launcherSelectedIndex = Math.max(0, Math.min(launcherSelectedIndex, nextEntries.length - 1));
+        if (launcherMode === "sessions") {
+            ensureSessionPreviewForSelection();
+        }
+    }
+
+    function normalizeSettingsSection(section) {
+        return stringOrEmpty(section).toLowerCase() === "commands" ? "commands" : "commands";
+    }
+
+    function setSettingsSection(section) {
+        settingsSection = normalizeSettingsSection(section);
+    }
+
+    function openSettings(section) {
+        setSettingsSection(section);
+        settingsVisible = true;
+    }
+
+    function closeSettings() {
+        settingsVisible = false;
+    }
+
+    function activeSettingsCommandEntry() {
+        const entries = arrayOrEmpty(settingsCommandEntries);
+        if (!entries.length) {
+            return null;
+        }
+        if (settingsCommandSelectedIndex < 0 || settingsCommandSelectedIndex >= entries.length) {
+            return entries[0];
+        }
+        return entries[settingsCommandSelectedIndex];
+    }
+
+    function setSettingsCommandEntries(entries) {
+        const nextEntries = arrayOrEmpty(entries);
+        const previousIdentity = launcherEntryIdentity(activeSettingsCommandEntry());
+        settingsCommandEntries = nextEntries;
+
+        if (!nextEntries.length) {
+            settingsCommandSelectedIndex = 0;
+            return;
+        }
+
+        if (snippetEditorSelectionHint >= 0) {
+            settingsCommandSelectedIndex = Math.max(0, Math.min(snippetEditorSelectionHint, nextEntries.length - 1));
+            snippetEditorSelectionHint = -1;
+            return;
+        }
+
+        if (previousIdentity) {
+            const previousIndex = nextEntries.findIndex(function (candidate) {
+                return launcherEntryIdentity(candidate) === previousIdentity;
+            });
+            if (previousIndex >= 0) {
+                settingsCommandSelectedIndex = previousIndex;
+                return;
+            }
+        }
+
+        settingsCommandSelectedIndex = Math.max(0, Math.min(settingsCommandSelectedIndex, nextEntries.length - 1));
+    }
+
+    function resetSnippetEditor() {
+        snippetEditorSyncing = true;
+        snippetEditorBusy = false;
+        snippetEditorError = "";
+        snippetEditorMessage = "";
+        snippetEditorIndex = -1;
+        snippetEditorSelectionHint = -1;
+        snippetEditorNewDraft = false;
+        snippetEditorDirty = false;
+        snippetEditorLoadedIdentity = "";
+        snippetEditorName = "";
+        snippetEditorCommand = "";
+        snippetEditorDescription = "";
+        snippetEditorSyncing = false;
+    }
+
+    function activeSnippetEntry() {
+        const entry = activeSettingsCommandEntry();
+        if (stringOrEmpty(entry && entry.kind) !== "snippet") {
+            return null;
+        }
+        return entry;
+    }
+
+    function snippetEditorTitle() {
+        return snippetEditorNewDraft ? "New Command" : "Edit Command";
+    }
+
+    function snippetEditorStatus() {
+        if (snippetEditorError) {
+            return snippetEditorError;
+        }
+        if (snippetEditorBusy) {
+            return "Saving curated command";
+        }
+        if (snippetEditorMessage) {
+            return snippetEditorMessage;
+        }
+        if (snippetEditorDirty) {
+            return "Unsaved changes";
+        }
+        if (snippetEditorNewDraft) {
+            return "Create a curated command saved to Elephant snippets";
+        }
+        return "Selected command is stored in Elephant snippets";
+    }
+
+    function snippetEditorCanSave() {
+        return stringOrEmpty(snippetEditorName).trim().length > 0 && stringOrEmpty(snippetEditorCommand).trim().length > 0 && !snippetEditorBusy;
+    }
+
+    function startSnippetDraft() {
+        snippetEditorSyncing = true;
+        snippetEditorError = "";
+        snippetEditorMessage = "";
+        snippetEditorIndex = -1;
+        snippetEditorSelectionHint = -1;
+        snippetEditorNewDraft = true;
+        snippetEditorDirty = false;
+        snippetEditorLoadedIdentity = "";
+        snippetEditorName = stringOrEmpty(snippetEditorName).trim() ? snippetEditorName : stringOrEmpty(settingsCommandQuery).trim();
+        snippetEditorCommand = stringOrEmpty(snippetEditorCommand).trim() ? snippetEditorCommand : "";
+        snippetEditorDescription = stringOrEmpty(snippetEditorDescription).trim() ? snippetEditorDescription : "";
+        snippetEditorSyncing = false;
+    }
+
+    function loadSnippetEditor(entry) {
+        if (stringOrEmpty(entry && entry.kind) !== "snippet") {
+            startSnippetDraft();
+            return;
+        }
+        snippetEditorSyncing = true;
+        snippetEditorError = "";
+        snippetEditorMessage = "";
+        snippetEditorIndex = Number(entry && entry.index);
+        snippetEditorSelectionHint = snippetEditorIndex;
+        snippetEditorNewDraft = false;
+        snippetEditorDirty = false;
+        snippetEditorLoadedIdentity = launcherEntryIdentity(entry);
+        snippetEditorName = stringOrEmpty(entry && entry.text);
+        snippetEditorCommand = stringOrEmpty(entry && entry.command);
+        snippetEditorDescription = stringOrEmpty(entry && entry.description);
+        snippetEditorSyncing = false;
+    }
+
+    function syncSnippetEditorFromSelection() {
+        if (!settingsVisible || settingsSection !== "commands" || snippetEditorBusy) {
+            return;
+        }
+        const entry = activeSnippetEntry();
+        if (!entry) {
+            if (!snippetEditorNewDraft || (!settingsCommandEntries.length && !stringOrEmpty(snippetEditorName).trim() && !stringOrEmpty(snippetEditorCommand).trim())) {
+                startSnippetDraft();
+            }
+            return;
+        }
+        const identity = launcherEntryIdentity(entry);
+        if (!snippetEditorNewDraft && snippetEditorLoadedIdentity === identity && snippetEditorIndex === Number(entry && entry.index)) {
+            return;
+        }
+        loadSnippetEditor(entry);
+    }
+
+    function beginNewSnippetFromQuery() {
+        snippetEditorSyncing = true;
+        snippetEditorName = stringOrEmpty(settingsCommandQuery).trim();
+        snippetEditorCommand = "";
+        snippetEditorDescription = "";
+        snippetEditorSyncing = false;
+        startSnippetDraft();
+    }
+
+    function submitSnippetMutation(command) {
+        if (snippetEditorProcess.running) {
+            snippetEditorProcess.running = false;
+        }
+        snippetEditorBusy = true;
+        snippetEditorError = "";
+        snippetEditorMessage = "";
+        snippetEditorProcess.command = command;
+        snippetEditorProcess.running = true;
+    }
+
+    function saveSnippetEditor() {
+        if (!snippetEditorCanSave()) {
+            snippetEditorError = "Command name and command text are required";
+            return;
+        }
+        submitSnippetMutation([
+            shellConfig.snippetsManageBin,
+            "upsert",
+            String(snippetEditorNewDraft ? -1 : snippetEditorIndex),
+            stringOrEmpty(snippetEditorName).trim(),
+            stringOrEmpty(snippetEditorCommand).trim(),
+            stringOrEmpty(snippetEditorDescription).trim()
+        ]);
+    }
+
+    function removeSnippetEditorEntry() {
+        if (snippetEditorBusy || snippetEditorNewDraft || snippetEditorIndex < 0) {
+            return;
+        }
+        submitSnippetMutation([shellConfig.snippetsManageBin, "remove", String(snippetEditorIndex)]);
+    }
+
+    function moveSnippetEditorEntry(direction) {
+        if (snippetEditorBusy || snippetEditorNewDraft || snippetEditorIndex < 0) {
+            return;
+        }
+        submitSnippetMutation([shellConfig.snippetsManageBin, "move", String(snippetEditorIndex), direction]);
+    }
+
+    function handleSnippetMutationResult(data) {
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            snippetEditorBusy = false;
+            return;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            snippetEditorBusy = false;
+            snippetEditorError = "";
+            snippetEditorMessage = stringOrEmpty(parsed && parsed.message);
+            if (parsed && parsed.index !== undefined && parsed.index !== null) {
+                snippetEditorSelectionHint = Number(parsed.index);
+            }
+            if (stringOrEmpty(parsed && parsed.action) === "remove") {
+                snippetEditorLoadedIdentity = "";
+                snippetEditorNewDraft = false;
+            }
+            settingsCommandQueryDebounce.restart();
+            if (launcherVisible && launcherMode === "snippets") {
+                launcherQueryDebounce.restart();
+            }
+        } catch (error) {
+            snippetEditorBusy = false;
+            snippetEditorError = "Unable to update curated commands";
+            console.warn("settings.commands.mutation:", raw, error);
+        }
+    }
+
+    function settingsTitle() {
+        return "Settings";
+    }
+
+    function settingsCommandStatusText() {
+        if (settingsCommandError) {
+            return settingsCommandError;
+        }
+        if (settingsCommandLoading) {
+            return "Loading commands";
+        }
+        if (settingsCommandEntries.length) {
+            return settingsCommandEntries.length + " command" + (settingsCommandEntries.length === 1 ? "" : "s");
+        }
+        return "No commands match the current query";
+    }
+
+    function settingsCommandEmptyText() {
+        if (settingsCommandError) {
+            return settingsCommandError;
+        }
+        return settingsCommandQuery.trim().length ? "No commands match the current query" : "No commands yet. Create one from the editor.";
+    }
+
+    function moveSettingsCommandSelection(delta) {
+        const entries = arrayOrEmpty(settingsCommandEntries);
+        if (!entries.length) {
+            settingsCommandSelectedIndex = 0;
+            return;
+        }
+        settingsCommandSelectedIndex = (settingsCommandSelectedIndex + delta + entries.length) % entries.length;
+    }
+
+    function restartSettingsCommandQuery() {
+        if (!settingsVisible || settingsSection !== "commands") {
+            return;
+        }
+
+        settingsCommandError = "";
+
+        if (settingsCommandQueryProcess.running) {
+            settingsCommandQueryProcess.running = false;
+        }
+
+        settingsCommandLoading = true;
+        settingsCommandQueryProcess.command = [shellConfig.snippetsListBin, settingsCommandQuery, "200"];
+        settingsCommandQueryProcess.running = true;
+    }
+
+    function parseSettingsCommandResults(data) {
+        if (!settingsVisible || settingsSection !== "commands") {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setSettingsCommandEntries([]);
+            settingsCommandLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setSettingsCommandEntries(Array.isArray(parsed) ? parsed : []);
+            if (!settingsCommandEntries.length && !snippetEditorBusy) {
+                startSnippetDraft();
+            }
+            settingsCommandLoading = false;
+            settingsCommandError = "";
+        } catch (error) {
+            setSettingsCommandEntries([]);
+            settingsCommandLoading = false;
+            settingsCommandError = "Unable to load commands";
+            console.warn("settings.commands.parse:", raw, error);
+        }
     }
 
     function projectLauncherEntries(query) {
@@ -2761,12 +3439,24 @@ ShellRoot {
         if (kind === "session" || kind === "window") {
             return hostTokenData && hostTokenData.is_remote ? colors.orange : colors.blue;
         }
+        if (kind === "url" || kind === "search") {
+            return stringOrEmpty(entry && entry.matched_pwa_ulid) ? colors.teal : colors.blue;
+        }
+        if (kind === "runner") {
+            return colors.orange;
+        }
+        if (kind === "snippet") {
+            return colors.teal;
+        }
         return "transparent";
     }
 
     function launcherIconSource(entry) {
         const isOnePassword = stringOrEmpty(entry && entry.kind) === "onepassword";
         const isClipboard = stringOrEmpty(entry && entry.kind) === "clipboard";
+        const isUrl = stringOrEmpty(entry && entry.kind) === "url" || stringOrEmpty(entry && entry.kind) === "search";
+        const isRunner = stringOrEmpty(entry && entry.kind) === "runner";
+        const isSnippet = stringOrEmpty(entry && entry.kind) === "snippet";
         const icon = stringOrEmpty(entry && entry.icon);
         if (!icon) {
             if (isOnePassword) {
@@ -2774,6 +3464,15 @@ ShellRoot {
             }
             if (isClipboard) {
                 return Quickshell.iconPath("edit-paste", true) || Quickshell.iconPath("application-x-executable", true) || "";
+            }
+            if (isUrl) {
+                return Quickshell.iconPath("web-browser", true) || Quickshell.iconPath("internet-web-browser", true) || Quickshell.iconPath("application-x-executable", true) || "";
+            }
+            if (isRunner) {
+                return Quickshell.iconPath("utilities-terminal", true) || Quickshell.iconPath("application-x-executable", true) || "";
+            }
+            if (isSnippet) {
+                return Quickshell.iconPath("insert-text", true) || Quickshell.iconPath("application-x-executable", true) || "";
             }
             return Quickshell.iconPath("application-x-executable", true) || "";
         }
@@ -2794,6 +3493,15 @@ ShellRoot {
         if (isClipboard) {
             return Quickshell.iconPath("edit-paste", true) || Quickshell.iconPath("application-x-executable", true) || "";
         }
+        if (isUrl) {
+            return Quickshell.iconPath("web-browser", true) || Quickshell.iconPath("internet-web-browser", true) || Quickshell.iconPath("application-x-executable", true) || "";
+        }
+        if (isRunner) {
+            return Quickshell.iconPath("utilities-terminal", true) || Quickshell.iconPath("application-x-executable", true) || "";
+        }
+        if (isSnippet) {
+            return Quickshell.iconPath("insert-text", true) || Quickshell.iconPath("application-x-executable", true) || "";
+        }
 
         return Quickshell.iconPath("application-x-executable", true) || "";
     }
@@ -2812,6 +3520,27 @@ ShellRoot {
         if (launcherMode === "projects") {
             launcherLoading = false;
             setLauncherEntries(projectLauncherEntries(launcherQuery));
+            return;
+        }
+
+        if (launcherMode === "urls") {
+            launcherLoading = true;
+            launcherQueryProcess.command = [shellConfig.urlListBin, launcherQuery, "30"];
+            launcherQueryProcess.running = true;
+            return;
+        }
+
+        if (launcherMode === "runner") {
+            launcherLoading = true;
+            launcherQueryProcess.command = [shellConfig.runnerListBin, launcherQuery];
+            launcherQueryProcess.running = true;
+            return;
+        }
+
+        if (launcherMode === "snippets") {
+            launcherLoading = true;
+            launcherQueryProcess.command = [shellConfig.snippetsListBin, launcherQuery, "40"];
+            launcherQueryProcess.running = true;
             return;
         }
 
@@ -2847,6 +3576,31 @@ ShellRoot {
         launcherQueryProcess.running = true;
     }
 
+    function parseUrlResults(data) {
+        if (launcherMode !== "urls" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to load Chrome URL results";
+            console.warn("launcher.urls.parse:", raw, error);
+        }
+    }
+
     function parseLauncherResults(data) {
         if (launcherMode !== "apps" || !launcherVisible) {
             return;
@@ -2869,6 +3623,56 @@ ShellRoot {
             launcherLoading = false;
             launcherError = "Unable to load app results";
             console.warn("launcher.query.parse:", raw, error);
+        }
+    }
+
+    function parseRunnerResults(data) {
+        if (launcherMode !== "runner" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to prepare command";
+            console.warn("launcher.runner.parse:", raw, error);
+        }
+    }
+
+    function parseSnippetResults(data) {
+        if (launcherMode !== "snippets" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to load curated commands";
+            console.warn("launcher.snippets.parse:", raw, error);
         }
     }
 
@@ -3001,6 +3805,39 @@ ShellRoot {
 
             closeLauncher();
             runDetached([shellConfig.clipboardActionBin, action, identifier]);
+            return;
+        }
+        if (kind === "url" || kind === "search") {
+            const url = stringOrEmpty(entry && entry.url);
+            const mode = stringOrEmpty(actionMode || "preferred") || "preferred";
+            if (!url) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached([shellConfig.urlOpenBin, mode, url]);
+            return;
+        }
+        if (kind === "runner") {
+            const command = stringOrEmpty(entry && (entry.command || entry.text || entry.identifier));
+            const mode = stringOrEmpty(actionMode || "background") || "background";
+            if (!command) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached([shellConfig.launcherCommandActionBin, mode, command]);
+            return;
+        }
+        if (kind === "snippet") {
+            const command = stringOrEmpty(entry && (entry.command || entry.identifier || entry.text));
+            const mode = stringOrEmpty(actionMode || "background") || "background";
+            if (!command) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached([shellConfig.launcherCommandActionBin, mode, command]);
             return;
         }
 
@@ -3287,6 +4124,30 @@ ShellRoot {
         onTriggered: root.restartLauncherQuery()
     }
 
+    Timer {
+        id: sessionPreviewDebounce
+        interval: 75
+        repeat: false
+        onTriggered: root.restartSessionPreview()
+    }
+
+    Timer {
+        id: settingsFocusTimer
+        interval: 40
+        repeat: false
+        onTriggered: {
+            settingsCommandQueryField.forceActiveFocus();
+            settingsCommandQueryField.selectAll();
+        }
+    }
+
+    Timer {
+        id: settingsCommandQueryDebounce
+        interval: 90
+        repeat: false
+        onTriggered: root.restartSettingsCommandQuery()
+    }
+
     Process {
         id: dashboardWatcher
         command: [shellConfig.i3pmBin, "dashboard", "watch", "--interval", String(shellConfig.dashboardHeartbeatMs)]
@@ -3357,12 +4218,79 @@ ShellRoot {
     }
 
     Process {
+        id: snippetEditorProcess
+        command: [shellConfig.snippetsManageBin, "upsert", "-1", "", "", ""]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                root.handleSnippetMutationResult(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (message) {
+                    root.snippetEditorBusy = false;
+                    root.snippetEditorError = message;
+                    console.warn("settings.commands.manage:", message);
+                }
+            }
+        }
+        onExited: function () {
+            root.snippetEditorBusy = false;
+        }
+    }
+
+    Process {
+        id: settingsCommandQueryProcess
+        command: [shellConfig.snippetsListBin, "", "200"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                root.parseSettingsCommandResults(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (!root.settingsVisible || root.settingsSection !== "commands") {
+                    return;
+                }
+                const message = data && data.trim();
+                if (message) {
+                    root.settingsCommandError = "Unable to load commands";
+                    root.settingsCommandLoading = false;
+                    console.warn("settings.commands.query:", message);
+                }
+            }
+        }
+        onExited: function () {
+            root.settingsCommandLoading = false;
+        }
+    }
+
+    Process {
         id: launcherQueryProcess
         command: [shellConfig.launcherQueryBin, "", "12", "20"]
         running: false
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
+                if (root.launcherMode === "urls") {
+                    root.parseUrlResults(data);
+                    return;
+                }
+                if (root.launcherMode === "runner") {
+                    root.parseRunnerResults(data);
+                    return;
+                }
+                if (root.launcherMode === "snippets") {
+                    root.parseSnippetResults(data);
+                    return;
+                }
                 if (root.launcherMode === "onepassword") {
                     root.parseOnePasswordResults(data);
                     return;
@@ -3377,12 +4305,18 @@ ShellRoot {
         stderr: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
-                if (!root.launcherVisible || (root.launcherMode !== "apps" && root.launcherMode !== "onepassword" && root.launcherMode !== "clipboard")) {
+                if (!root.launcherVisible || (root.launcherMode !== "apps" && root.launcherMode !== "urls" && root.launcherMode !== "runner" && root.launcherMode !== "snippets" && root.launcherMode !== "onepassword" && root.launcherMode !== "clipboard")) {
                     return;
                 }
                 const message = data && data.trim();
                 if (message) {
-                    if (root.launcherMode === "onepassword") {
+                    if (root.launcherMode === "urls") {
+                        root.launcherError = "Unable to load Chrome URL results";
+                    } else if (root.launcherMode === "runner") {
+                        root.launcherError = "Unable to prepare command";
+                    } else if (root.launcherMode === "snippets") {
+                        root.launcherError = "Unable to load curated commands";
+                    } else if (root.launcherMode === "onepassword") {
                         root.launcherError = "Unable to load 1Password items";
                     } else if (root.launcherMode === "clipboard") {
                         root.launcherError = "Unable to load clipboard history";
@@ -3395,8 +4329,42 @@ ShellRoot {
             }
         }
         onExited: function () {
-            if (root.launcherMode === "apps" || root.launcherMode === "onepassword" || root.launcherMode === "clipboard") {
+            if (root.launcherMode === "apps" || root.launcherMode === "urls" || root.launcherMode === "runner" || root.launcherMode === "snippets" || root.launcherMode === "onepassword" || root.launcherMode === "clipboard") {
                 root.launcherLoading = false;
+            }
+        }
+    }
+
+    Process {
+        id: sessionPreviewProcess
+        command: [shellConfig.i3pmBin, "session", "preview", "", "--follow", "--jsonl", "--lines", "100"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                root.parseSessionPreview(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("session.preview:", data);
+                }
+            }
+        }
+        onExited: function () {
+            if (root.sessionPreviewStopExpected) {
+                root.sessionPreviewStopExpected = false;
+                return;
+            }
+            if (root.launcherVisible && root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null && root.stringOrEmpty(root.sessionPreview.status) === "loading") {
+                root.sessionPreview = Object.assign(root.emptySessionPreview(), {
+                    status: "error",
+                    kind: "error",
+                    session_key: root.stringOrEmpty(root.activeLauncherSessionEntry().session_key || root.activeLauncherSessionEntry().identifier),
+                    message: "Unable to start session preview."
+                });
             }
         }
     }
@@ -3441,7 +4409,22 @@ ShellRoot {
         }
 
         function toggleLauncher() {
+            if (!root.launcherVisible) {
+                root.settingsVisible = false;
+            }
             root.launcherVisible = !root.launcherVisible;
+        }
+
+        function toggleSettings() {
+            if (!root.settingsVisible) {
+                root.openSettings("commands");
+                return;
+            }
+            root.closeSettings();
+        }
+
+        function showSettings(section) {
+            root.openSettings(section);
         }
     }
 
@@ -4323,7 +5306,7 @@ ShellRoot {
             Rectangle {
                 id: launcherCard
                 anchors.centerIn: parent
-                width: Math.min(760, parent.width - 96)
+                width: Math.min(root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 980 : 760, parent.width - 96)
                 height: Math.min(560, parent.height - 96)
                 radius: 12
                 color: colors.panel
@@ -4383,6 +5366,32 @@ ShellRoot {
                         }
 
                         Rectangle {
+                            Layout.preferredWidth: launcherUrlsModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "urls" ? colors.tealBg : (launcherUrlsModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "urls" ? colors.teal : (launcherUrlsModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherUrlsModeLabel
+                                anchors.centerIn: parent
+                                text: "URLs"
+                                color: root.launcherMode === "urls" ? colors.teal : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherUrlsModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("urls")
+                            }
+                        }
+
+                        Rectangle {
                             Layout.preferredWidth: launcherProjectsModeLabel.implicitWidth + 18
                             height: 26
                             radius: 6
@@ -4405,6 +5414,58 @@ ShellRoot {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: root.setLauncherMode("projects")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherRunnerModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "runner" ? colors.orangeBg : (launcherRunnerModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "runner" ? colors.orange : (launcherRunnerModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherRunnerModeLabel
+                                anchors.centerIn: parent
+                                text: "Runner"
+                                color: root.launcherMode === "runner" ? colors.orange : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherRunnerModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("runner")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherSnippetsModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "snippets" ? colors.tealBg : (launcherSnippetsModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "snippets" ? colors.teal : (launcherSnippetsModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherSnippetsModeLabel
+                                anchors.centerIn: parent
+                                text: "Commands"
+                                color: root.launcherMode === "snippets" ? colors.teal : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherSnippetsModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("snippets")
                             }
                         }
 
@@ -4545,17 +5606,32 @@ ShellRoot {
 
                         Keys.onPressed: function (event) {
                             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_2) {
-                                root.setLauncherMode("projects");
+                                root.setLauncherMode("urls");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_7) {
+                                root.setLauncherMode("clipboard");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_8) {
+                                root.setLauncherMode("runner");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_9) {
+                                root.setLauncherMode("snippets");
                                 event.accepted = true;
                                 return;
                             }
                             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_3) {
-                                root.setLauncherMode("onepassword");
+                                root.setLauncherMode("projects");
                                 event.accepted = true;
                                 return;
                             }
                             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_4) {
-                                root.setLauncherMode("clipboard");
+                                root.setLauncherMode("onepassword");
                                 event.accepted = true;
                                 return;
                             }
@@ -4601,6 +5677,20 @@ ShellRoot {
                                         root.activateSelectedLauncherEntry("username");
                                     } else {
                                         root.activateSelectedLauncherEntry("password");
+                                    }
+                                } else if (root.launcherMode === "urls") {
+                                    if (event.modifiers & Qt.ControlModifier) {
+                                        root.activateSelectedLauncherEntry("copy");
+                                    } else if (event.modifiers & Qt.ShiftModifier) {
+                                        root.activateSelectedLauncherEntry("browser");
+                                    } else {
+                                        root.activateSelectedLauncherEntry("preferred");
+                                    }
+                                } else if (root.launcherMode === "runner" || root.launcherMode === "snippets") {
+                                    if (event.modifiers & Qt.ShiftModifier) {
+                                        root.activateSelectedLauncherEntry("terminal");
+                                    } else {
+                                        root.activateSelectedLauncherEntry("background");
                                     }
                                 } else if (root.launcherMode === "clipboard") {
                                     root.activateSelectedLauncherEntry("copy");
@@ -4667,8 +5757,8 @@ ShellRoot {
                             Rectangle {
                                 Layout.fillHeight: true
                                 Layout.fillWidth: true
-                                Layout.minimumWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 280 : 0
-                                Layout.preferredWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 340 : -1
+                                Layout.minimumWidth: ((root.launcherMode === "clipboard") || (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null)) && root.launcherEntries.length > 0 ? 280 : 0
+                                Layout.preferredWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 340 : (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 360 : -1)
                                 radius: 8
                                 color: "transparent"
                                 border.width: 0
@@ -4684,12 +5774,14 @@ ShellRoot {
                                         required property var modelData
                                         readonly property var entry: modelData
                                         readonly property int itemIndex: root.launcherEntries.findIndex(function (candidate) {
-                                            return root.stringOrEmpty(candidate && candidate.identifier) === root.stringOrEmpty(entry && entry.identifier);
+                                            return root.launcherEntryIdentity(candidate) === root.launcherEntryIdentity(entry);
                                         })
                                         readonly property bool selected: itemIndex === root.launcherSelectedIndex
                                         readonly property bool projectEntry: root.stringOrEmpty(entry && entry.kind) === "project" || root.stringOrEmpty(entry && entry.kind) === "global"
                                         readonly property bool sessionEntry: root.stringOrEmpty(entry && entry.kind) === "session"
                                         readonly property bool windowEntry: root.stringOrEmpty(entry && entry.kind) === "window"
+                                        readonly property bool urlEntry: root.stringOrEmpty(entry && entry.kind) === "url" || root.stringOrEmpty(entry && entry.kind) === "search"
+                                        readonly property bool snippetEntry: root.stringOrEmpty(entry && entry.kind) === "snippet"
                                         readonly property bool onePasswordEntry: root.stringOrEmpty(entry && entry.kind) === "onepassword"
                                         readonly property bool clipboardEntry: root.stringOrEmpty(entry && entry.kind) === "clipboard"
                                         readonly property bool clipboardImageEntry: root.clipboardEntryHasImagePreview(entry)
@@ -4713,7 +5805,7 @@ ShellRoot {
                                         Component.onCompleted: resetMotionVisuals()
 
                                         width: launcherList.width
-                                        height: sessionEntry || projectEntry || windowEntry || clipboardImageEntry ? 62 : 56
+                                        height: sessionEntry || projectEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry ? 62 : 56
                                         radius: 8
                                         color: selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent")
                                         border.color: selected ? colors.blue : (entryMouse.containsMouse ? colors.borderStrong : "transparent")
@@ -4919,6 +6011,83 @@ ShellRoot {
                                                     color: selected ? colors.textDim : colors.subtle
                                                     font.pixelSize: 10
                                                     elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: urlEntry
+                                                height: 20
+                                                radius: 6
+                                                color: colors.blueBg
+                                                border.color: colors.blue
+                                                border.width: 1
+                                                Layout.preferredWidth: urlSourceChipText.implicitWidth + 12
+
+                                                Text {
+                                                    id: urlSourceChipText
+                                                    anchors.centerIn: parent
+                                                    text: root.stringOrEmpty(entry && entry.source).toUpperCase()
+                                                    color: colors.blue
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: urlEntry && root.stringOrEmpty(entry && entry.matched_pwa_name).length > 0
+                                                height: 20
+                                                radius: 6
+                                                color: colors.tealBg
+                                                border.color: colors.teal
+                                                border.width: 1
+                                                Layout.preferredWidth: urlPwaChipText.implicitWidth + 12
+
+                                                Text {
+                                                    id: urlPwaChipText
+                                                    anchors.centerIn: parent
+                                                    text: root.stringOrEmpty(entry && entry.matched_pwa_name)
+                                                    color: colors.teal
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: snippetEntry
+                                                height: 20
+                                                radius: 6
+                                                color: colors.tealBg
+                                                border.color: colors.teal
+                                                border.width: 1
+                                                Layout.preferredWidth: snippetCommandChipText.implicitWidth + 12
+
+                                                Text {
+                                                    id: snippetCommandChipText
+                                                    anchors.centerIn: parent
+                                                    text: "Command"
+                                                    color: colors.teal
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: snippetEntry && selected
+                                                height: 20
+                                                radius: 6
+                                                color: colors.blueBg
+                                                border.color: colors.blue
+                                                border.width: 1
+                                                Layout.preferredWidth: snippetSelectedChipText.implicitWidth + 12
+
+                                                Text {
+                                                    id: snippetSelectedChipText
+                                                    anchors.centerIn: parent
+                                                    text: "Editing"
+                                                    color: colors.blue
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
                                                 }
                                             }
 
@@ -5323,6 +6492,95 @@ ShellRoot {
                             }
 
                             Rectangle {
+                                id: launcherSessionPreviewPane
+                                visible: root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null
+                                Layout.fillHeight: true
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 320
+                                radius: 8
+                                color: colors.cardAlt
+                                border.color: colors.lineSoft
+                                border.width: 1
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    anchors.topMargin: 14
+                                    anchors.bottomMargin: 14
+                                    spacing: 10
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.sessionPreviewTitle()
+                                            color: colors.text
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Rectangle {
+                                            height: 20
+                                            radius: 6
+                                            color: boolOrFalse(root.sessionPreview.is_live) ? colors.accentBg : (boolOrFalse(root.sessionPreview.is_remote) ? colors.tealBg : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.redBg : colors.panelAlt))
+                                            border.color: boolOrFalse(root.sessionPreview.is_live) ? colors.accent : (boolOrFalse(root.sessionPreview.is_remote) ? colors.teal : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.border))
+                                            border.width: 1
+                                            Layout.preferredWidth: previewSessionBadgeText.implicitWidth + 12
+
+                                            Text {
+                                                id: previewSessionBadgeText
+                                                anchors.centerIn: parent
+                                                text: root.sessionPreviewBadgeText()
+                                                color: boolOrFalse(root.sessionPreview.is_live) ? colors.accent : (boolOrFalse(root.sessionPreview.is_remote) ? colors.teal : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.textDim))
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.sessionPreviewSubtitle()
+                                        color: colors.subtle
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        radius: 8
+                                        color: colors.panel
+                                        border.color: colors.border
+                                        border.width: 1
+
+                                        ScrollView {
+                                            anchors.fill: parent
+                                            anchors.margins: 10
+                                            clip: true
+
+                                            TextArea {
+                                                readOnly: true
+                                                selectByMouse: true
+                                                wrapMode: TextEdit.NoWrap
+                                                text: root.sessionPreviewBody()
+                                                color: root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.text
+                                                selectionColor: colors.blueWash
+                                                selectedTextColor: colors.text
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 11
+                                                background: null
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
                                 id: launcherClipboardPreviewPane
                                 readonly property var previewEntry: root.activeClipboardEntry()
                                 readonly property string previewType: root.stringOrEmpty(previewEntry && previewEntry.preview_type).toLowerCase()
@@ -5454,6 +6712,609 @@ ShellRoot {
                                 text: root.launcherEmptyText()
                                 color: root.launcherError ? colors.red : colors.subtle
                                 font.pixelSize: 11
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    PanelWindow {
+        id: settingsWindow
+        screen: root.primaryScreen
+        visible: root.settingsVisible && root.primaryScreen !== null
+        color: "transparent"
+        anchors.left: true
+        anchors.right: true
+        anchors.top: true
+        anchors.bottom: true
+        exclusiveZone: 0
+        exclusionMode: ExclusionMode.Ignore
+        focusable: true
+        aboveWindows: true
+        WlrLayershell.namespace: "i3pm-runtime-settings"
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#66070b12"
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.closeSettings()
+            }
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.min(1040, parent.width - 72)
+                height: Math.min(700, parent.height - 72)
+                radius: 14
+                color: colors.panel
+                border.color: colors.borderStrong
+                border.width: 1
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: function (mouse) {
+                        mouse.accepted = true;
+                    }
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 14
+
+                    Rectangle {
+                        Layout.fillHeight: true
+                        Layout.preferredWidth: 180
+                        radius: 10
+                        color: colors.card
+                        border.color: colors.border
+                        border.width: 1
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            spacing: 12
+
+                            Text {
+                                text: root.settingsTitle()
+                                color: colors.text
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Manage mutable runtime data without putting CRUD into the launcher."
+                                color: colors.subtle
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 1
+                                color: colors.lineSoft
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 42
+                                radius: 8
+                                color: root.settingsSection === "commands" ? colors.tealBg : colors.cardAlt
+                                border.color: root.settingsSection === "commands" ? colors.teal : colors.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 8
+
+                                    Text {
+                                        text: "$"
+                                        color: root.settingsSection === "commands" ? colors.teal : colors.textDim
+                                        font.pixelSize: 12
+                                        font.weight: Font.Bold
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 1
+
+                                        Text {
+                                            text: "Commands"
+                                            color: root.settingsSection === "commands" ? colors.teal : colors.text
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Text {
+                                            text: "Elephant snippets"
+                                            color: colors.subtle
+                                            font.pixelSize: 9
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.setSettingsSection("commands")
+                                }
+                            }
+
+                            Item {
+                                Layout.fillHeight: true
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Open with `toggle-runtime-settings`."
+                                color: colors.subtle
+                                font.pixelSize: 9
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillHeight: true
+                        Layout.fillWidth: true
+                        radius: 10
+                        color: colors.card
+                        border.color: colors.border
+                        border.width: 1
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            spacing: 12
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        text: "Commands"
+                                        color: colors.text
+                                        font.pixelSize: 15
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        text: "Browse and edit curated commands stored in `~/.config/elephant/snippets.toml`."
+                                        color: colors.subtle
+                                        font.pixelSize: 10
+                                    }
+                                }
+
+                                Button {
+                                    text: "Close"
+                                    onClicked: root.closeSettings()
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.settingsCommandStatusText()
+                                    color: root.settingsCommandError ? colors.red : colors.subtle
+                                    font.pixelSize: 10
+                                }
+
+                                Text {
+                                    text: root.snippetEditorStatus()
+                                    color: root.snippetEditorError ? colors.red : (root.snippetEditorDirty ? colors.orange : colors.subtle)
+                                    font.pixelSize: 10
+                                }
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequence: StandardKey.New
+                                onActivated: root.beginNewSnippetFromQuery()
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequence: StandardKey.Save
+                                onActivated: root.saveSnippetEditor()
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequence: "Ctrl+D"
+                                onActivated: root.removeSnippetEditorEntry()
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequence: "Alt+Up"
+                                onActivated: root.moveSnippetEditorEntry("up")
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequence: "Alt+Down"
+                                onActivated: root.moveSnippetEditorEntry("down")
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                spacing: 12
+
+                                Rectangle {
+                                    Layout.fillHeight: true
+                                    Layout.preferredWidth: 330
+                                    radius: 8
+                                    color: colors.cardAlt
+                                    border.color: colors.lineSoft
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 12
+                                        spacing: 10
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            TextField {
+                                                id: settingsCommandQueryField
+                                                Layout.fillWidth: true
+                                                text: ""
+                                                placeholderText: "Search commands"
+                                                color: colors.text
+                                                selectByMouse: true
+                                                background: Rectangle {
+                                                    radius: 8
+                                                    color: colors.panel
+                                                    border.color: settingsCommandQueryField.activeFocus ? colors.teal : colors.border
+                                                    border.width: 1
+                                                }
+                                                onTextChanged: {
+                                                    if (!root.settingsCommandNormalizingInput) {
+                                                        root.settingsCommandQuery = text;
+                                                    }
+                                                }
+                                                Keys.onPressed: function (event) {
+                                                    switch (event.key) {
+                                                    case Qt.Key_Escape:
+                                                        root.closeSettings();
+                                                        event.accepted = true;
+                                                        break;
+                                                    case Qt.Key_Down:
+                                                        root.moveSettingsCommandSelection(1);
+                                                        event.accepted = true;
+                                                        break;
+                                                    case Qt.Key_Up:
+                                                        root.moveSettingsCommandSelection(-1);
+                                                        event.accepted = true;
+                                                        break;
+                                                    default:
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            Button {
+                                                text: "New"
+                                                enabled: !root.snippetEditorBusy
+                                                onClicked: root.beginNewSnippetFromQuery()
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 1
+                                            color: colors.lineSoft
+                                        }
+
+                                        ScriptModel {
+                                            id: settingsCommandEntriesModel
+                                            values: root.settingsCommandEntries
+                                            objectProp: "modelData"
+                                        }
+
+                                        ListView {
+                                            id: settingsCommandsList
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            clip: true
+                                            spacing: 6
+                                            model: settingsCommandEntriesModel
+
+                                            delegate: Rectangle {
+                                                required property var modelData
+                                                readonly property var entry: modelData
+                                                readonly property int itemIndex: root.settingsCommandEntries.findIndex(function (candidate) {
+                                                    return root.launcherEntryIdentity(candidate) === root.launcherEntryIdentity(entry);
+                                                })
+                                                readonly property bool selected: itemIndex === root.settingsCommandSelectedIndex
+
+                                                width: settingsCommandsList.width
+                                                height: 70
+                                                radius: 8
+                                                color: selected ? colors.blueBg : (settingsCommandMouse.containsMouse ? colors.panelAlt : "transparent")
+                                                border.color: selected ? colors.blue : (settingsCommandMouse.containsMouse ? colors.borderStrong : "transparent")
+                                                border.width: 1
+
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 12
+                                                    anchors.rightMargin: 12
+                                                    anchors.topMargin: 10
+                                                    anchors.bottomMargin: 10
+                                                    spacing: 4
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: root.stringOrEmpty(entry && entry.text)
+                                                        color: colors.text
+                                                        font.pixelSize: 11
+                                                        font.weight: Font.DemiBold
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: root.stringOrEmpty(entry && entry.description)
+                                                        visible: text.length > 0
+                                                        color: colors.subtle
+                                                        font.pixelSize: 9
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: root.stringOrEmpty(entry && entry.command)
+                                                        color: selected ? colors.blue : colors.textDim
+                                                        font.pixelSize: 9
+                                                        elide: Text.ElideRight
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: settingsCommandMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onEntered: root.settingsCommandSelectedIndex = itemIndex
+                                                    onClicked: root.settingsCommandSelectedIndex = itemIndex
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                anchors.centerIn: parent
+                                                visible: !root.settingsCommandLoading && root.settingsCommandEntries.length === 0
+                                                width: parent.width - 12
+                                                height: 72
+                                                radius: 8
+                                                color: colors.panel
+                                                border.color: colors.border
+                                                border.width: 1
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: root.settingsCommandEmptyText()
+                                                    color: root.settingsCommandError ? colors.red : colors.subtle
+                                                    font.pixelSize: 10
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillHeight: true
+                                    Layout.fillWidth: true
+                                    radius: 8
+                                    color: colors.cardAlt
+                                    border.color: colors.lineSoft
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 14
+                                        anchors.rightMargin: 14
+                                        anchors.topMargin: 14
+                                        anchors.bottomMargin: 14
+                                        spacing: 10
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: root.snippetEditorTitle()
+                                                color: colors.text
+                                                font.pixelSize: 13
+                                                font.weight: Font.DemiBold
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Rectangle {
+                                                height: 20
+                                                radius: 6
+                                                color: root.snippetEditorNewDraft ? colors.orangeBg : colors.tealBg
+                                                border.color: root.snippetEditorNewDraft ? colors.orange : colors.teal
+                                                border.width: 1
+                                                Layout.preferredWidth: settingsEditorModeText.implicitWidth + 12
+
+                                                Text {
+                                                    id: settingsEditorModeText
+                                                    anchors.centerIn: parent
+                                                    text: root.snippetEditorNewDraft ? "New" : "Saved"
+                                                    color: root.snippetEditorNewDraft ? colors.orange : colors.teal
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.snippetEditorStatus()
+                                            color: root.snippetEditorError ? colors.red : (root.snippetEditorDirty ? colors.orange : colors.subtle)
+                                            font.pixelSize: 10
+                                            wrapMode: Text.WordWrap
+                                        }
+
+                                        Text {
+                                            text: "Name"
+                                            color: colors.textDim
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        TextField {
+                                            id: settingsSnippetNameField
+                                            Layout.fillWidth: true
+                                            text: root.snippetEditorName
+                                            placeholderText: "deploy api"
+                                            color: colors.text
+                                            selectByMouse: true
+                                            enabled: !root.snippetEditorBusy
+                                            background: Rectangle {
+                                                radius: 8
+                                                color: colors.panel
+                                                border.color: settingsSnippetNameField.activeFocus ? colors.teal : colors.border
+                                                border.width: 1
+                                            }
+                                            onTextChanged: {
+                                                if (root.snippetEditorSyncing) {
+                                                    return;
+                                                }
+                                                root.snippetEditorName = text;
+                                                root.snippetEditorDirty = true;
+                                                root.snippetEditorError = "";
+                                                root.snippetEditorMessage = "";
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Command"
+                                            color: colors.textDim
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 180
+                                            radius: 8
+                                            color: colors.panel
+                                            border.color: colors.border
+                                            border.width: 1
+
+                                            ScrollView {
+                                                anchors.fill: parent
+                                                anchors.margins: 2
+                                                clip: true
+
+                                                TextArea {
+                                                    text: root.snippetEditorCommand
+                                                    placeholderText: "just deploy api"
+                                                    color: colors.text
+                                                    selectByMouse: true
+                                                    wrapMode: TextEdit.Wrap
+                                                    enabled: !root.snippetEditorBusy
+                                                    background: null
+                                                    onTextChanged: {
+                                                        if (root.snippetEditorSyncing) {
+                                                            return;
+                                                        }
+                                                        root.snippetEditorCommand = text;
+                                                        root.snippetEditorDirty = true;
+                                                        root.snippetEditorError = "";
+                                                        root.snippetEditorMessage = "";
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Description"
+                                            color: colors.textDim
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        TextField {
+                                            id: settingsSnippetDescriptionField
+                                            Layout.fillWidth: true
+                                            text: root.snippetEditorDescription
+                                            placeholderText: "Optional note shown in the launcher"
+                                            color: colors.text
+                                            selectByMouse: true
+                                            enabled: !root.snippetEditorBusy
+                                            background: Rectangle {
+                                                radius: 8
+                                                color: colors.panel
+                                                border.color: settingsSnippetDescriptionField.activeFocus ? colors.blue : colors.border
+                                                border.width: 1
+                                            }
+                                            onTextChanged: {
+                                                if (root.snippetEditorSyncing) {
+                                                    return;
+                                                }
+                                                root.snippetEditorDescription = text;
+                                                root.snippetEditorDirty = true;
+                                                root.snippetEditorError = "";
+                                                root.snippetEditorMessage = "";
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Button {
+                                                text: root.snippetEditorBusy ? "Saving..." : "Save"
+                                                enabled: root.snippetEditorCanSave()
+                                                onClicked: root.saveSnippetEditor()
+                                            }
+
+                                            Button {
+                                                text: "Delete"
+                                                enabled: !root.snippetEditorBusy && !root.snippetEditorNewDraft && root.snippetEditorIndex >= 0
+                                                onClicked: root.removeSnippetEditorEntry()
+                                            }
+
+                                            Button {
+                                                text: "Move Up"
+                                                enabled: !root.snippetEditorBusy && !root.snippetEditorNewDraft && root.snippetEditorIndex > 0
+                                                onClicked: root.moveSnippetEditorEntry("up")
+                                            }
+
+                                            Button {
+                                                text: "Move Down"
+                                                enabled: !root.snippetEditorBusy && !root.snippetEditorNewDraft && root.snippetEditorIndex >= 0 && root.snippetEditorIndex < root.settingsCommandEntries.length - 1
+                                                onClicked: root.moveSnippetEditorEntry("down")
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

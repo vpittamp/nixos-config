@@ -254,7 +254,7 @@ let
     (mkApp {
       name = "google-chrome";
       display_name = "Google Chrome";
-      command = "google-chrome-stable";
+      command = "google-chrome-i3pm";
       parameters = "";
       scope = "global";
       expected_class = "Google-chrome";

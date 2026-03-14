@@ -647,6 +647,8 @@ class IPCServer:
                 result = await self._session_list(params)
             elif method == "session.focus":
                 result = await self._session_focus(params)
+            elif method == "session.preview":
+                result = await self._session_preview(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
 
@@ -6700,6 +6702,86 @@ class IPCServer:
             "focus_target_host": "",
             "focus": focus_result,
             "tmux": tmux_result,
+        }
+
+    async def _session_preview(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve preview metadata for a daemon-owned AI session."""
+        session_key = str(params.get("session_key") or "").strip()
+        if not session_key:
+            raise ValueError("session_key is required")
+
+        try:
+            lines = int(params.get("lines", 100) or 100)
+        except (TypeError, ValueError):
+            lines = 100
+        lines = max(20, min(lines, 200))
+
+        sessions_result = await self._session_list({})
+        sessions = sessions_result.get("sessions", [])
+        session = next(
+            (
+                item for item in sessions
+                if isinstance(item, dict)
+                and str(item.get("session_key") or "").strip() == session_key
+            ),
+            None,
+        )
+        if not isinstance(session, dict):
+            raise RuntimeError(f"Unknown session_key: {session_key}")
+
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+
+        execution_mode = str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local"
+        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        pane_label = str(session.get("pane_label") or session.get("pane_title") or tmux_pane or "").strip()
+        focus_mode = str(session.get("focus_mode") or "").strip() or "unfocusable"
+        is_current_host = bool(session.get("is_current_host", False))
+        has_tmux_identity = bool(tmux_session and tmux_pane)
+
+        preview_mode = "unavailable"
+        preview_reason = "missing_tmux_identity"
+        is_live = False
+        is_remote = not is_current_host
+
+        if has_tmux_identity and is_current_host and execution_mode == "local" and focus_mode != "remote_handoff":
+            preview_mode = "local_stream"
+            preview_reason = "ok"
+            is_live = True
+            is_remote = False
+        elif has_tmux_identity and (not is_current_host or execution_mode == "ssh" or focus_mode == "remote_handoff"):
+            preview_mode = "remote_fallback"
+            preview_reason = "remote_host"
+            is_live = False
+            is_remote = True
+
+        return {
+            "success": True,
+            "session_key": session_key,
+            "preview_mode": preview_mode,
+            "preview_reason": preview_reason,
+            "lines": lines,
+            "is_live": is_live,
+            "is_remote": is_remote,
+            "tool": str(session.get("tool") or "unknown").strip() or "unknown",
+            "project_name": str(session.get("project_name") or session.get("project") or "").strip(),
+            "host_name": str(session.get("host_name") or "").strip(),
+            "connection_key": str(session.get("connection_key") or "").strip(),
+            "execution_mode": execution_mode,
+            "focus_mode": focus_mode,
+            "window_id": int(session.get("window_id") or 0),
+            "pane_label": pane_label,
+            "pane_title": str(session.get("pane_title") or "").strip(),
+            "tmux_session": tmux_session,
+            "tmux_window": tmux_window,
+            "tmux_pane": tmux_pane,
+            "surface_key": str(session.get("surface_key") or "").strip(),
+            "session_phase": str(session.get("session_phase") or "").strip(),
+            "session_phase_label": str(session.get("session_phase_label") or "").strip(),
+            "status_reason": str(session.get("status_reason") or "").strip(),
         }
 
     def _build_dashboard_projects(
