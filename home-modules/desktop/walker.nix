@@ -4,6 +4,8 @@ let
   cfg = config.programs.walker;
   remoteWorktreeHost = "ryzen";
   remoteWorktreeUser = "vpittamp";
+  onePasswordCacheTtlSeconds = 43200;
+  onePasswordRetryDelaySeconds = 1800;
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
   isWaylandMode = config.wayland.windowManager.sway.enable or false;
@@ -276,58 +278,100 @@ PY
 
   walkerOpenInNvimCmd = lib.getExe walkerOpenInNvim;
 
-  # Walker project list script - outputs formatted project list for Walker menu
-  # Reordered to show inactive projects first, active project last with visual indicator
-  # Fixed: Use .active.project_name instead of .active.name to match i3pm JSON structure
+  # Walker project list script - renders the daemon-owned dashboard worktree model
+  # Default output is plain text for dmenu/i3bar consumers.
+  # `--walker` emits richer tab-separated metadata for the Elephant Lua menu.
   walkerProjectList = pkgs.writeShellScriptBin "walker-project-list" ''
     #!/usr/bin/env bash
-    # List projects for Walker menu
-    # Feature 101: Uses worktree list and active-worktree.json
+    # List project contexts for Walker and dmenu consumers.
     set -euo pipefail
 
     I3PM="${config.home.profileDirectory}/bin/i3pm"
+    MODE="dmenu"
+    if [[ "''${1:-}" == "--walker" ]]; then
+      MODE="walker"
+    fi
 
-    # Feature 101: Get worktrees JSON from repos.json
-    REPOS_FILE="$HOME/.config/i3/repos.json"
-
-    if [ ! -f "$REPOS_FILE" ]; then
+    SNAPSHOT_JSON=$("$I3PM" dashboard snapshot --json 2>/dev/null || true)
+    if [[ -z "$SNAPSHOT_JSON" ]]; then
       exit 0
     fi
 
-    ACTIVE_PROJECT=$("$I3PM" context current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.qualified_name // ""' 2>/dev/null || echo "")
-
-    # Add "Clear Project" option if a project is active
-    if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
-      echo "∅ Clear Project (Global Mode)	__CLEAR__"
+    if ! printf '%s\n' "$SNAPSHOT_JSON" | ${pkgs.jq}/bin/jq -e '.worktrees and (.worktrees | type == "array")' >/dev/null 2>&1; then
+      exit 0
     fi
 
-    # Build worktree list from repos.json
-    ${pkgs.jq}/bin/jq -r '
-      .repositories[] |
-      . as $repo |
-      .worktrees[] |
-      {
-        qualified_name: ($repo.account + "/" + $repo.name + ":" + .branch),
-        display_name: $repo.name,
-        branch: .branch,
-        directory: .path,
-        is_main: .is_main
-      } |
-      (if .branch == "main" or .branch == "master" then "📦" else "🌿" end) + " " +
-      (if (.branch | test("^[0-9]+-")) then (.branch | capture("^(?<num>[0-9]+)-") | .num) + " - " else "" end) +
-      .display_name + ":" + .branch +
-      " [" + (.directory | gsub("'$HOME'"; "~")) + "]" +
-      (if .qualified_name == "'"$ACTIVE_PROJECT"'" then " 🟢 ACTIVE" else "" end) +
-      "\t" + .qualified_name
-    ' "$REPOS_FILE" | sort -t'	' -k1,1
+    printf '%s\n' "$SNAPSHOT_JSON" | ${pkgs.jq}/bin/jq -r \
+      --arg home "$HOME" \
+      --arg mode "$MODE" '
+      def homeify:
+        if ($home | length) > 0 and (. | startswith($home)) then
+          "~" + .[$home | length:]
+        else
+          .
+        end;
+
+      def summary:
+        [
+          (if .dirty_count > 0 then "dirty:\(.dirty_count)" else empty end),
+          (if .visible_window_count > 0 then "visible:\(.visible_window_count)" else empty end),
+          (if .scoped_window_count > .visible_window_count then "scoped:\(.scoped_window_count)" else empty end)
+        ] | join(" • ");
+
+      def title($variant):
+        (
+          (if .is_active and .active_execution_mode == $variant then "🟢 " else "" end)
+          + (if .is_main then "📦 " else "🌿 " end)
+          + .qualified_name
+          + " ["
+          + ($variant | ascii_upcase)
+          + "]"
+        );
+
+      def subtext:
+        [
+          (.path | homeify),
+          summary
+        ] | map(select(. != "")) | join(" • ");
+
+      .active_context as $active
+      | (
+          if (($active.is_global // false) | not) and (($active.qualified_name // "") != "") then
+            if $mode == "walker" then
+              ["∅ Clear Project (Global Mode)", "Return to global context", "__CLEAR__", "clear"] | @tsv
+            else
+              "∅ Clear Project (Global Mode)"
+            end
+          else
+            empty
+          end
+        ),
+        (
+          .worktrees[]?
+          | (
+              if .remote_available then
+                if .is_active and .active_execution_mode == "ssh" then
+                  ["ssh", "local"]
+                else
+                  ["local", "ssh"]
+                end
+              else
+                ["local"]
+              end
+            )[] as $variant
+          | if $mode == "walker" then
+              [title($variant), subtext, .qualified_name, $variant] | @tsv
+            else
+              title($variant)
+            end
+        )
+      '
   '';
 
-  # Walker project switch script - parses selection and switches project
-  # Feature 101: Uses worktree switch command
+  # Walker project switch script - parses selection and switches runtime context
   walkerProjectSwitch = pkgs.writeShellScriptBin "walker-project-switch" ''
     #!/usr/bin/env bash
-    # Switch to selected project from Walker
-    # Feature 101: Uses worktree switch with qualified names
+    # Switch to selected project context from Walker or dmenu.
     set -euo pipefail
 
     if [ $# -eq 0 ]; then
@@ -341,16 +385,39 @@ PY
     # Feature 072 fix: Close preview window before switching projects
     $I3PM_WS_MODE cancel 2>/dev/null || true
 
-    # Extract qualified name (everything after the tab character)
-    QUALIFIED_NAME=$(echo "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
+    QUALIFIED_NAME=""
+    VARIANT=""
 
-    # Handle special cases
-    if [ "$QUALIFIED_NAME" = "__CLEAR__" ]; then
-      $I3PM worktree clear >/dev/null 2>&1
+    if printf '%s' "$SELECTED" | ${pkgs.gnugrep}/bin/grep -q $'\t'; then
+      QUALIFIED_NAME=$(printf '%s\n' "$SELECTED" | ${pkgs.coreutils}/bin/cut -f3)
+      VARIANT=$(printf '%s\n' "$SELECTED" | ${pkgs.coreutils}/bin/cut -f4)
+    elif [[ "$SELECTED" == "∅ Clear Project (Global Mode)"* ]]; then
+      QUALIFIED_NAME="__CLEAR__"
+      VARIANT="clear"
     else
-      # Feature 101: Local project list should always enter local context.
-      $I3PM worktree switch --local "$QUALIFIED_NAME" >/dev/null 2>&1
+      NORMALIZED="$SELECTED"
+      NORMALIZED="''${NORMALIZED#🟢 }"
+      NORMALIZED="''${NORMALIZED#📦 }"
+      NORMALIZED="''${NORMALIZED#🌿 }"
+      VARIANT=$(printf '%s' "$NORMALIZED" | ${pkgs.gnused}/bin/sed -nE 's/.*\[([A-Z]+)\]$/\1/p')
+      QUALIFIED_NAME="''${NORMALIZED% \[*}"
+      VARIANT="''${VARIANT,,}"
     fi
+
+    if [ "$QUALIFIED_NAME" = "__CLEAR__" ]; then
+      $I3PM context clear >/dev/null 2>&1
+      exit 0
+    fi
+
+    if [ -z "$QUALIFIED_NAME" ]; then
+      exit 1
+    fi
+
+    if [ "$VARIANT" != "ssh" ]; then
+      VARIANT="local"
+    fi
+
+    $I3PM context ensure "$QUALIFIED_NAME" --variant "$VARIANT" >/dev/null 2>&1
   '';
 
   # Walker SSH worktree list script - discovers remote worktrees via Tailscale SSH
@@ -1010,6 +1077,7 @@ REMOTE
   walkerOnePasswordCacheRefresh = pkgs.writeShellScriptBin "walker-1password-cache-refresh" ''
     #!/usr/bin/env bash
     set -euo pipefail
+    export OP_BIOMETRIC_UNLOCK_ENABLED=true
 
     cache_dir="$HOME/.cache/walker-1password"
     lock_file="$cache_dir/refresh.lock"
@@ -1028,23 +1096,10 @@ REMOTE
     ${pkgs.util-linux}/bin/flock -n 9 || exit 0
     ${pkgs.coreutils}/bin/date +%s >"$last_attempt_file"
 
-    run_op() {
-      local script="$1"
-      shift
-
-      ${pkgs.systemd}/bin/systemd-run --user --wait --pipe --quiet \
-        ${pkgs.bashInteractive}/bin/bash -ilc "$script" _ "$@"
-    }
-
     fetch_vault() {
       local vault="$1"
       local outfile="$2"
-
-      if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
-        run_op '/run/wrappers/bin/op item list --vault "$1" --format=json' "$vault" >"$outfile"
-      else
-        run_op '${pkgs._1password-cli}/bin/op item list --vault "$1" --format=json' "$vault" >"$outfile"
-      fi
+      "$op_cmd" item list --vault "$vault" --format=json >"$outfile"
     }
 
     fetch_vault "ampm3rvesendx6mvksmu2ydh6e" "$tmp_dir/personal.json"
@@ -1071,8 +1126,8 @@ REMOTE
     cache_file="$cache_dir/items.json"
     lock_file="$cache_dir/refresh.lock"
     last_attempt_file="$cache_dir/last-attempt"
-    ttl_seconds=900
-    retry_delay_seconds=300
+    ttl_seconds=${toString onePasswordCacheTtlSeconds}
+    retry_delay_seconds=${toString onePasswordRetryDelaySeconds}
 
     mkdir -p "$cache_dir"
 
@@ -1124,6 +1179,7 @@ REMOTE
   walkerOnePasswordCopy = pkgs.writeShellScriptBin "walker-1password-copy" ''
     #!/usr/bin/env bash
     set -euo pipefail
+    export OP_BIOMETRIC_UNLOCK_ENABLED=true
 
     mode="''${1:-password}"
     item_id="''${2:-}"
@@ -1137,37 +1193,17 @@ REMOTE
       op_cmd="${pkgs._1password-cli}/bin/op"
     fi
 
-    run_op() {
-      local script="$1"
-      shift
-
-      ${pkgs.systemd}/bin/systemd-run --user --wait --pipe --quiet \
-        ${pkgs.bashInteractive}/bin/bash -ilc "$script" _ "$@"
-    }
-
     case "$mode" in
       password)
-        if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
-          value=$(run_op '/run/wrappers/bin/op item get "$1" --fields password --reveal' "$item_id")
-        else
-          value=$(run_op '${pkgs._1password-cli}/bin/op item get "$1" --fields password --reveal' "$item_id")
-        fi
+        value=$("$op_cmd" item get "$item_id" --fields password --reveal)
         label="password"
         ;;
       username)
-        if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
-          value=$(run_op '/run/wrappers/bin/op item get "$1" --fields username --reveal' "$item_id")
-        else
-          value=$(run_op '${pkgs._1password-cli}/bin/op item get "$1" --fields username --reveal' "$item_id")
-        fi
+        value=$("$op_cmd" item get "$item_id" --fields username --reveal)
         label="username"
         ;;
       otp)
-        if [[ "$op_cmd" == "/run/wrappers/bin/op" ]]; then
-          value=$(run_op '/run/wrappers/bin/op item get "$1" --otp' "$item_id")
-        else
-          value=$(run_op '${pkgs._1password-cli}/bin/op item get "$1" --otp' "$item_id")
-        fi
+        value=$("$op_cmd" item get "$item_id" --otp)
         label="otp"
         ;;
       *)
@@ -2541,7 +2577,7 @@ in
 
   # Feature 101: Project switcher menu (Elephant Lua menu)
   # Access: Win+P or Meta+D → ;p → select project
-  # Uses i3pm worktree switch for bare repository support
+  # Uses daemon-backed dashboard worktrees and explicit local/SSH variants.
   xdg.configFile."elephant/menus/projects.lua".text = ''
     Name = "projects"
     NamePretty = "Projects"
@@ -2549,46 +2585,55 @@ in
     Cache = false  -- Always refresh project list
     Action = "walker-project-switch '%VALUE%'"
     HideFromProviderlist = false
-    Description = "Switch between projects (bare repo worktrees)"
+    Description = "Switch between local and SSH project contexts"
     SearchName = true
     GlobalSearch = false  -- Keep local to ;p prefix
 
     function GetEntries()
         local entries = {}
 
-        -- Get project list from walker-project-list
-        local handle = io.popen("walker-project-list 2>/dev/null")
+        -- Get project list from walker-project-list with Walker-specific metadata.
+        local handle = io.popen("walker-project-list --walker 2>/dev/null")
         if handle then
             for line in handle:lines() do
-                -- Parse tab-separated format: "display\tqualified_name"
-                local display, qualified_name = line:match("^(.+)\t(.+)$")
-                if display and qualified_name then
+                -- Parse tab-separated format: "title\tsubtext\tqualified_name\tvariant"
+                local title, subtext, qualified_name, variant = line:match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)$")
+                if title and qualified_name and variant then
                     -- Determine icon based on content
                     local icon = "folder"
-                    if display:match("^∅") then
+                    if qualified_name == "__CLEAR__" or title:match("^∅") then
                         icon = "edit-clear"  -- Clear project option
-                    elseif display:match("ACTIVE") then
-                        icon = "folder-open"  -- Active project
-                    elseif display:match("^📦") then
+                    elseif variant == "ssh" then
+                        icon = title:match("^🟢") and "network-server" or "network-workgroup"
+                    elseif title:match("^🟢") then
+                        icon = "folder-open"
+                    elseif title:match("📦") then
                         icon = "folder-code"  -- Main branch
-                    elseif display:match("^🌿") then
+                    elseif title:match("🌿") then
                         icon = "folder-new"  -- Feature branch
                     end
 
-                    -- Build keywords from display name
+                    -- Build keywords from display text, path metadata, and explicit variant.
                     local keywords = {"project", "worktree", "switch"}
                     table.insert(keywords, qualified_name:lower())
-                    for token in qualified_name:gmatch("[^/:]+") do
+                    table.insert(keywords, variant:lower())
+                    for token in qualified_name:gmatch("[^/:%s]+") do
                         table.insert(keywords, token:lower())
                     end
-                    for word in display:gmatch("%S+") do
+                    for word in title:gmatch("%S+") do
                         if not word:match("^[%[%]📦🌿∅🟢]") then
+                            table.insert(keywords, word:lower())
+                        end
+                    end
+                    for word in subtext:gmatch("%S+") do
+                        if not word:match("^[•]$") then
                             table.insert(keywords, word:lower())
                         end
                     end
 
                     table.insert(entries, {
-                        Text = display,
+                        Text = title,
+                        Subtext = subtext ~= "" and subtext or nil,
                         Value = line,  -- Pass full line to walker-project-switch
                         Icon = icon,
                         Keywords = keywords

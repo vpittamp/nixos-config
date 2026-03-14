@@ -18,73 +18,132 @@ ShellRoot {
     }
 
     property var dashboard: ({
-        status: "loading",
-        active_context: {},
-        active_terminal: {},
-        active_ai_sessions: [],
-        active_ai_sessions_mru: [],
-        current_ai_session_key: "",
-        display_layout: {},
-        outputs: [],
-        projects: [],
-        worktrees: [],
-        scratchpad: {},
-        state_health: {},
-        total_windows: 0
-    })
+            status: "loading",
+            active_context: {},
+            active_terminal: {},
+            active_ai_sessions: [],
+            active_ai_sessions_mru: [],
+            current_ai_session_key: "",
+            display_layout: {},
+            outputs: [],
+            projects: [],
+            worktrees: [],
+            scratchpad: {},
+            state_health: {},
+            total_windows: 0
+        })
     property var notificationState: ({
-        count: 0,
-        dnd: false,
-        visible: false,
-        inhibited: false,
-        has_unread: false,
-        display_count: "0",
-        error: false
-    })
+            count: 0,
+            dnd: false,
+            visible: false,
+            inhibited: false,
+            has_unread: false,
+            display_count: "0",
+            error: false
+        })
     property var networkState: ({
-        connected: false,
-        kind: "offline",
-        label: "Offline",
-        signal: null
-    })
+            connected: false,
+            kind: "offline",
+            label: "Offline",
+            signal: null
+        })
     property bool panelVisible: true
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool worktreePickerVisible: false
+    property bool launcherVisible: false
+    property bool launcherLoading: false
+    property bool launcherNormalizingInput: false
+    property string launcherMode: "apps"
+    property string launcherQuery: ""
+    property string launcherError: ""
+    property int launcherSelectedIndex: 0
+    property var launcherEntries: []
+    property var onePasswordEntriesCache: []
     property var expandedSessionGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
 
+    onLauncherVisibleChanged: {
+        if (launcherVisible) {
+            launcherMode = "apps";
+            launcherQuery = "";
+            launcherError = "";
+            launcherEntries = [];
+            launcherSelectedIndex = 0;
+            launcherNormalizingInput = true;
+            launcherField.text = "";
+            launcherNormalizingInput = false;
+            launcherQueryDebounce.restart();
+            launcherFocusTimer.restart();
+            return;
+        }
+
+        launcherLoading = false;
+        launcherError = "";
+        launcherEntries = [];
+        launcherSelectedIndex = 0;
+        launcherNormalizingInput = true;
+        launcherField.text = "";
+        launcherNormalizingInput = false;
+        if (launcherQueryProcess.running) {
+            launcherQueryProcess.running = false;
+        }
+    }
+
+    onLauncherModeChanged: {
+        launcherError = "";
+        launcherSelectedIndex = 0;
+        if (launcherVisible) {
+            launcherQueryDebounce.restart();
+            launcherFocusTimer.restart();
+        }
+    }
+
+    onLauncherQueryChanged: {
+        if (launcherVisible) {
+            launcherQueryDebounce.restart();
+        }
+    }
+
+    onLauncherSelectedIndexChanged: {
+        if (launcherVisible && launcherEntries.length && launcherSelectedIndex >= 0) {
+            launcherList.positionViewAtIndex(launcherSelectedIndex, ListView.Contain);
+        }
+    }
+
     readonly property var colors: ({
-        bg: "#0d1117",
-        panel: "#111827",
-        panelAlt: "#131d2a",
-        card: "#161f2c",
-        cardAlt: "#0f1722",
-        border: "#273244",
-        borderStrong: "#334155",
-        text: "#e7edf5",
-        muted: "#92a1b5",
-        subtle: "#64748b",
-        lineSoft: "#202b3a",
-        textDim: "#b4c0d1",
-        accent: "#d1fae5",
-        accentBg: "#123329",
-        blue: "#93c5fd",
-        blueBg: "#16243a",
-        blueMuted: "#5d7ba2",
-        blueWash: "#152231",
-        amber: "#f7d38c",
-        amberBg: "#3a2912",
-        red: "#fda4af",
-        redBg: "#3b1820",
-        teal: "#67e8f9",
-        tealBg: "#102a33",
-        violet: "#c4b5fd",
-        violetBg: "#241b43"
-    })
+            bg: "#0d1117",
+            panel: "#111827",
+            panelAlt: "#131d2a",
+            card: "#161f2c",
+            cardAlt: "#0f1722",
+            border: "#273244",
+            borderStrong: "#334155",
+            text: "#e7edf5",
+            muted: "#92a1b5",
+            subtle: "#64748b",
+            lineSoft: "#202b3a",
+            textDim: "#b4c0d1",
+            accent: "#d1fae5",
+            accentBg: "#123329",
+            blue: "#93c5fd",
+            blueBg: "#16243a",
+            blueMuted: "#5d7ba2",
+            blueWash: "#152231",
+            amber: "#f7d38c",
+            amberBg: "#3a2912",
+            orange: "#fb923c",
+            orangeBg: "#3a2414",
+            red: "#fda4af",
+            redBg: "#3b1820",
+            teal: "#67e8f9",
+            tealBg: "#102a33",
+            violet: "#c4b5fd",
+            violetBg: "#241b43"
+        })
     readonly property int fastColorMs: 90
 
     function arrayOrEmpty(value) {
@@ -154,12 +213,7 @@ ShellRoot {
         const executionMode = stringOrEmpty(context.execution_mode || "local");
 
         if (executionMode === "ssh") {
-            return stringOrEmpty(
-                remote.host_alias
-                || remote.host
-                || context.host_alias
-                || context.connection_key
-            );
+            return stringOrEmpty(remote.host_alias || remote.host || context.host_alias || context.connection_key);
         }
 
         return stringOrEmpty(context.host_alias || shellConfig.hostName);
@@ -225,7 +279,7 @@ ShellRoot {
     }
 
     function panelSessions() {
-        return stableSortedSessions(activeSessions().filter((session) => sessionIsDisplayEligible(session)));
+        return stableSortedSessions(activeSessions().filter(session => sessionIsDisplayEligible(session)));
     }
 
     function sessionIdentityKey(session) {
@@ -239,15 +293,7 @@ ShellRoot {
             return surfaceKey;
         }
 
-        return [
-            stringOrEmpty(session && session.tool),
-            stringOrEmpty(session && session.connection_key),
-            stringOrEmpty(session && session.context_key),
-            String(Number(session && session.window_id || 0)),
-            String(Number(session && session.pid || 0)),
-            String(Number(session && session.pane_pid || 0)),
-            stringOrEmpty(session && session.pane_label)
-        ].join("::");
+        return [stringOrEmpty(session && session.tool), stringOrEmpty(session && session.connection_key), stringOrEmpty(session && session.context_key), String(Number(session && session.window_id || 0)), String(Number(session && session.pid || 0)), String(Number(session && session.pane_pid || 0)), stringOrEmpty(session && session.pane_label)].join("::");
     }
 
     function uniqueSessions(items) {
@@ -302,10 +348,7 @@ ShellRoot {
     }
 
     function sessionPaneSlot(session) {
-        return firstNumber(
-            session && session.tmux_pane,
-            firstNumber(session && session.pane_label, 1000000)
-        );
+        return firstNumber(session && session.tmux_pane, firstNumber(session && session.pane_label, 1000000));
     }
 
     function sessionIsCurrentHost(session) {
@@ -318,9 +361,7 @@ ShellRoot {
         }
 
         const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
-        const hasTmuxIdentity = stringOrEmpty(session.tmux_session)
-            && stringOrEmpty(session.tmux_window)
-            && stringOrEmpty(session.tmux_pane);
+        const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
         if (!terminalAnchor && !hasTmuxIdentity) {
             return false;
         }
@@ -397,10 +438,7 @@ ShellRoot {
         const project = stringOrEmpty(projectName);
         const mode = stringOrEmpty(executionMode || "local") || "local";
 
-        return projects.find((projectGroup) =>
-            stringOrEmpty(projectGroup.project) === project
-            && stringOrEmpty(projectGroup.execution_mode || "local") === mode
-        ) || null;
+        return projects.find(projectGroup => stringOrEmpty(projectGroup.project) === project && stringOrEmpty(projectGroup.execution_mode || "local") === mode) || null;
     }
 
     function focusPreferredWindowForContext(projectName, executionMode) {
@@ -409,12 +447,12 @@ ShellRoot {
             return false;
         }
 
-        const windows = arrayOrEmpty(projectGroup.windows).filter((windowData) => !boolOrFalse(windowData.hidden));
+        const windows = arrayOrEmpty(projectGroup.windows).filter(windowData => !boolOrFalse(windowData.hidden));
         if (!windows.length) {
             return false;
         }
 
-        const focusedWindow = windows.find((windowData) => boolOrFalse(windowData.focused));
+        const focusedWindow = windows.find(windowData => boolOrFalse(windowData.focused));
         focusWindow(focusedWindow || windows[0]);
         return true;
     }
@@ -424,7 +462,7 @@ ShellRoot {
     }
 
     function primaryOutputCandidates() {
-        return arrayOrEmpty(shellConfig.primaryOutputs).map((value) => stringOrEmpty(value)).filter((value) => value);
+        return arrayOrEmpty(shellConfig.primaryOutputs).map(value => stringOrEmpty(value)).filter(value => value);
     }
 
     function findScreenByOutputName(outputName) {
@@ -591,10 +629,7 @@ ShellRoot {
     }
 
     function topBarTimeText() {
-        return Qt.formatDateTime(
-            clock.date,
-            shellConfig.topBarShowSeconds ? "ddd MMM d  h:mm:ss AP" : "ddd MMM d  h:mm AP"
-        );
+        return Qt.formatDateTime(clock.date, shellConfig.topBarShowSeconds ? "ddd MMM d  h:mm:ss AP" : "ddd MMM d  h:mm AP");
     }
 
     function neutralChipFill(hovered) {
@@ -999,19 +1034,21 @@ ShellRoot {
     }
 
     function worktreeItems() {
-        const items = [{
-            kind: "global",
-            qualified_name: "global",
-            is_active: root.isGlobalContext(),
-            active_execution_mode: root.activeContextExecutionMode(),
-            remote_available: false,
-            visible_window_count: 0,
-            scoped_window_count: 0,
-            is_clean: true,
-            dirty_count: 0,
-            last_used_at: 0,
-            use_count: 0
-        }];
+        const items = [
+            {
+                kind: "global",
+                qualified_name: "global",
+                is_active: root.isGlobalContext(),
+                active_execution_mode: root.activeContextExecutionMode(),
+                remote_available: false,
+                visible_window_count: 0,
+                scoped_window_count: 0,
+                is_clean: true,
+                dirty_count: 0,
+                last_used_at: 0,
+                use_count: 0
+            }
+        ];
 
         const worktrees = dashboardWorktrees();
         for (let i = 0; i < worktrees.length; i += 1) {
@@ -1045,11 +1082,665 @@ ShellRoot {
         return items;
     }
 
+    function normalizeLauncherMode(mode) {
+        const value = stringOrEmpty(mode).toLowerCase();
+        if (value === "projects") {
+            return "projects";
+        }
+        if (value === "sessions") {
+            return "sessions";
+        }
+        if (value === "windows") {
+            return "windows";
+        }
+        if (value === "onepassword") {
+            return "onepassword";
+        }
+        if (value === "clipboard") {
+            return "clipboard";
+        }
+        return "apps";
+    }
+
+    function launcherModeOrder() {
+        return ["apps", "projects", "onepassword", "clipboard", "sessions", "windows"];
+    }
+
+    function setLauncherMode(mode) {
+        launcherMode = normalizeLauncherMode(mode);
+    }
+
+    function cycleLauncherMode(delta) {
+        const modes = launcherModeOrder();
+        if (!modes.length) {
+            return;
+        }
+
+        const current = normalizeLauncherMode(launcherMode);
+        const currentIndex = modes.indexOf(current);
+        const startIndex = currentIndex >= 0 ? currentIndex : 0;
+        const nextIndex = (startIndex + delta + modes.length) % modes.length;
+        setLauncherMode(modes[nextIndex]);
+    }
+
+    function launcherTitle() {
+        if (launcherMode === "projects") {
+            return "Switch Project";
+        }
+        if (launcherMode === "sessions") {
+            return "AI Sessions";
+        }
+        if (launcherMode === "windows") {
+            return "Windows";
+        }
+        if (launcherMode === "onepassword") {
+            return "1Password";
+        }
+        if (launcherMode === "clipboard") {
+            return "Clipboard";
+        }
+        return "Launch App";
+    }
+
+    function launcherPlaceholderText() {
+        if (launcherMode === "projects") {
+            return "Filter projects";
+        }
+        if (launcherMode === "sessions") {
+            return "Filter AI sessions";
+        }
+        if (launcherMode === "windows") {
+            return "Filter windows";
+        }
+        if (launcherMode === "onepassword") {
+            return "Search 1Password";
+        }
+        if (launcherMode === "clipboard") {
+            return "Search clipboard history";
+        }
+        return "Search apps or type ;p, ;s, ;w, *, or :";
+    }
+
+    function launcherHelpText() {
+        if (launcherMode === "projects") {
+            return "Tab modes  •  Up/Down results  •  Ctrl+1 Apps";
+        }
+        if (launcherMode === "sessions") {
+            return "Tab modes  •  Up/Down sessions  •  Enter focus  •  Ctrl+6 Windows";
+        }
+        if (launcherMode === "windows") {
+            return "Tab modes  •  Up/Down windows  •  Enter focus  •  Ctrl+W close";
+        }
+        if (launcherMode === "onepassword") {
+            return "Tab modes  •  Enter password  •  Shift+Enter user  •  Ctrl+Enter OTP";
+        }
+        if (launcherMode === "clipboard") {
+            return "Tab modes  •  Enter smart paste  •  Ctrl+D remove";
+        }
+        return "Tab modes  •  Up/Down results  •  Ctrl+2 Projects";
+    }
+
+    function launcherStatusText() {
+        if (launcherLoading) {
+            if (launcherMode === "onepassword") {
+                return "Loading 1Password items";
+            }
+            if (launcherMode === "clipboard") {
+                return "Loading clipboard history";
+            }
+            return "Searching with Elephant";
+        }
+        if (launcherMode === "projects") {
+            return launcherEntries.length ? launcherEntries.length + " project context" + (launcherEntries.length === 1 ? "" : "s") : "No matching projects";
+        }
+        if (launcherMode === "sessions") {
+            return launcherEntries.length ? launcherEntries.length + " AI session" + (launcherEntries.length === 1 ? "" : "s") : "No matching AI sessions";
+        }
+        if (launcherMode === "windows") {
+            return launcherEntries.length ? launcherEntries.length + " window" + (launcherEntries.length === 1 ? "" : "s") : "No matching windows";
+        }
+        if (launcherMode === "onepassword") {
+            return launcherEntries.length ? launcherEntries.length + " 1Password item" + (launcherEntries.length === 1 ? "" : "s") : "No matching 1Password items";
+        }
+        if (launcherMode === "clipboard") {
+            return launcherEntries.length ? launcherEntries.length + " clipboard item" + (launcherEntries.length === 1 ? "" : "s") : "No matching clipboard items";
+        }
+        return launcherEntries.length ? launcherEntries.length + " app" + (launcherEntries.length === 1 ? "" : "s") : "No matching apps";
+    }
+
+    function launcherEmptyText() {
+        if (launcherError) {
+            return launcherError;
+        }
+        if (launcherMode === "projects") {
+            return "No projects match the current query";
+        }
+        if (launcherMode === "sessions") {
+            return "No AI sessions match the current query";
+        }
+        if (launcherMode === "windows") {
+            return "No windows match the current query";
+        }
+        if (launcherMode === "onepassword") {
+            return "No 1Password items match the current query";
+        }
+        if (launcherMode === "clipboard") {
+            return "No clipboard items match the current query";
+        }
+        return "No apps match the current query";
+    }
+
+    function updateLauncherInput(rawInput) {
+        let nextMode = launcherMode;
+        let nextQuery = stringOrEmpty(rawInput);
+
+        if (nextQuery.indexOf(";p") === 0) {
+            nextMode = "projects";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";s") === 0) {
+            nextMode = "sessions";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";w") === 0) {
+            nextMode = "windows";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery === "*" || nextQuery.indexOf("* ") === 0) {
+            nextMode = "onepassword";
+            nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
+        } else if (nextQuery === ":" || nextQuery.indexOf(":") === 0) {
+            nextMode = "clipboard";
+            nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";a") === 0) {
+            nextMode = "apps";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        }
+
+        if (launcherMode !== nextMode) {
+            launcherMode = nextMode;
+        }
+        if (launcherQuery !== nextQuery) {
+            launcherQuery = nextQuery;
+        }
+        if (launcherField.text !== nextQuery) {
+            launcherNormalizingInput = true;
+            launcherField.text = nextQuery;
+            launcherNormalizingInput = false;
+        }
+    }
+
+    function launcherQueryTokens(query) {
+        const trimmed = stringOrEmpty(query).trim().toLowerCase();
+        if (!trimmed) {
+            return [];
+        }
+        return trimmed.split(/\s+/).filter(function (token) {
+            return !!token;
+        });
+    }
+
+    function launcherTokensMatch(tokens, haystackParts) {
+        if (!tokens.length) {
+            return true;
+        }
+
+        const haystack = haystackParts.join(" ").toLowerCase();
+        for (let i = 0; i < tokens.length; i += 1) {
+            if (haystack.indexOf(tokens[i]) === -1) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function launcherProjectSubtitle(item) {
+        if (!item) {
+            return "";
+        }
+        if (stringOrEmpty(item.kind) === "global") {
+            return "Return to global context";
+        }
+
+        const bits = [];
+        const path = stringOrEmpty(item.path);
+        if (path) {
+            bits.push(path);
+        }
+        if (Number(item.dirty_count || 0) > 0) {
+            bits.push("dirty:" + String(Number(item.dirty_count || 0)));
+        }
+        if (Number(item.visible_window_count || 0) > 0) {
+            bits.push("visible:" + String(Number(item.visible_window_count || 0)));
+        }
+        if (Number(item.scoped_window_count || 0) > Number(item.visible_window_count || 0)) {
+            bits.push("scoped:" + String(Number(item.scoped_window_count || 0)));
+        }
+        return bits.join("  •  ");
+    }
+
+    function launcherProjectMatches(entry, query) {
+        const trimmed = stringOrEmpty(query).trim().toLowerCase();
+        if (!trimmed) {
+            return true;
+        }
+
+        const tokens = trimmed.split(/\s+/).filter(function (token) {
+            return !!token;
+        });
+        const haystack = [stringOrEmpty(entry.qualified_name), stringOrEmpty(entry.repo_display), stringOrEmpty(entry.repo_name), stringOrEmpty(entry.account), stringOrEmpty(entry.branch), stringOrEmpty(entry.path), stringOrEmpty(entry.variant), stringOrEmpty(entry.text), stringOrEmpty(entry.subtext)].join(" ").toLowerCase();
+
+        for (let i = 0; i < tokens.length; i += 1) {
+            if (haystack.indexOf(tokens[i]) === -1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function onePasswordCategoryLabel(category) {
+        const value = stringOrEmpty(category).toLowerCase();
+        if (value === "login") {
+            return "Login";
+        }
+        if (value === "secure_note") {
+            return "Note";
+        }
+        if (value === "ssh_key") {
+            return "SSH";
+        }
+        if (value === "credit_card") {
+            return "Card";
+        }
+        if (value === "identity") {
+            return "Identity";
+        }
+        if (value === "document") {
+            return "Document";
+        }
+        if (value === "password") {
+            return "Password";
+        }
+        if (value === "api_credential") {
+            return "API";
+        }
+        if (!value) {
+            return "";
+        }
+        return value.replace(/_/g, " ");
+    }
+
+    function onePasswordEntries(query) {
+        const trimmed = stringOrEmpty(query).trim().toLowerCase();
+        const tokens = trimmed ? trimmed.split(/\s+/).filter(function (token) {
+            return !!token;
+        }) : [];
+
+        return arrayOrEmpty(onePasswordEntriesCache).filter(function (entry) {
+            if (!tokens.length) {
+                return true;
+            }
+
+            const haystack = [stringOrEmpty(entry.text), stringOrEmpty(entry.subtext), stringOrEmpty(entry.category), onePasswordCategoryLabel(entry.category)].join(" ").toLowerCase();
+
+            for (let i = 0; i < tokens.length; i += 1) {
+                if (haystack.indexOf(tokens[i]) === -1) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }
+
+    function launcherEntryHasState(entry, stateName) {
+        const target = stringOrEmpty(stateName).toLowerCase();
+        const states = arrayOrEmpty(entry && entry.state);
+        for (let i = 0; i < states.length; i += 1) {
+            if (stringOrEmpty(states[i]).toLowerCase() === target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function clipboardEntryHasImagePreview(entry) {
+        if (stringOrEmpty(entry && entry.kind) !== "clipboard") {
+            return false;
+        }
+        const previewType = stringOrEmpty(entry && entry.preview_type).toLowerCase();
+        const preview = stringOrEmpty(entry && entry.preview);
+        if (previewType !== "file" || !preview) {
+            return false;
+        }
+        if (preview.indexOf("/") === 0) {
+            return /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(preview);
+        }
+        if (preview.indexOf("file://") === 0) {
+            return /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(preview);
+        }
+        return false;
+    }
+
+    function clipboardImageSource(entry) {
+        if (!clipboardEntryHasImagePreview(entry)) {
+            return "";
+        }
+        const preview = stringOrEmpty(entry && entry.preview);
+        if (preview.indexOf("file://") === 0) {
+            return preview;
+        }
+        if (preview.indexOf("/") === 0) {
+            return "file://" + preview;
+        }
+        return "";
+    }
+
+    function clipboardEntryTitle(entry) {
+        const text = stringOrEmpty(entry && entry.text).trim();
+        if (text) {
+            return text.replace(/\s+/g, " ");
+        }
+        if (clipboardEntryHasImagePreview(entry)) {
+            return "Image clipboard item";
+        }
+        return "Clipboard item";
+    }
+
+    function clipboardEntrySubtitle(entry) {
+        const bits = [];
+        const subtext = stringOrEmpty(entry && entry.subtext);
+        if (subtext) {
+            bits.push(subtext);
+        }
+        if (launcherEntryHasState(entry, "pinned")) {
+            bits.push("Pinned");
+        }
+        if (clipboardEntryHasImagePreview(entry)) {
+            bits.push("Image");
+        }
+        return bits.join("  •  ");
+    }
+
+    function activeClipboardEntry() {
+        const entry = activeLauncherEntry();
+        if (stringOrEmpty(entry && entry.kind) !== "clipboard") {
+            return null;
+        }
+        return entry;
+    }
+
+    function clipboardPreviewTitle(entry) {
+        return clipboardEntryTitle(entry);
+    }
+
+    function clipboardPreviewBody(entry) {
+        if (!entry) {
+            return "";
+        }
+        const previewType = stringOrEmpty(entry.preview_type).toLowerCase();
+        if (previewType === "text") {
+            const preview = stringOrEmpty(entry.preview);
+            return preview || stringOrEmpty(entry.text);
+        }
+        if (previewType === "file") {
+            return stringOrEmpty(entry.preview);
+        }
+        return stringOrEmpty(entry.preview) || stringOrEmpty(entry.text);
+    }
+
+    function sessionLauncherEntry(session) {
+        const parentWindow = findWindowById(Number(session && session.window_id || 0));
+        return Object.assign({}, session, {
+            kind: "session",
+            identifier: stringOrEmpty(session && session.session_key),
+            text: sessionPrimaryLabel(session),
+            subtext: sessionSecondaryLabel(session),
+            badge_label: sessionBadgeLabel(session),
+            host_label: sessionHostLabel(session),
+            host_token: sessionHostToken(session),
+            project_label: shortProject(stringOrEmpty(session && (session.project_name || session.project || "global"))),
+            window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""
+        });
+    }
+
+    function launcherSessionMatches(session, tokens) {
+        const parentWindow = findWindowById(Number(session && session.window_id || 0));
+        const hostTokenData = sessionHostToken(session);
+        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), stringOrEmpty(session && session.stage), stringOrEmpty(session && session.status_reason), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
+    }
+
+    function launcherSessionGroups(query) {
+        const tokens = launcherQueryTokens(query);
+        const groups = groupedSessionBands();
+        if (!tokens.length) {
+            return groups;
+        }
+
+        const filteredGroups = [];
+        for (let i = 0; i < groups.length; i += 1) {
+            const group = groups[i];
+            const nextGroup = Object.assign({}, group, {
+                sessions: [],
+                project_groups: []
+            });
+            const projectGroups = arrayOrEmpty(group && group.project_groups);
+            for (let j = 0; j < projectGroups.length; j += 1) {
+                const projectGroup = projectGroups[j];
+                const matchedSessions = arrayOrEmpty(projectGroup && projectGroup.sessions).filter(function (session) {
+                    return launcherSessionMatches(session, tokens);
+                });
+                if (!matchedSessions.length) {
+                    continue;
+                }
+                nextGroup.project_groups.push(Object.assign({}, projectGroup, {
+                    sessions: matchedSessions
+                }));
+                nextGroup.sessions = nextGroup.sessions.concat(matchedSessions);
+            }
+            if (nextGroup.project_groups.length) {
+                filteredGroups.push(nextGroup);
+            }
+        }
+        return filteredGroups;
+    }
+
+    function launcherSessionEntries(query) {
+        const entries = [];
+        const groups = launcherSessionGroups(query);
+        for (let i = 0; i < groups.length; i += 1) {
+            const projectGroups = arrayOrEmpty(groups[i] && groups[i].project_groups);
+            for (let j = 0; j < projectGroups.length; j += 1) {
+                const sessions = arrayOrEmpty(projectGroups[j] && projectGroups[j].sessions);
+                for (let k = 0; k < sessions.length; k += 1) {
+                    entries.push(sessionLauncherEntry(sessions[k]));
+                }
+            }
+        }
+        return entries;
+    }
+
+    function launcherWindowMatches(windowData, tokens) {
+        const sessions = arrayOrEmpty(windowData && windowData.sessions);
+        const sessionBits = [];
+        for (let i = 0; i < sessions.length; i += 1) {
+            sessionBits.push(sessionPrimaryLabel(sessions[i]));
+            sessionBits.push(toolLabel(sessions[i]));
+            sessionBits.push(sessionHostLabel(sessions[i]));
+        }
+
+        const hostTokenData = windowHostToken(windowData);
+        return launcherTokensMatch(tokens, [displayTitle(windowData), displayMeta(windowData), appLabel(windowData), stringOrEmpty(windowData && windowData.project), stringOrEmpty(windowData && windowData.workspace), stringOrEmpty(windowData && windowData.output), stringOrEmpty(windowData && windowData.execution_mode), stringOrEmpty(hostTokenData && hostTokenData.label), sessionBits.join(" ")]);
+    }
+
+    function launcherWindowProjects(query) {
+        const tokens = launcherQueryTokens(query);
+        const projects = panelProjects();
+        if (!tokens.length) {
+            return projects;
+        }
+
+        const filteredProjects = [];
+        for (let i = 0; i < projects.length; i += 1) {
+            const projectGroup = projects[i];
+            const matchedWindows = arrayOrEmpty(projectGroup && projectGroup.windows).filter(function (windowData) {
+                return launcherWindowMatches(windowData, tokens);
+            });
+            if (!matchedWindows.length) {
+                continue;
+            }
+            filteredProjects.push(Object.assign({}, projectGroup, {
+                windows: matchedWindows
+            }));
+        }
+        return filteredProjects;
+    }
+
+    function launcherWindowEntries(query) {
+        const entries = [];
+        const projects = launcherWindowProjects(query);
+        for (let i = 0; i < projects.length; i += 1) {
+            const windows = arrayOrEmpty(projects[i] && projects[i].windows);
+            for (let j = 0; j < windows.length; j += 1) {
+                entries.push(Object.assign({}, windows[j], {
+                    kind: "window",
+                    identifier: String(Number(windows[j] && (windows[j].id || windows[j].window_id) || 0)),
+                    text: displayTitle(windows[j]),
+                    subtext: displayMeta(windows[j]),
+                    host_token: windowHostToken(windows[j])
+                }));
+            }
+        }
+        return entries;
+    }
+
+    function launcherEntryIdentity(entry) {
+        const kind = stringOrEmpty(entry && entry.kind);
+        if (!kind) {
+            return "";
+        }
+        if (kind === "session") {
+            return "session::" + stringOrEmpty(entry && entry.session_key);
+        }
+        if (kind === "window") {
+            return "window::" + String(Number(entry && (entry.id || entry.window_id) || 0));
+        }
+        return kind + "::" + stringOrEmpty(entry && (entry.identifier || entry.qualified_name || entry.text));
+    }
+
+    function setLauncherEntries(entries) {
+        const nextEntries = arrayOrEmpty(entries);
+        const previousIdentity = launcherEntryIdentity(activeLauncherEntry());
+        launcherEntries = nextEntries;
+
+        if (!nextEntries.length) {
+            launcherSelectedIndex = 0;
+            return;
+        }
+
+        if (previousIdentity) {
+            const previousIndex = nextEntries.findIndex(function (candidate) {
+                return launcherEntryIdentity(candidate) === previousIdentity;
+            });
+            if (previousIndex >= 0) {
+                launcherSelectedIndex = previousIndex;
+                return;
+            }
+        }
+
+        launcherSelectedIndex = Math.max(0, Math.min(launcherSelectedIndex, nextEntries.length - 1));
+    }
+
+    function projectLauncherEntries(query) {
+        const entries = [];
+        const worktrees = dashboardWorktrees();
+
+        if (!isGlobalContext()) {
+            entries.push({
+                kind: "global",
+                identifier: "__clear__",
+                text: "Clear Project Context",
+                subtext: "Return to global context",
+                qualified_name: "global",
+                variant: "clear",
+                is_active: false,
+                active_execution_mode: "",
+                remote_available: false,
+                repo_display: "",
+                repo_name: "",
+                account: "",
+                branch: "",
+                path: "",
+                is_main: false,
+                is_clean: true,
+                is_stale: false,
+                has_conflicts: false,
+                ahead: 0,
+                behind: 0,
+                dirty_count: 0,
+                visible_window_count: 0,
+                scoped_window_count: 0,
+                last_used_at: 0,
+                use_count: 0
+            });
+        }
+
+        for (let i = 0; i < worktrees.length; i += 1) {
+            const worktree = worktrees[i];
+            if (!worktree) {
+                continue;
+            }
+
+            const baseItem = {
+                kind: "project",
+                qualified_name: stringOrEmpty(worktree.qualified_name),
+                repo_display: stringOrEmpty(worktree.repo_display),
+                repo_name: stringOrEmpty(worktree.repo_name),
+                account: stringOrEmpty(worktree.account),
+                branch: stringOrEmpty(worktree.branch),
+                path: stringOrEmpty(worktree.path),
+                is_main: boolOrFalse(worktree.is_main),
+                is_clean: boolOrFalse(worktree.is_clean),
+                is_stale: boolOrFalse(worktree.is_stale),
+                has_conflicts: boolOrFalse(worktree.has_conflicts),
+                ahead: Number(worktree.ahead || 0),
+                behind: Number(worktree.behind || 0),
+                dirty_count: Number(worktree.dirty_count || 0),
+                active_execution_mode: stringOrEmpty(worktree.active_execution_mode),
+                remote_available: boolOrFalse(worktree.remote_available),
+                visible_window_count: Number(worktree.visible_window_count || 0),
+                scoped_window_count: Number(worktree.scoped_window_count || 0),
+                last_used_at: Number(worktree.last_used_at || 0),
+                use_count: Number(worktree.use_count || 0),
+                last_commit_message: stringOrEmpty(worktree.last_commit_message)
+            };
+
+            const variants = baseItem.remote_available ? ((boolOrFalse(worktree.is_active) && baseItem.active_execution_mode === "ssh") ? ["ssh", "local"] : ["local", "ssh"]) : ["local"];
+
+            for (let j = 0; j < variants.length; j += 1) {
+                const variant = variants[j];
+                const entry = {
+                    kind: "project",
+                    identifier: baseItem.qualified_name + "::" + variant,
+                    text: shortProject(baseItem.qualified_name),
+                    subtext: "",
+                    variant: variant,
+                    is_active: boolOrFalse(worktree.is_active) && baseItem.active_execution_mode === variant
+                };
+                Object.assign(entry, baseItem);
+                entry.subtext = launcherProjectSubtitle(entry);
+                entries.push(entry);
+            }
+        }
+
+        return entries.filter(function (entry) {
+            return launcherProjectMatches(entry, query);
+        });
+    }
+
     function panelWindowItems() {
         const items = [];
         const projects = arrayOrEmpty(dashboard.projects);
 
-        const addGroup = function(sectionTitle, projectGroup, emphasize) {
+        const addGroup = function (sectionTitle, projectGroup, emphasize) {
             if (!projectGroup) {
                 return;
             }
@@ -1107,11 +1798,7 @@ ShellRoot {
                 continue;
             }
             const project = stringOrEmpty(projectGroup.project);
-            addGroup(
-                project === "global" ? "Shared Windows" : shortProject(project),
-                projectGroup,
-                !!projectGroup.is_active
-            );
+            addGroup(project === "global" ? "Shared Windows" : shortProject(project), projectGroup, !!projectGroup.is_active);
         }
 
         if (!items.length) {
@@ -1128,7 +1815,7 @@ ShellRoot {
 
     function panelProjects() {
         const projects = arrayOrEmpty(dashboard.projects);
-        return projects.filter((projectGroup) => arrayOrEmpty(projectGroup && projectGroup.windows).length > 0);
+        return projects.filter(projectGroup => arrayOrEmpty(projectGroup && projectGroup.windows).length > 0);
     }
 
     function panelWindowCount() {
@@ -1346,11 +2033,95 @@ ShellRoot {
             return "";
         }
 
-        const pieces = host.split(/[^a-z0-9]+/).filter((part) => part.length > 0);
+        const pieces = host.split(/[^a-z0-9]+/).filter(part => part.length > 0);
         if (!pieces.length) {
             return titleCaseWord(host);
         }
-        return pieces.map((part) => titleCaseWord(part)).join(" ");
+        return pieces.map(part => titleCaseWord(part)).join(" ");
+    }
+
+    function hostNameFromConnectionKey(value) {
+        let key = stringOrEmpty(value).trim();
+        if (!key.length) {
+            return "";
+        }
+
+        const atIndex = key.lastIndexOf("@");
+        if (atIndex >= 0 && atIndex < key.length - 1) {
+            key = key.slice(atIndex + 1);
+        }
+
+        const slashIndex = key.indexOf("/");
+        if (slashIndex > 0) {
+            key = key.slice(0, slashIndex);
+        }
+
+        const colonIndex = key.lastIndexOf(":");
+        if (colonIndex > 0 && /^[0-9]+$/.test(key.slice(colonIndex + 1))) {
+            key = key.slice(0, colonIndex);
+        }
+
+        return displayHostName(key);
+    }
+
+    function localHostDisplayName() {
+        return displayHostName(shellConfig.hostName) || "Local";
+    }
+
+    function resolveThemeIcon(candidates) {
+        for (let i = 0; i < candidates.length; i += 1) {
+            const candidate = stringOrEmpty(candidates[i]);
+            if (!candidate.length) {
+                continue;
+            }
+            const resolved = Quickshell.iconPath(candidate, true);
+            if (resolved) {
+                return resolved;
+            }
+        }
+        return "";
+    }
+
+    function hostToken(mode, hostName, connectionKey) {
+        const normalizedMode = stringOrEmpty(mode).toLowerCase() === "ssh" ? "ssh" : "local";
+        const isRemote = normalizedMode === "ssh";
+        const label = displayHostName(hostName) || hostNameFromConnectionKey(connectionKey) || (isRemote ? "Remote" : localHostDisplayName());
+        const icon = isRemote ? resolveThemeIcon(["network-server-symbolic", "network-workgroup-symbolic", "network-wired-symbolic", "utilities-terminal-symbolic"]) : resolveThemeIcon(["computer-symbolic", "computer-laptop-symbolic", "video-display-symbolic", "desktop-symbolic"]);
+
+        return {
+            label: label,
+            icon: icon,
+            is_remote: isRemote,
+            foreground: isRemote ? colors.orange : colors.blue,
+            background: isRemote ? colors.orangeBg : colors.blueWash,
+            border: isRemote ? colors.orange : colors.blueMuted,
+            monogram: label.length ? label.charAt(0).toUpperCase() : (isRemote ? "R" : "L")
+        };
+    }
+
+    function sessionHostToken(session) {
+        return hostToken(stringOrEmpty(session && session.execution_mode), stringOrEmpty(session && session.host_name), stringOrEmpty(session && session.connection_key));
+    }
+
+    function windowHostToken(windowData) {
+        const sessions = arrayOrEmpty(windowData && windowData.sessions);
+        let preferredSession = null;
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            if (!preferredSession) {
+                preferredSession = session;
+            }
+            if (stringOrEmpty(session && session.execution_mode).toLowerCase() === "ssh") {
+                preferredSession = session;
+                break;
+            }
+        }
+
+        if (preferredSession) {
+            return sessionHostToken(preferredSession);
+        }
+
+        return hostToken(stringOrEmpty(windowData && windowData.execution_mode), "", stringOrEmpty(windowData && windowData.connection_key));
     }
 
     function projectCardFill(projectGroup) {
@@ -1389,9 +2160,7 @@ ShellRoot {
             }
             return phase;
         }
-        if (boolOrFalse(session && session.output_unseen)
-            || boolOrFalse(session && session.review_pending)
-            || boolOrFalse(session && session.needs_user_action)) {
+        if (boolOrFalse(session && session.output_unseen) || boolOrFalse(session && session.review_pending) || boolOrFalse(session && session.needs_user_action)) {
             return "needs_attention";
         }
         if (boolOrFalse(session && session.output_ready)) {
@@ -1473,26 +2242,20 @@ ShellRoot {
         const statusReason = stringOrEmpty(session && session.status_reason).toLowerCase();
         const lastActivityAt = stringOrEmpty(session && session.last_activity_at);
 
-        if (boolOrFalse(session && session.needs_user_action)
-            || boolOrFalse(session && session.output_ready)
-            || boolOrFalse(session && session.output_unseen)) {
+        if (boolOrFalse(session && session.needs_user_action) || boolOrFalse(session && session.output_ready) || boolOrFalse(session && session.output_unseen)) {
             return false;
         }
         if (boolOrFalse(session && session.remote_source_stale) || freshness === "stale") {
             return false;
         }
-        if (boolOrFalse(session && session.pulse_working)
-            || boolOrFalse(session && session.is_streaming)
-            || (Number.isFinite(pendingTools) && pendingTools > 0)) {
+        if (boolOrFalse(session && session.pulse_working) || boolOrFalse(session && session.is_streaming) || (Number.isFinite(pendingTools) && pendingTools > 0)) {
             return true;
         }
         if (statusReason === "process_keepalive" && !lastActivityAt.length) {
             return false;
         }
 
-        return ["starting", "thinking", "tool_running", "streaming"].indexOf(stage) >= 0
-            && (!Number.isFinite(ageSeconds) || ageSeconds <= 15)
-            && freshness !== "stale";
+        return ["starting", "thinking", "tool_running", "streaming"].indexOf(stage) >= 0 && (!Number.isFinite(ageSeconds) || ageSeconds <= 15) && freshness !== "stale";
     }
 
     function sessionHasMotion(session) {
@@ -1976,11 +2739,7 @@ ShellRoot {
             return "file://" + absolute;
         }
 
-        const candidates = [
-            stringOrEmpty(windowData.app_key),
-            stringOrEmpty(windowData.app_name),
-            "application-x-executable"
-        ];
+        const candidates = [stringOrEmpty(windowData.app_key), stringOrEmpty(windowData.app_name), "application-x-executable"];
 
         for (let i = 0; i < candidates.length; i += 1) {
             const candidate = candidates[i];
@@ -1994,6 +2753,268 @@ ShellRoot {
         }
 
         return "";
+    }
+
+    function launcherEntryAccentColor(entry) {
+        const kind = stringOrEmpty(entry && entry.kind);
+        const hostTokenData = entry && entry.host_token ? entry.host_token : null;
+        if (kind === "session" || kind === "window") {
+            return hostTokenData && hostTokenData.is_remote ? colors.orange : colors.blue;
+        }
+        return "transparent";
+    }
+
+    function launcherIconSource(entry) {
+        const isOnePassword = stringOrEmpty(entry && entry.kind) === "onepassword";
+        const isClipboard = stringOrEmpty(entry && entry.kind) === "clipboard";
+        const icon = stringOrEmpty(entry && entry.icon);
+        if (!icon) {
+            if (isOnePassword) {
+                return Quickshell.iconPath("dialog-password-symbolic", true) || ("file://" + shellConfig.onePasswordIcon);
+            }
+            if (isClipboard) {
+                return Quickshell.iconPath("edit-paste", true) || Quickshell.iconPath("application-x-executable", true) || "";
+            }
+            return Quickshell.iconPath("application-x-executable", true) || "";
+        }
+
+        if (icon.indexOf("/") === 0) {
+            return "file://" + icon;
+        }
+
+        const resolved = Quickshell.iconPath(icon, true);
+        if (resolved) {
+            return resolved;
+        }
+
+        if (isOnePassword) {
+            return Quickshell.iconPath("dialog-password-symbolic", true) || ("file://" + shellConfig.onePasswordIcon);
+        }
+
+        if (isClipboard) {
+            return Quickshell.iconPath("edit-paste", true) || Quickshell.iconPath("application-x-executable", true) || "";
+        }
+
+        return Quickshell.iconPath("application-x-executable", true) || "";
+    }
+
+    function restartLauncherQuery() {
+        if (!launcherVisible) {
+            return;
+        }
+
+        launcherError = "";
+
+        if (launcherQueryProcess.running) {
+            launcherQueryProcess.running = false;
+        }
+
+        if (launcherMode === "projects") {
+            launcherLoading = false;
+            setLauncherEntries(projectLauncherEntries(launcherQuery));
+            return;
+        }
+
+        if (launcherMode === "sessions") {
+            launcherLoading = false;
+            setLauncherEntries(launcherSessionEntries(launcherQuery));
+            return;
+        }
+
+        if (launcherMode === "windows") {
+            launcherLoading = false;
+            setLauncherEntries(launcherWindowEntries(launcherQuery));
+            return;
+        }
+
+        if (launcherMode === "onepassword") {
+            setLauncherEntries(onePasswordEntries(launcherQuery));
+            launcherLoading = onePasswordEntriesCache.length === 0;
+            launcherQueryProcess.command = [shellConfig.onePasswordListBin];
+            launcherQueryProcess.running = true;
+            return;
+        }
+
+        if (launcherMode === "clipboard") {
+            launcherLoading = true;
+            launcherQueryProcess.command = [shellConfig.clipboardListBin, launcherQuery, "30"];
+            launcherQueryProcess.running = true;
+            return;
+        }
+
+        launcherLoading = true;
+        launcherQueryProcess.command = [shellConfig.launcherQueryBin, launcherQuery, "12", "20"];
+        launcherQueryProcess.running = true;
+    }
+
+    function parseLauncherResults(data) {
+        if (launcherMode !== "apps" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to load app results";
+            console.warn("launcher.query.parse:", raw, error);
+        }
+    }
+
+    function parseOnePasswordResults(data) {
+        if (launcherMode !== "onepassword" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            onePasswordEntriesCache = [];
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            onePasswordEntriesCache = Array.isArray(parsed) ? parsed : [];
+            setLauncherEntries(onePasswordEntries(launcherQuery));
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            onePasswordEntriesCache = [];
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to load 1Password items";
+            console.warn("launcher.onepassword.parse:", raw, error);
+        }
+    }
+
+    function parseClipboardResults(data) {
+        if (launcherMode !== "clipboard" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to load clipboard history";
+            console.warn("launcher.clipboard.parse:", raw, error);
+        }
+    }
+
+    function activeLauncherEntry() {
+        const entries = arrayOrEmpty(launcherEntries);
+        if (!entries.length) {
+            return null;
+        }
+        if (launcherSelectedIndex < 0 || launcherSelectedIndex >= entries.length) {
+            return entries[0];
+        }
+        return entries[launcherSelectedIndex];
+    }
+
+    function moveLauncherSelection(delta) {
+        const entries = arrayOrEmpty(launcherEntries);
+        if (!entries.length) {
+            launcherSelectedIndex = 0;
+            return;
+        }
+
+        launcherSelectedIndex = (launcherSelectedIndex + delta + entries.length) % entries.length;
+    }
+
+    function closeLauncher() {
+        launcherVisible = false;
+    }
+
+    function activateLauncherEntry(entry, actionMode) {
+        const kind = stringOrEmpty(entry && entry.kind);
+        if (kind === "global") {
+            closeLauncher();
+            clearContext();
+            return;
+        }
+        if (kind === "project") {
+            closeLauncher();
+            activateWorktree(entry, stringOrEmpty(entry && entry.variant) || "local");
+            return;
+        }
+        if (kind === "session") {
+            const sessionKey = stringOrEmpty(entry && entry.session_key);
+            if (!sessionKey) {
+                return;
+            }
+
+            closeLauncher();
+            focusSession(sessionKey);
+            return;
+        }
+        if (kind === "window") {
+            closeLauncher();
+            if (stringOrEmpty(actionMode) === "close") {
+                closeWindow(entry);
+            } else {
+                focusWindow(entry);
+            }
+            return;
+        }
+        if (kind === "onepassword") {
+            const itemId = stringOrEmpty(entry && entry.identifier);
+            const mode = stringOrEmpty(actionMode || "password") || "password";
+            if (!itemId) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached([shellConfig.onePasswordActionBin, mode, itemId]);
+            return;
+        }
+        if (kind === "clipboard") {
+            const identifier = stringOrEmpty(entry && entry.identifier);
+            const action = stringOrEmpty(actionMode || "copy") || "copy";
+            if (!identifier) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached([shellConfig.clipboardActionBin, action, identifier]);
+            return;
+        }
+
+        const identifier = stringOrEmpty(entry && entry.identifier);
+        if (!identifier) {
+            return;
+        }
+
+        closeLauncher();
+        runDetached([shellConfig.launcherLaunchBin, identifier]);
+    }
+
+    function activateSelectedLauncherEntry(actionMode) {
+        activateLauncherEntry(activeLauncherEntry(), actionMode);
     }
 
     function runDetached(command) {
@@ -2024,7 +3045,7 @@ ShellRoot {
         }
 
         const current = currentSessionKey();
-        let index = sessions.findIndex((item) => stringOrEmpty(item.session_key) === current);
+        let index = sessions.findIndex(item => stringOrEmpty(item.session_key) === current);
         if (index < 0) {
             index = 0;
         }
@@ -2183,6 +3204,9 @@ ShellRoot {
             if (current) {
                 selectedSessionKey = current;
             }
+            if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
+                restartLauncherQuery();
+            }
         } catch (error) {
             console.warn("Failed to parse dashboard payload", error, raw);
         }
@@ -2246,25 +3270,42 @@ ShellRoot {
         onTriggered: networkWatcher.running = true
     }
 
+    Timer {
+        id: launcherFocusTimer
+        interval: 40
+        repeat: false
+        onTriggered: {
+            launcherField.forceActiveFocus();
+            launcherField.selectAll();
+        }
+    }
+
+    Timer {
+        id: launcherQueryDebounce
+        interval: 90
+        repeat: false
+        onTriggered: root.restartLauncherQuery()
+    }
+
     Process {
         id: dashboardWatcher
         command: [shellConfig.i3pmBin, "dashboard", "watch", "--interval", String(shellConfig.dashboardHeartbeatMs)]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"
-            onRead: function(data) {
+            onRead: function (data) {
                 root.parseDashboard(data);
             }
         }
         stderr: SplitParser {
             splitMarker: "\n"
-            onRead: function(data) {
+            onRead: function (data) {
                 if (data && data.trim()) {
                     console.warn("dashboard.watch:", data);
                 }
             }
         }
-        onExited: function() {
+        onExited: function () {
             dashboardRestartTimer.restart();
         }
     }
@@ -2275,19 +3316,19 @@ ShellRoot {
         running: true
         stdout: SplitParser {
             splitMarker: "\n"
-            onRead: function(data) {
+            onRead: function (data) {
                 root.parseNotification(data);
             }
         }
         stderr: SplitParser {
             splitMarker: "\n"
-            onRead: function(data) {
+            onRead: function (data) {
                 if (data && data.trim()) {
                     console.warn("notification.watch:", data);
                 }
             }
         }
-        onExited: function() {
+        onExited: function () {
             notificationRestartTimer.restart();
         }
     }
@@ -2298,20 +3339,65 @@ ShellRoot {
         running: true
         stdout: SplitParser {
             splitMarker: "\n"
-            onRead: function(data) {
+            onRead: function (data) {
                 root.parseNetwork(data);
             }
         }
         stderr: SplitParser {
             splitMarker: "\n"
-            onRead: function(data) {
+            onRead: function (data) {
                 if (data && data.trim()) {
                     console.warn("network.watch:", data);
                 }
             }
         }
-        onExited: function() {
+        onExited: function () {
             networkRefreshTimer.restart();
+        }
+    }
+
+    Process {
+        id: launcherQueryProcess
+        command: [shellConfig.launcherQueryBin, "", "12", "20"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (root.launcherMode === "onepassword") {
+                    root.parseOnePasswordResults(data);
+                    return;
+                }
+                if (root.launcherMode === "clipboard") {
+                    root.parseClipboardResults(data);
+                    return;
+                }
+                root.parseLauncherResults(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (!root.launcherVisible || (root.launcherMode !== "apps" && root.launcherMode !== "onepassword" && root.launcherMode !== "clipboard")) {
+                    return;
+                }
+                const message = data && data.trim();
+                if (message) {
+                    if (root.launcherMode === "onepassword") {
+                        root.launcherError = "Unable to load 1Password items";
+                    } else if (root.launcherMode === "clipboard") {
+                        root.launcherError = "Unable to load clipboard history";
+                    } else {
+                        root.launcherError = "Launcher query failed";
+                    }
+                    root.launcherLoading = false;
+                    console.warn("launcher.query:", message);
+                }
+            }
+        }
+        onExited: function () {
+            if (root.launcherMode === "apps" || root.launcherMode === "onepassword" || root.launcherMode === "clipboard") {
+                root.launcherLoading = false;
+            }
         }
     }
 
@@ -2352,6 +3438,10 @@ ShellRoot {
 
         function togglePowerMenu() {
             root.powerMenuVisible = !root.powerMenuVisible;
+        }
+
+        function toggleLauncher() {
+            root.launcherVisible = !root.launcherVisible;
         }
     }
 
@@ -2440,11 +3530,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Text {
@@ -2475,11 +3569,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Text {
@@ -2535,11 +3633,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Text {
@@ -2573,11 +3675,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Text {
@@ -2598,7 +3704,7 @@ ShellRoot {
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: function(mouse) {
+                                onClicked: function (mouse) {
                                     if (mouse.button === Qt.RightButton) {
                                         root.runDetached(["swaync-client", "-d", "-sw"]);
                                         return;
@@ -2618,11 +3724,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Text {
@@ -2644,7 +3754,7 @@ ShellRoot {
                                 cursorShape: Qt.PointingHandCursor
                                 acceptedButtons: Qt.LeftButton
                                 onClicked: root.toggleMute()
-                                onWheel: function(wheel) {
+                                onWheel: function (wheel) {
                                     root.changeVolume(wheel.angleDelta.y > 0 ? 0.05 : -0.05);
                                 }
                             }
@@ -2661,11 +3771,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             RowLayout {
@@ -2717,11 +3831,15 @@ ShellRoot {
                                     border.width: 1
 
                                     Behavior on color {
-                                        ColorAnimation { duration: root.fastColorMs }
+                                        ColorAnimation {
+                                            duration: root.fastColorMs
+                                        }
                                     }
 
                                     Behavior on border.color {
-                                        ColorAnimation { duration: root.fastColorMs }
+                                        ColorAnimation {
+                                            duration: root.fastColorMs
+                                        }
                                     }
 
                                     IconImage {
@@ -2740,7 +3858,7 @@ ShellRoot {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                                        onClicked: function(mouse) {
+                                        onClicked: function (mouse) {
                                             if (mouse.button === Qt.RightButton) {
                                                 trayItem.secondaryActivate();
                                                 return;
@@ -2754,7 +3872,7 @@ ShellRoot {
 
                                             trayItem.activate();
                                         }
-                                        onWheel: function(wheel) {
+                                        onWheel: function (wheel) {
                                             trayItem.scroll(wheel.angleDelta.y > 0 ? 1 : -1, false);
                                         }
                                     }
@@ -2776,11 +3894,15 @@ ShellRoot {
                             implicitHeight: parent.height
 
                             Behavior on color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Behavior on border.color {
-                                ColorAnimation { duration: root.fastColorMs }
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
                             }
 
                             Text {
@@ -2833,11 +3955,26 @@ ShellRoot {
 
                         Repeater {
                             model: [
-                                { label: "Lock", command: ["swaylock", "-f"] },
-                                { label: "Suspend", command: ["systemctl", "suspend"] },
-                                { label: "Exit Sway", command: ["swaymsg", "exit"] },
-                                { label: "Reboot", command: ["systemctl", "reboot"] },
-                                { label: "Shutdown", command: ["systemctl", "poweroff"] }
+                                {
+                                    label: "Lock",
+                                    command: ["swaylock", "-f"]
+                                },
+                                {
+                                    label: "Suspend",
+                                    command: ["systemctl", "suspend"]
+                                },
+                                {
+                                    label: "Exit Sway",
+                                    command: ["swaymsg", "exit"]
+                                },
+                                {
+                                    label: "Reboot",
+                                    command: ["systemctl", "reboot"]
+                                },
+                                {
+                                    label: "Shutdown",
+                                    command: ["systemctl", "poweroff"]
+                                }
                             ]
 
                             delegate: Rectangle {
@@ -2850,11 +3987,15 @@ ShellRoot {
                                 border.width: 1
 
                                 Behavior on color {
-                                    ColorAnimation { duration: root.fastColorMs }
+                                    ColorAnimation {
+                                        duration: root.fastColorMs
+                                    }
                                 }
 
                                 Behavior on border.color {
-                                    ColorAnimation { duration: root.fastColorMs }
+                                    ColorAnimation {
+                                        duration: root.fastColorMs
+                                    }
                                 }
 
                                 Text {
@@ -2965,9 +4106,9 @@ ShellRoot {
                             contentWidth: workspaceRow.implicitWidth
                             contentHeight: workspaceRow.implicitHeight
 
-                                Row {
-                                    id: workspaceRow
-                                    spacing: 6
+                            Row {
+                                id: workspaceRow
+                                spacing: 6
 
                                 Repeater {
                                     model: root.barWorkspacesForOutput(barOutputName)
@@ -3115,12 +4256,8 @@ ShellRoot {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 radius: 7
-                                color: root.panelVisible
-                                    ? (bottomPanelToggleMouse.containsMouse ? colors.blue : colors.blue)
-                                    : (bottomPanelToggleMouse.containsMouse ? colors.card : colors.cardAlt)
-                                border.color: root.panelVisible
-                                    ? colors.blue
-                                    : (bottomPanelToggleMouse.containsMouse ? colors.borderStrong : colors.border)
+                                color: root.panelVisible ? (bottomPanelToggleMouse.containsMouse ? colors.blue : colors.blue) : (bottomPanelToggleMouse.containsMouse ? colors.card : colors.cardAlt)
+                                border.color: root.panelVisible ? colors.blue : (bottomPanelToggleMouse.containsMouse ? colors.borderStrong : colors.border)
                                 border.width: 1
 
                                 Text {
@@ -3154,6 +4291,1175 @@ ShellRoot {
     Variants {
         model: Quickshell.screens
         delegate: perScreenBarWindow
+    }
+
+    PanelWindow {
+        id: launcherWindow
+        screen: root.primaryScreen
+        visible: root.launcherVisible && root.primaryScreen !== null
+        color: "transparent"
+        anchors.left: true
+        anchors.right: true
+        anchors.top: true
+        anchors.bottom: true
+        exclusiveZone: 0
+        exclusionMode: ExclusionMode.Ignore
+        focusable: true
+        aboveWindows: true
+        WlrLayershell.namespace: "i3pm-app-launcher"
+        WlrLayershell.layer: WlrLayer.Overlay
+        // Launchers need deterministic keyboard capture on open.
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#66070b12"
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.closeLauncher()
+            }
+
+            Rectangle {
+                id: launcherCard
+                anchors.centerIn: parent
+                width: Math.min(760, parent.width - 96)
+                height: Math.min(560, parent.height - 96)
+                radius: 12
+                color: colors.panel
+                border.color: colors.borderStrong
+                border.width: 1
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: function (mouse) {
+                        mouse.accepted = true;
+                    }
+                }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 16
+                    anchors.topMargin: 16
+                    anchors.bottomMargin: 16
+                    spacing: 12
+
+                    Text {
+                        text: root.launcherTitle()
+                        color: colors.text
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherAppsModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "apps" ? colors.blueBg : (launcherAppsModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "apps" ? colors.blue : (launcherAppsModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherAppsModeLabel
+                                anchors.centerIn: parent
+                                text: "Apps"
+                                color: root.launcherMode === "apps" ? colors.blue : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherAppsModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("apps")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherProjectsModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "projects" ? colors.tealBg : (launcherProjectsModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "projects" ? colors.teal : (launcherProjectsModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherProjectsModeLabel
+                                anchors.centerIn: parent
+                                text: "Projects"
+                                color: root.launcherMode === "projects" ? colors.teal : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherProjectsModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("projects")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherOnePasswordModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "onepassword" ? colors.accentBg : (launcherOnePasswordModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "onepassword" ? colors.accent : (launcherOnePasswordModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherOnePasswordModeLabel
+                                anchors.centerIn: parent
+                                text: "1Password"
+                                color: root.launcherMode === "onepassword" ? colors.accent : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherOnePasswordModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("onepassword")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherClipboardModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "clipboard" ? colors.amberBg : (launcherClipboardModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "clipboard" ? colors.amber : (launcherClipboardModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherClipboardModeLabel
+                                anchors.centerIn: parent
+                                text: "Clipboard"
+                                color: root.launcherMode === "clipboard" ? colors.amber : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherClipboardModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("clipboard")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherSessionsModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "sessions" ? colors.violetBg : (launcherSessionsModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "sessions" ? colors.violet : (launcherSessionsModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherSessionsModeLabel
+                                anchors.centerIn: parent
+                                text: "AI Sessions"
+                                color: root.launcherMode === "sessions" ? colors.violet : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherSessionsModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("sessions")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: launcherWindowsModeLabel.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: root.launcherMode === "windows" ? colors.blueWash : (launcherWindowsModeMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.launcherMode === "windows" ? colors.blueMuted : (launcherWindowsModeMouse.containsMouse ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            Text {
+                                id: launcherWindowsModeLabel
+                                anchors.centerIn: parent
+                                text: "Windows"
+                                color: root.launcherMode === "windows" ? colors.blue : colors.text
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: launcherWindowsModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setLauncherMode("windows")
+                            }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    TextField {
+                        id: launcherField
+                        Layout.fillWidth: true
+                        focus: root.launcherVisible
+                        placeholderText: root.launcherPlaceholderText()
+                        color: colors.text
+                        font.pixelSize: 18
+
+                        background: Rectangle {
+                            radius: 8
+                            color: colors.cardAlt
+                            border.color: launcherField.activeFocus ? colors.blue : colors.border
+                            border.width: 1
+                        }
+
+                        leftPadding: 14
+                        rightPadding: 14
+                        topPadding: 12
+                        bottomPadding: 12
+
+                        onTextChanged: {
+                            if (!root.launcherNormalizingInput) {
+                                root.updateLauncherInput(text);
+                            }
+                        }
+
+                        Keys.onPressed: function (event) {
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_2) {
+                                root.setLauncherMode("projects");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_3) {
+                                root.setLauncherMode("onepassword");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_4) {
+                                root.setLauncherMode("clipboard");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_5) {
+                                root.setLauncherMode("sessions");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_6) {
+                                root.setLauncherMode("windows");
+                                event.accepted = true;
+                                return;
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_1) {
+                                root.setLauncherMode("apps");
+                                event.accepted = true;
+                                return;
+                            }
+
+                            switch (event.key) {
+                            case Qt.Key_Escape:
+                                root.closeLauncher();
+                                event.accepted = true;
+                                break;
+                            case Qt.Key_Down:
+                                root.moveLauncherSelection(1);
+                                event.accepted = true;
+                                break;
+                            case Qt.Key_Up:
+                                root.moveLauncherSelection(-1);
+                                event.accepted = true;
+                                break;
+                            case Qt.Key_Tab:
+                                root.cycleLauncherMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1);
+                                event.accepted = true;
+                                break;
+                            case Qt.Key_Return:
+                            case Qt.Key_Enter:
+                                if (root.launcherMode === "onepassword") {
+                                    if (event.modifiers & Qt.ControlModifier) {
+                                        root.activateSelectedLauncherEntry("otp");
+                                    } else if (event.modifiers & Qt.ShiftModifier) {
+                                        root.activateSelectedLauncherEntry("username");
+                                    } else {
+                                        root.activateSelectedLauncherEntry("password");
+                                    }
+                                } else if (root.launcherMode === "clipboard") {
+                                    root.activateSelectedLauncherEntry("copy");
+                                } else {
+                                    root.activateSelectedLauncherEntry();
+                                }
+                                event.accepted = true;
+                                break;
+                            case Qt.Key_D:
+                                if (root.launcherMode === "clipboard" && (event.modifiers & Qt.ControlModifier)) {
+                                    root.activateSelectedLauncherEntry("remove");
+                                    event.accepted = true;
+                                }
+                                break;
+                            case Qt.Key_W:
+                                if (root.launcherMode === "windows" && (event.modifiers & Qt.ControlModifier)) {
+                                    root.activateSelectedLauncherEntry("close");
+                                    event.accepted = true;
+                                }
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.launcherStatusText()
+                            color: root.launcherError ? colors.red : colors.subtle
+                            font.pixelSize: 10
+                        }
+
+                        Text {
+                            text: root.launcherHelpText()
+                            color: colors.muted
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 10
+                        color: colors.card
+                        border.color: colors.border
+                        border.width: 1
+
+                        ScriptModel {
+                            id: launcherEntriesModel
+                            values: root.launcherEntries
+                            objectProp: "modelData"
+                        }
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 8
+
+                            Rectangle {
+                                Layout.fillHeight: true
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 280 : 0
+                                Layout.preferredWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 340 : -1
+                                radius: 8
+                                color: "transparent"
+                                border.width: 0
+
+                                ListView {
+                                    id: launcherList
+                                    anchors.fill: parent
+                                    clip: true
+                                    spacing: 6
+                                    model: launcherEntriesModel
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        readonly property var entry: modelData
+                                        readonly property int itemIndex: root.launcherEntries.findIndex(function (candidate) {
+                                            return root.stringOrEmpty(candidate && candidate.identifier) === root.stringOrEmpty(entry && entry.identifier);
+                                        })
+                                        readonly property bool selected: itemIndex === root.launcherSelectedIndex
+                                        readonly property bool projectEntry: root.stringOrEmpty(entry && entry.kind) === "project" || root.stringOrEmpty(entry && entry.kind) === "global"
+                                        readonly property bool sessionEntry: root.stringOrEmpty(entry && entry.kind) === "session"
+                                        readonly property bool windowEntry: root.stringOrEmpty(entry && entry.kind) === "window"
+                                        readonly property bool onePasswordEntry: root.stringOrEmpty(entry && entry.kind) === "onepassword"
+                                        readonly property bool clipboardEntry: root.stringOrEmpty(entry && entry.kind) === "clipboard"
+                                        readonly property bool clipboardImageEntry: root.clipboardEntryHasImagePreview(entry)
+                                        readonly property string clipboardThumbnailSource: root.clipboardImageSource(entry)
+                                        readonly property string activityLabel: sessionEntry ? root.sessionBadgeLabel(entry) : ""
+                                        readonly property var hostTokenData: (sessionEntry || windowEntry) ? (entry && entry.host_token ? entry.host_token : null) : null
+                                        readonly property color accentColor: root.launcherEntryAccentColor(entry)
+                                        property bool hasMotion: sessionEntry ? root.sessionHasMotion(entry) : false
+
+                                        function resetMotionVisuals() {
+                                            if (!sessionEntry) {
+                                                return;
+                                            }
+                                            sessionWorkingHalo.opacity = hasMotion ? 0.05 : 0;
+                                            sessionWorkingHalo.scale = 1;
+                                            sessionToolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
+                                            sessionToolIconWrap.scale = 1;
+                                        }
+
+                                        onHasMotionChanged: resetMotionVisuals()
+                                        Component.onCompleted: resetMotionVisuals()
+
+                                        width: launcherList.width
+                                        height: sessionEntry || projectEntry || windowEntry || clipboardImageEntry ? 62 : 56
+                                        radius: 8
+                                        color: selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent")
+                                        border.color: selected ? colors.blue : (entryMouse.containsMouse ? colors.borderStrong : "transparent")
+                                        border.width: 1
+
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 6
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: 4
+                                            height: selected ? 38 : (entryMouse.containsMouse ? 32 : 28)
+                                            radius: 3
+                                            color: accentColor
+                                            opacity: selected ? 1 : (entryMouse.containsMouse ? 0.75 : 0.5)
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 16
+                                            anchors.rightMargin: 12
+                                            spacing: 12
+
+                                            Rectangle {
+                                                width: 34
+                                                height: 34
+                                                radius: 8
+                                                color: sessionEntry ? (selected ? colors.bg : root.sessionTint(entry)) : (selected ? colors.bg : colors.panelAlt)
+                                                border.color: (sessionEntry || windowEntry) ? (selected ? colors.blueMuted : "transparent") : (selected ? colors.blueMuted : colors.lineSoft)
+                                                border.width: 1
+
+                                                Rectangle {
+                                                    id: sessionWorkingHalo
+                                                    visible: sessionEntry && hasMotion
+                                                    anchors.centerIn: parent
+                                                    width: 30
+                                                    height: 30
+                                                    radius: 9
+                                                    color: root.sessionAccentColor(entry)
+                                                    border.color: "transparent"
+                                                    border.width: 0
+                                                    opacity: hasMotion ? 0.05 : 0
+                                                    scale: 1
+
+                                                    ParallelAnimation {
+                                                        running: sessionEntry && hasMotion
+                                                        loops: Animation.Infinite
+
+                                                        SequentialAnimation {
+                                                            OpacityAnimator {
+                                                                target: sessionWorkingHalo
+                                                                from: 0.03
+                                                                to: 0.08
+                                                                duration: 800
+                                                            }
+                                                            OpacityAnimator {
+                                                                target: sessionWorkingHalo
+                                                                from: 0.08
+                                                                to: 0.03
+                                                                duration: 800
+                                                            }
+                                                        }
+
+                                                        SequentialAnimation {
+                                                            ScaleAnimator {
+                                                                target: sessionWorkingHalo
+                                                                from: 0.96
+                                                                to: 1.05
+                                                                duration: 800
+                                                            }
+                                                            ScaleAnimator {
+                                                                target: sessionWorkingHalo
+                                                                from: 1.05
+                                                                to: 0.96
+                                                                duration: 800
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Image {
+                                                    visible: clipboardImageEntry && clipboardThumbnailSource !== ""
+                                                    anchors.fill: parent
+                                                    anchors.margins: 3
+                                                    source: clipboardThumbnailSource
+                                                    fillMode: Image.PreserveAspectCrop
+                                                    smooth: true
+                                                    asynchronous: true
+                                                    cache: false
+                                                }
+
+                                                Item {
+                                                    id: sessionToolIconWrap
+                                                    visible: sessionEntry
+                                                    anchors.centerIn: parent
+                                                    width: 18
+                                                    height: 18
+                                                    scale: 1
+                                                    opacity: hasMotion ? 0.96 : 0.92
+
+                                                    ParallelAnimation {
+                                                        running: sessionEntry && hasMotion
+                                                        loops: Animation.Infinite
+
+                                                        SequentialAnimation {
+                                                            ScaleAnimator {
+                                                                target: sessionToolIconWrap
+                                                                from: 0.94
+                                                                to: 1.12
+                                                                duration: 800
+                                                            }
+                                                            ScaleAnimator {
+                                                                target: sessionToolIconWrap
+                                                                from: 1.12
+                                                                to: 0.94
+                                                                duration: 800
+                                                            }
+                                                        }
+
+                                                        SequentialAnimation {
+                                                            OpacityAnimator {
+                                                                target: sessionToolIconWrap
+                                                                from: 0.82
+                                                                to: 1
+                                                                duration: 800
+                                                            }
+                                                            OpacityAnimator {
+                                                                target: sessionToolIconWrap
+                                                                from: 1
+                                                                to: 0.82
+                                                                duration: 800
+                                                            }
+                                                        }
+                                                    }
+
+                                                    IconImage {
+                                                        anchors.centerIn: parent
+                                                        implicitSize: 16
+                                                        source: root.toolIconSource(entry)
+                                                        mipmap: true
+                                                        opacity: 1
+                                                    }
+                                                }
+
+                                                Image {
+                                                    visible: !sessionEntry && !projectEntry && !clipboardImageEntry && !windowEntry
+                                                    anchors.centerIn: parent
+                                                    width: 20
+                                                    height: 20
+                                                    source: root.launcherIconSource(entry)
+                                                    fillMode: Image.PreserveAspectFit
+                                                    smooth: true
+                                                    asynchronous: true
+                                                }
+
+                                                IconImage {
+                                                    visible: windowEntry && root.iconSourceFor(entry) !== ""
+                                                    anchors.centerIn: parent
+                                                    implicitSize: 20
+                                                    source: root.iconSourceFor(entry)
+                                                    mipmap: true
+                                                    opacity: 0.96
+                                                }
+
+                                                Text {
+                                                    visible: projectEntry || (windowEntry && root.iconSourceFor(entry) === "")
+                                                    anchors.centerIn: parent
+                                                    text: projectEntry ? (root.stringOrEmpty(entry && entry.kind) === "global" ? "G" : root.stringOrEmpty(entry && entry.text).slice(0, 1).toUpperCase()) : root.appLabel(entry).slice(0, 1).toUpperCase()
+                                                    color: selected ? colors.blue : (projectEntry && root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orange : colors.textDim)
+                                                    font.pixelSize: 11
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                Rectangle {
+                                                    visible: sessionEntry
+                                                    anchors.right: parent.right
+                                                    anchors.bottom: parent.bottom
+                                                    anchors.rightMargin: 1
+                                                    anchors.bottomMargin: 1
+                                                    width: 8
+                                                    height: 8
+                                                    radius: 4
+                                                    color: root.sessionBadgeColor(entry)
+                                                    opacity: 0.85
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 2
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: clipboardEntry ? root.clipboardEntryTitle(entry) : root.stringOrEmpty(entry && entry.text)
+                                                    color: selected ? colors.blue : colors.text
+                                                    font.pixelSize: 13
+                                                    font.weight: Font.DemiBold
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: clipboardEntry ? root.clipboardEntrySubtitle(entry) : (root.stringOrEmpty(entry && entry.subtext) || root.stringOrEmpty(entry && entry.identifier))
+                                                    color: selected ? colors.textDim : colors.subtle
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: windowEntry && root.stringOrEmpty(entry && entry.project).length > 0
+                                                height: 20
+                                                radius: 6
+                                                color: selected ? colors.bg : colors.panelAlt
+                                                border.color: selected ? colors.blue : colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherWindowProjectChipText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherWindowProjectChipText
+                                                    anchors.centerIn: parent
+                                                    text: root.shortProject(root.stringOrEmpty(entry && entry.project))
+                                                    color: selected ? colors.blue : colors.textDim
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: (sessionEntry || windowEntry) && hostTokenData && root.stringOrEmpty(hostTokenData.label).length > 0
+                                                height: 20
+                                                radius: 6
+                                                color: hostTokenData ? hostTokenData.background : colors.panelAlt
+                                                border.color: hostTokenData ? hostTokenData.border : colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherHostTokenRow.implicitWidth + 16
+                                                Layout.maximumWidth: 132
+
+                                                RowLayout {
+                                                    id: launcherHostTokenRow
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 6
+                                                    anchors.rightMargin: 8
+                                                    spacing: 5
+
+                                                    Rectangle {
+                                                        width: 12
+                                                        height: 12
+                                                        radius: 4
+                                                        color: hostTokenData ? hostTokenData.border : colors.lineSoft
+                                                        border.color: "transparent"
+                                                        border.width: 0
+
+                                                        IconImage {
+                                                            visible: hostTokenData && root.stringOrEmpty(hostTokenData.icon).length > 0
+                                                            anchors.centerIn: parent
+                                                            implicitSize: 10
+                                                            source: hostTokenData ? hostTokenData.icon : ""
+                                                            mipmap: true
+                                                        }
+
+                                                        Text {
+                                                            visible: !hostTokenData || root.stringOrEmpty(hostTokenData.icon).length === 0
+                                                            anchors.centerIn: parent
+                                                            text: hostTokenData ? root.stringOrEmpty(hostTokenData.monogram) : ""
+                                                            color: colors.bg
+                                                            font.pixelSize: 7
+                                                            font.weight: Font.Bold
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: hostTokenData ? root.stringOrEmpty(hostTokenData.label) : ""
+                                                        color: hostTokenData ? hostTokenData.foreground : colors.textDim
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                        elide: Text.ElideRight
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: windowEntry && !!entry.focused
+                                                height: 20
+                                                radius: 6
+                                                color: colors.accentBg
+                                                border.color: colors.accent
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherWindowFocusedText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherWindowFocusedText
+                                                    anchors.centerIn: parent
+                                                    text: "Focused"
+                                                    color: colors.accent
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: sessionEntry && root.stringOrEmpty(entry && entry.project_label).length > 0
+                                                height: 20
+                                                radius: 6
+                                                color: selected ? colors.bg : colors.panelAlt
+                                                border.color: selected ? colors.blue : colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherSessionProjectText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherSessionProjectText
+                                                    anchors.centerIn: parent
+                                                    text: root.stringOrEmpty(entry && entry.project_label)
+                                                    color: selected ? colors.blue : colors.textDim
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: sessionEntry && !!root.sessionIsCurrent(entry)
+                                                height: 20
+                                                radius: 6
+                                                color: colors.accentBg
+                                                border.color: colors.accent
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherSessionCurrentText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherSessionCurrentText
+                                                    anchors.centerIn: parent
+                                                    text: "Current"
+                                                    color: colors.accent
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: projectEntry && root.stringOrEmpty(entry && entry.kind) !== "global"
+                                                height: 20
+                                                radius: 6
+                                                color: root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orangeBg : colors.blueWash
+                                                border.color: root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orange : colors.blueMuted
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherVariantText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherVariantText
+                                                    anchors.centerIn: parent
+                                                    text: root.modeChipLabel(root.stringOrEmpty(entry && entry.variant)).toUpperCase()
+                                                    color: root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orange : colors.blue
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: projectEntry && root.stringOrEmpty(entry && entry.kind) !== "global"
+                                                height: 20
+                                                radius: 6
+                                                color: selected ? colors.bg : colors.panelAlt
+                                                border.color: root.worktreeStatusColor(entry)
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherProjectStatusText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherProjectStatusText
+                                                    anchors.centerIn: parent
+                                                    text: root.worktreeStatusLabel(entry)
+                                                    color: root.worktreeStatusColor(entry)
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: projectEntry && !!entry.is_active
+                                                height: 20
+                                                radius: 6
+                                                color: colors.accentBg
+                                                border.color: colors.accent
+                                                border.width: 1
+                                                Layout.preferredWidth: launcherCurrentText.implicitWidth + 12
+
+                                                Text {
+                                                    id: launcherCurrentText
+                                                    anchors.centerIn: parent
+                                                    text: "Current"
+                                                    color: colors.accent
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: onePasswordEntry
+                                                height: 20
+                                                radius: 6
+                                                color: selected ? colors.bg : colors.panelAlt
+                                                border.color: selected ? colors.accent : colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: onePasswordCategoryText.implicitWidth + 12
+
+                                                Text {
+                                                    id: onePasswordCategoryText
+                                                    anchors.centerIn: parent
+                                                    text: root.onePasswordCategoryLabel(root.stringOrEmpty(entry && entry.category))
+                                                    color: selected ? colors.accent : colors.textDim
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: sessionEntry
+                                                width: 24
+                                                height: 24
+                                                radius: 8
+                                                color: root.sessionBadgeBackground(entry)
+                                                border.color: "transparent"
+                                                border.width: 0
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: root.sessionBadgeSymbol(entry)
+                                                    color: root.sessionBadgeColor(entry)
+                                                    font.pixelSize: 14
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: sessionEntry && activityLabel.length > 0
+                                                height: 18
+                                                radius: 6
+                                                color: root.sessionBadgeBackground(entry)
+                                                border.color: "transparent"
+                                                border.width: 0
+                                                Layout.preferredWidth: launcherSessionActivityText.implicitWidth + 14
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 5
+                                                    anchors.rightMargin: 5
+                                                    spacing: 4
+
+                                                    Rectangle {
+                                                        width: 5
+                                                        height: 5
+                                                        radius: 3
+                                                        color: root.sessionBadgeColor(entry)
+                                                    }
+
+                                                    Text {
+                                                        id: launcherSessionActivityText
+                                                        text: activityLabel
+                                                        color: root.sessionBadgeColor(entry)
+                                                        font.pixelSize: 7
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: clipboardEntry && root.launcherEntryHasState(entry, "pinned")
+                                                height: 20
+                                                radius: 6
+                                                color: selected ? colors.bg : colors.panelAlt
+                                                border.color: selected ? colors.amber : colors.lineSoft
+                                                border.width: 1
+                                                Layout.preferredWidth: clipboardPinnedText.implicitWidth + 12
+
+                                                Text {
+                                                    id: clipboardPinnedText
+                                                    anchors.centerIn: parent
+                                                    text: "Pinned"
+                                                    color: selected ? colors.amber : colors.textDim
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                visible: windowEntry && Number(entry.ai_session_count || 0) > 0
+                                                spacing: 4
+
+                                                Repeater {
+                                                    model: root.windowSessionIcons(entry)
+
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        readonly property var session: modelData
+                                                        width: 20
+                                                        height: 20
+                                                        radius: 6
+                                                        color: root.sessionTint(session)
+                                                        border.color: "transparent"
+                                                        border.width: 0
+
+                                                        Rectangle {
+                                                            anchors.right: parent.right
+                                                            anchors.bottom: parent.bottom
+                                                            anchors.rightMargin: -1
+                                                            anchors.bottomMargin: -1
+                                                            width: 9
+                                                            height: 9
+                                                            radius: 5
+                                                            color: root.sessionAccentColor(session)
+                                                            border.color: "transparent"
+                                                            border.width: 0
+                                                            opacity: root.sessionHasMotion(session) ? 1 : 0.85
+                                                        }
+
+                                                        IconImage {
+                                                            anchors.centerIn: parent
+                                                            implicitSize: 13
+                                                            source: root.toolIconSource(session)
+                                                            mipmap: true
+                                                            opacity: root.sessionIsCurrent(session) ? 1 : 0.94
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                mouse.accepted = true;
+                                                                root.focusSession(root.stringOrEmpty(session.session_key));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    visible: root.windowSessionOverflowCount(entry) > 0
+                                                    width: visible ? launcherWindowOverflowText.implicitWidth + 10 : 0
+                                                    height: 18
+                                                    radius: 6
+                                                    color: colors.bg
+                                                    border.color: "transparent"
+                                                    border.width: 0
+
+                                                    Text {
+                                                        id: launcherWindowOverflowText
+                                                        anchors.centerIn: parent
+                                                        text: "+" + String(root.windowSessionOverflowCount(entry))
+                                                        color: colors.subtle
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                visible: windowEntry
+                                                width: 18
+                                                height: 18
+                                                radius: 6
+                                                color: launcherWindowCloseMouse.containsMouse ? colors.redBg : colors.bg
+                                                border.color: "transparent"
+                                                border.width: 0
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "×"
+                                                    color: launcherWindowCloseMouse.containsMouse ? colors.red : (entry.focused ? colors.muted : colors.subtle)
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                MouseArea {
+                                                    id: launcherWindowCloseMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        mouse.accepted = true;
+                                                        if (itemIndex >= 0) {
+                                                            root.launcherSelectedIndex = itemIndex;
+                                                            root.activateLauncherEntry(root.launcherEntries[itemIndex], "close");
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: entryMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onEntered: root.launcherSelectedIndex = itemIndex
+                                            onClicked: {
+                                                root.launcherSelectedIndex = itemIndex;
+                                                root.activateLauncherEntry(entry);
+                                            }
+                                        }
+                                    }
+
+                                    onCountChanged: {
+                                        if (count > 0 && root.launcherSelectedIndex >= count) {
+                                            root.launcherSelectedIndex = count - 1;
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                id: launcherClipboardPreviewPane
+                                readonly property var previewEntry: root.activeClipboardEntry()
+                                readonly property string previewType: root.stringOrEmpty(previewEntry && previewEntry.preview_type).toLowerCase()
+                                readonly property string previewImageSource: root.clipboardImageSource(previewEntry)
+                                readonly property string previewBody: root.clipboardPreviewBody(previewEntry)
+                                visible: root.launcherMode === "clipboard" && previewEntry !== null
+                                Layout.fillHeight: true
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 260
+                                radius: 8
+                                color: colors.cardAlt
+                                border.color: colors.lineSoft
+                                border.width: 1
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    anchors.topMargin: 14
+                                    anchors.bottomMargin: 14
+                                    spacing: 10
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.clipboardPreviewTitle(launcherClipboardPreviewPane.previewEntry)
+                                            color: colors.text
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Rectangle {
+                                            visible: root.launcherEntryHasState(launcherClipboardPreviewPane.previewEntry, "pinned")
+                                            height: 20
+                                            radius: 6
+                                            color: colors.panelAlt
+                                            border.color: colors.amber
+                                            border.width: 1
+                                            Layout.preferredWidth: previewPinnedText.implicitWidth + 12
+
+                                            Text {
+                                                id: previewPinnedText
+                                                anchors.centerIn: parent
+                                                text: "Pinned"
+                                                color: colors.amber
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.clipboardEntrySubtitle(launcherClipboardPreviewPane.previewEntry)
+                                        color: colors.subtle
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        radius: 8
+                                        color: colors.panel
+                                        border.color: colors.border
+                                        border.width: 1
+
+                                        Item {
+                                            anchors.fill: parent
+                                            anchors.margins: 10
+
+                                            Image {
+                                                visible: launcherClipboardPreviewPane.previewImageSource !== ""
+                                                anchors.fill: parent
+                                                source: launcherClipboardPreviewPane.previewImageSource
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                                asynchronous: true
+                                                cache: false
+                                            }
+
+                                            ScrollView {
+                                                visible: launcherClipboardPreviewPane.previewImageSource === "" && launcherClipboardPreviewPane.previewBody !== ""
+                                                anchors.fill: parent
+                                                clip: true
+
+                                                TextArea {
+                                                    readOnly: true
+                                                    selectByMouse: true
+                                                    wrapMode: TextEdit.Wrap
+                                                    text: launcherClipboardPreviewPane.previewBody
+                                                    color: colors.text
+                                                    selectionColor: colors.blueWash
+                                                    selectedTextColor: colors.text
+                                                    font.pixelSize: 11
+                                                    background: null
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: launcherClipboardPreviewPane.previewImageSource === "" && launcherClipboardPreviewPane.previewBody === ""
+                                                anchors.centerIn: parent
+                                                text: "No preview available"
+                                                color: colors.subtle
+                                                font.pixelSize: 11
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            visible: !root.launcherLoading && root.launcherEntries.length === 0
+                            width: parent.width - 40
+                            height: 72
+                            radius: 12
+                            color: colors.cardAlt
+                            border.color: colors.lineSoft
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.launcherEmptyText()
+                                color: root.launcherError ? colors.red : colors.subtle
+                                font.pixelSize: 11
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     PanelWindow {
@@ -3279,12 +5585,8 @@ ShellRoot {
                                 Rectangle {
                                     height: 18
                                     radius: 6
-                                    color: root.activeTerminalAvailable()
-                                        ? colors.accentBg
-                                        : (activeTerminalMouse.containsMouse ? colors.cardAlt : colors.card)
-                                    border.color: root.activeTerminalAvailable()
-                                        ? colors.accent
-                                        : (activeTerminalMouse.containsMouse ? colors.borderStrong : colors.border)
+                                    color: root.activeTerminalAvailable() ? colors.accentBg : (activeTerminalMouse.containsMouse ? colors.cardAlt : colors.card)
+                                    border.color: root.activeTerminalAvailable() ? colors.accent : (activeTerminalMouse.containsMouse ? colors.borderStrong : colors.border)
                                     border.width: 1
                                     Layout.preferredWidth: shellStatusText.implicitWidth + 14
 
@@ -3320,12 +5622,8 @@ ShellRoot {
                             id: worktreeBrowseChip
                             height: 24
                             radius: 7
-                            color: root.worktreePickerVisible
-                                ? colors.blueBg
-                                : (worktreeBrowseMouse.containsMouse ? colors.cardAlt : colors.card)
-                            border.color: root.worktreePickerVisible
-                                ? colors.blue
-                                : (worktreeBrowseMouse.containsMouse ? colors.borderStrong : colors.border)
+                            color: root.worktreePickerVisible ? colors.blueBg : (worktreeBrowseMouse.containsMouse ? colors.cardAlt : colors.card)
+                            border.color: root.worktreePickerVisible ? colors.blue : (worktreeBrowseMouse.containsMouse ? colors.borderStrong : colors.border)
                             border.width: 1
                             Layout.preferredWidth: worktreeBrowseText.implicitWidth + 18
 
@@ -3628,9 +5926,7 @@ ShellRoot {
                                                             implicitHeight: 40
                                                             height: implicitHeight
                                                             radius: 10
-                                                            color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session)
-                                                                ? colors.cardAlt
-                                                                : root.sessionCardFill(session)
+                                                            color: sessionPillMouse.containsMouse && !root.sessionIsCurrent(session) ? colors.cardAlt : root.sessionCardFill(session)
                                                             border.color: root.sessionCardBorder(session)
                                                             border.width: 0
 
@@ -3957,123 +6253,111 @@ ShellRoot {
                             opacity: projectGroup.is_active ? 0.95 : 0.72
                         }
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 8
-                                anchors.topMargin: 8
-                                anchors.bottomMargin: 8
-                                spacing: 8
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            anchors.topMargin: 8
+                            anchors.bottomMargin: 8
+                            spacing: 8
 
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    implicitHeight: 30
-                                    radius: 10
-                                    color: root.projectHeaderFill(projectGroup)
-                                    border.color: "transparent"
-                                    border.width: 0
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 30
+                                radius: 10
+                                color: root.projectHeaderFill(projectGroup)
+                                border.color: "transparent"
+                                border.width: 0
 
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        spacing: 8
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 8
 
-                                        Rectangle {
-                                            width: 20
-                                            height: 20
-                                            radius: 7
-                                            color: root.stringOrEmpty(projectGroup.project) === "global"
-                                                ? colors.card
-                                                : (projectGroup.is_active ? colors.blueBg : colors.bg)
+                                    Rectangle {
+                                        width: 20
+                                        height: 20
+                                        radius: 7
+                                        color: root.stringOrEmpty(projectGroup.project) === "global" ? colors.card : (projectGroup.is_active ? colors.blueBg : colors.bg)
                                         border.color: "transparent"
                                         border.width: 0
 
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: root.stringOrEmpty(projectGroup.project) === "global"
-                                                    ? "G"
-                                                : root.shortProject(projectGroup.project).slice(0, 1).toUpperCase()
-                                                color: root.stringOrEmpty(projectGroup.project) === "global"
-                                                    ? colors.subtle
-                                                    : (projectGroup.is_active ? colors.blue : colors.muted)
-                                                font.pixelSize: 10
-                                                font.weight: Font.DemiBold
-                                            }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: root.stringOrEmpty(projectGroup.project) === "global" ? "G" : root.shortProject(projectGroup.project).slice(0, 1).toUpperCase()
+                                            color: root.stringOrEmpty(projectGroup.project) === "global" ? colors.subtle : (projectGroup.is_active ? colors.blue : colors.muted)
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
                                         }
+                                    }
 
-                                        Rectangle {
-                                            visible: root.stringOrEmpty(projectGroup.project) !== "global"
-                                            width: visible ? projectModeText.implicitWidth + 12 : 0
-                                            height: 18
-                                            radius: 6
-                                            color: root.stringOrEmpty(projectGroup.execution_mode) === "ssh"
-                                                ? colors.tealBg
-                                                : colors.blueBg
-                                            border.color: root.modeAccentColor(projectGroup.execution_mode)
-                                            border.width: 1
-
-                                            Text {
-                                                id: projectModeText
-                                                anchors.centerIn: parent
-                                                text: root.modeChipLabel(projectGroup.execution_mode)
-                                                color: root.modeAccentColor(projectGroup.execution_mode)
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
+                                    Rectangle {
+                                        visible: root.stringOrEmpty(projectGroup.project) !== "global"
+                                        width: visible ? projectModeText.implicitWidth + 12 : 0
+                                        height: 18
+                                        radius: 6
+                                        color: root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.tealBg : colors.blueBg
+                                        border.color: root.modeAccentColor(projectGroup.execution_mode)
+                                        border.width: 1
 
                                         Text {
-                                            Layout.fillWidth: true
-                                            text: root.stringOrEmpty(projectGroup.project) === "global"
-                                                ? "Shared Windows"
-                                                : root.shortProject(projectGroup.project)
-                                            color: projectGroup.is_active
-                                                ? (root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.teal : colors.text)
-                                                : colors.textDim
-                                            font.pixelSize: 12
+                                            id: projectModeText
+                                            anchors.centerIn: parent
+                                            text: root.modeChipLabel(projectGroup.execution_mode)
+                                            color: root.modeAccentColor(projectGroup.execution_mode)
+                                            font.pixelSize: 8
                                             font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
                                         }
+                                    }
 
-                                        Rectangle {
-                                            width: projectWindowCountText.implicitWidth + 12
-                                            height: 18
-                                            radius: 6
-                                            color: colors.bg
-                                            border.color: "transparent"
-                                            border.width: 0
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.stringOrEmpty(projectGroup.project) === "global" ? "Shared Windows" : root.shortProject(projectGroup.project)
+                                        color: projectGroup.is_active ? (root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.teal : colors.text) : colors.textDim
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
 
-                                            Text {
-                                                id: projectWindowCountText
-                                                anchors.centerIn: parent
-                                                text: String(projectWindows.length)
-                                                color: colors.muted
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
+                                    Rectangle {
+                                        width: projectWindowCountText.implicitWidth + 12
+                                        height: 18
+                                        radius: 6
+                                        color: colors.bg
+                                        border.color: "transparent"
+                                        border.width: 0
+
+                                        Text {
+                                            id: projectWindowCountText
+                                            anchors.centerIn: parent
+                                            text: String(projectWindows.length)
+                                            color: colors.muted
+                                            font.pixelSize: 8
+                                            font.weight: Font.DemiBold
                                         }
+                                    }
 
-                                        Rectangle {
-                                            visible: Number(projectGroup.ai_session_count || 0) > 0
-                                            width: visible ? projectSessionCountText.implicitWidth + 12 : 0
-                                            height: 18
-                                            radius: 6
-                                            color: colors.cardAlt
-                                            border.color: "transparent"
-                                            border.width: 0
+                                    Rectangle {
+                                        visible: Number(projectGroup.ai_session_count || 0) > 0
+                                        width: visible ? projectSessionCountText.implicitWidth + 12 : 0
+                                        height: 18
+                                        radius: 6
+                                        color: colors.cardAlt
+                                        border.color: "transparent"
+                                        border.width: 0
 
-                                            Text {
-                                                id: projectSessionCountText
-                                                anchors.centerIn: parent
-                                                text: String(Number(projectGroup.ai_session_count || 0))
-                                                color: colors.subtle
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
+                                        Text {
+                                            id: projectSessionCountText
+                                            anchors.centerIn: parent
+                                            text: String(Number(projectGroup.ai_session_count || 0))
+                                            color: colors.subtle
+                                            font.pixelSize: 8
+                                            font.weight: Font.DemiBold
                                         }
                                     }
                                 }
+                            }
 
                             Repeater {
                                 model: projectWindows
@@ -4287,13 +6571,7 @@ ShellRoot {
                 y: panelColumn.y + worktreeSummaryCard.y + worktreeSummaryCard.height + 8
                 width: panelColumn.width
                 readonly property int listRows: Math.min(6, Math.max(1, root.inactiveWorktreeItems().length))
-                height: Math.min(
-                    372,
-                    Math.max(
-                        176,
-                        parent.height - y - 12
-                    )
-                )
+                height: Math.min(372, Math.max(176, parent.height - y - 12))
                 radius: 12
                 color: colors.card
                 border.color: colors.blueMuted

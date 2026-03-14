@@ -14,6 +14,7 @@ let
     if hasRuntimeShell
     then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList))
     else {};
+  primaryLauncherCommand = if hasRuntimeShell then "exec toggle-app-launcher" else "exec walker";
 in
 {
   wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault (
@@ -39,7 +40,8 @@ in
     # ========== APPLICATION LAUNCHERS ==========
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
     "${modifier}+Shift+Return" = "exec i3pm launch open terminal";
-    "${modifier}+d" = "exec walker";
+    "${modifier}+d" = primaryLauncherCommand;
+    "Mod1+space" = "exec walker";
     "${modifier}+Shift+f" = "exec i3pm run fzf-file-search --force";
 
     # ========== 1PASSWORD ==========

@@ -44,7 +44,8 @@
 "Mod+Return" = { command = "exec i3pm launch open terminal", description = "Open terminal" }
 "Mod+Shift+Return" = { command = "exec i3pm scratchpad toggle", description = "Toggle project scratchpad terminal (Feature 062)" }
 "Control+Alt+Return" = { command = "exec i3pm scratchpad toggle", description = "Toggle project scratchpad terminal (Feature 062)" }
-"Mod+d" = { command = "exec walker", description = "Application launcher" }
+"Mod+d" = { command = "exec toggle-app-launcher", description = "Application launcher" }
+"Mod1+space" = { command = "exec walker", description = "Fallback Walker launcher" }
 
 # ========== WINDOW MANAGEMENT ==========
 # Focus windows

@@ -5,6 +5,10 @@
 let
   # Feature 106: Portable script wrappers for worktree support
   scriptWrappers = import ../../shared/script-wrappers.nix { inherit pkgs lib; };
+  runtimeShellCfg = config.programs.quickshell-runtime-shell or null;
+  hasRuntimeShell = runtimeShellCfg != null && (runtimeShellCfg.enable or false);
+  walkerCommand = "exec env GDK_BACKEND=x11 XDG_DATA_DIRS=\"${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS\" ${config.programs.walker.package}/bin/walker";
+  primaryLauncherCommand = if hasRuntimeShell then "exec toggle-app-launcher" else walkerCommand;
 in
 {
   # Feature 034: Application launcher now uses Walker (configured in walker.nix)
@@ -73,12 +77,12 @@ in
     # Primary launcher: Walker (modern GTK4 launcher with fuzzy search, calculator, file browser)
     # Use GDK_BACKEND=x11 to force X11 backend and avoid Wayland layer shell issues
     # Feature 034/035: Set XDG_DATA_DIRS to include i3pm-applications directory
-    bindsym $mod+d exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
+    bindsym $mod+d ${primaryLauncherCommand}
     # FZF fallbacks for specific use cases (Feature 106: portable wrappers)
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-launcher}/bin/fzf-launcher
     bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e ${scriptWrappers.fzf-send-to-window}/bin/fzf-send-to-window
     # Walker alternative keybinding (Alt+Space for muscle memory)
-    bindsym Mod1+space exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
+    bindsym Mod1+space ${walkerCommand}
 
     # Sesh tmux session switcher (Meta+Shift+s)
     # Opens Walker in dmenu mode to select and launch tmux sessions

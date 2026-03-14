@@ -324,8 +324,8 @@ in
       # Terminal (Meta+Return) - using the daemon-owned launcher for project context
       terminal = "i3pm launch open terminal";
 
-      # Application menu (Meta+D) - walker works with software rendering (GSK_RENDERER=cairo)
-      menu = "walker";
+      # Application menu (Meta+D) - QuickShell primary launcher, Walker fallback on Alt+Space
+      menu = "toggle-app-launcher";
 
       # Font with Font Awesome icons - reduced size for compact status bar
       fonts = {
@@ -734,8 +734,8 @@ in
         bindswitch lid:off output eDP-1 enable
       ''}
 
-      # Application menu launcher - walker works with software rendering (GSK_RENDERER=cairo)
-      set $menu walker
+      # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
+      set $menu toggle-app-launcher
 
       # Define modifier key for dynamic keybindings (Feature 047)
       set $mod Mod4

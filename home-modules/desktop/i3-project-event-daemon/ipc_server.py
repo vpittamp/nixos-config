@@ -6934,10 +6934,15 @@ class IPCServer:
 
         worktrees.sort(
             key=lambda item: (
-                str(item.get("repo_display") or "").casefold(),
-                str(item.get("qualified_name") or "").casefold(),
+                0 if bool(item.get("is_active", False)) else 1,
+                -int(item.get("visible_window_count", 0) or 0),
+                -int(item.get("scoped_window_count", 0) or 0),
+                -int(item.get("last_used_at", 0) or 0),
+                -int(item.get("use_count", 0) or 0),
                 0 if not bool(item.get("is_clean", False)) else 1,
-                str(item.get("branch") or ""),
+                str(item.get("repo_display") or "").casefold(),
+                str(item.get("branch") or "").casefold(),
+                str(item.get("qualified_name") or "").casefold(),
             ),
         )
         self._worktree_cache = [dict(item) for item in worktrees]
