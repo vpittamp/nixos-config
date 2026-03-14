@@ -1,72 +1,67 @@
-"""Regression tests for Active AI rail and AI tmux view script wiring."""
+"""Regression tests for the QuickShell AI/session view wiring."""
 
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WINDOWS_VIEW_YUCK = REPO_ROOT / "home-modules" / "desktop" / "eww-monitoring-panel" / "yuck" / "windows-view.yuck.nix"
-AI_TMUX_VIEW_NIX = REPO_ROOT / "home-modules" / "desktop" / "eww-monitoring-panel" / "scripts" / "ai-tmux-view.nix"
-WINDOWS_SCRIPTS_NIX = REPO_ROOT / "home-modules" / "desktop" / "eww-monitoring-panel" / "scripts" / "windows.nix"
+SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "shell.qml"
 
 
-def test_active_ai_rail_visible_in_windows_detail_mode():
-    """Rail should stay visible on Windows tab even when detail pane is open."""
-    text = WINDOWS_VIEW_YUCK.read_text()
-    assert ":visible {current_view_index == 0}" in text
-    assert "No active or unread sessions" in text
-    assert "current_view_index == 0 && selected_window_id == 0" not in text
+def test_session_phase_prioritizes_review_and_unread_output():
+    """Unread output and review-pending sessions should surface as attention."""
+    text = SHELL_QML.read_text()
+    assert "function sessionPhase(session)" in text
+    assert "session.output_unseen" in text
+    assert "session.review_pending" in text
+    assert "return \"needs_attention\";" in text
 
 
-def test_active_ai_review_pending_visual_hooks_present():
-    """Windows view should include review_pending classes and unread dots."""
-    text = WINDOWS_VIEW_YUCK.read_text()
-    assert "review_pending ?: false" in text
-    assert "active-ai-chip-unread-dot" in text
-    assert "ai-badge-unread-dot" in text
+def test_session_activity_uses_explicit_work_signals_and_ignores_stale_state():
+    """Animation/motion should be driven by explicit work signals, not old broad stage heuristics."""
+    text = SHELL_QML.read_text()
+    assert "function sessionIsActivelyProcessing(session)" in text
+    assert "session.pulse_working" in text
+    assert "session.is_streaming" in text
+    assert "pendingTools > 0" in text
+    assert "session.output_ready" in text
+    assert "session.output_unseen" in text
+    assert "session.remote_source_stale" in text
+    assert "freshness === \"stale\"" in text
 
 
-def test_active_ai_current_window_visual_hooks_present():
-    """Windows view should distinguish the currently focused AI window."""
-    text = WINDOWS_VIEW_YUCK.read_text()
-    assert "session.is_current_window ?: false" in text
-    assert "active-ai-chip-marker current" in text
-    assert ':text "Now"' in text
+def test_session_badge_uses_turn_owner_and_activity_substate_labels():
+    """Launcher/session chips should expose telemetry-derived owner + substate labels."""
+    text = SHELL_QML.read_text()
+    assert "function sessionTurnOwnerLabel(session)" in text
+    assert "function sessionActivitySubstateLabel(session)" in text
+    assert "function sessionBadgeLabel(session)" in text
+    assert "ownerLabel + \" · \" + substateLabel" in text
+    assert "session.turn_owner" in text
+    assert "session.activity_substate" in text
 
 
-def test_active_ai_pulse_uses_explicit_work_signal():
-    """Pulsing should be driven by pulse_working, not broad stage classes."""
-    text = WINDOWS_VIEW_YUCK.read_text()
-    assert "session.pulse_working ?: false" in text
-    assert "badge.pulse_working ?: false" in text
+def test_session_badge_symbol_and_attention_hooks_cover_unread_output():
+    """Badge symbol/state should react to blocked or unread-output conditions."""
+    text = SHELL_QML.read_text()
+    assert "function sessionBadgeSymbol(session)" in text
+    assert "owner === \"blocked\" || state === \"needs_attention\"" in text
+    assert "session.output_ready" in text
+    assert "session.output_unseen" in text
 
 
-def test_ai_tmux_view_supports_unseen_finished_sessions_by_default():
-    """ai-tmux-view should include unseen-finished sessions with opt-out flag."""
-    text = AI_TMUX_VIEW_NIX.read_text()
-    assert "INCLUDE_UNSEEN_FINISHED=true" in text
-    assert "--no-unseen-finished" in text
-    assert "No active or unread sessions right now." in text
+def test_launcher_session_search_indexes_telemetry_fields():
+    """Launcher session search should include telemetry-derived state terms."""
+    text = SHELL_QML.read_text()
+    assert "session.turn_owner" in text
+    assert "session.activity_substate" in text
+    assert "session.last_event_name" in text
+    assert "session.status_reason" in text
+    assert "sessionBadgeLabel(session)" in text
 
 
-def test_focus_action_emits_seen_ack_event():
-    """Focus-active script should emit explicit seen acknowledgements."""
-    text = WINDOWS_SCRIPTS_NIX.read_text()
-    assert "ack-ai-session-seen-action" in text
-    assert "ai-session-seen-events.jsonl" in text
+def test_grouped_session_pills_focus_by_session_key():
+    """Session pills should focus via canonical session keys."""
+    text = SHELL_QML.read_text()
+    assert "root.focusSession(root.stringOrEmpty(session.session_key));" in text
+    assert "readonly property string activityLabel: root.sessionBadgeLabel(session)" in text
 
-
-def test_focus_actions_pass_connection_key_for_session_and_badge_clicks():
-    """Session and badge focus actions should pass connection identity for SSH tmux targeting."""
-    text = WINDOWS_VIEW_YUCK.read_text()
-    assert "session.connection_key ?: \"\"" in text
-    assert "badge.connection_key ?: window.connection_key ?: \"\"" in text
-
-
-def test_focus_script_supports_remote_tmux_targeting_over_ssh():
-    """Focus script should execute tmux targeting remotely when execution mode is ssh."""
-    text = WINDOWS_SCRIPTS_NIX.read_text()
-    assert "parse_ssh_connection_key()" in text
-    assert "run_remote_tmux()" in text
-    assert "-o BatchMode=yes" in text
-    assert "tmux_target_remote_ok" in text
-    assert "tmux_remote_connection_invalid" in text

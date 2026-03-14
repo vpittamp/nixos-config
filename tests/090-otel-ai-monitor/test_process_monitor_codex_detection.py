@@ -145,6 +145,9 @@ async def test_update_sessions_ignores_untracked_pid_during_anchor_cutover():
             self._sessions = {}
             self.enable_notifications = False
 
+        async def _ensure_process_session_for_pid(self, _tool, _pid):
+            return None
+
     monitor = ProcessMonitor(tracker=_DummyTracker())  # type: ignore[arg-type]
 
     await monitor._update_sessions({777: AITool.CODEX_CLI})
@@ -160,6 +163,9 @@ async def test_complete_session_resolves_rekeyed_native_session_by_pid():
             self._lock = asyncio.Lock()
             self._sessions = {}
             self.enable_notifications = False
+
+        async def _ensure_process_session_for_pid(self, _tool, _pid):
+            return None
 
         def _mark_dirty_unlocked(self):
             return None

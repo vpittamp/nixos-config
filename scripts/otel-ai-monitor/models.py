@@ -35,6 +35,15 @@ class SessionStage(str, Enum):
     IDLE = "idle"
 
 
+class TurnOwner(str, Enum):
+    """Who currently owns the turn for the tracked session."""
+
+    LLM = "llm"
+    USER = "user"
+    BLOCKED = "blocked"
+    UNKNOWN = "unknown"
+
+
 class ActivityFreshness(str, Enum):
     """User-facing freshness bucket for last session activity."""
 
@@ -281,6 +290,18 @@ class Session(BaseModel):
     status_reason: Optional[str] = Field(
         default=None, description="Machine-readable reason for current state"
     )
+    last_event_name: Optional[str] = Field(
+        default=None,
+        description="Most recent normalized telemetry event name observed for the session",
+    )
+    turn_owner: TurnOwner = Field(
+        default=TurnOwner.UNKNOWN,
+        description="Whether the model, user, or a blocking condition currently owns the turn",
+    )
+    activity_substate: SessionStage = Field(
+        default=SessionStage.IDLE,
+        description="Canonical activity substate used to refine the current turn owner",
+    )
 
     # Streaming metrics (Feature 136: fix missing fields referenced by session_tracker.py)
     first_token_time: Optional[datetime] = Field(
@@ -449,6 +470,10 @@ class SessionListItem(BaseModel):
     is_streaming: bool = Field(default=False, description="True if currently receiving streaming response")
     state_seq: int = Field(default=0, description="Monotonic state sequence")
     status_reason: Optional[str] = Field(default=None, description="Machine-readable status reason")
+    last_event_name: Optional[str] = Field(
+        default=None,
+        description="Most recent normalized telemetry event name observed for the session",
+    )
     stage: SessionStage = Field(default=SessionStage.IDLE, description="Canonical user-facing stage")
     stage_label: str = Field(default="Idle", description="Short user-facing stage label")
     stage_detail: str = Field(default="", description="Short user-facing detail for the current stage")
@@ -469,6 +494,22 @@ class SessionListItem(BaseModel):
     session_phase_label: str = Field(
         default="Idle",
         description="User-facing label for the collapsed session phase",
+    )
+    turn_owner: TurnOwner = Field(
+        default=TurnOwner.UNKNOWN,
+        description="Whether the model, user, or a blocking condition currently owns the turn",
+    )
+    turn_owner_label: str = Field(
+        default="Unknown",
+        description="User-facing label for the current turn owner",
+    )
+    activity_substate: SessionStage = Field(
+        default=SessionStage.IDLE,
+        description="Canonical activity substate used to refine the current turn owner",
+    )
+    activity_substate_label: str = Field(
+        default="Idle",
+        description="User-facing label for the current activity substate",
     )
     activity_freshness: ActivityFreshness = Field(
         default=ActivityFreshness.FRESH,
@@ -493,7 +534,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="7", description="Session payload schema version")
+    schema_version: str = Field(default="8", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

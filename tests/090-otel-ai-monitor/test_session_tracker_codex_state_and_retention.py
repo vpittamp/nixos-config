@@ -36,7 +36,7 @@ from otel_ai_monitor.models import (  # type: ignore  # noqa: E402
     SessionState,
     TelemetryEvent,
 )
-from otel_ai_monitor.session_tracker import SessionTracker  # type: ignore  # noqa: E402
+from otel_ai_monitor.session_tracker import SessionTracker, _derive_session_stage  # type: ignore  # noqa: E402
 
 
 class _DummyOutput:
@@ -252,7 +252,7 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     session_list, _ = tracker._build_session_list_unlocked()
 
     assert len(session_list.sessions) == 1
-    assert session_list.schema_version == "6"
+    assert session_list.schema_version == "8"
     assert session_list.sessions[0].session_id == "codex:pid:706991"
     assert session_list.sessions[0].identity_confidence == IdentityConfidence.PID
     assert session_list.sessions[0].project == "vpittamp/nixos-config:main"
@@ -264,6 +264,8 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     assert session_list.sessions[0].stage_label == "Starting"
     assert session_list.sessions[0].stage_detail == "Process detected"
     assert session_list.sessions[0].stage_visual_state == "working"
+    assert session_list.sessions[0].turn_owner == "unknown"
+    assert session_list.sessions[0].activity_substate == "starting"
     assert session_list.sessions[0].identity_source == "pid"
     assert session_list.sessions[0].lifecycle_source == "process"
     assert session_list.has_working is True
@@ -320,6 +322,50 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
     assert item.focus_project == "vpittamp/nixos-config:main"
     assert item.display_project == "vpittamp/nixos-config:main"
     assert item.project_source == "anchor"
+
+
+@pytest.mark.asyncio
+async def test_codex_response_completed_exports_user_turn_owner(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request",
+            timestamp=now,
+            session_id="codex-native-session-turn-owner",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%55",
+            },
+        )
+    )
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.sse_event",
+            timestamp=now,
+            session_id="codex-native-session-turn-owner",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "event.kind": "response.completed",
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%55",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "codex-native-session-turn-owner"
+        ]
+        assert len(matches) == 1
+        stage_fields = _derive_session_stage(matches[0], now=now)
+
+    assert getattr(stage_fields["turn_owner"], "value", stage_fields["turn_owner"]) == "user"
+    assert getattr(stage_fields["activity_substate"], "value", stage_fields["activity_substate"]) == "output_ready"
 
 
 @pytest.mark.asyncio

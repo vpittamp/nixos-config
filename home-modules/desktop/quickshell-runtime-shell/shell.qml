@@ -1855,7 +1855,7 @@ ShellRoot {
     function launcherSessionMatches(session, tokens) {
         const parentWindow = findWindowById(Number(session && session.window_id || 0));
         const hostTokenData = sessionHostToken(session);
-        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), stringOrEmpty(session && session.stage), stringOrEmpty(session && session.status_reason), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
+        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), sessionTurnOwnerLabel(session), sessionActivitySubstateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), stringOrEmpty(session && session.stage), stringOrEmpty(session && session.turn_owner), stringOrEmpty(session && session.activity_substate), stringOrEmpty(session && session.last_event_name), stringOrEmpty(session && session.status_reason), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
     }
 
     function launcherSessionGroups(query) {
@@ -3002,30 +3002,75 @@ ShellRoot {
         return String(Math.floor(ageSeconds / 86400)) + "d";
     }
 
+    function sessionTurnOwner(session) {
+        const explicitOwner = stringOrEmpty(session && session.turn_owner).toLowerCase();
+        if (["llm", "user", "blocked", "unknown"].indexOf(explicitOwner) >= 0) {
+            return explicitOwner;
+        }
+        if (boolOrFalse(session && session.needs_user_action)) {
+            return "blocked";
+        }
+        if (boolOrFalse(session && session.output_ready) || boolOrFalse(session && session.output_unseen)) {
+            return "user";
+        }
+        if (sessionPhase(session) === "working") {
+            return "llm";
+        }
+        if (boolOrFalse(session && session.process_running)) {
+            return "user";
+        }
+        return "unknown";
+    }
+
+    function sessionTurnOwnerLabel(session) {
+        const owner = sessionTurnOwner(session);
+        if (owner === "llm") {
+            return "LLM";
+        }
+        if (owner === "user") {
+            return "User";
+        }
+        if (owner === "blocked") {
+            return "Blocked";
+        }
+        return "Unknown";
+    }
+
+    function sessionActivitySubstateLabel(session) {
+        const explicit = stringOrEmpty(session && session.activity_substate_label);
+        if (explicit.length > 0) {
+            return explicit;
+        }
+        const stageLabel = stringOrEmpty(session && session.stage_label);
+        if (stageLabel.length > 0) {
+            return stageLabel;
+        }
+        return compactSessionStateLabel(session);
+    }
+
     function sessionBadgeLabel(session) {
-        const state = sessionBadgeState(session);
-        if (state === "working") {
-            return "Working";
+        const ownerLabel = sessionTurnOwnerLabel(session);
+        const substateLabel = sessionActivitySubstateLabel(session);
+        if (substateLabel.length > 0 && substateLabel !== ownerLabel) {
+            return ownerLabel + " · " + substateLabel;
         }
-        if (state === "needs_attention") {
-            return "Needs attention";
-        }
-        if (state === "done") {
-            return "Done";
+        if (ownerLabel !== "Unknown") {
+            return ownerLabel;
         }
         return sessionAgeCompactLabel(session);
     }
 
     function sessionBadgeSymbol(session) {
+        const owner = sessionTurnOwner(session);
         const state = sessionBadgeState(session);
-        if (state === "needs_attention") {
+        if (owner === "blocked" || state === "needs_attention") {
             return "!";
         }
-        if (state === "done") {
-            return "✓";
-        }
-        if (state === "working") {
+        if (owner === "llm" || state === "working") {
             return "◔";
+        }
+        if (owner === "user") {
+            return "⌨";
         }
         if (state === "stale") {
             return "◌";

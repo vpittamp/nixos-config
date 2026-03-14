@@ -36,6 +36,7 @@ from .models import (
     SessionState,
     TerminalContext,
     SessionUpdate,
+    TurnOwner,
     TelemetryEvent,
     TOOL_PROVIDER,
     UserActionReason,
@@ -286,6 +287,19 @@ _SESSION_PHASE_LABELS: dict[str, str] = {
     "done": "Done",
     "idle": "Idle",
 }
+_TURN_OWNER_LABELS: dict[TurnOwner, str] = {
+    TurnOwner.LLM: "LLM",
+    TurnOwner.USER: "User",
+    TurnOwner.BLOCKED: "Blocked",
+    TurnOwner.UNKNOWN: "Unknown",
+}
+
+
+def _status_reason_event_name(status_reason: Optional[str]) -> str:
+    lowered = str(status_reason or "").strip().lower()
+    if not lowered.startswith("event:"):
+        return ""
+    return lowered.split("event:", 1)[1]
 
 
 def _status_reason_is_heartbeat_like(status_reason: Optional[str]) -> bool:
@@ -348,6 +362,8 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         stage = SessionStage.TOOL_RUNNING
     elif session.is_streaming:
         stage = SessionStage.STREAMING
+    elif _status_reason_event_name(session.status_reason).endswith("response.completed"):
+        stage = SessionStage.OUTPUT_READY
     elif output_ready:
         stage = SessionStage.OUTPUT_READY
     elif (
@@ -360,6 +376,40 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         stage = SessionStage.THINKING
     else:
         stage = SessionStage.IDLE
+
+    event_name = _status_reason_event_name(session.status_reason)
+
+    if user_action_reason != UserActionReason.NONE or stage in {SessionStage.WAITING_INPUT, SessionStage.ATTENTION}:
+        turn_owner = TurnOwner.BLOCKED
+    elif output_ready or stage == SessionStage.OUTPUT_READY:
+        turn_owner = TurnOwner.USER
+    elif session.pending_tools > 0 or session.is_streaming:
+        turn_owner = TurnOwner.LLM
+    elif stage in {SessionStage.STARTING, SessionStage.THINKING, SessionStage.TOOL_RUNNING, SessionStage.STREAMING}:
+        if session.last_activity_at is not None and not _status_reason_is_heartbeat_like(session.status_reason):
+            turn_owner = TurnOwner.LLM
+        elif "response.completed" in event_name or str(session.status_reason or "").strip().lower() in {
+            "quiet_period_expired",
+            "completed_timeout",
+            "finished_unseen_retained",
+            "process_exited_retained",
+        }:
+            turn_owner = TurnOwner.USER
+        else:
+            turn_owner = TurnOwner.UNKNOWN
+    elif event_name.endswith("user_prompt") or event_name == str(EventNames.CODEX_CONVERSATION_STARTS):
+        turn_owner = TurnOwner.LLM
+    elif str(session.status_reason or "").strip().lower() in {
+        "quiet_period_expired",
+        "completed_timeout",
+        "finished_unseen_retained",
+        "process_exited_retained",
+    } or "response.completed" in event_name:
+        turn_owner = TurnOwner.USER
+    elif session.state == SessionState.IDLE:
+        turn_owner = TurnOwner.USER
+    else:
+        turn_owner = TurnOwner.UNKNOWN
 
     session_phase = _derive_session_phase(
         stage=stage,
@@ -385,6 +435,10 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         "output_unseen": output_unseen,
         "session_phase": session_phase,
         "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
+        "turn_owner": turn_owner,
+        "turn_owner_label": _TURN_OWNER_LABELS.get(turn_owner, "Unknown"),
+        "activity_substate": stage,
+        "activity_substate_label": _STAGE_LABELS[stage],
         "activity_freshness": freshness,
         "activity_age_seconds": activity_age_seconds,
         "last_activity_at": session.last_activity_at.isoformat() if session.last_activity_at else None,
@@ -1014,7 +1068,7 @@ class SessionTracker:
                     if value is not None:
                         setattr(session.terminal_context, key, value)
                 if (
-                    str(getattr(session.terminal_context, "execution_mode", "") or "").strip().lower() == "ssh"
+                    str(getattr(session.terminal_context, "execution_mode", "") or "").strip().lower() == "local"
                     and (
                         session.terminal_context.tmux_session
                         or session.terminal_context.tmux_window
@@ -2704,6 +2758,7 @@ class SessionTracker:
                     setattr(session.terminal_context, key, value)
 
             session.last_event_at = now
+            session.last_event_name = event.event_name
 
             if session.trace_id is None and event.trace_id:
                 session.trace_id = event.trace_id
@@ -3220,6 +3275,18 @@ class SessionTracker:
                 f"Session {session.session_id}: tool_complete, pending_tools={session.pending_tools}"
             )
             # If all tools completed, the quiet timer will start in process_event
+        elif event_name == EventNames.CODEX_TOOL_DECISION:
+            decision = str(event.attributes.get("decision") or "").strip().lower()
+            if decision not in {"denied", "abort", "cancelled", "canceled"}:
+                session.pending_tools += 1
+                logger.debug(
+                    f"Session {session.session_id}: codex tool_decision, pending_tools={session.pending_tools}"
+                )
+        elif event_name == EventNames.CODEX_TOOL_RESULT:
+            session.pending_tools = max(0, session.pending_tools - 1)
+            logger.debug(
+                f"Session {session.session_id}: codex tool_result, pending_tools={session.pending_tools}"
+            )
 
     async def _handle_streaming_events(self, session: Session, event: TelemetryEvent) -> None:
         """Handle streaming events for TTFT metrics.
@@ -3256,6 +3323,22 @@ class SessionTracker:
         # Reset streaming state on LLM call completion
         elif event_name == EventNames.CLAUDE_LLM_CALL:
             if session.is_streaming:
+                session.is_streaming = False
+                session.streaming_tokens = 0
+                session.first_token_time = None
+        elif event_name == EventNames.CODEX_SSE_EVENT:
+            kind = _normalized_codex_sse_kind(event)
+            if _codex_sse_counts_as_activity(kind):
+                session.is_streaming = True
+                if session.first_token_time is None:
+                    session.first_token_time = event.timestamp
+            elif kind in {
+                "response.completed",
+                "response.failed",
+                "response.cancelled",
+                "response.canceled",
+                "response.incomplete",
+            }:
                 session.is_streaming = False
                 session.streaming_tokens = 0
                 session.first_token_time = None
@@ -3637,7 +3720,7 @@ class SessionTracker:
                 terminal_context.window_active = bool(live_tmux_entry.get("window_active", False))
                 terminal_context.pty = str(live_tmux_entry.get("pty") or "").strip() or terminal_context.pty
             if (
-                str(getattr(terminal_context, "execution_mode", "") or "").strip().lower() == "ssh"
+                str(getattr(terminal_context, "execution_mode", "") or "").strip().lower() == "local"
                 and (
                     terminal_context.tmux_session
                     or terminal_context.tmux_window
@@ -3712,6 +3795,7 @@ class SessionTracker:
                 is_streaming=s.is_streaming,
                 state_seq=s.state_seq,
                 status_reason=s.status_reason,
+                last_event_name=s.last_event_name,
                 stage=stage_fields["stage"],
                 stage_label=str(stage_fields["stage_label"]),
                 stage_detail=str(stage_fields["stage_detail"]),
@@ -3724,6 +3808,10 @@ class SessionTracker:
                 output_unseen=bool(stage_fields["output_unseen"]),
                 session_phase=str(stage_fields["session_phase"]),
                 session_phase_label=str(stage_fields["session_phase_label"]),
+                turn_owner=stage_fields["turn_owner"],
+                turn_owner_label=str(stage_fields["turn_owner_label"]),
+                activity_substate=stage_fields["activity_substate"],
+                activity_substate_label=str(stage_fields["activity_substate_label"]),
                 activity_freshness=stage_fields["activity_freshness"],
                 activity_age_seconds=int(stage_fields["activity_age_seconds"]),
                 last_activity_at=stage_fields["last_activity_at"],
@@ -3771,6 +3859,7 @@ class SessionTracker:
                     s.is_streaming,
                     s.state_seq,
                     s.status_reason,
+                    s.last_event_name,
                     str(stage_fields["stage"]),
                     str(stage_fields["stage_label"]),
                     str(stage_fields["stage_detail"]),
@@ -3783,6 +3872,10 @@ class SessionTracker:
                     bool(stage_fields["output_unseen"]),
                     str(stage_fields["session_phase"]),
                     str(stage_fields["session_phase_label"]),
+                    str(stage_fields["turn_owner"]),
+                    str(stage_fields["turn_owner_label"]),
+                    str(stage_fields["activity_substate"]),
+                    str(stage_fields["activity_substate_label"]),
                     str(stage_fields["activity_freshness"]),
                     int(stage_fields["activity_age_seconds"]),
                     str(stage_fields["last_activity_at"] or ""),

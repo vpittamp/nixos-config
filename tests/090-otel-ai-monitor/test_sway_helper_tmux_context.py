@@ -46,8 +46,8 @@ async def test_get_tmux_context_for_pid_returns_session_window_and_pane(monkeypa
     )
 
     fake_output = (
-        "/dev/pts/4\tother/main\t0\tbash\t%4\t0\n"
-        "/dev/pts/5\tworkflow-builder/main\t1\tnode\t%5\t0\n"
+        "/dev/pts/4\tother/main\t0:bash\t%4\t0\t111\tbash\t0\t0\n"
+        "/dev/pts/5\tworkflow-builder/main\t1:node\t%5\t1\t1234\tnode\t1\t0\n"
     ).encode("utf-8")
 
     async def _fake_create_subprocess_exec(*_args, **_kwargs):

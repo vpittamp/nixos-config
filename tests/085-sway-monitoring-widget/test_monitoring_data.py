@@ -3371,6 +3371,45 @@ class TestAiReviewLifecycle:
         assert stage["stage_glyph"] == "◔"
 
     @pytest.mark.parametrize(
+        ("session", "expected_turn_owner", "expected_substate"),
+        [
+            (
+                {
+                    "otel_state": "working",
+                    "pending_tools": 1,
+                    "status_reason": "event:codex.tool_decision",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "llm",
+                "tool_running",
+            ),
+            (
+                {
+                    "otel_state": "working",
+                    "status_reason": "event:claude_code.permission_request",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "blocked",
+                "waiting_input",
+            ),
+            (
+                {
+                    "otel_state": "working",
+                    "status_reason": "event:codex.sse_event:response.completed",
+                    "updated_at": "2026-03-07T20:33:51+00:00",
+                },
+                "user",
+                "output_ready",
+            ),
+        ],
+    )
+    def test_normalize_stage_fields_derives_turn_owner(self, session, expected_turn_owner, expected_substate):
+        stage = monitoring_data._normalize_stage_fields(session, now_epoch=1741380000.0)
+
+        assert stage["turn_owner"] == expected_turn_owner
+        assert stage["activity_substate"] == expected_substate
+
+    @pytest.mark.parametrize(
         ("session", "expected_stage", "expected_label", "expected_detail", "expected_glyph"),
         [
             (

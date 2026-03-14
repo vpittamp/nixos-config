@@ -1981,6 +1981,12 @@ _SESSION_PHASE_LABELS = {
     "stale": "Stale",
     "inactive": "Inactive",
 }
+_TURN_OWNER_LABELS = {
+    "llm": "LLM",
+    "user": "User",
+    "blocked": "Blocked",
+    "unknown": "Unknown",
+}
 
 
 def _status_reason_is_heartbeat_like(status_reason: str) -> bool:
@@ -1988,6 +1994,13 @@ def _status_reason_is_heartbeat_like(status_reason: str) -> bool:
     if lowered in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
         return True
     return lowered.startswith("event:codex.sse_event:response.completed")
+
+
+def _status_reason_event_name(status_reason: str) -> str:
+    lowered = str(status_reason or "").strip().lower()
+    if not lowered.startswith("event:"):
+        return ""
+    return lowered.split("event:", 1)[1]
 
 
 def _derive_session_phase(
@@ -2031,15 +2044,22 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     pending_tools = int(session.get("pending_tools", 0) or 0)
     is_streaming = bool(session.get("is_streaming", False))
     status_reason = str(session.get("status_reason") or "").strip().lower()
+    event_name = _status_reason_event_name(status_reason)
     updated_epoch = _parse_timestamp_to_epoch(str(session.get("updated_at") or "")) or now_epoch
     last_activity_epoch = _parse_timestamp_to_epoch(str(session.get("last_activity_at") or ""))
     activity_epoch = last_activity_epoch or updated_epoch
     activity_age_seconds = max(0, int(now_epoch - activity_epoch))
-    if bool(session.get("remote_source_stale", False)):
+    remote_source_stale = bool(session.get("remote_source_stale", False))
+    remote_source_age_seconds = int(session.get("remote_source_age_seconds", 0) or 0)
+    if remote_source_stale:
         activity_age_seconds = max(
             activity_age_seconds,
-            int(session.get("remote_source_age_seconds", 0) or 0),
+            remote_source_age_seconds,
         )
+    elif "remote_source_age_seconds" in session:
+        activity_age_seconds = min(activity_age_seconds, remote_source_age_seconds)
+    if bool(session.get("live", False)) and not remote_source_stale:
+        activity_age_seconds = min(activity_age_seconds, 15)
     user_action_reason = _normalize_user_action_reason(session.get("user_action_reason"))
     stage = str(session.get("stage") or "").strip().lower()
 
@@ -2062,6 +2082,8 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
             stage = "tool_running"
         elif is_streaming:
             stage = "streaming"
+        elif event_name.endswith("response.completed"):
+            stage = "output_ready"
         elif state == "completed":
             stage = "output_ready"
         elif state == "working" and status_reason in {"process_detected", "metrics_heartbeat_created"}:
@@ -2116,7 +2138,7 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     activity_freshness = str(session.get("activity_freshness") or "").strip().lower()
     if activity_freshness not in {"fresh", "warm", "stale"}:
         if (
-            bool(session.get("remote_source_stale", False))
+            remote_source_stale
             or bool(session.get("stale", False))
             or activity_age_seconds > _AI_SESSION_STALE_THRESHOLD_SECONDS
         ):
@@ -2138,9 +2160,47 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
             stage=stage,
             activity_freshness=activity_freshness,
             status_reason=status_reason,
-            remote_source_stale=bool(session.get("remote_source_stale", False)),
+            remote_source_stale=remote_source_stale,
             process_running=process_running,
         )
+
+    turn_owner = str(session.get("turn_owner") or "").strip().lower()
+    if turn_owner not in _TURN_OWNER_LABELS:
+        if user_action_reason or stage in {"waiting_input", "attention"}:
+            turn_owner = "blocked"
+        elif output_ready or stage == "output_ready":
+            turn_owner = "user"
+        elif pending_tools > 0 or is_streaming:
+            turn_owner = "llm"
+        elif stage in {"starting", "thinking", "tool_running", "streaming"}:
+            if activity_freshness != "stale" and not _status_reason_is_heartbeat_like(status_reason):
+                turn_owner = "llm"
+            elif "response.completed" in event_name or status_reason in {
+                "quiet_period_expired",
+                "completed_timeout",
+                "finished_unseen_retained",
+                "process_exited_retained",
+            }:
+                turn_owner = "user"
+            else:
+                turn_owner = "unknown"
+        elif event_name.endswith("user_prompt") or event_name == "codex.conversation_starts":
+            turn_owner = "llm"
+        elif status_reason in {
+            "quiet_period_expired",
+            "completed_timeout",
+            "finished_unseen_retained",
+            "process_exited_retained",
+        } or "response.completed" in event_name:
+            turn_owner = "user"
+        elif process_running:
+            turn_owner = "user"
+        else:
+            turn_owner = "unknown"
+
+    activity_substate = str(session.get("activity_substate") or stage).strip().lower() or stage
+    activity_substate_label = str(session.get("activity_substate_label") or _AI_STAGE_LABELS.get(activity_substate, stage_label))
+    last_event_name = str(session.get("last_event_name") or event_name)
 
     identity_source = str(session.get("identity_source") or "").strip().lower()
     if not identity_source:
@@ -2182,9 +2242,14 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
         "output_unseen": output_unseen,
         "session_phase": session_phase,
         "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
+        "turn_owner": turn_owner,
+        "turn_owner_label": _TURN_OWNER_LABELS.get(turn_owner, "Unknown"),
+        "activity_substate": activity_substate,
+        "activity_substate_label": activity_substate_label,
         "activity_freshness": activity_freshness,
         "activity_age_seconds": activity_age_seconds,
         "activity_age_label": _format_activity_age(activity_age_seconds),
+        "last_event_name": last_event_name,
         "identity_source": identity_source,
         "lifecycle_source": lifecycle_source,
     }
@@ -2989,6 +3054,44 @@ def _resolve_otel_session_window_id(
             return False
         return True
 
+    def _pick_preferred_identity_window(
+        scoped_candidates: List[Dict[str, Any]],
+        *,
+        exact_scope: Optional[set[str]] = None,
+        prefix_scope: Optional[set[str]] = None,
+    ) -> Optional[int]:
+        preferred_window_id: Optional[int] = None
+        preferred_score: Optional[tuple[int, int, int, int, int]] = None
+        for candidate in scoped_candidates:
+            candidate_window_id = _safe_int(candidate.get("id"), 0)
+            candidate_project = str(candidate.get("project") or "").strip()
+            if candidate_window_id <= 0:
+                continue
+            if exact_scope or prefix_scope:
+                if not candidate_project:
+                    continue
+                in_scope = (
+                    candidate_project in (exact_scope or set())
+                    or any(
+                        candidate_project == prefix
+                        or candidate_project.startswith(prefix + ":")
+                        for prefix in (prefix_scope or set())
+                    )
+                )
+                if not in_scope:
+                    continue
+            score = (
+                _window_terminal_preference_rank(candidate),
+                int(bool(candidate.get("focused", False))),
+                int(not bool(candidate.get("hidden", False))),
+                int(not bool(candidate.get("floating", False))),
+                candidate_window_id,
+            )
+            if preferred_score is None or score > preferred_score:
+                preferred_score = score
+                preferred_window_id = candidate_window_id
+        return preferred_window_id
+
     # Deterministic tmux-session mapping for remote windows when project/context
     # metadata is absent or stale. When tmux identity is present, it is
     # authoritative; we never fall back to project heuristics if this lookup
@@ -2997,35 +3100,18 @@ def _resolve_otel_session_window_id(
         identity_candidates: List[Dict[str, Any]] = [
             candidate for candidate in candidates if _identity_compatible(candidate)
         ]
+        tmux_matches: List[int] = []
+        tmux_metadata_available = False
         tmux_hint_exact: set[str] = set()
         tmux_hint_prefixes: set[str] = set()
-
-        # Derive project hints from tmux session suffix (e.g. "stacks/main" ->
-        # "PittampalliOrg/stacks:main") even when daemon windows lack explicit
-        # remote_session_name metadata.
-        for candidate in identity_candidates:
-            candidate_project = str(candidate.get("project") or "").strip()
-            if not candidate_project:
-                continue
-            candidate_suffix = _normalize_session_name_key(
-                _project_session_suffix(candidate_project)
-            )
-            if not candidate_suffix or candidate_suffix != session_tmux_session_key:
-                continue
-            candidate_exact, candidate_prefixes = _session_project_candidates(candidate_project)
-            tmux_hint_exact.update(candidate_exact)
-            tmux_hint_prefixes.update(candidate_prefixes)
-
-        tmux_matches: List[int] = []
-        tmux_nonfocusable_match_found = False
         for candidate in identity_candidates:
             candidate_tmux_session_key = _normalize_session_name_key(
                 candidate.get("remote_session_name") or ""
             )
-            if (
-                not candidate_tmux_session_key
-                or candidate_tmux_session_key != session_tmux_session_key
-            ):
+            if not candidate_tmux_session_key:
+                continue
+            tmux_metadata_available = True
+            if candidate_tmux_session_key != session_tmux_session_key:
                 continue
             candidate_project = str(candidate.get("project") or "").strip()
             if candidate_project:
@@ -3035,45 +3121,18 @@ def _resolve_otel_session_window_id(
             candidate_window_id = _safe_int(candidate.get("id"), 0)
             if candidate_window_id > 0:
                 tmux_matches.append(candidate_window_id)
-            else:
-                tmux_nonfocusable_match_found = True
-
-        if tmux_hint_exact or tmux_hint_prefixes:
-            exact_candidates = set(tmux_hint_exact)
-            prefix_candidates = set(tmux_hint_prefixes)
 
         if len(tmux_matches) == 1:
             return tmux_matches[0]
-
-        tmux_metadata_available_focusable = False
-        tmux_metadata_available_nonfocusable = False
-        for candidate in identity_candidates:
-            candidate_tmux_session_key = _normalize_session_name_key(
-                candidate.get("remote_session_name") or ""
+        if tmux_hint_exact or tmux_hint_prefixes:
+            preferred_window_id = _pick_preferred_identity_window(
+                identity_candidates,
+                exact_scope=tmux_hint_exact,
+                prefix_scope=tmux_hint_prefixes,
             )
-            if not candidate_tmux_session_key:
-                continue
-            if tmux_hint_exact or tmux_hint_prefixes:
-                candidate_project = str(candidate.get("project") or "").strip()
-                if not candidate_project:
-                    continue
-                in_scope = (
-                    candidate_project in tmux_hint_exact
-                    or any(
-                        candidate_project == prefix
-                        or candidate_project.startswith(prefix + ":")
-                        for prefix in tmux_hint_prefixes
-                    )
-                )
-                if not in_scope:
-                    continue
-            candidate_window_id = _safe_int(candidate.get("id"), 0)
-            if candidate_window_id > 0:
-                tmux_metadata_available_focusable = True
-            else:
-                tmux_metadata_available_nonfocusable = True
-
-        if tmux_metadata_available_focusable:
+            if preferred_window_id is not None:
+                return preferred_window_id
+        if tmux_metadata_available:
             upstream_window_project = str(
                 session.get("focus_project") or session.get("window_project") or ""
             ).strip()
@@ -3081,62 +3140,39 @@ def _resolve_otel_session_window_id(
                 upstream_exact, upstream_prefixes = _session_project_candidates(
                     upstream_window_project
                 )
-                preferred_window_id: Optional[int] = None
-                preferred_score: Optional[tuple[int, int, int, int, int]] = None
-                for candidate in identity_candidates:
-                    candidate_window_id = _safe_int(candidate.get("id"), 0)
-                    candidate_project = str(candidate.get("project") or "").strip()
-                    if candidate_window_id <= 0 or not candidate_project:
-                        continue
-                    if not (
-                        candidate_project in upstream_exact
-                        or any(
-                            candidate_project == prefix
-                            or candidate_project.startswith(prefix + ":")
-                            for prefix in upstream_prefixes
-                        )
-                    ):
-                        continue
-                    score = (
-                        _window_terminal_preference_rank(candidate),
-                        int(bool(candidate.get("focused", False))),
-                        int(not bool(candidate.get("hidden", False))),
-                        int(not bool(candidate.get("floating", False))),
-                        candidate_window_id,
-                    )
-                    if preferred_score is None or score > preferred_score:
-                        preferred_score = score
-                        preferred_window_id = candidate_window_id
+                preferred_window_id = _pick_preferred_identity_window(
+                    identity_candidates,
+                    exact_scope=upstream_exact,
+                    prefix_scope=upstream_prefixes,
+                )
                 if preferred_window_id is not None:
                     return preferred_window_id
-            scoped_focusable_candidates: List[Dict[str, Any]] = []
-            for candidate in identity_candidates:
-                candidate_window_id = _safe_int(candidate.get("id"), 0)
-                if candidate_window_id <= 0:
-                    continue
-                if tmux_hint_exact or tmux_hint_prefixes:
-                    candidate_project = str(candidate.get("project") or "").strip()
-                    if not candidate_project:
-                        continue
-                    in_scope = (
-                        candidate_project in tmux_hint_exact
-                        or any(
-                            candidate_project == prefix
-                            or candidate_project.startswith(prefix + ":")
-                            for prefix in tmux_hint_prefixes
-                        )
-                    )
-                    if not in_scope:
-                        continue
-                scoped_focusable_candidates.append(candidate)
-            if len(scoped_focusable_candidates) == 1:
-                return _safe_int(scoped_focusable_candidates[0].get("id"), 0) or None
             return None
-        # Synthetic remote-session rows (negative IDs) cannot be focused directly,
-        # but when they are the only tmux metadata source they can still provide
-        # project hints. If metadata exists and does not match, do not fall back.
-        if tmux_metadata_available_nonfocusable and not tmux_nonfocusable_match_found:
-            return None
+
+        # If daemon windows do not publish remote_session_name, allow one
+        # deterministic suffix-based match from project -> tmux session.
+        suffix_exact: set[str] = set()
+        suffix_prefixes: set[str] = set()
+        for candidate in identity_candidates:
+            candidate_project = str(candidate.get("project") or "").strip()
+            candidate_suffix = _normalize_session_name_key(
+                _project_session_suffix(candidate_project)
+            )
+            if not candidate_suffix or candidate_suffix != session_tmux_session_key:
+                continue
+            if candidate_project:
+                candidate_exact, candidate_prefixes = _session_project_candidates(candidate_project)
+                suffix_exact.update(candidate_exact)
+                suffix_prefixes.update(candidate_prefixes)
+        if suffix_exact or suffix_prefixes:
+            preferred_window_id = _pick_preferred_identity_window(
+                identity_candidates,
+                exact_scope=suffix_exact,
+                prefix_scope=suffix_prefixes,
+            )
+            if preferred_window_id is not None:
+                return preferred_window_id
+        return None
 
     # Strict identity-only fallback:
     # When project/tmux metadata is missing or stale, map by identity only if
@@ -3880,6 +3916,7 @@ def _build_otel_badges(
             "is_streaming": session.get("is_streaming", False),
             "state_seq": _safe_int(session.get("state_seq"), 0),
             "status_reason": str(session.get("status_reason") or ""),
+            "last_event_name": str(stage_fields.get("last_event_name") or session.get("last_event_name") or ""),
             "stage": str(stage_fields.get("stage") or "idle"),
             "stage_label": str(stage_fields.get("stage_label") or "Idle"),
             "stage_detail": str(stage_fields.get("stage_detail") or ""),
@@ -3893,6 +3930,10 @@ def _build_otel_badges(
             "output_unseen": bool(stage_fields.get("output_unseen", False)),
             "session_phase": str(stage_fields.get("session_phase") or "idle"),
             "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
+            "turn_owner": str(stage_fields.get("turn_owner") or "unknown"),
+            "turn_owner_label": str(stage_fields.get("turn_owner_label") or "Unknown"),
+            "activity_substate": str(stage_fields.get("activity_substate") or stage_fields.get("stage") or "idle"),
+            "activity_substate_label": str(stage_fields.get("activity_substate_label") or stage_fields.get("stage_label") or "Idle"),
             "activity_freshness": str(stage_fields.get("activity_freshness") or "fresh"),
             "activity_age_seconds": int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
             "activity_age_label": str(stage_fields.get("activity_age_label") or _format_activity_age(stale_age_seconds)),
@@ -4115,6 +4156,7 @@ def _build_active_ai_sessions(
             "is_streaming": is_streaming,
             "state_seq": _safe_int(raw_session.get("state_seq"), 0),
             "status_reason": str(raw_session.get("status_reason") or ""),
+            "last_event_name": str(stage_fields.get("last_event_name") or raw_session.get("last_event_name") or ""),
             "stage": str(stage_fields.get("stage") or "idle"),
             "stage_label": str(stage_fields.get("stage_label") or "Idle"),
             "stage_detail": str(stage_fields.get("stage_detail") or ""),
@@ -4128,6 +4170,10 @@ def _build_active_ai_sessions(
             "output_unseen": bool(stage_fields.get("output_unseen", False)),
             "session_phase": str(stage_fields.get("session_phase") or "idle"),
             "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
+            "turn_owner": str(stage_fields.get("turn_owner") or "unknown"),
+            "turn_owner_label": str(stage_fields.get("turn_owner_label") or "Unknown"),
+            "activity_substate": str(stage_fields.get("activity_substate") or stage_fields.get("stage") or "idle"),
+            "activity_substate_label": str(stage_fields.get("activity_substate_label") or stage_fields.get("stage_label") or "Idle"),
             "activity_freshness": str(stage_fields.get("activity_freshness") or "fresh"),
             "activity_age_seconds": int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
             "activity_age_label": str(stage_fields.get("activity_age_label") or _format_activity_age(stale_age_seconds)),
@@ -4424,6 +4470,38 @@ def _apply_review_lifecycle(
         entry["updated_at"] = now_epoch
         changed = True
 
+    if focused_window_id is not None and focused_window_id > 0:
+        tmux_active_by_connection: Dict[str, Dict[str, str]] = {}
+        for entry in review_sessions.values():
+            if not isinstance(entry, dict):
+                continue
+            if not _review_entry_is_pending(entry):
+                continue
+            if _safe_int(entry.get("window_id"), 0) != focused_window_id:
+                continue
+            finish_marker = str(entry.get("finish_marker") or "")
+            if not finish_marker:
+                continue
+            tmux_session = str(entry.get("tmux_session") or "").strip()
+            tmux_pane = str(entry.get("tmux_pane") or "").strip()
+            if tmux_session and tmux_pane:
+                connection_key = str(
+                    entry.get("focus_connection_key")
+                    or entry.get("connection_key")
+                    or ""
+                ).strip()
+                if connection_key not in tmux_active_by_connection:
+                    tmux_active_by_connection[connection_key] = _list_tmux_active_panes_by_session(
+                        connection_key
+                    )
+                if tmux_active_by_connection[connection_key].get(tmux_session) != tmux_pane:
+                    continue
+            if str(entry.get("seen_marker") or "") != finish_marker:
+                entry["seen_marker"] = finish_marker
+                entry["seen_at"] = now_epoch
+                entry["updated_at"] = now_epoch
+                changed = True
+
     # Prune expired or non-actionable entries, then synthesize unseen sessions
     # for contexts where OTEL session already disappeared.
     synthetic_sessions: List[Dict[str, Any]] = []
@@ -4508,9 +4586,16 @@ def _apply_review_lifecycle(
             "user_action_reason": "",
             "output_ready": True,
             "output_unseen": True,
+            "session_phase": "needs_attention",
+            "session_phase_label": "Needs attention",
+            "turn_owner": "user",
+            "turn_owner_label": "User",
+            "activity_substate": stage,
+            "activity_substate_label": _AI_STAGE_LABELS[stage],
             "activity_freshness": "stale" if stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS else "warm",
             "activity_age_seconds": stale_age_seconds,
             "activity_age_label": _format_activity_age(stale_age_seconds),
+            "last_event_name": "review.retained",
             "identity_source": "review",
             "lifecycle_source": "review",
             "project": project,
@@ -4663,6 +4748,10 @@ def _merge_review_state_into_window_badges(
                 "stage_glyph",
                 "session_phase",
                 "session_phase_label",
+                "turn_owner",
+                "turn_owner_label",
+                "activity_substate",
+                "activity_substate_label",
                 "needs_user_action",
                 "user_action_reason",
                 "output_ready",
@@ -4670,6 +4759,7 @@ def _merge_review_state_into_window_badges(
                 "activity_freshness",
                 "activity_age_seconds",
                 "activity_age_label",
+                "last_event_name",
                 "identity_source",
                 "lifecycle_source",
             ):
@@ -4702,6 +4792,10 @@ def _merge_review_state_into_window_badges(
                 "stage_glyph": str(session.get("stage_glyph") or _AI_STAGE_GLYPHS["output_ready"]),
                 "session_phase": str(session.get("session_phase") or "needs_attention"),
                 "session_phase_label": str(session.get("session_phase_label") or "Needs attention"),
+                "turn_owner": str(session.get("turn_owner") or "user"),
+                "turn_owner_label": str(session.get("turn_owner_label") or "User"),
+                "activity_substate": str(session.get("activity_substate") or "output_ready"),
+                "activity_substate_label": str(session.get("activity_substate_label") or "Ready"),
                 "needs_user_action": False,
                 "user_action_reason": "",
                 "output_ready": True,
@@ -4709,6 +4803,7 @@ def _merge_review_state_into_window_badges(
                 "activity_freshness": str(session.get("activity_freshness") or "warm"),
                 "activity_age_seconds": _safe_int(session.get("activity_age_seconds"), 0),
                 "activity_age_label": str(session.get("activity_age_label") or _format_activity_age(_safe_int(session.get("activity_age_seconds"), 0))),
+                "last_event_name": str(session.get("last_event_name") or "review.retained"),
                 "identity_source": "review",
                 "lifecycle_source": "review",
                 "otel_tool": tool,
@@ -4776,19 +4871,31 @@ def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
         return 2
     if phase == "done":
         return 1
-    return 0
+    return int(session.get("stage_rank") or 0)
 
 
 def _should_render_ai_session(session: Dict[str, Any]) -> bool:
     """Visible rail sessions: active work, pending review, or pinned."""
     if _is_tmux_discovered_process_ghost(session):
         return False
+    if bool(session.get("pinned", False)):
+        return True
     phase = str(session.get("session_phase") or "").strip().lower()
     if phase in {"working", "needs_attention", "done"}:
         return True
-    if bool(session.get("pinned", False)):
+    if bool(session.get("output_unseen", False) or session.get("review_pending", False)):
         return True
-    return False
+    if bool(session.get("stale", False)) or str(session.get("activity_freshness") or "").strip().lower() == "stale":
+        return False
+    stage = str(session.get("stage") or "").strip().lower()
+    return stage in {
+        "starting",
+        "thinking",
+        "tool_running",
+        "streaming",
+        "waiting_input",
+        "attention",
+    }
 
 
 def _should_render_otel_badge(badge: Dict[str, Any]) -> bool:
@@ -4798,7 +4905,19 @@ def _should_render_otel_badge(badge: Dict[str, Any]) -> bool:
     phase = str(badge.get("session_phase") or "").strip().lower()
     if phase in {"working", "needs_attention", "done"}:
         return True
-    return bool(badge.get("output_unseen", False) or badge.get("review_pending", False))
+    if bool(badge.get("output_unseen", False) or badge.get("review_pending", False)):
+        return True
+    if bool(badge.get("stale", False)) or str(badge.get("activity_freshness") or "").strip().lower() == "stale":
+        return False
+    stage = str(badge.get("stage") or "").strip().lower()
+    return stage in {
+        "starting",
+        "thinking",
+        "tool_running",
+        "streaming",
+        "waiting_input",
+        "attention",
+    }
 
 
 def _is_tmux_discovered_process_ghost(session: Dict[str, Any]) -> bool:

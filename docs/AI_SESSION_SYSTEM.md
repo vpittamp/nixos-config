@@ -102,6 +102,46 @@ The visible panel model intentionally prioritizes three states:
 
 Internal fallback states such as `idle`, `stale`, and `inactive` still exist, but they are not the primary UX language.
 
+### Turn Ownership
+
+The canonical per-session state model now separates:
+- `session_phase`
+- `turn_owner`
+- `activity_substate`
+
+These fields answer different questions:
+- `session_phase`
+  - broad UX grouping for sorting and attention handling
+- `turn_owner`
+  - who owns the turn right now:
+    - `llm`
+    - `user`
+    - `blocked`
+    - `unknown`
+- `activity_substate`
+  - the most useful current lifecycle detail:
+    - `starting`
+    - `thinking`
+    - `tool_running`
+    - `streaming`
+    - `waiting_input`
+    - `attention`
+    - `output_ready`
+    - `idle`
+
+Important rule:
+- `turn_owner` is the primary answer to “is the model still doing work, or is it waiting for the user?”
+
+Interpretation:
+- `turn_owner = llm`
+  - the model is still actively executing a turn
+- `turn_owner = user`
+  - the model finished and is waiting for the next user action
+- `turn_owner = blocked`
+  - work cannot continue without approval, auth, or another explicit unblock step
+- `turn_owner = unknown`
+  - the process exists, but telemetry is not strong enough to claim true turn ownership
+
 ### Working
 
 A session is `working` when telemetry indicates active model/tool work, for example:
@@ -114,11 +154,21 @@ A session is `working` when telemetry indicates active model/tool work, for exam
 The important rule is:
 - process existence alone does not mean `working`
 
+Typical working combinations:
+- `session_phase = working`, `turn_owner = llm`, `activity_substate = thinking`
+- `session_phase = working`, `turn_owner = llm`, `activity_substate = tool_running`
+- `session_phase = working`, `turn_owner = llm`, `activity_substate = streaming`
+
 ### Needs Attention
 
 `needs_attention` means the session finished useful output and the user has not acknowledged it yet.
 
 This is a retained completion state. It exists so a session can stop animating and still remain visually actionable.
+
+Typical completion combinations:
+- `session_phase = needs_attention`, `turn_owner = user`, `activity_substate = output_ready`
+- `session_phase = needs_attention`, `turn_owner = blocked`, `activity_substate = waiting_input`
+- `session_phase = needs_attention`, `turn_owner = blocked`, `activity_substate = attention`
 
 ### Done
 
@@ -147,6 +197,20 @@ Examples of heartbeat-like reasons:
 - `metrics_heartbeat_created`
 
 These signals can keep a session alive, but they should not by themselves animate the panel or promote a session to `working`.
+
+## Freshness Rules
+
+Freshness is derived from semantic activity, not simply the timestamp on the last exported snapshot.
+
+Rules:
+- local `live` exported sessions are treated as fresh enough for active rendering even when the last semantic event is older than the wall clock delta
+- remote OTEL sessions use sink receipt freshness
+- `remote_source_age_seconds` caps activity age when the remote sink is fresh
+- `remote_source_stale = true` always suppresses active-working rendering
+
+Why this matters:
+- remote current-session snapshots may remain valid even when the underlying event timestamp is older
+- a fresh remote sink update should not be rendered as “19d stale” just because the last model event happened on another host earlier
 
 ## Current Session Selection
 
@@ -190,6 +254,10 @@ The review path is especially important when:
 
 Focusing a session records it as seen and clears the retained attention state.
 
+The seen path now supports both:
+- explicit focus acknowledgements emitted by focus actions
+- passive acknowledgement when the owning window is focused and the retained tmux pane is still the active pane
+
 ## QuickShell Rendering Model
 
 QuickShell is presentation-only for session state.
@@ -205,6 +273,24 @@ It should not:
 - infer active work from CPU
 - infer current-ness from pane/window booleans when a canonical current key is present
 - own process discovery
+
+Launcher/session behavior:
+- the launcher session search indexes:
+  - `turn_owner`
+  - `activity_substate`
+  - `last_event_name`
+  - `status_reason`
+- session chips render owner + substate, for example:
+  - `LLM · Thinking`
+  - `User · Ready`
+  - `Blocked · Waiting`
+- unread output and retained review state render as attention, not generic completion
+- motion is driven by explicit work signals:
+  - `pulse_working`
+  - `is_streaming`
+  - `pending_tools > 0`
+
+This keeps the shell fast while avoiding terminal-preview complexity.
 
 ## Tool Integration Contract
 
@@ -258,6 +344,46 @@ If more than one session is marked current, the daemon emit path is wrong and Qu
 Check:
 - `status_reason`
 - `last_activity_at`
+
+Expected:
+- heartbeat-only states such as `process_keepalive` should not animate on their own
+- a stale remote source should not animate
+- `output_ready` / retained review sessions should not pulse
+
+### A remote session disappears from the active rail
+
+Check:
+- `connection_key`
+- `context_key`
+- `remote_source_stale`
+- `remote_source_age_seconds`
+- `window_id`
+- `tmux_session`
+
+Expected:
+- fresh remote sink updates remain renderable even when the original event timestamp is older
+- tmux identity mismatch should prevent incorrect remaps, not silently attach to the wrong window
+
+## Validation
+
+Validated test surface for the current telemetry-first model:
+
+```bash
+pytest -q \
+  tests/085-sway-monitoring-widget/test_ai_view_regressions.py \
+  tests/085-sway-monitoring-widget/test_codex_notify_metadata.py \
+  tests/085-sway-monitoring-widget/test_monitoring_data.py \
+  tests/090-otel-ai-monitor/test_process_monitor_codex_detection.py \
+  tests/090-otel-ai-monitor/test_receiver_log_event_normalization.py \
+  tests/090-otel-ai-monitor/test_remote_transport.py \
+  tests/090-otel-ai-monitor/test_session_tracker_codex_state_and_retention.py \
+  tests/090-otel-ai-monitor/test_session_tracker_heartbeat.py \
+  tests/090-otel-ai-monitor/test_sway_helper_tmux_context.py
+```
+
+Current expected result:
+- all tests pass
+- only the existing Pydantic v2 deprecation warnings remain
 - `pulse_working`
 - `is_streaming`
 - `pending_tools`
