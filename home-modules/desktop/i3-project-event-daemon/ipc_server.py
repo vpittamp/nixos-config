@@ -5360,6 +5360,29 @@ class IPCServer:
         digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8]
         return f"i3pm-{slug[:24]}-{digest}"
 
+    def _extract_scoped_terminal_command(
+        self,
+        *,
+        app_name: str,
+        prepared_args: List[str],
+    ) -> List[str]:
+        """Extract the command executed inside Ghostty for scoped terminal apps."""
+        args = [str(arg) for arg in prepared_args]
+        if len(args) >= 2 and args[0] == "-e":
+            return args[1:]
+
+        raise RuntimeError(json.dumps({
+            "code": -32004,
+            "message": (
+                f"Scoped terminal app '{app_name}' must use Ghostty '-e <command>' parameters "
+                "for project-aware launches"
+            ),
+            "data": {
+                "app_name": app_name,
+                "parameters": args,
+            }
+        }))
+
     def _find_context_terminal_window(
         self,
         *,
@@ -5804,12 +5827,18 @@ class IPCServer:
         )
         terminal_role = ""
         tmux_session_name = ""
+        scoped_terminal_command: List[str] = []
         if app.name == "terminal" and project_name and context_key:
             terminal_role = "project-main"
             tmux_session_name = self._build_context_tmux_session_name(
                 project_name=project_name,
                 context_key=context_key,
                 terminal_role=terminal_role,
+            )
+        elif scoped_launch and bool(app.terminal):
+            scoped_terminal_command = self._extract_scoped_terminal_command(
+                app_name=app.name,
+                prepared_args=prepared_args,
             )
         environment = self._build_launch_env(
             app_name=app.name,
@@ -5836,18 +5865,10 @@ class IPCServer:
         )
         launch_strategy = "direct"
         terminal_launch: Optional[Dict[str, Any]] = None
-        if bool(app.terminal) and execution_mode == "local":
-            launch_strategy = "managed_local_terminal"
-            if app.name == "terminal":
-                terminal_launch = {
-                    "mode": "managed_local_terminal",
-                    "tmux_session_name": tmux_session_name,
-                    "terminal_role": terminal_role,
-                }
-        elif bool(app.terminal) and execution_mode == "ssh":
-            launch_strategy = "managed_remote_terminal"
+        if app.name == "terminal" and project_name and context_key:
+            launch_strategy = "managed_remote_terminal" if execution_mode == "ssh" else "managed_local_terminal"
             terminal_launch = {
-                "mode": "managed_remote_terminal",
+                "mode": "managed_project_terminal",
                 "tmux_session_name": (
                     tmux_session_name
                     or self._build_context_tmux_session_name(
@@ -5858,14 +5879,30 @@ class IPCServer:
                 ),
                 "terminal_role": terminal_role,
                 "remote_session_name": remote_session_name_override,
-                "remote": {
+                "helper_name": "project-terminal-launch.sh",
+                "helper_args": [],
+            }
+            if execution_mode == "ssh":
+                terminal_launch["remote"] = {
                     "host": str(remote_profile.get("host", "")) if remote_profile else "",
                     "user": str(remote_profile.get("user", "")) if remote_profile else "",
                     "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
                     "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
-                },
-                "remote_helper": "project-terminal-launch.sh",
+                }
+        elif scoped_launch and bool(app.terminal):
+            launch_strategy = "scoped_terminal_command"
+            terminal_launch = {
+                "mode": "scoped_terminal_command",
+                "helper_name": "project-command-launch.sh",
+                "helper_args": scoped_terminal_command,
             }
+            if execution_mode == "ssh":
+                terminal_launch["remote"] = {
+                    "host": str(remote_profile.get("host", "")) if remote_profile else "",
+                    "user": str(remote_profile.get("user", "")) if remote_profile else "",
+                    "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
+                    "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+                }
 
         if dry_run:
             launch = {
@@ -7096,14 +7133,22 @@ class IPCServer:
         if not isinstance(remote, dict):
             remote = {}
 
+        terminal_mode = str(terminal_launch.get("mode") or "").strip()
         tmux_session_name = str(terminal_launch.get("tmux_session_name") or "").strip()
+        helper_name = str(
+            terminal_launch.get("helper_name")
+            or terminal_launch.get("remote_helper")
+            or "project-terminal-launch.sh"
+        ).strip()
+        helper_args = [str(arg) for arg in (terminal_launch.get("helper_args") or [])]
         remote_dir = str(remote.get("remote_dir") or "").strip()
         remote_user = str(remote.get("user") or "").strip()
         remote_host = str(remote.get("host") or "").strip()
         remote_port = int(remote.get("port", 22) or 22)
-        remote_helper = str(terminal_launch.get("remote_helper") or "project-terminal-launch.sh").strip()
-        if not (tmux_session_name and remote_dir and remote_user and remote_host):
+        if not (remote_dir and remote_user and remote_host and helper_name):
             raise RuntimeError("Remote terminal launch requires a complete SSH profile")
+        if terminal_mode == "managed_project_terminal" and not tmux_session_name:
+            raise RuntimeError("Managed remote terminal launch requires tmux_session_name")
 
         runtime_dir = self._runtime_dir()
         runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -7112,6 +7157,10 @@ class IPCServer:
         env_exports = "\n".join(
             f"export {key}={shlex_quote(str(value))}"
             for key, value in (spec.get("environment") or {}).items()
+        )
+        helper_invocation = " ".join(
+            shlex_quote(part)
+            for part in [helper_name, remote_dir, *helper_args]
         )
         remote_script = f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -7122,12 +7171,12 @@ remote_cmd=$(cat <<'EOF_REMOTE'
 set -euo pipefail
 {env_exports}
 remote_dir={shlex_quote(remote_dir)}
-remote_helper={shlex_quote(remote_helper)}
+remote_helper={shlex_quote(helper_name)}
 if ! command -v "$remote_helper" >/dev/null 2>&1; then
   echo "[i3pm] remote terminal helper not found: $remote_helper"
   exit 127
 fi
-exec "$remote_helper" "$remote_dir"
+exec {helper_invocation}
 EOF_REMOTE
 )
 if ! ssh -t -o BatchMode=yes -o ConnectTimeout=2 -p {remote_port} {shlex_quote(f"{remote_user}@{remote_host}")} "bash -c $(printf '%q' \"$remote_cmd\")"; then
@@ -7178,6 +7227,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             str(key): str(value)
             for key, value in (spec.get("environment") or {}).items()
         }
+        terminal_launch = spec.get("terminal_launch") or {}
+        terminal_mode = str(terminal_launch.get("mode") or "").strip()
+        helper_name = str(terminal_launch.get("helper_name") or "").strip()
+        helper_args = [str(arg) for arg in (terminal_launch.get("helper_args") or [])]
 
         if app_name == "k9s":
             kubeconfig_path = Path.home() / ".kube" / "stacks" / "config"
@@ -7190,16 +7243,29 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     raise RuntimeError("Expected kubeconfig not found after sync")
             environment["KUBECONFIG"] = str(kubeconfig_path)
 
-        if app_name == "terminal" and execution_mode == "local":
+        if terminal_mode == "managed_project_terminal" and execution_mode == "local":
             if not local_project_dir:
                 raise RuntimeError("Managed local terminal launch requires local_project_directory")
-            launch_script = self._resolve_terminal_helper("project-terminal-launch.sh")
-            command = spec.get("command") or command
+            launch_script = self._resolve_terminal_helper(helper_name or "project-terminal-launch.sh")
             shell_command = (
                 f"exec {shlex.quote(command)} -e "
                 f"{shlex.quote(str(launch_script))} {shlex.quote(local_project_dir)}"
             )
-        elif app_name == "terminal" and execution_mode == "ssh":
+        elif terminal_mode == "managed_project_terminal" and execution_mode == "ssh":
+            helper_script = self._build_remote_terminal_helper_script(spec)
+            shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
+        elif terminal_mode == "scoped_terminal_command" and execution_mode == "local":
+            if not local_project_dir:
+                raise RuntimeError("Scoped local terminal launch requires local_project_directory")
+            launch_script = self._resolve_terminal_helper(helper_name or "project-command-launch.sh")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), local_project_dir, *helper_args]
+                )
+            )
+        elif terminal_mode == "scoped_terminal_command" and execution_mode == "ssh":
             helper_script = self._build_remote_terminal_helper_script(spec)
             shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
         elif execution_mode == "ssh":

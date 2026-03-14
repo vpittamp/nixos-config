@@ -271,7 +271,7 @@ let
       name = "lazygit";
       display_name = "Lazygit";
       command = "ghostty";
-      parameters = "-e lazygit --work-tree=$PROJECT_DIR";
+      parameters = "-e lazygit --path $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;

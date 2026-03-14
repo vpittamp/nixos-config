@@ -24,8 +24,10 @@ let
   terminalHelpersPackage = pkgs.runCommand "i3pm-terminal-helpers" {} ''
     mkdir -p "$out/bin"
     cp ${../../scripts/project-terminal-launch.sh} "$out/bin/project-terminal-launch.sh"
+    cp ${../../scripts/project-command-launch.sh} "$out/bin/project-command-launch.sh"
     cp ${../../scripts/managed-tmux-session.sh} "$out/bin/managed-tmux-session.sh"
     chmod 0555 "$out/bin/project-terminal-launch.sh"
+    chmod 0555 "$out/bin/project-command-launch.sh"
     chmod 0444 "$out/bin/managed-tmux-session.sh"
   '';
 
@@ -56,8 +58,10 @@ let
       mkdir -p $out/scripts
       cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon/
       cp ${terminalHelpersPackage}/bin/project-terminal-launch.sh $out/scripts/project-terminal-launch.sh
+      cp ${terminalHelpersPackage}/bin/project-command-launch.sh $out/scripts/project-command-launch.sh
       cp ${terminalHelpersPackage}/bin/managed-tmux-session.sh $out/scripts/managed-tmux-session.sh
       chmod 0555 $out/scripts/project-terminal-launch.sh
+      chmod 0555 $out/scripts/project-command-launch.sh
       chmod 0444 $out/scripts/managed-tmux-session.sh
     '';
   };
