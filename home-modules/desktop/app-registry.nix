@@ -53,7 +53,7 @@ let
       Categories=${categories}
       ${lib.optionalString (app ? expected_class) "StartupWMClass=${app.expected_class}"}
       X-Project-Scope=${app.scope}
-      X-Preferred-Workspace=${toString app.preferred_workspace}
+      ${lib.optionalString (app ? preferred_workspace && app.preferred_workspace != null) "X-Preferred-Workspace=${toString app.preferred_workspace}"}
       X-Multi-Instance=${if app.multi_instance then "true" else "false"}
       X-Fallback-Behavior=${app.fallback_behavior}
       ${lib.optionalString (app ? nix_package) "X-Nix-Package=${app.nix_package}"}

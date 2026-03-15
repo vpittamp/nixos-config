@@ -165,11 +165,13 @@ Those older wrapper scripts now defer to daemon-backed display actions when avai
 
 The runtime shell no longer depends on launcher-specific ownership logic.
 
-The declarative application registry now has three explicit partitions in:
+The declarative application registry now has five explicit partitions in:
 - `home-modules/desktop/app-registry-data.nix`
 
 Those are:
 - `workspaceOwningApplications`
+- `workspaceUtilityApplications`
+- `floatingUtilityApplications`
 - `nonOwningLaunchables`
 - `applications`
 
@@ -177,7 +179,11 @@ Runtime consequences:
 - `workspace-assignments.json` is generated only from `workspaceOwningApplications`
 - `application-registry.json` is generated from the combined `applications` list
 - PWAs are normal registry entries and participate in workspace ownership through the same path as native apps
+- `workspaceUtilityApplications` are global management surfaces that intentionally own a dedicated workspace
+- `floatingUtilityApplications` are a documented subset of non-owning launchables for tools like search pickers and standalone QuickShell surfaces
+- floating utilities intentionally omit `preferred_workspace`, so launcher-visible floating tools open in the current workspace instead of being treated like workspace-owned apps
 - scratchpad and floating utilities remain launchable without polluting workspace ownership
+- the standalone worktree manager is now a workspace utility on workspace `23`, not a floating utility
 
 ### 6. Terminal and SSH launch path
 

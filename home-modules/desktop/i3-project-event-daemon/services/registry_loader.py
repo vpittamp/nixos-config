@@ -49,6 +49,13 @@ class RegistryLoader:
 
         self.applications: Dict[str, RegistryApp] = {}
         self.version: str = ""
+        self._last_mtime_ns: Optional[int] = None
+
+    def _current_mtime_ns(self) -> Optional[int]:
+        try:
+            return self.registry_path.stat().st_mtime_ns
+        except FileNotFoundError:
+            return None
 
     def load(self) -> None:
         """
@@ -90,6 +97,8 @@ class RegistryLoader:
                 if app.name in self.applications:
                     logger.warning(f"Duplicate application name '{app.name}' in registry")
                 self.applications[app.name] = app
+
+            self._last_mtime_ns = self._current_mtime_ns()
 
             logger.info(
                 f"Loaded registry v{self.version} with {len(self.applications)} applications"
@@ -156,7 +165,28 @@ class RegistryLoader:
         """Reload registry from disk"""
         self.applications.clear()
         self.version = ""
+        self._last_mtime_ns = None
         self.load()
+
+    def ensure_current(self) -> None:
+        """Reload the registry when the on-disk file has changed."""
+        current_mtime_ns = self._current_mtime_ns()
+        if current_mtime_ns is None:
+            if self.is_loaded():
+                self.applications.clear()
+                self.version = ""
+                self._last_mtime_ns = None
+            raise FileNotFoundError(
+                f"Registry not found at {self.registry_path}. "
+                "Run 'nixos-rebuild switch' to generate it."
+            )
+
+        if not self.is_loaded():
+            self.reload()
+            return
+
+        if self._last_mtime_ns is not None and self._last_mtime_ns != current_mtime_ns:
+            self.reload()
 
     def is_loaded(self) -> bool:
         """Check if registry is loaded"""

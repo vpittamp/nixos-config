@@ -6,6 +6,8 @@ let
   hasTopBar = topBarCfg != null && (topBarCfg.enable or false);
   runtimeShellCfg = config.programs.quickshell-runtime-shell or null;
   hasRuntimeShell = runtimeShellCfg != null && (runtimeShellCfg.enable or false);
+  worktreeAppCfg = config.programs.quickshell-worktree-app or null;
+  hasWorktreeApp = worktreeAppCfg != null && (worktreeAppCfg.enable or false);
   nativeNotifications =
     hasRuntimeShell
     && ((lib.attrByPath [ "notifications" "backend" ] "native" runtimeShellCfg) == "native");
@@ -13,9 +15,17 @@ let
   toggleKeyList =
     let keys = if lib.isList rawToggleKey then rawToggleKey else [ rawToggleKey ];
     in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
+  rawWorktreeToggleKey = if hasWorktreeApp then worktreeAppCfg.toggleKey else "$mod+g";
+  worktreeToggleKeyList =
+    let keys = if lib.isList rawWorktreeToggleKey then rawWorktreeToggleKey else [ rawWorktreeToggleKey ];
+    in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
   monitoringPanelBindings =
     if hasRuntimeShell
     then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList))
+    else {};
+  worktreeAppBindings =
+    if hasWorktreeApp
+    then lib.listToAttrs (map (key: lib.nameValuePair key "exec ${worktreeAppCfg.toggleCommandName}") (lib.unique worktreeToggleKeyList))
     else {};
   primaryLauncherCommand = if hasRuntimeShell then "exec toggle-app-launcher" else "exec walker";
 in
@@ -220,5 +230,6 @@ in
     # Delete closes selected window (US3)
     # Escape cancels and exits mode
   }
-  // monitoringPanelBindings);
+  // monitoringPanelBindings
+  // worktreeAppBindings);
 }

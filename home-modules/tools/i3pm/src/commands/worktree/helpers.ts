@@ -2,6 +2,8 @@
  * Shared helpers for i3pm worktree commands.
  */
 
+import { DaemonClient } from "../../services/daemon-client.ts";
+
 const HOME = Deno.env.get("HOME") || "";
 const REPOS_FILE = `${HOME}/.config/i3/repos.json`;
 
@@ -161,6 +163,17 @@ export async function refreshDiscovery(): Promise<void> {
     stderr: "piped",
   });
   await discoverCmd.output();
+}
+
+export async function notifyWorktreeRefresh(): Promise<void> {
+  const client = new DaemonClient();
+  try {
+    await client.request("worktree.refresh", {});
+  } catch {
+    // best-effort daemon invalidation for dashboard consumers
+  } finally {
+    client.disconnect();
+  }
 }
 
 export type NativeWorktreeEntry = {

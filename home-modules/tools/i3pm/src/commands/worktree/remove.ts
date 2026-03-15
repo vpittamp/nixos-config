@@ -7,8 +7,10 @@ import {
   type WorktreeRemoveRequest,
   WorktreeRemoveRequestSchema,
 } from "../../../models/repository.ts";
+import { buildWorktreeMutationErrorResult, buildWorktreeRemoveResult } from "./result.ts";
 import {
   hasGitWorktreeRoot,
+  notifyWorktreeRefresh,
   refreshDiscovery,
   resolveWorktreeTarget,
   runGitGtr,
@@ -39,20 +41,22 @@ async function removeRemoteProfile(qualifiedName: string): Promise<boolean> {
   }
 }
 
-async function clearActiveContextIfRemoved(qualifiedName: string): Promise<void> {
+async function clearActiveContextIfRemoved(qualifiedName: string): Promise<boolean> {
   const client = new DaemonClient();
   try {
     const active = await client.request<{ qualified_name?: string }>("context.current", {});
-    if (active?.qualified_name !== qualifiedName) return;
+    if (active?.qualified_name !== qualifiedName) return false;
 
     const clearCmd = new Deno.Command("i3pm", {
       args: ["worktree", "clear"],
       stdout: "null",
       stderr: "null",
     });
-    await clearCmd.output();
+    const output = await clearCmd.output();
+    return output.success;
   } catch {
     // best-effort active context cleanup
+    return false;
   } finally {
     await client.close();
   }
@@ -68,15 +72,27 @@ async function clearActiveContextIfRemoved(qualifiedName: string): Promise<void>
 export async function worktreeRemove(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
     string: ["repo"],
-    boolean: ["force"],
+    boolean: ["force", "json"],
     default: {
       force: false,
+      json: false,
     },
   });
 
   const positionalArgs = parsed._ as string[];
 
   if (positionalArgs.length < 1) {
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult(
+          "remove",
+          "Usage: i3pm worktree remove <branch|account/repo:branch> [--force] [--repo <account/repo>]",
+        ),
+        null,
+        2,
+      ));
+      return 1;
+    }
     console.error(
       "Usage: i3pm worktree remove <branch|account/repo:branch> [--force] [--repo <account/repo>]",
     );
@@ -104,6 +120,18 @@ export async function worktreeRemove(args: string[]): Promise<number> {
   } catch (error: unknown) {
     if (error instanceof Error && error.name === "ZodError") {
       const zodError = error as unknown as { errors: Array<{ path: string[]; message: string }> };
+      if (parsed.json) {
+        const issues = zodError.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult(
+            "remove",
+            `Invalid worktree remove request: ${issues.join("; ")}`,
+          ),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error("Error: Invalid worktree remove request:");
       for (const issue of zodError.errors) {
         console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
@@ -115,6 +143,17 @@ export async function worktreeRemove(args: string[]): Promise<number> {
 
   const target = await resolveWorktreeTarget(branchOrQualified, request.repo);
   if (!target) {
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult(
+          "remove",
+          "Not in a bare repository structure. Run from within a repository worktree or specify --repo.",
+        ),
+        null,
+        2,
+      ));
+      return 1;
+    }
     console.error("Error: Not in a bare repository structure");
     console.error("Please run from within a repository worktree or specify --repo");
     return 1;
@@ -123,6 +162,14 @@ export async function worktreeRemove(args: string[]): Promise<number> {
   const branch = target.branch;
 
   if (branch === "main" || branch === "master") {
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult("remove", "Cannot remove main/master worktree."),
+        null,
+        2,
+      ));
+      return 1;
+    }
     console.error("Error: Cannot remove main worktree");
     console.error("The main/master worktree must always exist for the bare repository pattern.");
     return 1;
@@ -152,6 +199,18 @@ export async function worktreeRemove(args: string[]): Promise<number> {
   if (!output.success) {
     const stderr = new TextDecoder().decode(output.stderr);
     const stdout = new TextDecoder().decode(output.stdout);
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult(
+          "remove",
+          stderr.trim() || stdout.trim() ||
+            (useGtr ? "git gtr rm failed" : "git worktree remove failed"),
+        ),
+        null,
+        2,
+      ));
+      return 1;
+    }
     console.error(useGtr ? "Error: git gtr rm failed" : "Error: git worktree remove failed");
     if (stderr.trim()) console.error(stderr.trim());
     else if (stdout.trim()) console.error(stdout.trim());
@@ -159,8 +218,26 @@ export async function worktreeRemove(args: string[]): Promise<number> {
   }
 
   await refreshDiscovery();
-  await removeRemoteProfile(target.qualifiedName);
-  await clearActiveContextIfRemoved(target.qualifiedName);
+  await notifyWorktreeRefresh();
+  const remoteProfileRemoved = await removeRemoteProfile(target.qualifiedName);
+  const contextCleared = await clearActiveContextIfRemoved(target.qualifiedName);
+
+  if (parsed.json) {
+    console.log(JSON.stringify(
+      buildWorktreeRemoveResult({
+        repo: target.repoQualified,
+        branch,
+        force: request.force,
+        remoteProfileRemoved,
+        contextCleared,
+        usedGtr: useGtr,
+      }),
+      null,
+      2,
+    ));
+    return 0;
+  }
+
   console.log(`Removed worktree: ${target.qualifiedName}`);
 
   return 0;

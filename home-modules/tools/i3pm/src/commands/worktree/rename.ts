@@ -1,9 +1,11 @@
 import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
 import { DaemonClient } from "../../services/daemon-client.ts";
+import { buildWorktreeMutationErrorResult, buildWorktreeRenameResult } from "./result.ts";
 import {
   getDefaultBranch,
   hasGitWorktreeRoot,
   listNativeWorktrees,
+  notifyWorktreeRefresh,
   refreshDiscovery,
   resolveWorktreeTarget,
   runGitBare,
@@ -32,39 +34,43 @@ function isLikelyGitBranch(name: string): boolean {
   return true;
 }
 
-async function moveRemoteProfile(oldQualified: string, newQualified: string): Promise<void> {
+async function moveRemoteProfile(oldQualified: string, newQualified: string): Promise<boolean> {
   try {
     const content = await Deno.readTextFile(REMOTE_PROFILES_FILE);
     const data = JSON.parse(content);
     const profiles = data?.profiles;
-    if (!profiles || typeof profiles !== "object") return;
-    if (!(oldQualified in profiles)) return;
+    if (!profiles || typeof profiles !== "object") return false;
+    if (!(oldQualified in profiles)) return false;
     profiles[newQualified] = profiles[oldQualified];
     delete profiles[oldQualified];
     data.updated_at = Math.floor(Date.now() / 1000);
     await Deno.writeTextFile(REMOTE_PROFILES_FILE, `${JSON.stringify(data, null, 2)}\n`);
+    return true;
   } catch {
     // best-effort migration
+    return false;
   }
 }
 
 async function updateActiveContextIfNeeded(
   oldQualified: string,
   newQualified: string,
-): Promise<void> {
+): Promise<boolean> {
   const client = new DaemonClient();
   try {
     const active = await client.request<{ qualified_name?: string }>("context.current", {});
-    if (active?.qualified_name !== oldQualified) return;
+    if (active?.qualified_name !== oldQualified) return false;
 
     const switchCmd = new Deno.Command("i3pm", {
       args: ["worktree", "switch", newQualified],
       stdout: "piped",
       stderr: "piped",
     });
-    await switchCmd.output();
+    const output = await switchCmd.output();
+    return output.success;
   } catch {
     // best-effort switch for active context
+    return false;
   } finally {
     await client.close();
   }
@@ -73,12 +79,23 @@ async function updateActiveContextIfNeeded(
 export async function worktreeRename(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
     string: ["repo"],
-    boolean: ["force"],
-    default: { force: false },
+    boolean: ["force", "json"],
+    default: { force: false, json: false },
   });
 
   const positional = parsed._ as string[];
   if (positional.length < 2) {
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult(
+          "rename",
+          "Usage: i3pm worktree rename <branch|account/repo:branch> <new-branch> [--repo <account/repo>] [--force]",
+        ),
+        null,
+        2,
+      ));
+      return 1;
+    }
     showUsage();
     return 1;
   }
@@ -87,12 +104,31 @@ export async function worktreeRename(args: string[]): Promise<number> {
   const newBranch = String(positional[1]);
 
   if (!isLikelyGitBranch(newBranch)) {
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult("rename", `Invalid new branch name: ${newBranch}`),
+        null,
+        2,
+      ));
+      return 1;
+    }
     console.error(`Error: invalid new branch name: ${newBranch}`);
     return 1;
   }
 
   const resolved = await resolveWorktreeTarget(oldTarget, parsed.repo?.toString());
   if (!resolved) {
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult(
+          "rename",
+          "Not in a bare repository structure. Run from within a repository worktree or specify --repo.",
+        ),
+        null,
+        2,
+      ));
+      return 1;
+    }
     console.error("Error: Not in a bare repository structure");
     console.error("Please run from within a repository worktree or specify --repo");
     return 1;
@@ -110,6 +146,17 @@ export async function worktreeRename(args: string[]): Promise<number> {
     if (!output.success) {
       const stderr = new TextDecoder().decode(output.stderr);
       const stdout = new TextDecoder().decode(output.stdout);
+      if (parsed.json) {
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult(
+            "rename",
+            stderr.trim() || stdout.trim() || "git gtr mv failed",
+          ),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error("Error: git gtr mv failed");
       if (stderr.trim()) console.error(stderr.trim());
       else if (stdout.trim()) console.error(stdout.trim());
@@ -121,6 +168,14 @@ export async function worktreeRename(args: string[]): Promise<number> {
       resolved.branch === "main" || resolved.branch === "master" ||
       resolved.branch === defaultBranch
     ) {
+      if (parsed.json) {
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult("rename", "Cannot rename main/default worktree branch."),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error("Error: Cannot rename main/default worktree branch");
       return 1;
     }
@@ -129,11 +184,30 @@ export async function worktreeRename(args: string[]): Promise<number> {
     const targetEntry = worktrees.find((entry) => entry.branch === resolved.branch);
 
     if (!targetEntry) {
+      if (parsed.json) {
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult(
+            "rename",
+            `Could not find worktree for branch '${resolved.branch}'`,
+          ),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error(`Error: Could not find worktree for branch '${resolved.branch}'`);
       return 1;
     }
 
     if (targetEntry.isBare) {
+      if (parsed.json) {
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult("rename", "Cannot rename bare root worktree."),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error("Error: Cannot rename bare root worktree");
       return 1;
     }
@@ -145,6 +219,14 @@ export async function worktreeRename(args: string[]): Promise<number> {
       `refs/heads/${newBranch}`,
     ]);
     if (branchExists.success) {
+      if (parsed.json) {
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult("rename", `Branch already exists: ${newBranch}`),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error(`Error: Branch already exists: ${newBranch}`);
       return 1;
     }
@@ -160,6 +242,14 @@ export async function worktreeRename(args: string[]): Promise<number> {
     if (newPath !== oldPath) {
       try {
         await Deno.stat(newPath);
+        if (parsed.json) {
+          console.log(JSON.stringify(
+            buildWorktreeMutationErrorResult("rename", `Target path already exists: ${newPath}`),
+            null,
+            2,
+          ));
+          return 1;
+        }
         console.error(`Error: target path already exists: ${newPath}`);
         return 1;
       } catch {
@@ -175,6 +265,17 @@ export async function worktreeRename(args: string[]): Promise<number> {
       if (!moveOutput.success) {
         const stderr = new TextDecoder().decode(moveOutput.stderr);
         const stdout = new TextDecoder().decode(moveOutput.stdout);
+        if (parsed.json) {
+          console.log(JSON.stringify(
+            buildWorktreeMutationErrorResult(
+              "rename",
+              stderr.trim() || stdout.trim() || "git worktree move failed",
+            ),
+            null,
+            2,
+          ));
+          return 1;
+        }
         console.error("Error: git worktree move failed");
         if (stderr.trim()) console.error(stderr.trim());
         else if (stdout.trim()) console.error(stdout.trim());
@@ -191,6 +292,17 @@ export async function worktreeRename(args: string[]): Promise<number> {
     if (!branchRename.success) {
       const stderr = new TextDecoder().decode(branchRename.stderr);
       const stdout = new TextDecoder().decode(branchRename.stdout);
+      if (parsed.json) {
+        console.log(JSON.stringify(
+          buildWorktreeMutationErrorResult(
+            "rename",
+            stderr.trim() || stdout.trim() || "git branch -m failed",
+          ),
+          null,
+          2,
+        ));
+        return 1;
+      }
       console.error("Error: git branch -m failed");
       if (stderr.trim()) console.error(stderr.trim());
       else if (stdout.trim()) console.error(stdout.trim());
@@ -199,8 +311,26 @@ export async function worktreeRename(args: string[]): Promise<number> {
   }
 
   await refreshDiscovery();
-  await moveRemoteProfile(resolved.qualifiedName, newQualified);
-  await updateActiveContextIfNeeded(resolved.qualifiedName, newQualified);
+  await notifyWorktreeRefresh();
+  const remoteProfileMigrated = await moveRemoteProfile(resolved.qualifiedName, newQualified);
+  const contextUpdated = await updateActiveContextIfNeeded(resolved.qualifiedName, newQualified);
+
+  if (parsed.json) {
+    console.log(JSON.stringify(
+      buildWorktreeRenameResult({
+        repo: resolved.repoQualified,
+        previousBranch: resolved.branch,
+        newBranch,
+        force: parsed.force,
+        remoteProfileMigrated,
+        contextUpdated,
+        usedGtr: useGtr,
+      }),
+      null,
+      2,
+    ));
+    return 0;
+  }
 
   console.log(`Renamed worktree to: ${newQualified}`);
   return 0;

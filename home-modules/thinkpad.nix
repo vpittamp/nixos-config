@@ -14,6 +14,7 @@
     ./desktop/sway.nix
     ./desktop/unified-bar-theme.nix
     ./desktop/quickshell-runtime-shell.nix
+    ./desktop/quickshell-worktree-app.nix
     ./desktop/eww-quick-panel.nix
     ./desktop/eww-top-bar.nix
     ./desktop/swaync.nix
@@ -82,6 +83,8 @@
   programs.quickshell-runtime-shell = {
     enable = true;
   };
+
+  programs.quickshell-worktree-app.enable = true;
 
   # QuickShell owns the bars/runtime panel; quick settings still use the legacy Eww panel.
   programs.eww-quick-panel.enable = true;

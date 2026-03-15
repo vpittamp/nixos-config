@@ -29,6 +29,8 @@
 #
 # 4. Registry structure:
 #    - `workspaceOwningApplications`: apps that participate in workspace-to-output assignment
+#    - `workspaceUtilityApplications`: global utility apps that intentionally own a dedicated workspace
+#    - `floatingUtilityApplications`: transient global utilities that intentionally avoid workspace assignment
 #    - `nonOwningLaunchables`: launchable apps that should never own a workspace assignment
 #    - `applications`: combined validated list used for the runtime application registry
 
@@ -115,6 +117,41 @@ let
       scratchpad = if attrs ? scratchpad then attrs.scratchpad else false;
     };
 
+  mkFloatingUtilityApp = attrs:
+    let
+      appName = if attrs ? name then attrs.name else "<unnamed-floating-utility>";
+    in
+    if attrs ? scope && attrs.scope != "global" then
+      throw "Floating utility app '${appName}' must use scope = \"global\""
+    else if attrs ? preferred_workspace then
+      throw "Floating utility app '${appName}' must not set preferred_workspace"
+    else if attrs ? scratchpad && attrs.scratchpad then
+      throw "Floating utility app '${appName}' must not set scratchpad = true"
+    else
+      mkApp ({
+        scope = "global";
+        floating = true;
+        multi_instance = false;
+        fallback_behavior = "skip";
+      } // attrs);
+
+  mkWorkspaceUtilityApp = attrs:
+    let
+      appName = if attrs ? name then attrs.name else "<unnamed-workspace-utility>";
+    in
+    if attrs ? scope && attrs.scope != "global" then
+      throw "Workspace utility app '${appName}' must use scope = \"global\""
+    else if !(attrs ? preferred_workspace) then
+      throw "Workspace utility app '${appName}' must set preferred_workspace"
+    else if attrs ? scratchpad && attrs.scratchpad then
+      throw "Workspace utility app '${appName}' must not set scratchpad = true"
+    else
+      mkApp ({
+        scope = "global";
+        multi_instance = false;
+        fallback_behavior = "skip";
+      } // attrs);
+
   # Helper to convert PWA site definition → app registry entry (Feature 056)
   mkPWAApp = pwa: mkApp ({
     name = "${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa";
@@ -139,7 +176,7 @@ let
     preferred_monitor_role = pwa.preferred_monitor_role;
   });
 
-  workspaceOwningApplications = [
+  regularWorkspaceOwningApplications = [
     # TERMINAL APPLICATIONS OVERVIEW:
     # 1. Regular terminals (name="terminal", "ghostty"): Use deterministic anchor-keyed tmux session management
     # 2. Scratchpad terminal (name="scratchpad-terminal"): Uses tmux directly with scratchpad-{project} naming
@@ -535,7 +572,7 @@ let
   # This provides workspace assignments and window rules for i3pm
   ++ (builtins.map mkPWAApp pwas);
 
-  nonOwningLaunchables = [
+  scratchpadLaunchables = [
     # Scratchpad Terminal (Feature 062, Feature 101)
     # Special floating terminal for quick project access
     # NOTE: Launched by daemon via Sway IPC, not through wrapper
@@ -561,27 +598,48 @@ let
       fallback_behavior = "use_home";
       description = "Project-scoped floating scratchpad terminal with tmux session (scratchpad-{project})";
     })
+  ];
 
-    # FZF File Search (floating)
-    # Global fuzzy file finder with bat preview that opens files in nvim
-    # Always launches new instance (via --force flag in keybinding)
-    # Note: Runs in Ghostty with title "FZF File Search" for window rule matching
-    (mkApp {
+  workspaceUtilityApplications = [
+    # QuickShell worktree manager (workspace utility)
+    # This is launcher-visible, global, and intentionally owns a dedicated
+    # workspace because it is a management hub rather than an ephemeral popup.
+    (mkWorkspaceUtilityApp {
+      name = "worktree-manager";
+      display_name = "AI Worktree Manager";
+      command = "open-worktree-manager";
+      parameters = "";
+      expected_class = "quickshell";
+      expected_title_contains = "AI Worktree Manager";
+      preferred_workspace = 23;
+      preferred_monitor_role = "primary";
+      icon = iconPath "worktree-manager.svg";
+      nix_package = "pkgs.quickshell";
+      description = "Standalone QuickShell UI for git worktrees, AI sessions, and project context switching";
+    })
+  ];
+
+  workspaceOwningApplications = regularWorkspaceOwningApplications ++ workspaceUtilityApplications;
+
+  floatingUtilityApplications = [
+    # FZF File Search (floating utility)
+    # Global fuzzy file finder with bat preview that opens files in nvim.
+    # This intentionally avoids preferred_workspace so it opens in the current context.
+    (mkFloatingUtilityApp {
       name = "fzf-file-search";
       display_name = "FZF File Search";
       command = "fzf-file-search";
       parameters = "";
-      scope = "global";
       expected_class = "com.mitchellh.ghostty";  # Ghostty's app_id, matched by title
-      preferred_workspace = 1;  # Floating, doesn't matter
-      floating = true;
+      expected_title_contains = "FZF File Search";
       icon = "system-search";
       nix_package = "pkgs.fzf";
       multi_instance = true;  # Allow multiple search windows
-      fallback_behavior = "skip";
       description = "Floating fuzzy file finder with preview that opens files in nvim";
     })
   ];
+
+  nonOwningLaunchables = scratchpadLaunchables ++ floatingUtilityApplications;
 
   applications = workspaceOwningApplications ++ nonOwningLaunchables;
 
@@ -644,6 +702,8 @@ let
       {
         applications = applications;
         workspaceOwningApplications = workspaceOwningApplications;
+        workspaceUtilityApplications = workspaceUtilityApplications;
+        floatingUtilityApplications = floatingUtilityApplications;
         nonOwningLaunchables = nonOwningLaunchables;
       };
 

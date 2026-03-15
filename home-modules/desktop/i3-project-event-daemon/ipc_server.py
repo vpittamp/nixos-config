@@ -736,6 +736,8 @@ class IPCServer:
                 result = await self._worktree_create(params)
             elif method == "worktree.remove":
                 result = await self._worktree_remove(params)
+            elif method == "worktree.refresh":
+                result = await self._worktree_refresh(params)
             elif method == "worktree.switch":
                 # Feature 101: Switch to worktree by qualified name
                 result = await self._worktree_switch(params)
@@ -2361,6 +2363,16 @@ class IPCServer:
         """Invalidate the cached worktree summary used by dashboard snapshots."""
         self._worktree_cache = None
         self._worktree_cache_time = 0.0
+
+    async def _worktree_refresh(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Invalidate worktree/dashboard caches after CLI-side worktree mutations."""
+        _ = params
+        self.invalidate_worktree_cache()
+        await self.notify_state_change("worktree_changed")
+        return {
+            "success": True,
+            "timestamp": int(time.time()),
+        }
 
     async def notify_state_change(self, event_type: str = "state_changed") -> None:
         """Notify subscribed clients that state has changed.
@@ -5339,8 +5351,7 @@ class IPCServer:
 
     def _require_registry_app(self, app_name: str) -> RegistryApp:
         """Return a registry definition or raise a JSON-RPC-style error."""
-        if not self.registry_loader.is_loaded():
-            self.registry_loader.load()
+        self.registry_loader.ensure_current()
         app = self.registry_loader.get(str(app_name or "").strip())
         if app:
             return app

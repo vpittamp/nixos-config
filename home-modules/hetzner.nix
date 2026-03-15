@@ -83,6 +83,7 @@ in
     # ./desktop/swaybar.nix      # Swaybar with event-driven status (DISABLED: replaced by eww-top-bar Feature 060)
     # ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (DISABLED: replaced by eww-top-bar Feature 060)
     ./desktop/quickshell-runtime-shell.nix
+    ./desktop/quickshell-worktree-app.nix
     ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (network, apps, system controls)
     ./desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
     ./desktop/swaync.nix       # Feature 057: SwayNC notification center
@@ -175,6 +176,7 @@ in
   # };
 
   programs.quickshell-runtime-shell.enable = true;
+  programs.quickshell-worktree-app.enable = true;
 
   # eww quick settings panel (Feature 057)
   programs.eww-quick-panel.enable = true;
