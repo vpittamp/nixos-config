@@ -331,6 +331,11 @@ class IPCServer:
         self._worktree_cache_time: float = 0.0
         self._worktree_cache_ttl: float = 10.0
         self._active_runtime_context: Optional[Dict[str, Any]] = None
+        self._focus_session_override_key: str = ""
+        self._focus_window_override: Dict[str, Any] = {
+            "window_id": 0,
+            "connection_key": "",
+        }
 
     @classmethod
     async def from_systemd_socket(
@@ -647,6 +652,8 @@ class IPCServer:
                 result = await self._session_list(params)
             elif method == "session.focus":
                 result = await self._session_focus(params)
+            elif method == "focus.state":
+                result = await self._focus_state(params)
             elif method == "session.preview":
                 result = await self._session_preview(params)
             elif method == "session.exit":
@@ -1252,6 +1259,7 @@ class IPCServer:
             or params.get("execution_mode")
             or ""
         ).strip().lower()
+        desired_connection_key = self._normalize_connection_key(str(params.get("connection_key") or "").strip())
 
         if bool(params.get("prefer_local")) and not target_variant:
             target_variant = "local"
@@ -1281,7 +1289,11 @@ class IPCServer:
                 "context": await self._context_get_active({}),
             }
 
-        switch_result = await self._switch_runtime_context_if_needed(desired_project, target_variant)
+        switch_result = await self._switch_runtime_context_if_needed(
+            desired_project,
+            target_variant,
+            desired_connection_key,
+        )
         context = switch_result.get("context") if isinstance(switch_result, dict) else None
         if not isinstance(context, dict):
             context = await self._context_get_active({})
@@ -5391,19 +5403,21 @@ class IPCServer:
         project_name: str,
         context_key: str,
         execution_mode: str,
+        app_name: str = "",
+        terminal_role: str = "",
     ) -> Optional[Any]:
         """Return an existing canonical project terminal window for a context if present."""
         target_project = str(project_name or "").strip()
         target_context = str(context_key or "").strip()
         target_mode = str(execution_mode or "local").strip() or "local"
+        target_app = str(app_name or "").strip()
+        target_role = str(terminal_role or "").strip()
 
         if not (target_project and target_context):
             return None
 
         candidates: List[Any] = []
         for window_info in self.state_manager.state.window_map.values():
-            if str(getattr(window_info, "app_identifier", "") or "").strip() != "terminal":
-                continue
             if str(getattr(window_info, "project", "") or "").strip() != target_project:
                 continue
             if str(getattr(window_info, "context_key", "") or "").strip() != target_context:
@@ -5412,7 +5426,17 @@ class IPCServer:
                 continue
 
             role = str(getattr(window_info, "terminal_role", "") or "").strip()
-            if role and role != "project-main":
+            app_identifier = str(getattr(window_info, "app_identifier", "") or "").strip()
+            if target_role:
+                if role != target_role:
+                    continue
+            elif role:
+                if role != "project-main":
+                    continue
+            elif target_app:
+                if app_identifier != target_app:
+                    continue
+            elif app_identifier != "terminal":
                 continue
 
             candidates.append(window_info)
@@ -5459,12 +5483,16 @@ class IPCServer:
         project_name: str,
         context_key: str,
         execution_mode: str,
+        app_name: str = "",
+        terminal_role: str = "",
     ) -> Optional[Any]:
         """Return a reusable terminal only if the tracked window still exists in Sway."""
         candidate = self._find_context_terminal_window(
             project_name=project_name,
             context_key=context_key,
             execution_mode=execution_mode,
+            app_name=app_name,
+            terminal_role=terminal_role,
         )
         if candidate is None:
             return None
@@ -5827,21 +5855,25 @@ class IPCServer:
             launcher_pid=launcher_pid,
             app_id_override=str(params.get("app_id_override") or "").strip(),
         )
+        scoped_terminal_mode = str(getattr(app, "scoped_terminal_mode", "") or "").strip()
         terminal_role = ""
         tmux_session_name = ""
         scoped_terminal_command: List[str] = []
-        if app.name == "terminal" and project_name and context_key:
-            terminal_role = "project-main"
-            tmux_session_name = self._build_context_tmux_session_name(
-                project_name=project_name,
-                context_key=context_key,
-                terminal_role=terminal_role,
-            )
-        elif scoped_launch and bool(app.terminal):
+        if scoped_launch and bool(app.terminal) and app.name != "terminal":
             scoped_terminal_command = self._extract_scoped_terminal_command(
                 app_name=app.name,
                 prepared_args=prepared_args,
             )
+        if bool(app.terminal) and scoped_launch and project_name and context_key:
+            if scoped_terminal_mode == "dedicated_scoped_window":
+                terminal_role = f"project-app:{app.name}"
+            else:
+                terminal_role = "project-main"
+                tmux_session_name = self._build_context_tmux_session_name(
+                    project_name=project_name,
+                    context_key=context_key,
+                    terminal_role=terminal_role,
+                )
         environment = self._build_launch_env(
             app_name=app.name,
             scope=app.scope,
@@ -5867,44 +5899,58 @@ class IPCServer:
         )
         launch_strategy = "direct"
         terminal_launch: Optional[Dict[str, Any]] = None
-        if app.name == "terminal" and project_name and context_key:
-            launch_strategy = "managed_remote_terminal" if execution_mode == "ssh" else "managed_local_terminal"
-            terminal_launch = {
-                "mode": "managed_project_terminal",
-                "tmux_session_name": (
-                    tmux_session_name
-                    or self._build_context_tmux_session_name(
-                        project_name=project_name or app.name,
-                        context_key=context_key or connection_key,
-                        terminal_role=terminal_role or "project-main",
-                    )
-                ),
-                "terminal_role": terminal_role,
-                "remote_session_name": remote_session_name_override,
-                "helper_name": "project-terminal-launch.sh",
-                "helper_args": [],
-            }
-            if execution_mode == "ssh":
-                terminal_launch["remote"] = {
-                    "host": str(remote_profile.get("host", "")) if remote_profile else "",
-                    "user": str(remote_profile.get("user", "")) if remote_profile else "",
-                    "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
-                    "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+        if bool(app.terminal) and scoped_launch and project_name and context_key:
+            if scoped_terminal_mode == "dedicated_scoped_window":
+                launch_strategy = (
+                    "dedicated_remote_scoped_window"
+                    if execution_mode == "ssh"
+                    else "dedicated_local_scoped_window"
+                )
+                terminal_launch = {
+                    "mode": "dedicated_scoped_window",
+                    "terminal_role": terminal_role,
+                    "helper_name": "project-command-launch.sh",
+                    "helper_args": scoped_terminal_command,
                 }
-        elif scoped_launch and bool(app.terminal):
-            launch_strategy = "scoped_terminal_command"
-            terminal_launch = {
-                "mode": "scoped_terminal_command",
-                "helper_name": "project-command-launch.sh",
-                "helper_args": scoped_terminal_command,
-            }
-            if execution_mode == "ssh":
-                terminal_launch["remote"] = {
-                    "host": str(remote_profile.get("host", "")) if remote_profile else "",
-                    "user": str(remote_profile.get("user", "")) if remote_profile else "",
-                    "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
-                    "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+                if execution_mode == "ssh":
+                    terminal_launch["remote"] = {
+                        "host": str(remote_profile.get("host", "")) if remote_profile else "",
+                        "user": str(remote_profile.get("user", "")) if remote_profile else "",
+                        "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
+                        "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+                    }
+            else:
+                launch_strategy = (
+                    "managed_remote_terminal_command"
+                    if execution_mode == "ssh" and scoped_terminal_command
+                    else "managed_remote_terminal"
+                    if execution_mode == "ssh"
+                    else "managed_local_terminal_command"
+                    if scoped_terminal_command
+                    else "managed_local_terminal"
+                )
+                terminal_launch = {
+                    "mode": "managed_project_terminal",
+                    "tmux_session_name": (
+                        tmux_session_name
+                        or self._build_context_tmux_session_name(
+                            project_name=project_name or app.name,
+                            context_key=context_key or connection_key,
+                            terminal_role=terminal_role or "project-main",
+                        )
+                    ),
+                    "terminal_role": terminal_role,
+                    "remote_session_name": remote_session_name_override,
+                    "helper_name": "project-terminal-launch.sh",
+                    "helper_args": scoped_terminal_command,
                 }
+                if execution_mode == "ssh":
+                    terminal_launch["remote"] = {
+                        "host": str(remote_profile.get("host", "")) if remote_profile else "",
+                        "user": str(remote_profile.get("user", "")) if remote_profile else "",
+                        "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
+                        "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+                    }
 
         if dry_run:
             launch = {
@@ -6092,6 +6138,74 @@ class IPCServer:
             "stderr": str(result.stderr or "").strip(),
         }
 
+    def _verify_tmux_target(
+        self,
+        *,
+        execution_mode: str,
+        tmux_session: str,
+        tmux_window: str,
+        tmux_pane: str,
+        remote_target: str = "",
+        connection_key: str = "",
+    ) -> Dict[str, Any]:
+        """Verify the active tmux pane for a target session/window."""
+        if not tmux_session or not tmux_window or not tmux_pane:
+            return {
+                "success": False,
+                "reason": "missing_tmux_target",
+            }
+
+        tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or str(tmux_window or "").strip()
+        verify_script = (
+            f"tmux list-panes -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} "
+            "-F '#{pane_active} #{pane_id}' | "
+            "awk '$1 == 1 { print $2; exit }'"
+        )
+
+        if execution_mode == "ssh":
+            remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
+            if not remote_host:
+                return {
+                    "success": False,
+                    "reason": "missing_remote_target",
+                }
+            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=2",
+                    "-p",
+                    str(remote_port),
+                    destination,
+                    f"bash -lc {shlex.quote(verify_script)}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        else:
+            result = subprocess.run(
+                ["bash", "-lc", verify_script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        active_pane = str(result.stdout or "").strip()
+        success = result.returncode == 0 and active_pane == str(tmux_pane or "").strip()
+        return {
+            "success": success,
+            "reason": "ok" if success else "tmux_target_mismatch",
+            "tmux_session": tmux_session,
+            "tmux_window": tmux_window,
+            "tmux_pane": str(tmux_pane or "").strip(),
+            "active_tmux_pane": active_pane,
+            "stderr": str(result.stderr or "").strip(),
+        }
+
     def _build_session_key(self, session: Dict[str, Any], source_connection_key: str) -> str:
         """Create a deterministic key for daemon-owned AI session operations."""
         terminal_context = session.get("terminal_context") or {}
@@ -6116,6 +6230,34 @@ class IPCServer:
             identity,
             context_key or source_connection_key or "unknown",
         ])
+
+    def _build_session_focus_target(self, session_key: str) -> Dict[str, Any]:
+        """Return a daemon-owned focus target for a session entry."""
+        return {
+            "method": "session.focus",
+            "params": {
+                "session_key": str(session_key or "").strip(),
+            },
+        }
+
+    def _build_window_focus_target(
+        self,
+        *,
+        window_id: int,
+        project_name: str = "",
+        target_variant: str = "",
+        connection_key: str = "",
+    ) -> Dict[str, Any]:
+        """Return a daemon-owned focus target for a window entry."""
+        return {
+            "method": "window.focus",
+            "params": {
+                "window_id": int(window_id),
+                "project_name": str(project_name or "").strip(),
+                "target_variant": str(target_variant or "").strip(),
+                "connection_key": str(connection_key or "").strip(),
+            },
+        }
 
     def _flatten_runtime_windows(self, runtime_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Flatten dashboard windows from runtime snapshot outputs/workspaces."""
@@ -6174,6 +6316,88 @@ class IPCServer:
 
         return {}
 
+    def _load_live_tmux_focus_state(
+        self,
+        tmux_sessions: List[str],
+    ) -> Dict[Tuple[str, str, str], Dict[str, bool]]:
+        """Return live tmux pane activity keyed by session/window/pane."""
+        session_names = {
+            str(name or "").strip()
+            for name in tmux_sessions
+            if str(name or "").strip()
+        }
+        if not session_names:
+            return {}
+
+        format_string = "#{session_name}\t#{window_index}:#{window_name}\t#{pane_id}\t#{pane_active}\t#{window_active}"
+        result = subprocess.run(
+            ["bash", "-lc", f"tmux list-panes -a -F {shlex.quote(format_string)}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return {}
+
+        focus_map: Dict[Tuple[str, str, str], Dict[str, bool]] = {}
+        for line in str(result.stdout or "").splitlines():
+            parts = line.split("\t")
+            if len(parts) != 5:
+                continue
+            session_name, window_name, pane_id, pane_active, window_active = (
+                str(part or "").strip() for part in parts
+            )
+            if not session_name or session_name not in session_names:
+                continue
+            focus_map[(session_name, window_name, pane_id)] = {
+                "pane_active": pane_active == "1",
+                "window_active": window_active == "1",
+            }
+        return focus_map
+
+    def _refresh_live_session_focus_state(
+        self,
+        sessions: List[Dict[str, Any]],
+        *,
+        focused_window_id: int,
+    ) -> None:
+        """Refresh current-host session activity using live sway/tmux state."""
+        tmux_focus_map = self._load_live_tmux_focus_state([
+            str(session.get("tmux_session") or "").strip()
+            for session in sessions
+            if isinstance(session, dict) and bool(session.get("is_current_host", False))
+        ])
+
+        for session in sessions:
+            if not isinstance(session, dict) or not bool(session.get("is_current_host", False)):
+                continue
+
+            terminal_context = session.get("terminal_context") or {}
+            if not isinstance(terminal_context, dict):
+                terminal_context = {}
+                session["terminal_context"] = terminal_context
+
+            window_id = int(session.get("window_id") or 0)
+            window_active = focused_window_id > 0 and window_id == focused_window_id
+            session["window_active"] = window_active
+            terminal_context["window_active"] = window_active
+
+            tmux_session = str(session.get("tmux_session") or "").strip()
+            tmux_window = str(session.get("tmux_window") or "").strip()
+            tmux_pane = str(session.get("tmux_pane") or "").strip()
+            if not tmux_session or not tmux_window or not tmux_pane:
+                continue
+
+            live_focus = tmux_focus_map.get((tmux_session, tmux_window, tmux_pane))
+            if live_focus is None:
+                continue
+
+            session["pane_active"] = bool(
+                live_focus.get("pane_active", False)
+                and live_focus.get("window_active", False)
+            )
+            terminal_context["pane_active"] = session["pane_active"]
+
     def _normalize_session_items(
         self,
         sessions: List[Dict[str, Any]],
@@ -6228,10 +6452,13 @@ class IPCServer:
             pane_title = str(terminal_context.get("pane_title") or "").strip()
             pane_label = str(raw_session.get("pane_label") or "").strip() or pane_title or tmux_pane
             host_name = str(terminal_context.get("host_name") or source_host_name or "").strip().lower()
-            is_current_host = self._session_is_current_host(
+            is_current_host = bound_window_id > 0 or self._session_is_current_host(
                 host_name=host_name,
                 connection_key=connection_key,
             )
+            focus_connection_key = connection_key
+            if not is_current_host and source_connection_key:
+                focus_connection_key = str(source_connection_key or "").strip() or connection_key
             focus_mode = self._session_focus_mode(
                 window_id=bound_window_id,
                 is_current_host=is_current_host,
@@ -6239,6 +6466,7 @@ class IPCServer:
             )
             normalized.append({
                 "session_key": session_key,
+                "focus_target": self._build_session_focus_target(session_key),
                 "tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
                 "display_tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
                 "project": project_name,
@@ -6278,6 +6506,15 @@ class IPCServer:
                 "review_pending": bool(raw_session.get("review_pending", raw_session.get("output_unseen", False))),
                 "session_phase": str(raw_session.get("session_phase") or "").strip(),
                 "session_phase_label": str(raw_session.get("session_phase_label") or "").strip(),
+                "turn_owner": str(raw_session.get("turn_owner") or "unknown").strip() or "unknown",
+                "turn_owner_label": str(raw_session.get("turn_owner_label") or "Unknown").strip() or "Unknown",
+                "activity_substate": str(raw_session.get("activity_substate") or raw_session.get("stage") or "idle").strip() or "idle",
+                "activity_substate_label": str(
+                    raw_session.get("activity_substate_label")
+                    or raw_session.get("stage_label")
+                    or raw_session.get("stage")
+                    or "Idle"
+                ).strip() or "Idle",
                 "is_streaming": bool(raw_session.get("is_streaming", False)),
                 "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
                 "focusable": focus_mode != "unfocusable",
@@ -6309,7 +6546,7 @@ class IPCServer:
                 "remote_source_age_seconds": int(source_age_seconds),
                 "focus_project": project_name,
                 "focus_execution_mode": execution_mode,
-                "focus_connection_key": connection_key,
+                "focus_connection_key": focus_connection_key,
             })
 
         normalized.sort(
@@ -6413,6 +6650,66 @@ class IPCServer:
                 deduped[identity_key] = session
         return list(deduped.values())
 
+    def _set_focus_overrides(
+        self,
+        *,
+        session_key: str = "",
+        window_id: int = 0,
+        connection_key: str = "",
+    ) -> None:
+        """Persist the last successful daemon-owned focus target for dashboard consumers."""
+        self._focus_session_override_key = str(session_key or "").strip()
+        self._focus_window_override = {
+            "window_id": int(window_id or 0),
+            "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
+        }
+
+    def _clear_session_focus_override(self) -> None:
+        """Clear the session override while keeping any explicit window target."""
+        self._focus_session_override_key = ""
+
+    def _current_session_override_key(
+        self,
+        sessions: List[Dict[str, Any]],
+        *,
+        focused_window_id: int = 0,
+    ) -> str:
+        """Return the daemon-owned current-session override if it still resolves."""
+        override_key = str(self._focus_session_override_key or "").strip()
+        if not override_key:
+            return ""
+        match = next(
+            (
+                session for session in sessions
+                if isinstance(session, dict)
+                and str(session.get("session_key") or "").strip() == override_key
+            ),
+            None,
+        )
+        if isinstance(match, dict):
+            match_window_id = int(match.get("window_id") or 0)
+            if focused_window_id > 0 and match_window_id > 0 and match_window_id != int(focused_window_id):
+                self._focus_session_override_key = ""
+                return ""
+            return override_key
+        self._focus_session_override_key = ""
+        return ""
+
+    def _window_matches_focus_override(
+        self,
+        *,
+        window_id: int,
+        connection_key: str,
+    ) -> bool:
+        """Return whether a window matches the last successful daemon-owned focus target."""
+        override_window_id = int(self._focus_window_override.get("window_id") or 0)
+        if override_window_id <= 0 or override_window_id != int(window_id or 0):
+            return False
+        override_connection_key = self._normalize_connection_key(
+            str(self._focus_window_override.get("connection_key") or "").strip()
+        )
+        return override_connection_key == self._normalize_connection_key(str(connection_key or "").strip())
+
     def _select_current_session_key(
         self,
         sessions: List[Dict[str, Any]],
@@ -6420,29 +6717,61 @@ class IPCServer:
         focused_window_id: int,
     ) -> str:
         """Return the single session key that owns current focus in the dashboard."""
-        if focused_window_id <= 0:
-            return ""
-
-        window_sessions = [
-            session for session in sessions
-            if int(session.get("window_id") or 0) == focused_window_id
-        ]
-        if not window_sessions:
-            return ""
-
-        exact_match = next(
-            (
-                str(session.get("session_key") or "")
-                for session in window_sessions
-                if bool(session.get("window_active", False))
-                and bool(session.get("pane_active", False))
-            ),
-            "",
+        override_key = self._current_session_override_key(
+            sessions,
+            focused_window_id=focused_window_id,
         )
-        if exact_match:
-            return exact_match
 
-        return str(window_sessions[0].get("session_key") or "")
+        if focused_window_id > 0:
+            window_sessions = [
+                session for session in sessions
+                if int(session.get("window_id") or 0) == focused_window_id
+                and bool(session.get("is_current_host", False))
+            ]
+            if window_sessions:
+                override_match = next(
+                    (
+                        str(session.get("session_key") or "").strip()
+                        for session in window_sessions
+                        if str(session.get("session_key") or "").strip() == override_key
+                    ),
+                    "",
+                )
+                if override_match:
+                    return override_match
+
+                exact_match = next(
+                    (
+                        str(session.get("session_key") or "")
+                        for session in window_sessions
+                        if bool(session.get("window_active", False))
+                        and bool(session.get("pane_active", False))
+                    ),
+                    "",
+                )
+                if exact_match:
+                    return exact_match
+
+                return str(window_sessions[0].get("session_key") or "")
+
+        if override_key:
+            return override_key
+
+        # When no local AI surface owns the focused Sway container, allow a unique
+        # remotely active session to be treated as current so dashboard consumers
+        # can confirm the result of daemon-owned remote focus transactions.
+        exact_matches = [
+            str(session.get("session_key") or "").strip()
+            for session in sessions
+            if bool(session.get("window_active", False))
+            and bool(session.get("pane_active", False))
+            and str(session.get("session_key") or "").strip()
+        ]
+        unique_matches = list(dict.fromkeys(exact_matches))
+        if len(unique_matches) == 1:
+            return unique_matches[0]
+
+        return ""
 
     def _mark_current_session(
         self,
@@ -6540,13 +6869,17 @@ class IPCServer:
                     tracked_windows=tracked_windows,
                 ))
 
+        self._refresh_live_session_focus_state(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
         sessions = self._dedupe_session_items(sessions)
         sessions.sort(key=self._session_item_sort_key)
         return sessions
 
-    async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return daemon-owned AI session data merged from local and remote OTEL sources."""
-        runtime_snapshot = await self._runtime_snapshot({})
+    async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return canonical focus state for acceptance checks and UI confirmation."""
+        runtime_snapshot = await self._runtime_snapshot(params or {})
         sessions = self._load_session_items(runtime_snapshot)
         focused_window_id = next(
             (
@@ -6556,19 +6889,47 @@ class IPCServer:
             ),
             0,
         )
-        current_session_key = next(
-            (
-                str(session.get("session_key") or "")
-                for session in sessions
-                if int(session.get("window_id") or 0) == focused_window_id
-                and bool(session.get("window_active", False))
-                and bool(session.get("pane_active", False))
-            ),
-            self._select_current_session_key(
-                sessions,
-                focused_window_id=focused_window_id,
-            ),
+        current_session_key = self._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
         )
+        active_session = next(
+            (
+                session for session in sessions
+                if isinstance(session, dict)
+                and str(session.get("session_key") or "").strip() == current_session_key
+            ),
+            {},
+        )
+        if not isinstance(active_session, dict):
+            active_session = {}
+        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
+        return {
+            "success": True,
+            "current_ai_session_key": current_session_key,
+            "focused_window_id": focused_window_id,
+            "active_context": active_context if isinstance(active_context, dict) else {},
+            "active_session": {
+                "session_key": str(active_session.get("session_key") or "").strip(),
+                "window_id": int(active_session.get("window_id") or 0),
+                "project_name": str(active_session.get("project_name") or active_session.get("project") or "").strip(),
+                "execution_mode": str(active_session.get("execution_mode") or "").strip(),
+                "connection_key": str(active_session.get("connection_key") or "").strip(),
+                "focus_connection_key": str(active_session.get("focus_connection_key") or "").strip(),
+                "host_name": str(active_session.get("host_name") or "").strip(),
+                "tmux_session": str(active_session.get("tmux_session") or "").strip(),
+                "tmux_window": str(active_session.get("tmux_window") or "").strip(),
+                "tmux_pane": str(active_session.get("tmux_pane") or "").strip(),
+            },
+        }
+
+    async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return daemon-owned AI session data merged from local and remote OTEL sources."""
+        focus_state = await self._focus_state({})
+        runtime_snapshot = await self._runtime_snapshot({})
+        sessions = self._load_session_items(runtime_snapshot)
+        focused_window_id = int(focus_state.get("focused_window_id") or 0)
+        current_session_key = str(focus_state.get("current_ai_session_key") or "").strip()
         self._mark_current_session(
             sessions,
             current_session_key=current_session_key,
@@ -6581,6 +6942,8 @@ class IPCServer:
         return {
             "sessions": sessions,
             "total": len(sessions),
+            "current_session_key": current_session_key,
+            "focused_window_id": focused_window_id,
         }
 
     async def _session_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -6610,44 +6973,54 @@ class IPCServer:
             raise RuntimeError(f"Session {session_key} is not focusable")
 
         if focus_mode == "remote_handoff":
-            remote_user, remote_host, remote_port = self._remote_focus_target(session)
+            remote_handoff = self._remote_daemon_request(
+                connection_key=str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+                method="session.focus",
+                params={"session_key": session_key},
+            )
+            remote_host = str(remote_handoff.get("remote_host") or "").strip()
+            remote_result = remote_handoff.get("result")
             if not remote_host:
                 raise RuntimeError(f"Session {session_key} has no remote focus target")
-
-            remote_command = [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=3",
-                "-p",
-                str(remote_port),
-                f"{remote_user}@{remote_host}" if remote_user else remote_host,
-                "bash",
-                "-lc",
-                shlex.quote(f"i3pm session focus --json {shlex.quote(session_key)}"),
-            ]
-            result = subprocess.run(
-                remote_command,
-                capture_output=True,
-                text=True,
-                check=False,
+            remote_success = bool(remote_handoff.get("success", False))
+            if isinstance(remote_result, dict) and "success" in remote_result:
+                remote_success = remote_success and bool(remote_result.get("success", False))
+            remote_focus_state_after = (
+                dict(remote_result.get("focus_state_after") or {})
+                if isinstance(remote_result, dict) and isinstance(remote_result.get("focus_state_after"), dict)
+                else {}
             )
-            remote_handoff: Dict[str, Any] = {
-                "success": result.returncode == 0,
-                "reason": "ok" if result.returncode == 0 else "remote_focus_failed",
-                "stdout": str(result.stdout or "").strip(),
-                "stderr": str(result.stderr or "").strip(),
-            }
-            stdout = str(result.stdout or "").strip()
-            if stdout.startswith("{"):
-                try:
-                    remote_handoff["result"] = json.loads(stdout)
-                except Exception:
-                    remote_handoff["result"] = None
+            remote_verification = (
+                remote_result.get("verification")
+                if isinstance(remote_result, dict) and isinstance(remote_result.get("verification"), dict)
+                else {}
+            )
+            current_ai_session_key_after = (
+                str(remote_result.get("current_ai_session_key_after") or "").strip()
+                if isinstance(remote_result, dict)
+                else ""
+            )
+            if not current_ai_session_key_after:
+                current_ai_session_key_after = str(remote_focus_state_after.get("current_ai_session_key") or "").strip()
+            if not current_ai_session_key_after and isinstance(remote_verification, dict):
+                current_ai_session_key_after = str(remote_verification.get("current_session_key") or "").strip()
+            focused_window_id_after = (
+                int(remote_result.get("focused_window_id_after") or 0)
+                if isinstance(remote_result, dict)
+                else 0
+            )
+            if focused_window_id_after <= 0:
+                focused_window_id_after = int(remote_focus_state_after.get("focused_window_id") or 0)
+
+            if remote_success:
+                self._set_focus_overrides(
+                    session_key=session_key,
+                    window_id=focused_window_id_after,
+                    connection_key=str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+                )
 
             return {
-                "success": result.returncode == 0,
+                "success": remote_success,
                 "session_key": session_key,
                 "window_id": 0,
                 "surface_key": str(session.get("surface_key") or "").strip(),
@@ -6655,13 +7028,28 @@ class IPCServer:
                 "focus_mode": "remote_handoff",
                 "focus_target_host": remote_host,
                 "focus": {
-                    "success": result.returncode == 0,
+                    "success": remote_success,
                     "reason": "remote_handoff",
                 },
-                "tmux": {
-                    "success": True,
-                    "reason": "delegated_to_remote_host",
-                },
+                "current_ai_session_key_after": current_ai_session_key_after,
+                "focused_window_id_after": focused_window_id_after,
+                "focus_state_after": remote_focus_state_after,
+                "tmux": (
+                    remote_result.get("tmux")
+                    if isinstance(remote_result, dict) and isinstance(remote_result.get("tmux"), dict)
+                    else {
+                        "success": remote_success,
+                        "reason": "delegated_to_remote_host",
+                    }
+                ),
+                "verification": (
+                    remote_verification
+                    if isinstance(remote_verification, dict) and remote_verification
+                    else {
+                        "success": remote_success,
+                        "reason": str(remote_handoff.get("reason") or "remote_handoff"),
+                    }
+                ),
                 "remote_handoff": remote_handoff,
             }
 
@@ -6669,6 +7057,7 @@ class IPCServer:
             "window_id": window_id,
             "project_name": str(session.get("focus_project") or session.get("project_name") or "").strip(),
             "target_variant": str(session.get("focus_execution_mode") or session.get("execution_mode") or "").strip(),
+            "connection_key": str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
         })
         terminal_context = session.get("terminal_context") or {}
         if not isinstance(terminal_context, dict):
@@ -6692,6 +7081,52 @@ class IPCServer:
         overall_success = bool(focus_result.get("success", False)) and (
             not (tmux_session and tmux_window) or bool(tmux_result.get("success", False))
         )
+        uses_window_only_identity = not bool(tmux_session and tmux_window and tmux_pane)
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "session_key": session_key,
+            "current_session_key": "",
+        }
+        if overall_success:
+            if tmux_session and tmux_window and tmux_pane and bool(tmux_result.get("success", False)):
+                tmux_verification = self._verify_tmux_target(
+                    execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
+                    tmux_session=tmux_session,
+                    tmux_window=tmux_window,
+                    tmux_pane=tmux_pane,
+                    remote_target=str(terminal_context.get("remote_target") or "").strip(),
+                    connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                )
+                verification = {
+                    "success": bool(tmux_verification.get("success", False)),
+                    "reason": str(tmux_verification.get("reason") or "tmux_target_mismatch"),
+                    "session_key": session_key,
+                    "current_session_key": session_key if bool(tmux_verification.get("success", False)) else "",
+                    "verification_source": "tmux",
+                    "active_tmux_pane": str(tmux_verification.get("active_tmux_pane") or "").strip(),
+                    "tmux_pane": str(tmux_verification.get("tmux_pane") or "").strip(),
+                }
+            else:
+                if uses_window_only_identity:
+                    self._set_focus_overrides(
+                        session_key=session_key,
+                        window_id=int(window_id),
+                        connection_key=str(
+                            session.get("focus_connection_key")
+                            or session.get("connection_key")
+                            or ""
+                        ).strip(),
+                    )
+                verification = await self._wait_for_session_focus(session_key)
+            overall_success = overall_success and bool(verification.get("success", False))
+        focus_state_after = await self._focus_state({})
+        if overall_success:
+            self._set_focus_overrides(
+                session_key=session_key,
+                window_id=int(window_id),
+                connection_key=str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+            )
         return {
             "success": overall_success,
             "session_key": session_key,
@@ -6701,7 +7136,11 @@ class IPCServer:
             "focus_mode": "local",
             "focus_target_host": "",
             "focus": focus_result,
+            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+            "focus_state_after": focus_state_after,
             "tmux": tmux_result,
+            "verification": verification,
         }
 
     async def _session_preview(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -6781,6 +7220,15 @@ class IPCServer:
             "surface_key": str(session.get("surface_key") or "").strip(),
             "session_phase": str(session.get("session_phase") or "").strip(),
             "session_phase_label": str(session.get("session_phase_label") or "").strip(),
+            "turn_owner": str(session.get("turn_owner") or "unknown").strip() or "unknown",
+            "turn_owner_label": str(session.get("turn_owner_label") or "Unknown").strip() or "Unknown",
+            "activity_substate": str(session.get("activity_substate") or session.get("stage") or "idle").strip() or "idle",
+            "activity_substate_label": str(
+                session.get("activity_substate_label")
+                or session.get("stage_label")
+                or session.get("stage")
+                or "Idle"
+            ).strip() or "Idle",
             "status_reason": str(session.get("status_reason") or "").strip(),
         }
 
@@ -6834,6 +7282,7 @@ class IPCServer:
                     continue
                 session_items.append({
                     "session_key": str(session.get("session_key") or ""),
+                    "focus_target": dict(session.get("focus_target") or self._build_session_focus_target(str(session.get("session_key") or ""))),
                     "tool": str(session.get("tool") or ""),
                     "display_tool": str(session.get("display_tool") or session.get("tool") or ""),
                     "pane_label": str(session.get("pane_label") or session.get("pane_title") or session.get("tmux_pane") or "").strip(),
@@ -6842,10 +7291,20 @@ class IPCServer:
                     "stage_visual_state": str(session.get("stage_visual_state") or "").strip(),
                     "session_phase": str(session.get("session_phase") or "").strip(),
                     "session_phase_label": str(session.get("session_phase_label") or "").strip(),
+                    "turn_owner": str(session.get("turn_owner") or "unknown").strip() or "unknown",
+                    "turn_owner_label": str(session.get("turn_owner_label") or "Unknown").strip() or "Unknown",
+                    "activity_substate": str(session.get("activity_substate") or session.get("stage") or "idle").strip() or "idle",
+                    "activity_substate_label": str(
+                        session.get("activity_substate_label")
+                        or session.get("stage_label")
+                        or session.get("stage")
+                        or "Idle"
+                    ).strip() or "Idle",
                     "needs_user_action": bool(session.get("needs_user_action", False)),
                     "conflict_state": str(session.get("conflict_state") or "").strip(),
                     "is_current_window": bool(session.get("is_current_window", False)),
                     "pane_active": bool(session.get("pane_active", False)),
+                    "window_active": bool(session.get("window_active", False)),
                     "pid": session.get("pid"),
                     "pulse_working": bool(session.get("pulse_working", False)),
                     "execution_mode": str(session.get("execution_mode") or execution_mode).strip() or execution_mode,
@@ -6861,6 +7320,18 @@ class IPCServer:
                 ),
                 reverse=True,
             )
+            has_current_session = any(bool(item.get("is_current_window", False)) for item in session_items)
+            has_active_session = any(
+                bool(item.get("window_active", False)) or bool(item.get("pane_active", False))
+                for item in session_items
+            )
+            matches_focus_override = self._window_matches_focus_override(
+                window_id=window_id,
+                connection_key=str(window.get("connection_key") or "").strip(),
+            )
+            derived_focused = bool(window.get("focused", False)) or has_current_session or matches_focus_override
+            derived_visible = bool(window.get("visible", False)) or has_active_session or matches_focus_override
+            derived_hidden = bool(hidden and not derived_visible)
 
             entry = grouped.setdefault(group_key, {
                 "project": project_name,
@@ -6876,8 +7347,8 @@ class IPCServer:
                     and execution_mode == active_execution_mode
                 ),
             })
-            entry["focused"] = bool(entry["focused"]) or bool(window.get("focused", False))
-            if hidden:
+            entry["focused"] = bool(entry["focused"]) or derived_focused
+            if derived_hidden:
                 entry["hidden_window_count"] = int(entry["hidden_window_count"]) + 1
             else:
                 entry["visible_window_count"] = int(entry["visible_window_count"]) + 1
@@ -6893,11 +7364,17 @@ class IPCServer:
                 "connection_key": str(window.get("connection_key") or "").strip(),
                 "workspace": str(window.get("workspace") or "").strip(),
                 "output": str(window.get("output") or "").strip(),
-                "focused": bool(window.get("focused", False)),
-                "visible": bool(window.get("visible", False)),
-                "hidden": hidden,
+                "focused": derived_focused,
+                "visible": derived_visible,
+                "hidden": derived_hidden,
                 "floating": bool(window.get("floating", False)),
                 "scope": str(window.get("scope") or "").strip(),
+                "focus_target": self._build_window_focus_target(
+                    window_id=window_id,
+                    project_name=project_name,
+                    target_variant=execution_mode,
+                    connection_key=str(window.get("connection_key") or "").strip(),
+                ),
                 "sessions": session_items,
                 "ai_session_count": len(session_items),
             })
@@ -7241,32 +7718,30 @@ class IPCServer:
         runtime_dir.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(prefix="i3pm-remote-launch.", suffix=".sh", dir=str(runtime_dir))
         helper_path = Path(temp_name)
-        env_exports = "\n".join(
-            f"export {key}={shlex_quote(str(value))}"
+        env_items = [
+            (str(key), str(value))
             for key, value in (spec.get("environment") or {}).items()
+        ]
+        env_exports = "\n".join(
+            f"export {key}={shlex_quote(value)}"
+            for key, value in env_items
         )
-        helper_invocation = " ".join(
+        remote_env_invocation = " ".join(
             shlex_quote(part)
-            for part in [helper_name, remote_dir, *helper_args]
+            for part in [
+                "env",
+                *[f"{key}={value}" for key, value in env_items],
+                helper_name,
+                remote_dir,
+                *helper_args,
+            ]
         )
         remote_script = f"""#!/usr/bin/env bash
 set -euo pipefail
 {env_exports}
 session_name={shlex_quote(tmux_session_name)}
 remote_dir={shlex_quote(remote_dir)}
-remote_cmd=$(cat <<'EOF_REMOTE'
-set -euo pipefail
-{env_exports}
-remote_dir={shlex_quote(remote_dir)}
-remote_helper={shlex_quote(helper_name)}
-if ! command -v "$remote_helper" >/dev/null 2>&1; then
-  echo "[i3pm] remote terminal helper not found: $remote_helper"
-  exit 127
-fi
-exec {helper_invocation}
-EOF_REMOTE
-)
-if ! ssh -t -o BatchMode=yes -o ConnectTimeout=2 -p {remote_port} {shlex_quote(f"{remote_user}@{remote_host}")} "bash -c $(printf '%q' \"$remote_cmd\")"; then
+if ! ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p {remote_port} {shlex_quote(f"{remote_user}@{remote_host}")} {remote_env_invocation}; then
   echo
   echo "[i3pm] Remote terminal launch failed."
   echo "[i3pm] Press Enter to close..."
@@ -7285,6 +7760,117 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 pass
             raise
         return helper_path
+
+    def _managed_tmux_command_shell(
+        self,
+        *,
+        session_name: str,
+        working_dir: str,
+        command_args: List[str],
+        environment: Dict[str, str],
+    ) -> str:
+        """Build a shell snippet that opens a command in the canonical project tmux session."""
+        if not session_name or not working_dir or not command_args:
+            raise RuntimeError("Managed tmux command dispatch requires session_name, working_dir, and command_args")
+
+        env_lines = []
+        for key, value in environment.items():
+            if not str(key).startswith("I3PM_"):
+                continue
+            env_lines.append(
+                f"tmux set-environment -t {shlex.quote(session_name)} {shlex.quote(str(key))} {shlex.quote(str(value))}"
+            )
+        command_string = " ".join(shlex.quote(str(arg)) for arg in command_args)
+        window_name = Path(str(command_args[0])).name or "cmd"
+        script_lines = [
+            "set -euo pipefail",
+            f"if ! tmux has-session -t {shlex.quote(session_name)} 2>/dev/null; then exit 1; fi",
+        ]
+        script_lines.extend(env_lines)
+        script_lines.append(
+            f"tmux new-window -t {shlex.quote(session_name)} -c {shlex.quote(working_dir)} -n {shlex.quote(window_name[:24] or 'cmd')} \"exec {command_string}\""
+        )
+        return "\n".join(script_lines)
+
+    def _dispatch_managed_terminal_command(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Run a scoped terminal command inside the canonical project tmux session."""
+        terminal_launch = spec.get("terminal_launch") or {}
+        helper_args = [str(arg) for arg in (terminal_launch.get("helper_args") or [])]
+        if not helper_args:
+            return {
+                "success": True,
+                "reason": "no_command",
+            }
+
+        tmux_session_name = str(terminal_launch.get("tmux_session_name") or spec.get("tmux_session_name") or "").strip()
+        execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
+        environment = {
+            str(key): str(value)
+            for key, value in (spec.get("environment") or {}).items()
+        }
+        if execution_mode == "ssh":
+            remote = terminal_launch.get("remote") or {}
+            if not isinstance(remote, dict):
+                remote = {}
+            remote_dir = str(remote.get("remote_dir") or spec.get("project_directory") or "").strip()
+            remote_user = str(remote.get("user") or "").strip()
+            remote_host = str(remote.get("host") or "").strip()
+            remote_port = int(remote.get("port", 22) or 22)
+            if not (remote_dir and remote_host):
+                raise RuntimeError("Managed remote terminal command dispatch requires a complete SSH profile")
+            dispatch_script = self._managed_tmux_command_shell(
+                session_name=tmux_session_name,
+                working_dir=remote_dir,
+                command_args=helper_args,
+                environment=environment,
+            )
+            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=2",
+                    "-p",
+                    str(remote_port),
+                    destination,
+                    f"bash -lc {shlex.quote(dispatch_script)}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip()
+                raise RuntimeError(f"Managed remote terminal command failed: {detail or 'tmux dispatch error'}")
+            return {
+                "success": True,
+                "reason": "ok",
+            }
+
+        local_project_dir = str(spec.get("local_project_directory") or "").strip()
+        if not local_project_dir:
+            raise RuntimeError("Managed local terminal command dispatch requires local_project_directory")
+        dispatch_script = self._managed_tmux_command_shell(
+            session_name=tmux_session_name,
+            working_dir=local_project_dir,
+            command_args=helper_args,
+            environment=environment,
+        )
+        result = subprocess.run(
+            ["bash", "-lc", dispatch_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"Managed local terminal command failed: {detail or 'tmux dispatch error'}")
+        return {
+            "success": True,
+            "reason": "ok",
+        }
 
     def _resolve_terminal_helper(self, helper_name: str) -> Path:
         """Resolve installed terminal helpers, with a repo fallback for local development."""
@@ -7336,9 +7922,26 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             launch_script = self._resolve_terminal_helper(helper_name or "project-terminal-launch.sh")
             shell_command = (
                 f"exec {shlex.quote(command)} -e "
-                f"{shlex.quote(str(launch_script))} {shlex.quote(local_project_dir)}"
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), local_project_dir, *helper_args]
+                )
             )
         elif terminal_mode == "managed_project_terminal" and execution_mode == "ssh":
+            helper_script = self._build_remote_terminal_helper_script(spec)
+            shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
+        elif terminal_mode == "dedicated_scoped_window" and execution_mode == "local":
+            if not local_project_dir:
+                raise RuntimeError("Dedicated scoped terminal launch requires local_project_directory")
+            launch_script = self._resolve_terminal_helper(helper_name or "project-command-launch.sh")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), local_project_dir, *helper_args]
+                )
+            )
+        elif terminal_mode == "dedicated_scoped_window" and execution_mode == "ssh":
             helper_script = self._build_remote_terminal_helper_script(spec)
             shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
         elif terminal_mode == "scoped_terminal_command" and execution_mode == "local":
@@ -7356,7 +7959,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             helper_script = self._build_remote_terminal_helper_script(spec)
             shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
         elif execution_mode == "ssh":
-            raise RuntimeError("Remote project execution only supports managed terminal launches")
+            raise RuntimeError("Remote project execution only supports daemon-managed terminal launches")
 
         if not command:
             raise RuntimeError("Launch spec is missing command")
@@ -7405,17 +8008,23 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         reused_existing = False
         reused_window_id = 0
-        if str(spec.get("app_name") or "").strip() == "terminal":
+        terminal_launch = spec.get("terminal_launch") or {}
+        terminal_mode = str(terminal_launch.get("mode") or "").strip()
+        if terminal_mode == "managed_project_terminal":
             existing_window = await self._get_reusable_context_terminal_window(
                 project_name=str(spec.get("project_name") or "").strip(),
                 context_key=str(spec.get("context_key") or "").strip(),
                 execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+                app_name="terminal",
+                terminal_role=str(spec.get("terminal_role") or "project-main").strip(),
             )
             if existing_window is not None:
+                self._dispatch_managed_terminal_command(spec)
                 focus_result = await self._window_focus({
                     "window_id": int(getattr(existing_window, "window_id", 0) or 0),
                     "project_name": str(spec.get("project_name") or "").strip(),
                     "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+                    "connection_key": str(spec.get("connection_key") or "").strip(),
                 })
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
@@ -7434,6 +8043,44 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                             "project_name": spec.get("project_name"),
                             "context_key": spec.get("context_key"),
                             "launch_strategy": "focus_existing_terminal",
+                            "terminal_anchor_id": spec.get("terminal_anchor_id"),
+                            "preferred_workspace": spec.get("preferred_workspace"),
+                            "tmux_session_name": spec.get("tmux_session_name"),
+                            "terminal_role": spec.get("terminal_role"),
+                            "reused_existing": True,
+                        },
+                    }
+        elif terminal_mode == "dedicated_scoped_window":
+            existing_window = await self._get_reusable_context_terminal_window(
+                project_name=str(spec.get("project_name") or "").strip(),
+                context_key=str(spec.get("context_key") or "").strip(),
+                execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+                app_name=str(spec.get("app_name") or "").strip(),
+                terminal_role=str(spec.get("terminal_role") or "").strip(),
+            )
+            if existing_window is not None:
+                focus_result = await self._window_focus({
+                    "window_id": int(getattr(existing_window, "window_id", 0) or 0),
+                    "project_name": str(spec.get("project_name") or "").strip(),
+                    "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+                    "connection_key": str(spec.get("connection_key") or "").strip(),
+                })
+                if bool(focus_result.get("success", False)):
+                    reused_existing = True
+                    reused_window_id = int(focus_result.get("window_id") or 0)
+                    return {
+                        "success": True,
+                        "launch": {
+                            "success": True,
+                            "reused_existing": True,
+                            "window_id": reused_window_id,
+                        },
+                        "spec": {
+                            "app_name": spec.get("app_name"),
+                            "execution_mode": spec.get("execution_mode"),
+                            "project_name": spec.get("project_name"),
+                            "context_key": spec.get("context_key"),
+                            "launch_strategy": "focus_existing_dedicated_terminal_window",
                             "terminal_anchor_id": spec.get("terminal_anchor_id"),
                             "preferred_workspace": spec.get("preferred_workspace"),
                             "tmux_session_name": spec.get("tmux_session_name"),
@@ -9482,17 +10129,193 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         except Exception as e:
             logger.debug("Tick barrier failed for %s: %s", payload, e)
 
+    @staticmethod
+    def _extract_json_payload(raw_output: str) -> Optional[Any]:
+        """Extract a JSON object or array from stdout that may include shell noise."""
+        payload = str(raw_output or "").strip()
+        if not payload:
+            return None
+
+        candidate_indexes = [index for index in (payload.find("{"), payload.find("[")) if index >= 0]
+        if candidate_indexes:
+            try:
+                return json.loads(payload[min(candidate_indexes):])
+            except Exception:
+                pass
+
+        for line in reversed(payload.splitlines()):
+            stripped = str(line or "").strip()
+            if not stripped or stripped[0] not in {"{", "["}:
+                continue
+            try:
+                return json.loads(stripped)
+            except Exception:
+                continue
+
+        return None
+
+    def _remote_daemon_request(
+        self,
+        *,
+        connection_key: str,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a daemon JSON-RPC call on a remote host over SSH."""
+        remote_user, remote_host, remote_port = self._parse_remote_target("", connection_key)
+        if not remote_host:
+            return {
+                "success": False,
+                "reason": "missing_remote_target",
+                "remote_host": "",
+                "remote_port": 22,
+                "stdout": "",
+                "stderr": "",
+                "result": None,
+            }
+
+        resolved_user = remote_user or str(os.environ.get("USER") or "").strip() or "vpittamp"
+        payload = json.dumps(params or {}, separators=(",", ":"), sort_keys=True)
+        remote_script = (
+            f"i3pm daemon call {shlex.quote(method)} "
+            f"--params-json {shlex.quote(payload)} --json"
+        )
+        remote_command = f"bash -lc {shlex.quote(remote_script)}"
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=3",
+                "-p",
+                str(remote_port),
+                f"{resolved_user}@{remote_host}" if resolved_user else remote_host,
+                remote_command,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        parsed = self._extract_json_payload(str(result.stdout or ""))
+        transport_success = result.returncode == 0
+        remote_success = transport_success and parsed is not None
+        if isinstance(parsed, dict) and "success" in parsed:
+            remote_success = remote_success and bool(parsed.get("success", False))
+
+        reason = "ok"
+        if not transport_success:
+            reason = "remote_transport_failed"
+        elif parsed is None:
+            reason = "invalid_remote_response"
+        elif isinstance(parsed, dict) and not bool(parsed.get("success", True)):
+            reason = str(parsed.get("reason") or parsed.get("error") or "remote_call_failed")
+
+        return {
+            "success": remote_success,
+            "reason": reason,
+            "remote_user": resolved_user,
+            "remote_host": remote_host,
+            "remote_port": remote_port,
+            "stdout": str(result.stdout or "").strip(),
+            "stderr": str(result.stderr or "").strip(),
+            "result": parsed,
+        }
+
+    def _find_focused_tree_node(self, node: Any) -> Optional[Any]:
+        """Recursively find the currently focused tree node."""
+        if bool(getattr(node, "focused", False)):
+            return node
+        for child in list(getattr(node, "nodes", []) or []):
+            match = self._find_focused_tree_node(child)
+            if match is not None:
+                return match
+        for child in list(getattr(node, "floating_nodes", []) or []):
+            match = self._find_focused_tree_node(child)
+            if match is not None:
+                return match
+        return None
+
+    async def _focused_window_id(self) -> int:
+        """Return the currently focused Sway container id."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            return 0
+        try:
+            tree = await self.i3_connection.conn.get_tree()
+            node = self._find_focused_tree_node(tree)
+            return int(getattr(node, "id", 0) or 0) if node is not None else 0
+        except Exception as e:
+            logger.debug("Failed to resolve focused window id: %s", e)
+            return 0
+
+    async def _verify_window_focus(self, window_id: int) -> Dict[str, Any]:
+        """Verify that the requested window owns current Sway focus."""
+        focused_window_id = await self._focused_window_id()
+        success = int(focused_window_id or 0) == int(window_id or 0)
+        return {
+            "success": success,
+            "window_id": int(window_id or 0),
+            "focused_window_id": int(focused_window_id or 0),
+            "reason": "ok" if success else "focused_window_mismatch",
+        }
+
+    async def _verify_session_focus(self, session_key: str) -> Dict[str, Any]:
+        """Verify that the requested session became the canonical current session."""
+        sessions_result = await self._session_list({})
+        sessions = sessions_result.get("sessions", []) if isinstance(sessions_result, dict) else []
+        current_session_key = next(
+            (
+                str(session.get("session_key") or "").strip()
+                for session in sessions
+                if isinstance(session, dict) and bool(session.get("is_current_window", False))
+            ),
+            "",
+        )
+        success = current_session_key == str(session_key or "").strip()
+        return {
+            "success": success,
+            "session_key": str(session_key or "").strip(),
+            "current_session_key": current_session_key,
+            "reason": "ok" if success else "current_session_mismatch",
+        }
+
+    async def _wait_for_session_focus(
+        self,
+        session_key: str,
+        *,
+        attempts: int = 8,
+        delay_s: float = 0.2,
+    ) -> Dict[str, Any]:
+        """Poll for canonical current-session convergence after a focus mutation."""
+        verification: Dict[str, Any] = {
+            "success": False,
+            "session_key": str(session_key or "").strip(),
+            "current_session_key": "",
+            "reason": "current_session_mismatch",
+        }
+        for attempt in range(max(int(attempts), 1)):
+            verification = await self._verify_session_focus(session_key)
+            if bool(verification.get("success", False)):
+                return verification
+            if attempt + 1 < max(int(attempts), 1):
+                await asyncio.sleep(delay_s)
+        return verification
+
     async def _switch_runtime_context_if_needed(
         self,
         project_name: str,
         target_variant: str,
+        connection_key: str = "",
     ) -> Dict[str, Any]:
         """Align daemon runtime context before a focus/action request."""
         active = await self._context_get_active({})
         current_project = str(active.get("qualified_name") or "global").strip() or "global"
         current_variant = str(active.get("execution_mode") or "global").strip() or "global"
+        current_connection_key = self._normalize_connection_key(str(active.get("connection_key") or "").strip())
         desired_project = str(project_name or "").strip()
         desired_variant = str(target_variant or "").strip().lower()
+        desired_connection_key = self._normalize_connection_key(str(connection_key or "").strip())
         if desired_variant not in {"local", "ssh"}:
             desired_variant = ""
         if not desired_project:
@@ -9500,6 +10323,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         needs_switch = desired_project != current_project
         if desired_variant and desired_variant != current_variant:
+            needs_switch = True
+        if desired_connection_key and desired_connection_key != current_connection_key:
             needs_switch = True
         if not needs_switch:
             return {"switched": False, "context": active}
@@ -9520,16 +10345,107 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         window_id: int,
         project_name: str = "",
         target_variant: str = "",
+        connection_key: str = "",
         attempts: int = 3,
         delay_s: float = 0.12,
     ) -> Dict[str, Any]:
         """Project-aware focus flow owned by the daemon."""
+        target_variant_normalized = str(target_variant or "").strip().lower()
+        local_window_target = await self._window_is_locally_tracked(window_id)
+        should_remote_handoff = (
+            target_variant_normalized == "ssh"
+            and not self._connection_target_is_current_host(connection_key)
+            and not local_window_target
+        )
+        if should_remote_handoff:
+            remote_handoff = self._remote_daemon_request(
+                connection_key=str(connection_key or "").strip(),
+                method="window.focus",
+                params={
+                    "window_id": int(window_id),
+                    "project_name": str(project_name or "").strip(),
+                    "target_variant": "local",
+                    "connection_key": str(connection_key or "").strip(),
+                },
+            )
+            remote_host = str(remote_handoff.get("remote_host") or "").strip()
+            remote_result = remote_handoff.get("result")
+            if remote_host:
+                remote_success = bool(remote_handoff.get("success", False))
+                if isinstance(remote_result, dict) and "success" in remote_result:
+                    remote_success = remote_success and bool(remote_result.get("success", False))
+                remote_focus_state_after = (
+                    dict(remote_result.get("focus_state_after") or {})
+                    if isinstance(remote_result, dict) and isinstance(remote_result.get("focus_state_after"), dict)
+                    else {}
+                )
+                remote_verification = (
+                    remote_result.get("verification")
+                    if isinstance(remote_result, dict) and isinstance(remote_result.get("verification"), dict)
+                    else {}
+                )
+                current_ai_session_key_after = (
+                    str(remote_result.get("current_ai_session_key_after") or "").strip()
+                    if isinstance(remote_result, dict)
+                    else ""
+                )
+                if not current_ai_session_key_after:
+                    current_ai_session_key_after = str(remote_focus_state_after.get("current_ai_session_key") or "").strip()
+                focused_window_id_after = (
+                    int(remote_result.get("focused_window_id_after") or 0)
+                    if isinstance(remote_result, dict)
+                    else 0
+                )
+                if focused_window_id_after <= 0:
+                    focused_window_id_after = int(remote_focus_state_after.get("focused_window_id") or 0)
+                if focused_window_id_after <= 0 and isinstance(remote_verification, dict):
+                    focused_window_id_after = int(remote_verification.get("focused_window_id") or 0)
+
+                if remote_success:
+                    self._set_focus_overrides(
+                        session_key=current_ai_session_key_after,
+                        window_id=int(window_id),
+                        connection_key=str(connection_key or "").strip(),
+                    )
+
+                return {
+                    "success": remote_success,
+                    "window_id": int(window_id),
+                    "project_name": str(project_name or "").strip(),
+                    "target_variant": "ssh",
+                    "connection_key": str(connection_key or "").strip(),
+                    "switched_context": False,
+                    "remote_handoff": remote_handoff,
+                    "focus_target_host": remote_host,
+                    "current_ai_session_key_after": current_ai_session_key_after,
+                    "focused_window_id_after": focused_window_id_after,
+                    "focus_state_after": remote_focus_state_after,
+                    "verification": (
+                        remote_verification
+                        if isinstance(remote_verification, dict) and remote_verification
+                        else {
+                            "success": remote_success,
+                            "reason": str(remote_handoff.get("reason") or "remote_handoff"),
+                        }
+                    ),
+                }
+
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
             raise RuntimeError("Sway connection is unavailable")
 
-        switch_result = await self._switch_runtime_context_if_needed(project_name, target_variant)
+        switch_result = await self._switch_runtime_context_if_needed(
+            project_name,
+            target_variant,
+            connection_key,
+        )
         selector = f"[con_id={int(window_id)}]"
         last_error = ""
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "window_id": int(window_id),
+            "focused_window_id": 0,
+        }
 
         for _ in range(max(int(attempts), 1)):
             try:
@@ -9545,26 +10461,46 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 await self.i3_connection.conn.command("fullscreen disable")
                 await self.i3_connection.conn.command(f"{selector} focus")
                 await self._send_tick_barrier(f"i3pm:focus-window:{window_id}")
-                if await self._is_window_in_regular_state(window_id):
+                verification = await self._verify_window_focus(window_id)
+                if bool(verification.get("success", False)) and await self._is_window_in_regular_state(window_id):
+                    focus_state_after = await self._focus_state({})
+                    self._set_focus_overrides(
+                        session_key=str(focus_state_after.get("current_ai_session_key") or "").strip(),
+                        window_id=int(window_id),
+                        connection_key=str(connection_key or "").strip(),
+                    )
                     return {
                         "success": True,
                         "window_id": int(window_id),
                         "project_name": str(project_name or "").strip(),
                         "target_variant": str(target_variant or "").strip(),
+                        "connection_key": str(connection_key or "").strip(),
                         "switched_context": bool(switch_result.get("switched", False)),
+                        "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
+                        "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+                        "focus_state_after": focus_state_after,
+                        "verification": verification,
                     }
-                last_error = "window_not_tiled"
+                last_error = str(verification.get("reason") or "window_focus_unverified")
+                if last_error == "ok":
+                    last_error = "window_not_tiled"
             except Exception as e:
                 last_error = str(e)
             await asyncio.sleep(delay_s)
 
+        focus_state_after = await self._focus_state({})
         return {
             "success": False,
             "window_id": int(window_id),
             "project_name": str(project_name or "").strip(),
             "target_variant": str(target_variant or "").strip(),
+            "connection_key": str(connection_key or "").strip(),
             "switched_context": bool(switch_result.get("switched", False)),
             "error": last_error or "focus_failed",
+            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+            "focus_state_after": focus_state_after,
+            "verification": verification,
         }
 
     async def _window_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -9576,6 +10512,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             window_id=window_id,
             project_name=str(params.get("project_name") or "").strip(),
             target_variant=str(params.get("target_variant") or "").strip().lower(),
+            connection_key=str(params.get("connection_key") or "").strip(),
             attempts=int(params.get("attempts") or 3),
             delay_s=float(params.get("delay_s") or 0.12),
         )
@@ -9613,6 +10550,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 window_id=window_id,
                 project_name=str(params.get("project_name") or "").strip(),
                 target_variant=str(params.get("target_variant") or "").strip().lower(),
+                connection_key=str(params.get("connection_key") or "").strip(),
                 attempts=int(params.get("attempts") or 3),
                 delay_s=float(params.get("delay_s") or 0.12),
             )
@@ -11501,8 +12439,44 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             return "remote_handoff"
         return "unfocusable"
 
+    def _connection_target_is_current_host(self, connection_key: str) -> bool:
+        """Return whether an SSH connection target resolves back to this host."""
+        _remote_user, remote_host, _remote_port = self._parse_remote_target("", connection_key)
+        if not remote_host:
+            return False
+        return str(remote_host or "").strip().lower() == self._local_host_alias()
+
+    async def _window_is_locally_tracked(self, window_id: int) -> bool:
+        """Return whether a target window exists in the current host's tracked window map."""
+        target = int(window_id or 0)
+        if target <= 0:
+            return False
+        try:
+            tracked_windows = await self.state_manager.get_window_map_snapshot()
+        except Exception as exc:
+            logger.debug("Failed to read tracked windows while resolving local focus target: %s", exc)
+            return False
+        if target in tracked_windows:
+            return True
+        for window_info in tracked_windows.values():
+            if int(getattr(window_info, "window_id", 0) or 0) == target:
+                return True
+            if int(getattr(window_info, "con_id", 0) or 0) == target:
+                return True
+        return False
+
     def _remote_focus_target(self, session: Dict[str, Any]) -> Tuple[str, str, int]:
         """Return the SSH destination used for remote session handoff."""
+        connection_key = str(
+            session.get("focus_connection_key")
+            or session.get("connection_key")
+            or ""
+        ).strip()
+        user, host_name, port = self._parse_remote_target("", connection_key)
+        if host_name:
+            resolved_user = user or str(os.environ.get("USER") or "").strip() or "vpittamp"
+            return resolved_user, host_name, port
+
         host_name = self._session_host_name(session)
         if not host_name:
             return "", "", 22

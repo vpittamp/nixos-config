@@ -10,6 +10,12 @@ let
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
     cp ${./shell.qml} "$out/shell.qml"
+    cp ${./SessionRow.qml} "$out/SessionRow.qml"
+    cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
+    cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
+    cp ${./AssistantPanel.qml} "$out/AssistantPanel.qml"
+    cp ${./AssistantService.qml} "$out/AssistantService.qml"
+    cp ${./AssistantProviderLogic.js} "$out/AssistantProviderLogic.js"
     cat >"$out/ShellConfig.qml" <<'EOF'
 import QtQuick
 
@@ -20,12 +26,21 @@ QtObject {
   readonly property int panelWidth: ${toString cfg.panelWidth}
   readonly property int barHeight: ${toString cfg.barHeight}
   readonly property int dashboardHeartbeatMs: ${toString cfg.dashboardHeartbeatMs}
+  readonly property string notificationBackend: "${cfg.notifications.backend}"
+  readonly property int notificationHistoryLimit: ${toString cfg.notifications.historyLimit}
+  readonly property int notificationToastMaxPerOutput: ${toString cfg.notifications.toastMaxPerOutput}
+  readonly property int notificationDefaultTimeoutMs: ${toString cfg.notifications.defaultTimeoutMs}
+  readonly property int notificationCriticalTimeoutMs: ${toString cfg.notifications.criticalTimeoutMs}
+  readonly property bool notificationImagesEnabled: ${if cfg.notifications.enableImages then "true" else "false"}
+  readonly property bool notificationMarkupEnabled: ${if cfg.notifications.enableMarkup then "true" else "false"}
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-elephant-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
+  readonly property string fileListBin: "${fileListScript}/bin/quickshell-elephant-file-list"
+  readonly property string fileActionBin: "${fileActionScript}/bin/quickshell-elephant-file-action"
   readonly property string urlListBin: "${config.home.profileDirectory}/bin/chrome-url-list"
   readonly property string urlOpenBin: "${config.home.profileDirectory}/bin/chrome-url-open"
   readonly property string runnerListBin: "${runnerListScript}/bin/quickshell-runner-list"
@@ -47,6 +62,7 @@ QtObject {
 }
 EOF
   '';
+
 
   quickshellBin = lib.getExe pkgs.quickshell;
 
@@ -158,6 +174,176 @@ EOF
     fi
 
     exec ${pkgs.gtk3}/bin/gtk-launch "''${identifier%.desktop}"
+  '';
+
+  fileListScript = pkgs.writeShellScriptBin "quickshell-elephant-file-list" ''
+    set -euo pipefail
+
+    query="''${1:-}"
+    limit="''${2:-40}"
+
+    if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+      limit=40
+    fi
+
+    export QUICKSHELL_FILE_QUERY="$query"
+    export QUICKSHELL_FILE_LIMIT="$limit"
+
+    # Elephant's files query surface currently returns empty/crashes in this environment,
+    # so use the same search roots/ignore shape with fd + fzf filtering for QuickShell.
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+import subprocess
+from pathlib import Path
+
+query = os.environ.get("QUICKSHELL_FILE_QUERY", "").strip()
+limit = int(os.environ.get("QUICKSHELL_FILE_LIMIT", "40") or "40")
+home = Path.home()
+
+roots = []
+
+
+def add_root(value: str) -> None:
+    if not value:
+        return
+    path = Path(value).expanduser()
+    if not path.is_dir():
+        return
+    resolved = str(path.resolve())
+    if resolved not in roots:
+        roots.append(resolved)
+
+
+context_json = "{}"
+try:
+    context_run = subprocess.run(
+        ["${config.home.profileDirectory}/bin/i3pm", "context", "current", "--json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    context_json = context_run.stdout or "{}"
+except Exception:
+    context_json = "{}"
+
+try:
+    context = json.loads(context_json)
+except Exception:
+    context = {}
+
+add_root(str(context.get("local_directory") or context.get("directory") or ""))
+add_root(str(home))
+add_root("/etc/nixos")
+
+if not roots:
+    print("[]")
+    raise SystemExit(0)
+
+fd_cmd = [
+    "${lib.getExe pkgs.fd}",
+    "--hidden",
+    "--ignore-vcs",
+    "--absolute-path",
+    "--type",
+    "file",
+    "--type",
+    "directory",
+    "--exclude",
+    ".cache",
+    "--exclude",
+    ".local/share/Trash",
+    "--exclude",
+    ".npm",
+    "--exclude",
+    ".cargo",
+    "--exclude",
+    "node_modules",
+    "--exclude",
+    ".nix-profile",
+    ".",
+    *roots,
+]
+
+fd_run = subprocess.run(fd_cmd, capture_output=True, text=True, check=False)
+candidates = [line.strip() for line in fd_run.stdout.splitlines() if line.strip()]
+if not candidates:
+    print("[]")
+    raise SystemExit(0)
+
+if query:
+    fzf_run = subprocess.run(
+        ["${lib.getExe pkgs.fzf}", "--filter", query, "--scheme=path"],
+        input="\n".join(candidates) + "\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    filtered = fzf_run.stdout.splitlines()
+else:
+    filtered = candidates
+
+results = []
+seen = set()
+for raw in filtered:
+    value = raw.strip()
+    if not value or value in seen:
+        continue
+    seen.add(value)
+    path = Path(value)
+    is_dir = path.is_dir()
+    display_name = path.name or value
+    if is_dir and not display_name.endswith("/"):
+        display_name += "/"
+    results.append(
+        {
+            "kind": "file",
+            "identifier": value,
+            "text": display_name,
+            "subtext": str(path if is_dir else path.parent),
+            "icon": "folder" if is_dir else "",
+            "state": ["directory"] if is_dir else ["file"],
+            "actions": ["open", "opendir"],
+            "provider": "files",
+        }
+    )
+    if len(results) >= limit:
+        break
+
+print(json.dumps(results))
+PY
+  '';
+
+  fileActionScript = pkgs.writeShellScriptBin "quickshell-elephant-file-action" ''
+    set -euo pipefail
+
+    action="''${1:-open}"
+    identifier="''${2:-}"
+
+    case "$action" in
+      open|opendir) ;;
+      *)
+        echo "unsupported file action: $action" >&2
+        exit 1
+        ;;
+    esac
+
+    if [[ -z "$identifier" ]]; then
+      echo "missing file identifier" >&2
+      exit 1
+    fi
+
+    if [[ ! -e "$identifier" ]]; then
+      echo "file path does not exist: $identifier" >&2
+      exit 1
+    fi
+
+    target="$identifier"
+    if [[ "$action" == "opendir" && ! -d "$target" ]]; then
+      target=$(${pkgs.coreutils}/bin/dirname -- "$identifier")
+    fi
+
+    exec ${pkgs.glib}/bin/gio open "$target"
   '';
 
   runnerListScript = pkgs.writeShellScriptBin "quickshell-runner-list" ''
@@ -752,6 +938,9 @@ PY
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
+  toggleNotificationsScript = mkIpcScript "toggle-runtime-notifications" "toggleNotifications" "";
+  toggleNotificationDndScript = mkIpcScript "toggle-runtime-notification-dnd" "toggleNotificationDnd" "";
+  clearNotificationsScript = mkIpcScript "clear-runtime-notifications" "clearNotifications" "";
 
   monitorPanelTabScript = pkgs.writeShellScriptBin "monitor-panel-tab" ''
     set -euo pipefail
@@ -773,9 +962,14 @@ PY
   showAiSwitcherScript = pkgs.writeShellScriptBin "show-ai-mru-switcher-action" ''
     set -euo pipefail
     case "''${1:-next}" in
-      prev) exec ${quickshellBin} ipc -c ${cfg.configName} call shell prevSession ;;
-      *) exec ${quickshellBin} ipc -c ${cfg.configName} call shell nextSession ;;
+      prev) exec ${quickshellBin} ipc -c ${cfg.configName} call shell prevLauncherSession ;;
+      *) exec ${quickshellBin} ipc -c ${cfg.configName} call shell nextLauncherSession ;;
     esac
+  '';
+
+  commitAiSwitcherScript = pkgs.writeShellScriptBin "commit-ai-session-switch-action" ''
+    set -euo pipefail
+    exec ${quickshellBin} ipc -c ${cfg.configName} call shell commitLauncherSession
   '';
 
   focusLastSessionScript = pkgs.writeShellScriptBin "toggle-last-ai-session-action" ''
@@ -854,6 +1048,50 @@ in
       default = "$mod+m";
       description = "Keybinding(s) used to toggle the runtime shell panel.";
     };
+
+    notifications = {
+      backend = lib.mkOption {
+        type = lib.types.enum [ "native" "swaync" ];
+        default = "native";
+        description = "Notification backend owned by the runtime shell.";
+      };
+
+      historyLimit = lib.mkOption {
+        type = lib.types.int;
+        default = 80;
+        description = "Maximum number of notifications retained in the in-memory QuickShell feed.";
+      };
+
+      toastMaxPerOutput = lib.mkOption {
+        type = lib.types.int;
+        default = 4;
+        description = "Maximum number of visible notification toasts per output.";
+      };
+
+      defaultTimeoutMs = lib.mkOption {
+        type = lib.types.int;
+        default = 8000;
+        description = "Default notification toast timeout in milliseconds.";
+      };
+
+      criticalTimeoutMs = lib.mkOption {
+        type = lib.types.int;
+        default = 0;
+        description = "Critical notification timeout in milliseconds. Zero keeps the toast resident until dismissed.";
+      };
+
+      enableImages = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether the native QuickShell notification UI should render notification images.";
+      };
+
+      enableMarkup = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Whether the native QuickShell notification UI should render markup bodies.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -867,9 +1105,13 @@ in
       togglePowerMenuScript
       toggleLauncherScript
       toggleSettingsScript
+      toggleNotificationsScript
+      toggleNotificationDndScript
+      clearNotificationsScript
       monitorPanelTabScript
       cycleSessionsScript
       showAiSwitcherScript
+      commitAiSwitcherScript
       focusLastSessionScript
       cycleDisplayLayoutScript
       notificationMonitorScript
@@ -897,6 +1139,12 @@ in
     # Link individual files so the config directory stays writable for qmlls.
     xdg.configFile."quickshell/${cfg.configName}/shell.qml".source = shellConfigDir + "/shell.qml";
     xdg.configFile."quickshell/${cfg.configName}/ShellConfig.qml".source = shellConfigDir + "/ShellConfig.qml";
+    xdg.configFile."quickshell/${cfg.configName}/SessionRow.qml".source = shellConfigDir + "/SessionRow.qml";
+    xdg.configFile."quickshell/${cfg.configName}/NotificationToast.qml".source = shellConfigDir + "/NotificationToast.qml";
+    xdg.configFile."quickshell/${cfg.configName}/NotificationRailCard.qml".source = shellConfigDir + "/NotificationRailCard.qml";
+    xdg.configFile."quickshell/${cfg.configName}/AssistantPanel.qml".source = shellConfigDir + "/AssistantPanel.qml";
+    xdg.configFile."quickshell/${cfg.configName}/AssistantService.qml".source = shellConfigDir + "/AssistantService.qml";
+    xdg.configFile."quickshell/${cfg.configName}/AssistantProviderLogic.js".source = shellConfigDir + "/AssistantProviderLogic.js";
 
     home.activation.ensureQuickshellQmllsConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
       set -euo pipefail

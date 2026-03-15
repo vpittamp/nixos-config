@@ -162,6 +162,7 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
+      scoped_terminal_mode = "managed_project_terminal";
       description = "Regular terminal with daemon-managed tmux session identity for project directory";
     })
 
@@ -214,6 +215,7 @@ let
       nix_package = "pkgs.neovim";
       multi_instance = true;
       fallback_behavior = "use_home";
+      scoped_terminal_mode = "dedicated_scoped_window";
       description = "Neovim text editor in terminal";
     })
 
@@ -280,6 +282,7 @@ let
       nix_package = "pkgs.lazygit";
       multi_instance = true;
       fallback_behavior = "use_home";
+      scoped_terminal_mode = "dedicated_scoped_window";
       description = "Terminal UI for git commands";
     })
 
@@ -394,6 +397,7 @@ let
       nix_package = "pkgs.yazi";
       multi_instance = true;
       fallback_behavior = "use_home";
+      scoped_terminal_mode = "dedicated_scoped_window";
       description = "Terminal file manager";
     })
 

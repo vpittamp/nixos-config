@@ -40,10 +40,22 @@ in
         ForwardAgent yes
 
       # Tailscale hosts - generic pattern
+      Host ryzen thinkpad
+        HostName %h.tail286401.ts.net
+        User vpittamp
+        ForwardAgent yes
+        StrictHostKeyChecking accept-new
+        ControlMaster auto
+        ControlPersist 10m
+        ControlPath ~/.ssh/controlmasters/%C
+
       Host nixos-* *.tail*.ts.net
         User vpittamp
         ForwardAgent yes
         StrictHostKeyChecking accept-new
+        ControlMaster auto
+        ControlPersist 10m
+        ControlPath ~/.ssh/controlmasters/%C
 
       # Specific Tailscale machines for better compatibility
       Host nixos-hetzner
@@ -60,6 +72,9 @@ in
       # Create a writable SSH config from the source
       cp -f ~/.ssh/config_source ~/.ssh/config
       chmod 600 ~/.ssh/config
+
+      mkdir -p ~/.ssh/controlmasters
+      chmod 700 ~/.ssh/controlmasters
       
       # Ensure DevSpace config file exists and is writable
       touch ~/.ssh/devspace_config

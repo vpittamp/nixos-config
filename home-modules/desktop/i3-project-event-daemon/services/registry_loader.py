@@ -32,6 +32,7 @@ class RegistryApp:
     fallback_behavior: str  # "skip", "use_home", "error"
     multi_instance: bool
     pwa_match_domains: List[str]
+    scoped_terminal_mode: Optional[str] = None
     nix_package: Optional[str] = None
     description: Optional[str] = None
 
@@ -114,6 +115,7 @@ class RegistryLoader:
                 fallback_behavior=data.get("fallback_behavior", "use_home"),
                 multi_instance=data.get("multi_instance", False),
                 pwa_match_domains=data.get("pwa_match_domains", []),
+                scoped_terminal_mode=data.get("scoped_terminal_mode"),
                 nix_package=data.get("nix_package"),
                 description=data.get("description"),
             )

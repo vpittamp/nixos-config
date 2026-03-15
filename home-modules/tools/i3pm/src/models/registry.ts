@@ -8,6 +8,7 @@
 
 export type ApplicationScope = "scoped" | "global";
 export type FallbackBehavior = "skip" | "use_home" | "error";
+export type ScopedTerminalMode = "managed_project_terminal" | "dedicated_scoped_window";
 
 /**
  * Application registry entry
@@ -23,6 +24,7 @@ export interface RegistryApplication {
   command: string; // Absolute path to executable
   parameters: string[]; // Command-line arguments with variable substitution
   terminal: boolean; // Launch in terminal emulator
+  scoped_terminal_mode?: ScopedTerminalMode; // Special handling for scoped terminal apps
 
   // Window management
   expected_class: string; // WM_CLASS for window matching
@@ -58,6 +60,10 @@ export function isFallbackBehavior(value: unknown): value is FallbackBehavior {
   return value === "skip" || value === "use_home" || value === "error";
 }
 
+export function isScopedTerminalMode(value: unknown): value is ScopedTerminalMode {
+  return value === "managed_project_terminal" || value === "dedicated_scoped_window";
+}
+
 export function isRegistryApplication(value: unknown): value is RegistryApplication {
   if (typeof value !== "object" || value === null) return false;
   const app = value as Record<string, unknown>;
@@ -70,6 +76,7 @@ export function isRegistryApplication(value: unknown): value is RegistryApplicat
     Array.isArray(app.parameters) &&
     app.parameters.every((p) => typeof p === "string") &&
     typeof app.terminal === "boolean" &&
+    (app.scoped_terminal_mode === undefined || isScopedTerminalMode(app.scoped_terminal_mode)) &&
     typeof app.expected_class === "string" &&
     isApplicationScope(app.scope) &&
     isFallbackBehavior(app.fallback_behavior) &&

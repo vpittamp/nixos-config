@@ -7,9 +7,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/managed-tmux-session.sh"
 
 PROJECT_DIR="${1:-}"
+shift || true
 
 if [[ -z "$PROJECT_DIR" ]]; then
-    echo "project-terminal-launch: Usage: project-terminal-launch.sh <project_dir> [session_name]" >&2
+    echo "project-terminal-launch: Usage: project-terminal-launch.sh <project_dir> [command ...]" >&2
     exit 1
 fi
 
@@ -28,6 +29,12 @@ if tmux has-session -t "$TMUX_SESSION_NAME" 2>/dev/null; then
         tmux kill-session -t "$TMUX_SESSION_NAME" >/dev/null 2>&1 || true
     else
         managed_tmux_export_current_env "$TMUX_SESSION_NAME"
+        if [[ $# -gt 0 ]]; then
+            window_name="$(basename -- "$1")"
+            command_string="$(printf '%q ' "$@")"
+            command_string="${command_string% }"
+            tmux new-window -t "$TMUX_SESSION_NAME" -c "$PROJECT_DIR" -n "${window_name:0:24}" "exec $command_string"
+        fi
         exec env TMUX= tmux attach-session -t "$TMUX_SESSION_NAME"
     fi
 fi
@@ -42,5 +49,12 @@ tmux "${args[@]}"
 
 managed_tmux_export_current_env "$TMUX_SESSION_NAME"
 managed_tmux_set_metadata "$TMUX_SESSION_NAME"
+
+if [[ $# -gt 0 ]]; then
+    window_name="$(basename -- "$1")"
+    command_string="$(printf '%q ' "$@")"
+    command_string="${command_string% }"
+    tmux new-window -t "$TMUX_SESSION_NAME" -c "$PROJECT_DIR" -n "${window_name:0:24}" "exec $command_string"
+fi
 
 exec env TMUX= tmux attach-session -t "$TMUX_SESSION_NAME"

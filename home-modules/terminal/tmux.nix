@@ -289,12 +289,8 @@ in
         send-keys -X select-line \; \
         send-keys -X copy-pipe-and-cancel "${clipboardSyncScript}"
 
-      # Sesh session management
-      # Removed 'bind -n C-t' to allow bash's sesh_connect function to handle Ctrl+T
-      # This enables the interactive sesh picker to work both inside and outside tmux
+      # Session switching
       bind l switch-client -l
-      # Alternative sesh binding using prefix + T (backtick + T) if needed
-      bind-key T new-window sesh
 
       # Tmux Popup Windows with Enhanced Copy Support
       # Using UPPERCASE to avoid conflicts

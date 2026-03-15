@@ -29,6 +29,10 @@ interface SessionPreviewInfo {
   surface_key: string;
   session_phase: string;
   session_phase_label: string;
+  turn_owner: string;
+  turn_owner_label: string;
+  activity_substate: string;
+  activity_substate_label: string;
   status_reason: string;
 }
 
@@ -81,6 +85,10 @@ function buildPreviewFrame(
     surface_key: info.surface_key,
     session_phase: info.session_phase,
     session_phase_label: info.session_phase_label,
+    turn_owner: info.turn_owner,
+    turn_owner_label: info.turn_owner_label,
+    activity_substate: info.activity_substate,
+    activity_substate_label: info.activity_substate_label,
     status_reason: info.status_reason,
     content,
     message,

@@ -1,6 +1,9 @@
 { config, pkgs, lib, osConfig ? null, ... }:
 
 let
+  nativeQuickshellNotifications =
+    (lib.attrByPath [ "programs" "quickshell-runtime-shell" "enable" ] false config)
+    && ((lib.attrByPath [ "programs" "quickshell-runtime-shell" "notifications" "backend" ] "native" config) == "native");
   hostname =
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
@@ -527,7 +530,7 @@ let
     }
   '';
 
-in {
+in lib.mkIf (!nativeQuickshellNotifications) {
   # SwayNC (Notification Center) Configuration
   # Feature 057: Unified Bar System with Enhanced Workspace Mode
   # User Story 1: Unified Theming

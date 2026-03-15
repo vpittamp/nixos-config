@@ -448,11 +448,7 @@ in
       # Export the function so it's available in subshells (including tmux)
       export -f sesh_connect
       
-      # Bind sesh_connect to Ctrl+T (works both inside and outside tmux)
-      # Only bind if we're in an interactive shell with line editing enabled
-      if [[ $- == *i* ]] && [[ -t 0 ]]; then
-        bind -x '"\C-t": sesh_connect' 2>/dev/null || true
-      fi
+      # Leave sesh_connect unbound so default shell and tmux key flows remain intact.
       
       # Yazi wrapper function with zoxide integration
       # This allows yazi to change the current directory and update zoxide's database

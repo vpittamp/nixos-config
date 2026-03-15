@@ -10,7 +10,7 @@ import { bold, cyan, green, yellow, red, gray, magenta, blue, dim } from "jsr:@s
 export async function daemonCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json", "follow", "verbose", "debug"],
-    string: ["limit", "type", "scope", "workspace"],
+    string: ["limit", "type", "scope", "workspace", "params-json"],
     alias: { h: "help" },
     stopEarly: false,
   });
@@ -20,7 +20,7 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
 
   try {
     if (mergedFlags.help || !subcommand) {
-      console.error("Usage: i3pm daemon <status|events|ping|apps|snapshot> [options]");
+      console.error("Usage: i3pm daemon <status|events|ping|apps|snapshot|call> [options]");
       console.error("");
       console.error("Common options:");
       console.error("  --json            Output JSON");
@@ -44,13 +44,52 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
         return await daemonApps(subArgs, mergedFlags);
       case "snapshot":
         return await daemonSnapshot(mergedFlags);
+      case "call":
+        return await daemonCall(subArgs, mergedFlags);
       default:
-        console.error("Usage: i3pm daemon <status|events|ping|apps|snapshot>");
+        console.error("Usage: i3pm daemon <status|events|ping|apps|snapshot|call>");
         return 1;
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
+  }
+}
+
+async function daemonCall(args: string[], flags: Record<string, unknown>): Promise<number> {
+  const parsed = parseArgs(args, {
+    boolean: ["help", "json"],
+    string: ["params-json"],
+    alias: { h: "help" },
+  });
+  const method = String(parsed._[0] || "");
+  if (parsed.help || !method) {
+    console.error("Usage: i3pm daemon call <method> [--params-json <json>] [--json]");
+    return parsed.help ? 0 : 1;
+  }
+
+  let params: unknown = {};
+  const rawParams = String(parsed["params-json"] || flags["params-json"] || "").trim();
+  if (rawParams) {
+    try {
+      params = JSON.parse(rawParams);
+    } catch (error) {
+      console.error(`Error: invalid --params-json payload: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
+
+  const client = new DaemonClient();
+  try {
+    const result = await client.request(method, params);
+    if (flags.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log(JSON.stringify(result, null, 2));
+    }
+    return 0;
+  } finally {
+    client.disconnect();
   }
 }
 

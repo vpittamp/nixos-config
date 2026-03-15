@@ -6,6 +6,9 @@ let
   hasTopBar = topBarCfg != null && (topBarCfg.enable or false);
   runtimeShellCfg = config.programs.quickshell-runtime-shell or null;
   hasRuntimeShell = runtimeShellCfg != null && (runtimeShellCfg.enable or false);
+  nativeNotifications =
+    hasRuntimeShell
+    && ((lib.attrByPath [ "notifications" "backend" ] "native" runtimeShellCfg) == "native");
   rawToggleKey = if hasRuntimeShell then runtimeShellCfg.toggleKey else "$mod+m";
   toggleKeyList =
     let keys = if lib.isList rawToggleKey then rawToggleKey else [ rawToggleKey ];
@@ -30,8 +33,9 @@ in
     # Force-close stuck workspace preview (emergency exit)
     "${modifier}+Shift+Escape" = "exec i3pm-workspace-mode cancel";
 
-    # Toggle between current and last workspace
-    "${modifier}+Tab" = "workspace back_and_forth";
+    # AI session switcher in launcher style
+    "${modifier}+Tab" = "exec show-ai-mru-switcher-action next";
+    "${modifier}+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
 
     # Next/previous workspace
     "${modifier}+n" = "workspace next";
@@ -129,8 +133,8 @@ in
 
     # ========== NOTIFICATIONS (SwayNC) ==========
     "${modifier}+i" = "exec toggle-quick-panel";  # Toggle Eww quick settings panel
-    "${modifier}+Shift+i" = "exec toggle-swaync";  # Toggle notification center (mutually exclusive with monitoring panel)
-    "${modifier}+Ctrl+Shift+i" = "exec swaync-client -d -sw";  # Toggle Do Not Disturb
+    "${modifier}+Shift+i" = if nativeNotifications then "exec toggle-runtime-notifications" else "exec toggle-swaync";
+    "${modifier}+Ctrl+Shift+i" = if nativeNotifications then "exec toggle-runtime-notification-dnd" else "exec swaync-client -d -sw";
 
     # ========== ADDITIONAL UTILITIES ==========
     # Screenshots (Wayland with grim + slurp)
@@ -159,8 +163,6 @@ in
     "Alt+3" = "exec monitor-panel-tab 2";
     "Alt+bracketright" = "exec cycle-active-ai-session-action next";
     "Alt+bracketleft" = "exec cycle-active-ai-session-action prev";
-    "Alt+Tab" = "exec show-ai-mru-switcher-action next";
-    "Alt+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
     "Alt+grave" = "exec toggle-last-ai-session-action";
 
     # Internal display brightness

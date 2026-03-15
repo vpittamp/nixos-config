@@ -14,6 +14,7 @@ export type ApplicationScope = "scoped" | "global";
  * Fallback behavior when project context is unavailable
  */
 export type FallbackBehavior = "skip" | "use_home" | "error";
+export type ScopedTerminalMode = "managed_project_terminal" | "dedicated_scoped_window";
 
 /**
  * Application registry entry - declarative application definition
@@ -51,6 +52,9 @@ export interface ApplicationRegistryEntry {
 
   /** Allow multiple windows */
   multi_instance?: boolean;
+
+  /** Special launch handling for scoped terminal apps */
+  scoped_terminal_mode?: ScopedTerminalMode;
 
   /** Behavior when no project context available */
   fallback_behavior?: FallbackBehavior;

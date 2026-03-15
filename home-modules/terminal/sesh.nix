@@ -49,7 +49,9 @@
   programs.sesh = {
     enable = true;
     enableAlias = true; # Enable 's' alias for sesh
-    enableTmuxIntegration = true;
+    # Keep sesh available for occasional manual use, but do not let it
+    # override tmux's built-in prefix bindings.
+    enableTmuxIntegration = false;
     icons = true;
 
     # Sesh configuration settings

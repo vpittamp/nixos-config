@@ -124,6 +124,9 @@ let
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
+  nativeQuickshellNotifications =
+    (lib.attrByPath [ "programs" "quickshell-runtime-shell" "enable" ] false config)
+    && ((lib.attrByPath [ "programs" "quickshell-runtime-shell" "notifications" "backend" ] "native" config) == "native");
   headlessOutputStateDefaults = {
     "HEADLESS-1" = true;
     "HEADLESS-2" = false;
@@ -1268,7 +1271,7 @@ PY
 
   # SwayNC (Sway Notification Center) systemd service
   # Notification daemon for Sway (replaces Dunst which is used for i3)
-  systemd.user.services.swaync = {
+  systemd.user.services.swaync = lib.mkIf (!nativeQuickshellNotifications) {
     Unit = {
       Description = "Sway Notification Center";
       Documentation = "https://github.com/ErikReider/SwayNotificationCenter";

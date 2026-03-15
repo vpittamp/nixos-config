@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -68,6 +68,7 @@ def make_registry_app(
     command: str = "ghostty",
     terminal: bool = True,
     scope: str = "scoped",
+    scoped_terminal_mode: str | None = None,
 ) -> RegistryApp:
     return RegistryApp(
         name=name,
@@ -83,6 +84,7 @@ def make_registry_app(
         fallback_behavior="use_home",
         multi_instance=True,
         pwa_match_domains=[],
+        scoped_terminal_mode=scoped_terminal_mode,
     )
 
 
@@ -109,9 +111,10 @@ def server_local():
     state_manager = DummyStateManager(QUALIFIED_NAME)
     server = IPCServer(state_manager)
     server.registry_loader.applications = {
-        "terminal": make_registry_app(name="terminal", parameters=["-e", "bash", "-lc", "true"]),
-        "yazi": make_registry_app(name="yazi", parameters=["-e", "yazi", "$PROJECT_DIR"]),
-        "lazygit": make_registry_app(name="lazygit", parameters=["-e", "lazygit", "--path", "$PROJECT_DIR"]),
+        "terminal": make_registry_app(name="terminal", parameters=["-e", "bash", "-lc", "true"], scoped_terminal_mode="managed_project_terminal"),
+        "yazi": make_registry_app(name="yazi", parameters=["-e", "yazi", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "lazygit": make_registry_app(name="lazygit", parameters=["-e", "lazygit", "--path", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "nvim": make_registry_app(name="nvim", parameters=["-e", "nvim", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
         "code": make_registry_app(
             name="code",
             command="code",
@@ -131,9 +134,10 @@ def server_ssh():
     state_manager = DummyStateManager(QUALIFIED_NAME)
     server = IPCServer(state_manager)
     server.registry_loader.applications = {
-        "terminal": make_registry_app(name="terminal", parameters=["-e", "bash", "-lc", "true"]),
-        "yazi": make_registry_app(name="yazi", parameters=["-e", "yazi", "$PROJECT_DIR"]),
-        "lazygit": make_registry_app(name="lazygit", parameters=["-e", "lazygit", "--path", "$PROJECT_DIR"]),
+        "terminal": make_registry_app(name="terminal", parameters=["-e", "bash", "-lc", "true"], scoped_terminal_mode="managed_project_terminal"),
+        "yazi": make_registry_app(name="yazi", parameters=["-e", "yazi", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "lazygit": make_registry_app(name="lazygit", parameters=["-e", "lazygit", "--path", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "nvim": make_registry_app(name="nvim", parameters=["-e", "nvim", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
         "code": make_registry_app(
             name="code",
             command="code",
@@ -187,10 +191,12 @@ async def test_prepare_launch_yazi_local_uses_scoped_terminal_command(server_loc
     spec = await server_local._prepare_launch({"app_name": "yazi", "register_launch": False})
 
     assert spec["execution_mode"] == "local"
-    assert spec["launch_strategy"] == "scoped_terminal_command"
-    assert spec["terminal_launch"]["mode"] == "scoped_terminal_command"
+    assert spec["launch_strategy"] == "dedicated_local_scoped_window"
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_name"] == "project-command-launch.sh"
     assert spec["terminal_launch"]["helper_args"] == ["yazi", LOCAL_PROJECT]
+    assert spec["terminal_role"] == "project-app:yazi"
+    assert spec["tmux_session_name"] == ""
 
 
 @pytest.mark.asyncio
@@ -198,17 +204,20 @@ async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(serve
     spec = await server_ssh._prepare_launch({"app_name": "yazi", "register_launch": False})
 
     assert spec["execution_mode"] == "ssh"
-    assert spec["launch_strategy"] == "scoped_terminal_command"
-    assert spec["terminal_launch"]["mode"] == "scoped_terminal_command"
+    assert spec["launch_strategy"] == "dedicated_remote_scoped_window"
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_name"] == "project-command-launch.sh"
     assert spec["terminal_launch"]["helper_args"] == ["yazi", REMOTE_PROJECT]
     assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
+    assert spec["terminal_role"] == "project-app:yazi"
+    assert spec["tmux_session_name"] == ""
 
 
 @pytest.mark.asyncio
 async def test_prepare_launch_lazygit_local_uses_path_target(server_local):
     spec = await server_local._prepare_launch({"app_name": "lazygit", "register_launch": False})
 
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_args"] == ["lazygit", "--path", LOCAL_PROJECT]
 
 
@@ -216,7 +225,28 @@ async def test_prepare_launch_lazygit_local_uses_path_target(server_local):
 async def test_prepare_launch_lazygit_ssh_uses_path_target(server_ssh):
     spec = await server_ssh._prepare_launch({"app_name": "lazygit", "register_launch": False})
 
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_args"] == ["lazygit", "--path", REMOTE_PROJECT]
+
+
+@pytest.mark.asyncio
+async def test_prepare_launch_nvim_local_uses_dedicated_window(server_local):
+    spec = await server_local._prepare_launch({"app_name": "nvim", "register_launch": False})
+
+    assert spec["launch_strategy"] == "dedicated_local_scoped_window"
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
+    assert spec["terminal_launch"]["helper_args"] == ["nvim", LOCAL_PROJECT]
+    assert spec["terminal_role"] == "project-app:nvim"
+
+
+@pytest.mark.asyncio
+async def test_prepare_launch_nvim_ssh_uses_dedicated_window(server_ssh):
+    spec = await server_ssh._prepare_launch({"app_name": "nvim", "register_launch": False})
+
+    assert spec["launch_strategy"] == "dedicated_remote_scoped_window"
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
+    assert spec["terminal_launch"]["helper_args"] == ["nvim", REMOTE_PROJECT]
+    assert spec["terminal_role"] == "project-app:nvim"
 
 
 @pytest.mark.asyncio
@@ -236,7 +266,7 @@ def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
             "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
         },
         "terminal_launch": {
-            "mode": "scoped_terminal_command",
+            "mode": "dedicated_scoped_window",
             "helper_name": "project-command-launch.sh",
             "helper_args": ["yazi", REMOTE_PROJECT],
             "remote": {
@@ -254,8 +284,13 @@ def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     finally:
         helper_path.unlink(missing_ok=True)
 
-    assert "remote_helper=project-command-launch.sh" in content
-    assert "exec project-command-launch.sh /srv/worktrees/nixos-config/main yazi /srv/worktrees/nixos-config/main" in content
+    assert "ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p 22 vpittamp@ryzen" in content
+    assert "I3PM_PROJECT_NAME=vpittamp/nixos-config:main" in content
+    assert "I3PM_CONTEXT_KEY=vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22" in content
+    assert "project-command-launch.sh" in content
+    assert "/srv/worktrees/nixos-config/main" in content
+    assert "yazi" in content
+    assert "bash -c" not in content
 
 
 def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_terminal(server_local, monkeypatch):
@@ -267,7 +302,7 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
         "local_project_directory": LOCAL_PROJECT,
         "environment": {},
         "terminal_launch": {
-            "mode": "scoped_terminal_command",
+            "mode": "dedicated_scoped_window",
             "helper_name": "project-command-launch.sh",
             "helper_args": ["yazi", LOCAL_PROJECT],
         },
@@ -290,3 +325,30 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
     assert captured["cmd"][-2] == "-lc"
     assert "project-command-launch.sh" in captured["cmd"][-1]
     assert "yazi" in captured["cmd"][-1]
+
+
+@pytest.mark.asyncio
+async def test_launch_open_reuses_existing_terminal_for_scoped_terminal_command(server_local):
+    existing_window = SimpleNamespace(window_id=321)
+    spec = {
+        "app_name": "yazi",
+        "project_name": QUALIFIED_NAME,
+        "context_key": f"{QUALIFIED_NAME}::local::local@thinkpad",
+        "execution_mode": "local",
+        "terminal_role": "project-app:yazi",
+        "connection_key": "local@thinkpad",
+        "terminal_launch": {
+            "mode": "dedicated_scoped_window",
+            "helper_args": ["yazi", LOCAL_PROJECT],
+        },
+    }
+    server_local._prepare_launch = AsyncMock(return_value=spec)
+    server_local._get_reusable_context_terminal_window = AsyncMock(return_value=existing_window)
+    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 321})
+
+    result = await server_local._launch_open({"app_name": "yazi"})
+
+    server_local._window_focus.assert_awaited_once()
+    assert result["success"] is True
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["window_id"] == 321
