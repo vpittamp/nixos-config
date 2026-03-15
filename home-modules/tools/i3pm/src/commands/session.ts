@@ -18,14 +18,19 @@ interface SessionPreviewInfo {
   project_name: string;
   host_name: string;
   connection_key: string;
+  focus_connection_key: string;
   execution_mode: string;
   focus_mode: string;
   window_id: number;
   pane_label: string;
   pane_title: string;
+  tmux_socket: string;
   tmux_session: string;
   tmux_window: string;
   tmux_pane: string;
+  remote_user: string;
+  remote_host: string;
+  remote_port: number;
   surface_key: string;
   session_phase: string;
   session_phase_label: string;
@@ -106,6 +111,10 @@ function normalizeLines(text: string, limit: number): string[] {
   return lines.slice(Math.max(0, lines.length - limit));
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 async function* readLines(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
@@ -138,11 +147,36 @@ async function capturePaneContent(info: SessionPreviewInfo): Promise<string> {
     return "";
   }
 
-  const result = await new Deno.Command("tmux", {
-    args: ["capture-pane", "-p", "-J", "-S", `-${info.lines}`, "-t", info.tmux_pane],
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
+  let result: Deno.CommandOutput;
+  if (info.preview_mode === "ssh_stream") {
+    const destination = info.remote_user
+      ? `${info.remote_user}@${info.remote_host}`
+      : info.remote_host;
+    const tmuxCmd = info.tmux_socket
+      ? `tmux -S ${shellQuote(info.tmux_socket)}`
+      : "tmux";
+    const remoteScript = `${tmuxCmd} capture-pane -p -J -S -${info.lines} -t ${shellQuote(info.tmux_pane)}`;
+    result = await new Deno.Command("ssh", {
+      args: [
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=2",
+        "-p",
+        String(info.remote_port || 22),
+        destination,
+        `bash -lc ${shellQuote(remoteScript)}`,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+  } else {
+    result = await new Deno.Command("tmux", {
+      args: ["capture-pane", "-p", "-J", "-S", `-${info.lines}`, "-t", info.tmux_pane],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+  }
 
   if (!result.success) {
     const error = new TextDecoder().decode(result.stderr).trim();
@@ -163,10 +197,6 @@ async function emitSnapshot(info: SessionPreviewInfo): Promise<void> {
 }
 
 function previewFallbackMessage(info: SessionPreviewInfo): string {
-  if (info.preview_mode === "remote_fallback") {
-    const host = info.host_name || info.connection_key || "remote host";
-    return `Live preview is not available for ${host} in the launcher yet. Focus the session to hand off to that host.`;
-  }
   if (info.preview_reason === "missing_tmux_identity") {
     return "This session has no tmux pane identity, so there is nothing stable to preview.";
   }
@@ -200,7 +230,7 @@ async function runPreview(client: DaemonClient, subArgs: string[]): Promise<numb
     return 0;
   }
 
-  if (info.preview_mode !== "local_stream") {
+  if (info.preview_mode !== "local_stream" && info.preview_mode !== "ssh_stream") {
     emitPreviewFrame(buildPreviewFrame(info, {
       kind: "status",
       status: "fallback",
@@ -224,6 +254,34 @@ async function runPreview(client: DaemonClient, subArgs: string[]): Promise<numb
 
   if (!follow) {
     return 0;
+  }
+
+  if (info.preview_mode === "ssh_stream") {
+    let lastContent = "";
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const content = await capturePaneContent(info);
+        if (content === lastContent) {
+          continue;
+        }
+        lastContent = content;
+        emitPreviewFrame(buildPreviewFrame(info, {
+          kind: "snapshot",
+          status: "live",
+          content,
+          isLive: true,
+        }));
+      } catch (error) {
+        emitPreviewFrame(buildPreviewFrame(info, {
+          kind: "error",
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          isLive: false,
+        }));
+        return 1;
+      }
+    }
   }
 
   const child = new Deno.Command("tmux", {

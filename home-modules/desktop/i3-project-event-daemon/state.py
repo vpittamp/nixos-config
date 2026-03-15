@@ -291,6 +291,8 @@ class StateManager:
                             (window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@"))
                             or parsed_execution_mode == "ssh"
                         ),
+                        remote_session_key=str(window_env.remote_session_key or "") if window_env else "",
+                        remote_surface_key=str(window_env.remote_surface_key or "") if window_env else "",
                     )
 
                     self.state.window_map[tracked_window_id] = window_info

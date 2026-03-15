@@ -192,6 +192,7 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
     monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
     monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
 
     result = await server._session_list({})
 
@@ -208,13 +209,22 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
 
 
 @pytest.mark.asyncio
-async def test_remote_local_session_uses_source_connection_for_focus_handoff(server, monkeypatch):
+async def test_remote_local_session_uses_ssh_attach_focus_mode(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["active_context"].update({
+        "execution_mode": "local",
+        "connection_key": "local@ryzen",
+    })
+    runtime_snapshot["tracked_windows"][0].update({
+        "execution_mode": "local",
+        "connection_key": "local@ryzen",
+        "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+    })
     local_payload = {"sessions": []}
     remote_payload = {
         "sources": {
-            "vpittamp@ryzen:22": {
-                "host_name": "ryzen",
+            "vpittamp@thinkpad:22": {
+                "host_name": "thinkpad",
                 "received_at": 0,
                 "sessions": [
                     {
@@ -258,9 +268,9 @@ async def test_remote_local_session_uses_source_connection_for_focus_handoff(ser
                             "window_id": 30,
                             "terminal_anchor_id": "remote-anchor",
                             "execution_mode": "local",
-                            "connection_key": "local@ryzen",
-                            "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
-                            "host_name": "ryzen",
+                            "connection_key": "local@thinkpad",
+                            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                            "host_name": "thinkpad",
                             "pane_title": "main",
                             "pane_active": True,
                             "window_active": True,
@@ -288,14 +298,15 @@ async def test_remote_local_session_uses_source_connection_for_focus_handoff(ser
     monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
     monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
 
     result = await server._session_list({})
 
     assert result["total"] == 1
     session = result["sessions"][0]
-    assert session["connection_key"] == "local@ryzen"
-    assert session["focus_connection_key"] == "vpittamp@ryzen:22"
-    assert session["focus_mode"] == "remote_handoff"
+    assert session["connection_key"] == "local@thinkpad"
+    assert session["focus_connection_key"] == "vpittamp@thinkpad:22"
+    assert session["focus_mode"] == "ssh_attach"
 
 
 @pytest.mark.asyncio
@@ -397,6 +408,93 @@ async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server,
 
 
 @pytest.mark.asyncio
+async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            "id": 211,
+            "window_id": 211,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "terminal_anchor_id": "bridge-anchor",
+            "terminal_role": "remote-session:123456789abc",
+            "remote_session_key": "codex|surface-remote|vpittamp/nixos-config:main::local::local@thinkpad",
+            "remote_surface_key": "surface-remote",
+            "focused": False,
+            "hidden": False,
+        }
+    ]
+    local_payload = {"sessions": []}
+    remote_payload = {
+        "sources": {
+            "local@thinkpad": {
+                "host_name": "thinkpad",
+                "received_at": 0,
+                "sessions": [
+                    {
+                        "tool": "codex",
+                        "project_name": "vpittamp/nixos-config:main",
+                        "project": "vpittamp/nixos-config:main",
+                        "display_project": "vpittamp/nixos-config:main",
+                        "surface_kind": "tmux-pane",
+                        "surface_key": "surface-remote",
+                        "pane_label": "main",
+                        "updated_at": "2026-03-14T15:00:00Z",
+                        "stage": "idle",
+                        "stage_rank": 0,
+                        "stage_label": "Idle",
+                        "session_phase": "idle",
+                        "session_phase_label": "Idle",
+                        "turn_owner": "user",
+                        "turn_owner_label": "User",
+                        "activity_substate": "idle",
+                        "activity_substate_label": "Idle",
+                        "identity_source": "pane",
+                        "native_session_id": "remote-native-1",
+                        "session_id": "remote-session-1",
+                        "terminal_context": {
+                            "execution_mode": "local",
+                            "connection_key": "local@thinkpad",
+                            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                            "host_name": "thinkpad",
+                            "tmux_session": "i3pm-nixos-config-main",
+                            "tmux_window": "0:main",
+                            "tmux_pane": "%0",
+                        },
+                    }
+                ],
+            }
+        }
+    }
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return remote_payload
+        return {}
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+
+    result = await server._session_list({})
+
+    assert result["total"] == 1
+    session = result["sessions"][0]
+    assert session["window_id"] == 211
+    assert session["focus_mode"] == "local"
+    assert session["focus_execution_mode"] == "ssh"
+    assert session["focus_connection_key"] == "vpittamp@thinkpad:22"
+
+
+@pytest.mark.asyncio
 async def test_session_list_refreshes_current_host_tmux_focus_state(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     local_payload = {
@@ -487,11 +585,11 @@ async def test_session_list_refreshes_current_host_tmux_focus_state(server, monk
 
     def fake_tmux_focus(_tmux_sessions):
         return {
-            ("i3pm-vpittamp-nixos-config-main", "0:main", "%0"): {
+            ("", "i3pm-vpittamp-nixos-config-main", "0:main", "%0"): {
                 "pane_active": False,
                 "window_active": False,
             },
-            ("i3pm-vpittamp-nixos-config-main", "1:codex-raw", "%1"): {
+            ("", "i3pm-vpittamp-nixos-config-main", "1:codex-raw", "%1"): {
                 "pane_active": True,
                 "window_active": True,
             },

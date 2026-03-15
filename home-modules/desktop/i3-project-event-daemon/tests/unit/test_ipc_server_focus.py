@@ -59,43 +59,36 @@ def server():
 
 
 @pytest.mark.asyncio
-async def test_session_focus_remote_handoff_uses_remote_daemon_request(server, monkeypatch):
+async def test_session_focus_remote_session_uses_ssh_attach(server, monkeypatch):
     remote_session = {
         "session_key": "session-remote",
         "window_id": 0,
-        "focus_mode": "remote_handoff",
-        "focus_connection_key": "vpittamp@ryzen:22",
-        "connection_key": "local@ryzen",
+        "focus_mode": "ssh_attach",
+        "focus_connection_key": "local@thinkpad",
+        "connection_key": "local@thinkpad",
         "surface_key": "surface-remote",
         "conflict_state": "",
     }
     server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
     monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
-    monkeypatch.setattr(server, "_remote_daemon_request", lambda **_kwargs: {
+    server._focus_remote_session_attach = AsyncMock(return_value={
         "success": True,
-        "reason": "ok",
-        "remote_host": "ryzen",
-        "result": {
-            "success": True,
-            "tmux": {"success": True, "reason": "ok"},
-            "verification": {"success": True, "reason": "ok"},
-            "current_ai_session_key_after": "session-remote",
-            "focused_window_id_after": 30,
-            "focus_state_after": {
-                "current_ai_session_key": "session-remote",
-                "focused_window_id": 30,
-            },
-        },
+        "focus_mode": "ssh_attach",
+        "focus_target_host": "thinkpad",
+        "verification": {"success": True, "reason": "ok"},
+        "current_ai_session_key_after": "session-remote",
+        "focused_window_id_after": 30,
     })
 
     result = await server._session_focus({"session_key": "session-remote"})
 
     assert result["success"] is True
-    assert result["focus_mode"] == "remote_handoff"
-    assert result["focus_target_host"] == "ryzen"
+    assert result["focus_mode"] == "ssh_attach"
+    assert result["focus_target_host"] == "thinkpad"
     assert result["verification"]["success"] is True
     assert result["current_ai_session_key_after"] == "session-remote"
     assert result["focused_window_id_after"] == 30
+    server._focus_remote_session_attach.assert_awaited_once()
 
 
 @pytest.mark.asyncio

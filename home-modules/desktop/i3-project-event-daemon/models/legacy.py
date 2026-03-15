@@ -66,6 +66,8 @@ class WindowInfo:
     remote_port: str = ""
     remote_dir: str = ""
     remote_session_name: str = ""
+    remote_session_key: str = ""
+    remote_surface_key: str = ""
 
     def __post_init__(self) -> None:
         """Validate window information."""

@@ -60,6 +60,8 @@ class WindowEnvironment:
     target_workspace: Optional[int] = None  # I3PM_TARGET_WORKSPACE - preferred workspace number (Feature 039 T060)
     connection_key: Optional[str] = None  # I3PM_CONNECTION_KEY - host-aware connection identity
     context_key: Optional[str] = None  # I3PM_CONTEXT_KEY - project/variant/connection identity
+    remote_session_key: Optional[str] = None  # I3PM_REMOTE_SESSION_KEY - canonical remote AI session key
+    remote_surface_key: Optional[str] = None  # I3PM_REMOTE_SURFACE_KEY - canonical remote AI surface key
 
 
 def read_process_environ(pid: int) -> Dict[str, str]:
@@ -298,6 +300,8 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
             target_workspace=target_workspace,
             connection_key=env.get("I3PM_CONNECTION_KEY"),
             context_key=env.get("I3PM_CONTEXT_KEY"),
+            remote_session_key=env.get("I3PM_REMOTE_SESSION_KEY"),
+            remote_surface_key=env.get("I3PM_REMOTE_SURFACE_KEY"),
         )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse I3PM environment variables: {e}")

@@ -259,6 +259,42 @@ async def test_prepare_launch_rejects_non_terminal_ssh(server_ssh):
     assert payload["data"]["ssh_policy"] == "terminal_only"
 
 
+@pytest.mark.asyncio
+async def test_build_remote_session_attach_spec_overrides_bridge_context_env(server_ssh):
+    session = {
+        "session_key": "codex|session-remote",
+        "surface_key": "surface-remote",
+        "project_name": QUALIFIED_NAME,
+        "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+        "tmux_window": "0:main",
+        "tmux_pane": "%0",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+        },
+    }
+    attach_profile = {
+        "connection_key": "vpittamp@thinkpad:22",
+        "context_key": f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22",
+        "remote_user": "vpittamp",
+        "remote_host": "thinkpad",
+        "remote_port": 22,
+        "remote_dir": "",
+    }
+
+    spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
+
+    assert spec["connection_key"] == "vpittamp@thinkpad:22"
+    assert spec["context_key"] == f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22"
+    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@thinkpad:22"
+    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22"
+    assert spec["environment"]["I3PM_REMOTE_HOST"] == "thinkpad"
+    assert spec["environment"]["I3PM_REMOTE_USER"] == "vpittamp"
+
+
 def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     spec = {
         "environment": {
@@ -291,6 +327,44 @@ def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     assert "/srv/worktrees/nixos-config/main" in content
     assert "yazi" in content
     assert "bash -c" not in content
+
+
+def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_ssh):
+    spec = {
+        "environment": {
+            "I3PM_PROJECT_NAME": QUALIFIED_NAME,
+            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22",
+            "I3PM_REMOTE_SESSION_KEY": "codex|remote-session",
+        },
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "helper_name": "project-terminal-launch.sh",
+            "tmux_session_name": "i3pm-remote-shell",
+            "remote": {
+                "host": "thinkpad",
+                "user": "vpittamp",
+                "port": 22,
+                "remote_dir": "",
+            },
+            "remote_attach": {
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+                "tmux_window": "0:main",
+                "tmux_pane": "%0",
+            },
+        },
+    }
+
+    helper_path = server_ssh._build_remote_terminal_helper_script(spec)
+    try:
+        content = helper_path.read_text()
+    finally:
+        helper_path.unlink(missing_ok=True)
+
+    assert "ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p 22 vpittamp@thinkpad" in content
+    assert "tmux -S /run/user/1000/tmux-1000/default has-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
+    assert "attach-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
+    assert "cd " not in content
 
 
 def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_terminal(server_local, monkeypatch):

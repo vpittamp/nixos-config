@@ -78,6 +78,7 @@ def make_session(**overrides):
         "session_phase_label": "Working",
         "status_reason": "pulse_working",
         "is_current_host": True,
+        "source_is_current_host": True,
         "terminal_context": {
             "execution_mode": "local",
             "tmux_session": "nixos-config/main",
@@ -105,30 +106,84 @@ async def test_session_preview_returns_live_local_stream_for_current_host_tmux_s
 
 
 @pytest.mark.asyncio
-async def test_session_preview_returns_remote_fallback_for_remote_session(server):
+async def test_session_preview_returns_ssh_stream_for_remote_session(server, monkeypatch):
     remote_session = make_session(
         session_key="session-remote",
+        project_name="vpittamp/nixos-config:main",
         host_name="ryzen",
-        connection_key="vpittamp@ryzen:22",
-        execution_mode="ssh",
-        focus_mode="remote_handoff",
+        connection_key="local@ryzen",
+        focus_connection_key="vpittamp@ryzen:22",
+        execution_mode="local",
+        focus_mode="ssh_attach",
         is_current_host=False,
+        source_is_current_host=False,
         terminal_context={
-            "execution_mode": "ssh",
+            "execution_mode": "local",
             "tmux_session": "nixos-config/main",
             "tmux_window": "0:main",
             "tmux_pane": "%21",
+            "tmux_socket": "/tmp/tmux-1000/default",
+        },
+        tmux_pane="%21",
+    )
+    server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
+    monkeypatch.setattr(server, "_resolve_remote_attach_profile", lambda _session: {
+        "remote_user": "vpittamp",
+        "remote_host": "ryzen",
+        "remote_port": 22,
+    })
+
+    result = await server._session_preview({"session_key": "session-remote"})
+
+    assert result["preview_mode"] == "ssh_stream"
+    assert result["preview_reason"] == "remote_host"
+    assert result["is_live"] is True
+    assert result["is_remote"] is True
+    assert result["remote_host"] == "ryzen"
+    assert result["remote_user"] == "vpittamp"
+    assert result["tmux_socket"] == "/tmp/tmux-1000/default"
+
+
+@pytest.mark.asyncio
+async def test_session_preview_prefers_remote_source_connection_for_bound_remote_session(server, monkeypatch):
+    remote_session = make_session(
+        session_key="session-remote-bound",
+        project_name="vpittamp/nixos-config:main",
+        host_name="thinkpad",
+        connection_key="local@thinkpad",
+        source_connection_key="vpittamp@thinkpad:22",
+        focus_connection_key="vpittamp@ryzen:22",
+        execution_mode="local",
+        focus_mode="local",
+        window_id=52,
+        is_current_host=True,
+        source_is_current_host=False,
+        terminal_context={
+            "execution_mode": "local",
+            "tmux_session": "nixos-config/main",
+            "tmux_window": "0:main",
+            "tmux_pane": "%21",
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
         },
         tmux_pane="%21",
     )
     server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
 
-    result = await server._session_preview({"session_key": "session-remote"})
+    def resolve_attach_profile(session):
+        assert session["source_connection_key"] == "vpittamp@thinkpad:22"
+        return {
+            "remote_user": "vpittamp",
+            "remote_host": "thinkpad",
+            "remote_port": 22,
+        }
 
-    assert result["preview_mode"] == "remote_fallback"
-    assert result["preview_reason"] == "remote_host"
-    assert result["is_live"] is False
-    assert result["is_remote"] is True
+    monkeypatch.setattr(server, "_resolve_remote_attach_profile", resolve_attach_profile)
+
+    result = await server._session_preview({"session_key": "session-remote-bound"})
+
+    assert result["preview_mode"] == "ssh_stream"
+    assert result["remote_host"] == "thinkpad"
+    assert result["remote_user"] == "vpittamp"
 
 
 @pytest.mark.asyncio

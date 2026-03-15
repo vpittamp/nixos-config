@@ -912,6 +912,8 @@ async def on_window_new(
                 and str(window_env.connection_key or "").strip()
                 and not str(window_env.connection_key or "").startswith("local@")
             ),
+            remote_session_key=str(window_env.remote_session_key or "") if window_env else "",
+            remote_surface_key=str(window_env.remote_surface_key or "") if window_env else "",
         )
         await state_manager.add_window(window_info)
 
