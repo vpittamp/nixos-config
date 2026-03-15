@@ -7064,21 +7064,37 @@ class IPCServer:
             connection_key=connection_key,
             tmux_socket=str(terminal_context.get("tmux_socket") or "").strip(),
         )
-        verification = await self._wait_for_session_focus(session_key)
-        focus_state_after = await self._focus_state({})
-
         overall_success = (
             bool(launch_result.get("success", False))
             and bool(focus_result.get("success", False))
             and bool(tmux_result.get("success", False))
-            and bool(verification.get("success", False))
         )
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "session_key": session_key,
+            "current_session_key": "",
+        }
         if overall_success:
+            verification = {
+                "success": True,
+                "reason": str(tmux_result.get("reason") or "ok"),
+                "session_key": session_key,
+                "current_session_key": session_key,
+                "verification_source": "tmux",
+                "active_tmux_pane": str(tmux_result.get("active_tmux_pane") or "").strip(),
+                "tmux_pane": str(tmux_result.get("tmux_pane") or "").strip(),
+            }
             self._set_focus_overrides(
                 session_key=session_key,
                 window_id=local_window_id,
                 connection_key=connection_key,
             )
+        focus_state_after = await self._focus_state({})
+        focus_result = dict(focus_result)
+        focus_result["current_ai_session_key_after"] = str(focus_state_after.get("current_ai_session_key") or "").strip()
+        focus_result["focused_window_id_after"] = int(focus_state_after.get("focused_window_id") or 0)
+        focus_result["focus_state_after"] = focus_state_after
 
         return {
             "success": overall_success,

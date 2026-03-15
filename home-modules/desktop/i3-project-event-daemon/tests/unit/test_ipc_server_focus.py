@@ -311,6 +311,68 @@ async def test_session_focus_tmux_target_uses_tmux_verification(server, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_focus_remote_session_attach_tmux_target_sets_override_without_wait(server):
+    remote_session = {
+        "session_key": "session-remote-pane",
+        "surface_key": "surface-remote-pane",
+        "conflict_state": "",
+        "host_name": "ryzen",
+        "tmux_session": "i3pm-remote",
+        "tmux_window": "1:codex-raw",
+        "tmux_pane": "%11",
+        "terminal_context": {
+            "tmux_socket": "/tmp/tmux-1000/default",
+        },
+    }
+    server._resolve_remote_attach_profile = lambda _session: {"host": "ryzen"}
+    server._switch_to_explicit_remote_context = AsyncMock()
+    server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "terminal_role": "project-main",
+    })
+    server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(window_id=20))
+    server._window_focus = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key_after": "session-stale",
+        "focused_window_id_after": 20,
+        "focus_state_after": {
+            "success": True,
+            "current_ai_session_key": "session-stale",
+            "focused_window_id": 20,
+        },
+    })
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%11",
+        "tmux_pane": "%11",
+    }
+    server._wait_for_session_focus = AsyncMock(return_value={"success": False, "reason": "should_not_run"})
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-remote-pane",
+        "focused_window_id": 20,
+    })
+
+    result = await server._focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session=remote_session,
+    )
+
+    assert result["success"] is True
+    assert result["verification"]["verification_source"] == "tmux"
+    assert result["verification"]["success"] is True
+    assert result["current_ai_session_key_after"] == "session-remote-pane"
+    assert result["focus"]["current_ai_session_key_after"] == "session-remote-pane"
+    assert result["focus"]["focus_state_after"]["current_ai_session_key"] == "session-remote-pane"
+    assert server._focus_session_override_key == "session-remote-pane"
+    assert server._focus_window_override["window_id"] == 20
+    server._wait_for_session_focus.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_select_tmux_target_uses_local_socket_for_current_host_ssh_context(server, monkeypatch):
     commands = []
 
