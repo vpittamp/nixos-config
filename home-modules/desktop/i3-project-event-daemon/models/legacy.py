@@ -68,6 +68,11 @@ class WindowInfo:
     remote_session_name: str = ""
     remote_session_key: str = ""
     remote_surface_key: str = ""
+    remote_tmux_socket: str = ""
+    remote_tmux_server_key: str = ""
+    remote_tmux_session: str = ""
+    remote_tmux_window: str = ""
+    remote_tmux_pane: str = ""
 
     def __post_init__(self) -> None:
         """Validate window information."""

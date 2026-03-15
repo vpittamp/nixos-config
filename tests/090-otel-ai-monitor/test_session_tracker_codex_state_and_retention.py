@@ -529,6 +529,73 @@ async def test_tracker_restores_recent_working_session_from_previous_snapshot(tm
         assert "codex:native-restore" in tracker._native_session_map["codex:native-restore"]
 
 
+def test_derive_session_stage_marks_quiet_alive_for_heartbeat_only_working_session():
+    now = datetime.now(timezone.utc)
+    session = Session(
+        session_id="codex:quiet-alive",
+        native_session_id="native-quiet-alive",
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=100,
+        pid=321,
+        trace_id="trace-quiet",
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        pending_tools=0,
+        is_streaming=False,
+        state_seq=1,
+        status_reason="process_keepalive",
+    )
+    session.terminal_context.tmux_session = "i3pm-vpittamp-nixos-config-main"
+    session.terminal_context.tmux_window = "0:main"
+    session.terminal_context.tmux_pane = "%7"
+
+    stage_fields = _derive_session_stage(session, now=now)
+
+    assert stage_fields["session_phase"] == "quiet_alive"
+    assert stage_fields["session_phase_label"] == "Quiet"
+
+
+def test_derive_session_stage_marks_tmux_missing_when_tmux_identity_is_lost():
+    now = datetime.now(timezone.utc)
+    session = Session(
+        session_id="codex:tmux-missing",
+        native_session_id="native-tmux-missing",
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=101,
+        pid=654,
+        trace_id="trace-tmux-missing",
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        pending_tools=0,
+        is_streaming=False,
+        state_seq=1,
+        status_reason="process_detected",
+    )
+    session.terminal_context.terminal_anchor_id = "terminal-anchor"
+    session.terminal_context.tmux_resolution_source = "missing"
+
+    stage_fields = _derive_session_stage(session, now=now)
+
+    assert stage_fields["session_phase"] == "tmux_missing"
+    assert stage_fields["session_phase_label"] == "Tmux missing"
+
+
 def test_build_session_list_still_suppresses_unresolved_heuristic_session():
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)

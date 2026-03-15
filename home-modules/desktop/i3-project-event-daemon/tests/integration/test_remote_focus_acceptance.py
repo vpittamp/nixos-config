@@ -107,7 +107,7 @@ def select_remote_session_pair() -> tuple[str, RemoteSessionTarget, RemoteSessio
     for session in sessions:
         if not isinstance(session, dict):
             continue
-        if str(session.get("focus_mode") or "").strip() != "remote_handoff":
+        if str(session.get("focus_mode") or "").strip() != "ssh_attach":
             continue
         focus_connection_key = str(
             session.get("focus_connection_key")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -206,6 +207,8 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
     assert session["is_current_window"] is True
     assert session["focus_target"]["method"] == "session.focus"
     assert result["current_session_key"] == session["session_key"]
+    assert session["availability_state"] == "attached_here"
+    assert session["focusability_reason"] == "attached_bridge_window"
 
 
 @pytest.mark.asyncio
@@ -307,6 +310,8 @@ async def test_remote_local_session_uses_ssh_attach_focus_mode(server, monkeypat
     assert session["connection_key"] == "local@thinkpad"
     assert session["focus_connection_key"] == "vpittamp@thinkpad:22"
     assert session["focus_mode"] == "ssh_attach"
+    assert session["availability_state"] == "remote_available"
+    assert session["focusability_reason"] == "remote_tmux_available"
 
 
 @pytest.mark.asyncio
@@ -495,6 +500,245 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
 
 
 @pytest.mark.asyncio
+async def test_session_list_marks_stale_remote_sources(server, monkeypatch):
+    runtime_snapshot = {
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "project_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@ryzen",
+        },
+        "tracked_windows": [],
+    }
+    local_payload = {"sessions": []}
+    remote_payload = {
+        "sources": {
+            "vpittamp@thinkpad:22": {
+                "host_name": "thinkpad",
+                "received_at": time.time() - 45,
+                "sessions": [
+                    {
+                        "tool": "codex",
+                        "project_name": "vpittamp/nixos-config:main",
+                        "project": "vpittamp/nixos-config:main",
+                        "display_project": "vpittamp/nixos-config:main",
+                        "surface_kind": "tmux-pane",
+                        "surface_key": "surface-remote-stale",
+                        "pane_label": "main",
+                        "updated_at": "2026-03-14T15:00:00Z",
+                        "session_phase": "working",
+                        "session_phase_label": "Working",
+                        "turn_owner": "llm",
+                        "turn_owner_label": "LLM",
+                        "activity_substate": "thinking",
+                        "activity_substate_label": "Thinking",
+                        "process_running": True,
+                        "status_reason": "process_keepalive",
+                        "terminal_context": {
+                            "execution_mode": "local",
+                            "connection_key": "local@thinkpad",
+                            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                            "host_name": "thinkpad",
+                            "terminal_anchor_id": "remote-anchor",
+                            "tmux_session": "i3pm-nixos-config-main",
+                            "tmux_window": "0:main",
+                            "tmux_pane": "%0",
+                        },
+                    }
+                ],
+            }
+        }
+    }
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return remote_payload
+        return {}
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
+
+    result = await server._session_list({})
+
+    session = result["sessions"][0]
+    assert session["session_phase"] == "stale_source"
+    assert session["session_phase_label"] == "Stale source"
+    assert session["focus_mode"] == "unfocusable"
+
+
+@pytest.mark.asyncio
+async def test_session_cleanup_closes_stale_remote_bridge_windows(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            "id": 211,
+            "window_id": 211,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "terminal_anchor_id": "bridge-anchor",
+            "terminal_role": "remote-session:123456789abc",
+            "remote_session_key": "session-remote",
+            "remote_surface_key": "surface-remote",
+            "remote_tmux_server_key": "/tmp/tmux-1000/default",
+            "remote_tmux_session": "i3pm-old",
+            "remote_tmux_window": "0:main",
+            "remote_tmux_pane": "%0",
+            "focused": False,
+            "hidden": True,
+        }
+    ]
+    local_payload = {"sessions": []}
+    remote_payload = {"sources": {}}
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return remote_payload
+        return {}
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
+    server._close_managed_window = AsyncMock(return_value=True)
+    server.state_manager.remove_window = AsyncMock()
+
+    result = await server._session_cleanup({})
+
+    assert result["success"] is True
+    assert result["cleaned_up"] == 1
+    assert result["windows_cleaned"] == [{
+        "window_id": 211,
+        "closed": True,
+        "reason": "missing_remote_session",
+    }]
+    server._close_managed_window.assert_awaited_once_with(211)
+    server.state_manager.remove_window.assert_awaited_once_with(211)
+
+
+@pytest.mark.asyncio
+async def test_session_cleanup_reports_but_does_not_close_stale_remote_source_bridge(server):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            "id": 211,
+            "window_id": 211,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "remote_session_key": "session-remote",
+            "remote_surface_key": "surface-remote",
+            "remote_tmux_server_key": "/tmp/tmux-1000/default",
+            "remote_tmux_session": "i3pm-old",
+            "remote_tmux_window": "0:main",
+            "remote_tmux_pane": "%0",
+        }
+    ]
+    sessions = [{
+        "session_key": "session-remote",
+        "surface_key": "surface-remote",
+        "focus_mode": "ssh_attach",
+        "remote_source_stale": True,
+        "terminal_context": {
+            "tmux_server_key": "/tmp/tmux-1000/default",
+            "tmux_session": "i3pm-old",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+        },
+        "tmux_session": "i3pm-old",
+        "tmux_window": "0:main",
+        "tmux_pane": "%0",
+    }]
+    server._close_managed_window = AsyncMock(return_value=True)
+    server.state_manager.remove_window = AsyncMock()
+
+    cleanup = await server._reconcile_session_runtime_state(
+        runtime_snapshot,
+        sessions,
+        close_windows=True,
+    )
+
+    assert cleanup["stale_bridge_count"] == 1
+    assert cleanup["cleaned_window_count"] == 0
+    assert cleanup["stale_bridges"][0]["reason"] == "stale_remote_source"
+    server._close_managed_window.assert_not_awaited()
+    server.state_manager.remove_window.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            "id": 211,
+            "window_id": 211,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "remote_session_key": "session-remote",
+            "remote_surface_key": "surface-remote",
+            "remote_tmux_server_key": "/tmp/tmux-1000/default",
+            "remote_tmux_session": "i3pm-remote",
+            "remote_tmux_window": "0:main",
+            "remote_tmux_pane": "%0",
+            "focused": False,
+            "hidden": True,
+        }
+    ]
+    sessions = [
+        {
+            "session_key": "session-remote",
+            "surface_key": "surface-remote",
+            "availability_state": "attached_here",
+            "focusability_reason": "attached_bridge_window",
+            "focus_mode": "ssh_attach",
+            "window_id": 211,
+            "is_current_host": True,
+            "terminal_context": {
+                "tmux_server_key": "/tmp/tmux-1000/default",
+                "tmux_session": "i3pm-remote",
+                "tmux_window": "0:main",
+                "tmux_pane": "%0",
+            },
+            "tmux_session": "i3pm-remote",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+        }
+    ]
+
+    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
+    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+
+    result = await server._session_doctor({})
+
+    assert result["success"] is True
+    assert result["session_count"] == 1
+    assert result["bridge_window_count"] == 1
+    assert result["bridge_windows"][0]["matched_session_key"] == "session-remote"
+    assert result["bridge_windows"][0]["mismatch_reason"] == ""
+    assert result["sessions"][0]["availability_state"] == "attached_here"
+    assert result["sessions"][0]["focusability_reason"] == "attached_bridge_window"
+
+
+@pytest.mark.asyncio
 async def test_session_list_refreshes_current_host_tmux_focus_state(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     local_payload = {
@@ -675,6 +919,8 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
     server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
     server._display_snapshot = AsyncMock(return_value={"outputs": []})
     server._build_dashboard_worktrees = AsyncMock(return_value=[])
+    server._focus_session_override_key = "session-remote-current"
+    server._focus_window_override = {"window_id": 175, "connection_key": "vpittamp@ryzen:22"}
     monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
 

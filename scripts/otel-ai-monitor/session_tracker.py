@@ -284,8 +284,10 @@ def _lifecycle_source(session: Session) -> str:
 _SESSION_PHASE_LABELS: dict[str, str] = {
     "working": "Working",
     "needs_attention": "Needs attention",
+    "quiet_alive": "Quiet",
     "done": "Done",
     "idle": "Idle",
+    "tmux_missing": "Tmux missing",
 }
 _TURN_OWNER_LABELS: dict[TurnOwner, str] = {
     TurnOwner.LLM: "LLM",
@@ -421,6 +423,26 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         last_activity_at=session.last_activity_at,
         status_reason=session.status_reason,
     )
+    terminal_context = session.terminal_context or TerminalContext()
+    has_tmux_identity = bool(
+        str(terminal_context.tmux_session or "").strip()
+        and str(terminal_context.tmux_window or "").strip()
+        and str(terminal_context.tmux_pane or "").strip()
+    )
+    tmux_resolution_source = str(terminal_context.tmux_resolution_source or "").strip().lower()
+    if (
+        session_phase in {"idle", "working", "quiet_alive"}
+        and session.state == SessionState.WORKING
+        and not has_tmux_identity
+        and tmux_resolution_source == "missing"
+    ):
+        session_phase = "tmux_missing"
+    elif (
+        session_phase == "idle"
+        and session.state == SessionState.WORKING
+        and _status_reason_is_heartbeat_like(session.status_reason)
+    ):
+        session_phase = "quiet_alive"
 
     return {
         "stage": stage,

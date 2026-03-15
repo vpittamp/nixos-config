@@ -53,6 +53,7 @@ def test_launcher_session_search_indexes_telemetry_fields():
     """Launcher session search should include telemetry-derived state terms."""
     text = SHELL_QML.read_text()
     assert "function sessionAlias(session)" in text
+    assert "function sessionAvailabilityLabel(session)" in text
     assert "session.turn_owner" in text
     assert "session.activity_substate" in text
     assert "session.last_event_name" in text
@@ -87,9 +88,11 @@ def test_session_secondary_label_prioritizes_project_and_phase():
     """Session subtitles should show project/worktree and high-level state."""
     text = SHELL_QML.read_text()
     assert "const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || \"\")));" in text
+    assert "const availability = sessionAvailabilityLabel(session);" in text
     assert "const phase = compactSessionStateLabel(session);" in text
     assert "project !== \"Global\"" in text
     assert "bits.push(project);" in text
+    assert "sessionAvailabilityState(session) !== \"available_here\"" in text
     assert "bits.push(phase);" in text
 
 

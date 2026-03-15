@@ -373,6 +373,78 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
 
 
 @pytest.mark.asyncio
+async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch(server):
+    remote_session = {
+        "session_key": "session-remote-pane",
+        "surface_key": "surface-remote-pane",
+        "conflict_state": "",
+        "host_name": "ryzen",
+        "tmux_session": "i3pm-remote",
+        "tmux_window": "1:codex-raw",
+        "tmux_pane": "%11",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+        },
+    }
+    server._resolve_remote_attach_profile = lambda _session: {"host": "ryzen"}
+    server._switch_to_explicit_remote_context = AsyncMock()
+    server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "terminal_role": "project-main",
+        "terminal_anchor_id": "bridge-anchor",
+    })
+    server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
+        window_id=20,
+        remote_surface_key="surface-remote-pane",
+        remote_session_key="session-remote-pane",
+        remote_tmux_server_key="/tmp/tmux-1000/default",
+        remote_tmux_session="i3pm-old",
+        remote_tmux_window="0:main",
+        remote_tmux_pane="%0",
+    ))
+    server._close_managed_window = AsyncMock(return_value=True)
+    server.state_manager.remove_window = AsyncMock()
+    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server._execute_launch_spec = lambda _spec: {"success": True}
+    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server._window_focus = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key_after": "session-stale",
+        "focused_window_id_after": 44,
+        "focus_state_after": {
+            "success": True,
+            "current_ai_session_key": "session-stale",
+            "focused_window_id": 44,
+        },
+    })
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%11",
+        "tmux_pane": "%11",
+    }
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-remote-pane",
+        "focused_window_id": 44,
+    })
+
+    result = await server._focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session=remote_session,
+    )
+
+    assert result["success"] is True
+    assert result["launch"]["reused_existing"] is False
+    server._close_managed_window.assert_awaited_once_with(20)
+    server.state_manager.remove_window.assert_awaited_once_with(20)
+    server._register_launch_for_spec.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_select_tmux_target_uses_local_socket_for_current_host_ssh_context(server, monkeypatch):
     commands = []
 
@@ -490,7 +562,7 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_focus_state_uses_unique_remote_active_session_without_local_ai_focus(server, monkeypatch):
+async def test_focus_state_uses_verified_remote_override_without_local_ai_focus(server, monkeypatch):
     runtime_snapshot = {
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
@@ -534,6 +606,8 @@ async def test_focus_state_uses_unique_remote_active_session_without_local_ai_fo
             "tmux_pane": "%1",
         },
     ]
+    server._focus_session_override_key = "session-remote-current"
+    server._focus_window_override = {"window_id": 30, "connection_key": "vpittamp@ryzen:22"}
     server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
     monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
@@ -544,6 +618,47 @@ async def test_focus_state_uses_unique_remote_active_session_without_local_ai_fo
     assert result["current_ai_session_key"] == "session-remote-current"
     assert result["focused_window_id"] == 404
     assert result["active_session"]["host_name"] == "ryzen"
+
+
+@pytest.mark.asyncio
+async def test_focus_state_does_not_float_to_remote_session_without_verified_override(server, monkeypatch):
+    runtime_snapshot = {
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+        },
+        "outputs": [],
+        "tracked_windows": [
+            {"id": 404, "window_id": 404, "focused": True},
+        ],
+    }
+    sessions = [
+        {
+            "session_key": "session-remote-current",
+            "window_id": 30,
+            "window_active": True,
+            "pane_active": True,
+            "project_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@ryzen",
+            "focus_connection_key": "vpittamp@ryzen:22",
+            "host_name": "ryzen",
+            "is_current_host": False,
+            "tmux_session": "i3pm-test-remote",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+        },
+    ]
+    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
+    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+
+    result = await server._focus_state({})
+
+    assert result["success"] is True
+    assert result["current_ai_session_key"] == ""
+    assert result["active_session"]["session_key"] == ""
 
 
 @pytest.mark.asyncio

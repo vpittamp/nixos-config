@@ -121,7 +121,11 @@ ShellRoot {
             connection_key: "",
             execution_mode: "",
             focus_mode: "",
+            availability_state: "",
+            focusability_reason: "",
             window_id: 0,
+            bridge_window_id: 0,
+            bridge_state: "",
             pane_label: "",
             pane_title: "",
             tmux_session: "",
@@ -2420,11 +2424,15 @@ ShellRoot {
         const bits = [];
         const host = stringOrEmpty(sessionPreview.host_name);
         const project = shortProject(stringOrEmpty(sessionPreview.project_name));
+        const availability = sessionAvailabilityLabel(sessionPreview);
         if (host) {
             bits.push(displayHostName(host));
         }
         if (project && project !== "Global") {
             bits.push(project);
+        }
+        if (availability.length > 0 && sessionAvailabilityState(sessionPreview) !== "available_here") {
+            bits.push(availability);
         }
         if (stringOrEmpty(sessionPreview.tmux_session)) {
             bits.push(stringOrEmpty(sessionPreview.tmux_session));
@@ -2578,7 +2586,7 @@ ShellRoot {
     function launcherSessionMatches(session, tokens) {
         const parentWindow = findWindowById(Number(session && session.window_id || 0));
         const hostTokenData = sessionHostToken(session);
-        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), sessionTurnOwnerLabel(session), sessionActivitySubstateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), stringOrEmpty(session && session.stage), stringOrEmpty(session && session.turn_owner), stringOrEmpty(session && session.activity_substate), stringOrEmpty(session && session.last_event_name), stringOrEmpty(session && session.status_reason), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
+        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), sessionAvailabilityLabel(session), sessionTurnOwnerLabel(session), sessionActivitySubstateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), stringOrEmpty(session && session.stage), stringOrEmpty(session && session.turn_owner), stringOrEmpty(session && session.activity_substate), stringOrEmpty(session && session.last_event_name), stringOrEmpty(session && session.status_reason), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
     }
 
     function launcherSessionHostSortKey(session) {
@@ -3889,7 +3897,10 @@ ShellRoot {
         if (phase === "working") {
             return stageColor(session);
         }
-        if (phase === "stale") {
+        if (phase === "tmux_missing") {
+            return colors.orange;
+        }
+        if (phase === "stale" || phase === "stale_source") {
             return colors.subtle;
         }
         return colors.blueMuted;
@@ -3905,6 +3916,9 @@ ShellRoot {
         }
         if (phase === "working") {
             return stageBackground(session);
+        }
+        if (phase === "tmux_missing") {
+            return colors.orangeBg;
         }
         return colors.panelAlt;
     }
@@ -3981,7 +3995,10 @@ ShellRoot {
         if (state === "working") {
             return root.sessionAccentColor(session);
         }
-        if (state === "stale") {
+        if (state === "tmux_missing") {
+            return colors.orange;
+        }
+        if (state === "stale" || state === "stale_source") {
             return colors.subtle;
         }
         return colors.muted;
@@ -3998,10 +4015,57 @@ ShellRoot {
         if (state === "working") {
             return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
         }
-        if (state === "stale") {
+        if (state === "tmux_missing") {
+            return colors.orangeBg;
+        }
+        if (state === "stale" || state === "stale_source") {
             return colors.bg;
         }
         return colors.cardAlt;
+    }
+
+    function sessionAvailabilityState(session) {
+        const explicit = stringOrEmpty(session && session.availability_state).toLowerCase();
+        if (explicit.length > 0) {
+            return explicit;
+        }
+        if (boolOrFalse(session && session.remote_source_stale)) {
+            return "stale_source";
+        }
+        if (stringOrEmpty(session && session.session_phase).toLowerCase() === "tmux_missing") {
+            return "tmux_missing";
+        }
+        if (Number(session && session.bridge_window_id) > 0) {
+            return "attached_here";
+        }
+        const focusMode = stringOrEmpty(session && session.focus_mode).toLowerCase();
+        if (focusMode === "ssh_attach") {
+            return "remote_available";
+        }
+        if (focusMode === "local") {
+            return "available_here";
+        }
+        return "unfocusable";
+    }
+
+    function sessionAvailabilityLabel(session) {
+        const state = sessionAvailabilityState(session);
+        if (state === "attached_here") {
+            return "Attached here";
+        }
+        if (state === "remote_available") {
+            return "Remote available";
+        }
+        if (state === "stale_source") {
+            return "Stale source";
+        }
+        if (state === "tmux_missing") {
+            return "Tmux missing";
+        }
+        if (state === "unfocusable") {
+            return "Unavailable";
+        }
+        return "Available here";
     }
 
     function sessionAgeCompactLabel(session) {
@@ -4192,8 +4256,23 @@ ShellRoot {
         if (badgeState === "done") {
             return "Done";
         }
+        if (badgeState === "quiet_alive") {
+            return "Quiet";
+        }
         if (badgeState === "working") {
             return "Working";
+        }
+        if (badgeState === "tmux_missing") {
+            return "Tmux missing";
+        }
+        if (badgeState === "stale_source") {
+            return "Stale source";
+        }
+        if (badgeState === "stale") {
+            return "Stale";
+        }
+        if (badgeState === "inactive") {
+            return "Inactive";
         }
         return "Idle";
     }
@@ -4263,11 +4342,15 @@ ShellRoot {
     function sessionSecondaryLabel(session) {
         const bits = [];
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
+        const availability = sessionAvailabilityLabel(session);
         const phase = compactSessionStateLabel(session);
         if (project.length > 0 && project !== "Global") {
             bits.push(project);
         }
-        if (phase.length > 0) {
+        if (availability.length > 0 && sessionAvailabilityState(session) !== "available_here") {
+            bits.push(availability);
+        }
+        if (phase.length > 0 && phase !== availability) {
             bits.push(phase);
         }
 
@@ -5448,6 +5531,45 @@ ShellRoot {
         runDetached(command);
     }
 
+    function emptyDashboardState(status, errorMessage) {
+        return {
+            status: stringOrEmpty(status) || "loading",
+            error: stringOrEmpty(errorMessage),
+            active_context: {},
+            active_terminal: {},
+            active_ai_sessions: [],
+            active_ai_sessions_mru: [],
+            current_ai_session_key: "",
+            display_layout: {},
+            outputs: [],
+            projects: [],
+            worktrees: [],
+            scratchpad: {},
+            state_health: {},
+            total_windows: 0
+        };
+    }
+
+    function resetDashboard(status, errorMessage) {
+        dashboard = root.emptyDashboardState(status, errorMessage);
+        if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
+            restartLauncherQuery();
+        }
+    }
+
+    function handleDashboardWatchError(payload) {
+        const message = stringOrEmpty(payload).trim();
+        if (!message) {
+            return;
+        }
+        console.warn("dashboard.watch:", message);
+        if (message.indexOf("Bad resource ID") !== -1 || message.indexOf("Fatal error") !== -1) {
+            root.resetDashboard("reconnecting", message);
+            dashboardWatcher.running = false;
+            dashboardRestartTimer.restart();
+        }
+    }
+
     function parseDashboard(payload) {
         const raw = stringOrEmpty(payload).trim();
         if (!raw || raw === "undefined" || raw === "null") {
@@ -5537,7 +5659,10 @@ ShellRoot {
         id: dashboardRestartTimer
         interval: 1000
         repeat: false
-        onTriggered: dashboardWatcher.running = true
+        onTriggered: {
+            root.resetDashboard("loading", "");
+            dashboardWatcher.running = true;
+        }
     }
 
     Timer {
@@ -5622,12 +5747,11 @@ ShellRoot {
         stderr: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
-                if (data && data.trim()) {
-                    console.warn("dashboard.watch:", data);
-                }
+                root.handleDashboardWatchError(data);
             }
         }
         onExited: function () {
+            root.resetDashboard("reconnecting", "dashboard watcher exited");
             dashboardRestartTimer.restart();
         }
     }

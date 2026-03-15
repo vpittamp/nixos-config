@@ -656,6 +656,10 @@ class IPCServer:
                 result = await self._focus_state(params)
             elif method == "session.preview":
                 result = await self._session_preview(params)
+            elif method == "session.cleanup":
+                result = await self._session_cleanup(params)
+            elif method == "session.doctor":
+                result = await self._session_doctor(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
 
@@ -2675,6 +2679,11 @@ class IPCServer:
                         "remote_session_name": i3pm_env.get("I3PM_REMOTE_SESSION_NAME", ""),
                         "remote_session_key": i3pm_env.get("I3PM_REMOTE_SESSION_KEY", ""),
                         "remote_surface_key": i3pm_env.get("I3PM_REMOTE_SURFACE_KEY", ""),
+                        "remote_tmux_socket": i3pm_env.get("I3PM_REMOTE_TMUX_SOCKET", ""),
+                        "remote_tmux_server_key": i3pm_env.get("I3PM_REMOTE_TMUX_SERVER_KEY", ""),
+                        "remote_tmux_session": i3pm_env.get("I3PM_REMOTE_TMUX_SESSION", ""),
+                        "remote_tmux_window": i3pm_env.get("I3PM_REMOTE_TMUX_WINDOW", ""),
+                        "remote_tmux_pane": i3pm_env.get("I3PM_REMOTE_TMUX_PANE", ""),
                     }
                     tracked_window = tracked_windows.get(int(window.id)) or tracked_windows_by_con_id.get(int(window.id))
                     if tracked_window:
@@ -2728,6 +2737,11 @@ class IPCServer:
             "remote_session_name": str(getattr(tracked_window, "remote_session_name", "") or ""),
             "remote_session_key": str(getattr(tracked_window, "remote_session_key", "") or ""),
             "remote_surface_key": str(getattr(tracked_window, "remote_surface_key", "") or ""),
+            "remote_tmux_socket": str(getattr(tracked_window, "remote_tmux_socket", "") or ""),
+            "remote_tmux_server_key": str(getattr(tracked_window, "remote_tmux_server_key", "") or ""),
+            "remote_tmux_session": str(getattr(tracked_window, "remote_tmux_session", "") or ""),
+            "remote_tmux_window": str(getattr(tracked_window, "remote_tmux_window", "") or ""),
+            "remote_tmux_pane": str(getattr(tracked_window, "remote_tmux_pane", "") or ""),
             "terminal_anchor_id": str(getattr(tracked_window, "terminal_anchor_id", "") or ""),
             "app_key": str(getattr(tracked_window, "app_identifier", "") or ""),
             "app_name": str(getattr(tracked_window, "app_identifier", "") or ""),
@@ -2920,6 +2934,11 @@ class IPCServer:
                     "remote_session_name": env.get("I3PM_REMOTE_SESSION_NAME", ""),
                     "remote_session_key": env.get("I3PM_REMOTE_SESSION_KEY", ""),
                     "remote_surface_key": env.get("I3PM_REMOTE_SURFACE_KEY", ""),
+                    "remote_tmux_socket": env.get("I3PM_REMOTE_TMUX_SOCKET", ""),
+                    "remote_tmux_server_key": env.get("I3PM_REMOTE_TMUX_SERVER_KEY", ""),
+                    "remote_tmux_session": env.get("I3PM_REMOTE_TMUX_SESSION", ""),
+                    "remote_tmux_window": env.get("I3PM_REMOTE_TMUX_WINDOW", ""),
+                    "remote_tmux_pane": env.get("I3PM_REMOTE_TMUX_PANE", ""),
                 }
                 if tracked_window:
                     window_data.update(self._tracked_window_runtime_fields(tracked_window))
@@ -6457,6 +6476,119 @@ class IPCServer:
             )
             terminal_context["pane_active"] = session["pane_active"]
 
+    @staticmethod
+    def _is_heartbeat_like_status_reason(status_reason: Any) -> bool:
+        """Return whether a status reason only reflects liveness, not new work."""
+        lowered = str(status_reason or "").strip().lower()
+        if not lowered:
+            return False
+        if lowered in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
+            return True
+        return lowered.startswith("event:codex.sse_event:response.completed")
+
+    @staticmethod
+    def _session_phase_label(phase: str) -> str:
+        """Return the user-facing label for a normalized session phase."""
+        mapping = {
+            "needs_attention": "Needs attention",
+            "working": "Working",
+            "quiet_alive": "Quiet",
+            "done": "Done",
+            "idle": "Idle",
+            "tmux_missing": "Tmux missing",
+            "stale_source": "Stale source",
+            "stale": "Stale",
+            "inactive": "Inactive",
+        }
+        return mapping.get(str(phase or "").strip().lower(), "Idle")
+
+    def _session_phase_with_runtime_overrides(
+        self,
+        *,
+        phase: str,
+        terminal_context: Dict[str, Any],
+        process_running: bool,
+        status_reason: str,
+        remote_source_stale: bool,
+    ) -> Tuple[str, str]:
+        """Overlay runtime-specific session phases that the OTEL snapshot cannot infer alone."""
+        normalized_phase = str(phase or "").strip().lower() or "idle"
+        tmux_session = str(terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
+        tmux_resolution_source = str(terminal_context.get("tmux_resolution_source") or "").strip().lower()
+        has_tmux_identity = bool(tmux_session and tmux_window and tmux_pane)
+        has_tracking_anchor = bool(
+            str(terminal_context.get("terminal_anchor_id") or "").strip()
+            or str(terminal_context.get("pty") or "").strip()
+            or str(terminal_context.get("context_key") or "").strip()
+        )
+
+        if remote_source_stale:
+            normalized_phase = "stale_source"
+        elif (
+            normalized_phase in {"idle", "working", "quiet_alive"}
+            and process_running
+            and has_tracking_anchor
+            and not has_tmux_identity
+            and tmux_resolution_source == "missing"
+        ):
+            normalized_phase = "tmux_missing"
+        elif (
+            normalized_phase == "idle"
+            and process_running
+            and self._is_heartbeat_like_status_reason(status_reason)
+        ):
+            normalized_phase = "quiet_alive"
+
+        return normalized_phase, self._session_phase_label(normalized_phase)
+
+    @staticmethod
+    def _session_availability_state(
+        *,
+        focus_mode: str,
+        session_phase: str,
+        bridge_window_id: int,
+        remote_source_stale: bool,
+    ) -> str:
+        """Return the user-facing availability bucket for a normalized session."""
+        normalized_phase = str(session_phase or "").strip().lower()
+        normalized_focus_mode = str(focus_mode or "").strip().lower()
+        if remote_source_stale or normalized_phase == "stale_source":
+            return "stale_source"
+        if normalized_phase == "tmux_missing":
+            return "tmux_missing"
+        if normalized_focus_mode == "ssh_attach":
+            return "attached_here" if int(bridge_window_id or 0) > 0 else "remote_available"
+        if normalized_focus_mode == "local":
+            return "available_here"
+        return "unfocusable"
+
+    @staticmethod
+    def _session_focusability_reason(
+        *,
+        focus_mode: str,
+        session_phase: str,
+        bridge_window_id: int,
+        window_id: int,
+        remote_source_stale: bool,
+        has_tmux_identity: bool,
+    ) -> str:
+        """Return the primary reason a session can or cannot be focused."""
+        normalized_phase = str(session_phase or "").strip().lower()
+        normalized_focus_mode = str(focus_mode or "").strip().lower()
+        if remote_source_stale or normalized_phase == "stale_source":
+            return "remote_source_stale"
+        if normalized_phase == "tmux_missing":
+            return "missing_tmux_identity"
+        if normalized_focus_mode == "ssh_attach":
+            return "attached_bridge_window" if int(bridge_window_id or 0) > 0 else "remote_tmux_available"
+        if normalized_focus_mode == "local":
+            return "local_window_bound" if int(window_id or 0) > 0 else "local_focus_target"
+        if not has_tmux_identity:
+            return "no_focus_target"
+        return "focus_target_unavailable"
+
     def _normalize_session_items(
         self,
         sessions: List[Dict[str, Any]],
@@ -6534,6 +6666,37 @@ class IPCServer:
                 remote_source_stale=source_stale,
                 has_tmux_identity=bool(tmux_session and tmux_pane),
             )
+            session_phase, session_phase_label = self._session_phase_with_runtime_overrides(
+                phase=str(raw_session.get("session_phase") or "").strip(),
+                terminal_context=terminal_context,
+                process_running=bool(raw_session.get("process_running", False)),
+                status_reason=str(raw_session.get("status_reason") or "").strip(),
+                remote_source_stale=bool(source_stale),
+            )
+            bridge_window_id = (
+                bound_window_id
+                if bound_window_id > 0 and not source_is_current_host
+                else 0
+            )
+            bridge_state = (
+                "attached"
+                if bridge_window_id > 0
+                else ("available" if focus_mode == "ssh_attach" else "")
+            )
+            availability_state = self._session_availability_state(
+                focus_mode=focus_mode,
+                session_phase=session_phase,
+                bridge_window_id=bridge_window_id,
+                remote_source_stale=bool(source_stale),
+            )
+            focusability_reason = self._session_focusability_reason(
+                focus_mode=focus_mode,
+                session_phase=session_phase,
+                bridge_window_id=bridge_window_id,
+                window_id=bound_window_id,
+                remote_source_stale=bool(source_stale),
+                has_tmux_identity=bool(tmux_session and tmux_pane),
+            )
             normalized.append({
                 "session_key": session_key,
                 "focus_target": self._build_session_focus_target(session_key),
@@ -6541,6 +6704,7 @@ class IPCServer:
                 "display_tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
                 "project": project_name,
                 "project_name": project_name,
+                "project_path": str(raw_session.get("project_path") or "").strip(),
                 "display_project": display_project,
                 "window_project": str(bound_window.get("project") or project_name or "").strip(),
                 "window_id": bound_window_id,
@@ -6574,8 +6738,8 @@ class IPCServer:
                 "output_ready": bool(raw_session.get("output_ready", False)),
                 "output_unseen": bool(raw_session.get("output_unseen", False)),
                 "review_pending": bool(raw_session.get("review_pending", raw_session.get("output_unseen", False))),
-                "session_phase": str(raw_session.get("session_phase") or "").strip(),
-                "session_phase_label": str(raw_session.get("session_phase_label") or "").strip(),
+                "session_phase": session_phase,
+                "session_phase_label": session_phase_label,
                 "turn_owner": str(raw_session.get("turn_owner") or "unknown").strip() or "unknown",
                 "turn_owner_label": str(raw_session.get("turn_owner_label") or "Unknown").strip() or "Unknown",
                 "activity_substate": str(raw_session.get("activity_substate") or raw_session.get("stage") or "idle").strip() or "idle",
@@ -6593,6 +6757,8 @@ class IPCServer:
                 "source_is_current_host": source_is_current_host,
                 "focus_mode": focus_mode,
                 "focus_target_host": "" if focus_mode == "local" else host_name,
+                "availability_state": availability_state,
+                "focusability_reason": focusability_reason,
                 "identity_source": str(raw_session.get("identity_source") or "").strip(),
                 "native_session_id": str(raw_session.get("native_session_id") or "").strip(),
                 "session_id": str(raw_session.get("session_id") or "").strip(),
@@ -6619,6 +6785,8 @@ class IPCServer:
                 "focus_project": project_name,
                 "focus_execution_mode": focus_execution_mode,
                 "focus_connection_key": focus_connection_key,
+                "bridge_window_id": bridge_window_id,
+                "bridge_state": bridge_state,
             })
 
         normalized.sort(
@@ -6696,12 +6864,15 @@ class IPCServer:
     @staticmethod
     def _session_phase_priority(phase: str) -> int:
         mapping = {
-            "needs_attention": 4,
-            "working": 3,
+            "needs_attention": 5,
+            "working": 4,
+            "quiet_alive": 3,
             "done": 2,
             "idle": 1,
-            "stale": 0,
-            "inactive": -1,
+            "tmux_missing": 0,
+            "stale_source": -1,
+            "stale": -2,
+            "inactive": -3,
         }
         return mapping.get(str(phase or "").strip().lower(), -1)
 
@@ -6759,10 +6930,6 @@ class IPCServer:
             None,
         )
         if isinstance(match, dict):
-            match_window_id = int(match.get("window_id") or 0)
-            if focused_window_id > 0 and match_window_id > 0 and match_window_id != int(focused_window_id):
-                self._focus_session_override_key = ""
-                return ""
             return override_key
         self._focus_session_override_key = ""
         return ""
@@ -6812,6 +6979,10 @@ class IPCServer:
                 if override_match:
                     return override_match
 
+                if override_key:
+                    self._focus_session_override_key = ""
+                    self._focus_window_override = {"window_id": 0, "connection_key": ""}
+
                 exact_match = next(
                     (
                         str(session.get("session_key") or "")
@@ -6829,21 +7000,20 @@ class IPCServer:
         if override_key:
             return override_key
 
-        # When no local AI surface owns the focused Sway container, allow a unique
-        # remotely active session to be treated as current so dashboard consumers
-        # can confirm the result of daemon-owned remote focus transactions.
-        exact_matches = [
-            str(session.get("session_key") or "").strip()
-            for session in sessions
-            if bool(session.get("window_active", False))
-            and bool(session.get("pane_active", False))
-            and str(session.get("session_key") or "").strip()
-        ]
-        unique_matches = list(dict.fromkeys(exact_matches))
-        if len(unique_matches) == 1:
-            return unique_matches[0]
-
         return ""
+
+    @staticmethod
+    def _stale_bridge_close_reasons() -> set[str]:
+        """Return stale bridge reasons that are safe to close automatically."""
+        return {
+            "missing_remote_session",
+            "remote_surface_mismatch",
+            "remote_session_mismatch",
+            "tmux_server_key_mismatch",
+            "tmux_session_mismatch",
+            "tmux_window_mismatch",
+            "tmux_pane_mismatch",
+        }
 
     def _mark_current_session(
         self,
@@ -6949,10 +7119,31 @@ class IPCServer:
         sessions.sort(key=self._session_item_sort_key)
         return sessions
 
-    async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return canonical focus state for acceptance checks and UI confirmation."""
+    async def _load_reconciled_session_runtime(
+        self,
+        params: Optional[Dict[str, Any]] = None,
+        *,
+        close_windows: bool,
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+        """Load runtime + sessions and reconcile stale remote bridge state."""
         runtime_snapshot = await self._runtime_snapshot(params or {})
         sessions = self._load_session_items(runtime_snapshot)
+        cleanup = await self._reconcile_session_runtime_state(
+            runtime_snapshot,
+            sessions,
+            close_windows=close_windows,
+        )
+        if int(cleanup.get("cleaned_window_count") or 0) > 0:
+            runtime_snapshot = await self._runtime_snapshot(params or {})
+            sessions = self._load_session_items(runtime_snapshot)
+        return runtime_snapshot, sessions, cleanup
+
+    async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return canonical focus state for acceptance checks and UI confirmation."""
+        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
+            params or {},
+            close_windows=True,
+        )
         focused_window_id = next(
             (
                 int(window.get("id") or 0)
@@ -6997,11 +7188,22 @@ class IPCServer:
 
     async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return daemon-owned AI session data merged from local and remote OTEL sources."""
-        focus_state = await self._focus_state({})
-        runtime_snapshot = await self._runtime_snapshot({})
-        sessions = self._load_session_items(runtime_snapshot)
-        focused_window_id = int(focus_state.get("focused_window_id") or 0)
-        current_session_key = str(focus_state.get("current_ai_session_key") or "").strip()
+        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
+            params or {},
+            close_windows=True,
+        )
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in self._flatten_runtime_windows(runtime_snapshot)
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = self._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
         self._mark_current_session(
             sessions,
             current_session_key=current_session_key,
@@ -7047,9 +7249,26 @@ class IPCServer:
         }
         local_window_id = int(getattr(existing_window, "window_id", 0) or 0) if existing_window is not None else 0
 
+        if existing_window is not None:
+            stale_bridge_reason = self._remote_bridge_window_mismatch_reason(existing_window, session)
+            if stale_bridge_reason:
+                await self._close_managed_window(local_window_id)
+                await self.state_manager.remove_window(local_window_id)
+                self.invalidate_window_tree_cache()
+                existing_window = None
+                local_window_id = 0
+                launch_result = {
+                    "success": True,
+                    "reused_existing": False,
+                    "replaced_stale_bridge": True,
+                    "stale_bridge_reason": stale_bridge_reason,
+                }
+
         if existing_window is None:
+            prior_launch_state = dict(launch_result)
             spec["launch"] = await self._register_launch_for_spec(spec)
-            launch_result = self._execute_launch_spec(spec)
+            launch_result = dict(prior_launch_state)
+            launch_result.update(self._execute_launch_spec(spec))
             anchor_result = await self._wait_for_terminal_window(str(spec.get("terminal_anchor_id") or "").strip())
             local_window_id = int(anchor_result.get("window_id") or 0)
             if local_window_id <= 0:
@@ -7285,6 +7504,8 @@ class IPCServer:
         tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
         pane_label = str(session.get("pane_label") or session.get("pane_title") or tmux_pane or "").strip()
         focus_mode = str(session.get("focus_mode") or "").strip() or "unfocusable"
+        availability_state = str(session.get("availability_state") or "").strip()
+        focusability_reason = str(session.get("focusability_reason") or "").strip()
         source_is_current_host = bool(session.get("source_is_current_host", False))
         has_tmux_identity = bool(tmux_session and tmux_pane)
         remote_user = ""
@@ -7306,7 +7527,12 @@ class IPCServer:
         is_live = False
         is_remote = not source_is_current_host
 
-        if has_tmux_identity and source_is_current_host and execution_mode == "local":
+        if availability_state == "stale_source":
+            preview_mode = "unavailable"
+            preview_reason = "stale_remote_source"
+            is_live = False
+            is_remote = not source_is_current_host
+        elif has_tmux_identity and source_is_current_host and execution_mode == "local":
             preview_mode = "local_stream"
             preview_reason = "ok"
             is_live = True
@@ -7332,7 +7558,11 @@ class IPCServer:
             "focus_connection_key": str(session.get("focus_connection_key") or "").strip(),
             "execution_mode": execution_mode,
             "focus_mode": focus_mode,
+            "availability_state": availability_state,
+            "focusability_reason": focusability_reason,
             "window_id": int(session.get("window_id") or 0),
+            "bridge_window_id": int(session.get("bridge_window_id") or 0),
+            "bridge_state": str(session.get("bridge_state") or "").strip(),
             "pane_label": pane_label,
             "pane_title": str(session.get("pane_title") or "").strip(),
             "tmux_socket": tmux_socket,
@@ -7738,8 +7968,10 @@ class IPCServer:
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by EWW/Walker."""
-        runtime_snapshot = await self._runtime_snapshot(params or {})
-        sessions = self._load_session_items(runtime_snapshot)
+        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
+            params or {},
+            close_windows=True,
+        )
         display_snapshot = await self._display_snapshot({})
         focused_window_id = next(
             (
@@ -7794,7 +8026,7 @@ class IPCServer:
                 "active_sessions": len(sessions),
                 "working_sessions": sum(
                     1 for session in sessions
-                    if str(session.get("session_phase") or "").strip().lower() == "working"
+                    if str(session.get("session_phase") or "").strip().lower() in {"working", "quiet_alive"}
                 ),
                 "attention_sessions": sum(
                     1 for session in sessions
@@ -10850,6 +11082,31 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                         or getattr(window_info, "remote_surface_key", "")
                         or ""
                     ),
+                    "remote_tmux_socket": str(
+                        visible_window.get("remote_tmux_socket")
+                        or getattr(window_info, "remote_tmux_socket", "")
+                        or ""
+                    ),
+                    "remote_tmux_server_key": str(
+                        visible_window.get("remote_tmux_server_key")
+                        or getattr(window_info, "remote_tmux_server_key", "")
+                        or ""
+                    ),
+                    "remote_tmux_session": str(
+                        visible_window.get("remote_tmux_session")
+                        or getattr(window_info, "remote_tmux_session", "")
+                        or ""
+                    ),
+                    "remote_tmux_window": str(
+                        visible_window.get("remote_tmux_window")
+                        or getattr(window_info, "remote_tmux_window", "")
+                        or ""
+                    ),
+                    "remote_tmux_pane": str(
+                        visible_window.get("remote_tmux_pane")
+                        or getattr(window_info, "remote_tmux_pane", "")
+                        or ""
+                    ),
                     "focused": bool(visible_window.get("focused", False)),
                     "visible": visible,
                     "hidden": hidden,
@@ -12620,6 +12877,317 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
         return f"remote-session:{digest}"
 
+    @staticmethod
+    def _remote_bridge_identity_from_window(window_like: Any) -> Dict[str, str]:
+        """Return the remote bridge identity recorded on a local terminal window."""
+        if isinstance(window_like, dict):
+            getter = window_like.get
+        else:
+            getter = lambda key, default="": getattr(window_like, key, default)
+        return {
+            "remote_session_key": str(getter("remote_session_key", "") or "").strip(),
+            "remote_surface_key": str(getter("remote_surface_key", "") or "").strip(),
+            "tmux_socket": str(getter("remote_tmux_socket", "") or "").strip(),
+            "tmux_server_key": str(
+                getter("remote_tmux_server_key", "")
+                or getter("remote_tmux_socket", "")
+                or ""
+            ).strip(),
+            "tmux_session": str(getter("remote_tmux_session", "") or "").strip(),
+            "tmux_window": str(getter("remote_tmux_window", "") or "").strip(),
+            "tmux_pane": str(getter("remote_tmux_pane", "") or "").strip(),
+        }
+
+    @staticmethod
+    def _remote_bridge_identity_from_session(session: Dict[str, Any]) -> Dict[str, str]:
+        """Return the canonical remote tmux identity for a normalized session item."""
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        return {
+            "remote_session_key": str(session.get("session_key") or "").strip(),
+            "remote_surface_key": str(session.get("surface_key") or "").strip(),
+            "tmux_socket": str(terminal_context.get("tmux_socket") or "").strip(),
+            "tmux_server_key": str(
+                terminal_context.get("tmux_server_key")
+                or terminal_context.get("tmux_socket")
+                or ""
+            ).strip(),
+            "tmux_session": str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip(),
+            "tmux_window": str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip(),
+            "tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
+        }
+
+    def _remote_bridge_window_mismatch_reason(
+        self,
+        window_like: Any,
+        session: Dict[str, Any],
+    ) -> str:
+        """Return why a local bridge window no longer matches the remote session identity."""
+        window_identity = self._remote_bridge_identity_from_window(window_like)
+        session_identity = self._remote_bridge_identity_from_session(session)
+
+        if (
+            window_identity["remote_surface_key"]
+            and session_identity["remote_surface_key"]
+            and window_identity["remote_surface_key"] != session_identity["remote_surface_key"]
+        ):
+            return "remote_surface_mismatch"
+        if (
+            window_identity["remote_session_key"]
+            and session_identity["remote_session_key"]
+            and window_identity["remote_session_key"] != session_identity["remote_session_key"]
+        ):
+            return "remote_session_mismatch"
+
+        for key in ("tmux_server_key", "tmux_session", "tmux_window", "tmux_pane"):
+            if (
+                window_identity[key]
+                and session_identity[key]
+                and window_identity[key] != session_identity[key]
+            ):
+                return f"{key}_mismatch"
+        return ""
+
+    async def _close_managed_window(self, window_id: int) -> bool:
+        """Close a managed Sway window by container id."""
+        target = int(window_id or 0)
+        if target <= 0:
+            return False
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            return False
+        result = await self.i3_connection.conn.command(f"[con_id={target}] kill")
+        return any(bool(item.get("success", False)) for item in (result or []))
+
+    def _stale_remote_bridge_windows(
+        self,
+        runtime_snapshot: Dict[str, Any],
+        sessions: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Return stale local bridge windows that no longer map to a live remote session."""
+        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
+        live_by_surface = {
+            str(session.get("surface_key") or "").strip(): session
+            for session in sessions
+            if isinstance(session, dict)
+            and str(session.get("surface_key") or "").strip()
+            and str(session.get("focus_mode") or "").strip() == "ssh_attach"
+        }
+        live_by_session = {
+            str(session.get("session_key") or "").strip(): session
+            for session in sessions
+            if isinstance(session, dict)
+            and str(session.get("session_key") or "").strip()
+            and str(session.get("focus_mode") or "").strip() == "ssh_attach"
+        }
+        stale: List[Dict[str, Any]] = []
+        for window in tracked_windows:
+            if not isinstance(window, dict):
+                continue
+            if str(window.get("execution_mode") or "").strip() != "ssh":
+                continue
+            window_identity = self._remote_bridge_identity_from_window(window)
+            if not (window_identity["remote_surface_key"] or window_identity["remote_session_key"]):
+                continue
+            session = (
+                live_by_surface.get(window_identity["remote_surface_key"])
+                or live_by_session.get(window_identity["remote_session_key"])
+            )
+            if session is None:
+                stale.append({
+                    "window_id": int(window.get("window_id") or window.get("id") or 0),
+                    "reason": "missing_remote_session",
+                    "remote_surface_key": window_identity["remote_surface_key"],
+                    "remote_session_key": window_identity["remote_session_key"],
+                })
+                continue
+            if bool(session.get("remote_source_stale", False)):
+                stale.append({
+                    "window_id": int(window.get("window_id") or window.get("id") or 0),
+                    "reason": "stale_remote_source",
+                    "remote_surface_key": window_identity["remote_surface_key"],
+                    "remote_session_key": window_identity["remote_session_key"],
+                })
+                continue
+            mismatch_reason = self._remote_bridge_window_mismatch_reason(window, session)
+            if mismatch_reason:
+                stale.append({
+                    "window_id": int(window.get("window_id") or window.get("id") or 0),
+                    "reason": mismatch_reason,
+                    "remote_surface_key": window_identity["remote_surface_key"],
+                    "remote_session_key": window_identity["remote_session_key"],
+                })
+        return stale
+
+    async def _reconcile_session_runtime_state(
+        self,
+        runtime_snapshot: Dict[str, Any],
+        sessions: List[Dict[str, Any]],
+        *,
+        close_windows: bool,
+    ) -> Dict[str, Any]:
+        """Prune stale bridge windows and clear overrides that no longer resolve."""
+        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
+        stale_bridges = self._stale_remote_bridge_windows(runtime_snapshot, sessions)
+        live_window_ids = {
+            int(window.get("window_id") or window.get("id") or 0)
+            for window in tracked_windows
+            if isinstance(window, dict) and int(window.get("window_id") or window.get("id") or 0) > 0
+        }
+        live_session_keys = {
+            str(session.get("session_key") or "").strip()
+            for session in sessions
+            if isinstance(session, dict) and str(session.get("session_key") or "").strip()
+        }
+        stale_window_ids = {int(item.get("window_id") or 0) for item in stale_bridges if int(item.get("window_id") or 0) > 0}
+
+        cleared_session_override = False
+        if (
+            str(self._focus_session_override_key or "").strip()
+            and str(self._focus_session_override_key or "").strip() not in live_session_keys
+        ):
+            self._focus_session_override_key = ""
+            cleared_session_override = True
+
+        cleared_window_override = False
+        override_window_id = int(self._focus_window_override.get("window_id") or 0)
+        if override_window_id > 0 and (
+            override_window_id not in live_window_ids or override_window_id in stale_window_ids
+        ):
+            self._focus_window_override = {"window_id": 0, "connection_key": ""}
+            cleared_window_override = True
+
+        cleaned_windows: List[Dict[str, Any]] = []
+        close_reasons = self._stale_bridge_close_reasons()
+        if close_windows:
+            for item in stale_bridges:
+                window_id = int(item.get("window_id") or 0)
+                if window_id <= 0:
+                    continue
+                if str(item.get("reason") or "").strip() not in close_reasons:
+                    continue
+                closed = await self._close_managed_window(window_id)
+                if hasattr(self.state_manager, "remove_window"):
+                    await self.state_manager.remove_window(window_id)
+                cleaned_windows.append({
+                    "window_id": window_id,
+                    "closed": bool(closed),
+                    "reason": str(item.get("reason") or "").strip(),
+                })
+            if cleaned_windows:
+                self.invalidate_window_tree_cache()
+
+        return {
+            "stale_bridge_count": len(stale_bridges),
+            "stale_bridges": stale_bridges,
+            "cleaned_window_count": len(cleaned_windows),
+            "cleaned_windows": cleaned_windows,
+            "cleared_session_override": cleared_session_override,
+            "cleared_window_override": cleared_window_override,
+        }
+
+    async def _session_doctor(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return an operator-facing AI session diagnostic snapshot."""
+        runtime_snapshot, sessions, cleanup = await self._load_reconciled_session_runtime(
+            params,
+            close_windows=False,
+        )
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in self._flatten_runtime_windows(runtime_snapshot)
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = self._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
+        session_by_surface = {
+            str(session.get("surface_key") or "").strip(): session
+            for session in sessions
+            if isinstance(session, dict) and str(session.get("surface_key") or "").strip()
+        }
+        session_by_key = {
+            str(session.get("session_key") or "").strip(): session
+            for session in sessions
+            if isinstance(session, dict) and str(session.get("session_key") or "").strip()
+        }
+        bridge_windows: List[Dict[str, Any]] = []
+        for window in runtime_snapshot.get("tracked_windows", []) or []:
+            if not isinstance(window, dict):
+                continue
+            identity = self._remote_bridge_identity_from_window(window)
+            if not (identity["remote_surface_key"] or identity["remote_session_key"]):
+                continue
+            session = (
+                session_by_surface.get(identity["remote_surface_key"])
+                or session_by_key.get(identity["remote_session_key"])
+            )
+            mismatch_reason = ""
+            if session is None:
+                mismatch_reason = "missing_remote_session"
+            else:
+                mismatch_reason = self._remote_bridge_window_mismatch_reason(window, session)
+            bridge_windows.append({
+                "window_id": int(window.get("window_id") or window.get("id") or 0),
+                "project": str(window.get("project") or "").strip(),
+                "execution_mode": str(window.get("execution_mode") or "").strip(),
+                "connection_key": str(window.get("connection_key") or "").strip(),
+                "context_key": str(window.get("context_key") or "").strip(),
+                "focused": bool(window.get("focused", False)),
+                "hidden": bool(window.get("hidden", False)),
+                "remote_session_key": identity["remote_session_key"],
+                "remote_surface_key": identity["remote_surface_key"],
+                "remote_tmux_server_key": identity["tmux_server_key"],
+                "remote_tmux_session": identity["tmux_session"],
+                "remote_tmux_window": identity["tmux_window"],
+                "remote_tmux_pane": identity["tmux_pane"],
+                "matched_session_key": str(session.get("session_key") or "").strip() if isinstance(session, dict) else "",
+                "mismatch_reason": mismatch_reason,
+            })
+
+        return {
+            "success": True,
+            "current_ai_session_key": current_session_key,
+            "focused_window_id": focused_window_id,
+            "focus_override": {
+                "session_key": str(self._focus_session_override_key or "").strip(),
+                "window_id": int(self._focus_window_override.get("window_id") or 0),
+                "connection_key": str(self._focus_window_override.get("connection_key") or "").strip(),
+            },
+            "session_count": len(sessions),
+            "bridge_window_count": len(bridge_windows),
+            "stale_bridge_count": int(cleanup.get("stale_bridge_count") or 0),
+            "stale_bridges": cleanup.get("stale_bridges", []),
+            "bridge_windows": bridge_windows,
+            "sessions": sessions,
+        }
+
+    async def _session_cleanup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clean up stale remote bridge windows and focus overrides."""
+        runtime_snapshot = await self._runtime_snapshot({})
+        sessions = self._load_session_items(runtime_snapshot)
+        close_windows = bool(params.get("close_windows", True))
+        cleanup = await self._reconcile_session_runtime_state(
+            runtime_snapshot,
+            sessions,
+            close_windows=close_windows,
+        )
+        refreshed_runtime = await self._runtime_snapshot({})
+        refreshed_sessions = self._load_session_items(refreshed_runtime)
+        return {
+            "success": True,
+            "cleaned_up": int(cleanup.get("cleaned_window_count") or 0),
+            "remaining_sessions": len(refreshed_sessions),
+            "stale_bridge_count": int(cleanup.get("stale_bridge_count") or 0),
+            "stale_bridges": cleanup.get("stale_bridges", []),
+            "windows_cleaned": cleanup.get("cleaned_windows", []),
+            "cleared_session_override": bool(cleanup.get("cleared_session_override", False)),
+            "cleared_window_override": bool(cleanup.get("cleared_window_override", False)),
+        }
+
     def _resolve_remote_attach_profile(self, session: Dict[str, Any]) -> Dict[str, Any]:
         """Return the local SSH profile used to attach to a remote session."""
         project_name = str(session.get("project_name") or session.get("project") or "").strip()
@@ -12649,6 +13217,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         configured_host = str(configured_profile.get("host") or "").strip()
         if configured_host and configured_host == remote_host:
             remote_dir = str(configured_profile.get("remote_dir") or "").strip()
+        if not remote_dir:
+            remote_dir = str(session.get("project_path") or "").strip()
         if not remote_host:
             raise RuntimeError(f"Remote session '{project_name}' has no SSH host metadata")
 

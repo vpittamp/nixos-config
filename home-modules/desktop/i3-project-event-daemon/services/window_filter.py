@@ -62,6 +62,11 @@ class WindowEnvironment:
     context_key: Optional[str] = None  # I3PM_CONTEXT_KEY - project/variant/connection identity
     remote_session_key: Optional[str] = None  # I3PM_REMOTE_SESSION_KEY - canonical remote AI session key
     remote_surface_key: Optional[str] = None  # I3PM_REMOTE_SURFACE_KEY - canonical remote AI surface key
+    remote_tmux_socket: Optional[str] = None  # I3PM_REMOTE_TMUX_SOCKET - remote tmux socket path
+    remote_tmux_server_key: Optional[str] = None  # I3PM_REMOTE_TMUX_SERVER_KEY - remote tmux server identity
+    remote_tmux_session: Optional[str] = None  # I3PM_REMOTE_TMUX_SESSION - remote tmux session
+    remote_tmux_window: Optional[str] = None  # I3PM_REMOTE_TMUX_WINDOW - remote tmux window
+    remote_tmux_pane: Optional[str] = None  # I3PM_REMOTE_TMUX_PANE - remote tmux pane
 
 
 def read_process_environ(pid: int) -> Dict[str, str]:
@@ -302,6 +307,11 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
             context_key=env.get("I3PM_CONTEXT_KEY"),
             remote_session_key=env.get("I3PM_REMOTE_SESSION_KEY"),
             remote_surface_key=env.get("I3PM_REMOTE_SURFACE_KEY"),
+            remote_tmux_socket=env.get("I3PM_REMOTE_TMUX_SOCKET"),
+            remote_tmux_server_key=env.get("I3PM_REMOTE_TMUX_SERVER_KEY"),
+            remote_tmux_session=env.get("I3PM_REMOTE_TMUX_SESSION"),
+            remote_tmux_window=env.get("I3PM_REMOTE_TMUX_WINDOW"),
+            remote_tmux_pane=env.get("I3PM_REMOTE_TMUX_PANE"),
         )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse I3PM environment variables: {e}")

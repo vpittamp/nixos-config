@@ -67,7 +67,11 @@ def make_session(**overrides):
         "connection_key": "local@thinkpad",
         "execution_mode": "local",
         "focus_mode": "local",
+        "availability_state": "available_here",
+        "focusability_reason": "local_window_bound",
         "window_id": 1001,
+        "bridge_window_id": 0,
+        "bridge_state": "",
         "pane_label": "editor",
         "pane_title": "editor",
         "tmux_session": "nixos-config/main",
@@ -103,6 +107,8 @@ async def test_session_preview_returns_live_local_stream_for_current_host_tmux_s
     assert result["is_remote"] is False
     assert result["lines"] == 120
     assert result["tmux_pane"] == "%17"
+    assert result["availability_state"] == "available_here"
+    assert result["focusability_reason"] == "local_window_bound"
 
 
 @pytest.mark.asyncio
@@ -115,6 +121,8 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
         focus_connection_key="vpittamp@ryzen:22",
         execution_mode="local",
         focus_mode="ssh_attach",
+        availability_state="remote_available",
+        focusability_reason="remote_tmux_available",
         is_current_host=False,
         source_is_current_host=False,
         terminal_context={
@@ -142,6 +150,7 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
     assert result["remote_host"] == "ryzen"
     assert result["remote_user"] == "vpittamp"
     assert result["tmux_socket"] == "/tmp/tmux-1000/default"
+    assert result["availability_state"] == "remote_available"
 
 
 @pytest.mark.asyncio
@@ -155,7 +164,11 @@ async def test_session_preview_prefers_remote_source_connection_for_bound_remote
         focus_connection_key="vpittamp@ryzen:22",
         execution_mode="local",
         focus_mode="local",
+        availability_state="attached_here",
+        focusability_reason="attached_bridge_window",
         window_id=52,
+        bridge_window_id=52,
+        bridge_state="attached",
         is_current_host=True,
         source_is_current_host=False,
         terminal_context={
@@ -184,6 +197,8 @@ async def test_session_preview_prefers_remote_source_connection_for_bound_remote
     assert result["preview_mode"] == "ssh_stream"
     assert result["remote_host"] == "thinkpad"
     assert result["remote_user"] == "vpittamp"
+    assert result["bridge_state"] == "attached"
+    assert result["bridge_window_id"] == 52
 
 
 @pytest.mark.asyncio
@@ -204,3 +219,27 @@ async def test_session_preview_reports_missing_tmux_identity(server):
     assert result["preview_reason"] == "missing_tmux_identity"
     assert result["is_live"] is False
     assert result["lines"] == 200
+
+
+@pytest.mark.asyncio
+async def test_session_preview_reports_stale_remote_source(server):
+    stale_remote = make_session(
+        session_key="session-stale-remote",
+        host_name="ryzen",
+        connection_key="local@ryzen",
+        focus_connection_key="vpittamp@ryzen:22",
+        execution_mode="local",
+        focus_mode="unfocusable",
+        availability_state="stale_source",
+        focusability_reason="remote_source_stale",
+        is_current_host=False,
+        source_is_current_host=False,
+    )
+    server._session_list = AsyncMock(return_value={"sessions": [stale_remote]})
+
+    result = await server._session_preview({"session_key": "session-stale-remote"})
+
+    assert result["preview_mode"] == "unavailable"
+    assert result["preview_reason"] == "stale_remote_source"
+    assert result["availability_state"] == "stale_source"
+    assert result["is_live"] is False

@@ -914,6 +914,11 @@ async def on_window_new(
             ),
             remote_session_key=str(window_env.remote_session_key or "") if window_env else "",
             remote_surface_key=str(window_env.remote_surface_key or "") if window_env else "",
+            remote_tmux_socket=str(window_env.remote_tmux_socket or "") if window_env else "",
+            remote_tmux_server_key=str(window_env.remote_tmux_server_key or "") if window_env else "",
+            remote_tmux_session=str(window_env.remote_tmux_session or "") if window_env else "",
+            remote_tmux_window=str(window_env.remote_tmux_window or "") if window_env else "",
+            remote_tmux_pane=str(window_env.remote_tmux_pane or "") if window_env else "",
         )
         await state_manager.add_window(window_info)
 
@@ -1832,7 +1837,7 @@ async def on_window_close(
                 processing_duration_ms=duration_ms,
                 error=error_msg,
             )
-            event_buffer.add_event(entry)
+            await event_buffer.add_event(entry)
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
         # Feature 123: Invalidate window tree cache and notify subscribers

@@ -44,6 +44,11 @@ async def test_get_tmux_context_for_pid_returns_session_window_and_pane(monkeypa
         "get_process_tty_path",
         lambda _pid: "/dev/pts/5",
     )
+    monkeypatch.setattr(
+        sway_helper_module,
+        "_tmux_socket_candidates",
+        lambda: ["/tmp/tmux-1000/default"],
+    )
 
     fake_output = (
         "/dev/pts/4\tother/main\t0:bash\t%4\t0\t111\tbash\t0\t0\n"

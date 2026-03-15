@@ -21,7 +21,11 @@ interface SessionPreviewInfo {
   focus_connection_key: string;
   execution_mode: string;
   focus_mode: string;
+  availability_state: string;
+  focusability_reason: string;
   window_id: number;
+  bridge_window_id: number;
+  bridge_state: string;
   pane_label: string;
   pane_title: string;
   tmux_socket: string;
@@ -42,9 +46,11 @@ interface SessionPreviewInfo {
 }
 
 function showHelp(): void {
-  console.log(`i3pm session <list|focus|preview> [session_key] [--json]
+  console.log(`i3pm session <list|focus|preview|cleanup|doctor> [session_key] [--json]
 
-  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl]`);
+  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl]
+  i3pm session cleanup [--json]
+  i3pm session doctor [--json]`);
 }
 
 function emitPreviewFrame(frame: Record<string, unknown>): void {
@@ -81,7 +87,11 @@ function buildPreviewFrame(
     connection_key: info.connection_key,
     execution_mode: info.execution_mode,
     focus_mode: info.focus_mode,
+    availability_state: info.availability_state,
+    focusability_reason: info.focusability_reason,
     window_id: info.window_id,
+    bridge_window_id: info.bridge_window_id,
+    bridge_state: info.bridge_state,
     pane_label: info.pane_label,
     pane_title: info.pane_title,
     tmux_session: info.tmux_session,
@@ -199,6 +209,9 @@ async function emitSnapshot(info: SessionPreviewInfo): Promise<void> {
 function previewFallbackMessage(info: SessionPreviewInfo): string {
   if (info.preview_reason === "missing_tmux_identity") {
     return "This session has no tmux pane identity, so there is nothing stable to preview.";
+  }
+  if (info.preview_reason === "stale_remote_source") {
+    return "The remote session source is stale, so live preview is temporarily unavailable.";
   }
   return "Preview is unavailable for this session.";
 }
@@ -422,6 +435,16 @@ export async function sessionCommand(args: string[], _flags: CommandOptions): Pr
     }
     if (subcommand === "preview") {
       return await runPreview(client, args.slice(1));
+    }
+    if (subcommand === "cleanup") {
+      const result = await client.request("session.cleanup", {});
+      console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
+      return 0;
+    }
+    if (subcommand === "doctor") {
+      const result = await client.request("session.doctor", {});
+      console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
+      return 0;
     }
     showHelp();
     return 1;
