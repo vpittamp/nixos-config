@@ -1173,6 +1173,7 @@ in
       };
       Service = {
         Type = "simple";
+        ExecStartPre = "${pkgs.bash}/bin/bash -lc '${pkgs.procps}/bin/pkill -u ${config.home.username} -f \"(^|/)quickshell([[:space:]].*)?[[:space:]]-c[[:space:]]${cfg.configName}([[:space:]]|$)\" || true'";
         ExecStart = "${quickshellBin} -c ${cfg.configName}";
         Restart = "on-failure";
         RestartSec = "1s";

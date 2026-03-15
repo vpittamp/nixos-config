@@ -210,13 +210,13 @@ class ProcessMonitor:
                     f"{tool.value}:pid:{pid}",
                     pid,
                 )
-                if not resolved_session_id:
-                    resolved_session_id = await self.tracker._ensure_process_session_for_pid(
-                        tool,
-                        pid,
-                    )
-                if resolved_session_id:
-                    self._process_sessions[pid] = resolved_session_id
+                refreshed_session_id = await self.tracker._ensure_process_session_for_pid(
+                    tool,
+                    pid,
+                )
+                session_id = refreshed_session_id or resolved_session_id
+                if session_id:
+                    self._process_sessions[pid] = session_id
                 else:
                     logger.debug(
                         "Process monitor: ignoring untracked %s pid=%s during anchor-only cutover",

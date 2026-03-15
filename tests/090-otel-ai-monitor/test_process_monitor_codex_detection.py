@@ -157,6 +157,45 @@ async def test_update_sessions_ignores_untracked_pid_during_anchor_cutover():
 
 
 @pytest.mark.asyncio
+async def test_update_sessions_refreshes_restored_session_context_for_new_pid():
+    class _DummyTracker:
+        def __init__(self):
+            self._lock = asyncio.Lock()
+            self.enable_notifications = False
+            self._sessions = {}
+            self.ensure_calls = []
+
+        async def _ensure_process_session_for_pid(self, tool, pid):
+            self.ensure_calls.append((tool, pid))
+            return "codex:restored:123"
+
+    tracker = _DummyTracker()
+    now = datetime.now(timezone.utc)
+    tracker._sessions["codex:restored:123"] = Session(
+        session_id="codex:restored:123",
+        native_session_id=None,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=42,
+        pid=123,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="restored_snapshot",
+    )
+    monitor = ProcessMonitor(tracker=tracker)  # type: ignore[arg-type]
+
+    await monitor._update_sessions({123: AITool.CODEX_CLI})
+
+    assert tracker.ensure_calls == [(AITool.CODEX_CLI, 123)]
+    assert monitor._process_sessions == {123: "codex:restored:123"}
+
+
+@pytest.mark.asyncio
 async def test_complete_session_resolves_rekeyed_native_session_by_pid():
     class _DummyTracker:
         def __init__(self):

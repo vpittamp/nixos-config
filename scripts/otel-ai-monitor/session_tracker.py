@@ -930,6 +930,9 @@ class SessionTracker:
             session.terminal_context.tmux_session = terminal_context.get("tmux_session")
             session.terminal_context.tmux_window = terminal_context.get("tmux_window")
             session.terminal_context.tmux_pane = terminal_context.get("tmux_pane")
+            session.terminal_context.tmux_socket = terminal_context.get("tmux_socket")
+            session.terminal_context.tmux_server_key = terminal_context.get("tmux_server_key")
+            session.terminal_context.tmux_resolution_source = terminal_context.get("tmux_resolution_source")
             session.terminal_context.pane_pid = terminal_context.get("pane_pid")
             session.terminal_context.pane_title = terminal_context.get("pane_title")
             session.terminal_context.pane_active = terminal_context.get("pane_active")
@@ -1057,6 +1060,9 @@ class SessionTracker:
                     "tmux_session",
                     "tmux_window",
                     "tmux_pane",
+                    "tmux_socket",
+                    "tmux_server_key",
+                    "tmux_resolution_source",
                     "pty",
                     "host_name",
                     "execution_mode",
@@ -1080,11 +1086,16 @@ class SessionTracker:
                         tmux_window=session.terminal_context.tmux_window,
                         tmux_pane=session.terminal_context.tmux_pane,
                         pty=session.terminal_context.pty,
+                        tmux_socket=session.terminal_context.tmux_socket,
+                        tmux_server_key=session.terminal_context.tmux_server_key,
                     )
                 ):
                     session.terminal_context.tmux_session = None
                     session.terminal_context.tmux_window = None
                     session.terminal_context.tmux_pane = None
+                    session.terminal_context.tmux_socket = None
+                    session.terminal_context.tmux_server_key = None
+                    session.terminal_context.tmux_resolution_source = "missing"
                     session.terminal_context.pane_pid = None
                     session.terminal_context.pane_title = None
                     session.terminal_context.pane_active = None
@@ -1316,6 +1327,8 @@ class SessionTracker:
 
         # Highest-signal terminal identity first.
         add_part("anchor", terminal_context.get("terminal_anchor_id"))
+        add_part("tmux_server", terminal_context.get("tmux_server_key"))
+        add_part("tmux_socket", terminal_context.get("tmux_socket"))
         add_part("pane", terminal_context.get("tmux_pane"))
         add_part("pty", terminal_context.get("pty"))
         add_part("window", window_id)
@@ -1348,12 +1361,14 @@ class SessionTracker:
         tmux_session = str(getattr(terminal_context, "tmux_session", "") or "").strip()
         tmux_window = str(getattr(terminal_context, "tmux_window", "") or "").strip()
         tmux_pane = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+        tmux_server_key = str(getattr(terminal_context, "tmux_server_key", "") or "").strip()
         pane_tty = str(getattr(terminal_context, "pty", "") or "").strip()
 
         if tmux_pane:
             parts = [
                 context_key or "unknown-context",
                 anchor or "unknown-anchor",
+                tmux_server_key or "unknown-tmux-server",
                 tmux_session or "unknown-session",
                 tmux_window or "unknown-window",
                 tmux_pane,
@@ -1455,11 +1470,25 @@ class SessionTracker:
 
         pane = terminal_context.get("tmux_pane")
         if pane:
+            preferred_server_key = str(terminal_context.get("tmux_server_key") or "").strip()
             for sid in live_ids:
                 session = self._sessions[sid]
-                if session.terminal_context.tmux_pane == pane:
-                    self._native_preferred_session[native_group_id] = sid
-                    return sid
+                if session.terminal_context.tmux_pane != pane:
+                    continue
+                if preferred_server_key and (
+                    str(session.terminal_context.tmux_server_key or "").strip()
+                    != preferred_server_key
+                ):
+                    continue
+                if (
+                    not preferred_server_key
+                    and terminal_context.get("tmux_session")
+                    and str(session.terminal_context.tmux_session or "").strip()
+                    != str(terminal_context.get("tmux_session") or "").strip()
+                ):
+                    continue
+                self._native_preferred_session[native_group_id] = sid
+                return sid
 
         pty = terminal_context.get("pty")
         if pty:
@@ -1629,6 +1658,9 @@ class SessionTracker:
             "tmux_session": None,
             "tmux_window": None,
             "tmux_pane": None,
+            "tmux_socket": None,
+            "tmux_server_key": None,
+            "tmux_resolution_source": "missing",
             "pane_pid": None,
             "pane_title": None,
             "pane_active": None,
@@ -1664,6 +1696,14 @@ class SessionTracker:
                 terminal_context["connection_key"] = i3pm_env.get("I3PM_CONNECTION_KEY")
                 terminal_context["context_key"] = i3pm_env.get("I3PM_CONTEXT_KEY")
                 terminal_context["remote_target"] = remote_target or None
+                explicit_tmux_socket = str(i3pm_env.get("I3PM_TMUX_SOCKET") or "").strip()
+                explicit_tmux_server_key = str(i3pm_env.get("I3PM_TMUX_SERVER_KEY") or "").strip()
+                if explicit_tmux_socket:
+                    terminal_context["tmux_socket"] = explicit_tmux_socket
+                if explicit_tmux_server_key:
+                    terminal_context["tmux_server_key"] = explicit_tmux_server_key
+                if explicit_tmux_socket or explicit_tmux_server_key:
+                    terminal_context["tmux_resolution_source"] = "explicit"
             raw_tmux_context = await get_tmux_context_for_pid(pid)
             tmux_context = (
                 dict(raw_tmux_context)
@@ -2073,6 +2113,9 @@ class SessionTracker:
             "tmux_session": attrs.get("terminal.tmux.session") or attrs.get("tmux.session"),
             "tmux_window": attrs.get("terminal.tmux.window") or attrs.get("tmux.window"),
             "tmux_pane": attrs.get("terminal.tmux.pane") or attrs.get("tmux.pane"),
+            "tmux_socket": attrs.get("terminal.tmux.socket") or attrs.get("tmux.socket"),
+            "tmux_server_key": attrs.get("terminal.tmux.server_key") or attrs.get("tmux.server_key"),
+            "tmux_resolution_source": attrs.get("terminal.tmux.resolution_source") or attrs.get("tmux.resolution_source"),
             "pty": attrs.get("terminal.pty") or attrs.get("pty"),
             "ai_trace_token": attrs.get("i3pm.ai_trace_token"),
             "host_name": attrs.get("host.name") or attrs.get("service.instance.id"),
@@ -2118,10 +2161,20 @@ class SessionTracker:
             else None
         )
         if preferred_tmux_pane:
+            preferred_server_key = (
+                str(preferred_terminal_context.get("tmux_server_key") or "").strip()
+                if preferred_terminal_context
+                else ""
+            )
             pane_matched = [
                 s
                 for s in candidates
                 if s.terminal_context.tmux_pane == preferred_tmux_pane
+                and (
+                    not preferred_server_key
+                    or str(s.terminal_context.tmux_server_key or "").strip()
+                    == preferred_server_key
+                )
                 and (
                     not preferred_terminal_context.get("tmux_session")
                     or s.terminal_context.tmux_session
@@ -2151,6 +2204,7 @@ class SessionTracker:
             (
                 s.window_id,
                 s.project,
+                s.terminal_context.tmux_server_key,
                 s.terminal_context.tmux_session,
                 s.terminal_context.tmux_window,
                 s.terminal_context.tmux_pane,
@@ -2292,6 +2346,9 @@ class SessionTracker:
                 self._session_pids[session.collision_group_id] = chosen.pid
 
         for key in (
+            "tmux_socket",
+            "tmux_server_key",
+            "tmux_resolution_source",
             "tmux_session",
             "tmux_window",
             "tmux_pane",
@@ -2448,6 +2505,9 @@ class SessionTracker:
             "tmux_session",
             "tmux_window",
             "tmux_pane",
+            "tmux_socket",
+            "tmux_server_key",
+            "tmux_resolution_source",
             "pty",
             "host_name",
             "execution_mode",
@@ -2471,7 +2531,14 @@ class SessionTracker:
             or resolved_terminal_context.get("tmux_window")
         )
         if client_pid is not None and not resolved_tmux_target:
-            for key in ("tmux_session", "tmux_window", "tmux_pane"):
+            for key in (
+                "tmux_session",
+                "tmux_window",
+                "tmux_pane",
+                "tmux_socket",
+                "tmux_server_key",
+                "tmux_resolution_source",
+            ):
                 event_terminal_context[key] = None
                 resolved_context_keys.add(key)
 
@@ -2603,6 +2670,15 @@ class SessionTracker:
                 session.terminal_context.tmux_pane = event_terminal_context.get(
                     "tmux_pane"
                 )
+                session.terminal_context.tmux_socket = event_terminal_context.get(
+                    "tmux_socket"
+                )
+                session.terminal_context.tmux_server_key = event_terminal_context.get(
+                    "tmux_server_key"
+                )
+                session.terminal_context.tmux_resolution_source = event_terminal_context.get(
+                    "tmux_resolution_source"
+                )
                 session.terminal_context.pane_pid = event_terminal_context.get("pane_pid")
                 session.terminal_context.pane_title = event_terminal_context.get("pane_title")
                 session.terminal_context.pane_active = event_terminal_context.get("pane_active")
@@ -2729,6 +2805,9 @@ class SessionTracker:
                 "tmux_session",
                 "tmux_window",
                 "tmux_pane",
+                "tmux_socket",
+                "tmux_server_key",
+                "tmux_resolution_source",
                 "pty",
                 "host_name",
                 "execution_mode",
@@ -2738,7 +2817,14 @@ class SessionTracker:
             ):
                 value = event_terminal_context.get(key)
                 if (
-                    key in {"tmux_session", "tmux_window", "tmux_pane"}
+                    key in {
+                        "tmux_session",
+                        "tmux_window",
+                        "tmux_pane",
+                        "tmux_socket",
+                        "tmux_server_key",
+                        "tmux_resolution_source",
+                    }
                     and key in resolved_context_keys
                     and not value
                 ):
@@ -2903,6 +2989,9 @@ class SessionTracker:
                         for key in (
                             "terminal_anchor_id",
                             "anchor_lookup",
+                            "tmux_socket",
+                            "tmux_server_key",
+                            "tmux_resolution_source",
                             "pty",
                             "host_name",
                             "execution_mode",
@@ -2923,6 +3012,15 @@ class SessionTracker:
                             session.terminal_context.tmux_pane = resolved_terminal_context.get(
                                 "tmux_pane"
                             )
+                            session.terminal_context.tmux_socket = resolved_terminal_context.get(
+                                "tmux_socket"
+                            )
+                            session.terminal_context.tmux_server_key = resolved_terminal_context.get(
+                                "tmux_server_key"
+                            )
+                            session.terminal_context.tmux_resolution_source = resolved_terminal_context.get(
+                                "tmux_resolution_source"
+                            )
                             session.terminal_context.pane_pid = resolved_terminal_context.get("pane_pid")
                             session.terminal_context.pane_title = resolved_terminal_context.get("pane_title")
                             session.terminal_context.pane_active = resolved_terminal_context.get("pane_active")
@@ -2931,6 +3029,9 @@ class SessionTracker:
                             session.terminal_context.tmux_session = None
                             session.terminal_context.tmux_window = None
                             session.terminal_context.tmux_pane = None
+                            session.terminal_context.tmux_socket = None
+                            session.terminal_context.tmux_server_key = None
+                            session.terminal_context.tmux_resolution_source = "missing"
                             session.terminal_context.pane_pid = None
                             session.terminal_context.pane_title = None
                             session.terminal_context.pane_active = None
@@ -3683,10 +3784,14 @@ class SessionTracker:
         fingerprint_source = []
         snapshot_now = datetime.now(timezone.utc)
         live_tmux_panes = list_tmux_panes_sync()
-        live_tmux_by_pane = {
-            str(pane.get("tmux_pane") or "").strip(): pane
+        live_tmux_by_server_pane = {
+            (
+                str(pane.get("tmux_server_key") or "").strip(),
+                str(pane.get("tmux_pane") or "").strip(),
+            ): pane
             for pane in live_tmux_panes
-            if str(pane.get("tmux_pane") or "").strip()
+            if str(pane.get("tmux_server_key") or "").strip()
+            and str(pane.get("tmux_pane") or "").strip()
         }
         live_tmux_by_pty = {
             str(pane.get("pty") or "").strip(): pane
@@ -3704,9 +3809,10 @@ class SessionTracker:
             terminal_context = s.terminal_context
             live_tmux_entry = None
             pane_id = str(getattr(terminal_context, "tmux_pane", "") or "").strip()
+            pane_server_key = str(getattr(terminal_context, "tmux_server_key", "") or "").strip()
             pane_tty = str(getattr(terminal_context, "pty", "") or "").strip()
-            if pane_id:
-                live_tmux_entry = live_tmux_by_pane.get(pane_id)
+            if pane_id and pane_server_key:
+                live_tmux_entry = live_tmux_by_server_pane.get((pane_server_key, pane_id))
             if live_tmux_entry is None and pane_tty:
                 live_tmux_entry = live_tmux_by_pty.get(pane_tty)
             if isinstance(live_tmux_entry, dict):
@@ -3714,6 +3820,9 @@ class SessionTracker:
                 terminal_context.tmux_session = str(live_tmux_entry.get("tmux_session") or "").strip() or terminal_context.tmux_session
                 terminal_context.tmux_window = str(live_tmux_entry.get("tmux_window") or "").strip() or terminal_context.tmux_window
                 terminal_context.tmux_pane = str(live_tmux_entry.get("tmux_pane") or "").strip() or terminal_context.tmux_pane
+                terminal_context.tmux_socket = str(live_tmux_entry.get("tmux_socket") or "").strip() or terminal_context.tmux_socket
+                terminal_context.tmux_server_key = str(live_tmux_entry.get("tmux_server_key") or "").strip() or terminal_context.tmux_server_key
+                terminal_context.tmux_resolution_source = str(live_tmux_entry.get("tmux_resolution_source") or "").strip() or terminal_context.tmux_resolution_source
                 terminal_context.pane_pid = live_tmux_entry.get("pane_pid") or terminal_context.pane_pid
                 terminal_context.pane_title = str(live_tmux_entry.get("pane_title") or "").strip() or terminal_context.pane_title
                 terminal_context.pane_active = bool(live_tmux_entry.get("pane_active", False))
@@ -3732,12 +3841,17 @@ class SessionTracker:
                     tmux_window=terminal_context.tmux_window,
                     tmux_pane=terminal_context.tmux_pane,
                     pty=terminal_context.pty,
+                    tmux_socket=terminal_context.tmux_socket,
+                    tmux_server_key=terminal_context.tmux_server_key,
                 )
             ):
                 terminal_context = terminal_context.model_copy(deep=True)
                 terminal_context.tmux_session = None
                 terminal_context.tmux_window = None
                 terminal_context.tmux_pane = None
+                terminal_context.tmux_socket = None
+                terminal_context.tmux_server_key = None
+                terminal_context.tmux_resolution_source = "missing"
                 terminal_context.pane_pid = None
                 terminal_context.pane_title = None
                 terminal_context.pane_active = None

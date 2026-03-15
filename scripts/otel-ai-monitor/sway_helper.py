@@ -30,6 +30,123 @@ _TMUX_LIST_PANES_FORMAT = (
 )
 
 
+def _normalize_tmux_socket(value: Optional[str]) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _tmux_server_key_for_socket(socket_path: Optional[str]) -> Optional[str]:
+    normalized = _normalize_tmux_socket(socket_path)
+    if not normalized:
+        return None
+    return normalized
+
+
+def _tmux_socket_candidates() -> list[Optional[str]]:
+    """Return deterministic tmux socket candidates for user-session services."""
+    candidates: list[Optional[str]] = []
+    seen: set[Optional[str]] = set()
+
+    def add(candidate: Optional[str]) -> None:
+        normalized = str(candidate).strip() if candidate else None
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    tmux_env = str(os.environ.get("TMUX") or "").strip()
+    if tmux_env:
+        add(tmux_env.split(",", 1)[0])
+
+    uid = os.getuid()
+    runtime_dir = str(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}").strip()
+    add(f"/tmp/tmux-{uid}/default")
+    add(os.path.join(runtime_dir, f"tmux-{uid}", "default"))
+    add(None)
+    return candidates
+
+
+def _merge_tmux_panes(panes_by_socket: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Merge pane snapshots from multiple tmux sockets without duplicates."""
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for panes in panes_by_socket:
+        for pane in panes:
+            key = (
+                str(pane.get("tmux_server_key") or "").strip(),
+                str(pane.get("tmux_session") or "").strip(),
+                str(pane.get("tmux_window") or "").strip(),
+                str(pane.get("tmux_pane") or "").strip(),
+                str(pane.get("pty") or "").strip(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(pane)
+    return merged
+
+
+async def _list_tmux_panes_for_socket(socket_path: Optional[str]) -> list[dict[str, Any]]:
+    """Return tmux panes for one candidate socket."""
+    cmd = ["tmux"]
+    if socket_path:
+        cmd.extend(["-S", socket_path])
+    cmd.extend(["list-panes", "-a", "-F", _TMUX_LIST_PANES_FORMAT])
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logger.debug("list_tmux_panes: tmux list-panes timed out for socket %s", socket_path or "<default>")
+            return []
+        if proc.returncode != 0:
+            return []
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        logger.debug(
+            "list_tmux_panes failed for socket %s: %s",
+            socket_path or "<default>",
+            exc,
+        )
+        return []
+    return _parse_tmux_panes_output(stdout.decode("utf-8"), socket_path=socket_path)
+
+
+def _list_tmux_panes_for_socket_sync(socket_path: Optional[str]) -> list[dict[str, Any]]:
+    """Return tmux panes for one candidate socket synchronously."""
+    cmd = ["tmux"]
+    if socket_path:
+        cmd.extend(["-S", socket_path])
+    cmd.extend(["list-panes", "-a", "-F", _TMUX_LIST_PANES_FORMAT])
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    except Exception as exc:
+        logger.debug(
+            "list_tmux_panes_sync failed for socket %s: %s",
+            socket_path or "<default>",
+            exc,
+        )
+        return []
+    if proc.returncode != 0:
+        return []
+    return _parse_tmux_panes_output(proc.stdout, socket_path=socket_path)
+
+
 def get_sway_socket() -> Optional[str]:
     """Find the Sway IPC socket path.
 
@@ -669,6 +786,9 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Any]:
         "tmux_session": None,
         "tmux_window": None,
         "tmux_pane": None,
+        "tmux_socket": None,
+        "tmux_server_key": None,
+        "tmux_resolution_source": "missing",
         "pane_pid": None,
         "pane_title": None,
         "pane_active": None,
@@ -688,6 +808,9 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Any]:
             context["tmux_session"] = pane.get("tmux_session")
             context["tmux_window"] = pane.get("tmux_window")
             context["tmux_pane"] = pane.get("tmux_pane")
+            context["tmux_socket"] = pane.get("tmux_socket")
+            context["tmux_server_key"] = pane.get("tmux_server_key")
+            context["tmux_resolution_source"] = pane.get("tmux_resolution_source") or "discovered"
             context["pane_pid"] = pane.get("pane_pid")
             context["pane_title"] = pane.get("pane_title")
             context["pane_active"] = pane.get("pane_active")
@@ -703,57 +826,33 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Any]:
 
 async def list_tmux_panes() -> list[dict[str, Any]]:
     """Return live tmux pane metadata keyed by tmux-native pane identity."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "tmux",
-            "list-panes",
-            "-a",
-            "-F",
-            _TMUX_LIST_PANES_FORMAT,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            logger.debug("list_tmux_panes: tmux list-panes timed out")
-            return []
-        if proc.returncode != 0:
-            return []
-    except FileNotFoundError:
-        return []
-    except Exception as exc:
-        logger.debug("list_tmux_panes failed: %s", exc)
-        return []
-
-    return _parse_tmux_panes_output(stdout.decode("utf-8"))
+    panes_by_socket: list[list[dict[str, Any]]] = []
+    for socket_path in _tmux_socket_candidates():
+        panes = await _list_tmux_panes_for_socket(socket_path)
+        if panes:
+            panes_by_socket.append(panes)
+    return _merge_tmux_panes(panes_by_socket)
 
 
 def list_tmux_panes_sync() -> list[dict[str, Any]]:
     """Return live tmux pane metadata synchronously for hot UI/export paths."""
-    try:
-        proc = subprocess.run(
-            ["tmux", "list-panes", "-a", "-F", _TMUX_LIST_PANES_FORMAT],
-            capture_output=True,
-            text=True,
-            timeout=2.0,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return []
-    except Exception as exc:
-        logger.debug("list_tmux_panes_sync failed: %s", exc)
-        return []
-    if proc.returncode != 0:
-        return []
-    return _parse_tmux_panes_output(proc.stdout)
+    panes_by_socket: list[list[dict[str, Any]]] = []
+    for socket_path in _tmux_socket_candidates():
+        panes = _list_tmux_panes_for_socket_sync(socket_path)
+        if panes:
+            panes_by_socket.append(panes)
+    return _merge_tmux_panes(panes_by_socket)
 
 
-def _parse_tmux_panes_output(stdout_text: str) -> list[dict[str, Any]]:
+def _parse_tmux_panes_output(
+    stdout_text: str,
+    *,
+    socket_path: Optional[str] = None,
+) -> list[dict[str, Any]]:
     """Parse `tmux list-panes` output into normalized pane dictionaries."""
     panes: list[dict[str, Any]] = []
+    normalized_socket = _normalize_tmux_socket(socket_path)
+    server_key = _tmux_server_key_for_socket(normalized_socket)
     for line in stdout_text.strip().splitlines():
         if not line:
             continue
@@ -771,6 +870,9 @@ def _parse_tmux_panes_output(stdout_text: str) -> list[dict[str, Any]]:
             "tmux_session": str(session_name or "").strip() or None,
             "tmux_window": str(window_ref or "").strip() or None,
             "tmux_pane": str(pane_id or pane_index or "").strip() or None,
+            "tmux_socket": normalized_socket,
+            "tmux_server_key": server_key,
+            "tmux_resolution_source": "discovered",
             "pane_index": str(pane_index or "").strip() or None,
             "pane_pid": pane_pid,
             "pane_title": str(pane_title or "").strip() or None,
@@ -787,46 +889,31 @@ def tmux_target_exists(
     tmux_window: Optional[str] = None,
     tmux_pane: Optional[str] = None,
     pty: Optional[str] = None,
+    tmux_socket: Optional[str] = None,
+    tmux_server_key: Optional[str] = None,
 ) -> bool:
     """Return whether the claimed tmux target exists in the live tmux server."""
-    if not (tmux_session or tmux_window or tmux_pane or pty):
-        return False
-
-    try:
-        proc = subprocess.run(
-            [
-                "tmux",
-                "list-panes",
-                "-a",
-                "-F",
-                "#{session_name}\t#{window_index}:#{window_name}\t#{pane_id}\t#{pane_tty}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=2.0,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-    if proc.returncode != 0:
+    if not (tmux_session or tmux_window or tmux_pane or pty or tmux_socket or tmux_server_key):
         return False
 
     expected_session = str(tmux_session or "").strip()
     expected_window = str(tmux_window or "").strip()
     expected_pane = str(tmux_pane or "").strip()
     expected_pty = str(pty or "").strip()
+    expected_socket = str(tmux_socket or "").strip()
+    expected_server_key = str(tmux_server_key or "").strip()
 
-    for line in proc.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) != 4:
+    for pane in list_tmux_panes_sync():
+        live_session = str(pane.get("tmux_session") or "").strip()
+        live_window = str(pane.get("tmux_window") or "").strip()
+        live_pane = str(pane.get("tmux_pane") or "").strip()
+        live_pty = str(pane.get("pty") or "").strip()
+        live_socket = str(pane.get("tmux_socket") or "").strip()
+        live_server_key = str(pane.get("tmux_server_key") or "").strip()
+        if expected_socket and live_socket != expected_socket:
             continue
-        live_session, live_window, live_pane, live_pty = (
-            str(parts[0] or "").strip(),
-            str(parts[1] or "").strip(),
-            str(parts[2] or "").strip(),
-            str(parts[3] or "").strip(),
-        )
+        if expected_server_key and live_server_key != expected_server_key:
+            continue
         if expected_session and live_session != expected_session:
             continue
         if expected_window and live_window != expected_window:

@@ -109,6 +109,15 @@ class TerminalContext(BaseModel):
     tmux_pane: Optional[str] = Field(
         default=None, description="Tmux pane identifier"
     )
+    tmux_socket: Optional[str] = Field(
+        default=None, description="Tmux socket path for the server that owns the pane"
+    )
+    tmux_server_key: Optional[str] = Field(
+        default=None, description="Host-scoped tmux server identity derived from the socket path"
+    )
+    tmux_resolution_source: Optional[str] = Field(
+        default=None, description="How tmux identity was resolved (explicit, discovered, or missing)"
+    )
     pane_pid: Optional[int] = Field(
         default=None, description="Root PID reported by tmux for the pane"
     )

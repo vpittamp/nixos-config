@@ -177,6 +177,7 @@ async def test_session_focus_window_only_identity_sets_override_before_wait(serv
 
 @pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
+    server._connection_target_is_current_host = lambda _connection_key: False
     monkeypatch.setattr(server, "_remote_daemon_request", lambda **_kwargs: {
         "success": True,
         "reason": "ok",
@@ -314,6 +315,42 @@ async def test_session_focus_tmux_target_uses_tmux_verification(server, monkeypa
     assert result["verification"]["verification_source"] == "tmux"
     assert result["verification"]["success"] is True
     assert result["current_ai_session_key_after"] == "session-local-pane"
+
+
+@pytest.mark.asyncio
+async def test_select_tmux_target_uses_local_socket_for_current_host_ssh_context(server, monkeypatch):
+    commands = []
+
+    class _Result:
+        def __init__(self):
+            self.returncode = 0
+            self.stdout = ""
+            self.stderr = ""
+
+    server._connection_target_is_current_host = lambda _connection_key: True
+
+    def fake_run(args, **_kwargs):
+        commands.append(args)
+        return _Result()
+
+    monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
+
+    result = server._select_tmux_target(
+        execution_mode="ssh",
+        tmux_session="i3pm-test",
+        tmux_window="1:codex-raw",
+        tmux_pane="%3",
+        remote_target="vpittamp@ryzen:22",
+        connection_key="vpittamp@ryzen:22",
+        tmux_socket="/tmp/tmux-1000/default",
+    )
+
+    assert result["success"] is True
+    assert commands == [[
+        "bash",
+        "-lc",
+        "tmux -S /tmp/tmux-1000/default select-window -t i3pm-test:1 >/dev/null 2>&1 && tmux -S /tmp/tmux-1000/default select-pane -t %3 >/dev/null 2>&1",
+    ]]
 
 
 @pytest.mark.asyncio

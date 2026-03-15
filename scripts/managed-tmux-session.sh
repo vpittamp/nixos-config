@@ -26,8 +26,34 @@ managed_tmux_session_name() {
     printf 'i3pm-%s-%s' "${slug:0:24}" "$digest"
 }
 
+managed_tmux_current_socket() {
+    if [[ -n "${I3PM_TMUX_SOCKET:-}" ]]; then
+        printf '%s' "${I3PM_TMUX_SOCKET}"
+        return 0
+    fi
+    if [[ -n "${TMUX:-}" ]]; then
+        printf '%s' "${TMUX%%,*}"
+        return 0
+    fi
+    tmux display-message -p '#{socket_path}' 2>/dev/null || true
+}
+
+managed_tmux_refresh_server_metadata() {
+    local session_name="$1"
+    local tmux_socket tmux_server_key
+    tmux_socket="$(managed_tmux_current_socket)"
+    tmux_server_key="$tmux_socket"
+    if [[ -n "$tmux_socket" ]]; then
+        export I3PM_TMUX_SOCKET="$tmux_socket"
+        export I3PM_TMUX_SERVER_KEY="$tmux_server_key"
+        tmux set-environment -t "$session_name" I3PM_TMUX_SOCKET "$tmux_socket"
+        tmux set-environment -t "$session_name" I3PM_TMUX_SERVER_KEY "$tmux_server_key"
+    fi
+}
+
 managed_tmux_export_current_env() {
     local session_name="$1"
+    managed_tmux_refresh_server_metadata "$session_name"
     while IFS='=' read -r name _; do
         [[ -n "$name" ]] && tmux set-environment -t "$session_name" -u "$name" 2>/dev/null || true
     done < <(tmux show-environment -t "$session_name" 2>/dev/null | sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' | rg '^I3PM_' || true)
@@ -40,12 +66,15 @@ managed_tmux_export_current_env() {
 
 managed_tmux_set_metadata() {
     local session_name="$1"
+    managed_tmux_refresh_server_metadata "$session_name"
     tmux set-option -t "$session_name" -q @i3pm_managed "1"
     tmux set-option -t "$session_name" -q @i3pm_terminal_anchor "${I3PM_TERMINAL_ANCHOR_ID}"
     tmux set-option -t "$session_name" -q @i3pm_context_key "${I3PM_CONTEXT_KEY}"
     tmux set-option -t "$session_name" -q @i3pm_project_name "${I3PM_PROJECT_NAME:-}"
     tmux set-option -t "$session_name" -q @i3pm_terminal_role "${I3PM_TERMINAL_ROLE:-}"
     tmux set-option -t "$session_name" -q @i3pm_tmux_session_name "${I3PM_TMUX_SESSION_NAME:-$session_name}"
+    tmux set-option -t "$session_name" -q @i3pm_tmux_socket "${I3PM_TMUX_SOCKET:-}"
+    tmux set-option -t "$session_name" -q @i3pm_tmux_server_key "${I3PM_TMUX_SERVER_KEY:-}"
 }
 
 managed_tmux_validate_metadata() {
@@ -99,4 +128,10 @@ managed_tmux_recreate_reason() {
 
 managed_tmux_prepare_env() {
     export I3PM_TMUX_SESSION_NAME="$1"
+    local tmux_socket
+    tmux_socket="$(managed_tmux_current_socket)"
+    if [[ -n "$tmux_socket" ]]; then
+        export I3PM_TMUX_SOCKET="$tmux_socket"
+        export I3PM_TMUX_SERVER_KEY="$tmux_socket"
+    fi
 }

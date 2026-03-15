@@ -544,7 +544,7 @@ ShellRoot {
             return result;
         }
 
-        result = compareAscending(sessionWindowSlot(left), sessionWindowSlot(right));
+        result = compareAscending(sessionHostGroupKey(left), sessionHostGroupKey(right));
         if (result !== 0) {
             return result;
         }
@@ -554,12 +554,12 @@ ShellRoot {
             return result;
         }
 
-        result = compareAscending(stringOrEmpty(left && left.tmux_session), stringOrEmpty(right && right.tmux_session));
+        result = compareAscending(sessionWindowSlot(left), sessionWindowSlot(right));
         if (result !== 0) {
             return result;
         }
 
-        result = compareAscending(stringOrEmpty(left && left.host_name), stringOrEmpty(right && right.host_name));
+        result = compareAscending(stringOrEmpty(left && left.tmux_session), stringOrEmpty(right && right.tmux_session));
         if (result !== 0) {
             return result;
         }
@@ -2401,9 +2401,16 @@ ShellRoot {
     }
 
     function sessionPreviewTitle() {
-        const label = stringOrEmpty(sessionPreview.pane_label || sessionPreview.pane_title || sessionPreview.tmux_pane);
-        if (label) {
-            return label;
+        const alias = buildSessionAlias(
+            hostMonogram(
+                stringOrEmpty(sessionPreview.execution_mode),
+                stringOrEmpty(sessionPreview.host_name),
+                stringOrEmpty(sessionPreview.connection_key)
+            ),
+            stringOrEmpty(sessionPreview.tmux_pane)
+        );
+        if (alias.length > 0) {
+            return alias;
         }
         const entry = activeLauncherSessionEntry();
         return entry ? sessionPrimaryLabel(entry) : "Session Preview";
@@ -4115,6 +4122,32 @@ ShellRoot {
         return host;
     }
 
+    function hostMonogram(mode, hostName, connectionKey) {
+        const token = hostToken(mode, hostName, connectionKey);
+        const monogram = stringOrEmpty(token && token.monogram).trim().toUpperCase();
+        return monogram.length > 0 ? monogram.charAt(0) : "";
+    }
+
+    function buildSessionAlias(monogram, paneId) {
+        const prefix = stringOrEmpty(monogram).trim().toUpperCase();
+        const pane = stringOrEmpty(paneId).trim();
+        if (!prefix.length || !pane.length) {
+            return "";
+        }
+        return prefix.charAt(0) + pane;
+    }
+
+    function sessionAlias(session) {
+        return buildSessionAlias(
+            hostMonogram(
+                stringOrEmpty(session && session.execution_mode),
+                stringOrEmpty(session && session.host_name),
+                stringOrEmpty(session && session.connection_key)
+            ),
+            stringOrEmpty(session && session.tmux_pane)
+        );
+    }
+
     function sessionPaneLabel(session) {
         const label = stringOrEmpty(session.pane_label || session.pane_title || session.tmux_pane);
         if (label) {
@@ -4203,6 +4236,10 @@ ShellRoot {
     }
 
     function sessionPillLabel(session) {
+        const alias = sessionAlias(session);
+        if (alias.length > 0) {
+            return alias;
+        }
         const pane = sessionPaneLabel(session);
         if (pane) {
             return pane;
@@ -4211,6 +4248,10 @@ ShellRoot {
     }
 
     function sessionPrimaryLabel(session) {
+        const alias = sessionAlias(session);
+        if (alias.length > 0) {
+            return alias;
+        }
         const pane = sessionPaneLabel(session);
         if (pane) {
             return pane;
@@ -4221,21 +4262,24 @@ ShellRoot {
 
     function sessionSecondaryLabel(session) {
         const bits = [];
-        const pane = sessionPaneLabel(session);
-        const paneLocator = sessionPaneLocatorLabel(session);
-        const pid = sessionPidLabel(session);
+        const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
+        const phase = compactSessionStateLabel(session);
+        if (project.length > 0 && project !== "Global") {
+            bits.push(project);
+        }
+        if (phase.length > 0) {
+            bits.push(phase);
+        }
 
-        if (!pane) {
-            const tool = toolLabel(session);
-            if (tool) {
-                bits.push(tool);
+        if (bits.length === 0) {
+            const paneLocator = sessionPaneLocatorLabel(session);
+            const pid = sessionPidLabel(session);
+            if (paneLocator) {
+                bits.push(paneLocator);
             }
-        }
-        if (paneLocator) {
-            bits.push(paneLocator);
-        }
-        if (pid) {
-            bits.push(pid);
+            if (pid) {
+                bits.push(pid);
+            }
         }
 
         return bits.join(" • ");

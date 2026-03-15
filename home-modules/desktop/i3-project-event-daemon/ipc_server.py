@@ -6072,6 +6072,13 @@ class IPCServer:
                 port = 22
         return user_part.strip(), host.strip(), port
 
+    @staticmethod
+    def _tmux_command_prefix(tmux_socket: str = "") -> str:
+        socket_path = str(tmux_socket or "").strip()
+        if socket_path:
+            return f"tmux -S {shlex.quote(socket_path)}"
+        return "tmux"
+
     def _select_tmux_target(
         self,
         *,
@@ -6081,6 +6088,7 @@ class IPCServer:
         tmux_pane: str = "",
         remote_target: str = "",
         connection_key: str = "",
+        tmux_socket: str = "",
     ) -> Dict[str, Any]:
         """Select a tmux window/pane locally or over SSH."""
         if not tmux_session or not tmux_window:
@@ -6089,14 +6097,15 @@ class IPCServer:
                 "reason": "missing_tmux_target",
             }
 
+        tmux_cmd = self._tmux_command_prefix(tmux_socket)
         tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or str(tmux_window or "").strip()
         select_script = (
-            f"tmux select-window -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} >/dev/null 2>&1"
+            f"{tmux_cmd} select-window -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} >/dev/null 2>&1"
         )
         if tmux_pane:
-            select_script += f" && tmux select-pane -t {shlex.quote(tmux_pane)} >/dev/null 2>&1"
+            select_script += f" && {tmux_cmd} select-pane -t {shlex.quote(tmux_pane)} >/dev/null 2>&1"
 
-        if execution_mode == "ssh":
+        if execution_mode == "ssh" and not self._connection_target_is_current_host(connection_key):
             remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
             if not remote_host:
                 return {
@@ -6147,6 +6156,7 @@ class IPCServer:
         tmux_pane: str,
         remote_target: str = "",
         connection_key: str = "",
+        tmux_socket: str = "",
     ) -> Dict[str, Any]:
         """Verify the active tmux pane for a target session/window."""
         if not tmux_session or not tmux_window or not tmux_pane:
@@ -6155,14 +6165,15 @@ class IPCServer:
                 "reason": "missing_tmux_target",
             }
 
+        tmux_cmd = self._tmux_command_prefix(tmux_socket)
         tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or str(tmux_window or "").strip()
         verify_script = (
-            f"tmux list-panes -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} "
+            f"{tmux_cmd} list-panes -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} "
             "-F '#{pane_active} #{pane_id}' | "
             "awk '$1 == 1 { print $2; exit }'"
         )
 
-        if execution_mode == "ssh":
+        if execution_mode == "ssh" and not self._connection_target_is_current_host(connection_key):
             remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
             if not remote_host:
                 return {
@@ -6318,41 +6329,46 @@ class IPCServer:
 
     def _load_live_tmux_focus_state(
         self,
-        tmux_sessions: List[str],
-    ) -> Dict[Tuple[str, str, str], Dict[str, bool]]:
+        tmux_targets: List[Dict[str, str]],
+    ) -> Dict[Tuple[str, str, str, str], Dict[str, bool]]:
         """Return live tmux pane activity keyed by session/window/pane."""
-        session_names = {
-            str(name or "").strip()
-            for name in tmux_sessions
-            if str(name or "").strip()
-        }
-        if not session_names:
+        socket_targets: Dict[str, set[str]] = {}
+        for target in tmux_targets:
+            if not isinstance(target, dict):
+                continue
+            session_name = str(target.get("tmux_session") or "").strip()
+            socket_path = str(target.get("tmux_socket") or "").strip()
+            if not session_name:
+                continue
+            socket_targets.setdefault(socket_path, set()).add(session_name)
+        if not socket_targets:
             return {}
 
         format_string = "#{session_name}\t#{window_index}:#{window_name}\t#{pane_id}\t#{pane_active}\t#{window_active}"
-        result = subprocess.run(
-            ["bash", "-lc", f"tmux list-panes -a -F {shlex.quote(format_string)}"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            return {}
-
-        focus_map: Dict[Tuple[str, str, str], Dict[str, bool]] = {}
-        for line in str(result.stdout or "").splitlines():
-            parts = line.split("\t")
-            if len(parts) != 5:
-                continue
-            session_name, window_name, pane_id, pane_active, window_active = (
-                str(part or "").strip() for part in parts
+        focus_map: Dict[Tuple[str, str, str, str], Dict[str, bool]] = {}
+        for socket_path, session_names in socket_targets.items():
+            tmux_cmd = self._tmux_command_prefix(socket_path)
+            result = subprocess.run(
+                ["bash", "-lc", f"{tmux_cmd} list-panes -a -F {shlex.quote(format_string)}"],
+                capture_output=True,
+                text=True,
+                check=False,
             )
-            if not session_name or session_name not in session_names:
+            if result.returncode != 0:
                 continue
-            focus_map[(session_name, window_name, pane_id)] = {
-                "pane_active": pane_active == "1",
-                "window_active": window_active == "1",
-            }
+            for line in str(result.stdout or "").splitlines():
+                parts = line.split("\t")
+                if len(parts) != 5:
+                    continue
+                session_name, window_name, pane_id, pane_active, window_active = (
+                    str(part or "").strip() for part in parts
+                )
+                if not session_name or session_name not in session_names:
+                    continue
+                focus_map[(socket_path, session_name, window_name, pane_id)] = {
+                    "pane_active": pane_active == "1",
+                    "window_active": window_active == "1",
+                }
         return focus_map
 
     def _refresh_live_session_focus_state(
@@ -6363,9 +6379,14 @@ class IPCServer:
     ) -> None:
         """Refresh current-host session activity using live sway/tmux state."""
         tmux_focus_map = self._load_live_tmux_focus_state([
-            str(session.get("tmux_session") or "").strip()
+            {
+                "tmux_socket": str((session.get("terminal_context") or {}).get("tmux_socket") or "").strip(),
+                "tmux_session": str(session.get("tmux_session") or "").strip(),
+            }
             for session in sessions
-            if isinstance(session, dict) and bool(session.get("is_current_host", False))
+            if isinstance(session, dict)
+            and bool(session.get("is_current_host", False))
+            and bool(str(session.get("tmux_session") or "").strip())
         ])
 
         for session in sessions:
@@ -6385,10 +6406,11 @@ class IPCServer:
             tmux_session = str(session.get("tmux_session") or "").strip()
             tmux_window = str(session.get("tmux_window") or "").strip()
             tmux_pane = str(session.get("tmux_pane") or "").strip()
+            tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
             if not tmux_session or not tmux_window or not tmux_pane:
                 continue
 
-            live_focus = tmux_focus_map.get((tmux_session, tmux_window, tmux_pane))
+            live_focus = tmux_focus_map.get((tmux_socket, tmux_session, tmux_window, tmux_pane))
             if live_focus is None:
                 continue
 
@@ -7069,6 +7091,7 @@ class IPCServer:
         tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
         tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
         tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
         if tmux_session and tmux_window:
             tmux_result = self._select_tmux_target(
                 execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
@@ -7077,6 +7100,7 @@ class IPCServer:
                 tmux_pane=tmux_pane,
                 remote_target=str(terminal_context.get("remote_target") or "").strip(),
                 connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                tmux_socket=tmux_socket,
             )
         overall_success = bool(focus_result.get("success", False)) and (
             not (tmux_session and tmux_window) or bool(tmux_result.get("success", False))
@@ -7097,6 +7121,7 @@ class IPCServer:
                     tmux_pane=tmux_pane,
                     remote_target=str(terminal_context.get("remote_target") or "").strip(),
                     connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                    tmux_socket=tmux_socket,
                 )
                 verification = {
                     "success": bool(tmux_verification.get("success", False)),
