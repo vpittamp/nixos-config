@@ -489,7 +489,7 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
     assert result["total"] == 1
     session = result["sessions"][0]
     assert session["window_id"] == 211
-    assert session["focus_mode"] == "local"
+    assert session["focus_mode"] == "ssh_attach"
     assert session["focus_execution_mode"] == "ssh"
     assert session["focus_connection_key"] == "vpittamp@thinkpad:22"
 

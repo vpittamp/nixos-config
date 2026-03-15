@@ -12581,10 +12581,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         has_tmux_identity: bool,
     ) -> str:
         """Return how a session should be focused."""
-        if window_id > 0:
-            return "local"
         if not source_is_current_host and not remote_source_stale and has_tmux_identity:
             return "ssh_attach"
+        if window_id > 0:
+            return "local"
         return "unfocusable"
 
     def _remote_session_terminal_role(self, surface_key: str) -> str:
