@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+managed_tmux_prepare_terminal_term() {
+    local current_term="${TERM:-}"
+    if [[ -z "$current_term" || "$current_term" == "dumb" ]]; then
+        export TERM="${I3PM_TERM_OVERRIDE:-xterm-256color}"
+    fi
+}
+
 managed_tmux_require_context() {
     if ! command -v tmux >/dev/null 2>&1; then
         echo "managed-tmux: tmux is required but not installed" >&2
@@ -127,6 +134,7 @@ managed_tmux_recreate_reason() {
 }
 
 managed_tmux_prepare_env() {
+    managed_tmux_prepare_terminal_term
     export I3PM_TMUX_SESSION_NAME="$1"
     local tmux_socket
     tmux_socket="$(managed_tmux_current_socket)"
