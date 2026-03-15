@@ -28,9 +28,10 @@ class MockRect:
 class MockWorkspace:
     """Mock workspace object."""
 
-    def __init__(self, name="1", num=1):
+    def __init__(self, name="1", num=1, floating_nodes=None):
         self.name = name
         self.num = num
+        self.floating_nodes = floating_nodes or []
 
 
 class MockWindow:
@@ -45,13 +46,16 @@ class MockWindow:
         workspace_num=1,
         floating="user_off",
         rect=None,
+        pid=None,
     ):
         self.id = window_id
         self.window_class = window_class
+        self.name = window_class
         self.marks = marks or []
         self._workspace = MockWorkspace(workspace_name, workspace_num)
         self.floating = floating
         self.rect = rect or MockRect()
+        self.pid = pid
 
     def workspace(self):
         return self._workspace
@@ -63,6 +67,7 @@ class MockTree:
     def __init__(self, windows=None, scratchpad_windows=None):
         self._windows = windows or []
         self._scratchpad = MockScratchpad(scratchpad_windows or [])
+        self.nodes = [MockOutputNode(self._windows)]
 
     def leaves(self):
         return self._windows
@@ -76,6 +81,21 @@ class MockScratchpad:
 
     def __init__(self, windows=None):
         self.floating_nodes = windows or []
+
+
+class MockOutputNode:
+    """Mock output tree node."""
+
+    def __init__(self, windows=None):
+        self.name = "eDP-1"
+        self.nodes = [MockWorkspaceNode()]
+
+
+class MockWorkspaceNode:
+    """Mock workspace tree node."""
+
+    def __init__(self, floating_nodes=None):
+        self.floating_nodes = list(floating_nodes or [])
 
 
 @pytest.mark.asyncio
@@ -134,6 +154,45 @@ class TestWindowFilterParallelization:
         assert result["visible"] == 2  # project-a + global
         assert result["hidden"] == 1  # project-b
         assert result["duration_ms"] < 500  # Should be fast even without optimization
+
+    async def test_scoped_window_uses_env_context_when_ctx_mark_missing(self, monkeypatch):
+        """Test that strict context filtering falls back to I3PM context env when ctx mark drifted."""
+        windows = [
+            MockWindow(
+                44,
+                "Ghostty",
+                marks=["scoped:terminal:vpittamp/t3code:main:44"],
+                pid=2284946,
+            ),
+        ]
+
+        mock_conn = AsyncMock()
+        mock_conn.get_tree = AsyncMock(return_value=MockTree(windows))
+        mock_conn.command = AsyncMock(return_value=None)
+
+        from home_modules.desktop.i3_project_event_daemon.services import window_filter as window_filter_module
+
+        monkeypatch.setattr(
+            window_filter_module,
+            "read_process_environ_with_fallback",
+            lambda _pid, max_depth=3: {
+                "I3PM_APP_ID": "terminal-vpittamp/t3code:main-1913381-1773617031",
+                "I3PM_APP_NAME": "terminal",
+                "I3PM_SCOPE": "scoped",
+                "I3PM_PROJECT_NAME": "vpittamp/t3code:main",
+                "I3PM_CONTEXT_KEY": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+            },
+        )
+
+        result = await window_filter_module.filter_windows_by_project(
+            mock_conn,
+            active_project="vpittamp/t3code:main",
+            workspace_tracker=None,
+            active_context_key="vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        )
+
+        assert result["visible"] == 1
+        assert result["hidden"] == 0
 
     async def test_scratchpad_windows_restored(self):
         """Test that scratchpad windows are restored when switching to their project."""

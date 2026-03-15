@@ -42,28 +42,16 @@ def _tmux_server_key_for_socket(socket_path: Optional[str]) -> Optional[str]:
     return normalized
 
 
-def _tmux_socket_candidates() -> list[Optional[str]]:
-    """Return deterministic tmux socket candidates for user-session services."""
-    candidates: list[Optional[str]] = []
-    seen: set[Optional[str]] = set()
-
-    def add(candidate: Optional[str]) -> None:
-        normalized = str(candidate).strip() if candidate else None
-        if normalized in seen:
-            return
-        seen.add(normalized)
-        candidates.append(normalized)
-
-    tmux_env = str(os.environ.get("TMUX") or "").strip()
-    if tmux_env:
-        add(tmux_env.split(",", 1)[0])
-
+def _canonical_tmux_socket() -> str:
+    """Return the only managed tmux socket tracked by the session system."""
     uid = os.getuid()
     runtime_dir = str(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}").strip()
-    add(f"/tmp/tmux-{uid}/default")
-    add(os.path.join(runtime_dir, f"tmux-{uid}", "default"))
-    add(None)
-    return candidates
+    return os.path.join(runtime_dir, f"tmux-{uid}", "default")
+
+
+def _tmux_socket_candidates() -> list[Optional[str]]:
+    """Return the canonical managed tmux socket for session tracking."""
+    return [_canonical_tmux_socket()]
 
 
 def _merge_tmux_panes(panes_by_socket: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:

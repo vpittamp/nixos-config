@@ -343,6 +343,11 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
             "focused_window_id": 20,
         },
     })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
     server._verify_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
@@ -367,6 +372,7 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
     assert result["current_ai_session_key_after"] == "session-remote-pane"
     assert result["focus"]["current_ai_session_key_after"] == "session-remote-pane"
     assert result["focus"]["focus_state_after"]["current_ai_session_key"] == "session-remote-pane"
+    assert result["tmux_select"]["success"] is True
     assert server._focus_session_override_key == "session-remote-pane"
     assert server._focus_window_override["window_id"] == 20
     server._wait_for_session_focus.assert_not_awaited()
@@ -420,6 +426,11 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
             "focused_window_id": 44,
         },
     })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
     server._verify_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
@@ -442,6 +453,277 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     server._close_managed_window.assert_awaited_once_with(20)
     server.state_manager.remove_window.assert_awaited_once_with(20)
     server._register_launch_for_spec.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_focus_remote_session_attach_reuses_project_main_terminal_before_bridge(server):
+    remote_session = {
+        "session_key": "session-remote-pane",
+        "surface_key": "surface-remote-pane",
+        "conflict_state": "",
+        "host_name": "ryzen",
+        "tmux_session": "i3pm-vpittamp-t3code-main-f7056320",
+        "tmux_window": "0:main",
+        "tmux_pane": "%3",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+        },
+    }
+    server._resolve_remote_attach_profile = lambda _session: {
+        "remote_host": "ryzen",
+        "remote_user": "vpittamp",
+        "remote_port": 22,
+        "remote_dir": "/home/vpittamp/repos/vpittamp/t3code/main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+    }
+    server._switch_to_explicit_remote_context = AsyncMock()
+    server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "project_name": "vpittamp/t3code:main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        "terminal_role": "remote-session:abc123",
+        "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
+    })
+    server._get_reusable_context_terminal_window = AsyncMock(side_effect=[
+        None,
+        SimpleNamespace(window_id=44, terminal_role="project-main", tmux_session_name="i3pm-vpittamp-t3code-main-f7056320"),
+    ])
+    server._window_focus = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key_after": "",
+        "focused_window_id_after": 44,
+        "focus_state_after": {
+            "success": True,
+            "current_ai_session_key": "",
+            "focused_window_id": 44,
+        },
+    })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%3",
+        "tmux_pane": "%3",
+    }
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-remote-pane",
+        "focused_window_id": 44,
+    })
+    server._register_launch_for_spec = AsyncMock(side_effect=AssertionError("unexpected launch"))
+    server._execute_launch_spec = lambda _spec: (_ for _ in ()).throw(AssertionError("unexpected execute"))
+
+    result = await server._focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session=remote_session,
+    )
+
+    assert result["success"] is True
+    assert result["window_id"] == 44
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["reused_terminal_role"] == "project-main"
+
+
+@pytest.mark.asyncio
+async def test_focus_remote_session_attach_prefers_already_bound_window(server):
+    remote_session = {
+        "session_key": "session-remote-pane",
+        "surface_key": "surface-remote-pane",
+        "conflict_state": "",
+        "host_name": "ryzen",
+        "window_id": 39,
+        "bridge_window_id": 39,
+        "tmux_session": "i3pm-pittampalliorg-workflow--919ce57f",
+        "tmux_window": "0:main",
+        "tmux_pane": "%2",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+        },
+    }
+    server._resolve_remote_attach_profile = lambda _session: {
+        "remote_host": "ryzen",
+        "remote_user": "vpittamp",
+        "remote_port": 22,
+        "remote_dir": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+    }
+    server._switch_to_explicit_remote_context = AsyncMock()
+    server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "terminal_role": "remote-session:abc123",
+        "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
+    })
+    server.state_manager.state.window_map[39] = SimpleNamespace(window_id=39, terminal_role="project-main")
+    server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=39))
+    server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
+    server._window_focus = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key_after": "",
+        "focused_window_id_after": 39,
+        "focus_state_after": {
+            "success": True,
+            "current_ai_session_key": "",
+            "focused_window_id": 39,
+        },
+    })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%2",
+        "tmux_pane": "%2",
+    }
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-remote-pane",
+        "focused_window_id": 39,
+    })
+
+    result = await server._focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session=remote_session,
+    )
+
+    assert result["success"] is True
+    assert result["window_id"] == 39
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["reused_terminal_role"] == "project-main"
+
+
+@pytest.mark.asyncio
+async def test_focus_remote_session_attach_prefers_live_already_bound_window_without_tracking(server):
+    remote_session = {
+        "session_key": "session-remote-pane",
+        "surface_key": "surface-remote-pane",
+        "conflict_state": "",
+        "host_name": "ryzen",
+        "window_id": 44,
+        "bridge_window_id": 44,
+        "tmux_session": "i3pm-vpittamp-t3code-main-f7056320",
+        "tmux_window": "0:main",
+        "tmux_pane": "%3",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+        },
+    }
+    server._resolve_remote_attach_profile = lambda _session: {
+        "remote_host": "ryzen",
+        "remote_user": "vpittamp",
+        "remote_port": 22,
+        "remote_dir": "/home/vpittamp/repos/vpittamp/t3code/main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+    }
+    server._switch_to_explicit_remote_context = AsyncMock()
+    server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "project_name": "vpittamp/t3code:main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        "terminal_role": "remote-session:abc123",
+        "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
+    })
+    server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=44))
+    server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
+    server._window_focus = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key_after": "",
+        "focused_window_id_after": 44,
+        "focus_state_after": {
+            "success": True,
+            "current_ai_session_key": "",
+            "focused_window_id": 44,
+        },
+    })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%3",
+        "tmux_pane": "%3",
+    }
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-remote-pane",
+        "focused_window_id": 44,
+    })
+
+    result = await server._focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session=remote_session,
+    )
+
+    assert result["success"] is True
+    assert result["window_id"] == 44
+    assert result["launch"]["reused_existing"] is True
+
+
+@pytest.mark.asyncio
+async def test_find_context_terminal_window_recovers_context_from_process_env(server, monkeypatch):
+    window = SimpleNamespace(
+        window_id=44,
+        workspace="",
+        project="vpittamp/t3code:main",
+        context_key="",
+        execution_mode="local",
+        terminal_role="",
+        app_identifier="terminal",
+        tmux_session_name="",
+        pid=1234,
+    )
+    server.state_manager.state.window_map[44] = window
+    monkeypatch.setattr(
+        ipc_server_module,
+        "read_process_environ_with_fallback",
+        lambda pid: {
+            "I3PM_PROJECT_NAME": "vpittamp/t3code:main",
+            "I3PM_CONTEXT_KEY": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+            "I3PM_CONTEXT_VARIANT": "ssh",
+            "I3PM_TERMINAL_ROLE": "project-main",
+            "I3PM_TMUX_SESSION_NAME": "i3pm-vpittamp-t3code-main-f7056320",
+            "I3PM_APP_ID": "terminal-vpittamp/t3code:main-1",
+            "I3PM_APP_NAME": "terminal",
+        },
+    )
+    monkeypatch.setattr(
+        ipc_server_module,
+        "parse_window_environment",
+        lambda _env: SimpleNamespace(
+            project_name="vpittamp/t3code:main",
+            context_key="vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+            terminal_role="project-main",
+            tmux_session_name="i3pm-vpittamp-t3code-main-f7056320",
+            app_name="terminal",
+        ),
+    )
+
+    result = server._find_context_terminal_window(
+        project_name="vpittamp/t3code:main",
+        context_key="vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        execution_mode="ssh",
+        app_name="terminal",
+        terminal_role="project-main",
+    )
+
+    assert result is window
 
 
 @pytest.mark.asyncio

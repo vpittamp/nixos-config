@@ -123,6 +123,7 @@ def server_local():
         ),
     }
     server.registry_loader.version = "test"
+    server._local_host_alias = lambda: "thinkpad"
     server._set_active_runtime_context(
         make_context(execution_mode="local", connection_key="local@thinkpad")
     )
@@ -146,6 +147,41 @@ def server_ssh():
         ),
     }
     server.registry_loader.version = "test"
+    server._local_host_alias = lambda: "thinkpad"
+    server._set_active_runtime_context(
+        make_context(
+            execution_mode="ssh",
+            connection_key="vpittamp@ryzen:22",
+            remote={
+                "enabled": True,
+                "host": "ryzen",
+                "user": "vpittamp",
+                "port": 22,
+                "remote_dir": REMOTE_PROJECT,
+            },
+        )
+    )
+    return server
+
+
+@pytest.fixture
+def server_ssh_current_host():
+    state_manager = DummyStateManager(QUALIFIED_NAME)
+    server = IPCServer(state_manager)
+    server.registry_loader.applications = {
+        "terminal": make_registry_app(name="terminal", parameters=["-e", "bash", "-lc", "true"], scoped_terminal_mode="managed_project_terminal"),
+        "yazi": make_registry_app(name="yazi", parameters=["-e", "yazi", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "lazygit": make_registry_app(name="lazygit", parameters=["-e", "lazygit", "--path", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "nvim": make_registry_app(name="nvim", parameters=["-e", "nvim", "$PROJECT_DIR"], scoped_terminal_mode="dedicated_scoped_window"),
+        "code": make_registry_app(
+            name="code",
+            command="code",
+            parameters=["$PROJECT_DIR"],
+            terminal=False,
+        ),
+    }
+    server.registry_loader.version = "test"
+    server._local_host_alias = lambda: "ryzen"
     server._set_active_runtime_context(
         make_context(
             execution_mode="ssh",
@@ -172,6 +208,8 @@ async def test_prepare_launch_terminal_local_uses_managed_tmux(server_local):
     assert spec["terminal_launch"]["helper_name"] == "project-terminal-launch.sh"
     assert spec["terminal_launch"]["helper_args"] == []
     assert spec["tmux_session_name"].startswith("i3pm-")
+    assert spec["environment"]["I3PM_TMUX_SOCKET"] == server_local._canonical_tmux_socket()
+    assert spec["environment"]["I3PM_TMUX_SERVER_KEY"] == server_local._canonical_tmux_socket()
 
 
 @pytest.mark.asyncio
@@ -184,6 +222,21 @@ async def test_prepare_launch_terminal_ssh_uses_managed_tmux(server_ssh):
     assert spec["terminal_launch"]["helper_name"] == "project-terminal-launch.sh"
     assert spec["terminal_launch"]["remote"]["remote_dir"] == REMOTE_PROJECT
     assert spec["tmux_session_name"].startswith("i3pm-")
+    assert spec["environment"]["I3PM_TMUX_SOCKET"] == server_ssh._canonical_tmux_socket()
+    assert spec["environment"]["I3PM_TMUX_SERVER_KEY"] == server_ssh._canonical_tmux_socket()
+
+
+@pytest.mark.asyncio
+async def test_prepare_launch_terminal_ssh_current_host_uses_local_transport(server_ssh_current_host):
+    spec = await server_ssh_current_host._prepare_launch({"app_name": "terminal", "register_launch": False})
+
+    assert spec["execution_mode"] == "ssh"
+    assert spec["launch_strategy"] == "managed_local_terminal"
+    assert spec["launch_transport"] == "local_helper"
+    assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
+    assert "remote" not in spec["terminal_launch"]
+    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@ryzen:22"
+    assert spec["environment"]["I3PM_CONTEXT_VARIANT"] == "ssh"
 
 
 @pytest.mark.asyncio
@@ -211,6 +264,17 @@ async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(serve
     assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
     assert spec["terminal_role"] == "project-app:yazi"
     assert spec["tmux_session_name"] == ""
+
+
+@pytest.mark.asyncio
+async def test_prepare_launch_yazi_ssh_current_host_uses_local_scoped_window(server_ssh_current_host):
+    spec = await server_ssh_current_host._prepare_launch({"app_name": "yazi", "register_launch": False})
+
+    assert spec["execution_mode"] == "ssh"
+    assert spec["launch_strategy"] == "dedicated_local_scoped_window"
+    assert spec["launch_transport"] == "local_helper"
+    assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
+    assert "remote" not in spec["terminal_launch"]
 
 
 @pytest.mark.asyncio
@@ -297,6 +361,8 @@ async def test_build_remote_session_attach_spec_overrides_bridge_context_env(ser
 
 def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     spec = {
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
         "environment": {
             "I3PM_PROJECT_NAME": QUALIFIED_NAME,
             "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
@@ -331,9 +397,11 @@ def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
 
 def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_ssh):
     spec = {
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
         "environment": {
             "I3PM_PROJECT_NAME": QUALIFIED_NAME,
-            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22",
+            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
             "I3PM_REMOTE_SESSION_KEY": "codex|remote-session",
         },
         "terminal_launch": {
@@ -341,7 +409,7 @@ def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_
             "helper_name": "project-terminal-launch.sh",
             "tmux_session_name": "i3pm-remote-shell",
             "remote": {
-                "host": "thinkpad",
+                "host": "ryzen",
                 "user": "vpittamp",
                 "port": 22,
                 "remote_dir": "",
@@ -361,10 +429,92 @@ def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_
     finally:
         helper_path.unlink(missing_ok=True)
 
-    assert "ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p 22 vpittamp@thinkpad" in content
+    assert "ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p 22 vpittamp@ryzen" in content
     assert "tmux -S /run/user/1000/tmux-1000/default has-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
     assert "attach-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
     assert "cd " not in content
+
+
+def test_build_remote_helper_script_rejects_current_host_ssh_launch(server_ssh_current_host):
+    spec = {
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "environment": {
+            "I3PM_PROJECT_NAME": QUALIFIED_NAME,
+            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
+        },
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "helper_name": "project-terminal-launch.sh",
+            "tmux_session_name": "i3pm-remote-shell",
+            "remote": {
+                "host": "ryzen",
+                "user": "vpittamp",
+                "port": 22,
+                "remote_dir": REMOTE_PROJECT,
+            },
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="current-host or local launch contexts"):
+        server_ssh_current_host._build_remote_terminal_helper_script(spec)
+
+
+def test_managed_tmux_command_shell_uses_canonical_socket(server_local):
+    script = server_local._managed_tmux_command_shell(
+        session_name="i3pm-vpittamp-nixos-config-main",
+        tmux_socket=server_local._canonical_tmux_socket(),
+        working_dir=LOCAL_PROJECT,
+        command_args=["yazi", LOCAL_PROJECT],
+        environment={
+            "I3PM_PROJECT_NAME": QUALIFIED_NAME,
+            "I3PM_TMUX_SOCKET": server_local._canonical_tmux_socket(),
+        },
+    )
+
+    assert f"tmux -S {server_local._canonical_tmux_socket()} has-session -t i3pm-vpittamp-nixos-config-main" in script
+    assert f"tmux -S {server_local._canonical_tmux_socket()} set-environment -t i3pm-vpittamp-nixos-config-main I3PM_PROJECT_NAME {QUALIFIED_NAME}" in script
+    assert f"tmux -S {server_local._canonical_tmux_socket()} new-window -t i3pm-vpittamp-nixos-config-main" in script
+
+
+def test_dispatch_managed_terminal_command_ssh_current_host_uses_local_tmux_dispatch(server_ssh_current_host, monkeypatch):
+    spec = {
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "local_project_directory": LOCAL_PROJECT,
+        "project_directory": REMOTE_PROJECT,
+        "launch_transport": "local_helper",
+        "environment": {
+            "I3PM_TMUX_SOCKET": server_ssh_current_host._canonical_tmux_socket(),
+            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
+        },
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "tmux_session_name": "i3pm-vpittamp-nixos-config-main",
+            "helper_args": ["yazi", LOCAL_PROJECT],
+            "remote": {
+                "host": "ryzen",
+                "user": "vpittamp",
+                "port": 22,
+                "remote_dir": REMOTE_PROJECT,
+            },
+        },
+    }
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, check):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
+
+    result = server_ssh_current_host._dispatch_managed_terminal_command(spec)
+
+    assert result["success"] is True
+    assert captured["cmd"][:2] == ["bash", "-lc"]
+    assert "tmux -S" in captured["cmd"][2]
+    assert "ssh -o" not in captured["cmd"][2]
+    assert "BatchMode=yes" not in captured["cmd"][2]
 
 
 def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_terminal(server_local, monkeypatch):
@@ -399,6 +549,45 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
     assert captured["cmd"][-2] == "-lc"
     assert "project-command-launch.sh" in captured["cmd"][-1]
     assert "yazi" in captured["cmd"][-1]
+
+
+def test_execute_launch_spec_ssh_current_host_uses_local_terminal_helper(server_ssh_current_host, monkeypatch):
+    spec = {
+        "app_name": "terminal",
+        "command": "ghostty",
+        "args": ["-e", "bash", "-lc", "true"],
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "launch_transport": "local_helper",
+        "local_project_directory": LOCAL_PROJECT,
+        "environment": {
+            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
+        },
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "helper_name": "project-terminal-launch.sh",
+            "helper_args": [],
+        },
+    }
+    captured = {}
+
+    monkeypatch.setattr(server_ssh_current_host, "_resolve_terminal_helper", lambda _name: Path("/tmp/project-terminal-launch.sh"))
+    monkeypatch.setattr(server_ssh_current_host, "_build_remote_terminal_helper_script", lambda _spec: (_ for _ in ()).throw(AssertionError("unexpected remote helper")))
+    monkeypatch.setattr(ipc_server_module.shutil, "which", lambda _name: f"/usr/bin/{_name}")
+
+    def fake_run(cmd, capture_output, text, check):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
+
+    result = server_ssh_current_host._execute_launch_spec(spec)
+
+    assert result["success"] is True
+    assert captured["cmd"][-3] == "bash"
+    assert captured["cmd"][-2] == "-lc"
+    assert "project-terminal-launch.sh" in captured["cmd"][-1]
+    assert "i3pm-remote-launch" not in captured["cmd"][-1]
 
 
 def test_resolve_terminal_helper_prefers_packaged_helper_dir(server_local, monkeypatch, tmp_path):

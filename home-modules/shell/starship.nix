@@ -117,15 +117,15 @@ in
       };
 
       custom.tmux = {
-        when = "test -n \"$TMUX\"";
-        command = "echo \"$TMUX_PANE\"";
+        when = "test -n \"$TMUX\" && [ -x ${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge ]";
+        command = "${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge --prompt --source hybrid --pane-id \"$TMUX_PANE\" --max-len 44";
         style = "bold fg:${colors.sky}";
         format = "[$output]($style) ";
       };
 
       # Feature 106: portable wrapper for worktree support
       custom.i3pm_project = {
-        when = "[ -x ${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge ] && test -n \"$I3PM_PROJECT_NAME$I3PM_PROJECT_DISPLAY_NAME\"";
+        when = "test -z \"$TMUX\" && [ -x ${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge ] && test -n \"$I3PM_PROJECT_NAME$I3PM_PROJECT_DISPLAY_NAME\"";
         command = "${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge --plain";
         style = "fg:${colors.peach} bold";
         format = "[$output]($style)";

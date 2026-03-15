@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -32,3 +33,23 @@ def test_prepare_terminal_term_preserves_existing_term() -> None:
     )
 
     assert output == "tmux-256color"
+
+
+def test_current_socket_uses_canonical_runtime_path() -> None:
+    runtime_dir = "/tmp/i3pm-runtime-managed"
+    expected = f"{runtime_dir}/tmux-{os.getuid()}/default"
+    output = _run_helper_shell(
+        f"export XDG_RUNTIME_DIR={runtime_dir}; export TMUX=/tmp/tmux-{os.getuid()}/default,123,0; source {HELPER_PATH}; managed_tmux_current_socket"
+    )
+
+    assert output == expected
+
+
+def test_prepare_env_exports_canonical_tmux_metadata() -> None:
+    runtime_dir = "/tmp/i3pm-runtime-managed"
+    expected = f"{runtime_dir}/tmux-{os.getuid()}/default"
+    output = _run_helper_shell(
+        f"export XDG_RUNTIME_DIR={runtime_dir}; export TMUX=/tmp/tmux-{os.getuid()}/default,123,0; source {HELPER_PATH}; managed_tmux_prepare_env demo-session; printf '%s|%s' \"$I3PM_TMUX_SOCKET\" \"$I3PM_TMUX_SERVER_KEY\""
+    )
+
+    assert output == f"{expected}|{expected}"

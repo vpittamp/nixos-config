@@ -20,6 +20,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -39,7 +40,11 @@ from . import window_filtering  # Feature 037: Window filtering utilities
 from .worktree_utils import parse_mark, parse_qualified_name, is_qualified_name  # Feature 101
 from .constants import ConfigPaths  # Feature 101
 from .config import atomic_write_json  # Feature 137: Atomic file writes
-from .services.window_filter import clear_pid_environ_cache
+from .services.window_filter import (
+    clear_pid_environ_cache,
+    parse_window_environment,
+    read_process_environ_with_fallback,
+)
 from .services.registry_loader import RegistryLoader, RegistryApp
 
 logger = logging.getLogger(__name__)
@@ -5454,15 +5459,36 @@ class IPCServer:
 
         candidates: List[Any] = []
         for window_info in self.state_manager.state.window_map.values():
-            if str(getattr(window_info, "project", "") or "").strip() != target_project:
-                continue
-            if str(getattr(window_info, "context_key", "") or "").strip() != target_context:
-                continue
-            if str(getattr(window_info, "execution_mode", "") or "local").strip() != target_mode:
-                continue
-
+            tracked_project = str(getattr(window_info, "project", "") or "").strip()
+            tracked_context = str(getattr(window_info, "context_key", "") or "").strip()
+            tracked_mode = str(getattr(window_info, "execution_mode", "") or "local").strip() or "local"
             role = str(getattr(window_info, "terminal_role", "") or "").strip()
             app_identifier = str(getattr(window_info, "app_identifier", "") or "").strip()
+            tracked_tmux_session = str(getattr(window_info, "tmux_session_name", "") or "").strip()
+
+            if not tracked_project or not tracked_context or not role or not tracked_tmux_session:
+                pid = int(getattr(window_info, "pid", 0) or 0)
+                if pid > 0:
+                    env = read_process_environ_with_fallback(pid)
+                    parsed_env = parse_window_environment(env) if env else None
+                    if parsed_env is not None:
+                        tracked_project = tracked_project or str(parsed_env.project_name or "").strip()
+                        tracked_context = tracked_context or str(parsed_env.context_key or "").strip()
+                        role = role or str(parsed_env.terminal_role or "").strip()
+                        app_identifier = app_identifier or str(parsed_env.app_name or "").strip()
+                        tracked_tmux_session = tracked_tmux_session or str(parsed_env.tmux_session_name or "").strip()
+                    tracked_mode = (
+                        str(env.get("I3PM_CONTEXT_VARIANT") or "").strip()
+                        or tracked_mode
+                    )
+
+            if tracked_project != target_project:
+                continue
+            if tracked_context != target_context:
+                continue
+            if tracked_mode != target_mode:
+                continue
+
             if target_role:
                 if role != target_role:
                     continue
@@ -5639,6 +5665,10 @@ class IPCServer:
             env["I3PM_IS_WORKTREE"] = "true"
             env["I3PM_FULL_BRANCH_NAME"] = worktree_branch
             env["I3PM_GIT_BRANCH"] = worktree_branch
+        if tmux_session_name:
+            canonical_tmux_socket = self._canonical_tmux_socket()
+            env["I3PM_TMUX_SOCKET"] = canonical_tmux_socket
+            env["I3PM_TMUX_SERVER_KEY"] = canonical_tmux_socket
         if restore_mark:
             env["I3PM_RESTORE_MARK"] = restore_mark
         if remote_profile and execution_mode == "ssh":
@@ -5934,12 +5964,16 @@ class IPCServer:
             worktree_repo=worktree_repo,
         )
         launch_strategy = "direct"
+        launch_transport = self._resolve_terminal_launch_transport(
+            execution_mode=execution_mode,
+            connection_key=connection_key,
+        )
         terminal_launch: Optional[Dict[str, Any]] = None
         if bool(app.terminal) and scoped_launch and project_name and context_key:
             if scoped_terminal_mode == "dedicated_scoped_window":
                 launch_strategy = (
                     "dedicated_remote_scoped_window"
-                    if execution_mode == "ssh"
+                    if launch_transport == "remote_helper"
                     else "dedicated_local_scoped_window"
                 )
                 terminal_launch = {
@@ -5948,7 +5982,7 @@ class IPCServer:
                     "helper_name": "project-command-launch.sh",
                     "helper_args": scoped_terminal_command,
                 }
-                if execution_mode == "ssh":
+                if launch_transport == "remote_helper":
                     terminal_launch["remote"] = {
                         "host": str(remote_profile.get("host", "")) if remote_profile else "",
                         "user": str(remote_profile.get("user", "")) if remote_profile else "",
@@ -5958,9 +5992,9 @@ class IPCServer:
             else:
                 launch_strategy = (
                     "managed_remote_terminal_command"
-                    if execution_mode == "ssh" and scoped_terminal_command
+                    if launch_transport == "remote_helper" and scoped_terminal_command
                     else "managed_remote_terminal"
-                    if execution_mode == "ssh"
+                    if launch_transport == "remote_helper"
                     else "managed_local_terminal_command"
                     if scoped_terminal_command
                     else "managed_local_terminal"
@@ -5980,7 +6014,7 @@ class IPCServer:
                     "helper_name": "project-terminal-launch.sh",
                     "helper_args": scoped_terminal_command,
                 }
-                if execution_mode == "ssh":
+                if launch_transport == "remote_helper":
                     terminal_launch["remote"] = {
                         "host": str(remote_profile.get("host", "")) if remote_profile else "",
                         "user": str(remote_profile.get("user", "")) if remote_profile else "",
@@ -6032,6 +6066,7 @@ class IPCServer:
             "connection_key": connection_key,
             "context_key": context_key,
             "launch_strategy": launch_strategy,
+            "launch_transport": launch_transport,
             "ssh_policy": "terminal_only" if execution_mode == "ssh" else "not_applicable",
             "remote_profile": remote_profile,
             "terminal_launch": terminal_launch,
@@ -6053,6 +6088,11 @@ class IPCServer:
     def _runtime_dir(self) -> Path:
         """Return the XDG runtime directory used by daemon-owned helpers."""
         return Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+
+    def _canonical_tmux_socket(self) -> str:
+        """Return the canonical managed tmux socket path for the current host user."""
+        uid = os.getuid()
+        return str(self._runtime_dir() / f"tmux-{uid}" / "default")
 
     def _remote_sink_file(self) -> Path:
         """Return the deterministic remote OTEL sink file path."""
@@ -6114,6 +6154,20 @@ class IPCServer:
         if socket_path:
             return f"tmux -S {shlex.quote(socket_path)}"
         return "tmux"
+
+    def _resolve_terminal_launch_transport(
+        self,
+        *,
+        execution_mode: str,
+        connection_key: str,
+    ) -> str:
+        """Return the terminal launch transport for the resolved context."""
+        mode = str(execution_mode or "local").strip().lower() or "local"
+        if mode != "ssh":
+            return "local_helper"
+        if self._connection_target_is_current_host(connection_key):
+            return "local_helper"
+        return "remote_helper"
 
     def _select_tmux_target(
         self,
@@ -7232,21 +7286,32 @@ class IPCServer:
         spec = await self._build_remote_session_attach_spec(session, attach_profile=attach_profile)
         project_name = str(spec.get("project_name") or "").strip()
         connection_key = str(spec.get("connection_key") or "").strip()
-        terminal_role = str(spec.get("terminal_role") or "").strip()
         focus_target_host = str(session.get("host_name") or "").strip()
+        session_window_id = int(session.get("window_id") or session.get("bridge_window_id") or 0)
 
-        existing_window = await self._get_reusable_context_terminal_window(
-            project_name=project_name,
-            context_key=str(spec.get("context_key") or "").strip(),
-            execution_mode="ssh",
-            app_name="terminal",
-            terminal_role=terminal_role,
-        )
+        existing_window = None
+        reused_terminal_role = ""
+        if session_window_id > 0:
+            live_window = await self._find_live_sway_window(session_window_id)
+            if live_window is not None:
+                existing_window = self.state_manager.state.window_map.get(session_window_id)
+                if existing_window is not None:
+                    reused_terminal_role = str(getattr(existing_window, "terminal_role", "") or "").strip()
+                else:
+                    existing_window = SimpleNamespace(window_id=session_window_id)
+
+        if existing_window is None:
+            existing_window, reused_terminal_role = await self._get_reusable_remote_attach_window(
+                spec=spec,
+                session=session,
+            )
 
         launch_result: Dict[str, Any] = {
             "success": True,
             "reused_existing": existing_window is not None,
         }
+        if reused_terminal_role:
+            launch_result["reused_terminal_role"] = reused_terminal_role
         local_window_id = int(getattr(existing_window, "window_id", 0) or 0) if existing_window is not None else 0
 
         if existing_window is not None:
@@ -7286,6 +7351,14 @@ class IPCServer:
         terminal_context = session.get("terminal_context") or {}
         if not isinstance(terminal_context, dict):
             terminal_context = {}
+        tmux_select_result = self._select_tmux_target(
+            execution_mode="ssh",
+            tmux_session=str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip(),
+            tmux_window=str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip(),
+            tmux_pane=str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
+            connection_key=connection_key,
+            tmux_socket=str(terminal_context.get("tmux_socket") or "").strip(),
+        )
         tmux_result = self._verify_tmux_target(
             execution_mode="ssh",
             tmux_session=str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip(),
@@ -7297,6 +7370,7 @@ class IPCServer:
         overall_success = (
             bool(launch_result.get("success", False))
             and bool(focus_result.get("success", False))
+            and bool(tmux_select_result.get("success", False))
             and bool(tmux_result.get("success", False))
         )
         verification: Dict[str, Any] = {
@@ -7339,6 +7413,7 @@ class IPCServer:
             "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
             "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
             "focus_state_after": focus_state_after,
+            "tmux_select": tmux_select_result,
             "tmux": tmux_result,
             "verification": verification,
         }
@@ -8057,6 +8132,17 @@ class IPCServer:
         if not isinstance(remote_attach, dict):
             remote_attach = {}
 
+        execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
+        connection_key = str(spec.get("connection_key") or "").strip()
+        if (
+            self._resolve_terminal_launch_transport(
+                execution_mode=execution_mode,
+                connection_key=connection_key,
+            )
+            != "remote_helper"
+        ):
+            raise RuntimeError("Remote terminal helper is invalid for current-host or local launch contexts")
+
         terminal_mode = str(terminal_launch.get("mode") or "").strip()
         tmux_session_name = str(terminal_launch.get("tmux_session_name") or "").strip()
         helper_name = str(
@@ -8155,6 +8241,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         self,
         *,
         session_name: str,
+        tmux_socket: str,
         working_dir: str,
         command_args: List[str],
         environment: Dict[str, str],
@@ -8163,22 +8250,23 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not session_name or not working_dir or not command_args:
             raise RuntimeError("Managed tmux command dispatch requires session_name, working_dir, and command_args")
 
+        tmux_cmd = self._tmux_command_prefix(tmux_socket or self._canonical_tmux_socket())
         env_lines = []
         for key, value in environment.items():
             if not str(key).startswith("I3PM_"):
                 continue
             env_lines.append(
-                f"tmux set-environment -t {shlex.quote(session_name)} {shlex.quote(str(key))} {shlex.quote(str(value))}"
+                f"{tmux_cmd} set-environment -t {shlex.quote(session_name)} {shlex.quote(str(key))} {shlex.quote(str(value))}"
             )
         command_string = " ".join(shlex.quote(str(arg)) for arg in command_args)
         window_name = Path(str(command_args[0])).name or "cmd"
         script_lines = [
             "set -euo pipefail",
-            f"if ! tmux has-session -t {shlex.quote(session_name)} 2>/dev/null; then exit 1; fi",
+            f"if ! {tmux_cmd} has-session -t {shlex.quote(session_name)} 2>/dev/null; then exit 1; fi",
         ]
         script_lines.extend(env_lines)
         script_lines.append(
-            f"tmux new-window -t {shlex.quote(session_name)} -c {shlex.quote(working_dir)} -n {shlex.quote(window_name[:24] or 'cmd')} \"exec {command_string}\""
+            f"{tmux_cmd} new-window -t {shlex.quote(session_name)} -c {shlex.quote(working_dir)} -n {shlex.quote(window_name[:24] or 'cmd')} \"exec {command_string}\""
         )
         return "\n".join(script_lines)
 
@@ -8194,11 +8282,20 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         tmux_session_name = str(terminal_launch.get("tmux_session_name") or spec.get("tmux_session_name") or "").strip()
         execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
+        connection_key = str(spec.get("connection_key") or "").strip()
         environment = {
             str(key): str(value)
             for key, value in (spec.get("environment") or {}).items()
         }
-        if execution_mode == "ssh":
+        tmux_socket = str(environment.get("I3PM_TMUX_SOCKET") or "").strip() or self._canonical_tmux_socket()
+        launch_transport = str(
+            spec.get("launch_transport")
+            or self._resolve_terminal_launch_transport(
+                execution_mode=execution_mode,
+                connection_key=connection_key,
+            )
+        ).strip() or "local_helper"
+        if launch_transport == "remote_helper":
             remote = terminal_launch.get("remote") or {}
             if not isinstance(remote, dict):
                 remote = {}
@@ -8210,6 +8307,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 raise RuntimeError("Managed remote terminal command dispatch requires a complete SSH profile")
             dispatch_script = self._managed_tmux_command_shell(
                 session_name=tmux_session_name,
+                tmux_socket=tmux_socket,
                 working_dir=remote_dir,
                 command_args=helper_args,
                 environment=environment,
@@ -8244,6 +8342,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             raise RuntimeError("Managed local terminal command dispatch requires local_project_directory")
         dispatch_script = self._managed_tmux_command_shell(
             session_name=tmux_session_name,
+            tmux_socket=tmux_socket,
             working_dir=local_project_dir,
             command_args=helper_args,
             environment=environment,
@@ -8291,6 +8390,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         args = [str(arg) for arg in (spec.get("args") or [])]
         shell_command = ""
         execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
+        connection_key = str(spec.get("connection_key") or "").strip()
         local_project_dir = str(spec.get("local_project_directory") or "").strip()
         environment = {
             str(key): str(value)
@@ -8300,6 +8400,13 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         terminal_mode = str(terminal_launch.get("mode") or "").strip()
         helper_name = str(terminal_launch.get("helper_name") or "").strip()
         helper_args = [str(arg) for arg in (terminal_launch.get("helper_args") or [])]
+        launch_transport = str(
+            spec.get("launch_transport")
+            or self._resolve_terminal_launch_transport(
+                execution_mode=execution_mode,
+                connection_key=connection_key,
+            )
+        ).strip() or "local_helper"
 
         if app_name == "k9s":
             kubeconfig_path = Path.home() / ".kube" / "stacks" / "config"
@@ -8312,7 +8419,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     raise RuntimeError("Expected kubeconfig not found after sync")
             environment["KUBECONFIG"] = str(kubeconfig_path)
 
-        if terminal_mode == "managed_project_terminal" and execution_mode == "local":
+        if terminal_mode == "managed_project_terminal" and launch_transport == "local_helper":
             if not local_project_dir:
                 raise RuntimeError("Managed local terminal launch requires local_project_directory")
             launch_script = self._resolve_terminal_helper(helper_name or "project-terminal-launch.sh")
@@ -8323,10 +8430,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     for part in [str(launch_script), local_project_dir, *helper_args]
                 )
             )
-        elif terminal_mode == "managed_project_terminal" and execution_mode == "ssh":
+        elif terminal_mode == "managed_project_terminal" and launch_transport == "remote_helper":
             helper_script = self._build_remote_terminal_helper_script(spec)
             shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
-        elif terminal_mode == "dedicated_scoped_window" and execution_mode == "local":
+        elif terminal_mode == "dedicated_scoped_window" and launch_transport == "local_helper":
             if not local_project_dir:
                 raise RuntimeError("Dedicated scoped terminal launch requires local_project_directory")
             launch_script = self._resolve_terminal_helper(helper_name or "project-command-launch.sh")
@@ -8337,10 +8444,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     for part in [str(launch_script), local_project_dir, *helper_args]
                 )
             )
-        elif terminal_mode == "dedicated_scoped_window" and execution_mode == "ssh":
+        elif terminal_mode == "dedicated_scoped_window" and launch_transport == "remote_helper":
             helper_script = self._build_remote_terminal_helper_script(spec)
             shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
-        elif terminal_mode == "scoped_terminal_command" and execution_mode == "local":
+        elif terminal_mode == "scoped_terminal_command" and launch_transport == "local_helper":
             if not local_project_dir:
                 raise RuntimeError("Scoped local terminal launch requires local_project_directory")
             launch_script = self._resolve_terminal_helper(helper_name or "project-command-launch.sh")
@@ -8351,7 +8458,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     for part in [str(launch_script), local_project_dir, *helper_args]
                 )
             )
-        elif terminal_mode == "scoped_terminal_command" and execution_mode == "ssh":
+        elif terminal_mode == "scoped_terminal_command" and launch_transport == "remote_helper":
             helper_script = self._build_remote_terminal_helper_script(spec)
             shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
         elif execution_mode == "ssh":
@@ -8363,7 +8470,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             raise RuntimeError(f"Command not found: {command}")
 
         workdir = Path.home()
-        if execution_mode == "local" and local_project_dir:
+        if launch_transport == "local_helper" and local_project_dir:
             workdir = Path(local_project_dir)
 
         unit_name = f"i3pm-launch-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', app_name or 'app')}-{os.getpid()}-{int(time.time())}"
@@ -13373,6 +13480,49 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "tmux_pane": tmux_pane,
         }
         return spec
+
+    async def _get_reusable_remote_attach_window(
+        self,
+        *,
+        spec: Dict[str, Any],
+        session: Dict[str, Any],
+    ) -> Tuple[Optional[Any], str]:
+        """Return the best reusable local terminal for a remote session attach."""
+        project_name = str(spec.get("project_name") or "").strip()
+        context_key = str(spec.get("context_key") or "").strip()
+        remote_terminal_role = str(spec.get("terminal_role") or "").strip()
+        tmux_session_name = str(spec.get("tmux_session_name") or "").strip()
+
+        existing_window = await self._get_reusable_context_terminal_window(
+            project_name=project_name,
+            context_key=context_key,
+            execution_mode="ssh",
+            app_name="terminal",
+            terminal_role=remote_terminal_role,
+        )
+        if existing_window is not None:
+            return existing_window, remote_terminal_role
+
+        # Prefer the canonical SSH project terminal if one already exists for
+        # the same context. That terminal should act as the local
+        # representation of the remote session instead of spawning a second
+        # remote-session bridge window.
+        project_main_window = await self._get_reusable_context_terminal_window(
+            project_name=project_name,
+            context_key=context_key,
+            execution_mode="ssh",
+            app_name="terminal",
+            terminal_role="project-main",
+        )
+        if project_main_window is None:
+            return None, ""
+
+        existing_tmux_session = str(getattr(project_main_window, "tmux_session_name", "") or "").strip()
+        if existing_tmux_session and tmux_session_name and existing_tmux_session != tmux_session_name:
+            return None, ""
+        if self._remote_bridge_window_mismatch_reason(project_main_window, session):
+            return None, ""
+        return project_main_window, "project-main"
 
     async def _wait_for_terminal_window(
         self,

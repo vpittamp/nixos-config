@@ -47,7 +47,7 @@ async def test_get_tmux_context_for_pid_returns_session_window_and_pane(monkeypa
     monkeypatch.setattr(
         sway_helper_module,
         "_tmux_socket_candidates",
-        lambda: ["/tmp/tmux-1000/default"],
+        lambda: ["/run/user/1000/tmux-1000/default"],
     )
 
     fake_output = (
@@ -75,26 +75,26 @@ async def test_get_tmux_context_for_pid_returns_session_window_and_pane(monkeypa
     assert context["tmux_session"] == "workflow-builder/main"
     assert context["tmux_window"] == "1:node"
     assert context["tmux_pane"] == "%5"
-    assert context["tmux_socket"] == "/tmp/tmux-1000/default"
-    assert context["tmux_server_key"] == "/tmp/tmux-1000/default"
+    assert context["tmux_socket"] == "/run/user/1000/tmux-1000/default"
+    assert context["tmux_server_key"] == "/run/user/1000/tmux-1000/default"
     assert context["tmux_resolution_source"] == "discovered"
 
 
 @pytest.mark.asyncio
-async def test_list_tmux_panes_falls_back_to_alternate_socket(monkeypatch):
+async def test_list_tmux_panes_uses_canonical_socket(monkeypatch):
     fake_output = (
         "/dev/pts/5\tworkflow-builder/main\t1:node\t%5\t1\t1234\tnode\t1\t0\n"
     ).encode("utf-8")
 
     async def _fake_create_subprocess_exec(*args, **_kwargs):
-        if args[:3] == ("tmux", "-S", "/tmp/tmux-1000/default"):
+        if args[:3] == ("tmux", "-S", "/run/user/1000/tmux-1000/default"):
             return _FakeProc(stdout=fake_output, returncode=0)
         return _FakeProc(stdout=b"", returncode=1)
 
     monkeypatch.setattr(
         sway_helper_module,
         "_tmux_socket_candidates",
-        lambda: ["/run/user/1000/tmux-1000/default", "/tmp/tmux-1000/default"],
+        lambda: ["/run/user/1000/tmux-1000/default"],
     )
     monkeypatch.setattr(
         sway_helper_module.asyncio,
@@ -114,8 +114,8 @@ async def test_list_tmux_panes_falls_back_to_alternate_socket(monkeypatch):
             "tmux_session": "workflow-builder/main",
             "tmux_window": "1:node",
             "tmux_pane": "%5",
-            "tmux_socket": "/tmp/tmux-1000/default",
-            "tmux_server_key": "/tmp/tmux-1000/default",
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
             "tmux_resolution_source": "discovered",
             "pane_index": "1",
             "pane_pid": 1234,
@@ -127,7 +127,7 @@ async def test_list_tmux_panes_falls_back_to_alternate_socket(monkeypatch):
     ]
 
 
-def test_list_tmux_panes_sync_falls_back_to_alternate_socket(monkeypatch):
+def test_list_tmux_panes_sync_uses_canonical_socket(monkeypatch):
     fake_output = (
         "/dev/pts/2\tvpittamp/nixos-config/main\t0:main\t%12\t0\t1114052\tryzen\t1\t1\n"
     )
@@ -138,14 +138,14 @@ def test_list_tmux_panes_sync_falls_back_to_alternate_socket(monkeypatch):
             self.returncode = returncode
 
     def _fake_run(args, **_kwargs):
-        if args[:3] == ["tmux", "-S", "/tmp/tmux-1000/default"]:
+        if args[:3] == ["tmux", "-S", "/run/user/1000/tmux-1000/default"]:
             return _FakeSyncProc(stdout=fake_output, returncode=0)
         return _FakeSyncProc(stdout="", returncode=1)
 
     monkeypatch.setattr(
         sway_helper_module,
         "_tmux_socket_candidates",
-        lambda: ["/run/user/1000/tmux-1000/default", "/tmp/tmux-1000/default"],
+        lambda: ["/run/user/1000/tmux-1000/default"],
     )
     monkeypatch.setattr(sway_helper_module.subprocess, "run", _fake_run)
 
@@ -156,8 +156,8 @@ def test_list_tmux_panes_sync_falls_back_to_alternate_socket(monkeypatch):
             "tmux_session": "vpittamp/nixos-config/main",
             "tmux_window": "0:main",
             "tmux_pane": "%12",
-            "tmux_socket": "/tmp/tmux-1000/default",
-            "tmux_server_key": "/tmp/tmux-1000/default",
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
             "tmux_resolution_source": "discovered",
             "pane_index": "0",
             "pane_pid": 1114052,

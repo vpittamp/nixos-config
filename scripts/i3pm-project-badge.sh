@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Display a compact I3PM project badge for prompts and tmux status bars.
-# Supports reading context from environment variables, pane process
-# environments, and daemon-backed i3pm context.
+# Display a compact I3PM/tmux context badge for prompts, tmux status bars,
+# and pane borders. Tmux-facing modes intentionally resolve from pane/tmux
+# metadata only so they do not drift from the actual pane being rendered.
 
 set -euo pipefail
 
@@ -10,18 +10,36 @@ mode="plain"
 source_mode="${I3PM_PROJECT_BADGE_SOURCE:-auto}"
 max_len="${I3PM_PROJECT_BADGE_MAX_LEN:-22}"
 pane_pid="${I3PM_PROJECT_BADGE_PANE_PID:-}"
+pane_id="${I3PM_PROJECT_BADGE_PANE_ID:-${TMUX_PANE:-}}"
+active_context_file="${I3PM_ACTIVE_WORKTREE_FILE:-${HOME}/.config/i3/active-worktree.json}"
 
-project_icon=""
 project_name=""
 project_qualified_name=""
+context_variant=""
+connection_key=""
+terminal_role=""
+
 remote_enabled="false"
 remote_host=""
 remote_user=""
 remote_port="22"
-remote_dir=""
+
+bridge_enabled="false"
+bridge_host=""
+bridge_user=""
+bridge_port="22"
+bridge_tmux_pane=""
+
 local_host_alias=""
+tmux_window_index=""
+tmux_window_name=""
+tmux_session_name=""
+tmux_pane_id=""
+
 icon_local="󰌽"
 icon_ssh="☁"
+icon_alias="◈"
+icon_role="▣"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tmux-pane)
       mode="tmux-pane"
+      shift
+      ;;
+    --prompt)
+      mode="prompt"
       shift
       ;;
     --plain)
@@ -47,6 +69,11 @@ while [[ $# -gt 0 ]]; do
       pane_pid="$1"
       shift
       ;;
+    --pane-id)
+      shift || break
+      pane_id="$1"
+      shift
+      ;;
     --max-len)
       shift || break
       max_len="$1"
@@ -54,11 +81,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --help|-h)
       cat <<'EOF'
-Usage: i3pm-project-badge.sh [--tmux|--tmux-pane|--plain] [--source auto|env|file|pane|hybrid] [--pane-pid PID] [--max-len N]
+Usage: i3pm-project-badge.sh [--prompt|--tmux|--tmux-pane|--plain] [--source auto|env|file|pane|hybrid] [--pane-pid PID] [--pane-id %N] [--max-len N]
 
-Reads I3PM_* environment variables and prints a compact badge.
-Set I3PM_PROJECT_BADGE_MAX_LEN to override the default length (22 chars).
-Set I3PM_PROJECT_BADGE_SOURCE to override source mode (auto/env/file/pane/hybrid).
+Modes:
+  --prompt     Compact shell-prompt context for tmux panes
+  --tmux       Status-line context chip
+  --tmux-pane  Pane-border context chip
+  --plain      Non-tmux project label fallback
+
+Tmux-facing modes resolve from pane/tmux metadata first and do not fall back to
+global daemon context, to avoid stale or cross-pane drift.
 EOF
       exit 0
       ;;
@@ -124,9 +156,14 @@ truncate_text() {
   printf '%s…' "${text:0:limit-1}"
 }
 
+env_value_from_block() {
+  local block="${1:-}"
+  local key="${2:-}"
+  printf '%s\n' "$block" | sed -n "s/^${key}=//p" | head -n1
+}
+
 derive_project_label() {
   local qualified="${1:-}"
-  local display="${2:-}"
   local label=""
 
   if [[ -n "$qualified" ]]; then
@@ -135,79 +172,168 @@ derive_project_label() {
     else
       label="$qualified"
     fi
-  elif [[ -n "$display" ]]; then
-    label="$display"
   fi
 
   printf '%s' "$label"
 }
 
-hydrate_remote_from_connection_key() {
-  local connection_key="${1:-}"
-
-  if [[ -z "$connection_key" ]] || [[ "$connection_key" == local@* ]]; then
-    return
-  fi
-
-  if [[ "$connection_key" =~ ^([^@]+)@([^:]+):([0-9]+)$ ]]; then
-    [[ -z "$remote_user" ]] && remote_user="${BASH_REMATCH[1]}"
-    [[ -z "$remote_host" ]] && remote_host="${BASH_REMATCH[2]}"
-    [[ -z "$remote_port" ]] && remote_port="${BASH_REMATCH[3]}"
-    return
-  fi
-
-  if [[ "$connection_key" =~ ^([^@]+)@([^:]+)$ ]]; then
-    [[ -z "$remote_user" ]] && remote_user="${BASH_REMATCH[1]}"
-    [[ -z "$remote_host" ]] && remote_host="${BASH_REMATCH[2]}"
-  fi
+normalize_role_label() {
+  local role="${1:-}"
+  case "$role" in
+    project-main|main)
+      printf 'main'
+      ;;
+    remote-attach|bridge-attach)
+      printf 'attach'
+      ;;
+    project-app:*)
+      printf '%s' "${role#project-app:}"
+      ;;
+    scratchpad* )
+      printf 'scratch'
+      ;;
+    "" )
+      printf ''
+      ;;
+    * )
+      printf '%s' "$role"
+      ;;
+  esac
 }
 
-apply_context_variant() {
-  local context_variant="${1:-}"
-  local connection_key="${2:-}"
-
-  if [[ "$context_variant" == "local" ]]; then
-    remote_enabled="false"
-    remote_host=""
-    remote_user=""
-    remote_port="22"
-    remote_dir=""
+parse_connection_key() {
+  local raw="${1:-}"
+  if [[ "$raw" =~ ^local@(.+)$ ]]; then
+    printf '%s\t%s\t%s\n' "" "${BASH_REMATCH[1],,}" "22"
     return
+  fi
+  if [[ "$raw" =~ ^([^@]+)@([^:]+):([0-9]+)$ ]]; then
+    printf '%s\t%s\t%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2],,}" "${BASH_REMATCH[3]}"
+    return
+  fi
+  if [[ "$raw" =~ ^([^@]+)@([^:]+)$ ]]; then
+    printf '%s\t%s\t%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2],,}" "22"
+    return
+  fi
+  printf '%s\t%s\t%s\n' "" "" "22"
+}
+
+hydrate_remote_from_connection_key() {
+  local raw="${1:-}"
+  local parsed user host port
+  parsed="$(parse_connection_key "$raw")"
+  IFS=$'\t' read -r user host port <<<"$parsed"
+  unset IFS
+  [[ -n "$host" ]] || return 0
+  [[ -n "$remote_user" ]] || remote_user="$user"
+  [[ -n "$remote_host" ]] || remote_host="$host"
+  [[ -n "$remote_port" ]] || remote_port="$port"
+}
+
+hydrate_bridge_from_connection_key() {
+  local raw="${1:-}"
+  local parsed user host port
+  parsed="$(parse_connection_key "$raw")"
+  IFS=$'\t' read -r user host port <<<"$parsed"
+  unset IFS
+  [[ -n "$host" ]] || return 0
+  [[ -n "$bridge_user" ]] || bridge_user="$user"
+  [[ -n "$bridge_host" ]] || bridge_host="$host"
+  [[ -n "$bridge_port" ]] || bridge_port="$port"
+}
+
+load_context_from_block() {
+  local block="${1:-}"
+
+  local value
+
+  value="$(env_value_from_block "$block" "I3PM_PROJECT_NAME")"
+  [[ -n "$value" ]] && project_qualified_name="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_CONTEXT_VARIANT")"
+  [[ -n "$value" ]] && context_variant="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_CONNECTION_KEY")"
+  [[ -n "$value" ]] && connection_key="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_LOCAL_HOST_ALIAS")"
+  [[ -n "$value" ]] && local_host_alias="${value,,}"
+
+  value="$(env_value_from_block "$block" "I3PM_TERMINAL_ROLE")"
+  [[ -n "$value" ]] && terminal_role="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_ENABLED")"
+  [[ -n "$value" ]] && remote_enabled="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_HOST")"
+  [[ -n "$value" ]] && remote_host="${value,,}"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_USER")"
+  [[ -n "$value" ]] && remote_user="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_PORT")"
+  [[ -n "$value" ]] && remote_port="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_SESSION_KEY")"
+  if [[ -n "$value" ]]; then
+    bridge_enabled="true"
+  fi
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_SURFACE_KEY")"
+  if [[ -n "$value" ]]; then
+    bridge_enabled="true"
+  fi
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_CONNECTION_KEY")"
+  if [[ -n "$value" ]]; then
+    bridge_enabled="true"
+    hydrate_bridge_from_connection_key "$value"
+  fi
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_HOST")"
+  if [[ -n "$value" && "$bridge_enabled" == "true" ]]; then
+    bridge_host="${value,,}"
+  fi
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_USER")"
+  [[ -n "$value" && "$bridge_enabled" == "true" ]] && bridge_user="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_PORT")"
+  [[ -n "$value" && "$bridge_enabled" == "true" ]] && bridge_port="$value"
+
+  value="$(env_value_from_block "$block" "I3PM_REMOTE_TMUX_PANE")"
+  if [[ -n "$value" ]]; then
+    bridge_enabled="true"
+    bridge_tmux_pane="$value"
+  fi
+
+  if [[ -z "$project_name" && -n "$project_qualified_name" ]]; then
+    project_name="$(derive_project_label "$project_qualified_name")"
   fi
 
   if [[ "$context_variant" == "ssh" ]]; then
     remote_enabled="true"
+  fi
+
+  if is_truthy "$remote_enabled" && [[ -z "$remote_host" ]]; then
     hydrate_remote_from_connection_key "$connection_key"
   fi
 }
 
-env_value_from_block() {
-  local block="${1:-}"
-  local key="${2:-}"
-  printf '%s\n' "$block" | sed -n "s/^${key}=//p" | head -n1
-}
-
 load_context_from_env() {
-  project_icon="${I3PM_PROJECT_ICON:-}"
-  project_qualified_name="${I3PM_PROJECT_NAME:-}"
-  project_name="$(derive_project_label "$project_qualified_name" "${I3PM_PROJECT_DISPLAY_NAME:-}")"
-  remote_enabled="${I3PM_REMOTE_ENABLED:-false}"
-  remote_host="${I3PM_REMOTE_HOST:-}"
-  remote_user="${I3PM_REMOTE_USER:-}"
-  remote_port="${I3PM_REMOTE_PORT:-22}"
-  remote_dir="${I3PM_REMOTE_DIR:-}"
-  local_host_alias="${I3PM_LOCAL_HOST_ALIAS:-$local_host_alias}"
-
-  apply_context_variant "${I3PM_CONTEXT_VARIANT:-}" "${I3PM_CONNECTION_KEY:-}"
-  if is_truthy "$remote_enabled" && [[ -z "$remote_host" ]]; then
-    hydrate_remote_from_connection_key "${I3PM_CONNECTION_KEY:-}"
+  local env_block
+  env_block="$(
+    env | awk -F= '
+      /^I3PM_(PROJECT_NAME|CONTEXT_VARIANT|CONNECTION_KEY|LOCAL_HOST_ALIAS|TERMINAL_ROLE|REMOTE_ENABLED|REMOTE_HOST|REMOTE_USER|REMOTE_PORT|REMOTE_SESSION_KEY|REMOTE_CONNECTION_KEY|REMOTE_TMUX_PANE)=/ {
+        print $0
+      }
+    '
+  )"
+  if [[ -z "$env_block" ]]; then
+    return 1
   fi
-
-  if [[ -n "$project_name" ]] || is_truthy "$remote_enabled"; then
-    return 0
-  fi
-
-  return 1
+  load_context_from_block "$env_block"
+  [[ -n "$project_name" || -n "$tmux_pane_id" || "$bridge_enabled" == "true" ]]
 }
 
 load_context_from_pane() {
@@ -225,38 +351,84 @@ load_context_from_pane() {
     return 1
   fi
 
-  project_icon="$(env_value_from_block "$proc_env" "I3PM_PROJECT_ICON")"
-  project_qualified_name="$(env_value_from_block "$proc_env" "I3PM_PROJECT_NAME")"
-  project_name="$(derive_project_label "$project_qualified_name" "$(env_value_from_block "$proc_env" "I3PM_PROJECT_DISPLAY_NAME")")"
-  remote_enabled="$(env_value_from_block "$proc_env" "I3PM_REMOTE_ENABLED")"
-  remote_host="$(env_value_from_block "$proc_env" "I3PM_REMOTE_HOST")"
-  remote_user="$(env_value_from_block "$proc_env" "I3PM_REMOTE_USER")"
-  remote_port="$(env_value_from_block "$proc_env" "I3PM_REMOTE_PORT")"
-  remote_dir="$(env_value_from_block "$proc_env" "I3PM_REMOTE_DIR")"
-  local_host_alias="$(env_value_from_block "$proc_env" "I3PM_LOCAL_HOST_ALIAS")"
-  local_host_alias="${local_host_alias:-$(default_local_host_alias)}"
+  load_context_from_block "$proc_env"
 
-  remote_enabled="${remote_enabled:-false}"
-  remote_port="${remote_port:-22}"
+  local value
+  value="$(env_value_from_block "$proc_env" "TMUX_PANE")"
+  [[ -n "$value" ]] && tmux_pane_id="$value"
 
-  local context_variant connection_key
-  context_variant="$(env_value_from_block "$proc_env" "I3PM_CONTEXT_VARIANT")"
-  connection_key="$(env_value_from_block "$proc_env" "I3PM_CONNECTION_KEY")"
+  [[ -n "$project_name" || -n "$tmux_pane_id" || "$bridge_enabled" == "true" ]]
+}
 
-  apply_context_variant "$context_variant" "$connection_key"
+tmux_display_message() {
+  local format="$1"
+  if ! command -v tmux >/dev/null 2>&1; then
+    return 1
+  fi
+  if [[ -n "$pane_id" ]]; then
+    tmux display-message -p -t "$pane_id" "$format" 2>/dev/null || true
+  else
+    tmux display-message -p "$format" 2>/dev/null || true
+  fi
+}
+
+load_tmux_native() {
+  local parsed
+  parsed="$(tmux_display_message '#{pane_id}|#{pane_pid}|#{window_index}|#{window_name}|#{session_name}')"
+  if [[ -z "$parsed" ]]; then
+    return 1
+  fi
+
+  local native_pane_id native_pane_pid
+  IFS='|' read -r native_pane_id native_pane_pid tmux_window_index tmux_window_name tmux_session_name <<<"$parsed"
+  unset IFS
+
+  [[ -n "$pane_id" ]] || pane_id="$native_pane_id"
+  [[ -n "$pane_pid" ]] || pane_pid="$native_pane_pid"
+  [[ -n "$tmux_pane_id" ]] || tmux_pane_id="$native_pane_id"
+
+  [[ -n "$native_pane_id" ]]
+}
+
+load_context_from_tmux_metadata() {
+  load_tmux_native || return 1
+  [[ -n "$tmux_session_name" ]] || return 1
+
+  local session_env
+  session_env="$(tmux show-environment -t "$tmux_session_name" 2>/dev/null || true)"
+  if [[ -n "$session_env" ]]; then
+    load_context_from_block "$session_env"
+  fi
+
+  local option_value
+  option_value="$(tmux show-options -t "$tmux_session_name" -qv @i3pm_project_name 2>/dev/null || true)"
+  [[ -n "$project_qualified_name" ]] || project_qualified_name="$option_value"
+  option_value="$(tmux show-options -t "$tmux_session_name" -qv @i3pm_context_key 2>/dev/null || true)"
+  if [[ -n "$option_value" && -z "$connection_key" ]]; then
+    connection_key="${option_value##*::}"
+  fi
+  option_value="$(tmux show-options -t "$tmux_session_name" -qv @i3pm_terminal_role 2>/dev/null || true)"
+  [[ -n "$terminal_role" ]] || terminal_role="$option_value"
+
+  if [[ -z "$project_name" && -n "$project_qualified_name" ]]; then
+    project_name="$(derive_project_label "$project_qualified_name")"
+  fi
   if is_truthy "$remote_enabled" && [[ -z "$remote_host" ]]; then
     hydrate_remote_from_connection_key "$connection_key"
   fi
 
-  if [[ -n "$project_name" ]] || is_truthy "$remote_enabled"; then
-    return 0
-  fi
-
-  return 1
+  [[ -n "$project_name" || -n "$tmux_pane_id" ]]
 }
 
 load_context_from_file() {
-  if ! command -v jq >/dev/null 2>&1; then
+  local payload=""
+  if [[ -f "$active_context_file" ]]; then
+    payload="$(cat "$active_context_file" 2>/dev/null || true)"
+  elif command -v i3pm >/dev/null 2>&1; then
+    payload="$(i3pm context current --json 2>/dev/null || true)"
+  fi
+
+  if [[ -z "$payload" ]] || ! command -v jq >/dev/null 2>&1; then
     return 1
   fi
 
@@ -264,167 +436,206 @@ load_context_from_file() {
   parsed="$(
     jq -r '
       if type != "object" then empty else
-      (.qualified_name // "") as $qualified_name |
-      ($qualified_name | split("/") | last) as $leaf |
-      ($leaf | split(":")) as $parts |
       [
-        (if ($parts | length) > 0 then $parts[0] else "" end),
-        (if ($parts | length) > 1 then $parts[1] else "" end),
-        $qualified_name,
-        ((.execution_mode // "local") == "ssh" | tostring),
+        (.qualified_name // ""),
+        (.execution_mode // "local"),
+        (.connection_key // ""),
         (.remote.host // ""),
         (.remote.user // ""),
-        ((.remote.port // 22) | tostring),
-        (.remote.remote_dir // .directory // "")
+        ((.remote.port // 22) | tostring)
       ] | @tsv
       end
-    ' <(i3pm context current --json 2>/dev/null || echo '{}') 2>/dev/null || true
+    ' <(printf '%s' "$payload") 2>/dev/null || true
   )"
-
   if [[ -z "$parsed" ]]; then
     return 1
   fi
 
-  local repo_name branch qualified_name
-  IFS=$'\t' read -r repo_name branch qualified_name remote_enabled remote_host remote_user remote_port remote_dir <<<"$parsed"
+  IFS=$'\t' read -r project_qualified_name context_variant connection_key remote_host remote_user remote_port <<<"$parsed"
   unset IFS
 
-  project_qualified_name="$qualified_name"
-  if [[ -n "$repo_name" ]] && [[ -n "$branch" ]]; then
-    project_name="${repo_name}:${branch}"
-  elif [[ -n "$qualified_name" ]]; then
-    project_name="$(derive_project_label "$qualified_name" "")"
-  else
-    project_name=""
+  project_name="$(derive_project_label "$project_qualified_name")"
+  if [[ "$context_variant" == "ssh" ]]; then
+    remote_enabled="true"
   fi
-
-  remote_enabled="${remote_enabled:-false}"
-  remote_port="${remote_port:-22}"
+  if is_truthy "$remote_enabled" && [[ -z "$remote_host" ]]; then
+    hydrate_remote_from_connection_key "$connection_key"
+  fi
   local_host_alias="$(default_local_host_alias)"
-  project_icon=""
-  return 0
+  [[ -n "$project_name" ]]
 }
 
 resolve_context() {
-  case "$source_mode" in
-    pane)
-      load_context_from_pane || true
+  case "$mode" in
+    tmux|tmux-pane|prompt)
+      case "$source_mode" in
+        env)
+          load_context_from_env || true
+          load_tmux_native || true
+          ;;
+        pane)
+          load_context_from_pane || true
+          load_context_from_tmux_metadata || true
+          ;;
+        file)
+          load_context_from_tmux_metadata || true
+          ;;
+        hybrid|auto)
+          if ! load_context_from_pane; then
+            if ! load_context_from_env; then
+              load_context_from_tmux_metadata || true
+            else
+              load_tmux_native || true
+            fi
+          else
+            load_tmux_native || true
+          fi
+          ;;
+      esac
       ;;
-    env)
-      load_context_from_env || true
-      ;;
-    file)
-      load_context_from_file || true
-      ;;
-    hybrid)
-      if ! load_context_from_pane; then
-        if ! load_context_from_env; then
+    plain)
+      case "$source_mode" in
+        env)
+          load_context_from_env || true
+          ;;
+        pane)
+          load_context_from_pane || true
+          ;;
+        file)
           load_context_from_file || true
-        fi
-      fi
-      ;;
-    auto)
-      if ! load_context_from_env; then
-        load_context_from_file || true
-      fi
+          ;;
+        hybrid|auto)
+          if ! load_context_from_env; then
+            load_context_from_file || true
+          fi
+          ;;
+      esac
       ;;
   esac
+
+  [[ -n "$project_name" ]] || project_name="$(derive_project_label "$project_qualified_name")"
+  terminal_role="$(normalize_role_label "$terminal_role")"
 }
 
-build_remote_target() {
-  local host="${remote_host:-}"
-  local port="${remote_port:-22}"
-  if [[ -z "$host" ]]; then
-    printf 'remote'
+primary_host_label() {
+  if is_truthy "$bridge_enabled" && [[ -n "$bridge_host" ]]; then
+    printf '%s' "$bridge_host"
     return
   fi
-  local target="$host"
-  if [[ -n "$remote_user" ]]; then
-    target="${remote_user}@${target}"
+  if is_truthy "$remote_enabled" && [[ -n "$remote_host" ]]; then
+    printf '%s' "$remote_host"
+    return
   fi
-  if [[ -n "$port" ]] && [[ "$port" != "22" ]]; then
-    printf '%s:%s' "$target" "$port"
-  else
-    printf '%s' "$target"
-  fi
+  printf '%s' "${local_host_alias:-$(default_local_host_alias)}"
 }
 
-build_local_target() {
-  local target="${local_host_alias:-}"
-  if [[ -z "$target" ]]; then
-    target="$(default_local_host_alias)"
+primary_pane_id() {
+  if is_truthy "$bridge_enabled" && [[ -n "$bridge_tmux_pane" ]]; then
+    printf '%s' "$bridge_tmux_pane"
+    return
   fi
-  printf '%s' "$target"
+  if [[ -n "$tmux_pane_id" ]]; then
+    printf '%s' "$tmux_pane_id"
+    return
+  fi
+  if [[ -n "$pane_id" ]]; then
+    printf '%s' "$pane_id"
+    return
+  fi
+  printf ''
+}
+
+host_monogram() {
+  local host="${1:-}"
+  host="${host##*@}"
+  host="${host%%.*}"
+  if [[ -z "$host" ]]; then
+    printf '?'
+    return
+  fi
+  printf '%s' "${host:0:1}" | tr '[:lower:]' '[:upper:]'
+}
+
+build_alias() {
+  local pane_ref host_label
+  pane_ref="$(primary_pane_id)"
+  host_label="$(primary_host_label)"
+  if [[ -z "$pane_ref" ]]; then
+    printf ''
+    return
+  fi
+  printf '%s%s' "$(host_monogram "$host_label")" "$pane_ref"
+}
+
+build_mode_label() {
+  local host_label
+  host_label="$(primary_host_label)"
+  if is_truthy "$bridge_enabled"; then
+    printf 'ssh %s' "$host_label"
+    return
+  fi
+  if [[ "$context_variant" == "ssh" ]]; then
+    printf 'ssh %s' "$host_label"
+    return
+  fi
+  printf 'local %s' "$host_label"
 }
 
 render_plain() {
   if [[ -z "$project_name" ]]; then
     exit 0
   fi
-
-  local badge="$project_name"
-  if [[ -n "$project_icon" ]]; then
-    badge="$project_icon $badge"
-  fi
-  badge="$(truncate_text "$badge" "$max_len")"
-  printf '%s' "$badge"
+  printf '%s' "$(truncate_text "$project_name" "$max_len")"
 }
 
-render_tmux_status() {
-  if [[ -z "$project_name" ]] && ! is_truthy "$remote_enabled"; then
+render_prompt() {
+  local alias_label mode_label output
+  alias_label="$(build_alias)"
+  mode_label="$(build_mode_label)"
+
+  if [[ -z "$alias_label" && -z "$project_name" ]]; then
     exit 0
   fi
 
-  local project_label target_label prefix suffix_budget suffix mode_style project_style
-  project_label="$(truncate_text "${project_name:-project}" "$max_len")"
+  output=""
+  [[ -n "$alias_label" ]] && output="$alias_label"
+  [[ -n "$project_name" ]] && output="${output:+$output }$project_name"
+  [[ -n "$mode_label" ]] && output="${output:+$output }$mode_label"
+  printf '%s' "$(truncate_text "$output" "$max_len")"
+}
 
-  if is_truthy "$remote_enabled"; then
-    target_label="$(truncate_text "$(build_remote_target)" 15)"
-    prefix="${icon_ssh} ${target_label}"
-    mode_style='#[fg=colour16 bg=colour114 bold]'
-    project_style='#[fg=colour230 bg=colour29]'
+render_tmux_status() {
+  local alias_label mode_label project_label
+  alias_label="$(build_alias)"
+  mode_label="$(truncate_text "$(build_mode_label)" 18)"
+  project_label="$(truncate_text "${project_name:-global}" "$max_len")"
+
+  if [[ "$context_variant" == "ssh" || "$bridge_enabled" == "true" ]]; then
+    printf '#[fg=colour16 bg=colour114 bold] %s %s ' "$icon_ssh" "$mode_label"
   else
-    target_label="$(truncate_text "$(build_local_target)" 12)"
-    prefix="${icon_local} ${target_label}"
-    mode_style='#[fg=colour16 bg=colour109 bold]'
-    project_style='#[fg=colour223 bg=colour240 bold]'
+    printf '#[fg=colour16 bg=colour109 bold] %s %s ' "$icon_local" "$mode_label"
   fi
 
-  if (( ${#prefix} >= max_len )); then
-    prefix="$(truncate_text "$prefix" "$max_len")"
-    printf '%s %s #[fg=colour248 bg=colour237]' "$mode_style" "$prefix"
-    return
+  if [[ -n "$alias_label" ]]; then
+    printf '#[fg=colour16 bg=colour159 bold] %s %s ' "$icon_alias" "$alias_label"
   fi
-
-  suffix_budget=$(( max_len - ${#prefix} - 1 ))
-  suffix=""
-  if (( suffix_budget > 0 )); then
-    suffix="$(truncate_text "$project_label" "$suffix_budget")"
-  fi
-
-  if [[ -n "$suffix" ]]; then
-    printf '%s %s %s %s #[fg=colour248 bg=colour237]' "$mode_style" "$prefix" "$project_style" "$suffix"
-  else
-    printf '%s %s #[fg=colour248 bg=colour237]' "$mode_style" "$prefix"
-  fi
+  printf '#[fg=colour230 bg=colour238 bold] %s ' "$project_label"
+  printf '#[default]'
 }
 
 render_tmux_pane() {
-  if [[ -z "$project_name" ]] && ! is_truthy "$remote_enabled"; then
-    printf '#[fg=colour245 bg=colour236] %s #[fg=colour252 bg=colour238] global #[default]' "$icon_local"
-    return
-  fi
+  local alias_label project_label role_label output
+  alias_label="$(build_alias)"
+  project_label="$(truncate_text "${project_name:-global}" "$max_len")"
+  role_label="$(truncate_text "${terminal_role:-pane}" 10)"
 
-  local project_label remote_target
-  project_label="$(truncate_text "${project_name:-project}" "$max_len")"
-
-  if is_truthy "$remote_enabled"; then
-    remote_target="$(build_remote_target)"
-    remote_target="$(truncate_text "$remote_target" 14)"
-    printf '#[fg=colour16 bg=colour120 bold] %s %s #[fg=colour230 bg=colour29] %s #[default]' "$icon_ssh" "$remote_target" "$project_label"
-  else
-    printf '#[fg=colour16 bg=colour109 bold] %s %s #[fg=colour252 bg=colour238] %s #[default]' "$icon_local" "$(truncate_text "$(build_local_target)" 10)" "$project_label"
+  if [[ -n "$terminal_role" ]]; then
+    printf '#[fg=colour16 bg=colour180 bold] %s %s ' "$icon_role" "$role_label"
   fi
+  if [[ -n "$alias_label" ]]; then
+    printf '#[fg=colour16 bg=colour159 bold] %s %s ' "$icon_alias" "$alias_label"
+  fi
+  printf '#[fg=colour252 bg=colour238] %s #[default]' "$project_label"
 }
 
 resolve_context
@@ -435,6 +646,9 @@ case "$mode" in
     ;;
   tmux-pane)
     render_tmux_pane
+    ;;
+  prompt)
+    render_prompt
     ;;
   plain)
     render_plain

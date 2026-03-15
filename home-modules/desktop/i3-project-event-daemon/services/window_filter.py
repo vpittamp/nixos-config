@@ -690,6 +690,17 @@ async def filter_windows_by_project(
                 window_context_key = mark[len("ctx:"):].strip()
                 break
 
+        if active_context_key and not window_context_key:
+            window_pid = int(getattr(window, "pid", 0) or 0)
+            if window_pid > 0:
+                try:
+                    env = read_process_environ_with_fallback(window_pid)
+                    env_context_key = str(env.get("I3PM_CONTEXT_KEY") or "").strip()
+                    if env_context_key:
+                        window_context_key = env_context_key
+                except (PermissionError, FileNotFoundError, ProcessLookupError, ValueError):
+                    window_context_key = ""
+
         for mark in window.marks:
             if mark.startswith("scoped:") or mark.startswith("global:"):
                 # Feature 103: Use centralized mark parser for unified format
