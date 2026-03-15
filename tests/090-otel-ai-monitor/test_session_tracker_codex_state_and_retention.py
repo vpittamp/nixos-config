@@ -324,6 +324,107 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
     assert item.project_source == "anchor"
 
 
+def test_build_session_list_collapses_duplicate_tmux_surface_to_single_canonical_item(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        session_tracker_module,
+        "list_tmux_panes_sync",
+        lambda: [{
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+            "tmux_window": "1:codex-raw",
+            "tmux_pane": "%4",
+            "pane_pid": 283369,
+            "pane_title": "codex --yolo",
+            "pane_active": True,
+            "window_active": True,
+            "pty": "/dev/pts/5",
+        }],
+    )
+
+    native = Session(
+        session_id="codex:native-pane",
+        native_session_id="native-pane",
+        context_fingerprint="pane=%4",
+        collision_group_id="codex:native-pane",
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path="/home/vpittamp/repos/vpittamp/nixos-config/main",
+        window_id=14,
+        pid=283369,
+        trace_id="trace-native",
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=48,
+        status_reason="event:codex.websocket_event",
+    )
+    native.pending_tools = 1
+    native.terminal_context.window_id = 14
+    native.terminal_context.terminal_anchor_id = "terminal-vpittamp/nixos-config:main-36847-1773601030"
+    native.terminal_context.tmux_session = "i3pm-vpittamp-nixos-config-ma-6e1abb85"
+    native.terminal_context.tmux_window = "1:codex-raw"
+    native.terminal_context.tmux_pane = "%4"
+    native.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    native.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    native.terminal_context.pty = "/dev/pts/5"
+    native.terminal_context.execution_mode = "local"
+    native.terminal_context.connection_key = "local@thinkpad"
+    native.terminal_context.context_key = "vpittamp/nixos-config:main::local::local@thinkpad"
+
+    duplicate = Session(
+        session_id="codex:pid:283369",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=14,
+        pid=283369,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="process_keepalive",
+    )
+    duplicate.terminal_context.window_id = 14
+    duplicate.terminal_context.terminal_anchor_id = "terminal-vpittamp/nixos-config:main-36847-1773601030"
+    duplicate.terminal_context.tmux_session = "i3pm-vpittamp-nixos-config-ma-6e1abb85"
+    duplicate.terminal_context.tmux_window = "1:codex-raw"
+    duplicate.terminal_context.tmux_pane = "%4"
+    duplicate.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    duplicate.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    duplicate.terminal_context.pty = "/dev/pts/5"
+    duplicate.terminal_context.execution_mode = "local"
+    duplicate.terminal_context.connection_key = "local@thinkpad"
+    duplicate.terminal_context.context_key = "vpittamp/nixos-config:main::local::local@thinkpad"
+
+    tracker._sessions[native.session_id] = native
+    tracker._sessions[duplicate.session_id] = duplicate
+
+    session_list, _ = tracker._build_session_list_unlocked()
+
+    assert len(session_list.sessions) == 1
+    item = session_list.sessions[0]
+    assert item.session_id == "codex:native-pane"
+    assert item.identity_confidence == IdentityConfidence.NATIVE
+    assert item.surface_kind == "tmux-pane"
+    assert item.surface_key.endswith("::%4::/dev/pts/5")
+    assert item.conflict_state is None
+    assert item.focusable is True
+
+
 @pytest.mark.asyncio
 async def test_codex_response_completed_exports_user_turn_owner(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())

@@ -1393,6 +1393,81 @@ class SessionTracker:
             ]
             return "terminal-window", "::".join(parts), None
 
+    @staticmethod
+    def _session_list_identity_confidence_rank(value: IdentityConfidence | str | None) -> int:
+        """Return a deterministic rank for canonical surface selection."""
+        normalized = str(getattr(value, "value", value) or "").strip().lower()
+        return {
+            "native": 4,
+            "pid": 3,
+            "pane": 2,
+            "heuristic": 1,
+        }.get(normalized, 0)
+
+    @classmethod
+    def _canonical_surface_item_sort_key(cls, item: SessionListItem) -> tuple:
+        """Return the canonical winner sort key for duplicate tmux-surface items."""
+        return (
+            int(bool(item.process_running)),
+            cls._session_list_identity_confidence_rank(item.identity_confidence),
+            int(bool(item.needs_user_action or item.output_unseen)),
+            int(bool(item.output_ready)),
+            int(bool(item.is_streaming)),
+            int(item.pending_tools or 0),
+            int(item.stage_rank or 0),
+            int(item.state_seq or 0),
+            str(item.updated_at or ""),
+            int(item.pid or 0),
+            str(item.session_id or ""),
+        )
+
+    def _collapse_duplicate_tmux_surface_items(
+        self,
+        items: list[SessionListItem],
+        fingerprint_source: list[tuple[object, ...]],
+    ) -> list[SessionListItem]:
+        """Collapse multiple exported sessions for the same tmux pane into one canonical item."""
+        buckets: dict[str, list[SessionListItem]] = {}
+        passthrough: list[SessionListItem] = []
+        for item in items:
+            surface_key = str(item.surface_key or "").strip()
+            if item.surface_kind == "tmux-pane" and surface_key:
+                buckets.setdefault(surface_key, []).append(item)
+                continue
+            passthrough.append(item)
+
+        collapsed: list[SessionListItem] = list(passthrough)
+        for surface_key, bucket in buckets.items():
+            if len(bucket) == 1:
+                collapsed.append(bucket[0])
+                continue
+
+            ordered = sorted(
+                bucket,
+                key=self._canonical_surface_item_sort_key,
+                reverse=True,
+            )
+            winner = ordered[0].model_copy(deep=True)
+            winner.conflict_state = None
+            winner.conflict_detail = None
+            winner.focusable = bool(winner.focusable and not winner.invalid_reason)
+            collapsed.append(winner)
+
+            fingerprint_source.append((
+                "surface_canonicalized",
+                surface_key,
+                winner.session_id,
+                tuple(str(item.session_id or "") for item in ordered),
+            ))
+            logger.info(
+                "Collapsed %d exported sessions onto tmux surface %s; keeping %s",
+                len(bucket),
+                surface_key,
+                winner.session_id,
+            )
+
+        return collapsed
+
         return "unresolved", None, None
 
     def _register_native_session_unlocked(self, group_id: str, session_id: str) -> None:
@@ -4006,26 +4081,7 @@ class SessionTracker:
                 )
             )
 
-        pane_conflicts: dict[str, list[SessionListItem]] = {}
-        for item in items:
-            if item.surface_kind != "tmux-pane":
-                continue
-            surface_key = str(item.surface_key or "").strip()
-            if not surface_key:
-                continue
-            pane_conflicts.setdefault(surface_key, []).append(item)
-
-        for surface_key, bucket in pane_conflicts.items():
-            if len(bucket) < 2:
-                continue
-            for item in bucket:
-                item.conflict_state = "conflict_same_pane"
-                item.conflict_detail = (
-                    "Multiple AI sessions are running in the same tmux pane. "
-                    "Track one session per pane to keep focus deterministic."
-                )
-                item.focusable = False
-            fingerprint_source.append(("pane_conflict", surface_key, len(bucket)))
+        items = self._collapse_duplicate_tmux_surface_items(items, fingerprint_source)
 
         for diagnostic in sorted(
             self._session_diagnostics.values(),
