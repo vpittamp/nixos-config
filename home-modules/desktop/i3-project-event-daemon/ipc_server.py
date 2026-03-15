@@ -7899,6 +7899,12 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
     def _resolve_terminal_helper(self, helper_name: str) -> Path:
         """Resolve installed terminal helpers, with a repo fallback for local development."""
+        helper_dir = os.environ.get("I3PM_TERMINAL_HELPER_DIR", "").strip()
+        if helper_dir:
+            packaged_helper = Path(helper_dir) / helper_name
+            if packaged_helper.is_file():
+                return packaged_helper
+
         local_helper = Path.home() / ".local" / "bin" / helper_name
         if local_helper.is_file():
             return local_helper

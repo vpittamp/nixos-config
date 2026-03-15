@@ -184,6 +184,7 @@ in
         # Environment variables
         Environment = [
           "LOG_LEVEL=${cfg.logLevel}"
+          "I3PM_TERMINAL_HELPER_DIR=${daemonPackage}/scripts"
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"

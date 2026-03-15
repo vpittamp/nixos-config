@@ -327,6 +327,26 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
     assert "yazi" in captured["cmd"][-1]
 
 
+def test_resolve_terminal_helper_prefers_packaged_helper_dir(server_local, monkeypatch, tmp_path):
+    helper_name = "project-terminal-launch.sh"
+    packaged_dir = tmp_path / "packaged"
+    packaged_dir.mkdir()
+    packaged_helper = packaged_dir / helper_name
+    packaged_helper.write_text("#!/usr/bin/env bash\n")
+
+    stale_local_bin = tmp_path / "local-bin"
+    stale_local_bin.mkdir()
+    stale_helper = stale_local_bin / helper_name
+    stale_helper.write_text("#!/usr/bin/env bash\n")
+
+    monkeypatch.setenv("I3PM_TERMINAL_HELPER_DIR", str(packaged_dir))
+    monkeypatch.setattr(ipc_server_module.Path, "home", lambda: tmp_path)
+
+    resolved = server_local._resolve_terminal_helper(helper_name)
+
+    assert resolved == packaged_helper
+
+
 @pytest.mark.asyncio
 async def test_launch_open_reuses_existing_terminal_for_scoped_terminal_command(server_local):
     existing_window = SimpleNamespace(window_id=321)
