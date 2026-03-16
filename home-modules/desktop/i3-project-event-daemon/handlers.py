@@ -27,6 +27,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _container_is_in_scratchpad(container) -> bool:
+    """Return True when a container is currently attached to the scratchpad tree."""
+    parent = container
+    while parent:
+        scratchpad_state = str(getattr(parent, "scratchpad_state", "") or "").strip().lower()
+        if scratchpad_state and scratchpad_state != "none":
+            return True
+        parent = getattr(parent, "parent", None)
+    return False
+
+
 # ============================================================================
 # Feature 101: Window Tracing Integration
 # ============================================================================
@@ -889,6 +900,7 @@ async def on_window_new(
                 if container.workspace() and getattr(container.workspace(), "ipc_data", None)
                 else ""
             ),
+            binding_state="bound_workspace" if container.workspace() else "transient_unbound",
             created=datetime.now(),
             # Feature 041 T022: Store correlation metadata if matched via launch
             # T040: Now using full signals from calculate_confidence including workspace details
@@ -1399,6 +1411,12 @@ async def on_window_new(
                 project=active_project,
                 marks=[],
                 workspace=container.workspace().name if container.workspace() else "",
+                output=(
+                    container.workspace().ipc_data.get("output", "")
+                    if container.workspace() and getattr(container.workspace(), "ipc_data", None)
+                    else ""
+                ),
+                binding_state="bound_workspace" if container.workspace() else "transient_unbound",
                 created=datetime.now(),
             )
 
@@ -2019,18 +2037,42 @@ async def on_window_move(
         # Feature 102 Fix: Record trace event BEFORE early return for scratchpad windows
         # This ensures windows moving to __i3_scratch are still traced
         if not workspace:
-            logger.debug(f"Window {window_id} has no workspace (likely scratchpad), recording trace and skipping tracking")
+            in_scratchpad = _container_is_in_scratchpad(container)
+            binding_state = "scratchpad_hidden" if in_scratchpad else "transient_unbound"
+            logger.debug(
+                "Window %s has no workspace, preserving tracked binding as %s",
+                window_id,
+                binding_state,
+            )
+            await state_manager.update_window(
+                window_id,
+                binding_state=binding_state,
+                workspace="scratchpad" if in_scratchpad else "",
+                is_floating=is_floating,
+            )
             # Record scratchpad move event
             await _record_trace_event(
                 container,
-                "scratchpad::move",
-                f"Window moved to scratchpad",
-                {"window_class": window_class, "floating": is_floating}
+                "scratchpad::move" if in_scratchpad else "window::move",
+                "Window moved to scratchpad" if in_scratchpad else "Window temporarily lost workspace binding",
+                {"window_class": window_class, "floating": is_floating, "binding_state": binding_state}
             )
             return
 
         workspace_num = workspace.num
         workspace_name = workspace.name
+        workspace_output = (
+            workspace.ipc_data.get("output", "")
+            if getattr(workspace, "ipc_data", None)
+            else ""
+        )
+        await state_manager.update_window(
+            window_id,
+            workspace=workspace_name,
+            output=workspace_output,
+            is_floating=is_floating,
+            binding_state="bound_workspace",
+        )
 
         # Feature 053 Phase 6: Comprehensive window::move event logging
         log_event_entry(

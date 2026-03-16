@@ -29,8 +29,10 @@ if "i3_project_daemon" not in sys.modules:
 
 
 ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
+models_module = importlib.import_module("i3_project_daemon.models")
 
 IPCServer = ipc_server_module.IPCServer
+WindowInfo = models_module.WindowInfo
 
 
 class DummyLaunchRegistry:
@@ -81,6 +83,76 @@ def make_runtime_snapshot():
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_runtime_snapshot_keeps_transient_unbound_window_visible(server, monkeypatch):
+    tracked_window = WindowInfo(
+        window_id=101,
+        con_id=101,
+        window_class="com.mitchellh.ghostty",
+        window_title="Ghostty",
+        window_instance="ghostty",
+        app_identifier="terminal",
+        project="vpittamp/nixos-config:main",
+        marks=["scoped:terminal:vpittamp/nixos-config:main:101"],
+        scope="scoped",
+        workspace="1",
+        output="eDP-1",
+        binding_state="transient_unbound",
+        last_workspace="1",
+        last_output="eDP-1",
+    )
+
+    async def fake_context_get_active(_params):
+        return {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "project_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        }
+
+    async def fake_window_map_snapshot():
+        return {101: tracked_window}
+
+    server._get_window_tree = AsyncMock(return_value={
+        "outputs": [
+            {
+                "name": "eDP-1",
+                "active": True,
+                "primary": True,
+                "geometry": {},
+                "current_workspace": "1",
+                "workspaces": [
+                    {
+                        "number": 1,
+                        "name": "1",
+                        "focused": True,
+                        "visible": True,
+                        "output": "eDP-1",
+                        "windows": [],
+                    }
+                ],
+            }
+        ],
+        "total_windows": 0,
+        "cached": False,
+    })
+    monkeypatch.setattr(server, "_context_get_active", fake_context_get_active)
+    monkeypatch.setattr(server.state_manager, "get_window_map_snapshot", fake_window_map_snapshot, raising=False)
+    monkeypatch.setattr(server, "_get_reusable_context_terminal_window", AsyncMock(return_value=None))
+    monkeypatch.setattr(server, "_get_launch_stats", AsyncMock(return_value={}))
+
+    snapshot = await server._runtime_snapshot({})
+
+    assert snapshot["total_windows"] == 1
+    assert snapshot["tracked_windows"][0]["binding_state"] == "transient_unbound"
+    assert snapshot["tracked_windows"][0]["visible"] is True
+    assert snapshot["tracked_windows"][0]["hidden"] is False
+    assert snapshot["tracked_windows"][0]["workspace"] == "1"
+    assert snapshot["outputs"][0]["workspaces"][0]["windows"][0]["id"] == 101
+    assert snapshot["outputs"][0]["workspaces"][0]["windows"][0]["binding_state"] == "transient_unbound"
 
 
 def make_local_payload():

@@ -800,11 +800,11 @@ ShellRoot {
     }
 
     function barWorkspacesForOutput(outputName) {
-        const nativeWorkspaces = workspacesForScreen(findScreenByOutputName(outputName));
-        if (nativeWorkspaces.length > 0) {
-            return nativeWorkspaces;
+        const dashboardWorkspaces = dashboardWorkspacesForOutput(outputName);
+        if (dashboardWorkspaces.length > 0) {
+            return dashboardWorkspaces;
         }
-        return dashboardWorkspacesForOutput(outputName);
+        return workspacesForScreen(findScreenByOutputName(outputName));
     }
 
     function currentLayoutLabel() {

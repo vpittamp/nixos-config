@@ -2776,7 +2776,138 @@ class IPCServer:
             "terminal_anchor_id": str(getattr(tracked_window, "terminal_anchor_id", "") or ""),
             "app_key": str(getattr(tracked_window, "app_identifier", "") or ""),
             "app_name": str(getattr(tracked_window, "app_identifier", "") or ""),
+            "binding_state": str(getattr(tracked_window, "binding_state", "") or ""),
+            "last_workspace": str(getattr(tracked_window, "last_workspace", "") or ""),
+            "last_output": str(getattr(tracked_window, "last_output", "") or ""),
+            "last_visible": bool(getattr(tracked_window, "last_visible", True)),
         }
+
+    def _workspace_number_from_label(self, workspace_name: str) -> int:
+        """Parse a workspace label into a stable numeric ordering key."""
+        workspace = str(workspace_name or "").strip()
+        if workspace.lower() == "scratchpad":
+            return -1
+        match = re.match(r"^(\d+)", workspace)
+        if match:
+            return int(match.group(1))
+        return 0
+
+    def _project_outputs_from_tracked_windows(
+        self,
+        outputs: List[Dict[str, Any]],
+        tracked_windows: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Project workspace windows from canonical tracked window state."""
+        projected_outputs: List[Dict[str, Any]] = []
+        output_index: Dict[str, Dict[str, Any]] = {}
+        workspace_index: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+        for raw_output in outputs:
+            if not isinstance(raw_output, dict):
+                continue
+            output_name = str(raw_output.get("name") or "").strip()
+            projected_output = {
+                "name": output_name,
+                "active": bool(raw_output.get("active", False)),
+                "primary": bool(raw_output.get("primary", False)),
+                "geometry": dict(raw_output.get("geometry", {}) or {}),
+                "current_workspace": str(raw_output.get("current_workspace") or "").strip(),
+                "workspaces": [],
+            }
+            for raw_workspace in list(raw_output.get("workspaces", []) or []):
+                if not isinstance(raw_workspace, dict):
+                    continue
+                workspace_name = str(raw_workspace.get("name") or "").strip()
+                projected_workspace = {
+                    "number": int(raw_workspace.get("number") or self._workspace_number_from_label(workspace_name)),
+                    "name": workspace_name,
+                    "focused": bool(raw_workspace.get("focused", False)),
+                    "visible": bool(raw_workspace.get("visible", False)),
+                    "output": output_name,
+                    "windows": [],
+                }
+                projected_output["workspaces"].append(projected_workspace)
+                workspace_index[(output_name, workspace_name)] = projected_workspace
+            projected_outputs.append(projected_output)
+            output_index[output_name] = projected_output
+
+        fallback_output_name = str(projected_outputs[0].get("name") or "").strip() if projected_outputs else ""
+
+        for tracked_window in tracked_windows:
+            if not isinstance(tracked_window, dict):
+                continue
+            binding_state = str(tracked_window.get("binding_state") or "").strip() or "bound_workspace"
+            workspace_name = str(
+                tracked_window.get("workspace")
+                or tracked_window.get("last_workspace")
+                or ""
+            ).strip()
+            output_name = str(
+                tracked_window.get("output")
+                or tracked_window.get("last_output")
+                or fallback_output_name
+            ).strip()
+            if not workspace_name or not output_name:
+                continue
+
+            projected_output = output_index.get(output_name)
+            if projected_output is None:
+                projected_output = {
+                    "name": output_name,
+                    "active": True,
+                    "primary": False,
+                    "geometry": {},
+                    "current_workspace": "",
+                    "workspaces": [],
+                }
+                projected_outputs.append(projected_output)
+                output_index[output_name] = projected_output
+
+            workspace_key = (output_name, workspace_name)
+            projected_workspace = workspace_index.get(workspace_key)
+            if projected_workspace is None:
+                projected_workspace = {
+                    "number": self._workspace_number_from_label(workspace_name),
+                    "name": workspace_name,
+                    "focused": False,
+                    "visible": False,
+                    "output": output_name,
+                    "windows": [],
+                }
+                projected_output["workspaces"].append(projected_workspace)
+                workspace_index[workspace_key] = projected_workspace
+
+            projected_workspace["windows"].append({
+                "id": int(tracked_window.get("window_id") or tracked_window.get("id") or 0),
+                "title": str(tracked_window.get("title") or "(untitled)"),
+                "app_key": str(tracked_window.get("app_key") or ""),
+                "app_name": str(tracked_window.get("app_name") or tracked_window.get("window_class") or "window"),
+                "icon_path": str(tracked_window.get("icon_path") or "").strip(),
+                "project": str(tracked_window.get("project") or "").strip(),
+                "scope": str(tracked_window.get("scope") or "").strip(),
+                "workspace": workspace_name,
+                "output": output_name,
+                "focused": bool(tracked_window.get("focused", False)),
+                "hidden": binding_state == "scratchpad_hidden",
+                "visible": binding_state != "scratchpad_hidden",
+                "floating": bool(tracked_window.get("floating", False)),
+                "execution_mode": str(tracked_window.get("execution_mode") or "").strip(),
+                "connection_key": str(tracked_window.get("connection_key") or "").strip(),
+                "context_key": str(tracked_window.get("context_key") or "").strip(),
+                "binding_state": binding_state,
+            })
+
+        for projected_output in projected_outputs:
+            workspaces = list(projected_output.get("workspaces", []) or [])
+            workspaces.sort(
+                key=lambda workspace: (
+                    int(workspace.get("number") or self._workspace_number_from_label(str(workspace.get("name") or ""))),
+                    str(workspace.get("name") or ""),
+                )
+            )
+            projected_output["workspaces"] = workspaces
+
+        return projected_outputs
 
     def _resolve_window_icon_path(
         self,
@@ -11696,13 +11827,20 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             window_instance = str(getattr(window_info, "window_instance", "") or "")
             window_id = int(getattr(window_info, "window_id", 0) or 0)
             visible_window = visible_windows_by_id.get(window_id, {})
+            tracked_binding_state = str(getattr(window_info, "binding_state", "") or "").strip()
+            tracked_last_workspace = str(getattr(window_info, "last_workspace", "") or "").strip()
+            tracked_last_output = str(getattr(window_info, "last_output", "") or "").strip()
             scope = str(
                 visible_window.get("scope")
                 or getattr(window_info, "scope", "")
                 or "global"
             )
-            hidden = bool(visible_window.get("hidden", False)) if visible_window else True
-            visible = bool(visible_window) and not hidden
+            if visible_window:
+                binding_state = "scratchpad_hidden" if bool(visible_window.get("hidden", False)) else "bound_workspace"
+            else:
+                binding_state = tracked_binding_state or "transient_unbound"
+            hidden = binding_state == "scratchpad_hidden"
+            visible = binding_state != "scratchpad_hidden"
             icon_path = self._resolve_window_icon_path(
                 app_key=str(visible_window.get("app_key") or app_key or ""),
                 app_id=visible_window.get("app_id") or app_key,
@@ -11720,8 +11858,18 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     "con_id": int(getattr(window_info, "con_id", 0) or 0),
                     "project": str(visible_window.get("project") or getattr(window_info, "project", "") or ""),
                     "scope": scope,
-                    "workspace": str(visible_window.get("workspace") or getattr(window_info, "workspace", "") or ""),
-                    "output": str(visible_window.get("output") or getattr(window_info, "output", "") or ""),
+                    "workspace": str(
+                        visible_window.get("workspace")
+                        or getattr(window_info, "workspace", "")
+                        or tracked_last_workspace
+                        or ""
+                    ),
+                    "output": str(
+                        visible_window.get("output")
+                        or getattr(window_info, "output", "")
+                        or tracked_last_output
+                        or ""
+                    ),
                     "title": str(
                         visible_window.get("title")
                         or getattr(window_info, "window_title", "")
@@ -11785,6 +11933,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     "focused": bool(visible_window.get("focused", False)),
                     "visible": visible,
                     "hidden": hidden,
+                    "binding_state": binding_state,
+                    "last_workspace": tracked_last_workspace,
+                    "last_output": tracked_last_output,
                     "floating": (
                         bool(visible_window.get("floating", False))
                         if visible_window
@@ -11795,6 +11946,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     "tmux_session_name": str(getattr(window_info, "tmux_session_name", "") or ""),
                 }
             )
+
+        outputs = self._project_outputs_from_tracked_windows(outputs, tracked_window_list)
 
         active_context_key = str(active_context.get("context_key") or "").strip()
         active_project_name = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
@@ -11845,7 +11998,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "active_context": active_context,
             "outputs": outputs,
             "active_outputs": active_outputs,
-            "total_windows": int(tree_result.get("total_windows", 0) or 0) if isinstance(tree_result, dict) else 0,
+            "total_windows": len(tracked_window_list),
             "cached_window_tree": bool(tree_result.get("cached", False)) if isinstance(tree_result, dict) else False,
             "tracked_windows": tracked_window_list,
             "state_health": {

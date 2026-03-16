@@ -43,6 +43,10 @@ class WindowInfo:
     workspace: str = ""  # Current workspace name
     output: str = ""  # Current monitor/output name
     is_floating: bool = False  # Floating vs. tiled
+    binding_state: str = "bound_workspace"  # bound_workspace | scratchpad_hidden | transient_unbound
+    last_workspace: str = ""  # Durable last bound workspace for transient rebinds
+    last_output: str = ""  # Durable last bound output for transient rebinds
+    last_visible: bool = True  # Whether the window was last represented as visible
 
     # Timestamps
     created: datetime = field(default_factory=datetime.now)
@@ -80,6 +84,18 @@ class WindowInfo:
             raise ValueError(f"Invalid window_id: {self.window_id}")
         if self.con_id <= 0:
             raise ValueError(f"Invalid con_id: {self.con_id}")
+        if not self.last_workspace and self.workspace:
+            self.last_workspace = self.workspace
+        if not self.last_output and self.output:
+            self.last_output = self.output
+        state = str(self.binding_state or "").strip() or ("bound_workspace" if self.workspace else "transient_unbound")
+        if state not in {"bound_workspace", "scratchpad_hidden", "transient_unbound"}:
+            state = "bound_workspace" if self.workspace else "transient_unbound"
+        self.binding_state = state
+        if self.binding_state == "scratchpad_hidden":
+            self.last_visible = False
+        else:
+            self.last_visible = True
 
 
 # Feature 030: Standalone Project model (remove i3_project_manager dependency)

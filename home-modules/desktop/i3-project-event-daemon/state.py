@@ -18,6 +18,42 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _normalize_window_runtime(window_info: WindowInfo) -> None:
+    """Keep tracked window binding state and durable workspace/output in sync."""
+    state = str(getattr(window_info, "binding_state", "") or "").strip()
+    if state not in {"bound_workspace", "scratchpad_hidden", "transient_unbound"}:
+        state = "bound_workspace" if getattr(window_info, "workspace", "") else "transient_unbound"
+        window_info.binding_state = state
+
+    workspace = str(getattr(window_info, "workspace", "") or "").strip()
+    output = str(getattr(window_info, "output", "") or "").strip()
+
+    if state == "bound_workspace":
+        if workspace:
+            window_info.last_workspace = workspace
+        if output:
+            window_info.last_output = output
+        window_info.last_visible = True
+    elif state == "scratchpad_hidden":
+        if workspace and workspace.lower() != "scratchpad":
+            window_info.last_workspace = workspace
+        if output:
+            window_info.last_output = output
+        if not workspace:
+            window_info.workspace = "scratchpad"
+        window_info.last_visible = False
+    else:
+        if workspace:
+            window_info.last_workspace = workspace
+        elif getattr(window_info, "last_workspace", ""):
+            window_info.workspace = window_info.last_workspace
+        if output:
+            window_info.last_output = output
+        elif getattr(window_info, "last_output", ""):
+            window_info.output = window_info.last_output
+        window_info.last_visible = True
+
+
 class StateManager:
     """Manages runtime state for the daemon with async-safe operations."""
 
@@ -51,6 +87,7 @@ class StateManager:
             window_info: WindowInfo object to add
         """
         async with self._lock:
+            _normalize_window_runtime(window_info)
             self.state.window_map[window_info.window_id] = window_info
             logger.debug(
                 f"Added window {window_info.window_id} "
@@ -94,6 +131,7 @@ class StateManager:
                     logger.debug(f"Updated window {window_id}: {key}={value}")
                 else:
                     logger.warning(f"Unknown window property: {key}")
+            _normalize_window_runtime(window_info)
 
     async def get_window(self, window_id: int) -> Optional[WindowInfo]:
         """Get window by ID.
@@ -299,6 +337,7 @@ class StateManager:
                         remote_tmux_window=str(window_env.remote_tmux_window or "") if window_env else "",
                         remote_tmux_pane=str(window_env.remote_tmux_pane or "") if window_env else "",
                     )
+                    _normalize_window_runtime(window_info)
 
                     self.state.window_map[tracked_window_id] = window_info
                     count += 1
