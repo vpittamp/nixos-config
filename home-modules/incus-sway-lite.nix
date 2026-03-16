@@ -36,8 +36,6 @@
     ./services/i3-project-daemon.nix
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
-    ./tools/i3pm-workspace-mode-wrapper.nix
-
     # Launcher + app registry
     ./desktop/walker.nix
     ./desktop/app-registry.nix

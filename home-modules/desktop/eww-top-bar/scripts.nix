@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 let
   hardwareDetectScript = pkgs.writeText "hardware-detect.py" ''
@@ -201,10 +201,7 @@ let
 
   projectSwitcherScript = pkgs.writeShellScriptBin "eww-project-switcher-open" ''
     set -euo pipefail
-    ${daemonRpcHelpers}
-
-    daemon_rpc "workspace_mode.enter" '{"mode":"goto"}' >/dev/null
-    daemon_rpc "workspace_mode.char" '{"char":":"}' >/dev/null
+    exec ${config.home.profileDirectory}/bin/i3-project-switch
   '';
 
   swayExitScript = pkgs.writeShellScriptBin "eww-sway-exit" ''

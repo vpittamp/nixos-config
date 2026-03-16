@@ -40,7 +40,7 @@ let
       lib.replaceStrings [" " ":" "/" "_" "-"] ["" "" "" "" ""] name
     );
 
-  scripts = import ./scripts.nix { inherit pkgs; };
+  scripts = import ./scripts.nix { inherit config pkgs; };
   inherit (scripts) hardwareDetectScript togglePowermenuScript toggleBadgeShelfScript projectSwitcherScript swayExitScript;
   openActiveWindowsScript = shared.mkOpenActiveEwwWindowsScript {
     scriptName = "eww-top-bar-open-active";

@@ -156,8 +156,6 @@ class TestNavigationHandlerProjectMode:
 
     def test_navigation_handler_identifies_project_mode(self):
         """Handler should recognize project_list mode parameter."""
-        # This is a placeholder test for workspace-preview-daemon changes
-        # The actual implementation will be in the daemon code
         mode = "project_list"
         assert mode == "project_list"
 

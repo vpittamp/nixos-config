@@ -92,8 +92,6 @@ EOF
   };
   # Wrapper scripts for Sway keybindings (aliases don't work with exec)
   i3-project-switch = pkgs.writeShellScriptBin "i3-project-switch" ''
-    # Cancel workspace mode preview if active, then launch project switcher
-    i3pm-workspace-mode cancel 2>/dev/null || true
     # Launch Walker with the projects provider for fuzzy selection
     exec ${pkgs.walker}/bin/walker -m projects
   '';

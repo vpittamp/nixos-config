@@ -39,7 +39,7 @@ in
     # Desktop environment (Sway - Wayland compositor)
     ../modules/desktop/sway.nix
 
-    # Kernel-level key remapper (CapsLock→Ctrl+0, Copilot F23→Compose for voxtype)
+    # Kernel-level key remapper (Copilot F23→Compose for voxtype)
     ../modules/services/keyd.nix
 
     # Services
@@ -206,14 +206,6 @@ in
         user = "greeter";
       };
     };
-  };
-
-  # wshowkeys setuid wrapper for workspace mode visual feedback
-  security.wrappers.wshowkeys = {
-    owner = "root";
-    group = "input";
-    setuid = true;
-    source = "${pkgs.wshowkeys}/bin/wshowkeys";
   };
 
   # Swap configured in hardware/thinkpad.nix (uses dedicated partition)

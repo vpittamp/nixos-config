@@ -406,11 +406,7 @@ PY
     fi
 
     I3PM="${config.home.profileDirectory}/bin/i3pm"
-    I3PM_WS_MODE="${config.home.profileDirectory}/bin/i3pm-workspace-mode"
     SELECTED="$1"
-
-    # Feature 072 fix: Close preview window before switching projects
-    $I3PM_WS_MODE cancel 2>/dev/null || true
 
     QUALIFIED_NAME=""
     VARIANT=""
