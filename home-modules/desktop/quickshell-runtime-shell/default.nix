@@ -36,7 +36,7 @@ QtObject {
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
-  readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
+  readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-elephant-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
   readonly property string fileListBin: "${fileListScript}/bin/quickshell-elephant-file-list"
@@ -68,39 +68,198 @@ EOF
 
   notificationMonitorScript = pkgs.writeShellScriptBin "quickshell-notification-monitor" ''
     set -euo pipefail
-    exec ${lib.getExe pkgs.python3} ${../eww-top-bar/scripts/notification-monitor.py}
+    exec ${lib.getExe pkgs.python3} -u - <<'PY'
+import json
+import subprocess
+import sys
+import time
+
+INITIAL_RETRY_DELAY = 1.0
+MAX_RETRY_DELAY = 30.0
+BACKOFF_MULTIPLIER = 2.0
+
+
+def initial_state() -> dict:
+    return {
+        "count": 0,
+        "dnd": False,
+        "visible": False,
+        "inhibited": False,
+        "has_unread": False,
+        "display_count": "0",
+        "error": False,
+    }
+
+
+def error_state() -> dict:
+    payload = initial_state()
+    payload["error"] = True
+    return payload
+
+
+def transform_event(raw_event: dict) -> dict:
+    count = raw_event.get("count", 0)
+    return {
+        "count": count,
+        "dnd": raw_event.get("dnd", False),
+        "visible": raw_event.get("visible", False),
+        "inhibited": raw_event.get("inhibited", False),
+        "has_unread": count > 0,
+        "display_count": "9+" if count > 9 else str(count),
+        "error": False,
+    }
+
+
+def emit(data: dict) -> None:
+    print(json.dumps(data), flush=True)
+
+
+def subscribe_loop() -> None:
+    retry_delay = INITIAL_RETRY_DELAY
+
+    while True:
+        try:
+            proc = subprocess.Popen(
+                ["swaync-client", "--subscribe"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+
+            retry_delay = INITIAL_RETRY_DELAY
+
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    emit(transform_event(json.loads(line)))
+                except json.JSONDecodeError as error:
+                    print(f"[notification-monitor] malformed JSON: {error}", file=sys.stderr)
+
+            proc.wait()
+
+        except FileNotFoundError:
+            print("[notification-monitor] swaync-client not found, retrying...", file=sys.stderr)
+            emit(error_state())
+        except Exception as error:
+            print(f"[notification-monitor] error: {error}", file=sys.stderr)
+            emit(error_state())
+
+        print(f"[notification-monitor] reconnecting in {retry_delay}s...", file=sys.stderr)
+        time.sleep(retry_delay)
+        retry_delay = min(retry_delay * BACKOFF_MULTIPLIER, MAX_RETRY_DELAY)
+
+
+emit(initial_state())
+subscribe_loop()
+PY
   '';
 
-  networkStatusScript = pkgs.writeShellScriptBin "quickshell-network-status" ''
+  systemStatsScript = pkgs.writeShellScriptBin "quickshell-system-stats" ''
     set -euo pipefail
+    exec ${lib.getExe pkgs.python3} -u - <<'PY'
+import json
+import time
+from pathlib import Path
 
-    if ! command -v nmcli >/dev/null 2>&1; then
-      echo '{"connected":false,"kind":"offline","label":"Offline","signal":null}'
-      exit 0
-    fi
 
-    active_line="$(nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$3=="connected" { print; exit }')"
+def read_meminfo() -> dict[str, int]:
+    values: dict[str, int] = {}
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        token = value.strip().split()[0]
+        try:
+            values[key] = int(token)
+        except ValueError:
+            continue
+    return values
 
-    if [ -z "$active_line" ]; then
-      echo '{"connected":false,"kind":"offline","label":"Offline","signal":null}'
-      exit 0
-    fi
 
-    IFS=: read -r device type _state connection <<<"$active_line"
+def read_loadavg() -> list[float]:
+    tokens = Path("/proc/loadavg").read_text().strip().split()
+    values: list[float] = []
+    for token in tokens[:3]:
+        try:
+            values.append(float(token))
+        except ValueError:
+            values.append(0.0)
+    while len(values) < 3:
+        values.append(0.0)
+    return values
 
-    if [ "$type" = "wifi" ]; then
-      signal="$(nmcli -t -f IN-USE,SIGNAL dev wifi list ifname "$device" 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$1=="*" { print $2; exit }')"
-      if [ -z "$signal" ]; then
-        signal=null
-      fi
-      printf '{"connected":true,"kind":"wifi","label":%s,"signal":%s}\n' \
-        "$(${lib.getExe pkgs.jq} -Rn --arg value "$connection" '$value')" \
-        "$signal"
-      exit 0
-    fi
 
-    printf '{"connected":true,"kind":"ethernet","label":%s,"signal":null}\n' \
-      "$(${lib.getExe pkgs.jq} -Rn --arg value "$connection" '$value')"
+def read_temperature_c() -> int | None:
+    thermal_root = Path("/sys/class/thermal")
+    if thermal_root.exists():
+        for zone in sorted(thermal_root.glob("thermal_zone*")):
+            temp_path = zone / "temp"
+            if not temp_path.exists():
+                continue
+            try:
+                value = int(temp_path.read_text().strip())
+            except ValueError:
+                continue
+            if value > 0:
+                return round(value / 1000)
+
+    hwmon_root = Path("/sys/class/hwmon")
+    if hwmon_root.exists():
+        for sensor in sorted(hwmon_root.glob("hwmon*")):
+            for temp_path in sorted(sensor.glob("temp*_input")):
+                try:
+                    value = int(temp_path.read_text().strip())
+                except ValueError:
+                    continue
+                if value > 0:
+                    return round(value / 1000)
+
+    return None
+
+
+while True:
+    try:
+        meminfo = read_meminfo()
+        total_kb = max(1, int(meminfo.get("MemTotal", 0)))
+        available_kb = max(0, int(meminfo.get("MemAvailable", meminfo.get("MemFree", 0))))
+        used_kb = max(0, total_kb - available_kb)
+        swap_total_kb = max(0, int(meminfo.get("SwapTotal", 0)))
+        swap_free_kb = max(0, int(meminfo.get("SwapFree", 0)))
+        swap_used_kb = max(0, swap_total_kb - swap_free_kb)
+        load1, load5, load15 = read_loadavg()
+
+        payload = {
+            "memory_percent": round((used_kb / total_kb) * 100, 1),
+            "memory_used_gb": round(used_kb / (1024 * 1024), 1),
+            "memory_total_gb": round(total_kb / (1024 * 1024), 1),
+            "swap_used_gb": round(swap_used_kb / (1024 * 1024), 1),
+            "swap_total_gb": round(swap_total_kb / (1024 * 1024), 1),
+            "load1": round(load1, 2),
+            "load5": round(load5, 2),
+            "load15": round(load15, 2),
+            "temperature_c": read_temperature_c(),
+        }
+        print(json.dumps(payload), flush=True)
+    except Exception as error:
+        print(json.dumps({
+            "memory_percent": 0,
+            "memory_used_gb": 0,
+            "memory_total_gb": 0,
+            "swap_used_gb": 0,
+            "swap_total_gb": 0,
+            "load1": 0,
+            "load5": 0,
+            "load15": 0,
+            "temperature_c": None,
+            "error": str(error),
+        }), flush=True)
+    time.sleep(1)
+PY
   '';
 
   launcherQueryScript = pkgs.writeShellScriptBin "quickshell-elephant-launcher-query" ''
@@ -939,6 +1098,10 @@ PY
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
+  showRuntimeDevicesScript = pkgs.writeShellScriptBin "show-runtime-devices" ''
+    set -euo pipefail
+    exec ${quickshellBin} ipc -c ${cfg.configName} call shell showSettings devices
+  '';
   toggleNotificationsScript = mkIpcScript "toggle-runtime-notifications" "toggleNotifications" "";
   toggleNotificationDndScript = mkIpcScript "toggle-runtime-notification-dnd" "toggleNotificationDnd" "";
   clearNotificationsScript = mkIpcScript "clear-runtime-notifications" "clearNotifications" "";
@@ -1106,6 +1269,7 @@ in
       togglePowerMenuScript
       toggleLauncherScript
       toggleSettingsScript
+      showRuntimeDevicesScript
       toggleNotificationsScript
       toggleNotificationDndScript
       clearNotificationsScript
@@ -1116,7 +1280,7 @@ in
       focusLastSessionScript
       cycleDisplayLayoutScript
       notificationMonitorScript
-      networkStatusScript
+      systemStatsScript
       launcherQueryScript
       launcherLaunchScript
       runnerListScript

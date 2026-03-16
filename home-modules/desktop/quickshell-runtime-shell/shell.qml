@@ -2,8 +2,10 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.I3
 import Quickshell.Io
+import Quickshell.Networking
 import Quickshell.Services.Notifications
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
@@ -56,17 +58,24 @@ ShellRoot {
     property bool notificationDetailVisible: false
     property var notificationDetailItem: null
     property bool notificationDnd: false
-    property var networkState: ({
-            connected: false,
-            kind: "offline",
-            label: "Offline",
-            signal: null
+    property var systemStatsState: ({
+            memory_percent: 0,
+            memory_used_gb: 0,
+            memory_total_gb: 0,
+            swap_used_gb: 0,
+            swap_total_gb: 0,
+            load1: 0,
+            load5: 0,
+            load15: 0,
+            temperature_c: null
         })
     property bool panelVisible: true
     property string panelSection: "runtime"
     property string runtimePanelExpandedSection: "sessions"
     property bool dockedMode: true
     property bool powerMenuVisible: false
+    property bool audioPopupVisible: false
+    property bool bluetoothPopupVisible: false
     property bool worktreePickerVisible: false
     property bool launcherVisible: false
     property bool launcherLoading: false
@@ -239,7 +248,6 @@ ShellRoot {
     onSettingsVisibleChanged: {
         if (settingsVisible) {
             launcherVisible = false;
-            settingsSection = "commands";
             settingsCommandQuery = "";
             settingsCommandNormalizingInput = true;
             settingsCommandQueryField.text = "";
@@ -1388,6 +1396,31 @@ ShellRoot {
         return Pipewire.ready ? Pipewire.defaultAudioSink : null;
     }
 
+    function audioNodes() {
+        const nodes = arrayOrEmpty(Pipewire.nodes ? Pipewire.nodes.values : []);
+        const sinks = [];
+        for (let i = 0; i < nodes.length; i += 1) {
+            const node = nodes[i];
+            if (!(node && node.ready && boolOrFalse(node.isSink) && node.audio)) {
+                continue;
+            }
+            sinks.push(node);
+        }
+        return sinks;
+    }
+
+    function audioSinkIdentity(node) {
+        return stringOrEmpty(node && (node.objectSerial || node.id || node.name || node.nickname || node.description));
+    }
+
+    function audioSinkLabel(node) {
+        return stringOrEmpty(node && (node.description || node.nickname || node.name || "Audio output"));
+    }
+
+    function audioSinkIsActive(node) {
+        return audioSinkIdentity(node) === audioSinkIdentity(audioNode());
+    }
+
     function audioReady() {
         const node = audioNode();
         return !!(node && node.ready && node.audio);
@@ -1417,7 +1450,7 @@ ShellRoot {
         if (!(node && node.ready)) {
             return "PipeWire unavailable";
         }
-        return stringOrEmpty(node.description || node.nickname || node.name || "Default audio");
+        return audioSinkLabel(node);
     }
 
     function changeVolume(delta) {
@@ -1436,6 +1469,180 @@ ShellRoot {
             return;
         }
         node.audio.muted = !boolOrFalse(node.audio.muted);
+    }
+
+    function setPreferredAudioSink(node) {
+        if (!(Pipewire.ready && node && node.ready)) {
+            return;
+        }
+        Pipewire.preferredDefaultAudioSink = node;
+    }
+
+    function defaultBluetoothAdapter() {
+        return Bluetooth.defaultAdapter || null;
+    }
+
+    function bluetoothAvailable() {
+        return !!defaultBluetoothAdapter();
+    }
+
+    function bluetoothEnabled() {
+        const adapter = defaultBluetoothAdapter();
+        return !!(adapter && adapter.enabled);
+    }
+
+    function bluetoothDevices() {
+        const adapter = defaultBluetoothAdapter();
+        if (!adapter) {
+            return [];
+        }
+        const devices = adapter.devices;
+        return arrayOrEmpty(devices && devices.values ? devices.values : devices);
+    }
+
+    function bluetoothConnectedDevices() {
+        const devices = bluetoothDevices();
+        const connected = [];
+        for (let i = 0; i < devices.length; i += 1) {
+            if (boolOrFalse(devices[i] && devices[i].connected)) {
+                connected.push(devices[i]);
+            }
+        }
+        return connected;
+    }
+
+    function bluetoothConnectedCount() {
+        return bluetoothConnectedDevices().length;
+    }
+
+    function bluetoothLabel() {
+        if (!bluetoothAvailable()) {
+            return "BT --";
+        }
+        if (!bluetoothEnabled()) {
+            return "BT Off";
+        }
+        const connected = bluetoothConnectedCount();
+        if (connected > 0) {
+            return "BT " + String(connected);
+        }
+        return "BT On";
+    }
+
+    function bluetoothDetail() {
+        if (!bluetoothAvailable()) {
+            return "No Bluetooth adapter";
+        }
+        if (!bluetoothEnabled()) {
+            return "Bluetooth disabled";
+        }
+        const connected = bluetoothConnectedDevices();
+        if (!connected.length) {
+            return "Bluetooth enabled";
+        }
+        const names = [];
+        for (let i = 0; i < connected.length; i += 1) {
+            names.push(stringOrEmpty(connected[i] && connected[i].name) || "Connected device");
+        }
+        return names.join(" • ");
+    }
+
+    function setBluetoothEnabled(enabled) {
+        const adapter = defaultBluetoothAdapter();
+        if (!adapter) {
+            return;
+        }
+        adapter.enabled = enabled;
+    }
+
+    function toggleBluetoothEnabled() {
+        setBluetoothEnabled(!bluetoothEnabled());
+    }
+
+    function toggleBluetoothDevice(device) {
+        if (!device) {
+            return;
+        }
+        if (boolOrFalse(device.connected)) {
+            device.disconnect();
+            return;
+        }
+        device.connect();
+    }
+
+    function networkDevices() {
+        return arrayOrEmpty(Networking.devices ? Networking.devices.values : []);
+    }
+
+    function networkDeviceTypeKey(device) {
+        const rawType = stringOrEmpty(device && device.type !== undefined && device.type !== null && typeof DeviceType !== "undefined" && DeviceType.toString ? DeviceType.toString(device.type) : "");
+        const type = rawType.toLowerCase();
+        if (type.indexOf("wifi") >= 0 || type.indexOf("wireless") >= 0) {
+            return "wifi";
+        }
+        if (type.indexOf("ethernet") >= 0 || type.indexOf("wired") >= 0) {
+            return "ethernet";
+        }
+        return type || "other";
+    }
+
+    function networkDeviceStateKey(device) {
+        const rawState = stringOrEmpty(device && device.state !== undefined && device.state !== null && typeof DeviceState !== "undefined" && DeviceState.toString ? DeviceState.toString(device.state) : "");
+        return rawState.toLowerCase();
+    }
+
+    function networkDeviceConnected(device) {
+        if (!device) {
+            return false;
+        }
+        const state = networkDeviceStateKey(device);
+        if (state.indexOf("activated") >= 0 || state.indexOf("connected") >= 0) {
+            return true;
+        }
+        return !!(device.connection || device.activeAccessPoint);
+    }
+
+    function networkAccessPoint(device) {
+        return device && device.activeAccessPoint ? device.activeAccessPoint : null;
+    }
+
+    function networkSignal(device) {
+        const accessPoint = networkAccessPoint(device);
+        const value = Number(accessPoint && (accessPoint.strength !== undefined ? accessPoint.strength : accessPoint.signalStrength));
+        return Number.isFinite(value) ? Math.round(value) : null;
+    }
+
+    function networkSsid(device) {
+        const accessPoint = networkAccessPoint(device);
+        return stringOrEmpty(accessPoint && (accessPoint.ssid || accessPoint.name))
+            || stringOrEmpty(device && device.connection && (device.connection.id || device.connection.name));
+    }
+
+    function activeNetworkDevice() {
+        const devices = networkDevices();
+        let ethernetFallback = null;
+        for (let i = 0; i < devices.length; i += 1) {
+            const device = devices[i];
+            if (!networkDeviceConnected(device)) {
+                continue;
+            }
+            const type = networkDeviceTypeKey(device);
+            if (type === "wifi") {
+                return device;
+            }
+            if (type === "ethernet" && ethernetFallback === null) {
+                ethernetFallback = device;
+            }
+        }
+        return ethernetFallback;
+    }
+
+    function wifiEnabled() {
+        return boolOrFalse(Networking.wifiEnabled);
+    }
+
+    function toggleWifiEnabled() {
+        Networking.wifiEnabled = !wifiEnabled();
     }
 
     function batteryDevice() {
@@ -1506,30 +1713,77 @@ ShellRoot {
     }
 
     function networkLabel() {
-        if (!boolOrFalse(networkState.connected)) {
+        const device = activeNetworkDevice();
+        if (!device) {
             return "Offline";
         }
-        if (stringOrEmpty(networkState.kind) === "wifi" && networkState.signal !== null && networkState.signal !== undefined) {
-            return "Wi-Fi " + String(networkState.signal) + "%";
+        if (networkDeviceTypeKey(device) === "wifi") {
+            const signal = networkSignal(device);
+            if (signal !== null && signal !== undefined) {
+                return "Wi-Fi " + String(signal) + "%";
+            }
+            const ssid = networkSsid(device);
+            return ssid ? ssid : "Wi-Fi";
         }
-        if (stringOrEmpty(networkState.kind) === "ethernet") {
+        if (networkDeviceTypeKey(device) === "ethernet") {
             return "Ethernet";
         }
-        return stringOrEmpty(networkState.label || "Connected");
+        return stringOrEmpty(device.interface || device.name || "Connected");
     }
 
     function networkDetail() {
-        if (!boolOrFalse(networkState.connected)) {
-            return "No active NetworkManager connection";
+        const device = activeNetworkDevice();
+        if (!device) {
+            return wifiEnabled() ? "No active network connection" : "Wi-Fi disabled";
         }
-        return stringOrEmpty(networkState.label || "Connected");
+        const type = networkDeviceTypeKey(device);
+        if (type === "wifi") {
+            const ssid = networkSsid(device);
+            const signal = networkSignal(device);
+            const bits = [ssid || "Wi-Fi"];
+            if (signal !== null && signal !== undefined) {
+                bits.push(String(signal) + "% signal");
+            }
+            return bits.join(" • ");
+        }
+        return stringOrEmpty(device.interface || device.name || "Ethernet");
     }
 
     function networkChipText(hovered) {
-        if (!boolOrFalse(networkState.connected)) {
+        if (!activeNetworkDevice()) {
             return hovered ? colors.amber : colors.subtle;
         }
         return neutralChipText(hovered);
+    }
+
+    function systemStatsMemoryPercentValue() {
+        return Math.round(Math.max(0, Number(systemStatsState.memory_percent || 0)));
+    }
+
+    function systemStatsMemoryLabel() {
+        return "Mem " + String(systemStatsMemoryPercentValue()) + "%";
+    }
+
+    function systemStatsMemoryTooltip() {
+        const bits = [
+            String(Number(systemStatsState.memory_used_gb || 0).toFixed(1)) + " / " + String(Number(systemStatsState.memory_total_gb || 0).toFixed(1)) + " GB",
+            "load " + String(Number(systemStatsState.load1 || 0).toFixed(2))
+        ];
+        if (Number(systemStatsState.swap_total_gb || 0) > 0) {
+            bits.push("swap " + String(Number(systemStatsState.swap_used_gb || 0).toFixed(1)) + " GB");
+        }
+        if (systemStatsState.temperature_c !== null && systemStatsState.temperature_c !== undefined) {
+            bits.push(String(systemStatsState.temperature_c) + "°C");
+        }
+        return bits.join(" • ");
+    }
+
+    function systemStatsSummaryLabel() {
+        const bits = ["Mem " + String(systemStatsMemoryPercentValue()) + "%", "Load " + String(Number(systemStatsState.load1 || 0).toFixed(2))];
+        if (systemStatsState.temperature_c !== null && systemStatsState.temperature_c !== undefined) {
+            bits.push(String(systemStatsState.temperature_c) + "°C");
+        }
+        return bits.join(" • ");
     }
 
     function notificationChipFill(hovered) {
@@ -2914,7 +3168,11 @@ ShellRoot {
     }
 
     function normalizeSettingsSection(section) {
-        return stringOrEmpty(section).toLowerCase() === "commands" ? "commands" : "commands";
+        const normalized = stringOrEmpty(section).toLowerCase();
+        if (normalized === "devices") {
+            return "devices";
+        }
+        return "commands";
     }
 
     function setSettingsSection(section) {
@@ -2923,6 +3181,8 @@ ShellRoot {
 
     function openSettings(section) {
         setSettingsSection(section);
+        audioPopupVisible = false;
+        bluetoothPopupVisible = false;
         settingsVisible = true;
     }
 
@@ -3145,7 +3405,7 @@ ShellRoot {
     }
 
     function settingsTitle() {
-        return "Settings";
+        return settingsSection === "devices" ? "Devices" : "Settings";
     }
 
     function settingsCommandStatusText() {
@@ -5208,6 +5468,8 @@ ShellRoot {
         panelVisible = true;
         panelSection = "runtime";
         worktreePickerVisible = false;
+        audioPopupVisible = false;
+        bluetoothPopupVisible = false;
         ensureRuntimePanelExpandedSection();
     }
 
@@ -5216,6 +5478,8 @@ ShellRoot {
         panelSection = "assistant";
         worktreePickerVisible = false;
         notificationCenterVisible = false;
+        audioPopupVisible = false;
+        bluetoothPopupVisible = false;
     }
 
     function toggleAssistantPanel() {
@@ -5752,7 +6016,7 @@ ShellRoot {
         }
     }
 
-    function parseNetwork(payload) {
+    function parseSystemStats(payload) {
         const raw = stringOrEmpty(payload).trim();
         if (!raw || raw === "undefined" || raw === "null") {
             return;
@@ -5762,9 +6026,9 @@ ShellRoot {
         }
 
         try {
-            networkState = JSON.parse(raw);
+            systemStatsState = Object.assign({}, systemStatsState, JSON.parse(raw));
         } catch (error) {
-            console.warn("Failed to parse network payload", error, raw);
+            console.warn("Failed to parse system stats payload", error, raw);
         }
     }
 
@@ -5816,10 +6080,10 @@ ShellRoot {
     }
 
     Timer {
-        id: networkRefreshTimer
-        interval: 15000
+        id: systemStatsRestartTimer
+        interval: 2000
         repeat: false
-        onTriggered: networkWatcher.running = true
+        onTriggered: systemStatsWatcher.running = true
     }
 
     Timer {
@@ -5865,8 +6129,10 @@ ShellRoot {
         interval: 40
         repeat: false
         onTriggered: {
-            settingsCommandQueryField.forceActiveFocus();
-            settingsCommandQueryField.selectAll();
+            if (root.settingsSection === "commands") {
+                settingsCommandQueryField.forceActiveFocus();
+                settingsCommandQueryField.selectAll();
+            }
         }
     }
 
@@ -5923,25 +6189,25 @@ ShellRoot {
     }
 
     Process {
-        id: networkWatcher
-        command: [shellConfig.networkStatusBin]
+        id: systemStatsWatcher
+        command: [shellConfig.systemStatsBin]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
-                root.parseNetwork(data);
+                root.parseSystemStats(data);
             }
         }
         stderr: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
                 if (data && data.trim()) {
-                    console.warn("network.watch:", data);
+                    console.warn("system.stats:", data);
                 }
             }
         }
         onExited: function () {
-            networkRefreshTimer.restart();
+            systemStatsRestartTimer.restart();
         }
     }
 
@@ -6460,6 +6726,48 @@ ShellRoot {
                         spacing: 6
 
                         Rectangle {
+                            id: memoryChip
+                            radius: 8
+                            color: root.neutralChipFill(memoryMouse.containsMouse)
+                            border.color: root.neutralChipBorder(memoryMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: memoryLabel.implicitWidth + 18
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
+                            }
+
+                            Text {
+                                id: memoryLabel
+                                anchors.centerIn: parent
+                                text: root.systemStatsMemoryLabel()
+                                color: root.neutralChipText(memoryMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                            }
+
+                            ToolTip.visible: memoryMouse.containsMouse
+                            ToolTip.text: root.systemStatsMemoryTooltip()
+
+                            MouseArea {
+                                id: memoryMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openSettings("devices")
+                            }
+                        }
+
+                        Rectangle {
                             id: networkChip
                             radius: 8
                             color: root.neutralChipFill(networkMouse.containsMouse)
@@ -6496,8 +6804,15 @@ ShellRoot {
                                 id: networkMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.runDetached(["toggle-quick-panel"])
+                                onClicked: function (mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root.toggleWifiEnabled();
+                                        return;
+                                    }
+                                    root.openSettings("devices");
+                                }
                             }
                         }
 
@@ -6596,10 +6911,67 @@ ShellRoot {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                acceptedButtons: Qt.LeftButton
-                                onClicked: root.toggleMute()
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onClicked: function (mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root.toggleMute();
+                                        return;
+                                    }
+                                    root.bluetoothPopupVisible = false;
+                                    root.audioPopupVisible = !root.audioPopupVisible;
+                                }
                                 onWheel: function (wheel) {
                                     root.changeVolume(wheel.angleDelta.y > 0 ? 0.05 : -0.05);
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: bluetoothChip
+                            radius: 8
+                            color: root.neutralChipFill(bluetoothMouse.containsMouse)
+                            border.color: root.neutralChipBorder(bluetoothMouse.containsMouse)
+                            border.width: 1
+                            implicitWidth: bluetoothLabel.implicitWidth + 18
+                            implicitHeight: parent.height
+
+                            Behavior on color {
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
+                            }
+
+                            Behavior on border.color {
+                                ColorAnimation {
+                                    duration: root.fastColorMs
+                                }
+                            }
+
+                            Text {
+                                id: bluetoothLabel
+                                anchors.centerIn: parent
+                                text: root.bluetoothLabel()
+                                color: root.neutralChipText(bluetoothMouse.containsMouse)
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                            }
+
+                            ToolTip.visible: bluetoothMouse.containsMouse
+                            ToolTip.text: root.bluetoothDetail()
+
+                            MouseArea {
+                                id: bluetoothMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: function (mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root.toggleBluetoothEnabled();
+                                        return;
+                                    }
+                                    root.audioPopupVisible = false;
+                                    root.bluetoothPopupVisible = !root.bluetoothPopupVisible;
                                 }
                             }
                         }
@@ -6765,6 +7137,311 @@ ShellRoot {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: root.powerMenuVisible = !root.powerMenuVisible
                             }
+                        }
+                    }
+                }
+            }
+
+            PopupWindow {
+                visible: topBarWindow.isPrimaryBar && root.audioPopupVisible
+                color: "transparent"
+                implicitWidth: 280
+                implicitHeight: audioPopupCard.implicitHeight + 16
+                anchor.window: topBarWindow
+                anchor.item: audioChip
+                anchor.edges: Edges.Bottom | Edges.Right
+                anchor.gravity: Edges.Bottom | Edges.Left
+                anchor.margins.top: 6
+
+                Rectangle {
+                    id: audioPopupCard
+                    implicitWidth: 280
+                    implicitHeight: audioPopupColumn.implicitHeight + 20
+                    radius: 12
+                    color: colors.panel
+                    border.color: colors.borderStrong
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: audioPopupColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 10
+                        spacing: 10
+
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Text {
+                                    text: "Audio"
+                                    color: colors.text
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    text: root.audioDetail()
+                                    color: colors.subtle
+                                    font.pixelSize: 9
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Button {
+                                text: root.audioMuted() ? "Unmute" : "Mute"
+                                onClicked: root.toggleMute()
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 150
+                            value: root.volumePercent()
+                            onMoved: {
+                                const node = root.audioNode();
+                                if (node && node.audio) {
+                                    node.audio.volume = Math.max(0, Math.min(1.5, value / 100));
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Button {
+                                text: "-5%"
+                                onClicked: root.changeVolume(-0.05)
+                            }
+
+                            Button {
+                                text: "+5%"
+                                onClicked: root.changeVolume(0.05)
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            Button {
+                                text: "Mixer"
+                                onClicked: root.runDetached(["pavucontrol"])
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: colors.lineSoft
+                        }
+
+                        Text {
+                            text: "Outputs"
+                            color: colors.text
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+
+                        Repeater {
+                            model: root.audioNodes()
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                readonly property var sink: modelData
+                                readonly property bool activeSink: root.audioSinkIsActive(sink)
+                                Layout.fillWidth: true
+                                implicitHeight: 34
+                                radius: 8
+                                color: activeSink ? colors.blueBg : colors.cardAlt
+                                border.color: activeSink ? colors.blue : colors.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.audioSinkLabel(sink)
+                                        color: activeSink ? colors.blue : colors.text
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        visible: activeSink
+                                        text: "Live"
+                                        color: colors.blue
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.setPreferredAudioSink(sink)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            PopupWindow {
+                visible: topBarWindow.isPrimaryBar && root.bluetoothPopupVisible
+                color: "transparent"
+                implicitWidth: 300
+                implicitHeight: bluetoothPopupCard.implicitHeight + 16
+                anchor.window: topBarWindow
+                anchor.item: bluetoothChip
+                anchor.edges: Edges.Bottom | Edges.Right
+                anchor.gravity: Edges.Bottom | Edges.Left
+                anchor.margins.top: 6
+
+                Rectangle {
+                    id: bluetoothPopupCard
+                    implicitWidth: 300
+                    implicitHeight: bluetoothPopupColumn.implicitHeight + 20
+                    radius: 12
+                    color: colors.panel
+                    border.color: colors.borderStrong
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: bluetoothPopupColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 10
+                        spacing: 10
+
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Text {
+                                    text: "Bluetooth"
+                                    color: colors.text
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    text: root.bluetoothDetail()
+                                    color: colors.subtle
+                                    font.pixelSize: 9
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Button {
+                                text: root.bluetoothEnabled() ? "Turn Off" : "Turn On"
+                                enabled: root.bluetoothAvailable()
+                                onClicked: root.toggleBluetoothEnabled()
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Button {
+                                text: root.wifiEnabled() ? "Wi-Fi On" : "Wi-Fi Off"
+                                onClicked: root.toggleWifiEnabled()
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            Button {
+                                text: "Manager"
+                                onClicked: root.runDetached(["blueman-manager"])
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: colors.lineSoft
+                        }
+
+                        Text {
+                            visible: root.bluetoothAvailable() && root.bluetoothDevices().length > 0
+                            text: "Devices"
+                            color: colors.text
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+
+                        Repeater {
+                            model: root.bluetoothDevices()
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                readonly property var device: modelData
+                                readonly property bool connected: !!(device && device.connected)
+                                Layout.fillWidth: true
+                                implicitHeight: 38
+                                radius: 8
+                                color: connected ? colors.tealBg : colors.cardAlt
+                                border.color: connected ? colors.teal : colors.border
+                                border.width: 1
+                                visible: device !== null
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.stringOrEmpty(device && device.name) || "Bluetooth device"
+                                        color: connected ? colors.teal : colors.text
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        text: connected ? "Disconnect" : "Connect"
+                                        color: connected ? colors.teal : colors.subtle
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: root.bluetoothEnabled()
+                                    onClicked: root.toggleBluetoothDevice(device)
+                                }
+                            }
+                        }
+
+                        Text {
+                            visible: !root.bluetoothAvailable()
+                            text: "No Bluetooth adapter detected on this host."
+                            color: colors.subtle
+                            font.pixelSize: 9
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }
@@ -9168,7 +9845,7 @@ ShellRoot {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: "Manage mutable runtime data without putting CRUD into the launcher."
+                                text: "Manage runtime shell commands and devices without leaving QuickShell."
                                 color: colors.subtle
                                 font.pixelSize: 10
                                 wrapMode: Text.WordWrap
@@ -9228,6 +9905,54 @@ ShellRoot {
                                 }
                             }
 
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 42
+                                radius: 8
+                                color: root.settingsSection === "devices" ? colors.blueBg : colors.cardAlt
+                                border.color: root.settingsSection === "devices" ? colors.blue : colors.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 8
+
+                                    Text {
+                                        text: "◈"
+                                        color: root.settingsSection === "devices" ? colors.blue : colors.textDim
+                                        font.pixelSize: 12
+                                        font.weight: Font.Bold
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 1
+
+                                        Text {
+                                            text: "Devices"
+                                            color: root.settingsSection === "devices" ? colors.blue : colors.text
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Text {
+                                            text: "Audio, Bluetooth, network, resources"
+                                            color: colors.subtle
+                                            font.pixelSize: 9
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.setSettingsSection("devices")
+                                }
+                            }
+
                             Item {
                                 Layout.fillHeight: true
                             }
@@ -9254,6 +9979,7 @@ ShellRoot {
                             anchors.fill: parent
                             anchors.margins: 14
                             spacing: 12
+                            visible: root.settingsSection === "commands"
 
                             RowLayout {
                                 Layout.fillWidth: true
@@ -9690,6 +10416,339 @@ ShellRoot {
 
                                             Item {
                                                 Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 12
+                                visible: root.settingsSection === "devices"
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            text: "Devices"
+                                            color: colors.text
+                                            font.pixelSize: 15
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Text {
+                                            text: "Native QuickShell controls for audio, Bluetooth, network, and system resources."
+                                            color: colors.subtle
+                                            font.pixelSize: 10
+                                            wrapMode: Text.WordWrap
+                                        }
+                                    }
+
+                                    Button {
+                                        text: "Close"
+                                        onClicked: root.closeSettings()
+                                    }
+                                }
+
+                                ScrollView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+
+                                    ColumnLayout {
+                                        width: parent.width
+                                        spacing: 12
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            radius: 10
+                                            color: colors.cardAlt
+                                            border.color: colors.lineSoft
+                                            border.width: 1
+                                            implicitHeight: devicesSummaryContent.implicitHeight + 24
+
+                                            ColumnLayout {
+                                                id: devicesSummaryContent
+                                                anchors.fill: parent
+                                                anchors.margins: 12
+                                                spacing: 8
+
+                                                Text {
+                                                    text: "System Resources"
+                                                    color: colors.text
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                Text {
+                                                    text: root.systemStatsSummaryLabel()
+                                                    color: colors.subtle
+                                                    font.pixelSize: 10
+                                                }
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 34
+                                                        radius: 8
+                                                        color: colors.panel
+                                                        border.color: colors.border
+                                                        border.width: 1
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: root.systemStatsMemoryLabel()
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 34
+                                                        radius: 8
+                                                        color: colors.panel
+                                                        border.color: colors.border
+                                                        border.width: 1
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "Load " + Number(root.systemStatsState.load1 || 0).toFixed(2)
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 34
+                                                        radius: 8
+                                                        color: colors.panel
+                                                        border.color: colors.border
+                                                        border.width: 1
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: root.systemStatsState.temperature_c !== null && root.systemStatsState.temperature_c !== undefined ? String(root.systemStatsState.temperature_c) + "°C" : "Temp --"
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            radius: 10
+                                            color: colors.cardAlt
+                                            border.color: colors.lineSoft
+                                            border.width: 1
+                                            implicitHeight: settingsAudioCardContent.implicitHeight + 24
+
+                                            ColumnLayout {
+                                                id: settingsAudioCardContent
+                                                anchors.fill: parent
+                                                anchors.margins: 12
+                                                spacing: 10
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: "Audio"
+                                                        color: colors.text
+                                                        font.pixelSize: 12
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Button {
+                                                        text: root.audioMuted() ? "Unmute" : "Mute"
+                                                        onClicked: root.toggleMute()
+                                                    }
+
+                                                    Button {
+                                                        text: "Mixer"
+                                                        onClicked: root.runDetached(["pavucontrol"])
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: root.audioDetail()
+                                                    color: colors.subtle
+                                                    font.pixelSize: 10
+                                                }
+
+                                                Slider {
+                                                    Layout.fillWidth: true
+                                                    from: 0
+                                                    to: 150
+                                                    value: root.volumePercent()
+                                                    onMoved: {
+                                                        const node = root.audioNode();
+                                                        if (node && node.audio) {
+                                                            node.audio.volume = Math.max(0, Math.min(1.5, value / 100));
+                                                        }
+                                                    }
+                                                }
+
+                                                Repeater {
+                                                    model: root.audioNodes()
+
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        readonly property var sink: modelData
+                                                        readonly property bool activeSink: root.audioSinkIsActive(sink)
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 34
+                                                        radius: 8
+                                                        color: activeSink ? colors.blueBg : colors.panel
+                                                        border.color: activeSink ? colors.blue : colors.border
+                                                        border.width: 1
+
+                                                        RowLayout {
+                                                            anchors.fill: parent
+                                                            anchors.leftMargin: 10
+                                                            anchors.rightMargin: 10
+
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: root.audioSinkLabel(sink)
+                                                                color: activeSink ? colors.blue : colors.text
+                                                                font.pixelSize: 9
+                                                                font.weight: Font.Medium
+                                                                elide: Text.ElideRight
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: root.setPreferredAudioSink(sink)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            radius: 10
+                                            color: colors.cardAlt
+                                            border.color: colors.lineSoft
+                                            border.width: 1
+                                            implicitHeight: settingsBluetoothCardContent.implicitHeight + 24
+
+                                            ColumnLayout {
+                                                id: settingsBluetoothCardContent
+                                                anchors.fill: parent
+                                                anchors.margins: 12
+                                                spacing: 10
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: "Bluetooth & Network"
+                                                        color: colors.text
+                                                        font.pixelSize: 12
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Button {
+                                                        text: root.bluetoothEnabled() ? "BT Off" : "BT On"
+                                                        enabled: root.bluetoothAvailable()
+                                                        onClicked: root.toggleBluetoothEnabled()
+                                                    }
+
+                                                    Button {
+                                                        text: root.wifiEnabled() ? "Wi-Fi On" : "Wi-Fi Off"
+                                                        onClicked: root.toggleWifiEnabled()
+                                                    }
+
+                                                    Button {
+                                                        text: "Manager"
+                                                        onClicked: root.runDetached(["blueman-manager"])
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: root.networkDetail()
+                                                    color: colors.subtle
+                                                    font.pixelSize: 10
+                                                }
+
+                                                Repeater {
+                                                    model: root.bluetoothDevices()
+
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        readonly property var device: modelData
+                                                        readonly property bool connected: !!(device && device.connected)
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 36
+                                                        radius: 8
+                                                        color: connected ? colors.tealBg : colors.panel
+                                                        border.color: connected ? colors.teal : colors.border
+                                                        border.width: 1
+
+                                                        RowLayout {
+                                                            anchors.fill: parent
+                                                            anchors.leftMargin: 10
+                                                            anchors.rightMargin: 10
+                                                            spacing: 8
+
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: root.stringOrEmpty(device && device.name) || "Bluetooth device"
+                                                                color: connected ? colors.teal : colors.text
+                                                                font.pixelSize: 9
+                                                                font.weight: Font.Medium
+                                                                elide: Text.ElideRight
+                                                            }
+
+                                                            Text {
+                                                                text: connected ? "Disconnect" : "Connect"
+                                                                color: connected ? colors.teal : colors.subtle
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.DemiBold
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            enabled: root.bluetoothEnabled()
+                                                            onClicked: root.toggleBluetoothDevice(device)
+                                                        }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    visible: !root.bluetoothAvailable()
+                                                    text: "No Bluetooth adapter detected on this host."
+                                                    color: colors.subtle
+                                                    font.pixelSize: 9
+                                                }
                                             }
                                         }
                                     }

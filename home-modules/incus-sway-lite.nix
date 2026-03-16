@@ -28,7 +28,6 @@
     ./desktop/unified-bar-theme.nix
     ./desktop/quickshell-runtime-shell.nix
     ./desktop/quickshell-worktree-app.nix
-    ./desktop/eww-top-bar.nix
     ./desktop/swaync.nix
     ./desktop/sway-config-manager.nix
 
@@ -117,5 +116,4 @@
 
   programs.quickshell-runtime-shell.enable = true;
   programs.quickshell-worktree-app.enable = true;
-  programs.eww-top-bar.enable = true;
 }

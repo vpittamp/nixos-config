@@ -2,8 +2,6 @@
 
 let
   modifier = config.wayland.windowManager.sway.config.modifier;
-  topBarCfg = config.programs.eww-top-bar or null;
-  hasTopBar = topBarCfg != null && (topBarCfg.enable or false);
   runtimeShellCfg = config.programs.quickshell-runtime-shell or null;
   hasRuntimeShell = runtimeShellCfg != null && (runtimeShellCfg.enable or false);
   worktreeAppCfg = config.programs.quickshell-worktree-app or null;
@@ -113,9 +111,7 @@ in
     # ========== SYSTEM ==========
     "${modifier}+Shift+c" = "reload";
     "${modifier}+Shift+e" =
-      if hasRuntimeShell then "exec toggle-runtime-power-menu"
-      else if hasTopBar then "exec toggle-topbar-powermenu"
-      else "exec swaymsg exit";
+      if hasRuntimeShell then "exec toggle-runtime-power-menu" else "exec swaymsg exit";
     "${modifier}+Ctrl+Shift+e" = "exec swaymsg exit";
     "${modifier}+Shift+r" = "mode resize";
 
@@ -131,7 +127,7 @@ in
     "${modifier}+y" = "exec i3pm run yazi";
 
     # ========== NOTIFICATIONS (SwayNC) ==========
-    "${modifier}+i" = "exec toggle-quick-panel";  # Toggle Eww quick settings panel
+    "${modifier}+i" = if hasRuntimeShell then "exec show-runtime-devices" else "exec swaync-client -t";
     "${modifier}+Shift+i" = if nativeNotifications then "exec toggle-runtime-notifications" else "exec toggle-swaync";
     "${modifier}+Ctrl+Shift+i" = if nativeNotifications then "exec toggle-runtime-notification-dnd" else "exec swaync-client -d -sw";
 

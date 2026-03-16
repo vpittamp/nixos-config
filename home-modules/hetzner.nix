@@ -80,12 +80,10 @@ in
     ./desktop/sway.nix         # Sway window manager with headless support
     # sway-easyfocus now provided by home-manager upstream
     ./desktop/unified-bar-theme.nix  # Feature 057: Unified bar theme (Catppuccin Mocha)
-    # ./desktop/swaybar.nix      # Swaybar with event-driven status (DISABLED: replaced by eww-top-bar Feature 060)
-    # ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (DISABLED: replaced by eww-top-bar Feature 060)
+    # ./desktop/swaybar.nix      # Swaybar with event-driven status (DISABLED: replaced by QuickShell runtime shell)
+    # ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (DISABLED: replaced by QuickShell runtime shell)
     ./desktop/quickshell-runtime-shell.nix
     ./desktop/quickshell-worktree-app.nix
-    ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (network, apps, system controls)
-    ./desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
     ./desktop/swaync.nix       # Feature 057: SwayNC notification center
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
@@ -167,7 +165,7 @@ in
     debounceMs = 500;  # Wait 500ms after last change before reloading
   };
 
-  # Feature 052: Enhanced Swaybar Status (DISABLED: replaced by eww-top-bar Feature 060)
+  # Feature 052: Enhanced Swaybar Status (DISABLED: replaced by QuickShell runtime shell)
   # programs.swaybar-enhanced = {
   #   enable = true;
   #   # Uses default Catppuccin Mocha theme and standard update intervals
@@ -175,12 +173,6 @@ in
 
   programs.quickshell-runtime-shell.enable = true;
   programs.quickshell-worktree-app.enable = true;
-
-  # eww quick settings panel (Feature 057)
-  programs.eww-quick-panel.enable = true;
-
-  # Eww top bar with system metrics (Feature 060)
-  programs.eww-top-bar.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

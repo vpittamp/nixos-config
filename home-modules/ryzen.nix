@@ -16,8 +16,6 @@
     ./desktop/unified-bar-theme.nix
     ./desktop/quickshell-runtime-shell.nix
     ./desktop/quickshell-worktree-app.nix
-    ./desktop/eww-quick-panel.nix
-    ./desktop/eww-top-bar.nix
     ./desktop/swaync.nix
     ./desktop/sway-config-manager.nix
 
@@ -83,12 +81,6 @@
   };
 
   programs.quickshell-worktree-app.enable = true;
-
-  # QuickShell owns the bars/runtime panel; quick settings still use the legacy Eww panel.
-  programs.eww-quick-panel.enable = true;
-
-  # Keep the legacy Eww top bar disabled while QuickShell renders the active bars.
-  programs.eww-top-bar.enable = false;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

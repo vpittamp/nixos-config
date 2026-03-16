@@ -44,11 +44,13 @@ The shell is split into three UI surfaces:
 Each per-monitor top bar now renders:
 - top-level display and monitoring-panel controls
 - native QuickShell system status where available:
+  - `Bluetooth`
+  - `Networking`
   - `SystemClock`
   - `Pipewire`
   - `UPower`
   - `SystemTray`
-- a thin compatibility layer for notification state and network summary
+- a small helper process only for non-native system resources such as memory/load/temperature
 
 Design rule:
 - only use native QuickShell services that are also present declaratively on the host
