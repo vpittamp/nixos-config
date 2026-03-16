@@ -10,6 +10,8 @@ PanelWindow {
     required property QtObject runtimeConfig
     required property var colors
     readonly property QtObject root: shellRoot
+    property alias settingsCommandQueryFieldRef: settingsCommandQueryField
+    property alias settingsCommandsListRef: settingsCommandsList
     id: settingsWindow
     screen: root.primaryScreen
     visible: root.settingsVisible && root.primaryScreen !== null

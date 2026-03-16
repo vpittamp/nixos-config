@@ -12,6 +12,8 @@ PanelWindow {
     required property QtObject runtimeConfig
     required property var colors
     readonly property QtObject root: shellRoot
+    property alias launcherFieldRef: launcherField
+    property alias launcherListRef: launcherList
     id: launcherWindow
     screen: root.primaryScreen
     visible: root.launcherVisible && root.primaryScreen !== null

@@ -11,6 +11,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Services.UPower
 import Quickshell.Wayland
 import Quickshell.Widgets
+import "controllers" as Controllers
 import "windows" as Windows
 
 ShellRoot {
@@ -27,6 +28,25 @@ ShellRoot {
         contextLabel: root.worktreePickerSummaryTitle()
         contextDetails: root.activeContextSummaryLabel()
     }
+
+    readonly property var launcherField: launcherWindow ? launcherWindow.launcherFieldRef : null
+    readonly property var launcherList: launcherWindow ? launcherWindow.launcherListRef : null
+    readonly property var settingsCommandQueryField: settingsWindow ? settingsWindow.settingsCommandQueryFieldRef : null
+    readonly property var settingsCommandsList: settingsWindow ? settingsWindow.settingsCommandsListRef : null
+    readonly property var clock: runtimeServices ? runtimeServices.clockRef : null
+    readonly property var launcherFocusTimer: runtimeServices ? runtimeServices.launcherFocusTimerRef : null
+    readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
+    readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
+    readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
+    readonly property var sessionPreviewFollowTimer: runtimeServices ? runtimeServices.sessionPreviewFollowTimerRef : null
+    readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
+    readonly property var settingsCommandQueryDebounce: runtimeServices ? runtimeServices.settingsCommandQueryDebounceRef : null
+    readonly property var snippetEditorProcess: runtimeServices ? runtimeServices.snippetEditorProcessRef : null
+    readonly property var settingsCommandQueryProcess: runtimeServices ? runtimeServices.settingsCommandQueryProcessRef : null
+    readonly property var launcherQueryProcess: runtimeServices ? runtimeServices.launcherQueryProcessRef : null
+    readonly property var sessionPreviewProcess: runtimeServices ? runtimeServices.sessionPreviewProcessRef : null
+    readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
+    readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
 
     property var dashboard: ({
             status: "loading",
@@ -168,136 +188,6 @@ ShellRoot {
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
 
-    onNotificationCenterVisibleChanged: {
-        refreshNotificationState();
-        if (notificationCenterVisible) {
-            markAllNotificationsRead();
-        }
-    }
-
-    onLauncherVisibleChanged: {
-        if (launcherVisible) {
-            settingsVisible = false;
-            const openingSessionSwitcher = launcherSessionSwitcherPendingDelta !== 0;
-            launcherMode = openingSessionSwitcher ? "sessions" : "apps";
-            launcherSessionSwitcherActive = openingSessionSwitcher;
-            launcherQuery = "";
-            launcherError = "";
-            launcherEntries = [];
-            launcherSelectedIndex = 0;
-            launcherPointerSelectionEnabled = true;
-            launcherNormalizingInput = true;
-            launcherField.text = "";
-            launcherNormalizingInput = false;
-            resetLauncherListViewport();
-            launcherQueryDebounce.restart();
-            launcherFocusTimer.restart();
-            sessionPreviewDebounce.restart();
-            return;
-        }
-
-        launcherLoading = false;
-        launcherError = "";
-        launcherEntries = [];
-        launcherSessionSwitcherActive = false;
-        launcherSessionSwitcherPendingDelta = 0;
-        launcherSessionEntryOrder = [];
-        launcherSelectedIndex = 0;
-        launcherPointerSelectionEnabled = true;
-        resetSnippetEditor();
-        launcherNormalizingInput = true;
-        launcherField.text = "";
-        launcherNormalizingInput = false;
-        resetLauncherListViewport();
-        clearSessionPreview();
-        if (launcherQueryProcess.running) {
-            launcherQueryProcess.running = false;
-        }
-    }
-
-    onLauncherModeChanged: {
-        launcherError = "";
-        launcherSelectedIndex = 0;
-        launcherPointerSelectionEnabled = true;
-        if (launcherMode !== "sessions") {
-            launcherSessionSwitcherActive = false;
-            launcherSessionSwitcherPendingDelta = 0;
-            launcherSessionEntryOrder = [];
-            clearSessionPreview();
-        }
-        resetLauncherListViewport();
-        if (launcherVisible) {
-            launcherQueryDebounce.restart();
-            launcherFocusTimer.restart();
-            if (launcherMode === "sessions") {
-                sessionPreviewDebounce.restart();
-            }
-        }
-    }
-
-    onLauncherQueryChanged: {
-        if (launcherSessionSwitcherActive && launcherQuery !== "") {
-            launcherSessionSwitcherActive = false;
-            launcherSessionSwitcherPendingDelta = 0;
-        }
-        if (launcherVisible) {
-            launcherQueryDebounce.restart();
-        }
-    }
-
-    onLauncherSelectedIndexChanged: {
-        syncLauncherListSelection();
-        if (launcherVisible && launcherMode === "sessions") {
-            ensureSessionPreviewForSelection();
-        }
-    }
-
-    onSettingsVisibleChanged: {
-        if (settingsVisible) {
-            launcherVisible = false;
-            settingsCommandQuery = "";
-            settingsCommandNormalizingInput = true;
-            settingsCommandQueryField.text = "";
-            settingsCommandNormalizingInput = false;
-            settingsCommandError = "";
-            settingsCommandEntries = [];
-            settingsCommandSelectedIndex = 0;
-            resetSnippetEditor();
-            settingsCommandQueryDebounce.restart();
-            settingsFocusTimer.restart();
-            return;
-        }
-
-        settingsCommandLoading = false;
-        settingsCommandError = "";
-        settingsCommandEntries = [];
-        settingsCommandSelectedIndex = 0;
-        resetSnippetEditor();
-        settingsCommandNormalizingInput = true;
-        settingsCommandQueryField.text = "";
-        settingsCommandNormalizingInput = false;
-        if (settingsCommandQueryProcess.running) {
-            settingsCommandQueryProcess.running = false;
-        }
-        if (snippetEditorProcess.running) {
-            snippetEditorProcess.running = false;
-        }
-    }
-
-    onSettingsCommandQueryChanged: {
-        if (settingsVisible && settingsSection === "commands") {
-            settingsCommandQueryDebounce.restart();
-        }
-    }
-
-    onSettingsCommandSelectedIndexChanged: {
-        if (settingsVisible && settingsCommandEntries.length && settingsCommandSelectedIndex >= 0) {
-            settingsCommandsList.positionViewAtIndex(settingsCommandSelectedIndex, ListView.Contain);
-        }
-        if (settingsVisible && settingsSection === "commands") {
-            syncSnippetEditorFromSelection();
-        }
-    }
 
     readonly property var colors: ({
             bg: "#0d1117",
@@ -1316,6 +1206,9 @@ ShellRoot {
     }
 
     function topBarTimeText() {
+        if (!clock) {
+            return "";
+        }
         return Qt.formatDateTime(clock.date, shellConfig.topBarShowSeconds ? "ddd MMM d  h:mm:ss AP" : "ddd MMM d  h:mm AP");
     }
 
@@ -2221,7 +2114,7 @@ ShellRoot {
         if (launcherSessionSwitcherActive && (nextMode !== "sessions" || nextQuery !== "")) {
             launcherSessionSwitcherActive = false;
         }
-        if (launcherField.text !== nextQuery) {
+        if (launcherField && launcherField.text !== nextQuery) {
             launcherNormalizingInput = true;
             launcherField.text = nextQuery;
             launcherNormalizingInput = false;
@@ -5963,549 +5856,11 @@ ShellRoot {
         }
     }
 
-    Component {
-        id: nativeNotificationServerComponent
-
-        NotificationServer {
-            keepOnReload: true
-            persistenceSupported: false
-            bodySupported: true
-            bodyMarkupSupported: shellConfig.notificationMarkupEnabled
-            bodyHyperlinksSupported: false
-            bodyImagesSupported: shellConfig.notificationImagesEnabled
-            actionsSupported: true
-            actionIconsSupported: false
-            imageSupported: shellConfig.notificationImagesEnabled
-            inlineReplySupported: false
-            onNotification: function (notification) {
-                root.handleNativeNotification(notification);
-            }
-        }
-    }
-
-    Loader {
-        active: root.notificationsBackendNative()
-        sourceComponent: nativeNotificationServerComponent
-    }
-
-    SystemClock {
-        id: clock
-        precision: shellConfig.topBarShowSeconds ? SystemClock.Seconds : SystemClock.Minutes
-    }
-
-    Timer {
-        id: dashboardRestartTimer
-        interval: 1000
-        repeat: false
-        onTriggered: {
-            root.resetDashboard("loading", "");
-            dashboardWatcher.running = true;
-        }
-    }
-
-    Timer {
-        id: notificationRestartTimer
-        interval: 2000
-        repeat: false
-        onTriggered: notificationWatcher.running = true
-    }
-
-    Timer {
-        id: networkRefreshTimer
-        interval: 15000
-        repeat: false
-        onTriggered: networkWatcher.running = true
-    }
-
-    Timer {
-        id: systemStatsRestartTimer
-        interval: 2000
-        repeat: false
-        onTriggered: systemStatsWatcher.running = true
-    }
-
-    Timer {
-        id: launcherFocusTimer
-        interval: 40
-        repeat: false
-        onTriggered: {
-            launcherField.forceActiveFocus();
-            launcherField.selectAll();
-        }
-    }
-
-    Timer {
-        id: launcherQueryDebounce
-        interval: 90
-        repeat: false
-        onTriggered: root.restartLauncherQuery()
-    }
-
-    Timer {
-        id: launcherSessionSwitcherOpenTimer
-        interval: 0
-        repeat: false
-        onTriggered: root.finalizeLauncherSessionSwitcherOpen()
-    }
-
-    Timer {
-        id: sessionPreviewDebounce
-        interval: 75
-        repeat: false
-        onTriggered: root.restartSessionPreview()
-    }
-
-    Timer {
-        id: sessionPreviewFollowTimer
-        interval: 16
-        repeat: false
-        onTriggered: root.sessionPreviewScrollToBottom()
-    }
-
-    Timer {
-        id: settingsFocusTimer
-        interval: 40
-        repeat: false
-        onTriggered: {
-            if (root.settingsSection === "commands") {
-                settingsCommandQueryField.forceActiveFocus();
-                settingsCommandQueryField.selectAll();
-            }
-        }
-    }
-
-    Timer {
-        id: settingsCommandQueryDebounce
-        interval: 90
-        repeat: false
-        onTriggered: root.restartSettingsCommandQuery()
-    }
-
-    Process {
-        id: dashboardWatcher
-        command: [shellConfig.i3pmBin, "dashboard", "watch", "--interval", String(shellConfig.dashboardHeartbeatMs)]
-        running: true
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.parseDashboard(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.handleDashboardWatchError(data);
-            }
-        }
-        onExited: function () {
-            root.resetDashboard("reconnecting", "dashboard watcher exited");
-            dashboardRestartTimer.restart();
-        }
-    }
-
-    Process {
-        id: notificationWatcher
-        command: [shellConfig.notificationMonitorBin]
-        running: !root.notificationsBackendNative()
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.parseNotification(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (data && data.trim()) {
-                    console.warn("notification.watch:", data);
-                }
-            }
-        }
-        onExited: function () {
-            notificationRestartTimer.restart();
-        }
-    }
-
-    Process {
-        id: networkWatcher
-        command: [shellConfig.networkStatusBin]
-        running: true
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.parseNetwork(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (data && data.trim()) {
-                    console.warn("network.watch:", data);
-                }
-            }
-        }
-        onExited: function () {
-            networkRefreshTimer.restart();
-        }
-    }
-
-    Process {
-        id: systemStatsWatcher
-        command: [shellConfig.systemStatsBin]
-        running: true
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.parseSystemStats(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (data && data.trim()) {
-                    console.warn("system.stats:", data);
-                }
-            }
-        }
-        onExited: function () {
-            systemStatsRestartTimer.restart();
-        }
-    }
-
-    Process {
-        id: snippetEditorProcess
-        command: [shellConfig.snippetsManageBin, "upsert", "-1", "", "", ""]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.handleSnippetMutationResult(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                const message = data && data.trim();
-                if (message) {
-                    root.snippetEditorBusy = false;
-                    root.snippetEditorError = message;
-                    console.warn("settings.commands.manage:", message);
-                }
-            }
-        }
-        onExited: function () {
-            root.snippetEditorBusy = false;
-        }
-    }
-
-    Process {
-        id: settingsCommandQueryProcess
-        command: [shellConfig.snippetsListBin, "", "200"]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.parseSettingsCommandResults(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (!root.settingsVisible || root.settingsSection !== "commands") {
-                    return;
-                }
-                const message = data && data.trim();
-                if (message) {
-                    root.settingsCommandError = "Unable to load commands";
-                    root.settingsCommandLoading = false;
-                    console.warn("settings.commands.query:", message);
-                }
-            }
-        }
-        onExited: function () {
-            root.settingsCommandLoading = false;
-        }
-    }
-
-    Process {
-        id: launcherQueryProcess
-        command: [shellConfig.launcherQueryBin, "", "12", "20"]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (root.launcherMode === "files") {
-                    root.parseFileResults(data);
-                    return;
-                }
-                if (root.launcherMode === "urls") {
-                    root.parseUrlResults(data);
-                    return;
-                }
-                if (root.launcherMode === "runner") {
-                    root.parseRunnerResults(data);
-                    return;
-                }
-                if (root.launcherMode === "snippets") {
-                    root.parseSnippetResults(data);
-                    return;
-                }
-                if (root.launcherMode === "onepassword") {
-                    root.parseOnePasswordResults(data);
-                    return;
-                }
-                if (root.launcherMode === "clipboard") {
-                    root.parseClipboardResults(data);
-                    return;
-                }
-                root.parseLauncherResults(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (!root.launcherVisible || (root.launcherMode !== "apps" && root.launcherMode !== "files" && root.launcherMode !== "urls" && root.launcherMode !== "runner" && root.launcherMode !== "snippets" && root.launcherMode !== "onepassword" && root.launcherMode !== "clipboard")) {
-                    return;
-                }
-                const message = data && data.trim();
-                if (message) {
-                    if (root.launcherMode === "files") {
-                        root.launcherError = "Unable to load file results";
-                    } else if (root.launcherMode === "urls") {
-                        root.launcherError = "Unable to load Chrome URL results";
-                    } else if (root.launcherMode === "runner") {
-                        root.launcherError = "Unable to prepare command";
-                    } else if (root.launcherMode === "snippets") {
-                        root.launcherError = "Unable to load curated commands";
-                    } else if (root.launcherMode === "onepassword") {
-                        root.launcherError = "Unable to load 1Password items";
-                    } else if (root.launcherMode === "clipboard") {
-                        root.launcherError = "Unable to load clipboard history";
-                    } else {
-                        root.launcherError = "Launcher query failed";
-                    }
-                    root.launcherLoading = false;
-                    console.warn("launcher.query:", message);
-                }
-            }
-        }
-        onExited: function () {
-            if (root.launcherMode === "apps" || root.launcherMode === "files" || root.launcherMode === "urls" || root.launcherMode === "runner" || root.launcherMode === "snippets" || root.launcherMode === "onepassword" || root.launcherMode === "clipboard") {
-                root.launcherLoading = false;
-            }
-        }
-    }
-
-    Process {
-        id: sessionPreviewProcess
-        command: [shellConfig.i3pmBin, "session", "preview", "", "--follow", "--jsonl", "--lines", "100"]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.parseSessionPreview(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (data && data.trim()) {
-                    console.warn("session.preview:", data);
-                }
-            }
-        }
-        onExited: function () {
-            if (root.sessionPreviewStopExpected) {
-                root.sessionPreviewStopExpected = false;
-                return;
-            }
-            if (root.launcherVisible && root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null && root.stringOrEmpty(root.sessionPreview.status) === "loading") {
-                root.sessionPreview = Object.assign(root.emptySessionPreview(), {
-                    status: "error",
-                    kind: "error",
-                    session_key: root.stringOrEmpty(root.activeLauncherSessionEntry().session_key || root.activeLauncherSessionEntry().identifier),
-                    message: "Unable to start session preview."
-                });
-            }
-        }
-    }
-
-    Process {
-        id: sessionCloseProcess
-        command: [shellConfig.i3pmBin, "session", "close", "", "--json"]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                root.sessionCloseProcessStdout += data + "\n";
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                const message = data && data.trim();
-                if (!message) {
-                    return;
-                }
-                root.sessionCloseProcessStderr += message + "\n";
-                console.warn("session.close:", message);
-            }
-        }
-        onExited: function () {
-            const targetKey = root.stringOrEmpty(root.sessionCloseProcessTargetKey);
-            let success = false;
-            const raw = root.stringOrEmpty(root.sessionCloseProcessStdout).trim();
-            if (raw) {
-                try {
-                    const parsed = JSON.parse(raw);
-                    success = !!(parsed && parsed.success);
-                } catch (error) {
-                    console.warn("session.close.parse:", raw, error);
-                }
-            }
-            if (!success) {
-                root.clearSessionClosePending(targetKey);
-            }
-            root.sessionCloseProcessTargetKey = "";
-            root.sessionCloseProcessStdout = "";
-            root.sessionCloseProcessStderr = "";
-            root.pruneSessionClosePending();
-        }
-    }
-
-    Timer {
-        id: sessionClosePendingPruneTimer
-        interval: 1500
-        repeat: true
-        running: true
-        onTriggered: root.pruneSessionClosePending()
-    }
-
-    IpcHandler {
-        target: "shell"
-
-        function togglePanel() {
-            root.panelVisible = !root.panelVisible;
-        }
-
-        function toggleDockMode() {
-            root.dockedMode = !root.dockedMode;
-        }
-
-        function showWindowsTab() {
-            root.showRuntimePanel();
-        }
-
-        function showSessionsTab() {
-            root.showRuntimePanel();
-        }
-
-        function showHealthTab() {
-            root.showRuntimePanel();
-        }
-
-        function showAssistant() {
-            root.showAssistantPanel();
-        }
-
-        function nextSession() {
-            root.cycleSessions("next");
-        }
-
-        function prevSession() {
-            root.cycleSessions("prev");
-        }
-
-        function nextLauncherSession() {
-            root.cycleLauncherSessions("next");
-        }
-
-        function prevLauncherSession() {
-            root.cycleLauncherSessions("prev");
-        }
-
-        function commitLauncherSession() {
-            root.commitLauncherSessionSwitch();
-        }
-
-        function focusLastSession() {
-            root.focusLastSession();
-        }
-
-        function togglePowerMenu() {
-            root.powerMenuVisible = !root.powerMenuVisible;
-        }
-
-        function toggleLauncher() {
-            if (!root.launcherVisible) {
-                root.settingsVisible = false;
-            }
-            root.launcherVisible = !root.launcherVisible;
-        }
-
-        function toggleSettings() {
-            if (!root.settingsVisible) {
-                root.openSettings("commands");
-                return;
-            }
-            root.closeSettings();
-        }
-
-        function showSettings(section: string) {
-            root.openSettings(section);
-        }
-
-        function toggleNotifications() {
-            root.toggleNotifications();
-        }
-
-        function toggleNotificationDnd() {
-            root.toggleNotificationDnd();
-        }
-
-        function clearNotifications() {
-            root.clearNotifications();
-        }
-    }
-
-    IpcHandler {
-        target: "assistant"
-
-        function toggle() {
-            root.toggleAssistantPanel();
-        }
-
-        function open() {
-            root.showAssistantPanel();
-        }
-
-        function close() {
-            root.panelVisible = false;
-        }
-
-        function send(message: string) {
-            root.showAssistantPanel();
-            assistantService.sendMessage(message);
-        }
-
-        function newChat() {
-            root.showAssistantPanel();
-            assistantService.newChat();
-        }
-
-        function setProvider(provider: string) {
-            assistantService.setProvider(provider);
-        }
-
-        function setModel(model: string) {
-            assistantService.setModel(model);
-        }
-
-        function translateText(text: string, targetLang: string) {
-            root.showAssistantPanel();
-            assistantService.activeTab = "translate";
-            assistantService.translate(text, targetLang || assistantService.targetLanguage, assistantService.sourceLanguage);
-        }
+    Controllers.RuntimeServices {
+        id: runtimeServices
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        assistantService: assistantService
     }
 
 
@@ -6543,12 +5898,14 @@ ShellRoot {
     }
 
     Windows.LauncherWindow {
+        id: launcherWindow
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors
     }
 
     Windows.SettingsWindow {
+        id: settingsWindow
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors
