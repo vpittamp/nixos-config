@@ -12,6 +12,7 @@ Rectangle {
     property bool hovered: false
     property bool interactive: false
     property bool compact: false
+    property bool closePending: false
     property bool showAccentRail: true
     property bool showHostToken: true
     property bool showProjectChip: true
@@ -40,6 +41,7 @@ Rectangle {
     color: selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent")
     border.color: selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent")
     border.width: 1
+    opacity: closePending ? 0.9 : 1
 
     function resetMotionVisuals() {
         sessionWorkingHalo.opacity = hasMotion ? 0.05 : 0;
@@ -64,6 +66,7 @@ Rectangle {
     }
 
         RowLayout {
+            z: 1
             anchors.fill: parent
             anchors.leftMargin: compact ? 12 : 16
             anchors.rightMargin: compact ? 10 : 12
@@ -337,27 +340,63 @@ Rectangle {
             }
         }
 
-        Rectangle {
+        Item {
             visible: closableSurface
-            z: 2
-            width: 18
-            height: 18
-            radius: 6
-            color: closeMouse.containsMouse ? colorsObject.redBg : colorsObject.bg
-            border.color: "transparent"
-            border.width: 0
+            width: 28
+            height: 28
+            Layout.preferredWidth: width
+            Layout.preferredHeight: height
 
-            Text {
+            Rectangle {
                 anchors.centerIn: parent
-                text: "×"
-                color: closeMouse.containsMouse ? colorsObject.red : (selected ? colorsObject.muted : colorsObject.subtle)
-                font.pixelSize: 10
-                font.weight: Font.DemiBold
+                width: 22
+                height: 22
+                radius: 6
+                color: closePending ? colorsObject.redBg : (closeMouse.containsMouse ? colorsObject.redBg : colorsObject.bg)
+                border.color: closePending ? colorsObject.red : (closeMouse.containsMouse ? colorsObject.red : colorsObject.lineSoft)
+                border.width: 1
+
+                Text {
+                    visible: !closePending
+                    anchors.centerIn: parent
+                    text: "×"
+                    color: closeMouse.containsMouse ? colorsObject.red : (selected ? colorsObject.muted : colorsObject.subtle)
+                    font.pixelSize: closeMouse.containsMouse ? 11 : 10
+                    font.weight: closeMouse.containsMouse ? Font.Bold : Font.DemiBold
+                }
+
+                Text {
+                    visible: closePending
+                    anchors.centerIn: parent
+                    text: "..."
+                    color: colorsObject.red
+                    font.pixelSize: 8
+                    font.weight: Font.Bold
+                    opacity: closePending ? 0.75 : 0
+
+                    SequentialAnimation on opacity {
+                        running: closePending
+                        loops: Animation.Infinite
+
+                        OpacityAnimator {
+                            from: 0.35
+                            to: 0.95
+                            duration: 500
+                        }
+                        OpacityAnimator {
+                            from: 0.95
+                            to: 0.35
+                            duration: 500
+                        }
+                    }
+                }
             }
 
             MouseArea {
                 id: closeMouse
                 anchors.fill: parent
+                z: 2
+                enabled: !closePending
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {

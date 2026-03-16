@@ -662,6 +662,8 @@ class IPCServer:
                 result = await self._prepare_launch(preview_params)
             elif method == "launch.open":
                 result = await self._launch_open(params)
+            elif method == "launch.status":
+                result = await self._launch_status(params)
             elif method == "get_launch_stats":
                 result = await self._get_launch_stats()
             elif method == "get_pending_launches":
@@ -676,6 +678,8 @@ class IPCServer:
                 result = await self._session_list(params)
             elif method == "session.focus":
                 result = await self._session_focus(params)
+            elif method == "session.close":
+                result = await self._session_close(params)
             elif method == "focus.state":
                 result = await self._focus_state(params)
             elif method == "session.preview":
@@ -5602,43 +5606,7 @@ class IPCServer:
         project_name: str,
         connection_key: str,
     ) -> Optional[Any]:
-        """Reuse a live attached remote bridge window even if its context marks drifted."""
-        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
-            {},
-            close_windows=False,
-        )
-        if not runtime_snapshot:
-            return None
-
-        target_project = str(project_name or "").strip()
-        target_connection = str(connection_key or "").strip()
-        if not (target_project and target_connection):
-            return None
-
-        candidate_window_ids: List[int] = []
-        for session in sessions:
-            if not isinstance(session, dict):
-                continue
-            if str(session.get("project_name") or session.get("project") or "").strip() != target_project:
-                continue
-            if str(session.get("focus_connection_key") or session.get("connection_key") or "").strip() != target_connection:
-                continue
-            if str(session.get("focus_execution_mode") or "").strip().lower() != "ssh":
-                continue
-            if str(session.get("availability_state") or "").strip() != "attached_here":
-                continue
-            bridge_window_id = int(session.get("bridge_window_id") or session.get("window_id") or 0)
-            if bridge_window_id > 0 and bridge_window_id not in candidate_window_ids:
-                candidate_window_ids.append(bridge_window_id)
-
-        for window_id in candidate_window_ids:
-            live_window = await self._find_live_sway_window(window_id)
-            if live_window is None:
-                continue
-            tracked_window = self.state_manager.state.window_map.get(window_id)
-            if tracked_window is not None:
-                return tracked_window
-            return SimpleNamespace(window_id=window_id)
+        """Disabled after deterministic remote-launch cutover."""
         return None
 
     def _substitute_launch_parameter(
@@ -6156,6 +6124,107 @@ class IPCServer:
         """Return the XDG runtime directory used by daemon-owned helpers."""
         return Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 
+    def _launch_runtime_dir(self) -> Path:
+        """Return the runtime directory used for deterministic launch specs and status."""
+        return self._runtime_dir() / "i3-project-daemon" / "launches"
+
+    def _launch_status_file(self, launch_id: str) -> Path:
+        """Return the canonical launch-status file for a launch id."""
+        return self._launch_runtime_dir() / f"{str(launch_id or '').strip()}.status.json"
+
+    def _launch_spec_file(self, launch_id: str) -> Path:
+        """Return the canonical launch-spec file for a launch id."""
+        return self._launch_runtime_dir() / f"{str(launch_id or '').strip()}.spec.json"
+
+    def _write_launch_status(
+        self,
+        *,
+        launch_id: str,
+        status: str,
+        spec: Optional[Dict[str, Any]] = None,
+        error_code: str = "",
+        error_message: str = "",
+    ) -> Dict[str, Any]:
+        """Persist deterministic launch status for UI and RPC consumers."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            raise RuntimeError("launch_id is required for launch status")
+        payload = {
+            "launch_id": launch_key,
+            "status": str(status or "").strip() or "queued",
+            "error_code": str(error_code or "").strip(),
+            "error_message": str(error_message or "").strip(),
+            "updated_at": int(time.time()),
+        }
+        if isinstance(spec, dict):
+            payload.update({
+                "project_name": str(spec.get("project_name") or "").strip(),
+                "execution_mode": str(spec.get("execution_mode") or "").strip(),
+                "connection_key": str(spec.get("connection_key") or "").strip(),
+                "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
+                "launch_kind": str(spec.get("launch_kind") or "").strip(),
+            })
+        status_file = self._launch_status_file(launch_key)
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(status_file, payload)
+        return payload
+
+    def _read_launch_status(self, launch_id: str) -> Dict[str, Any]:
+        """Return persisted status for a deterministic launch id."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            return {}
+        payload = self._load_json_file(self._launch_status_file(launch_key))
+        if not payload:
+            return {}
+        payload.setdefault("launch_id", launch_key)
+        return payload
+
+    def _list_launch_statuses(self, *, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return recent persisted launch statuses for dashboard consumers."""
+        runtime_dir = self._launch_runtime_dir()
+        if not runtime_dir.exists():
+            return []
+        items: List[Dict[str, Any]] = []
+        for path in sorted(runtime_dir.glob("*.status.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            payload = self._load_json_file(path)
+            if payload:
+                items.append(payload)
+            if len(items) >= max(int(limit), 1):
+                break
+        return items
+
+    def _write_remote_launch_spec(
+        self,
+        *,
+        spec: Dict[str, Any],
+        launch_kind: str,
+    ) -> Path:
+        """Persist the exact remote launch payload consumed by the remote launcher."""
+        launch = spec.get("launch") or {}
+        launch_id = str(launch.get("launch_id") or "").strip()
+        if not launch_id:
+            raise RuntimeError("remote launch requires a registered launch_id")
+        payload = {
+            "launch_id": launch_id,
+            "launch_kind": str(launch_kind or "").strip(),
+            "project_name": str(spec.get("project_name") or "").strip(),
+            "execution_mode": str(spec.get("execution_mode") or "").strip(),
+            "connection_key": str(spec.get("connection_key") or "").strip(),
+            "project_directory": str(spec.get("project_directory") or "").strip(),
+            "local_project_directory": str(spec.get("local_project_directory") or "").strip(),
+            "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
+            "tmux_session_name": str(spec.get("tmux_session_name") or "").strip(),
+            "terminal_launch": dict(spec.get("terminal_launch") or {}),
+            "environment": dict(spec.get("environment") or {}),
+            "status_file": str(self._launch_status_file(launch_id)),
+        }
+        spec_file = self._launch_spec_file(launch_id)
+        spec_file.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(spec_file, payload)
+        self._write_launch_status(launch_id=launch_id, status="queued", spec=payload)
+        return spec_file
+
     def _canonical_tmux_socket(self) -> str:
         """Return the canonical managed tmux socket path for the current host user."""
         uid = os.getuid()
@@ -6231,8 +6300,6 @@ class IPCServer:
         """Return the terminal launch transport for the resolved context."""
         mode = str(execution_mode or "local").strip().lower() or "local"
         if mode != "ssh":
-            return "local_helper"
-        if self._connection_target_is_current_host(connection_key):
             return "local_helper"
         return "remote_helper"
 
@@ -6371,6 +6438,70 @@ class IPCServer:
             "tmux_window": tmux_window,
             "tmux_pane": str(tmux_pane or "").strip(),
             "active_tmux_pane": active_pane,
+            "stderr": str(result.stderr or "").strip(),
+        }
+
+    def _kill_tmux_pane(
+        self,
+        *,
+        execution_mode: str,
+        tmux_pane: str,
+        remote_target: str = "",
+        connection_key: str = "",
+        tmux_socket: str = "",
+    ) -> Dict[str, Any]:
+        """Kill a tmux pane locally or over SSH."""
+        pane_id = str(tmux_pane or "").strip()
+        if not pane_id:
+            return {
+                "success": False,
+                "reason": "missing_tmux_pane",
+                "stderr": "",
+            }
+
+        tmux_cmd = self._tmux_command_prefix(tmux_socket)
+        kill_script = f"{tmux_cmd} kill-pane -t {shlex.quote(pane_id)} >/dev/null 2>&1"
+
+        if execution_mode == "ssh" and not self._connection_target_is_current_host(connection_key):
+            remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
+            if not remote_host:
+                return {
+                    "success": False,
+                    "reason": "missing_remote_target",
+                    "stderr": "",
+                }
+            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=2",
+                    "-p",
+                    str(remote_port),
+                    destination,
+                    f"bash -lc {shlex.quote(kill_script)}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return {
+                "success": result.returncode == 0,
+                "reason": "ok" if result.returncode == 0 else "remote_tmux_kill_failed",
+                "stderr": str(result.stderr or "").strip(),
+            }
+
+        result = subprocess.run(
+            ["bash", "-lc", kill_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            "success": result.returncode == 0,
+            "reason": "ok" if result.returncode == 0 else "local_tmux_kill_failed",
             "stderr": str(result.stderr or "").strip(),
         }
 
@@ -7618,27 +7749,31 @@ class IPCServer:
         terminal_context = session.get("terminal_context") or {}
         if not isinstance(terminal_context, dict):
             terminal_context = {}
-        tmux_select_result = self._select_tmux_target(
-            execution_mode="ssh",
-            tmux_session=str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip(),
-            tmux_window=str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip(),
-            tmux_pane=str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
-            connection_key=connection_key,
-            tmux_socket=str(terminal_context.get("tmux_socket") or "").strip(),
-        )
-        tmux_result = self._verify_tmux_target(
-            execution_mode="ssh",
-            tmux_session=str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip(),
-            tmux_window=str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip(),
-            tmux_pane=str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
-            connection_key=connection_key,
-            tmux_socket=str(terminal_context.get("tmux_socket") or "").strip(),
-        )
+        launch_metadata = spec.get("launch") or {}
+        launch_id = str(launch_metadata.get("launch_id") or "").strip()
+        tmux_select_result: Dict[str, Any] = {
+            "success": True,
+            "reason": "not_required",
+        }
+        tmux_result: Dict[str, Any] = {
+            "success": True,
+            "reason": "not_required",
+        }
+        launch_status: Dict[str, Any] = {
+            "success": True,
+            "launch_id": launch_id,
+            "status": "reused_existing" if existing_window is not None else "not_applicable",
+            "reason": "reused_existing" if existing_window is not None else "not_applicable",
+        }
+        if existing_window is None and launch_id:
+            launch_status = await self._wait_for_launch_status(
+                launch_id,
+                terminal_anchor_id=str(spec.get("terminal_anchor_id") or "").strip(),
+            )
         overall_success = (
             bool(launch_result.get("success", False))
             and bool(focus_result.get("success", False))
-            and bool(tmux_select_result.get("success", False))
-            and bool(tmux_result.get("success", False))
+            and bool(launch_status.get("success", False))
         )
         verification: Dict[str, Any] = {
             "success": False,
@@ -7649,12 +7784,12 @@ class IPCServer:
         if overall_success:
             verification = {
                 "success": True,
-                "reason": str(tmux_result.get("reason") or "ok"),
+                "reason": str(launch_status.get("reason") or "ok"),
                 "session_key": session_key,
                 "current_session_key": session_key,
-                "verification_source": "tmux",
-                "active_tmux_pane": str(tmux_result.get("active_tmux_pane") or "").strip(),
-                "tmux_pane": str(tmux_result.get("tmux_pane") or "").strip(),
+                "verification_source": "remote_launcher",
+                "active_tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
+                "tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
             }
             self._set_focus_overrides(
                 session_key=session_key,
@@ -7682,6 +7817,7 @@ class IPCServer:
             "focus_state_after": focus_state_after,
             "tmux_select": tmux_select_result,
             "tmux": tmux_result,
+            "launch_status": launch_status,
             "verification": verification,
         }
 
@@ -7809,6 +7945,107 @@ class IPCServer:
             "focus_state_after": focus_state_after,
             "tmux": tmux_result,
             "verification": verification,
+        }
+
+    async def _session_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Close an AI session by killing its tracked tmux pane or fallback window."""
+        session_key = str(params.get("session_key") or "").strip()
+        if not session_key:
+            raise ValueError("session_key is required")
+
+        sessions_result = await self._session_list({})
+        sessions = sessions_result.get("sessions", [])
+        session = next(
+            (
+                item for item in sessions
+                if isinstance(item, dict)
+                and str(item.get("session_key") or "").strip() == session_key
+            ),
+            None,
+        )
+        if not isinstance(session, dict):
+            return {
+                "success": False,
+                "session_key": session_key,
+                "reason": "session_not_found",
+                "close_mode": "",
+                "closed_window_id": 0,
+                "killed_tmux_pane": "",
+            }
+
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+
+        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
+        connection_hint = str(
+            (
+                session.get("source_connection_key")
+                if not bool(session.get("source_is_current_host", False))
+                else ""
+            )
+            or session.get("focus_connection_key")
+            or session.get("connection_key")
+            or terminal_context.get("remote_target")
+            or terminal_context.get("connection_key")
+            or ""
+        ).strip()
+        remote_target = str(terminal_context.get("remote_target") or connection_hint).strip()
+        target_is_current_host = self._connection_target_is_current_host(connection_hint)
+
+        if tmux_session and tmux_window and tmux_pane:
+            tmux_result = self._kill_tmux_pane(
+                execution_mode="local" if target_is_current_host else "ssh",
+                tmux_pane=tmux_pane,
+                remote_target=remote_target,
+                connection_key=connection_hint,
+                tmux_socket=tmux_socket,
+            )
+            success = bool(tmux_result.get("success", False))
+            if success and str(self._focus_session_override_key or "").strip() == session_key:
+                self._set_focus_overrides(session_key="", window_id=0, connection_key="")
+            if success:
+                await self.notify_state_change("ai_session_close")
+            return {
+                "success": success,
+                "session_key": session_key,
+                "reason": str(tmux_result.get("reason") or ("ok" if success else "tmux_close_failed")),
+                "close_mode": "local_tmux_pane" if target_is_current_host else "remote_tmux_pane",
+                "closed_window_id": 0,
+                "killed_tmux_pane": tmux_pane,
+                "tmux_session": tmux_session,
+                "tmux_window": tmux_window,
+                "connection_key": connection_hint,
+                "stderr": str(tmux_result.get("stderr") or "").strip(),
+            }
+
+        window_id = int(session.get("bridge_window_id") or session.get("window_id") or 0)
+        if window_id <= 0:
+            return {
+                "success": False,
+                "session_key": session_key,
+                "reason": "missing_close_target",
+                "close_mode": "",
+                "closed_window_id": 0,
+                "killed_tmux_pane": "",
+            }
+
+        closed = await self._close_managed_window(window_id)
+        if closed and str(self._focus_session_override_key or "").strip() == session_key:
+            self._set_focus_overrides(session_key="", window_id=0, connection_key="")
+        if closed:
+            await self.notify_state_change("ai_session_close")
+        return {
+            "success": bool(closed),
+            "session_key": session_key,
+            "reason": "ok" if closed else "window_close_failed",
+            "close_mode": "local_window_fallback",
+            "closed_window_id": window_id,
+            "killed_tmux_pane": "",
+            "connection_key": connection_hint,
         }
 
     async def _session_preview(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -8357,6 +8594,7 @@ class IPCServer:
             "tracked_windows": runtime_snapshot.get("tracked_windows", []),
             "state_health": runtime_snapshot.get("state_health", {}),
             "launch_stats": runtime_snapshot.get("launch_stats", {}),
+            "launches": self._list_launch_statuses(limit=12),
             "scratchpad": runtime_snapshot.get("scratchpad", {}),
             "projects": projects,
             "project_count": len(projects),
@@ -8564,34 +8802,28 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             )
         ).strip() or "local_helper"
         if launch_transport == "remote_helper":
-            remote = terminal_launch.get("remote") or {}
-            if not isinstance(remote, dict):
-                remote = {}
-            remote_dir = str(remote.get("remote_dir") or spec.get("project_directory") or "").strip()
-            remote_user = str(remote.get("user") or "").strip()
-            remote_host = str(remote.get("host") or "").strip()
-            remote_port = int(remote.get("port", 22) or 22)
-            if not (remote_dir and remote_host):
-                raise RuntimeError("Managed remote terminal command dispatch requires a complete SSH profile")
-            dispatch_script = self._managed_tmux_command_shell(
-                session_name=tmux_session_name,
-                tmux_socket=tmux_socket,
-                working_dir=remote_dir,
-                command_args=helper_args,
-                environment=environment,
+            launch_id = str((spec.get("launch") or {}).get("launch_id") or "").strip()
+            if not launch_id:
+                synthetic_launch_id = f"dispatch-{hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:12]}"
+                spec["launch"] = {"launch_id": synthetic_launch_id}
+                launch_id = synthetic_launch_id
+            spec["launch_kind"] = "open_scoped_command"
+            spec_file = self._write_remote_launch_spec(spec=spec, launch_kind="open_scoped_command")
+            helper_path = self._resolve_terminal_helper("project-remote-launch.py")
+            unit_name = (
+                f"i3pm-remote-dispatch-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', str(spec.get('app_name') or 'cmd'))}"
+                f"-{os.getpid()}-{int(time.time())}"
             )
-            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
             result = subprocess.run(
                 [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=2",
-                    "-p",
-                    str(remote_port),
-                    destination,
-                    f"bash -lc {shlex.quote(dispatch_script)}",
+                    "systemd-run",
+                    "--user",
+                    "--quiet",
+                    "--collect",
+                    "--unit",
+                    unit_name,
+                    str(helper_path),
+                    str(spec_file),
                 ],
                 capture_output=True,
                 text=True,
@@ -8599,10 +8831,24 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             )
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or "").strip()
-                raise RuntimeError(f"Managed remote terminal command failed: {detail or 'tmux dispatch error'}")
+                self._write_launch_status(
+                    launch_id=launch_id,
+                    status="failed",
+                    spec=spec,
+                    error_code="remote_command_dispatch_start_failed",
+                    error_message=detail or "remote launcher dispatch error",
+                )
+                raise RuntimeError(f"Managed remote terminal command failed: {detail or 'remote launcher dispatch error'}")
+            self._write_launch_status(
+                launch_id=launch_id,
+                status="starting_remote_command",
+                spec=spec,
+            )
             return {
                 "success": True,
-                "reason": "ok",
+                "reason": "queued",
+                "launch_id": launch_id,
+                "unit_name": unit_name,
             }
 
         local_project_dir = str(spec.get("local_project_directory") or "").strip()
@@ -8687,6 +8933,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     raise RuntimeError("Expected kubeconfig not found after sync")
             environment["KUBECONFIG"] = str(kubeconfig_path)
 
+        launch_id = str((spec.get("launch") or {}).get("launch_id") or "").strip()
+
         if terminal_mode == "managed_project_terminal" and launch_transport == "local_helper":
             if not local_project_dir:
                 raise RuntimeError("Managed local terminal launch requires local_project_directory")
@@ -8699,8 +8947,20 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 )
             )
         elif terminal_mode == "managed_project_terminal" and launch_transport == "remote_helper":
-            helper_script = self._build_remote_terminal_helper_script(spec)
-            shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
+            spec["launch_kind"] = (
+                "attach_ai_session"
+                if bool((terminal_launch.get("remote_attach") or {}))
+                else "open_project_terminal"
+            )
+            spec_file = self._write_remote_launch_spec(spec=spec, launch_kind=str(spec.get("launch_kind") or "open_project_terminal"))
+            launch_script = self._resolve_terminal_helper("project-remote-launch.py")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), str(spec_file)]
+                )
+            )
         elif terminal_mode == "dedicated_scoped_window" and launch_transport == "local_helper":
             if not local_project_dir:
                 raise RuntimeError("Dedicated scoped terminal launch requires local_project_directory")
@@ -8713,8 +8973,16 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 )
             )
         elif terminal_mode == "dedicated_scoped_window" and launch_transport == "remote_helper":
-            helper_script = self._build_remote_terminal_helper_script(spec)
-            shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
+            spec["launch_kind"] = "open_project_terminal"
+            spec_file = self._write_remote_launch_spec(spec=spec, launch_kind="open_project_terminal")
+            launch_script = self._resolve_terminal_helper("project-remote-launch.py")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), str(spec_file)]
+                )
+            )
         elif terminal_mode == "scoped_terminal_command" and launch_transport == "local_helper":
             if not local_project_dir:
                 raise RuntimeError("Scoped local terminal launch requires local_project_directory")
@@ -8727,8 +8995,16 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 )
             )
         elif terminal_mode == "scoped_terminal_command" and launch_transport == "remote_helper":
-            helper_script = self._build_remote_terminal_helper_script(spec)
-            shell_command = f"exec {shlex.quote(command)} -e {shlex.quote(str(helper_script))}"
+            spec["launch_kind"] = "open_project_terminal"
+            spec_file = self._write_remote_launch_spec(spec=spec, launch_kind="open_project_terminal")
+            launch_script = self._resolve_terminal_helper("project-remote-launch.py")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), str(spec_file)]
+                )
+            )
         elif execution_mode == "ssh":
             raise RuntimeError("Remote project execution only supports daemon-managed terminal launches")
 
@@ -8763,11 +9039,28 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         result = subprocess.run(systemd_cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
+            if launch_id:
+                self._write_launch_status(
+                    launch_id=launch_id,
+                    status="failed",
+                    spec=spec,
+                    error_code="launch_start_failed",
+                    error_message=detail or "systemd-run error",
+                )
             raise RuntimeError(f"Detached launch failed: {detail or 'systemd-run error'}")
+
+        if launch_id:
+            self._write_launch_status(
+                launch_id=launch_id,
+                status="starting_terminal",
+                spec=spec,
+            )
 
         return {
             "success": True,
             "unit_name": unit_name,
+            "launch_id": launch_id,
+            "status": self._read_launch_status(launch_id) if launch_id else {},
         }
 
     async def _launch_open(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -8791,15 +9084,6 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 app_name="terminal",
                 terminal_role=str(spec.get("terminal_role") or "project-main").strip(),
             )
-            if (
-                existing_window is None
-                and str(spec.get("execution_mode") or "").strip().lower() == "ssh"
-                and str(spec.get("launch_transport") or "").strip() == "remote_helper"
-            ):
-                existing_window = await self._get_reusable_remote_project_bridge_window(
-                    project_name=str(spec.get("project_name") or "").strip(),
-                    connection_key=str(spec.get("connection_key") or "").strip(),
-                )
             if existing_window is not None:
                 self._dispatch_managed_terminal_command(spec)
                 focus_result = await self._window_focus({
@@ -13786,27 +14070,62 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         )
         if existing_window is not None:
             return existing_window, remote_terminal_role
+        return None, ""
 
-        # Prefer the canonical SSH project terminal if one already exists for
-        # the same context. That terminal should act as the local
-        # representation of the remote session instead of spawning a second
-        # remote-session bridge window.
-        project_main_window = await self._get_reusable_context_terminal_window(
-            project_name=project_name,
-            context_key=context_key,
-            execution_mode="ssh",
-            app_name="terminal",
-            terminal_role="project-main",
-        )
-        if project_main_window is None:
-            return None, ""
+    async def _launch_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return deterministic launch status for a registered launch id."""
+        launch_id = str(params.get("launch_id") or "").strip()
+        if not launch_id:
+            raise ValueError("launch_id is required")
+        status = self._read_launch_status(launch_id)
+        if not status:
+            return {
+                "success": False,
+                "launch_id": launch_id,
+                "status": "unknown",
+                "reason": "launch_not_found",
+            }
+        status["success"] = str(status.get("status") or "").strip() not in {"failed", "unknown"}
+        return status
 
-        existing_tmux_session = str(getattr(project_main_window, "tmux_session_name", "") or "").strip()
-        if existing_tmux_session and tmux_session_name and existing_tmux_session != tmux_session_name:
-            return None, ""
-        if self._remote_bridge_window_mismatch_reason(project_main_window, session):
-            return None, ""
-        return project_main_window, "project-main"
+    async def _wait_for_launch_status(
+        self,
+        launch_id: str,
+        *,
+        terminal_anchor_id: str = "",
+        attempts: int = 50,
+        delay_s: float = 0.2,
+    ) -> Dict[str, Any]:
+        """Poll persisted launch status until a deterministic terminal state is reached."""
+        current: Dict[str, Any] = {
+            "success": False,
+            "launch_id": str(launch_id or "").strip(),
+            "status": "unknown",
+            "reason": "launch_not_found",
+        }
+        anchor_bound = False
+        for attempt in range(max(int(attempts), 1)):
+            current = await self._launch_status({"launch_id": launch_id})
+            if terminal_anchor_id and not anchor_bound:
+                anchor_result = await self._get_terminal_anchor({"terminal_anchor_id": terminal_anchor_id})
+                anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
+            status_value = str(current.get("status") or "").strip()
+            if status_value == "failed":
+                current["success"] = False
+                current["reason"] = str(current.get("error_code") or "launch_failed")
+                current["anchor_bound"] = anchor_bound
+                return current
+            if status_value in {"running", "attaching_tmux"} and (not terminal_anchor_id or anchor_bound):
+                current["success"] = True
+                current["reason"] = "ok"
+                current["anchor_bound"] = anchor_bound
+                return current
+            if attempt + 1 < max(int(attempts), 1):
+                await asyncio.sleep(delay_s)
+        current["success"] = False
+        current["reason"] = "launch_status_timeout"
+        current["anchor_bound"] = anchor_bound
+        return current
 
     async def _wait_for_terminal_window(
         self,

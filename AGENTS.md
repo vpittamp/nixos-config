@@ -117,6 +117,11 @@ Implications:
 
 ## Recent System Updates (this cycle)
 
+- Remote project/session launch is now a deterministic control plane:
+  - daemon resolves exact launch specs and returns immediately
+  - packaged remote launcher helpers own SSH/tmux execution and launch status files
+  - `launch.status` reports `queued`/`starting_terminal`/`connecting_remote`/`attaching_tmux`/`running`/`failed`
+  - fallback reuse of drifted remote bridge windows and current-host SSH transport downgrades were removed
 - QuickShell runtime shell migrated to native multi-monitor rendering:
   - one top bar and one bottom bar per monitor via `Quickshell.screens`
   - one AI/session panel anchored to host-configured primary output

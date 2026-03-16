@@ -7,7 +7,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -33,22 +33,8 @@ IPCServer = ipc_server_module.IPCServer
 
 
 class DummyLaunchRegistry:
-    def __init__(self):
-        self._launches = {}
-
     def get_stats(self):
         return SimpleNamespace(total_pending=0)
-
-    async def add(self, launch):
-        launch_id = f"launch-{len(self._launches) + 1}"
-        self._launches[launch_id] = launch
-        return launch_id
-
-    async def get_by_terminal_anchor(self, terminal_anchor_id):
-        for launch in self._launches.values():
-            if str(getattr(launch, "terminal_anchor_id", "") or "").strip() == str(terminal_anchor_id or "").strip():
-                return launch
-        return None
 
 
 class DummyStateManager:
@@ -209,100 +195,6 @@ async def test_session_focus_window_only_identity_sets_override_before_wait(serv
 
 
 @pytest.mark.asyncio
-async def test_session_close_local_tmux_kills_tracked_pane(server):
-    local_session = {
-        "session_key": "session-local-pane",
-        "focus_connection_key": "local@thinkpad",
-        "connection_key": "local@thinkpad",
-        "source_is_current_host": True,
-        "tmux_session": "i3pm-local",
-        "tmux_window": "0:main",
-        "tmux_pane": "%7",
-        "terminal_context": {
-            "tmux_socket": "/tmp/tmux-local",
-        },
-    }
-    server._session_list = AsyncMock(return_value={"sessions": [dict(local_session)]})
-    server._kill_tmux_pane = Mock(return_value={"success": True, "reason": "ok", "stderr": ""})
-    server.notify_state_change = AsyncMock()
-    server._set_focus_overrides(session_key="session-local-pane", window_id=12, connection_key="local@thinkpad")
-    server._connection_target_is_current_host = lambda connection_key: connection_key == "local@thinkpad"
-
-    result = await server._session_close({"session_key": "session-local-pane"})
-
-    assert result["success"] is True
-    assert result["close_mode"] == "local_tmux_pane"
-    assert result["killed_tmux_pane"] == "%7"
-    server._kill_tmux_pane.assert_called_once_with(
-        execution_mode="local",
-        tmux_pane="%7",
-        remote_target="local@thinkpad",
-        connection_key="local@thinkpad",
-        tmux_socket="/tmp/tmux-local",
-    )
-    server.notify_state_change.assert_awaited_once_with("ai_session_close")
-    assert server._focus_session_override_key == ""
-
-
-@pytest.mark.asyncio
-async def test_session_close_remote_tmux_uses_source_connection_key(server):
-    remote_session = {
-        "session_key": "session-remote-pane",
-        "focus_connection_key": "vpittamp@ryzen:22",
-        "source_connection_key": "vpittamp@ryzen:22",
-        "connection_key": "local@ryzen",
-        "source_is_current_host": False,
-        "tmux_session": "i3pm-remote",
-        "tmux_window": "2:claude",
-        "tmux_pane": "%5",
-        "terminal_context": {
-            "tmux_socket": "/run/user/1000/tmux-1000/default",
-            "remote_target": "vpittamp@ryzen:22",
-        },
-    }
-    server._session_list = AsyncMock(return_value={"sessions": [dict(remote_session)]})
-    server._kill_tmux_pane = Mock(return_value={"success": True, "reason": "ok", "stderr": ""})
-    server.notify_state_change = AsyncMock()
-    server._connection_target_is_current_host = lambda _connection_key: False
-
-    result = await server._session_close({"session_key": "session-remote-pane"})
-
-    assert result["success"] is True
-    assert result["close_mode"] == "remote_tmux_pane"
-    server._kill_tmux_pane.assert_called_once_with(
-        execution_mode="ssh",
-        tmux_pane="%5",
-        remote_target="vpittamp@ryzen:22",
-        connection_key="vpittamp@ryzen:22",
-        tmux_socket="/run/user/1000/tmux-1000/default",
-    )
-    server.notify_state_change.assert_awaited_once_with("ai_session_close")
-
-
-@pytest.mark.asyncio
-async def test_session_close_falls_back_to_managed_window_when_tmux_identity_missing(server):
-    window_only_session = {
-        "session_key": "session-window-only",
-        "window_id": 44,
-        "bridge_window_id": 55,
-        "focus_connection_key": "local@thinkpad",
-        "connection_key": "local@thinkpad",
-        "terminal_context": {},
-    }
-    server._session_list = AsyncMock(return_value={"sessions": [dict(window_only_session)]})
-    server._close_managed_window = AsyncMock(return_value=True)
-    server.notify_state_change = AsyncMock()
-
-    result = await server._session_close({"session_key": "session-window-only"})
-
-    assert result["success"] is True
-    assert result["close_mode"] == "local_window_fallback"
-    assert result["closed_window_id"] == 55
-    server._close_managed_window.assert_awaited_once_with(55)
-    server.notify_state_change.assert_awaited_once_with("ai_session_close")
-
-
-@pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
     server._connection_target_is_current_host = lambda _connection_key: False
     monkeypatch.setattr(server, "_remote_daemon_request", lambda **_kwargs: {
@@ -365,11 +257,6 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
     assert result["target_variant"] == "ssh"
     assert result["verification"]["success"] is True
     assert result["focused_window_id_after"] == 30
-    server._switch_runtime_context_if_needed.assert_awaited_once_with(
-        "vpittamp/nixos-config:main",
-        "",
-        "",
-    )
 
 
 @pytest.mark.asyncio
@@ -403,11 +290,6 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
     assert result["success"] is True
     assert result["target_variant"] == "ssh"
     assert result["verification"]["success"] is True
-    server._switch_runtime_context_if_needed.assert_awaited_once_with(
-        "PittampalliOrg/stacks:main",
-        "",
-        "",
-    )
     assert result["focused_window_id_after"] == 175
 
 
@@ -487,7 +369,17 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
             "focused_window_id": 20,
         },
     })
-    server._wait_for_launch_status = AsyncMock(side_effect=AssertionError("should not wait"))
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%11",
+        "tmux_pane": "%11",
+    }
     server._wait_for_session_focus = AsyncMock(return_value={"success": False, "reason": "should_not_run"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
@@ -501,12 +393,12 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
     )
 
     assert result["success"] is True
-    assert result["verification"]["verification_source"] == "remote_launcher"
+    assert result["verification"]["verification_source"] == "tmux"
     assert result["verification"]["success"] is True
     assert result["current_ai_session_key_after"] == "session-remote-pane"
     assert result["focus"]["current_ai_session_key_after"] == "session-remote-pane"
     assert result["focus"]["focus_state_after"]["current_ai_session_key"] == "session-remote-pane"
-    assert result["launch_status"]["status"] == "reused_existing"
+    assert result["tmux_select"]["success"] is True
     assert server._focus_session_override_key == "session-remote-pane"
     assert server._focus_window_override["window_id"] == 20
     server._wait_for_session_focus.assert_not_awaited()
@@ -550,7 +442,6 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server._execute_launch_spec = lambda _spec: {"success": True}
     server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
-    server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "session-stale",
@@ -561,6 +452,17 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
             "focused_window_id": 44,
         },
     })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%11",
+        "tmux_pane": "%11",
+    }
     server._focus_state = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key": "session-remote-pane",
@@ -574,14 +476,13 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
 
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is False
-    assert result["launch_status"]["status"] == "attaching_tmux"
     server._close_managed_window.assert_awaited_once_with(20)
     server.state_manager.remove_window.assert_awaited_once_with(20)
     server._register_launch_for_spec.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_focus_remote_session_attach_launches_new_exact_bridge_when_project_main_exists(server):
+async def test_focus_remote_session_attach_reuses_project_main_terminal_before_bridge(server):
     remote_session = {
         "session_key": "session-remote-pane",
         "surface_key": "surface-remote-pane",
@@ -610,13 +511,11 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
         "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
-        "terminal_anchor_id": "bridge-anchor",
     })
-    server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
-    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server._execute_launch_spec = lambda _spec: {"success": True}
-    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
-    server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
+    server._get_reusable_context_terminal_window = AsyncMock(side_effect=[
+        None,
+        SimpleNamespace(window_id=44, terminal_role="project-main", tmux_session_name="i3pm-vpittamp-t3code-main-f7056320"),
+    ])
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "",
@@ -627,11 +526,24 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
             "focused_window_id": 44,
         },
     })
+    server._select_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "stderr": "",
+    }
+    server._verify_tmux_target = lambda **_kwargs: {
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%3",
+        "tmux_pane": "%3",
+    }
     server._focus_state = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key": "session-remote-pane",
         "focused_window_id": 44,
     })
+    server._register_launch_for_spec = AsyncMock(side_effect=AssertionError("unexpected launch"))
+    server._execute_launch_spec = lambda _spec: (_ for _ in ()).throw(AssertionError("unexpected execute"))
 
     result = await server._focus_remote_session_attach(
         session_key="session-remote-pane",
@@ -640,8 +552,8 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
 
     assert result["success"] is True
     assert result["window_id"] == 44
-    assert result["launch"]["reused_existing"] is False
-    assert result["launch_status"]["status"] == "attaching_tmux"
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["reused_terminal_role"] == "project-main"
 
 
 @pytest.mark.asyncio

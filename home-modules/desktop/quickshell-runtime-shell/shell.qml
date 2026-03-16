@@ -102,6 +102,10 @@ ShellRoot {
     property var expandedSessionGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
+    property var sessionClosePendingMap: ({})
+    property string sessionCloseProcessTargetKey: ""
+    property string sessionCloseProcessStdout: ""
+    property string sessionCloseProcessStderr: ""
     property string sessionPreviewTargetKey: ""
     property bool sessionPreviewStopExpected: false
     property bool sessionPreviewAutoFollow: true
@@ -5447,8 +5451,67 @@ ShellRoot {
         return 0;
     }
 
+    function sessionCloseKey(session) {
+        return stringOrEmpty(session && session.session_key);
+    }
+
+    function sessionHasTmuxCloseTarget(session) {
+        const terminalContext = (session && session.terminal_context) || {};
+        const tmuxSession = stringOrEmpty(session && session.tmux_session) || stringOrEmpty(terminalContext.tmux_session);
+        const tmuxPane = stringOrEmpty(session && session.tmux_pane) || stringOrEmpty(terminalContext.tmux_pane);
+        return tmuxSession !== "" && tmuxPane !== "";
+    }
+
+    function markSessionClosePending(sessionKey) {
+        const key = stringOrEmpty(sessionKey);
+        if (!key) {
+            return;
+        }
+        const next = Object.assign({}, sessionClosePendingMap);
+        next[key] = Date.now();
+        sessionClosePendingMap = next;
+    }
+
+    function clearSessionClosePending(sessionKey) {
+        const key = stringOrEmpty(sessionKey);
+        if (!key || !Object.prototype.hasOwnProperty.call(sessionClosePendingMap, key)) {
+            return;
+        }
+        const next = Object.assign({}, sessionClosePendingMap);
+        delete next[key];
+        sessionClosePendingMap = next;
+    }
+
+    function sessionClosePending(session) {
+        const key = sessionCloseKey(session);
+        return key !== "" && Object.prototype.hasOwnProperty.call(sessionClosePendingMap, key);
+    }
+
+    function pruneSessionClosePending() {
+        const next = {};
+        const now = Date.now();
+        const liveKeys = {};
+        const sessions = activeSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            const sessionKey = sessionCloseKey(sessions[i]);
+            if (sessionKey) {
+                liveKeys[sessionKey] = true;
+            }
+        }
+        for (const key in sessionClosePendingMap) {
+            if (!Object.prototype.hasOwnProperty.call(sessionClosePendingMap, key)) {
+                continue;
+            }
+            const startedAt = Number(sessionClosePendingMap[key] || 0);
+            if (liveKeys[key] && now - startedAt < 15000) {
+                next[key] = startedAt;
+            }
+        }
+        sessionClosePendingMap = next;
+    }
+
     function sessionHasClosableSurface(session) {
-        return sessionClosableWindowId(session) > 0;
+        return sessionHasTmuxCloseTarget(session) || sessionClosableWindowId(session) > 0;
     }
 
     function closeSession(session) {
@@ -5456,9 +5519,30 @@ ShellRoot {
             return;
         }
 
+        const sessionKey = sessionCloseKey(session);
+        if (sessionClosePending(session)) {
+            return;
+        }
+
+        if (sessionHasTmuxCloseTarget(session) && sessionKey) {
+            if (sessionCloseProcess.running) {
+                return;
+            }
+            markSessionClosePending(sessionKey);
+            sessionCloseProcessTargetKey = sessionKey;
+            sessionCloseProcessStdout = "";
+            sessionCloseProcessStderr = "";
+            sessionCloseProcess.command = [shellConfig.i3pmBin, "session", "close", sessionKey, "--json"];
+            sessionCloseProcess.running = true;
+            return;
+        }
+
         const windowId = sessionClosableWindowId(session);
         if (!windowId) {
             return;
+        }
+        if (sessionKey) {
+            markSessionClosePending(sessionKey);
         }
 
         closeWindow({
@@ -5618,6 +5702,7 @@ ShellRoot {
 
         try {
             dashboard = JSON.parse(raw);
+            pruneSessionClosePending();
             const current = stringOrEmpty(dashboard.current_ai_session_key);
             if (current) {
                 selectedSessionKey = current;
@@ -5995,6 +6080,57 @@ ShellRoot {
                 });
             }
         }
+    }
+
+    Process {
+        id: sessionCloseProcess
+        command: [shellConfig.i3pmBin, "session", "close", "", "--json"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                root.sessionCloseProcessStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                root.sessionCloseProcessStderr += message + "\n";
+                console.warn("session.close:", message);
+            }
+        }
+        onExited: function () {
+            const targetKey = root.stringOrEmpty(root.sessionCloseProcessTargetKey);
+            let success = false;
+            const raw = root.stringOrEmpty(root.sessionCloseProcessStdout).trim();
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    success = !!(parsed && parsed.success);
+                } catch (error) {
+                    console.warn("session.close.parse:", raw, error);
+                }
+            }
+            if (!success) {
+                root.clearSessionClosePending(targetKey);
+            }
+            root.sessionCloseProcessTargetKey = "";
+            root.sessionCloseProcessStdout = "";
+            root.sessionCloseProcessStderr = "";
+            root.pruneSessionClosePending();
+        }
+    }
+
+    Timer {
+        id: sessionClosePendingPruneTimer
+        interval: 1500
+        repeat: true
+        running: true
+        onTriggered: root.pruneSessionClosePending()
     }
 
     IpcHandler {
@@ -9957,6 +10093,7 @@ ShellRoot {
                                                         compact: true
                                                         showHostToken: false
                                                         showProjectChip: false
+                                                        closePending: root.sessionClosePending(modelData)
                                                         onClicked: root.focusSession(modelData)
                                                         onCloseRequested: root.closeSession(modelData)
                                                         }

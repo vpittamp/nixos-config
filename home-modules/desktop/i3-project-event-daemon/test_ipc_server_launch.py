@@ -41,22 +41,8 @@ QUALIFIED_NAME = "vpittamp/nixos-config:main"
 
 
 class DummyLaunchRegistry:
-    def __init__(self):
-        self._launches = {}
-
     def get_stats(self):
         return SimpleNamespace(total_pending=0)
-
-    async def add(self, launch):
-        launch_id = f"launch-{len(self._launches) + 1}"
-        self._launches[launch_id] = launch
-        return launch_id
-
-    async def get_by_terminal_anchor(self, terminal_anchor_id):
-        for launch in self._launches.values():
-            if str(getattr(launch, "terminal_anchor_id", "") or "").strip() == str(terminal_anchor_id or "").strip():
-                return launch
-        return None
 
 
 class DummyStateManager:
@@ -241,14 +227,14 @@ async def test_prepare_launch_terminal_ssh_uses_managed_tmux(server_ssh):
 
 
 @pytest.mark.asyncio
-async def test_prepare_launch_terminal_ssh_current_host_uses_remote_transport(server_ssh_current_host):
+async def test_prepare_launch_terminal_ssh_current_host_uses_local_transport(server_ssh_current_host):
     spec = await server_ssh_current_host._prepare_launch({"app_name": "terminal", "register_launch": False})
 
     assert spec["execution_mode"] == "ssh"
-    assert spec["launch_strategy"] == "managed_remote_terminal"
-    assert spec["launch_transport"] == "remote_helper"
+    assert spec["launch_strategy"] == "managed_local_terminal"
+    assert spec["launch_transport"] == "local_helper"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
-    assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
+    assert "remote" not in spec["terminal_launch"]
     assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@ryzen:22"
     assert spec["environment"]["I3PM_CONTEXT_VARIANT"] == "ssh"
 
@@ -305,14 +291,14 @@ async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(serve
 
 
 @pytest.mark.asyncio
-async def test_prepare_launch_yazi_ssh_current_host_uses_remote_scoped_window(server_ssh_current_host):
+async def test_prepare_launch_yazi_ssh_current_host_uses_local_scoped_window(server_ssh_current_host):
     spec = await server_ssh_current_host._prepare_launch({"app_name": "yazi", "register_launch": False})
 
     assert spec["execution_mode"] == "ssh"
-    assert spec["launch_strategy"] == "dedicated_remote_scoped_window"
-    assert spec["launch_transport"] == "remote_helper"
+    assert spec["launch_strategy"] == "dedicated_local_scoped_window"
+    assert spec["launch_transport"] == "local_helper"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
-    assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
+    assert "remote" not in spec["terminal_launch"]
 
 
 @pytest.mark.asyncio
@@ -473,7 +459,7 @@ def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_
     assert "cd " not in content
 
 
-def test_build_remote_helper_script_allows_current_host_ssh_launch(server_ssh_current_host):
+def test_build_remote_helper_script_rejects_current_host_ssh_launch(server_ssh_current_host):
     spec = {
         "execution_mode": "ssh",
         "connection_key": "vpittamp@ryzen:22",
@@ -494,14 +480,8 @@ def test_build_remote_helper_script_allows_current_host_ssh_launch(server_ssh_cu
         },
     }
 
-    helper_path = server_ssh_current_host._build_remote_terminal_helper_script(spec)
-    try:
-        content = helper_path.read_text()
-    finally:
-        helper_path.unlink(missing_ok=True)
-
-    assert "vpittamp@ryzen" in content
-    assert "project-terminal-launch.sh" in content
+    with pytest.raises(RuntimeError, match="current-host or local launch contexts"):
+        server_ssh_current_host._build_remote_terminal_helper_script(spec)
 
 
 def test_managed_tmux_command_shell_uses_canonical_socket(server_local):
@@ -682,7 +662,7 @@ async def test_launch_open_reuses_existing_terminal_for_scoped_terminal_command(
 
 
 @pytest.mark.asyncio
-async def test_launch_open_does_not_reuse_remote_bridge_when_context_mark_drifted(server_ssh):
+async def test_launch_open_reuses_attached_remote_bridge_when_context_mark_drifted(server_ssh):
     spec = {
         "app_name": "terminal",
         "project_name": QUALIFIED_NAME,
@@ -701,13 +681,28 @@ async def test_launch_open_does_not_reuse_remote_bridge_when_context_mark_drifte
     }
     server_ssh._prepare_launch = AsyncMock(return_value=spec)
     server_ssh._get_reusable_context_terminal_window = AsyncMock(return_value=None)
-    server_ssh._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server_ssh._execute_launch_spec = MagicMock(return_value={"success": True, "launch_id": "launch-1"})
+    server_ssh._load_reconciled_session_runtime = AsyncMock(return_value=(
+        {"outputs": []},
+        [{
+            "project_name": QUALIFIED_NAME,
+            "connection_key": "local@ryzen",
+            "focus_connection_key": "vpittamp@ryzen:22",
+            "context_key": f"{QUALIFIED_NAME}::local::local@ryzen",
+            "focus_execution_mode": "ssh",
+            "availability_state": "attached_here",
+            "bridge_window_id": 14,
+        }],
+        {},
+    ))
+    server_ssh._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=14))
+    server_ssh._dispatch_managed_terminal_command = MagicMock()
+    server_ssh._window_focus = AsyncMock(return_value={"success": True, "window_id": 14})
 
     result = await server_ssh._launch_open({"app_name": "terminal"})
 
-    server_ssh._register_launch_for_spec.assert_awaited_once()
-    server_ssh._execute_launch_spec.assert_called_once_with(spec)
+    server_ssh._dispatch_managed_terminal_command.assert_called_once_with(spec)
+    server_ssh._window_focus.assert_awaited_once()
     assert result["success"] is True
-    assert result["launch"]["success"] is True
-    assert result["spec"]["launch_strategy"] is None
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["window_id"] == 14
+    assert result["spec"]["launch_strategy"] == "focus_existing_terminal"

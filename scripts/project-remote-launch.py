@@ -82,7 +82,7 @@ def build_remote_attach_script(spec: dict, remote_dir: str) -> str:
     return "\n".join(script_lines)
 
 
-def build_remote_interactive_invocation(spec: dict) -> tuple[list[str], str]:
+def build_remote_interactive_invocation(spec: dict) -> tuple[list[str], list[str]]:
     terminal_launch = spec.get("terminal_launch") or {}
     if not isinstance(terminal_launch, dict):
         terminal_launch = {}
@@ -110,7 +110,8 @@ def build_remote_interactive_invocation(spec: dict) -> tuple[list[str], str]:
         return (
             ["ssh", "-tt", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p", str(remote_port), destination,
              "bash", "-lc", attach_script],
-            preflight_script,
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p", str(remote_port), destination,
+             "bash", "-lc", preflight_script],
         )
 
     remote_command = env_prefix + [helper_name, remote_dir, *helper_args]
@@ -121,7 +122,8 @@ def build_remote_interactive_invocation(spec: dict) -> tuple[list[str], str]:
     return (
         ["ssh", "-tt", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p", str(remote_port), destination,
          shell_join(remote_command)],
-        remote_script,
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p", str(remote_port), destination,
+         "bash", "-lc", remote_script],
     )
 
 
@@ -203,8 +205,7 @@ def main() -> int:
             return 0
 
         write_status(spec, status="connecting_remote")
-        command, preflight_script = build_remote_interactive_invocation(spec)
-        preflight_command = command[:-2] + ["bash", "-lc", preflight_script]
+        command, preflight_command = build_remote_interactive_invocation(spec)
         preflight_result = subprocess.run(preflight_command, check=False, text=True, capture_output=True)
         if preflight_result.returncode != 0:
             return fail_with_prompt(

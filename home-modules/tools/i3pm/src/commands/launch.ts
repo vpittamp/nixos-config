@@ -8,7 +8,8 @@ interface CommandOptions {
 
 function showHelp(): void {
   console.log(
-    `i3pm launch <open|preview> <app_name> [--local|--variant <local|ssh>] [--project <qualified_name>] [--json]`,
+    `i3pm launch <open|preview> <app_name> [--local|--variant <local|ssh>] [--project <qualified_name>] [--json]\n` +
+      `i3pm launch status <launch_id> [--json]`,
   );
 }
 
@@ -24,6 +25,21 @@ export async function launchCommand(args: string[], _flags: CommandOptions): Pro
     showHelp();
     return 0;
   }
+  if (subcommand === "status") {
+    if (!appName) {
+      console.error("launch status requires a launch id");
+      return 1;
+    }
+    const client = new DaemonClient();
+    try {
+      const result = await client.request("launch.status", { launch_id: appName });
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    } finally {
+      client.disconnect();
+    }
+  }
+
   if (!appName) {
     console.error("launch requires an app name");
     return 1;

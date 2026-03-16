@@ -127,8 +127,8 @@ in
       set -g renumber-windows on
       set -g pane-border-lines heavy  # Thicker lines create more spacing
       set -g pane-border-status top  # Add padding line at top of each pane
-      # SSH/local-aware pane title strip sourced from focused pane runtime context.
-      set -g pane-border-format "#(${i3pmProjectBadgeScript} --tmux-pane --source hybrid --pane-id '#{pane_id}' --pane-pid '#{pane_pid}' --max-len 32)"
+      # Keep pane borders quiet now that window tabs carry the cross-window pane identifier.
+      set -g pane-border-format "#[fg=#7f849c]#(${i3pmProjectBadgeScript} --plain --source hybrid --pane-id '#{pane_id}' --pane-pid '#{pane_pid}' --max-len 32)#[default]"
 
       # Catppuccin Mocha theme - completely invisible borders with padding
       # Both active and inactive borders match their respective backgrounds
@@ -157,15 +157,16 @@ in
       set -g status-left-length 24
       set -g status-right-length 120
 
-      # Status left keeps only live tmux mode indicators; contextual identity lives on the right.
+      # Status left keeps only live tmux mode indicators.
       set -g status-left "#{?pane_in_mode,#[fg=#11111b bg=#89b4fa bold] COPY ,#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,#[fg=#11111b bg=#a6e3a1 bold] TMUX }}#{?window_zoomed_flag,#[fg=#11111b bg=#f9e2af bold] ZOOM ,}#[default]"
 
-      # Status right uses the shared pane-context helper plus live tmux window identity and time.
-      set -g status-right "#(${i3pmProjectBadgeScript} --tmux --source hybrid --pane-id '#{pane_id}' --pane-pid '#{pane_pid}' --max-len 36)#[fg=#bac2de bg=#313244] #I:#W #[fg=#cdd6f4 bg=#313244] %H:%M #[default]"
+      # Status right is intentionally muted: project context plus time, no pane/window identifier duplication.
+      set -g status-right "#[fg=#7f849c]#(${i3pmProjectBadgeScript} --plain --source hybrid --pane-id '#{pane_id}' --pane-pid '#{pane_pid}' --max-len 28) #[fg=#9399b2]%H:%M#[default]"
 
-      # Window status - inactive in muted colors, active in blue
-      set -g window-status-format "#[fg=#a6adc8] #I:#W "
-      set -g window-status-current-format "#[fg=#11111b bg=#89b4fa bold] #I:#W #[default]"  # Catppuccin Blue
+      # Window status - include host/pane labels like T%5 or R%11 for cross-window targeting.
+      set -g @window-pane-host-label "#{?#{==:#{host_short},thinkpad},T,#{?#{==:#{host_short},ryzen},R,#{=1:host_short}}}"
+      set -g window-status-format "#[fg=#a6adc8] #I:#W #[fg=#89b4fa,bold]#{E:@window-pane-host-label}#{pane_id}#[default] "
+      set -g window-status-current-format "#[fg=#a6adc8] #I:#W #[fg=#11111b,bg=#cdd6f4,bold]#{E:@window-pane-host-label}#{pane_id}#[default] "  # Only the identifier is highlighted; selected window gets stronger emphasis
       set -g window-status-separator ""
 
       # Message styling - Catppuccin Yellow for warnings/messages
