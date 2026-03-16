@@ -16,7 +16,9 @@ Rectangle {
     property bool showHostToken: true
     property bool showProjectChip: true
     property bool showCurrentChip: true
+    property bool showCloseAction: interactive
     signal clicked
+    signal closeRequested
 
     readonly property bool effectiveHovered: interactive ? sessionRowMouse.containsMouse : hovered
     readonly property string primaryLabel: rootObject.sessionPrimaryLabel(session)
@@ -25,6 +27,7 @@ Rectangle {
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
     readonly property string projectLabel: rootObject.stringOrEmpty(session && (session.project_label || rootObject.shortProject(rootObject.stringOrEmpty(session.project_name || session.project || "global"))))
+    readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     property bool hasMotion: rootObject.sessionHasMotion(session)
     readonly property int rowHeight: compact ? 48 : 62
     readonly property int railHeight: compact ? (selected ? 30 : (effectiveHovered ? 26 : 22)) : (selected ? 38 : (effectiveHovered ? 32 : 28))
@@ -333,10 +336,41 @@ Rectangle {
                 }
             }
         }
+
+        Rectangle {
+            visible: closableSurface
+            z: 2
+            width: 18
+            height: 18
+            radius: 6
+            color: closeMouse.containsMouse ? colorsObject.redBg : colorsObject.bg
+            border.color: "transparent"
+            border.width: 0
+
+            Text {
+                anchors.centerIn: parent
+                text: "×"
+                color: closeMouse.containsMouse ? colorsObject.red : (selected ? colorsObject.muted : colorsObject.subtle)
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+            }
+
+            MouseArea {
+                id: closeMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    mouse.accepted = true;
+                    sessionRow.closeRequested();
+                }
+            }
+        }
     }
 
     MouseArea {
         id: sessionRowMouse
+        z: 0
         anchors.fill: parent
         enabled: interactive
         hoverEnabled: interactive

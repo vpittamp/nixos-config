@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "shell.qml"
+SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
 
 
 def test_session_phase_prioritizes_review_and_unread_output():
@@ -68,6 +69,29 @@ def test_grouped_session_pills_focus_by_session_key():
     assert "const resolvedSessionKey = stringOrEmpty(sessionData && sessionData.session_key) || stringOrEmpty(sessionKey);" in text
     assert "root.focusSession(session);" in text
     assert "readonly property string activityLabel: sessionEntry ? root.sessionBadgeLabel(entry) : \"\"" in text
+
+
+def test_side_panel_sessions_close_local_surface_only():
+    """Session rows should close the local bound window/bridge, not kill tmux sessions directly."""
+    text = SHELL_QML.read_text()
+    assert "function sessionClosableWindowId(session)" in text
+    assert "const bridgeWindowId = Number(session && session.bridge_window_id || 0);" in text
+    assert "function sessionHasClosableSurface(session)" in text
+    assert "function closeSession(session)" in text
+    assert "closeWindow({" in text
+    assert "project: stringOrEmpty(session.project_name || session.project)" in text
+    assert "execution_mode: stringOrEmpty(session.execution_mode || session.focus_execution_mode)" in text
+    assert "onCloseRequested: root.closeSession(modelData)" in text
+
+    row_text = SESSION_ROW_QML.read_text()
+    assert "property bool showCloseAction: interactive" in row_text
+    assert "readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)" in row_text
+    assert "signal closeRequested" in row_text
+    assert "visible: closableSurface" in row_text
+    assert "z: 2" in row_text
+    assert "sessionRow.closeRequested();" in row_text
+    assert "id: sessionRowMouse" in row_text
+    assert "z: 0" in row_text
 
 
 def test_session_titles_prefer_host_prefixed_tmux_alias_with_preview_support():

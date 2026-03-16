@@ -5433,6 +5433,43 @@ ShellRoot {
         runFocusTarget(target);
     }
 
+    function sessionClosableWindowId(session) {
+        const bridgeWindowId = Number(session && session.bridge_window_id || 0);
+        if (bridgeWindowId > 0) {
+            return bridgeWindowId;
+        }
+
+        const windowId = Number(session && session.window_id || 0);
+        if (windowId > 0) {
+            return windowId;
+        }
+
+        return 0;
+    }
+
+    function sessionHasClosableSurface(session) {
+        return sessionClosableWindowId(session) > 0;
+    }
+
+    function closeSession(session) {
+        if (!session) {
+            return;
+        }
+
+        const windowId = sessionClosableWindowId(session);
+        if (!windowId) {
+            return;
+        }
+
+        closeWindow({
+            id: windowId,
+            window_id: windowId,
+            project: stringOrEmpty(session.project_name || session.project),
+            execution_mode: stringOrEmpty(session.execution_mode || session.focus_execution_mode),
+            connection_key: stringOrEmpty(session.connection_key || session.focus_connection_key),
+        });
+    }
+
     function activateWorkspace(workspace) {
         if (!workspace) {
             return;
@@ -9921,6 +9958,7 @@ ShellRoot {
                                                         showHostToken: false
                                                         showProjectChip: false
                                                         onClicked: root.focusSession(modelData)
+                                                        onCloseRequested: root.closeSession(modelData)
                                                         }
                                                     }
                                                 }

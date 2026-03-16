@@ -38,11 +38,12 @@ export async function windowCommand(args: string[], _flags: CommandOptions): Pro
         connection_key: parsed["connection-key"] || "",
       });
     } else if (subcommand === "action") {
-      const action = String(parsed._[2] || "");
-      if (!action) {
+      const requestedAction = String(parsed._[2] || "");
+      if (!requestedAction) {
         console.error("window action requires an action name");
         return 1;
       }
+      const action = requestedAction === "close" ? "kill" : requestedAction;
       result = await client.request("window.action", {
         window_id: windowId,
         action,
