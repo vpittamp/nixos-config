@@ -223,7 +223,6 @@ async def test_resolve_window_context_prefers_tmux_anchor_over_stale_process_env
     assert window_id == 5
     assert project == "vpittamp/nixos-config:main"
     assert terminal_context["terminal_anchor_id"] == "terminal-vpittamp/nixos-config:main-fresh"
-    assert terminal_context["source_terminal_anchor_id"] == "terminal-vpittamp/nixos-config:main-stale"
     assert terminal_context["binding_anchor_id"] == "terminal-vpittamp/nixos-config:main-fresh"
     assert terminal_context["binding_state"] == "rebound_local"
     assert terminal_context["binding_source"] == "tmux_metadata"
@@ -318,7 +317,7 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     session_list, _ = tracker._build_session_list_unlocked()
 
     assert len(session_list.sessions) == 1
-    assert session_list.schema_version == "9"
+    assert session_list.schema_version == "10"
     assert session_list.sessions[0].session_id == "codex:pid:706991"
     assert session_list.sessions[0].identity_confidence == IdentityConfidence.PID
     assert session_list.sessions[0].project == "vpittamp/nixos-config:main"

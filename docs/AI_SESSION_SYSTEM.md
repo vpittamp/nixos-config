@@ -86,8 +86,8 @@ Rules:
 - `pid` is the preferred process identity for the actual AI process.
 - `pane_pid` is only the tmux pane shell anchor and is diagnostic.
 - when tmux identity exists, `surface_key` and native collision handling must not depend on `terminal_anchor_id`
-- `terminal_anchor_id` remains a compatibility/debug field and should resolve to the effective current binding when one exists
-- sessions without tmux/anchor identity are intentionally not first-class in the panel model.
+- `terminal_anchor_id` is the current binding anchor for the pane, not a durable identity key
+- sessions without full tmux pane identity are unsupported and dropped
 
 ## Host Model
 

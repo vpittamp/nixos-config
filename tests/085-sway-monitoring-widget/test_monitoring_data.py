@@ -571,7 +571,7 @@ class TestQueryMonitoringData:
             ]
         }
         otel_payload = {
-            "schema_version": "4",
+            "schema_version": "10",
             "sessions": [
                 {
                     "tool": "codex",
@@ -672,7 +672,7 @@ class TestQueryMonitoringData:
             ]
         }
         otel_payload = {
-            "schema_version": "4",
+            "schema_version": "10",
             "sessions": [
                 {
                     "tool": "codex",
@@ -791,7 +791,7 @@ class TestQueryMonitoringData:
             ]
         }
         otel_payload = {
-            "schema_version": "4",
+            "schema_version": "10",
             "sessions": [
                 {
                     "tool": "codex",
@@ -893,7 +893,7 @@ class TestQueryMonitoringData:
         }
 
         local_otel_payload = {
-            "schema_version": "4",
+            "schema_version": "10",
             "sessions": [],
             "has_working": False,
             "timestamp": 0,
@@ -911,10 +911,10 @@ class TestQueryMonitoringData:
                     "source_boot_id": "boot-1",
                     "sequence": 12,
                     "payload_hash": "hash-1",
-                    "session_schema_version": "4",
+                    "session_schema_version": "10",
                     "updated_at": "2026-02-23T18:40:00+00:00",
                     "sent_at": "2026-02-23T18:40:00+00:00",
-                    "received_at": 1898116800.0,
+                    "received_at": time.time(),
                     "timestamp": 0,
                     "has_working": True,
                     "sessions": [
@@ -944,7 +944,7 @@ class TestQueryMonitoringData:
                                 "tmux_pane": "%37",
                                 "host_name": "ryzen",
                             },
-                            "updated_at": "2026-02-23T18:40:00+00:00",
+                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
                         }
                     ],
                 }
@@ -1060,7 +1060,7 @@ class TestQueryMonitoringData:
         }
 
         local_otel_payload = {
-            "schema_version": "4",
+            "schema_version": "10",
             "sessions": [],
             "has_working": False,
             "timestamp": 0,
@@ -1078,10 +1078,10 @@ class TestQueryMonitoringData:
                     "source_boot_id": "boot-2",
                     "sequence": 42,
                     "payload_hash": "hash-2",
-                    "session_schema_version": "4",
+                    "session_schema_version": "10",
                     "updated_at": "2026-02-23T19:10:00+00:00",
                     "sent_at": "2026-02-23T19:10:00+00:00",
-                    "received_at": 1898117400.0,
+                    "received_at": time.time(),
                     "timestamp": 0,
                     "has_working": True,
                     "sessions": [
@@ -1111,7 +1111,7 @@ class TestQueryMonitoringData:
                                 "connection_key": "vpittamp@ryzen:22",
                                 "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
                             },
-                            "updated_at": "2026-02-23T19:10:00+00:00",
+                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
                         }
                     ],
                 }
@@ -1195,7 +1195,7 @@ class TestQueryMonitoringData:
         }
 
         local_otel_payload = {
-            "schema_version": "4",
+            "schema_version": "10",
             "sessions": [],
             "has_working": False,
             "timestamp": 0,
@@ -1213,10 +1213,10 @@ class TestQueryMonitoringData:
                     "source_boot_id": "boot-3",
                     "sequence": 43,
                     "payload_hash": "hash-3",
-                    "session_schema_version": "4",
+                    "session_schema_version": "10",
                     "updated_at": "2026-02-23T19:20:00+00:00",
                     "sent_at": "2026-02-23T19:20:00+00:00",
-                    "received_at": 1898118000.0,
+                    "received_at": time.time(),
                     "timestamp": 0,
                     "has_working": True,
                     "sessions": [
@@ -1246,7 +1246,7 @@ class TestQueryMonitoringData:
                                 "connection_key": "vpittamp@ryzen:22",
                                 "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
                             },
-                            "updated_at": "2026-02-23T19:20:00+00:00",
+                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
                         }
                     ],
                 }
@@ -1674,6 +1674,7 @@ class TestQueryMonitoringData:
                 "vpittamp@ryzen:22": {
                     "connection_key": "vpittamp@ryzen:22",
                     "host_name": "ryzen",
+                    "session_schema_version": "10",
                     "received_at": time.time() - 120.0,
                     "sessions": [
                         {
@@ -1684,6 +1685,8 @@ class TestQueryMonitoringData:
                             "terminal_anchor_id": "anchor-stale",
                             "terminal_context": {
                                 "terminal_anchor_id": "anchor-stale",
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "1:main",
                                 "tmux_pane": "%12",
                             },
                             "updated_at": "2026-02-23T19:00:00+00:00",
@@ -1712,6 +1715,7 @@ class TestQueryMonitoringData:
                 "vpittamp@ryzen:22": {
                     "connection_key": "vpittamp@ryzen:22",
                     "host_name": "ryzen",
+                    "session_schema_version": "10",
                     "received_at": time.time(),
                     "sessions": [
                         {
@@ -1722,6 +1726,8 @@ class TestQueryMonitoringData:
                             "terminal_anchor_id": "anchor-fresh",
                             "terminal_context": {
                                 "terminal_anchor_id": "anchor-fresh",
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "1:main",
                                 "tmux_pane": "%17",
                             },
                             "updated_at": "2026-02-23T19:02:00+00:00",
@@ -2845,9 +2851,9 @@ class TestAiReviewLifecycle:
                 "terminal_context": {
                     "terminal_anchor_id": "anchor-stacks",
                     "window_id": 168,
-                    "tmux_session": "",
-                    "tmux_window": "",
-                    "tmux_pane": "",
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "0:main",
+                    "tmux_pane": "%7",
                     "pty": "/dev/pts/7",
                 },
                 "updated_at": "2026-03-06T18:19:45+00:00",
@@ -3162,7 +3168,7 @@ class TestAiReviewLifecycle:
             "total_windows": 2,
         }
         local_otel_payload = {
-            "schema_version": "5",
+            "schema_version": "10",
             "sessions": [
                 {
                     "tool": "codex",
@@ -3189,7 +3195,7 @@ class TestAiReviewLifecycle:
                         "connection_key": "local@ryzen",
                         "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
                     },
-                    "updated_at": "2026-03-06T19:22:03.457634+00:00",
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
                 }
             ],
         }

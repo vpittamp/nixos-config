@@ -807,7 +807,6 @@ class SessionTracker:
 
         for key in (
             "terminal_anchor_id",
-            "source_terminal_anchor_id",
             "binding_anchor_id",
             "binding_state",
             "binding_source",
@@ -839,8 +838,7 @@ class SessionTracker:
             project = self._project_from_path(project_path)
 
         native_session_id = str(metadata.get("session_id") or "").strip() or None
-        terminal_anchor_id = str(terminal_context.get("terminal_anchor_id") or "").strip()
-        if not terminal_anchor_id:
+        if not self._has_full_tmux_identity(terminal_context):
             return None
         if not project and not project_path:
             return None
@@ -958,7 +956,6 @@ class SessionTracker:
 
             session.terminal_context.window_id = session.window_id
             session.terminal_context.terminal_anchor_id = terminal_context.get("terminal_anchor_id")
-            session.terminal_context.source_terminal_anchor_id = terminal_context.get("source_terminal_anchor_id")
             session.terminal_context.binding_anchor_id = terminal_context.get("binding_anchor_id")
             session.terminal_context.binding_state = terminal_context.get("binding_state")
             session.terminal_context.binding_source = terminal_context.get("binding_source")
@@ -1098,7 +1095,6 @@ class SessionTracker:
                 session.terminal_context.window_id = raw.get("window_id")
                 for key in (
                     "terminal_anchor_id",
-                    "source_terminal_anchor_id",
                     "binding_anchor_id",
                     "binding_state",
                     "binding_source",
@@ -1367,7 +1363,7 @@ class SessionTracker:
         project_path: Optional[str],
     ) -> Optional[str]:
         parts: list[str] = []
-        has_tmux_identity = SessionTracker._has_tmux_context(terminal_context)
+        has_tmux_identity = SessionTracker._has_full_tmux_identity(terminal_context)
 
         def add_part(name: str, value: Optional[object]) -> None:
             if value is None:
@@ -1377,24 +1373,20 @@ class SessionTracker:
                 return
             parts.append(f"{name}={text}")
 
-        # Managed tmux identity is the durable identity boundary.
         if not has_tmux_identity:
-            add_part("anchor", terminal_context.get("binding_anchor_id") or terminal_context.get("terminal_anchor_id"))
+            return None
         add_part("tmux_server", terminal_context.get("tmux_server_key"))
         add_part("tmux_socket", terminal_context.get("tmux_socket"))
         add_part("pane", terminal_context.get("tmux_pane"))
         add_part("pty", terminal_context.get("pty"))
         add_part("tmux_session", terminal_context.get("tmux_session"))
         add_part("tmux_window", terminal_context.get("tmux_window"))
-        if not has_tmux_identity:
-            add_part("window", window_id)
         add_part("host", terminal_context.get("host_name"))
         add_part("mode", terminal_context.get("execution_mode"))
         add_part("connection", terminal_context.get("connection_key"))
         add_part("context", terminal_context.get("context_key"))
-        # PID is useful when pane metadata is absent but multiple local sessions exist.
-        if not has_tmux_identity:
-            add_part("pid", client_pid)
+        add_part("window", window_id)
+        add_part("pid", client_pid)
         add_part("project_path", project_path)
         add_part("project", project)
 
@@ -1438,16 +1430,7 @@ class SessionTracker:
             ) or tmux_pane
             return "tmux-pane", "::".join(parts), pane_label
 
-        anchor = str(
-            getattr(terminal_context, "binding_anchor_id", "") or getattr(terminal_context, "terminal_anchor_id", "") or ""
-        ).strip()
-        if anchor or window_id is not None:
-            identity = anchor or (f"window-{int(window_id)}" if window_id is not None else "")
-            parts = [
-                context_key or "unknown-context",
-                identity or "unknown-window",
-            ]
-            return "terminal-window", "::".join(parts), None
+        return "unsupported", None, None
 
     @staticmethod
     def _session_list_identity_confidence_rank(value: IdentityConfidence | str | None) -> int:
@@ -1785,7 +1768,7 @@ class SessionTracker:
         project: Optional[str] = None
         terminal_context = {
             "terminal_anchor_id": None,
-            "source_terminal_anchor_id": None,
+            "reported_terminal_anchor_id": None,
             "binding_anchor_id": None,
             "binding_state": "unresolved",
             "binding_source": None,
@@ -1810,11 +1793,11 @@ class SessionTracker:
             i3pm_env = get_process_i3pm_env(pid)
             project = i3pm_env.get("I3PM_PROJECT_NAME") if i3pm_env else None
             if i3pm_env:
-                terminal_context["source_terminal_anchor_id"] = (
+                terminal_context["reported_terminal_anchor_id"] = (
                     i3pm_env.get("I3PM_TERMINAL_ANCHOR_ID")
                     or i3pm_env.get("I3PM_APP_ID")
                 )
-                terminal_context["terminal_anchor_id"] = terminal_context["source_terminal_anchor_id"]
+                terminal_context["terminal_anchor_id"] = terminal_context["reported_terminal_anchor_id"]
                 remote_user = str(i3pm_env.get("I3PM_REMOTE_USER") or "").strip()
                 remote_host = str(i3pm_env.get("I3PM_REMOTE_HOST") or "").strip()
                 remote_port = str(i3pm_env.get("I3PM_REMOTE_PORT") or "").strip() or "22"
@@ -2134,19 +2117,13 @@ class SessionTracker:
 
     def _apply_tracking_contract_unlocked(self, session: Session) -> None:
         terminal_context = session.terminal_context
-        has_tmux_identity = bool(
-            str(terminal_context.tmux_session or "").strip()
-            or str(terminal_context.tmux_window or "").strip()
-            or str(terminal_context.tmux_pane or "").strip()
-            or str(terminal_context.pty or "").strip()
-        )
+        has_tmux_identity = self._has_full_tmux_identity(terminal_context.model_dump())
         binding_anchor_id = str(terminal_context.binding_anchor_id or "").strip()
-        anchor_id = str(terminal_context.terminal_anchor_id or "").strip()
-        if not has_tmux_identity and not anchor_id:
+        if not has_tmux_identity:
             self._set_session_diagnostic_unlocked(
                 session,
-                "missing_terminal_anchor",
-                detail="Telemetry arrived without a daemon-issued terminal anchor.",
+                "missing_tmux_identity",
+                detail="Tracked session is missing full tmux pane identity.",
             )
             return
         if not str(session.project or "").strip() and not str(session.project_path or "").strip():
@@ -2176,17 +2153,14 @@ class SessionTracker:
                 ),
             )
             return
-        if has_tmux_identity and binding_anchor_id:
+        if binding_anchor_id:
             terminal_context.binding_state = (
-                "rebound_local"
-                if str(terminal_context.source_terminal_anchor_id or "").strip()
-                and str(terminal_context.source_terminal_anchor_id or "").strip() != binding_anchor_id
+                terminal_context.binding_state
+                if str(terminal_context.binding_state or "").strip() == "rebound_local"
                 else "bound_local"
             )
-        elif anchor_id:
-            terminal_context.binding_state = "anchor_only"
         else:
-            terminal_context.binding_state = "unresolved"
+            terminal_context.binding_state = "tmux_present_unbound"
         self._set_session_diagnostic_unlocked(session, None)
 
     @staticmethod
@@ -2197,12 +2171,7 @@ class SessionTracker:
         connection_key = str(getattr(terminal_context, "connection_key", "") or "").strip()
         context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
         has_project = bool(str(session.project or "").strip() or str(session.project_path or "").strip())
-        has_terminal_identity = bool(
-            str(getattr(terminal_context, "tmux_session", "") or "").strip()
-            or str(getattr(terminal_context, "tmux_window", "") or "").strip()
-            or str(getattr(terminal_context, "tmux_pane", "") or "").strip()
-            or str(getattr(terminal_context, "pty", "") or "").strip()
-        )
+        has_terminal_identity = SessionTracker._has_full_tmux_identity(terminal_context.model_dump())
         return bool(
             execution_mode == "ssh"
             and has_project
@@ -2278,10 +2247,10 @@ class SessionTracker:
     @staticmethod
     def _extract_terminal_context_from_event(event: TelemetryEvent) -> dict:
         attrs = event.attributes
-        source_anchor = attrs.get("terminal.anchor_id") or attrs.get("i3pm.terminal_anchor_id")
+        reported_anchor = attrs.get("terminal.anchor_id") or attrs.get("i3pm.terminal_anchor_id")
         return {
-            "terminal_anchor_id": source_anchor,
-            "source_terminal_anchor_id": source_anchor,
+            "terminal_anchor_id": reported_anchor,
+            "reported_terminal_anchor_id": reported_anchor,
             "binding_anchor_id": None,
             "binding_state": "unresolved",
             "binding_source": None,
@@ -2302,11 +2271,11 @@ class SessionTracker:
         }
 
     @staticmethod
-    def _has_tmux_context(terminal_context: dict) -> bool:
+    def _has_full_tmux_identity(terminal_context: dict) -> bool:
         return bool(
-            terminal_context.get("tmux_session")
-            or terminal_context.get("tmux_window")
-            or terminal_context.get("tmux_pane")
+            str(terminal_context.get("tmux_session") or "").strip()
+            and str(terminal_context.get("tmux_window") or "").strip()
+            and str(terminal_context.get("tmux_pane") or "").strip()
         )
 
     @classmethod
@@ -2320,44 +2289,38 @@ class SessionTracker:
         if window_id is not None:
             normalized["window_id"] = window_id
 
-        has_tmux_identity = cls._has_tmux_context(normalized)
+        has_tmux_identity = cls._has_full_tmux_identity(normalized)
         raw_terminal_anchor = str(normalized.get("terminal_anchor_id") or "").strip() or None
-        source_anchor = str(normalized.get("source_terminal_anchor_id") or "").strip() or None
-        if not source_anchor and raw_terminal_anchor:
-            source_anchor = raw_terminal_anchor
+        reported_anchor = str(normalized.get("reported_terminal_anchor_id") or "").strip() or None
         binding_anchor = str(normalized.get("binding_anchor_id") or "").strip() or None
         binding_source = str(normalized.get("binding_source") or "").strip() or None
 
-        explicit_source_anchor = str(normalized.get("source_terminal_anchor_id") or "").strip() or None
         if has_tmux_identity and not binding_anchor and raw_terminal_anchor:
-            if raw_terminal_anchor != source_anchor or not explicit_source_anchor:
-                binding_anchor = raw_terminal_anchor
-                binding_source = binding_source or "tmux_metadata"
-        if not binding_anchor and not has_tmux_identity and source_anchor:
-            binding_anchor = source_anchor
-            binding_source = binding_source or "process_env"
+            binding_anchor = raw_terminal_anchor
+            binding_source = binding_source or (
+                "tmux_metadata"
+                if str(normalized.get("tmux_resolution_source") or "").strip() not in {"", "missing"}
+                else "process_env"
+            )
 
         if has_tmux_identity:
             if binding_anchor and window_id is not None:
                 binding_state = (
                     "rebound_local"
-                    if source_anchor and source_anchor != binding_anchor
+                    if reported_anchor and reported_anchor != binding_anchor
                     else "bound_local"
                 )
-            elif binding_anchor:
-                binding_state = "tmux_present_unbound"
             else:
                 binding_state = "tmux_present_unbound"
-        elif binding_anchor or source_anchor:
-            binding_state = "anchor_only"
         else:
+            binding_anchor = None
+            binding_source = None
             binding_state = "unresolved"
 
-        normalized["source_terminal_anchor_id"] = source_anchor
         normalized["binding_anchor_id"] = binding_anchor
         normalized["binding_state"] = binding_state
         normalized["binding_source"] = binding_source
-        normalized["terminal_anchor_id"] = binding_anchor or source_anchor
+        normalized["terminal_anchor_id"] = binding_anchor or raw_terminal_anchor
         return normalized
 
     def _resolve_context_from_process_sessions_unlocked(
@@ -2573,7 +2536,6 @@ class SessionTracker:
                 self._session_pids[session.collision_group_id] = chosen.pid
 
         for key in (
-            "source_terminal_anchor_id",
             "binding_anchor_id",
             "binding_state",
             "binding_source",
@@ -2654,10 +2616,6 @@ class SessionTracker:
         """Whether a session should be visible in project-scoped UI output."""
         _ = now_ts
         terminal_context = session.terminal_context
-        terminal_anchor_id = str(
-            getattr(terminal_context, "binding_anchor_id", "")
-            or getattr(terminal_context, "terminal_anchor_id", "")
-        ).strip()
         execution_mode = str(
             getattr(terminal_context, "execution_mode", "") or ""
         ).strip().lower()
@@ -2665,12 +2623,7 @@ class SessionTracker:
             getattr(terminal_context, "connection_key", "") or ""
         ).strip()
         context_key = str(getattr(terminal_context, "context_key", "") or "").strip()
-        has_terminal_identity = bool(
-            str(getattr(terminal_context, "tmux_session", "") or "").strip()
-            or str(getattr(terminal_context, "tmux_window", "") or "").strip()
-            or str(getattr(terminal_context, "tmux_pane", "") or "").strip()
-            or str(getattr(terminal_context, "pty", "") or "").strip()
-        )
+        has_terminal_identity = SessionTracker._has_full_tmux_identity(terminal_context.model_dump())
         has_project = bool(str(session.project or "").strip() or str(session.project_path or "").strip())
         has_window_binding = session.window_id is not None
         has_remote_projection = bool(
@@ -2688,7 +2641,7 @@ class SessionTracker:
         return bool(
             not session.invalid_reason
             and (
-                (terminal_anchor_id and has_window_binding)
+                has_window_binding
                 or has_remote_projection
                 or has_local_tmux_projection
             )
@@ -2870,7 +2823,7 @@ class SessionTracker:
                     identity_confidence = IdentityConfidence.NATIVE
                 elif client_pid is not None:
                     identity_confidence = IdentityConfidence.PID
-                elif self._has_tmux_context(event_terminal_context):
+                elif self._has_full_tmux_identity(event_terminal_context):
                     identity_confidence = IdentityConfidence.PANE
                 else:
                     identity_confidence = IdentityConfidence.HEURISTIC
@@ -2900,9 +2853,6 @@ class SessionTracker:
                 session.terminal_context.window_id = resolved_window_id
                 session.terminal_context.terminal_anchor_id = event_terminal_context.get(
                     "terminal_anchor_id"
-                )
-                session.terminal_context.source_terminal_anchor_id = event_terminal_context.get(
-                    "source_terminal_anchor_id"
                 )
                 session.terminal_context.binding_anchor_id = event_terminal_context.get(
                     "binding_anchor_id"
@@ -3056,7 +3006,6 @@ class SessionTracker:
 
             for key in (
                 "terminal_anchor_id",
-                "source_terminal_anchor_id",
                 "binding_anchor_id",
                 "binding_state",
                 "binding_source",
@@ -3123,7 +3072,7 @@ class SessionTracker:
             elif event_status_reason:
                 session.status_reason = event_status_reason
 
-            if self._has_tmux_context(event_terminal_context) and session.identity_confidence not in (
+            if self._has_full_tmux_identity(event_terminal_context) and session.identity_confidence not in (
                 IdentityConfidence.NATIVE,
                 IdentityConfidence.PID,
             ):
@@ -4232,7 +4181,6 @@ class SessionTracker:
                     s.project_path,
                     s.window_id,
                     terminal_context.terminal_anchor_id,
-                    terminal_context.source_terminal_anchor_id,
                     terminal_context.binding_anchor_id,
                     terminal_context.binding_state,
                     terminal_context.binding_source,

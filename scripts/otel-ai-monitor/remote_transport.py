@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
+AI_SESSION_SCHEMA_VERSION = "10"
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -208,7 +209,7 @@ class RemoteSessionPushClient:
             "payload_hash": payload_hash,
             "sent_at": _utc_now_iso(),
             "sessions_payload": {
-                "schema_version": str(payload.get("schema_version", "4")),
+                "schema_version": str(payload.get("schema_version", AI_SESSION_SCHEMA_VERSION)),
                 "updated_at": str(payload.get("updated_at", "")),
                 "timestamp": int(payload.get("timestamp", 0) or 0),
                 "has_working": bool(payload.get("has_working", False)),
@@ -325,7 +326,9 @@ class RemoteSessionSinkStore:
         sessions = [item for item in sessions_raw if isinstance(item, dict)]
         has_working = bool(sessions_payload.get("has_working", False))
         timestamp = int(sessions_payload.get("timestamp", 0) or 0)
-        session_schema = str(sessions_payload.get("schema_version", "4"))
+        session_schema = str(sessions_payload.get("schema_version", ""))
+        if session_schema != AI_SESSION_SCHEMA_VERSION:
+            return False, "unsupported_session_schema", 409
         updated_at = str(sessions_payload.get("updated_at", ""))
         sent_at = str(payload.get("sent_at", ""))
         sent_at_epoch = _parse_iso_epoch(sent_at)

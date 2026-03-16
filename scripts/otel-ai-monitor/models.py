@@ -92,19 +92,16 @@ class TerminalContext(BaseModel):
     """Terminal/tmux context used for session correlation."""
 
     terminal_anchor_id: Optional[str] = Field(
-        default=None, description="Effective terminal anchor used for current binding/fallback compatibility"
-    )
-    source_terminal_anchor_id: Optional[str] = Field(
-        default=None, description="Terminal anchor originally reported by telemetry or process environment"
+        default=None, description="Current live terminal anchor bound to the tracked tmux pane"
     )
     binding_anchor_id: Optional[str] = Field(
         default=None, description="Current live terminal anchor bound to the tmux/session surface"
     )
     binding_state: Optional[str] = Field(
-        default=None, description="Binding state for the tracked surface (bound_local, rebound_local, tmux_present_unbound, anchor_only, unresolved)"
+        default=None, description="Binding state for the tracked surface (bound_local, rebound_local, tmux_present_unbound, unresolved)"
     )
     binding_source: Optional[str] = Field(
-        default=None, description="Source of the current binding anchor (tmux_metadata, daemon_anchor_lookup, process_env, or fallback)"
+        default=None, description="Source of the current binding anchor (tmux_metadata, daemon_anchor_lookup, or process_env)"
     )
     anchor_lookup: Optional[str] = Field(
         default=None, description="Daemon lookup status for the terminal anchor"
@@ -567,7 +564,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="9", description="Session payload schema version")
+    schema_version: str = Field(default="10", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

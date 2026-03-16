@@ -97,6 +97,7 @@ BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid(
 # Feature 123: OTEL AI sessions file path
 # Written by otel-ai-monitor service, read here to include in monitoring_data output
 OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
+AI_SESSION_SCHEMA_VERSION = "10"
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
 AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"
@@ -186,7 +187,7 @@ def load_otel_sessions() -> Dict[str, Any]:
         'sessions_by_window' dict.
     """
     default_result = {
-        "schema_version": "4",
+        "schema_version": AI_SESSION_SCHEMA_VERSION,
         "sessions": [],
         "has_working": False,
         "timestamp": 0,
@@ -206,9 +207,11 @@ def load_otel_sessions() -> Dict[str, Any]:
             has_working = data.get("has_working", False)
             timestamp = data.get("timestamp", 0)
             updated_at = data.get("updated_at", "")
-            schema_version = str(data.get("schema_version", "1"))
+            schema_version = str(data.get("schema_version", ""))
             sessions_by_window = data.get("sessions_by_window", {})
             diagnostics = data.get("diagnostics", [])
+            if schema_version != AI_SESSION_SCHEMA_VERSION:
+                return default_result
 
             return {
                 "sessions": sessions,
@@ -510,6 +513,8 @@ def _load_remote_otel_sessions_for_connection(
     sink_payload = sink_payload if isinstance(sink_payload, dict) else _load_remote_otel_sink()
     source = _match_remote_otel_sink_source(sink_payload, normalized_key)
     if not source:
+        return []
+    if str(source.get("session_schema_version") or "").strip() != AI_SESSION_SCHEMA_VERSION:
         return []
 
     raw_sessions = source.get("sessions", [])
@@ -2279,8 +2284,8 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
 
     A session is eligible only when:
     - tool is one of supported AI CLIs
-    - execution identity is concrete (local/ssh + connection key)
-    - tracked surface identity is concrete (bound anchor or tmux pane identity)
+    - execution identity is concrete enough for its mode
+    - tracked surface identity is a full tmux pane identity
     """
     tool = str(session.get("tool") or "").strip().lower()
     if tool not in _AI_TRACKABLE_TOOLS:
@@ -2291,7 +2296,7 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
     connection = str(identity.get("connection_key") or "").strip()
     if mode not in {"local", "ssh"}:
         return False
-    if not connection or connection in {"unknown", "global"}:
+    if mode == "ssh" and (not connection or connection in {"unknown", "global"}):
         return False
     if not bool(session.get("focusable", True)):
         return False
@@ -2300,11 +2305,11 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
     terminal_context = session.get("terminal_context", {}) or {}
     if not isinstance(terminal_context, dict):
         terminal_context = {}
-    has_tmux_identity = bool(
-        str(terminal_context.get("tmux_session") or "").strip()
-        and str(terminal_context.get("tmux_pane") or "").strip()
+    return bool(
+        str(terminal_context.get("tmux_session") or session.get("tmux_session") or "").strip()
+        and str(terminal_context.get("tmux_window") or session.get("tmux_window") or "").strip()
+        and str(terminal_context.get("tmux_pane") or session.get("tmux_pane") or "").strip()
     )
-    return bool(_session_terminal_anchor(session) or has_tmux_identity)
 
 
 def _otel_badge_merge_key(session: Dict[str, Any]) -> str:

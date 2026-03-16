@@ -6383,7 +6383,6 @@ class IPCServer:
         native_id = str(session.get("native_session_id") or "").strip()
         session_id = str(session.get("session_id") or "").strip()
         surface_key = str(session.get("surface_key") or "").strip()
-        anchor = str(terminal_context.get("terminal_anchor_id") or "").strip()
         context_key = str(terminal_context.get("context_key") or "").strip()
         project_name = str(
             session.get("focus_project")
@@ -6392,7 +6391,7 @@ class IPCServer:
             or session.get("project")
             or ""
         ).strip()
-        identity = surface_key or native_id or session_id or anchor or project_name or str(session.get("pid") or "unknown")
+        identity = surface_key or native_id or session_id or project_name or str(session.get("pid") or "unknown")
         return "|".join([
             tool,
             identity,
@@ -6409,7 +6408,7 @@ class IPCServer:
         tmux_pane: str,
         pty: str,
     ) -> str:
-        """Build the tmux-first surface key used across mixed-version session payloads."""
+        """Build the tmux-first surface key for strict session tracking."""
         if not str(tmux_pane or "").strip():
             return ""
         parts = [
@@ -6793,6 +6792,8 @@ class IPCServer:
                 or ""
             ).strip()
             context_key = str(terminal_context.get("context_key") or "").strip()
+            if not connection_key or connection_key == "unknown":
+                continue
             project_name = str(
                 raw_session.get("focus_project")
                 or raw_session.get("window_project")
@@ -6841,7 +6842,7 @@ class IPCServer:
             if not binding_state and tmux_pane:
                 binding_state = "bound_local" if binding_anchor_id else "tmux_present_unbound"
             if not binding_source and binding_anchor_id:
-                binding_source = "legacy_anchor"
+                binding_source = "tmux_metadata"
             session_key = self._build_session_key(
                 {
                     **raw_session,
@@ -7365,6 +7366,8 @@ class IPCServer:
         """Return normalized AI session items for an existing runtime snapshot."""
         tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
         local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
+        if str(local_payload.get("schema_version") or "").strip() != "10":
+            local_payload = {}
         local_sessions_raw = [
             item for item in local_payload.get("sessions", [])
             if isinstance(item, dict)
@@ -7394,6 +7397,8 @@ class IPCServer:
         if isinstance(sources, dict):
             for source_connection_key, source_data in sources.items():
                 if not isinstance(source_data, dict):
+                    continue
+                if str(source_data.get("session_schema_version") or "").strip() != "10":
                     continue
                 source_sessions = [
                     item for item in source_data.get("sessions", [])
@@ -13223,10 +13228,6 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
     def _session_has_tracking_identity(self, terminal_context: Dict[str, Any]) -> bool:
         """Return whether a session can be tracked deterministically."""
-        terminal_anchor_id = str(terminal_context.get("terminal_anchor_id") or "").strip()
-        if terminal_anchor_id:
-            return True
-
         tmux_session = str(terminal_context.get("tmux_session") or "").strip()
         tmux_window = str(terminal_context.get("tmux_window") or "").strip()
         tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()

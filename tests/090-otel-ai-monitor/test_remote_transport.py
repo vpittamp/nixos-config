@@ -52,7 +52,7 @@ def _build_payload(
         "payload_hash": payload_hash,
         "sent_at": sent_at,
         "sessions_payload": {
-            "schema_version": "4",
+            "schema_version": "10",
             "updated_at": "2026-02-23T20:00:00+00:00",
             "timestamp": 1898126400,
             "has_working": True,
