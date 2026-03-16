@@ -117,7 +117,6 @@ swayconfig rollback <hash>  # Rollback
 
 ```bash
 systemctl --user restart eww-top-bar           # Top bar
-systemctl --user restart sway-workspace-panel  # Bottom bar
 systemctl --user restart swaync                # Notifications
 ```
 

@@ -32,17 +32,6 @@ in
 {
   wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault (
     {
-    # ========== WORKSPACE NAVIGATION ==========
-    # Mode-based system with visual feedback in status bar
-    # Platform-specific workspace mode entry keybindings are managed in sway.nix:
-    #   - M1 (physical): CapsLock / Shift+CapsLock
-    #   - Hetzner (VNC): Control+0 / Control+Shift+0
-    # Once in mode: type digits, press Enter to execute
-    # See workspace number appear in status bar as you type
-
-    # Force-close stuck workspace preview (emergency exit)
-    "${modifier}+Shift+Escape" = "exec i3pm-workspace-mode cancel";
-
     # AI session switcher in launcher style
     "${modifier}+Tab" = "exec show-ai-mru-switcher-action next";
     "${modifier}+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
@@ -197,38 +186,6 @@ in
     # System monitor
     "${modifier}+Shift+t" = "exec btop";
 
-    # ========== WORKSPACE MODE (Feature 042 + 058 + 059) ==========
-    # Platform-specific entry keybindings for workspace mode navigation
-    # Visual feedback now via workspace bar (Feature 058), no more notifications
-    # Hetzner (VNC): F9 (easy to press over VNC), Control+0 (standard)
-    # M1 (Physical): CapsLock is handled via bindcode in sway.nix extraConfig
-    # Note: keyd remapping doesn't work over VNC (WayVNC bypasses evdev)
-    # Feature 072: Must call 'i3pm-workspace-mode enter' to trigger all-windows preview
-    "Control+0" = "exec i3pm-workspace-mode enter; exec swaymsg 'mode \"→ WS\"'";
-    "Control+Shift+0" = "exec swaymsg 'mode \"⇒ WS\"'";
-
-    # F9 keybindings for VNC users (ergonomic alternative to Control+0)
-    "F9" = "exec i3pm-workspace-mode enter; exec swaymsg 'mode \"→ WS\"'";
-    "Shift+F9" = "exec swaymsg 'mode \"⇒ WS\"'";
-
-    # ========== FEATURE 059: Interactive Workspace Menu Keybindings ==========
-    # Arrow key navigation for workspace preview card (navigate through workspace list)
-    # These keybindings need to be added to sway.nix in the workspace mode definitions:
-    #
-    # In mode "→ WS" (goto mode) - add after line ~676:
-    #   bindsym Down exec i3pm-workspace-mode nav down
-    #   bindsym Up exec i3pm-workspace-mode nav up
-    #   bindsym Delete exec i3pm-workspace-mode delete
-    #
-    # In mode "⇒ WS" (move mode) - add at equivalent location:
-    #   bindsym Down exec i3pm-workspace-mode nav down
-    #   bindsym Up exec i3pm-workspace-mode nav up
-    #   bindsym Delete exec i3pm-workspace-mode delete
-    #
-    # Note: Return and Escape are already defined in workspace modes
-    # Return executes navigation to selected workspace/window (US2)
-    # Delete closes selected window (US3)
-    # Escape cancels and exits mode
   }
   // monitoringPanelBindings
   // worktreeAppBindings);

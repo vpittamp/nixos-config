@@ -243,14 +243,6 @@ in
     };
   };
 
-  # wshowkeys setuid wrapper for workspace mode visual feedback
-  security.wrappers.wshowkeys = {
-    owner = "root";
-    group = "input";
-    setuid = true;
-    source = "${pkgs.wshowkeys}/bin/wshowkeys";
-  };
-
   # Swap configuration - 16GB swap (desktop with 32GB RAM, no hibernation needed)
   swapDevices = [
     {

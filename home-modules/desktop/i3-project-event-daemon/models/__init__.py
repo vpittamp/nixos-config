@@ -51,11 +51,6 @@ from .floating_config import (
     get_floating_dimensions,
 )
 
-# Feature 058: Workspace Mode Visual Feedback
-from .workspace_mode_feedback import (
-    PendingWorkspaceState,
-)
-
 # Feature 078: Enhanced Project Selection in Eww Preview Dialog
 from .project_filter import (
     MatchPosition,
@@ -110,9 +105,6 @@ from .legacy import (
     ConfidenceLevel,
     CorrelationResult,
     LaunchRegistryStats,
-    WorkspaceModeState,
-    WorkspaceSwitch,
-    WorkspaceModeEvent,
 )
 
 __all__ = [
@@ -130,8 +122,6 @@ __all__ = [
     "OperationMetrics",
     "ProjectSwitchMetrics",
     "PerformanceSnapshot",
-    # Feature 058: Workspace Mode Visual Feedback
-    "PendingWorkspaceState",
     # Feature 078: Enhanced Project Selection
     "MatchPosition",
     "GitStatus",
@@ -189,7 +179,4 @@ __all__ = [
     "ConfidenceLevel",
     "CorrelationResult",
     "LaunchRegistryStats",
-    "WorkspaceModeState",
-    "WorkspaceSwitch",
-    "WorkspaceModeEvent",
 ]

@@ -217,7 +217,6 @@ monitoring-data-backend --mode health | jq '.health.categories[].services[] | se
 
 ### Core Daemons (3)
 - i3-project-daemon (socket-activated)
-- workspace-preview-daemon
 - sway-tree-monitor
 
 ### UI Services (7)

@@ -58,7 +58,6 @@ from .handlers import (
     on_workspace_move,
     on_workspace_focus,  # Feature 074 T026: Workspace focus tracking
     on_output,  # Feature 024: R013
-    on_mode,  # Feature 042: Workspace mode navigation
 )
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
 from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
@@ -323,18 +322,6 @@ class I3ProjectDaemon:
         self.tree_cache = initialize_tree_cache(self.connection.conn, ttl_ms=100.0)
         self.performance_tracker = initialize_performance_tracker(max_history=100, target_ms=200.0)
         logger.info("[Feature 091] Tree cache and performance tracker initialized")
-
-        # Feature 042: Initialize workspace mode manager
-        from .workspace_mode import WorkspaceModeManager
-        self.workspace_mode_manager = WorkspaceModeManager(
-            self.connection.conn,
-            config_dir=self.config_dir,
-            state_manager=self.state_manager,
-            workspace_tracker=self.workspace_tracker,
-            ipc_server=self.ipc_server  # Feature 058: IPC event broadcasting
-        )
-        self.state_manager.workspace_mode_manager = self.workspace_mode_manager
-        logger.info("Workspace mode manager initialized")
 
         # Feature 062: Initialize scratchpad manager
         self.scratchpad_manager = ScratchpadManager(self.connection.conn)
@@ -847,30 +834,15 @@ class I3ProjectDaemon:
         logger.info("Feature 091: Tree cache invalidation subscribed to window/workspace events")
 
         # Feature 024: R013 - Multi-monitor output event handling
-        # Feature 042: Also refresh workspace mode cache on output changes
         self.connection.subscribe(
             "output",
             partial(
                 on_output,
                 state_manager=self.state_manager,
-                event_buffer=self.event_buffer,
-                workspace_mode_manager=self.workspace_mode_manager
+                event_buffer=self.event_buffer
             )
         )
         logger.info("Subscribed to output events for monitor connect/disconnect detection")
-
-        # Feature 042: Workspace mode navigation via Sway mode events
-        self.connection.subscribe(
-            "mode",
-            partial(
-                on_mode,
-                workspace_mode_manager=self.workspace_mode_manager,
-                ipc_server=self.ipc_server,
-                event_buffer=self.event_buffer,
-                state_manager=self.state_manager
-            )
-        )
-        logger.info("Subscribed to mode events for workspace mode navigation")
 
         # Shutdown event (for i3 restart/exit)
         self.connection.subscribe("shutdown", self.connection.handle_shutdown_event)

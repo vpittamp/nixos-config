@@ -1063,14 +1063,6 @@ SERVICE_REGISTRY = {
             "description": "Window management and project context daemon",
         },
         {
-            "name": "workspace-preview-daemon",
-            "display_name": "Workspace Preview Daemon",
-            "is_user_service": True,
-            "socket_activated": False,
-            "conditional": False,
-            "description": "Workspace preview data provider for Eww workspace bar",
-        },
-        {
             "name": "sway-tree-monitor",
             "display_name": "Sway Tree Monitor",
             "is_user_service": True,

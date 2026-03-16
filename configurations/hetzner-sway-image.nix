@@ -240,14 +240,6 @@
   # Enable rtkit for better audio performance
   security.rtkit.enable = true;
 
-  # wshowkeys setuid wrapper for workspace mode visual feedback
-  security.wrappers.wshowkeys = {
-    owner = "root";
-    group = "input";
-    setuid = true;
-    source = "${pkgs.wshowkeys}/bin/wshowkeys";
-  };
-
   # Stream audio over Tailscale to Surface laptop
   services.tailscaleAudio = {
     enable = true;

@@ -815,152 +815,9 @@ in
       # - Overlay mode: 1100x550 centered on full screen
       for_window [app_id="com.mitchellh.ghostty" title="^Scratchpad Terminal$"] floating enable
 
-      # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
-      # Embedded directly instead of include due to Sway not loading included modes
-      # Visual feedback: workspace-mode-visual helper shows typed keys (wshowkeys overlay on physical, notifications on headless)
-      mode "→ WS" {
-          # Digits for workspace navigation
-          bindsym 0 exec i3pm-workspace-mode digit 0
-          bindsym 1 exec i3pm-workspace-mode digit 1
-          bindsym 2 exec i3pm-workspace-mode digit 2
-          bindsym 3 exec i3pm-workspace-mode digit 3
-          bindsym 4 exec i3pm-workspace-mode digit 4
-          bindsym 5 exec i3pm-workspace-mode digit 5
-          bindsym 6 exec i3pm-workspace-mode digit 6
-          bindsym 7 exec i3pm-workspace-mode digit 7
-          bindsym 8 exec i3pm-workspace-mode digit 8
-          bindsym 9 exec i3pm-workspace-mode digit 9
-
-          # Letters for project switching
-          bindsym a exec i3pm-workspace-mode char a
-          bindsym b exec i3pm-workspace-mode char b
-          bindsym c exec i3pm-workspace-mode char c
-          bindsym d exec i3pm-workspace-mode char d
-          bindsym e exec i3pm-workspace-mode char e
-          # bindsym f removed - conflicts with Feature 073 float toggle action
-          bindsym g exec i3pm-workspace-mode char g
-          bindsym h exec i3pm-workspace-mode char h
-          bindsym i exec i3pm-workspace-mode char i
-          bindsym j exec i3pm-workspace-mode char j
-          bindsym k exec i3pm-workspace-mode char k
-          bindsym l exec i3pm-workspace-mode char l
-          # bindsym m removed - conflicts with Feature 073 move window action
-          bindsym n exec i3pm-workspace-mode char n
-          bindsym o exec i3pm-workspace-mode char o
-          bindsym p exec i3pm-workspace-mode char p
-          bindsym q exec i3pm-workspace-mode char q
-          bindsym r exec i3pm-workspace-mode char r
-          bindsym s exec i3pm-workspace-mode char s
-          bindsym t exec i3pm-workspace-mode char t
-          bindsym u exec i3pm-workspace-mode char u
-          bindsym v exec i3pm-workspace-mode char v
-          bindsym w exec i3pm-workspace-mode char w
-          bindsym x exec i3pm-workspace-mode char x
-          bindsym y exec i3pm-workspace-mode char y
-          bindsym z exec i3pm-workspace-mode char z
-
-          # Feature 072: Colon to switch to project mode
-          bindsym colon exec i3pm-workspace-mode char :
-
-          # Feature 059: Arrow key navigation for interactive workspace menu
-          bindsym Down exec i3pm-workspace-mode nav down
-          bindsym Up exec i3pm-workspace-mode nav up
-          bindsym Home exec i3pm-workspace-mode nav home
-          bindsym End exec i3pm-workspace-mode nav end
-          bindsym Delete exec i3pm-workspace-mode delete
-          bindsym BackSpace exec i3pm-workspace-mode backspace
-
-          # Feature 073: Per-window actions for interactive menu (T048, T049)
-          bindsym m exec i3pm-workspace-mode action m
-          bindsym Shift+m exec i3pm-workspace-mode action shift-m
-          bindsym f exec i3pm-workspace-mode action f
-
-          # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
-          bindsym Return exec "i3pm-workspace-mode execute"
-          bindsym KP_Enter exec "i3pm-workspace-mode execute"
-          bindsym Escape exec "i3pm-workspace-mode cancel"
-      }
-
-      mode "⇒ WS" {
-          # Digits for workspace navigation
-          bindsym 0 exec i3pm-workspace-mode digit 0
-          bindsym 1 exec i3pm-workspace-mode digit 1
-          bindsym 2 exec i3pm-workspace-mode digit 2
-          bindsym 3 exec i3pm-workspace-mode digit 3
-          bindsym 4 exec i3pm-workspace-mode digit 4
-          bindsym 5 exec i3pm-workspace-mode digit 5
-          bindsym 6 exec i3pm-workspace-mode digit 6
-          bindsym 7 exec i3pm-workspace-mode digit 7
-          bindsym 8 exec i3pm-workspace-mode digit 8
-          bindsym 9 exec i3pm-workspace-mode digit 9
-
-          # Letters for project switching
-          bindsym a exec i3pm-workspace-mode char a
-          bindsym b exec i3pm-workspace-mode char b
-          bindsym c exec i3pm-workspace-mode char c
-          bindsym d exec i3pm-workspace-mode char d
-          bindsym e exec i3pm-workspace-mode char e
-          # bindsym f removed - conflicts with Feature 073 float toggle action
-          bindsym g exec i3pm-workspace-mode char g
-          bindsym h exec i3pm-workspace-mode char h
-          bindsym i exec i3pm-workspace-mode char i
-          bindsym j exec i3pm-workspace-mode char j
-          bindsym k exec i3pm-workspace-mode char k
-          bindsym l exec i3pm-workspace-mode char l
-          # bindsym m removed - conflicts with Feature 073 move window action
-          bindsym n exec i3pm-workspace-mode char n
-          bindsym o exec i3pm-workspace-mode char o
-          bindsym p exec i3pm-workspace-mode char p
-          bindsym q exec i3pm-workspace-mode char q
-          bindsym r exec i3pm-workspace-mode char r
-          bindsym s exec i3pm-workspace-mode char s
-          bindsym t exec i3pm-workspace-mode char t
-          bindsym u exec i3pm-workspace-mode char u
-          bindsym v exec i3pm-workspace-mode char v
-          bindsym w exec i3pm-workspace-mode char w
-          bindsym x exec i3pm-workspace-mode char x
-          bindsym y exec i3pm-workspace-mode char y
-          bindsym z exec i3pm-workspace-mode char z
-
-          # Feature 072: Colon to switch to project mode
-          bindsym colon exec i3pm-workspace-mode char :
-
-          # Feature 059: Arrow key navigation for interactive workspace menu
-          bindsym Down exec i3pm-workspace-mode nav down
-          bindsym Up exec i3pm-workspace-mode nav up
-          bindsym Home exec i3pm-workspace-mode nav home
-          bindsym End exec i3pm-workspace-mode nav end
-          bindsym Delete exec i3pm-workspace-mode delete
-          bindsym BackSpace exec i3pm-workspace-mode backspace
-
-          # Feature 073: Per-window actions for interactive menu (T048, T049)
-          bindsym m exec i3pm-workspace-mode action m
-          bindsym Shift+m exec i3pm-workspace-mode action shift-m
-          bindsym f exec i3pm-workspace-mode action f
-
-          # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
-          bindsym Return exec "i3pm-workspace-mode execute"
-          bindsym KP_Enter exec "i3pm-workspace-mode execute"
-          bindsym Escape exec "i3pm-workspace-mode cancel"
-      }
-
       # Feature 125: "📊 Panel" mode REMOVED
       # Focus mode functionality replaced by dock mode toggle (Mod+Shift+M)
       # See toggle-panel-dock-mode script for new implementation
-
-      # Platform-conditional workspace mode keybindings
-      # NOTE: Control+0/Shift+0 moved to sway-keybindings.nix (works on all platforms)
-      # CapsLock binding remains here (requires bindcode, not available in keybindings attr)
-      ${if isHeadless then ''
-        # Hetzner: Control+0 keybindings now in sway-keybindings.nix
-      '' else ''
-        # Physical laptop: Use CapsLock for ergonomic single-key workspace mode access
-        # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
-        # This approach is more reliable than binding to VoidSymbol
-        # Feature 072: Call enter command to trigger all-windows preview
-        bindcode --release 66 exec i3pm-workspace-mode enter, mode "→ WS"
-        bindcode --release Shift+66 mode "⇒ WS"
-      ''}
     '';
   };
 
@@ -973,7 +830,6 @@ in
     swaylock         # Screen locker
     swayidle         # Idle management
     sov              # Workspace overview
-    wshowkeys        # Visual key overlay for workspace mode
     lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
   ] ++ lib.optionals isHeadless [

@@ -218,53 +218,6 @@ get_load_average() {
     echo "$load"
 }
 
-# Get current daemon-managed workspace mode
-get_mode_indicator() {
-    local state_json mode
-    state_json=$(daemon_rpc "workspace_mode.state" '{}' 2>/dev/null || true)
-    mode=$("$JQ_BIN" -r '
-        if (.active // false) then
-            (if (.mode_type // "goto") == "move" then "⇒ WS" else "→ WS" end)
-        else
-            "default"
-        end
-    ' <<< "$state_json" 2>/dev/null)
-
-    # Only show indicator if not in default mode
-    if [ -z "$mode" ] || [ "$mode" = "default" ]; then
-        return
-    fi
-
-    # Convert mode to uppercase for visibility
-    local mode_upper
-    mode_upper=$(echo "$mode" | tr '[:lower:]' '[:upper:]')
-
-    # Feature 072: Hide workspace mode indicators (visual feedback now in preview card)
-    local display_text=" ⚡ ${mode_upper} ⚡ "
-    if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ] || [ "$mode" = "→ WS" ] || [ "$mode" = "⇒ WS" ]; then
-        # Don't show workspace mode in swaybar/i3bar - preview card handles this now
-        return 0
-    fi
-
-    # Return JSON block with bright red background for visibility
-    cat <<EOF
-{
-  "full_text": "$display_text",
-  "color": "#1e1e2e",
-  "background": "$COLOR_RED",
-  "border": "$COLOR_RED",
-  "border_top": 2,
-  "border_bottom": 2,
-  "border_left": 2,
-  "border_right": 2,
-  "name": "sway_mode",
-  "separator": false,
-  "separator_block_width": 20,
-  "markup": "pango"
-}
-EOF
-}
-
 # Build status line
 build_status_line() {
     local cpu_usage mem_usage disk_usage net_traffic cpu_temp load_avg current_time
@@ -278,13 +231,6 @@ build_status_line() {
     cpu_temp=$(get_cpu_temp)
     load_avg=$(get_load_average)
     current_time=$("$DATE_BIN" '+%a %b %d  %H:%M:%S')
-
-    # Mode indicator (first block - leftmost position, only shown when not in default mode)
-    if block=$(get_mode_indicator); then
-        if [ -n "$block" ]; then
-            blocks+=("$block")
-        fi
-    fi
 
     if block=$(get_generation_block); then
         if [ -n "$block" ]; then

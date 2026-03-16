@@ -26,8 +26,6 @@
     ./services/otel-ai-monitor.nix    # Feature 123: OTEL-based AI session monitoring
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
-    ./tools/i3pm-workspace-mode-wrapper.nix
-
     # Application launcher and registry
     ./desktop/walker.nix
     ./desktop/app-registry.nix
