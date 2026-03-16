@@ -85,6 +85,7 @@ def make_runtime_snapshot():
 
 def make_local_payload():
     return {
+        "schema_version": "10",
         "sessions": [
             {
                 "tool": "codex",
@@ -258,12 +259,12 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
     assert session["is_current_window"] is True
     assert session["focus_target"]["method"] == "session.focus"
     assert result["current_session_key"] == session["session_key"]
-    assert session["availability_state"] == "attached_here"
-    assert session["focusability_reason"] == "attached_bridge_window"
+    assert session["availability_state"] == "remote_bridge_bound"
+    assert session["focusability_reason"] == "exact_remote_bridge_bound"
 
 
 @pytest.mark.asyncio
-async def test_remote_local_session_uses_ssh_attach_focus_mode(server, monkeypatch):
+async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["active_context"].update({
         "execution_mode": "local",
@@ -279,6 +280,7 @@ async def test_remote_local_session_uses_ssh_attach_focus_mode(server, monkeypat
         "sources": {
             "vpittamp@thinkpad:22": {
                 "host_name": "thinkpad",
+                "session_schema_version": "10",
                 "received_at": 0,
                 "sessions": [
                     {
@@ -360,13 +362,13 @@ async def test_remote_local_session_uses_ssh_attach_focus_mode(server, monkeypat
     session = result["sessions"][0]
     assert session["connection_key"] == "local@thinkpad"
     assert session["focus_connection_key"] == "vpittamp@thinkpad:22"
-    assert session["focus_mode"] == "ssh_attach"
-    assert session["availability_state"] == "remote_available"
-    assert session["focusability_reason"] == "remote_tmux_available"
+    assert session["focus_mode"] == "remote_bridge_attachable"
+    assert session["availability_state"] == "remote_bridge_attachable"
+    assert session["focusability_reason"] == "exact_remote_tmux_attachable"
 
 
 @pytest.mark.asyncio
-async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server, monkeypatch):
+async def test_remote_ssh_session_bound_to_local_window_uses_remote_bridge_focus(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["tracked_windows"][0].update({
         "id": 175,
@@ -376,6 +378,12 @@ async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server,
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
         "terminal_anchor_id": "remote-ssh-anchor",
+        "remote_surface_key": "surface-remote-ssh",
+        "remote_session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+        "remote_tmux_server_key": "/run/user/1000/tmux-1000/default",
+        "remote_tmux_session": "i3pm-stacks-main",
+        "remote_tmux_window": "0:main",
+        "remote_tmux_pane": "%9",
         "focused": False,
     })
     local_payload = {"sessions": []}
@@ -383,6 +391,7 @@ async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server,
         "sources": {
             "vpittamp@ryzen:22": {
                 "host_name": "ryzen",
+                "session_schema_version": "10",
                 "received_at": 0,
                 "sessions": [
                     {
@@ -390,7 +399,8 @@ async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server,
                         "project_name": "PittampalliOrg/stacks:main",
                         "project": "PittampalliOrg/stacks:main",
                         "display_project": "PittampalliOrg/stacks:main",
-                        "surface_kind": "terminal-window",
+                        "surface_kind": "tmux-pane",
+                        "surface_key": "surface-remote-ssh",
                         "pane_label": "main",
                         "updated_at": "2026-03-14T15:00:00Z",
                         "stage": "idle",
@@ -432,6 +442,11 @@ async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server,
                             "pane_title": "main",
                             "pane_active": True,
                             "window_active": True,
+                            "tmux_socket": "/run/user/1000/tmux-1000/default",
+                            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                            "tmux_session": "i3pm-stacks-main",
+                            "tmux_window": "0:main",
+                            "tmux_pane": "%9",
                         },
                     }
                 ],
@@ -460,7 +475,7 @@ async def test_remote_ssh_session_bound_to_local_window_uses_local_focus(server,
     session = result["sessions"][0]
     assert session["window_id"] == 175
     assert session["is_current_host"] is True
-    assert session["focus_mode"] == "local"
+    assert session["focus_mode"] == "remote_bridge_bound"
 
 
 @pytest.mark.asyncio
@@ -487,6 +502,7 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
         "sources": {
             "local@thinkpad": {
                 "host_name": "thinkpad",
+                "session_schema_version": "10",
                 "received_at": 0,
                 "sessions": [
                     {
@@ -539,13 +555,14 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
     monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
     monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
 
     result = await server._session_list({})
 
     assert result["total"] == 1
     session = result["sessions"][0]
     assert session["window_id"] == 211
-    assert session["focus_mode"] == "ssh_attach"
+    assert session["focus_mode"] == "remote_bridge_bound"
     assert session["focus_execution_mode"] == "ssh"
     assert session["focus_connection_key"] == "vpittamp@thinkpad:22"
 
@@ -566,6 +583,7 @@ async def test_session_list_marks_stale_remote_sources(server, monkeypatch):
         "sources": {
             "vpittamp@thinkpad:22": {
                 "host_name": "thinkpad",
+                "session_schema_version": "10",
                 "received_at": time.time() - 45,
                 "sessions": [
                     {
@@ -622,7 +640,7 @@ async def test_session_list_marks_stale_remote_sources(server, monkeypatch):
     session = result["sessions"][0]
     assert session["session_phase"] == "stale_source"
     assert session["session_phase_label"] == "Stale source"
-    assert session["focus_mode"] == "unfocusable"
+    assert session["focus_mode"] == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -704,7 +722,7 @@ async def test_session_cleanup_reports_but_does_not_close_stale_remote_source_br
     sessions = [{
         "session_key": "session-remote",
         "surface_key": "surface-remote",
-        "focus_mode": "ssh_attach",
+        "focus_mode": "remote_bridge_attachable",
         "remote_source_stale": True,
         "terminal_context": {
             "tmux_server_key": "/tmp/tmux-1000/default",
@@ -757,9 +775,9 @@ async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
         {
             "session_key": "session-remote",
             "surface_key": "surface-remote",
-            "availability_state": "attached_here",
-            "focusability_reason": "attached_bridge_window",
-            "focus_mode": "ssh_attach",
+            "availability_state": "remote_bridge_bound",
+            "focusability_reason": "exact_remote_bridge_bound",
+            "focus_mode": "remote_bridge_bound",
             "window_id": 211,
             "is_current_host": True,
             "terminal_context": {
@@ -785,14 +803,15 @@ async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
     assert result["bridge_window_count"] == 1
     assert result["bridge_windows"][0]["matched_session_key"] == "session-remote"
     assert result["bridge_windows"][0]["mismatch_reason"] == ""
-    assert result["sessions"][0]["availability_state"] == "attached_here"
-    assert result["sessions"][0]["focusability_reason"] == "attached_bridge_window"
+    assert result["sessions"][0]["availability_state"] == "remote_bridge_bound"
+    assert result["sessions"][0]["focusability_reason"] == "exact_remote_bridge_bound"
 
 
 @pytest.mark.asyncio
 async def test_session_list_refreshes_current_host_tmux_focus_state(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     local_payload = {
+        "schema_version": "10",
         "sessions": [
             {
                 "tool": "codex",

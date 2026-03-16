@@ -66,8 +66,8 @@ def make_session(**overrides):
         "host_name": "thinkpad",
         "connection_key": "local@thinkpad",
         "execution_mode": "local",
-        "focus_mode": "local",
-        "availability_state": "available_here",
+        "focus_mode": "local_window",
+        "availability_state": "local_window",
         "focusability_reason": "local_window_bound",
         "window_id": 1001,
         "bridge_window_id": 0,
@@ -107,7 +107,7 @@ async def test_session_preview_returns_live_local_stream_for_current_host_tmux_s
     assert result["is_remote"] is False
     assert result["lines"] == 120
     assert result["tmux_pane"] == "%17"
-    assert result["availability_state"] == "available_here"
+    assert result["availability_state"] == "local_window"
     assert result["focusability_reason"] == "local_window_bound"
 
 
@@ -120,9 +120,9 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
         connection_key="local@ryzen",
         focus_connection_key="vpittamp@ryzen:22",
         execution_mode="local",
-        focus_mode="ssh_attach",
-        availability_state="remote_available",
-        focusability_reason="remote_tmux_available",
+        focus_mode="remote_bridge_attachable",
+        availability_state="remote_bridge_attachable",
+        focusability_reason="exact_remote_tmux_attachable",
         is_current_host=False,
         source_is_current_host=False,
         terminal_context={
@@ -150,7 +150,7 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
     assert result["remote_host"] == "ryzen"
     assert result["remote_user"] == "vpittamp"
     assert result["tmux_socket"] == "/tmp/tmux-1000/default"
-    assert result["availability_state"] == "remote_available"
+    assert result["availability_state"] == "remote_bridge_attachable"
 
 
 @pytest.mark.asyncio
@@ -163,9 +163,9 @@ async def test_session_preview_prefers_remote_source_connection_for_bound_remote
         source_connection_key="vpittamp@thinkpad:22",
         focus_connection_key="vpittamp@ryzen:22",
         execution_mode="local",
-        focus_mode="local",
-        availability_state="attached_here",
-        focusability_reason="attached_bridge_window",
+        focus_mode="remote_bridge_bound",
+        availability_state="remote_bridge_bound",
+        focusability_reason="exact_remote_bridge_bound",
         window_id=52,
         bridge_window_id=52,
         bridge_state="attached",
@@ -229,7 +229,7 @@ async def test_session_preview_reports_stale_remote_source(server):
         connection_key="local@ryzen",
         focus_connection_key="vpittamp@ryzen:22",
         execution_mode="local",
-        focus_mode="unfocusable",
+        focus_mode="unavailable",
         availability_state="stale_source",
         focusability_reason="remote_source_stale",
         is_current_host=False,

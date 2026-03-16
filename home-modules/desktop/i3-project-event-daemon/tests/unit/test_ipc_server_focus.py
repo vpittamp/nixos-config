@@ -73,11 +73,11 @@ def server():
 
 
 @pytest.mark.asyncio
-async def test_session_focus_remote_session_uses_ssh_attach(server, monkeypatch):
+async def test_session_focus_remote_session_uses_exact_remote_bridge_path(server, monkeypatch):
     remote_session = {
         "session_key": "session-remote",
         "window_id": 0,
-        "focus_mode": "ssh_attach",
+        "focus_mode": "remote_bridge_attachable",
         "focus_connection_key": "local@thinkpad",
         "connection_key": "local@thinkpad",
         "surface_key": "surface-remote",
@@ -87,7 +87,7 @@ async def test_session_focus_remote_session_uses_ssh_attach(server, monkeypatch)
     monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
     server._focus_remote_session_attach = AsyncMock(return_value={
         "success": True,
-        "focus_mode": "ssh_attach",
+        "focus_mode": "remote_bridge_bound",
         "focus_target_host": "thinkpad",
         "verification": {"success": True, "reason": "ok"},
         "current_ai_session_key_after": "session-remote",
@@ -97,7 +97,7 @@ async def test_session_focus_remote_session_uses_ssh_attach(server, monkeypatch)
     result = await server._session_focus({"session_key": "session-remote"})
 
     assert result["success"] is True
-    assert result["focus_mode"] == "ssh_attach"
+    assert result["focus_mode"] == "remote_bridge_bound"
     assert result["focus_target_host"] == "thinkpad"
     assert result["verification"]["success"] is True
     assert result["current_ai_session_key_after"] == "session-remote"
@@ -110,7 +110,7 @@ async def test_session_focus_remote_session_aborts_when_superseded_by_newer_inte
     remote_session = {
         "session_key": "session-remote",
         "window_id": 0,
-        "focus_mode": "ssh_attach",
+        "focus_mode": "remote_bridge_attachable",
         "focus_connection_key": "vpittamp@ryzen:22",
         "connection_key": "vpittamp@ryzen:22",
         "project_name": "vpittamp/nixos-config:main",
@@ -136,7 +136,7 @@ async def test_session_focus_local_requires_verified_current_session(server, mon
     local_session = {
         "session_key": "session-local",
         "window_id": 101,
-        "focus_mode": "local",
+        "focus_mode": "local_window",
         "focus_project": "vpittamp/nixos-config:main",
         "focus_execution_mode": "local",
         "focus_connection_key": "local@thinkpad",
@@ -167,7 +167,7 @@ async def test_session_focus_window_only_identity_sets_override_before_wait(serv
     local_session = {
         "session_key": "session-window-only",
         "window_id": 146,
-        "focus_mode": "local",
+        "focus_mode": "local_window",
         "focus_project": "PittampalliOrg/workflow-builder:main",
         "focus_execution_mode": "ssh",
         "focus_connection_key": "vpittamp@ryzen:22",
@@ -416,7 +416,7 @@ async def test_session_focus_tmux_target_uses_tmux_verification(server, monkeypa
     local_session = {
         "session_key": "session-local-pane",
         "window_id": 101,
-        "focus_mode": "local",
+        "focus_mode": "local_window",
         "focus_project": "vpittamp/nixos-config:main",
         "focus_execution_mode": "local",
         "focus_connection_key": "local@ryzen",
@@ -471,12 +471,18 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
     server._resolve_remote_attach_profile = lambda _session: {"host": "ryzen"}
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
-        "terminal_role": "project-main",
+        "terminal_role": "remote-session:abc123",
     })
-    server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(window_id=20))
+    server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
+        window_id=20,
+        terminal_role="remote-session:abc123",
+        remote_surface_key="surface-remote-pane",
+        remote_session_key="session-remote-pane",
+    ))
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "session-stale",
@@ -530,10 +536,11 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     server._resolve_remote_attach_profile = lambda _session: {"host": "ryzen"}
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
-        "terminal_role": "project-main",
+        "terminal_role": "remote-session:abc123",
         "terminal_anchor_id": "bridge-anchor",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
@@ -605,6 +612,7 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
     }
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "app_name": "terminal",
         "project_name": "vpittamp/t3code:main",
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
@@ -671,13 +679,22 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
     }
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
     })
-    server.state_manager.state.window_map[39] = SimpleNamespace(window_id=39, terminal_role="project-main")
+    server.state_manager.state.window_map[39] = SimpleNamespace(
+        window_id=39,
+        terminal_role="remote-session:abc123",
+        remote_surface_key="surface-remote-pane",
+        remote_session_key="session-remote-pane",
+        remote_tmux_session="i3pm-pittampalliorg-workflow--919ce57f",
+        remote_tmux_window="0:main",
+        remote_tmux_pane="%2",
+    )
     server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=39))
     server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
     server._window_focus = AsyncMock(return_value={
@@ -715,11 +732,11 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
     assert result["success"] is True
     assert result["window_id"] == 39
     assert result["launch"]["reused_existing"] is True
-    assert result["launch"]["reused_terminal_role"] == "project-main"
+    assert result["launch"]["reused_terminal_role"] == "remote-session:abc123"
 
 
 @pytest.mark.asyncio
-async def test_focus_remote_session_attach_prefers_live_already_bound_window_without_tracking(server):
+async def test_focus_remote_session_attach_relaunches_live_window_without_exact_bridge_identity(server):
     remote_session = {
         "session_key": "session-remote-pane",
         "surface_key": "surface-remote-pane",
@@ -745,14 +762,22 @@ async def test_focus_remote_session_attach_prefers_live_already_bound_window_wit
     }
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "app_name": "terminal",
         "project_name": "vpittamp/t3code:main",
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
+        "terminal_anchor_id": "bridge-anchor",
     })
     server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=44))
     server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
+    server._close_managed_window = AsyncMock(return_value=True)
+    server.state_manager.remove_window = AsyncMock()
+    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server._execute_launch_spec = lambda _spec: {"success": True}
+    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "",
@@ -787,7 +812,8 @@ async def test_focus_remote_session_attach_prefers_live_already_bound_window_wit
 
     assert result["success"] is True
     assert result["window_id"] == 44
-    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["reused_existing"] is False
+    assert result["launch"]["replaced_stale_bridge"] is True
 
 
 @pytest.mark.asyncio

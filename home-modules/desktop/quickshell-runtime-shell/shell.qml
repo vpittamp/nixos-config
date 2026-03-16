@@ -2435,7 +2435,7 @@ ShellRoot {
         if (project && project !== "Global") {
             bits.push(project);
         }
-        if (availability.length > 0 && sessionAvailabilityState(sessionPreview) !== "available_here") {
+        if (availability.length > 0 && sessionAvailabilityState(sessionPreview) !== "local_window") {
             bits.push(availability);
         }
         if (stringOrEmpty(sessionPreview.tmux_session)) {
@@ -4040,25 +4040,28 @@ ShellRoot {
             return "tmux_missing";
         }
         if (Number(session && session.bridge_window_id) > 0) {
-            return "attached_here";
+            return "remote_bridge_bound";
         }
         const focusMode = stringOrEmpty(session && session.focus_mode).toLowerCase();
-        if (focusMode === "ssh_attach") {
-            return "remote_available";
+        if (focusMode === "remote_bridge_bound") {
+            return "remote_bridge_bound";
         }
-        if (focusMode === "local") {
-            return "available_here";
+        if (focusMode === "remote_bridge_attachable") {
+            return "remote_bridge_attachable";
         }
-        return "unfocusable";
+        if (focusMode === "local_window") {
+            return "local_window";
+        }
+        return "unavailable";
     }
 
     function sessionAvailabilityLabel(session) {
         const state = sessionAvailabilityState(session);
-        if (state === "attached_here") {
+        if (state === "remote_bridge_bound") {
             return "Attached here";
         }
-        if (state === "remote_available") {
-            return "Remote available";
+        if (state === "remote_bridge_attachable") {
+            return "Attach here";
         }
         if (state === "stale_source") {
             return "Stale source";
@@ -4066,7 +4069,7 @@ ShellRoot {
         if (state === "tmux_missing") {
             return "Tmux missing";
         }
-        if (state === "unfocusable") {
+        if (state === "unavailable") {
             return "Unavailable";
         }
         return "Available here";
@@ -4351,7 +4354,7 @@ ShellRoot {
         if (project.length > 0 && project !== "Global") {
             bits.push(project);
         }
-        if (availability.length > 0 && sessionAvailabilityState(session) !== "available_here") {
+        if (availability.length > 0 && sessionAvailabilityState(session) !== "local_window") {
             bits.push(availability);
         }
         if (phase.length > 0 && phase !== availability) {

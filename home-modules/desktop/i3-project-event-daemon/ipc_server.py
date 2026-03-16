@@ -6636,6 +6636,16 @@ class IPCServer:
             if len(matches) == 1:
                 return dict(matches[0])
 
+        execution_mode = str(terminal_context.get("execution_mode") or session.get("execution_mode") or "local").strip().lower() or "local"
+        host_name = str(terminal_context.get("host_name") or session.get("host_name") or "").strip().lower()
+        connection_key = str(terminal_context.get("connection_key") or session.get("connection_key") or "").strip()
+        session_is_remote = execution_mode == "ssh" or not self._session_is_current_host(
+            host_name=host_name,
+            connection_key=connection_key,
+        )
+        if session_is_remote:
+            return {}
+
         anchor = str(terminal_context.get("terminal_anchor_id") or "").strip()
         if anchor:
             matches = [
@@ -6657,6 +6667,28 @@ class IPCServer:
                 return dict(matches[0])
 
         return {}
+
+    @staticmethod
+    def _session_has_exact_remote_identity(session: Dict[str, Any]) -> bool:
+        """Return whether a session is remote to this viewer and has exact bridge identity."""
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        execution_mode = str(
+            session.get("execution_mode")
+            or terminal_context.get("execution_mode")
+            or "local"
+        ).strip().lower() or "local"
+        source_is_current_host = bool(session.get("source_is_current_host", False))
+        if execution_mode != "ssh" and source_is_current_host:
+            return False
+        return bool(
+            str(session.get("session_key") or "").strip()
+            and str(session.get("surface_key") or "").strip()
+            and str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
+            and str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
+            and str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        )
 
     def _load_live_tmux_focus_state(
         self,
@@ -6823,71 +6855,47 @@ class IPCServer:
         *,
         focus_mode: str,
         session_phase: str,
-        bridge_window_id: int,
         remote_source_stale: bool,
-        source_is_current_host: bool,
-        execution_mode: str,
-        has_tmux_identity: bool,
-        binding_state: str,
     ) -> str:
         """Return the user-facing availability bucket for a normalized session."""
         normalized_phase = str(session_phase or "").strip().lower()
         normalized_focus_mode = str(focus_mode or "").strip().lower()
-        normalized_execution_mode = str(execution_mode or "").strip().lower()
-        normalized_binding_state = str(binding_state or "").strip().lower()
         if remote_source_stale or normalized_phase == "stale_source":
             return "stale_source"
         if normalized_phase == "tmux_missing":
             return "tmux_missing"
-        if normalized_focus_mode == "ssh_attach":
-            return "attached_here" if int(bridge_window_id or 0) > 0 else "remote_available"
-        if normalized_focus_mode == "local":
-            return "available_here"
-        if (
-            source_is_current_host
-            and normalized_execution_mode == "local"
-            and has_tmux_identity
-            and normalized_binding_state in {"tmux_present_unbound", "rebound_local", "bound_local"}
-        ):
-            return "local_unbound"
-        return "unfocusable"
+        if normalized_focus_mode in {
+            "local_window",
+            "remote_bridge_bound",
+            "remote_bridge_attachable",
+        }:
+            return normalized_focus_mode
+        return "unavailable"
 
     @staticmethod
     def _session_focusability_reason(
         *,
         focus_mode: str,
         session_phase: str,
-        bridge_window_id: int,
-        window_id: int,
         remote_source_stale: bool,
         has_tmux_identity: bool,
-        source_is_current_host: bool,
-        execution_mode: str,
-        binding_state: str,
     ) -> str:
         """Return the primary reason a session can or cannot be focused."""
         normalized_phase = str(session_phase or "").strip().lower()
         normalized_focus_mode = str(focus_mode or "").strip().lower()
-        normalized_execution_mode = str(execution_mode or "").strip().lower()
-        normalized_binding_state = str(binding_state or "").strip().lower()
         if remote_source_stale or normalized_phase == "stale_source":
             return "remote_source_stale"
         if normalized_phase == "tmux_missing":
             return "missing_tmux_identity"
-        if normalized_focus_mode == "ssh_attach":
-            return "attached_bridge_window" if int(bridge_window_id or 0) > 0 else "remote_tmux_available"
-        if normalized_focus_mode == "local":
-            return "local_window_bound" if int(window_id or 0) > 0 else "local_focus_target"
-        if (
-            source_is_current_host
-            and normalized_execution_mode == "local"
-            and has_tmux_identity
-            and normalized_binding_state in {"tmux_present_unbound", "rebound_local", "bound_local"}
-        ):
-            return "local_tmux_unbound"
+        if normalized_focus_mode == "remote_bridge_bound":
+            return "exact_remote_bridge_bound"
+        if normalized_focus_mode == "remote_bridge_attachable":
+            return "exact_remote_tmux_attachable"
+        if normalized_focus_mode == "local_window":
+            return "local_window_bound"
         if not has_tmux_identity:
-            return "no_focus_target"
-        return "focus_target_unavailable"
+            return "missing_tmux_identity"
+        return "unavailable"
 
     def _normalize_session_items(
         self,
@@ -7009,9 +7017,11 @@ class IPCServer:
                 focus_connection_key = str(connection_key or source_connection_key or "").strip()
             focus_mode = self._session_focus_mode(
                 window_id=bound_window_id,
+                bridge_window_id=bound_window_id if (execution_mode == "ssh" or not source_is_current_host) else 0,
                 source_is_current_host=source_is_current_host,
                 remote_source_stale=source_stale,
                 has_tmux_identity=bool(tmux_session and tmux_pane),
+                execution_mode=execution_mode,
             )
             session_phase, session_phase_label = self._session_phase_with_runtime_overrides(
                 phase=str(raw_session.get("session_phase") or "").strip(),
@@ -7020,36 +7030,22 @@ class IPCServer:
                 status_reason=str(raw_session.get("status_reason") or "").strip(),
                 remote_source_stale=bool(source_stale),
             )
-            bridge_window_id = (
-                bound_window_id
-                if bound_window_id > 0 and not source_is_current_host
-                else 0
-            )
+            bridge_window_id = bound_window_id if focus_mode == "remote_bridge_bound" and bound_window_id > 0 else 0
             bridge_state = (
                 "attached"
                 if bridge_window_id > 0
-                else ("available" if focus_mode == "ssh_attach" else "")
+                else ("attachable" if focus_mode == "remote_bridge_attachable" else "")
             )
             availability_state = self._session_availability_state(
                 focus_mode=focus_mode,
                 session_phase=session_phase,
-                bridge_window_id=bridge_window_id,
                 remote_source_stale=bool(source_stale),
-                source_is_current_host=source_is_current_host,
-                execution_mode=execution_mode,
-                has_tmux_identity=bool(tmux_session and tmux_pane),
-                binding_state=binding_state,
             )
             focusability_reason = self._session_focusability_reason(
                 focus_mode=focus_mode,
                 session_phase=session_phase,
-                bridge_window_id=bridge_window_id,
-                window_id=bound_window_id,
                 remote_source_stale=bool(source_stale),
                 has_tmux_identity=bool(tmux_session and tmux_pane),
-                source_is_current_host=source_is_current_host,
-                execution_mode=execution_mode,
-                binding_state=binding_state,
             )
             normalized.append({
                 "session_key": session_key,
@@ -7108,12 +7104,12 @@ class IPCServer:
                 ).strip() or "Idle",
                 "is_streaming": bool(raw_session.get("is_streaming", False)),
                 "pending_tools": int(raw_session.get("pending_tools", 0) or 0),
-                "focusable": focus_mode != "unfocusable",
+                "focusable": focus_mode != "unavailable",
                 "host_name": host_name,
                 "is_current_host": is_current_host,
                 "source_is_current_host": source_is_current_host,
                 "focus_mode": focus_mode,
-                "focus_target_host": "" if focus_mode == "local" else host_name,
+                "focus_target_host": "" if focus_mode == "local_window" else host_name,
                 "availability_state": availability_state,
                 "focusability_reason": focusability_reason,
                 "identity_source": str(raw_session.get("identity_source") or "").strip(),
@@ -7808,7 +7804,7 @@ class IPCServer:
             "window_id": local_window_id,
             "surface_key": str(session.get("surface_key") or "").strip(),
             "conflict_state": str(session.get("conflict_state") or "").strip(),
-            "focus_mode": "ssh_attach",
+            "focus_mode": "remote_bridge_bound",
             "focus_target_host": focus_target_host,
             "focus": focus_result,
             "launch": launch_result,
@@ -7843,11 +7839,11 @@ class IPCServer:
         self._record_ai_session_seen(session_key)
 
         window_id = int(session.get("window_id") or 0)
-        focus_mode = str(session.get("focus_mode") or "").strip() or "unfocusable"
-        if window_id <= 0 and focus_mode != "ssh_attach":
+        focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"
+        if window_id <= 0 and focus_mode not in {"remote_bridge_bound", "remote_bridge_attachable"}:
             raise RuntimeError(f"Session {session_key} is not focusable")
 
-        if focus_mode == "ssh_attach":
+        if focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
             return await self._focus_remote_session_attach(
                 session_key=session_key,
                 session=session,
@@ -7937,7 +7933,7 @@ class IPCServer:
             "window_id": window_id,
             "surface_key": str(session.get("surface_key") or "").strip(),
             "conflict_state": str(session.get("conflict_state") or "").strip(),
-            "focus_mode": "local",
+            "focus_mode": "local_window",
             "focus_target_host": "",
             "focus": focus_result,
             "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
@@ -8083,7 +8079,7 @@ class IPCServer:
         tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
         tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
         pane_label = str(session.get("pane_label") or session.get("pane_title") or tmux_pane or "").strip()
-        focus_mode = str(session.get("focus_mode") or "").strip() or "unfocusable"
+        focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"
         availability_state = str(session.get("availability_state") or "").strip()
         focusability_reason = str(session.get("focusability_reason") or "").strip()
         source_is_current_host = bool(session.get("source_is_current_host", False))
@@ -8091,7 +8087,7 @@ class IPCServer:
         remote_user = ""
         remote_host = ""
         remote_port = 22
-        if has_tmux_identity and not source_is_current_host:
+        if has_tmux_identity and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
             try:
                 attach_profile = self._resolve_remote_attach_profile(session)
                 remote_user = str(attach_profile.get("remote_user") or "").strip()
@@ -8112,16 +8108,16 @@ class IPCServer:
             preview_reason = "stale_remote_source"
             is_live = False
             is_remote = not source_is_current_host
+        elif has_tmux_identity and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
+            preview_mode = "ssh_stream"
+            preview_reason = "remote_host"
+            is_live = True
+            is_remote = True
         elif has_tmux_identity and source_is_current_host and execution_mode == "local":
             preview_mode = "local_stream"
             preview_reason = "ok"
             is_live = True
             is_remote = False
-        elif has_tmux_identity and not source_is_current_host:
-            preview_mode = "ssh_stream"
-            preview_reason = "remote_host"
-            is_live = True
-            is_remote = True
 
         return {
             "success": True,
@@ -13535,16 +13531,25 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         self,
         *,
         window_id: int,
+        bridge_window_id: int,
         source_is_current_host: bool,
         remote_source_stale: bool,
         has_tmux_identity: bool,
+        execution_mode: str,
     ) -> str:
         """Return how a session should be focused."""
-        if not source_is_current_host and not remote_source_stale and has_tmux_identity:
-            return "ssh_attach"
+        normalized_execution_mode = str(execution_mode or "").strip().lower() or "local"
+        if remote_source_stale:
+            return "unavailable"
+        if normalized_execution_mode == "ssh" or not source_is_current_host:
+            if bridge_window_id > 0:
+                return "remote_bridge_bound"
+            if has_tmux_identity:
+                return "remote_bridge_attachable"
+            return "unavailable"
         if window_id > 0:
-            return "local"
-        return "unfocusable"
+            return "local_window"
+        return "unavailable"
 
     def _remote_session_terminal_role(self, surface_key: str) -> str:
         """Return the deterministic local terminal role used for a remote AI session bridge."""
@@ -13602,16 +13607,14 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         window_identity = self._remote_bridge_identity_from_window(window_like)
         session_identity = self._remote_bridge_identity_from_session(session)
 
+        if not (window_identity["remote_surface_key"] and window_identity["remote_session_key"]):
+            return "missing_remote_identity"
         if (
-            window_identity["remote_surface_key"]
-            and session_identity["remote_surface_key"]
-            and window_identity["remote_surface_key"] != session_identity["remote_surface_key"]
+            window_identity["remote_surface_key"] != session_identity["remote_surface_key"]
         ):
             return "remote_surface_mismatch"
         if (
-            window_identity["remote_session_key"]
-            and session_identity["remote_session_key"]
-            and window_identity["remote_session_key"] != session_identity["remote_session_key"]
+            window_identity["remote_session_key"] != session_identity["remote_session_key"]
         ):
             return "remote_session_mismatch"
 
@@ -13645,15 +13648,15 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             str(session.get("surface_key") or "").strip(): session
             for session in sessions
             if isinstance(session, dict)
+            and self._session_has_exact_remote_identity(session)
             and str(session.get("surface_key") or "").strip()
-            and str(session.get("focus_mode") or "").strip() == "ssh_attach"
         }
         live_by_session = {
             str(session.get("session_key") or "").strip(): session
             for session in sessions
             if isinstance(session, dict)
+            and self._session_has_exact_remote_identity(session)
             and str(session.get("session_key") or "").strip()
-            and str(session.get("focus_mode") or "").strip() == "ssh_attach"
         }
         stale: List[Dict[str, Any]] = []
         for window in tracked_windows:
