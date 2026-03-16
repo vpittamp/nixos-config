@@ -10,6 +10,7 @@ let
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
     cp ${./shell.qml} "$out/shell.qml"
+    cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
     cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
     cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
