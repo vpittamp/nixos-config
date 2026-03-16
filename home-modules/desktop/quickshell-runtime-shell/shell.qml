@@ -5,7 +5,6 @@ import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.I3
 import Quickshell.Io
-import Quickshell.Networking
 import Quickshell.Services.Notifications
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
@@ -58,6 +57,12 @@ ShellRoot {
     property bool notificationDetailVisible: false
     property var notificationDetailItem: null
     property bool notificationDnd: false
+    property var networkState: ({
+            connected: false,
+            kind: "offline",
+            label: "Offline",
+            signal: null
+        })
     property var systemStatsState: ({
             memory_percent: 0,
             memory_used_gb: 0,
@@ -1570,81 +1575,6 @@ ShellRoot {
         device.connect();
     }
 
-    function networkDevices() {
-        return arrayOrEmpty(Networking.devices ? Networking.devices.values : []);
-    }
-
-    function networkDeviceTypeKey(device) {
-        const rawType = stringOrEmpty(device && device.type !== undefined && device.type !== null && typeof DeviceType !== "undefined" && DeviceType.toString ? DeviceType.toString(device.type) : "");
-        const type = rawType.toLowerCase();
-        if (type.indexOf("wifi") >= 0 || type.indexOf("wireless") >= 0) {
-            return "wifi";
-        }
-        if (type.indexOf("ethernet") >= 0 || type.indexOf("wired") >= 0) {
-            return "ethernet";
-        }
-        return type || "other";
-    }
-
-    function networkDeviceStateKey(device) {
-        const rawState = stringOrEmpty(device && device.state !== undefined && device.state !== null && typeof DeviceState !== "undefined" && DeviceState.toString ? DeviceState.toString(device.state) : "");
-        return rawState.toLowerCase();
-    }
-
-    function networkDeviceConnected(device) {
-        if (!device) {
-            return false;
-        }
-        const state = networkDeviceStateKey(device);
-        if (state.indexOf("activated") >= 0 || state.indexOf("connected") >= 0) {
-            return true;
-        }
-        return !!(device.connection || device.activeAccessPoint);
-    }
-
-    function networkAccessPoint(device) {
-        return device && device.activeAccessPoint ? device.activeAccessPoint : null;
-    }
-
-    function networkSignal(device) {
-        const accessPoint = networkAccessPoint(device);
-        const value = Number(accessPoint && (accessPoint.strength !== undefined ? accessPoint.strength : accessPoint.signalStrength));
-        return Number.isFinite(value) ? Math.round(value) : null;
-    }
-
-    function networkSsid(device) {
-        const accessPoint = networkAccessPoint(device);
-        return stringOrEmpty(accessPoint && (accessPoint.ssid || accessPoint.name))
-            || stringOrEmpty(device && device.connection && (device.connection.id || device.connection.name));
-    }
-
-    function activeNetworkDevice() {
-        const devices = networkDevices();
-        let ethernetFallback = null;
-        for (let i = 0; i < devices.length; i += 1) {
-            const device = devices[i];
-            if (!networkDeviceConnected(device)) {
-                continue;
-            }
-            const type = networkDeviceTypeKey(device);
-            if (type === "wifi") {
-                return device;
-            }
-            if (type === "ethernet" && ethernetFallback === null) {
-                ethernetFallback = device;
-            }
-        }
-        return ethernetFallback;
-    }
-
-    function wifiEnabled() {
-        return boolOrFalse(Networking.wifiEnabled);
-    }
-
-    function toggleWifiEnabled() {
-        Networking.wifiEnabled = !wifiEnabled();
-    }
-
     function batteryDevice() {
         return UPower.displayDevice;
     }
@@ -1713,44 +1643,27 @@ ShellRoot {
     }
 
     function networkLabel() {
-        const device = activeNetworkDevice();
-        if (!device) {
+        if (!boolOrFalse(networkState.connected)) {
             return "Offline";
         }
-        if (networkDeviceTypeKey(device) === "wifi") {
-            const signal = networkSignal(device);
-            if (signal !== null && signal !== undefined) {
-                return "Wi-Fi " + String(signal) + "%";
-            }
-            const ssid = networkSsid(device);
-            return ssid ? ssid : "Wi-Fi";
+        if (stringOrEmpty(networkState.kind) === "wifi" && networkState.signal !== null && networkState.signal !== undefined) {
+            return "Wi-Fi " + String(networkState.signal) + "%";
         }
-        if (networkDeviceTypeKey(device) === "ethernet") {
+        if (stringOrEmpty(networkState.kind) === "ethernet") {
             return "Ethernet";
         }
-        return stringOrEmpty(device.interface || device.name || "Connected");
+        return stringOrEmpty(networkState.label || "Connected");
     }
 
     function networkDetail() {
-        const device = activeNetworkDevice();
-        if (!device) {
-            return wifiEnabled() ? "No active network connection" : "Wi-Fi disabled";
+        if (!boolOrFalse(networkState.connected)) {
+            return "No active NetworkManager connection";
         }
-        const type = networkDeviceTypeKey(device);
-        if (type === "wifi") {
-            const ssid = networkSsid(device);
-            const signal = networkSignal(device);
-            const bits = [ssid || "Wi-Fi"];
-            if (signal !== null && signal !== undefined) {
-                bits.push(String(signal) + "% signal");
-            }
-            return bits.join(" • ");
-        }
-        return stringOrEmpty(device.interface || device.name || "Ethernet");
+        return stringOrEmpty(networkState.label || "Connected");
     }
 
     function networkChipText(hovered) {
-        if (!activeNetworkDevice()) {
+        if (!boolOrFalse(networkState.connected)) {
             return hovered ? colors.amber : colors.subtle;
         }
         return neutralChipText(hovered);
@@ -6016,6 +5929,22 @@ ShellRoot {
         }
     }
 
+    function parseNetwork(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            networkState = JSON.parse(raw);
+        } catch (error) {
+            console.warn("Failed to parse network payload", error, raw);
+        }
+    }
+
     function parseSystemStats(payload) {
         const raw = stringOrEmpty(payload).trim();
         if (!raw || raw === "undefined" || raw === "null") {
@@ -6077,6 +6006,13 @@ ShellRoot {
         interval: 2000
         repeat: false
         onTriggered: notificationWatcher.running = true
+    }
+
+    Timer {
+        id: networkRefreshTimer
+        interval: 15000
+        repeat: false
+        onTriggered: networkWatcher.running = true
     }
 
     Timer {
@@ -6185,6 +6121,29 @@ ShellRoot {
         }
         onExited: function () {
             notificationRestartTimer.restart();
+        }
+    }
+
+    Process {
+        id: networkWatcher
+        command: [shellConfig.networkStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                root.parseNetwork(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("network.watch:", data);
+                }
+            }
+        }
+        onExited: function () {
+            networkRefreshTimer.restart();
         }
     }
 
@@ -6808,7 +6767,7 @@ ShellRoot {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: function (mouse) {
                                     if (mouse.button === Qt.RightButton) {
-                                        root.toggleWifiEnabled();
+                                        root.runDetached(["nm-connection-editor"]);
                                         return;
                                     }
                                     root.openSettings("devices");
@@ -7359,9 +7318,12 @@ ShellRoot {
                             Layout.fillWidth: true
                             spacing: 8
 
-                            Button {
-                                text: root.wifiEnabled() ? "Wi-Fi On" : "Wi-Fi Off"
-                                onClicked: root.toggleWifiEnabled()
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.networkDetail()
+                                color: colors.subtle
+                                font.pixelSize: 9
+                                elide: Text.ElideRight
                             }
 
                             Item {
@@ -10677,11 +10639,6 @@ ShellRoot {
                                                         text: root.bluetoothEnabled() ? "BT Off" : "BT On"
                                                         enabled: root.bluetoothAvailable()
                                                         onClicked: root.toggleBluetoothEnabled()
-                                                    }
-
-                                                    Button {
-                                                        text: root.wifiEnabled() ? "Wi-Fi On" : "Wi-Fi Off"
-                                                        onClicked: root.toggleWifiEnabled()
                                                     }
 
                                                     Button {

@@ -36,6 +36,7 @@ QtObject {
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
+  readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-elephant-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
@@ -157,6 +158,38 @@ def subscribe_loop() -> None:
 emit(initial_state())
 subscribe_loop()
 PY
+  '';
+
+  networkStatusScript = pkgs.writeShellScriptBin "quickshell-network-status" ''
+    set -euo pipefail
+
+    if ! command -v nmcli >/dev/null 2>&1; then
+      echo '{"connected":false,"kind":"offline","label":"Offline","signal":null}'
+      exit 0
+    fi
+
+    active_line="$(nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$3=="connected" { print; exit }')"
+
+    if [ -z "$active_line" ]; then
+      echo '{"connected":false,"kind":"offline","label":"Offline","signal":null}'
+      exit 0
+    fi
+
+    IFS=: read -r device type _state connection <<<"$active_line"
+
+    if [ "$type" = "wifi" ]; then
+      signal="$(nmcli -t -f IN-USE,SIGNAL dev wifi list ifname "$device" 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$1=="*" { print $2; exit }')"
+      if [ -z "$signal" ]; then
+        signal=null
+      fi
+      printf '{"connected":true,"kind":"wifi","label":%s,"signal":%s}\n' \
+        "$(${lib.getExe pkgs.jq} -Rn --arg value "$connection" '$value')" \
+        "$signal"
+      exit 0
+    fi
+
+    printf '{"connected":true,"kind":"ethernet","label":%s,"signal":null}\n' \
+      "$(${lib.getExe pkgs.jq} -Rn --arg value "$connection" '$value')"
   '';
 
   systemStatsScript = pkgs.writeShellScriptBin "quickshell-system-stats" ''
@@ -1280,6 +1313,7 @@ in
       focusLastSessionScript
       cycleDisplayLayoutScript
       notificationMonitorScript
+      networkStatusScript
       systemStatsScript
       launcherQueryScript
       launcherLaunchScript
