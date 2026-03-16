@@ -7,6 +7,30 @@ import { DaemonClient } from "../../services/daemon-client.ts";
 const HOME = Deno.env.get("HOME") || "";
 const REPOS_FILE = `${HOME}/.config/i3/repos.json`;
 
+type ReposWorktreeEntry = {
+  branch?: string;
+  path?: string;
+};
+
+type ReposRepositoryEntry = {
+  account?: string;
+  name?: string;
+  default_branch?: string;
+  worktrees?: ReposWorktreeEntry[];
+};
+
+type ReposStorage = {
+  repositories?: ReposRepositoryEntry[];
+};
+
+export type DiscoveryRefreshResult = {
+  success: boolean;
+  discovered: number;
+  repos: number;
+  worktrees: number;
+  duration_ms: number;
+};
+
 /**
  * Detect repository path from current directory or --repo flag.
  */
@@ -156,13 +180,34 @@ export async function hasGitWorktreeRoot(repoPath: string): Promise<boolean> {
 /**
  * Keep repos.json fresh after worktree mutations.
  */
-export async function refreshDiscovery(): Promise<void> {
+export async function refreshDiscovery(): Promise<DiscoveryRefreshResult> {
   const discoverCmd = new Deno.Command("i3pm", {
-    args: ["discover"],
+    args: ["discover", "--json"],
     stdout: "piped",
     stderr: "piped",
   });
-  await discoverCmd.output();
+  const output = await discoverCmd.output();
+  const stdout = new TextDecoder().decode(output.stdout).trim();
+  const stderr = new TextDecoder().decode(output.stderr).trim();
+
+  let parsed: DiscoveryRefreshResult | null = null;
+  if (stdout) {
+    try {
+      parsed = JSON.parse(stdout) as DiscoveryRefreshResult;
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (!output.success) {
+    throw new Error(stderr || stdout || "Discovery refresh failed.");
+  }
+
+  if (!parsed || !parsed.success) {
+    throw new Error(stderr || stdout || "Discovery refresh returned an invalid response.");
+  }
+
+  return parsed;
 }
 
 export async function notifyWorktreeRefresh(): Promise<void> {
@@ -221,8 +266,7 @@ export async function listNativeWorktrees(repoPath: string): Promise<NativeWorkt
  */
 export async function getDefaultBranch(repoPath: string): Promise<string | null> {
   try {
-    const content = await Deno.readTextFile(REPOS_FILE);
-    const repos = JSON.parse(content);
+    const repos = await readReposStorage();
     const qualified = repoQualifiedFromPath(repoPath);
     const [account, repoName] = qualified.split("/");
     for (const repo of repos.repositories || []) {
@@ -244,18 +288,62 @@ export async function findWorktreePath(
   branch: string,
 ): Promise<string | null> {
   try {
-    const content = await Deno.readTextFile(REPOS_FILE);
-    const repos = JSON.parse(content);
-    const [account, repoName] = repoQualified.split("/");
-    for (const repo of repos.repositories || []) {
-      if (repo.account !== account || repo.name !== repoName) continue;
-      for (const wt of repo.worktrees || []) {
-        if (wt.branch === branch && wt.path) return wt.path;
-      }
-      break;
-    }
+    const worktree = await findDiscoveredWorktree(repoQualified, branch);
+    if (worktree?.path) return worktree.path;
   } catch {
     // ignore lookup failures
   }
   return null;
+}
+
+async function readReposStorage(): Promise<ReposStorage> {
+  const content = await Deno.readTextFile(REPOS_FILE);
+  return JSON.parse(content) as ReposStorage;
+}
+
+function splitRepoQualified(repoQualified: string): { account: string; repoName: string } {
+  const [account, repoName] = repoQualified.split("/", 2);
+  return {
+    account: account || "",
+    repoName: repoName || "",
+  };
+}
+
+export async function findDiscoveredWorktree(
+  repoQualified: string,
+  branch: string,
+): Promise<ReposWorktreeEntry | null> {
+  const repos = await readReposStorage();
+  const { account, repoName } = splitRepoQualified(repoQualified);
+
+  for (const repo of repos.repositories || []) {
+    if (repo.account !== account || repo.name !== repoName) continue;
+    for (const wt of repo.worktrees || []) {
+      if (wt.branch === branch) return wt;
+    }
+    break;
+  }
+
+  return null;
+}
+
+export async function ensureWorktreePresent(
+  repoQualified: string,
+  branch: string,
+): Promise<string> {
+  const worktree = await findDiscoveredWorktree(repoQualified, branch);
+  if (!worktree?.path) {
+    throw new Error(`Discovery did not register ${repoQualified}:${branch}.`);
+  }
+  return worktree.path;
+}
+
+export async function ensureWorktreeAbsent(
+  repoQualified: string,
+  branch: string,
+): Promise<void> {
+  const worktree = await findDiscoveredWorktree(repoQualified, branch);
+  if (worktree) {
+    throw new Error(`Discovery still lists ${repoQualified}:${branch}.`);
+  }
 }

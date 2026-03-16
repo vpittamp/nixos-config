@@ -174,6 +174,57 @@ def test_select_current_session_key_ignores_stale_override_when_focus_moves_wind
     assert server._focus_session_override_key == ""
 
 
+def test_select_current_session_key_clears_override_when_focus_moves_to_non_session_window(server):
+    server._set_focus_overrides(
+        session_key="session-remote",
+        window_id=29,
+        connection_key="vpittamp@ryzen:22",
+    )
+    sessions = [
+        {
+            "session_key": "session-remote",
+            "window_id": 29,
+            "is_current_host": True,
+            "window_active": False,
+            "pane_active": True,
+        }
+    ]
+
+    current_session_key = server._select_current_session_key(
+        sessions,
+        focused_window_id=32,
+    )
+
+    assert current_session_key == ""
+    assert server._focus_session_override_key == ""
+    assert server._focus_window_override == {"window_id": 0, "connection_key": ""}
+
+
+def test_select_current_session_key_preserves_override_when_focused_window_still_matches(server):
+    server._set_focus_overrides(
+        session_key="session-remote",
+        window_id=29,
+        connection_key="vpittamp@ryzen:22",
+    )
+    sessions = [
+        {
+            "session_key": "session-remote",
+            "window_id": 31,
+            "is_current_host": True,
+            "window_active": False,
+            "pane_active": False,
+        }
+    ]
+
+    current_session_key = server._select_current_session_key(
+        sessions,
+        focused_window_id=29,
+    )
+
+    assert current_session_key == "session-remote"
+    assert server._focus_session_override_key == "session-remote"
+
+
 @pytest.mark.asyncio
 async def test_session_list_preserves_turn_owner_and_activity_substate(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()

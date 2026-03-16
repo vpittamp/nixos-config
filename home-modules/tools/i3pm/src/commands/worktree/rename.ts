@@ -2,6 +2,8 @@ import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
 import { DaemonClient } from "../../services/daemon-client.ts";
 import { buildWorktreeMutationErrorResult, buildWorktreeRenameResult } from "./result.ts";
 import {
+  ensureWorktreeAbsent,
+  ensureWorktreePresent,
   getDefaultBranch,
   hasGitWorktreeRoot,
   listNativeWorktrees,
@@ -310,8 +312,27 @@ export async function worktreeRename(args: string[]): Promise<number> {
     }
   }
 
-  await refreshDiscovery();
-  await notifyWorktreeRefresh();
+  try {
+    await refreshDiscovery();
+    await ensureWorktreeAbsent(resolved.repoQualified, resolved.branch);
+    await ensureWorktreePresent(resolved.repoQualified, newBranch);
+    await notifyWorktreeRefresh();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const recovery =
+      `Worktree '${resolved.qualifiedName}' was renamed to '${newQualified}', but discovery refresh failed: ${message}. Run: i3pm discover && i3pm worktree switch ${newQualified}`;
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult("rename", recovery),
+        null,
+        2,
+      ));
+      return 1;
+    }
+    console.error(`Error: ${recovery}`);
+    return 1;
+  }
+
   const remoteProfileMigrated = await moveRemoteProfile(resolved.qualifiedName, newQualified);
   const contextUpdated = await updateActiveContextIfNeeded(resolved.qualifiedName, newQualified);
 

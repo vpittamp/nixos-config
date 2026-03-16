@@ -698,6 +698,17 @@ async def filter_windows_by_project(
                     env_context_key = str(env.get("I3PM_CONTEXT_KEY") or "").strip()
                     if env_context_key:
                         window_context_key = env_context_key
+                        context_mark = f"ctx:{env_context_key}"
+                        if context_mark not in window.marks:
+                            try:
+                                await conn.command(f'[con_id={window_id}] mark --add "{context_mark}"')
+                                window.marks.append(context_mark)
+                            except Exception as exc:
+                                logger.debug(
+                                    "Failed to repair missing context mark for window %s: %s",
+                                    window_id,
+                                    exc,
+                                )
                 except (PermissionError, FileNotFoundError, ProcessLookupError, ValueError):
                     window_context_key = ""
 

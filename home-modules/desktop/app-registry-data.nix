@@ -323,6 +323,24 @@ let
       description = "Terminal UI for git commands";
     })
 
+    # WS24: Git Worktree TUI (lazyworktree)
+    (mkApp {
+      name = "lazyworktree";
+      display_name = "LazyWorktree";
+      command = "ghostty";
+      parameters = "-e lazyworktree -w $PROJECT_DIR";
+      scope = "scoped";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 24;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "lazyworktree.svg";
+      nix_package = "pkgs.lazyworktree";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      scoped_terminal_mode = "dedicated_scoped_window";
+      description = "Terminal UI for git worktree management";
+    })
+
     # WS13: Docker Tools (lazydocker)
     (mkApp {
       name = "lazydocker";

@@ -23,9 +23,19 @@ let
     '';
   };
 
+  legacyI3ProjectManagerPackage = pkgs.stdenv.mkDerivation {
+    name = "i3-project-manager-legacy-python";
+    src = ../tools/i3_project_manager;
+
+    installPhase = ''
+      mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager
+      cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager/
+    '';
+  };
+
   # Wrapper script to run daemon with proper PYTHONPATH
   daemonWrapper = pkgs.writeShellScript "sway-config-manager-daemon" ''
-    export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages:''${PYTHONPATH}"
+    export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages:${legacyI3ProjectManagerPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages:''${PYTHONPATH}"
     export PYTHONUNBUFFERED=1
     cd ~
     exec ${sharedPythonEnv}/bin/python ${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/daemon.py
@@ -372,7 +382,8 @@ in {
       Unit = {
         Description = "Sway Configuration Manager Daemon";
         # Feature 121: Use sway-session.target for proper Sway lifecycle binding
-        After = [ "sway-session.target" ];
+        After = [ "sway-session.target" "i3-project-daemon.service" ];
+        Wants = [ "i3-project-daemon.service" ];
         PartOf = [ "sway-session.target" ];
       };
 

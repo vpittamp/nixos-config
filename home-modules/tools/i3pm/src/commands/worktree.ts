@@ -14,6 +14,7 @@ import { worktreeList } from "./worktree/list.ts";
 import { worktreeSwitch } from "./worktree/switch.ts";
 import { worktreeRemote } from "./worktree/remote.ts";
 import { worktreeRename } from "./worktree/rename.ts";
+import { worktreeSuggestName } from "./worktree/suggest-name.ts";
 import { DaemonClient } from "../services/daemon-client.ts";
 
 /**
@@ -30,6 +31,7 @@ SUBCOMMANDS:
   create <branch>       Create a new worktree (Feature 100)
   remove <branch>       Remove a worktree (Feature 100)
   rename <old> <new>    Rename worktree and branch via git gtr
+  suggest-name <task>   Suggest a meaningful branch name for a new worktree
   list [repo]           List worktrees for a repository (Feature 100)
   current               Show active daemon worktree context
   clear                 Clear active daemon worktree context
@@ -54,6 +56,7 @@ EXAMPLES:
   i3pm worktree remove 100-feature
   i3pm worktree remove 100-feature --force
   i3pm worktree rename 100-feature 100-feature-v2
+  i3pm worktree suggest-name "improve launcher refresh handling"
   i3pm worktree current
   i3pm worktree clear
   i3pm worktree ensure vpittamp/nixos-config:main
@@ -371,7 +374,9 @@ OPTIONS:
       return 0;
     }
 
-    console.log(`Context ensure: ${result.switched ? green("switched") : yellow("already aligned")}`);
+    console.log(
+      `Context ensure: ${result.switched ? green("switched") : yellow("already aligned")}`,
+    );
     console.log(`  Worktree: ${cyan(result.context.qualified_name || qualifiedName)}`);
     console.log(`  Mode: ${magenta(result.context.execution_mode || "local")}`);
     if (result.context.connection_key) {
@@ -420,7 +425,11 @@ OPTIONS:
       return 0;
     }
 
-    console.log(`Cleared worktree context${result.previous_project ? ` (was ${cyan(result.previous_project)})` : ""}`);
+    console.log(
+      `Cleared worktree context${
+        result.previous_project ? ` (was ${cyan(result.previous_project)})` : ""
+      }`,
+    );
     return 0;
   } finally {
     client.disconnect();
@@ -461,6 +470,10 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       exitCode = await worktreeRename(subcommandArgs);
       break;
 
+    case "suggest-name":
+      exitCode = await worktreeSuggestName(subcommandArgs);
+      break;
+
     case "list":
       exitCode = await worktreeList(subcommandArgs);
       break;
@@ -493,7 +506,7 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
       console.error(
-        "Available subcommands: create, remove, rename, list, current, clear, ensure, diagnose, switch, remote",
+        "Available subcommands: create, remove, rename, suggest-name, list, current, clear, ensure, diagnose, switch, remote",
       );
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);

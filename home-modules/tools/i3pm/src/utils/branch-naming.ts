@@ -29,13 +29,74 @@ async function execGit(args: string[], cwd: string): Promise<GitCommandResult> {
   return { stdout, stderr };
 }
 
+async function resolveGitCwd(repoRoot: string): Promise<string> {
+  try {
+    const gitStat = await Deno.stat(`${repoRoot}/.git`);
+    if (gitStat.isDirectory) return repoRoot;
+  } catch {
+    // fall through
+  }
+
+  try {
+    const bareStat = await Deno.stat(`${repoRoot}/.bare`);
+    if (bareStat.isDirectory) return `${repoRoot}/.bare`;
+  } catch {
+    // fall through
+  }
+
+  return repoRoot;
+}
+
 // Common stop words to filter out (matches legacy branch naming behavior)
 const STOP_WORDS = new Set([
-  "i", "a", "an", "the", "to", "for", "of", "in", "on", "at", "by", "with",
-  "from", "is", "are", "was", "were", "be", "been", "being", "have", "has",
-  "had", "do", "does", "did", "will", "would", "should", "could", "can", "may",
-  "might", "must", "shall", "this", "that", "these", "those", "my", "your",
-  "our", "their", "want", "need", "add", "get", "set"
+  "i",
+  "a",
+  "an",
+  "the",
+  "to",
+  "for",
+  "of",
+  "in",
+  "on",
+  "at",
+  "by",
+  "with",
+  "from",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "should",
+  "could",
+  "can",
+  "may",
+  "might",
+  "must",
+  "shall",
+  "this",
+  "that",
+  "these",
+  "those",
+  "my",
+  "your",
+  "our",
+  "their",
+  "want",
+  "need",
+  "add",
+  "get",
+  "set",
 ]);
 
 /**
@@ -48,7 +109,7 @@ export function generateBranchSuffix(description: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, " ")
     .split(/\s+/)
-    .filter(word => word.length > 0);
+    .filter((word) => word.length > 0);
 
   // Filter meaningful words
   const meaningfulWords: string[] = [];
@@ -77,7 +138,7 @@ export function generateBranchSuffix(description: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .split("-")
-    .filter(w => w.length > 0)
+    .filter((w) => w.length > 0)
     .slice(0, 3)
     .join("-");
 }
@@ -92,14 +153,15 @@ export function generateBranchSuffix(description: string): string {
  * not just branches with matching suffix.
  */
 export async function findNextFeatureNumber(
-  _shortName: string,  // Unused but kept for API compatibility
-  repoRoot: string
+  _shortName: string, // Unused but kept for API compatibility
+  repoRoot: string,
 ): Promise<number> {
   const numbers: number[] = [];
+  const gitCwd = await resolveGitCwd(repoRoot);
 
   // 1. Fetch latest from remotes (ignore errors if no remotes)
   try {
-    await execGit(["fetch", "--all", "--prune"], repoRoot);
+    await execGit(["fetch", "--all", "--prune"], gitCwd);
   } catch {
     // Ignore fetch errors (e.g., no remotes configured)
   }
@@ -108,7 +170,7 @@ export async function findNextFeatureNumber(
   try {
     const remoteResult = await execGit(
       ["ls-remote", "--heads", "origin"],
-      repoRoot
+      gitCwd,
     );
     const remotePattern = /refs\/heads\/(\d+)-/gm;
     let match;
@@ -122,7 +184,7 @@ export async function findNextFeatureNumber(
   // 3. Check ALL local branches with numeric prefix
   // Note: git branch prefixes are: * (current), + (checked out in another worktree), space (normal)
   try {
-    const localResult = await execGit(["branch", "--list"], repoRoot);
+    const localResult = await execGit(["branch", "--list"], gitCwd);
     const localPattern = /^[\*\+]?\s*(\d+)-/gm;
     let match;
     const localNums: number[] = [];
@@ -136,7 +198,7 @@ export async function findNextFeatureNumber(
 
   // 4. Check worktree branches (not visible in regular branch list)
   try {
-    const worktreeResult = await execGit(["worktree", "list", "--porcelain"], repoRoot);
+    const worktreeResult = await execGit(["worktree", "list", "--porcelain"], gitCwd);
     const worktreePattern = /^branch refs\/heads\/(\d+)-/gm;
     let match;
     while ((match = worktreePattern.exec(worktreeResult.stdout)) !== null) {
@@ -173,11 +235,33 @@ export async function findNextFeatureNumber(
  */
 export async function generateFeatureBranchName(
   description: string,
-  repoRoot: string
+  repoRoot: string,
 ): Promise<{ branchName: string; suffix: string; number: number }> {
   const suffix = generateBranchSuffix(description);
   const number = await findNextFeatureNumber(suffix, repoRoot);
   const branchName = `${String(number).padStart(3, "0")}-${suffix}`;
 
   return { branchName, suffix, number };
+}
+
+export async function branchNameExists(repoRoot: string, branchName: string): Promise<boolean> {
+  const gitCwd = await resolveGitCwd(repoRoot);
+
+  try {
+    await execGit(["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], gitCwd);
+    return true;
+  } catch {
+    // continue checking worktrees
+  }
+
+  try {
+    const worktreeResult = await execGit(["worktree", "list", "--porcelain"], gitCwd);
+    const pattern = new RegExp(
+      `^branch refs/heads/${branchName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      "m",
+    );
+    return pattern.test(worktreeResult.stdout);
+  } catch {
+    return false;
+  }
 }

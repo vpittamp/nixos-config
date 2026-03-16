@@ -240,6 +240,30 @@ async def test_prepare_launch_terminal_ssh_current_host_uses_local_transport(ser
 
 
 @pytest.mark.asyncio
+async def test_launch_open_clears_stale_focus_override_for_explicit_project_intent(server_local):
+    server_local._set_focus_overrides(
+        session_key="session-stale",
+        window_id=29,
+        connection_key="vpittamp@ryzen:22",
+    )
+    server_local._get_reusable_context_terminal_window = AsyncMock(
+        return_value=SimpleNamespace(window_id=7)
+    )
+    server_local._dispatch_managed_terminal_command = lambda _spec: None
+    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 7})
+
+    result = await server_local._launch_open({
+        "app_name": "terminal",
+        "__intent_epoch": 1,
+    })
+
+    assert result["success"] is True
+    assert result["launch"]["reused_existing"] is True
+    assert server_local._focus_session_override_key == ""
+    assert server_local._focus_window_override == {"window_id": 0, "connection_key": ""}
+
+
+@pytest.mark.asyncio
 async def test_prepare_launch_yazi_local_uses_scoped_terminal_command(server_local):
     spec = await server_local._prepare_launch({"app_name": "yazi", "register_launch": False})
 
@@ -635,3 +659,50 @@ async def test_launch_open_reuses_existing_terminal_for_scoped_terminal_command(
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
     assert result["launch"]["window_id"] == 321
+
+
+@pytest.mark.asyncio
+async def test_launch_open_reuses_attached_remote_bridge_when_context_mark_drifted(server_ssh):
+    spec = {
+        "app_name": "terminal",
+        "project_name": QUALIFIED_NAME,
+        "context_key": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "launch_transport": "remote_helper",
+        "terminal_role": "project-main",
+        "terminal_anchor_id": "terminal-anchor",
+        "preferred_workspace": 1,
+        "tmux_session_name": "i3pm-vpittamp-nixos-config-ma-30c6d27c",
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "helper_args": [],
+        },
+    }
+    server_ssh._prepare_launch = AsyncMock(return_value=spec)
+    server_ssh._get_reusable_context_terminal_window = AsyncMock(return_value=None)
+    server_ssh._load_reconciled_session_runtime = AsyncMock(return_value=(
+        {"outputs": []},
+        [{
+            "project_name": QUALIFIED_NAME,
+            "connection_key": "local@ryzen",
+            "focus_connection_key": "vpittamp@ryzen:22",
+            "context_key": f"{QUALIFIED_NAME}::local::local@ryzen",
+            "focus_execution_mode": "ssh",
+            "availability_state": "attached_here",
+            "bridge_window_id": 14,
+        }],
+        {},
+    ))
+    server_ssh._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=14))
+    server_ssh._dispatch_managed_terminal_command = MagicMock()
+    server_ssh._window_focus = AsyncMock(return_value={"success": True, "window_id": 14})
+
+    result = await server_ssh._launch_open({"app_name": "terminal"})
+
+    server_ssh._dispatch_managed_terminal_command.assert_called_once_with(spec)
+    server_ssh._window_focus.assert_awaited_once()
+    assert result["success"] is True
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["window_id"] == 14
+    assert result["spec"]["launch_strategy"] == "focus_existing_terminal"

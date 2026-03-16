@@ -12,6 +12,17 @@ export class DaemonError extends Error {
   }
 }
 
+function isIgnorableSocketCloseError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = String(error.message || "");
+  return message.includes("Bad resource ID")
+    || message.includes("Broken pipe")
+    || message.includes("not connected")
+    || message.includes("closed");
+}
+
 /**
  * JSON-RPC 2.0 request
  */
@@ -95,7 +106,13 @@ export class DaemonClient {
    */
   disconnect(): void {
     if (this.conn) {
-      this.conn.close();
+      try {
+        this.conn.close();
+      } catch (error) {
+        if (!isIgnorableSocketCloseError(error)) {
+          throw error;
+        }
+      }
       this.conn = null;
     }
   }

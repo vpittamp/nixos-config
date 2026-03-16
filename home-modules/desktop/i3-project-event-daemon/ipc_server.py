@@ -341,6 +341,7 @@ class IPCServer:
             "window_id": 0,
             "connection_key": "",
         }
+        self._user_intent_epoch: int = 0
 
     @classmethod
     async def from_systemd_socket(
@@ -512,7 +513,25 @@ class IPCServer:
         """
         method = request.get("method")
         params = request.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        else:
+            params = dict(params)
         request_id = request.get("id")
+
+        explicit_intent_methods = {
+            "context.ensure",
+            "launch.open",
+            "session.focus",
+            "window.focus",
+            "worktree.switch",
+            "worktree.clear",
+        }
+        if isinstance(method, str) and method in explicit_intent_methods:
+            params["__intent_epoch"] = self._advance_user_intent_epoch(
+                method=method,
+                params=params,
+            )
 
         try:
             # Dispatch to handler method
@@ -1277,6 +1296,9 @@ class IPCServer:
 
         if target_variant not in {"", "local", "ssh"}:
             raise ValueError("target_variant must be one of: local, ssh")
+
+        if int(params.get("__intent_epoch") or 0) > 0:
+            self._clear_focus_overrides()
 
         if bool(params.get("clear")) or desired_project == "global":
             clear_result = await self._worktree_clear({})
@@ -5574,6 +5596,51 @@ class IPCServer:
         self.invalidate_window_tree_cache()
         return None
 
+    async def _get_reusable_remote_project_bridge_window(
+        self,
+        *,
+        project_name: str,
+        connection_key: str,
+    ) -> Optional[Any]:
+        """Reuse a live attached remote bridge window even if its context marks drifted."""
+        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
+            {},
+            close_windows=False,
+        )
+        if not runtime_snapshot:
+            return None
+
+        target_project = str(project_name or "").strip()
+        target_connection = str(connection_key or "").strip()
+        if not (target_project and target_connection):
+            return None
+
+        candidate_window_ids: List[int] = []
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            if str(session.get("project_name") or session.get("project") or "").strip() != target_project:
+                continue
+            if str(session.get("focus_connection_key") or session.get("connection_key") or "").strip() != target_connection:
+                continue
+            if str(session.get("focus_execution_mode") or "").strip().lower() != "ssh":
+                continue
+            if str(session.get("availability_state") or "").strip() != "attached_here":
+                continue
+            bridge_window_id = int(session.get("bridge_window_id") or session.get("window_id") or 0)
+            if bridge_window_id > 0 and bridge_window_id not in candidate_window_ids:
+                candidate_window_ids.append(bridge_window_id)
+
+        for window_id in candidate_window_ids:
+            live_window = await self._find_live_sway_window(window_id)
+            if live_window is None:
+                continue
+            tracked_window = self.state_manager.state.window_map.get(window_id)
+            if tracked_window is not None:
+                return tracked_window
+            return SimpleNamespace(window_id=window_id)
+        return None
+
     def _substitute_launch_parameter(
         self,
         value: str,
@@ -6961,9 +7028,71 @@ class IPCServer:
             "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
         }
 
+    def _clear_focus_overrides(self) -> None:
+        """Clear both session and window focus overrides."""
+        self._focus_session_override_key = ""
+        self._focus_window_override = {"window_id": 0, "connection_key": ""}
+
     def _clear_session_focus_override(self) -> None:
         """Clear the session override while keeping any explicit window target."""
         self._focus_session_override_key = ""
+
+    def _advance_user_intent_epoch(
+        self,
+        *,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Record a new top-level user intent so stale async work can be ignored."""
+        self._user_intent_epoch += 1
+        payload = params or {}
+        logger.info(
+            "User intent epoch=%s method=%s project=%s variant=%s connection=%s session=%s app=%s",
+            self._user_intent_epoch,
+            str(method or "").strip(),
+            str(payload.get("qualified_name") or payload.get("project_name") or "").strip(),
+            str(payload.get("target_variant") or payload.get("execution_mode") or "").strip(),
+            self._normalize_connection_key(str(payload.get("connection_key") or "").strip()),
+            str(payload.get("session_key") or "").strip(),
+            str(payload.get("app_name") or "").strip(),
+        )
+        return self._user_intent_epoch
+
+    def _user_intent_is_current(self, intent_epoch: int) -> bool:
+        """Return whether an async action still matches the latest explicit user intent."""
+        epoch = int(intent_epoch or 0)
+        return epoch <= 0 or epoch == self._user_intent_epoch
+
+    def _stale_intent_result(
+        self,
+        *,
+        session_key: str = "",
+        project_name: str = "",
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Return a consistent response when a newer user action supersedes a stale request."""
+        logger.info(
+            "Ignoring stale user intent for session=%s project=%s reason=%s current_epoch=%s",
+            str(session_key or "").strip(),
+            str(project_name or "").strip(),
+            str(reason or "").strip(),
+            self._user_intent_epoch,
+        )
+        return {
+            "success": False,
+            "reason": str(reason or "superseded_by_newer_user_intent"),
+            "session_key": str(session_key or "").strip(),
+            "project_name": str(project_name or "").strip(),
+            "current_ai_session_key_after": "",
+            "focused_window_id_after": 0,
+            "focus_state_after": {},
+            "verification": {
+                "success": False,
+                "reason": str(reason or "superseded_by_newer_user_intent"),
+                "session_key": str(session_key or "").strip(),
+                "current_session_key": "",
+            },
+        }
 
     def _current_session_override_key(
         self,
@@ -7050,6 +7179,15 @@ class IPCServer:
                     return exact_match
 
                 return str(window_sessions[0].get("session_key") or "")
+
+            override_window_id = int(self._focus_window_override.get("window_id") or 0)
+            if override_key and override_window_id > 0 and override_window_id == focused_window_id:
+                return override_key
+
+            if override_key:
+                self._focus_session_override_key = ""
+                self._focus_window_override = {"window_id": 0, "connection_key": ""}
+                return ""
 
         if override_key:
             return override_key
@@ -7279,8 +7417,16 @@ class IPCServer:
         *,
         session_key: str,
         session: Dict[str, Any],
+        intent_epoch: int = 0,
     ) -> Dict[str, Any]:
         """Attach a remote tmux-backed session into a deterministic local SSH terminal."""
+        project_name = str(session.get("project_name") or session.get("project") or "").strip()
+        if not self._user_intent_is_current(intent_epoch):
+            return self._stale_intent_result(
+                session_key=session_key,
+                project_name=project_name,
+                reason="superseded_before_remote_attach",
+            )
         attach_profile = self._resolve_remote_attach_profile(session)
         await self._switch_to_explicit_remote_context(attach_profile)
         spec = await self._build_remote_session_attach_spec(session, attach_profile=attach_profile)
@@ -7330,6 +7476,12 @@ class IPCServer:
                 }
 
         if existing_window is None:
+            if not self._user_intent_is_current(intent_epoch):
+                return self._stale_intent_result(
+                    session_key=session_key,
+                    project_name=project_name,
+                    reason="superseded_before_remote_launch",
+                )
             prior_launch_state = dict(launch_result)
             spec["launch"] = await self._register_launch_for_spec(spec)
             launch_result = dict(prior_launch_state)
@@ -7341,6 +7493,12 @@ class IPCServer:
                     f"Remote session bridge for {session_key} did not bind to a local window"
                 )
 
+        if not self._user_intent_is_current(intent_epoch):
+            return self._stale_intent_result(
+                session_key=session_key,
+                project_name=project_name,
+                reason="superseded_before_remote_focus",
+            )
         focus_result = await self._window_focus({
             "window_id": local_window_id,
             "project_name": project_name,
@@ -7448,6 +7606,7 @@ class IPCServer:
             return await self._focus_remote_session_attach(
                 session_key=session_key,
                 session=session,
+                intent_epoch=int(params.get("__intent_epoch") or 0),
             )
 
         focus_result = await self._window_focus({
@@ -8508,6 +8667,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         payload.setdefault("launcher_pid", os.getpid())
         payload["register_launch"] = False
         spec = await self._prepare_launch(payload)
+        if int(payload.get("__intent_epoch") or 0) > 0 and str(spec.get("project_name") or "").strip():
+            self._clear_focus_overrides()
 
         reused_existing = False
         reused_window_id = 0
@@ -8521,6 +8682,15 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 app_name="terminal",
                 terminal_role=str(spec.get("terminal_role") or "project-main").strip(),
             )
+            if (
+                existing_window is None
+                and str(spec.get("execution_mode") or "").strip().lower() == "ssh"
+                and str(spec.get("launch_transport") or "").strip() == "remote_helper"
+            ):
+                existing_window = await self._get_reusable_remote_project_bridge_window(
+                    project_name=str(spec.get("project_name") or "").strip(),
+                    connection_key=str(spec.get("connection_key") or "").strip(),
+                )
             if existing_window is not None:
                 self._dispatch_managed_terminal_command(spec)
                 focus_result = await self._window_focus({
@@ -10855,9 +11025,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         """Project-aware focus flow owned by the daemon."""
         target_variant_normalized = str(target_variant or "").strip().lower()
         local_window_target = await self._window_is_locally_tracked(window_id)
+        connection_targets_current_host = self._connection_target_is_current_host(connection_key)
         should_remote_handoff = (
             target_variant_normalized == "ssh"
-            and not self._connection_target_is_current_host(connection_key)
+            and not connection_targets_current_host
             and not local_window_target
         )
         if should_remote_handoff:
@@ -10936,10 +11107,18 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
             raise RuntimeError("Sway connection is unavailable")
 
+        runtime_target_variant = target_variant_normalized
+        runtime_connection_key = str(connection_key or "").strip()
+        if target_variant_normalized == "ssh" and (
+            local_window_target or connection_targets_current_host
+        ):
+            runtime_target_variant = ""
+            runtime_connection_key = ""
+
         switch_result = await self._switch_runtime_context_if_needed(
             project_name,
-            target_variant,
-            connection_key,
+            runtime_target_variant,
+            runtime_connection_key,
         )
         selector = f"[con_id={int(window_id)}]"
         last_error = ""
@@ -13741,6 +13920,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             if not qualified_name:
                 raise ValueError("qualified_name parameter is required")
             prefer_local = bool(params.get("prefer_local"))
+            if int(params.get("__intent_epoch") or 0) > 0:
+                self._clear_focus_overrides()
 
             logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
 
@@ -13866,6 +14047,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         from pathlib import Path
 
         start_time = time.perf_counter()
+        if int(params.get("__intent_epoch") or 0) > 0:
+            self._clear_focus_overrides()
 
         try:
             # Get previous project

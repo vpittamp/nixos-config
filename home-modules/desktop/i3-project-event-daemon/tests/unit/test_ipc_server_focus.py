@@ -92,6 +92,32 @@ async def test_session_focus_remote_session_uses_ssh_attach(server, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_session_focus_remote_session_aborts_when_superseded_by_newer_intent(server, monkeypatch):
+    remote_session = {
+        "session_key": "session-remote",
+        "window_id": 0,
+        "focus_mode": "ssh_attach",
+        "focus_connection_key": "vpittamp@ryzen:22",
+        "connection_key": "vpittamp@ryzen:22",
+        "project_name": "vpittamp/nixos-config:main",
+        "surface_key": "surface-remote",
+        "conflict_state": "",
+    }
+    server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
+    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
+    server._user_intent_epoch = 2
+    server._resolve_remote_attach_profile = lambda _session: (_ for _ in ()).throw(AssertionError("should not resolve attach profile"))
+
+    result = await server._session_focus({
+        "session_key": "session-remote",
+        "__intent_epoch": 1,
+    })
+
+    assert result["success"] is False
+    assert result["reason"] == "superseded_before_remote_attach"
+
+
+@pytest.mark.asyncio
 async def test_session_focus_local_requires_verified_current_session(server, monkeypatch):
     local_session = {
         "session_key": "session-local",
@@ -231,6 +257,11 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
     assert result["target_variant"] == "ssh"
     assert result["verification"]["success"] is True
     assert result["focused_window_id_after"] == 30
+    server._switch_runtime_context_if_needed.assert_awaited_once_with(
+        "vpittamp/nixos-config:main",
+        "",
+        "",
+    )
 
 
 @pytest.mark.asyncio
@@ -264,6 +295,11 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
     assert result["success"] is True
     assert result["target_variant"] == "ssh"
     assert result["verification"]["success"] is True
+    server._switch_runtime_context_if_needed.assert_awaited_once_with(
+        "PittampalliOrg/stacks:main",
+        "",
+        "",
+    )
     assert result["focused_window_id_after"] == 175
 
 
@@ -844,7 +880,7 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_focus_state_uses_verified_remote_override_without_local_ai_focus(server, monkeypatch):
+async def test_focus_state_clears_verified_remote_override_without_local_ai_focus(server, monkeypatch):
     runtime_snapshot = {
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
@@ -897,9 +933,9 @@ async def test_focus_state_uses_verified_remote_override_without_local_ai_focus(
     result = await server._focus_state({})
 
     assert result["success"] is True
-    assert result["current_ai_session_key"] == "session-remote-current"
+    assert result["current_ai_session_key"] == ""
     assert result["focused_window_id"] == 404
-    assert result["active_session"]["host_name"] == "ryzen"
+    assert result["active_session"]["session_key"] == ""
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Create Worktree"
+  short_description: "Create a managed i3pm worktree from a task summary and switch into it"

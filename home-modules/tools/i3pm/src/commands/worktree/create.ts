@@ -9,6 +9,7 @@ import {
 import { buildWorktreeCreateResult, buildWorktreeMutationErrorResult } from "./result.ts";
 import {
   detectRepoPath,
+  ensureWorktreePresent,
   findWorktreePath,
   getDefaultBranch,
   hasGitWorktreeRoot,
@@ -170,11 +171,32 @@ export async function worktreeCreate(args: string[]): Promise<number> {
   }
 
   // Keep repos.json current for panel and project switching.
-  await refreshDiscovery();
-  await notifyWorktreeRefresh();
   const repoQualified = request.repo || repoQualifiedFromPath(repoPath);
+  let outputPath = `${repoPath}/${branch}`;
+
+  try {
+    await refreshDiscovery();
+    outputPath = await ensureWorktreePresent(repoQualified, branch);
+    await notifyWorktreeRefresh();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const recovery = `Run: i3pm discover && i3pm worktree switch ${repoQualified}:${branch}`;
+    const fullMessage =
+      `Worktree '${repoQualified}:${branch}' was created, but discovery refresh failed: ${message}. ${recovery}`;
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult("create", fullMessage),
+        null,
+        2,
+      ));
+      return 1;
+    }
+    console.error(`Error: ${fullMessage}`);
+    return 1;
+  }
+
   const discoveredPath = await findWorktreePath(repoQualified, branch);
-  const outputPath = discoveredPath || `${repoPath}/${branch}`;
+  outputPath = discoveredPath || outputPath;
 
   if (parsed.json) {
     console.log(JSON.stringify(

@@ -9,6 +9,7 @@ import {
 } from "../../../models/repository.ts";
 import { buildWorktreeMutationErrorResult, buildWorktreeRemoveResult } from "./result.ts";
 import {
+  ensureWorktreeAbsent,
   hasGitWorktreeRoot,
   notifyWorktreeRefresh,
   refreshDiscovery,
@@ -217,8 +218,26 @@ export async function worktreeRemove(args: string[]): Promise<number> {
     return 1;
   }
 
-  await refreshDiscovery();
-  await notifyWorktreeRefresh();
+  try {
+    await refreshDiscovery();
+    await ensureWorktreeAbsent(target.repoQualified, branch);
+    await notifyWorktreeRefresh();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const recovery =
+      `Worktree '${target.qualifiedName}' was removed, but discovery refresh failed: ${message}. Run: i3pm discover`;
+    if (parsed.json) {
+      console.log(JSON.stringify(
+        buildWorktreeMutationErrorResult("remove", recovery),
+        null,
+        2,
+      ));
+      return 1;
+    }
+    console.error(`Error: ${recovery}`);
+    return 1;
+  }
+
   const remoteProfileRemoved = await removeRemoteProfile(target.qualifiedName);
   const contextCleared = await clearActiveContextIfRemoved(target.qualifiedName);
 

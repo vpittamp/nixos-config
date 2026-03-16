@@ -75,6 +75,7 @@ EXAMPLES:
   i3pm dashboard snapshot             Show dashboard state
   i3pm display snapshot               Show display layout state
   i3pm worktree list                   List all worktrees
+  i3pm worktree suggest-name "improve launcher refresh"  Suggest a new branch name
   i3pm worktree switch account/repo:branch   Switch to worktree
   i3pm worktree remote set account/repo:branch --dir /remote/path
   i3pm run firefox                     Toggle Firefox (launch/focus/summon)

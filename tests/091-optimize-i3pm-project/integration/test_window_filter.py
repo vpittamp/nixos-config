@@ -411,3 +411,38 @@ class TestWindowFilterParallelization:
         assert result["hidden"] == 3  # All queued
         assert mock_conn.command.call_count == 3
         # Note: error_count tracking happens in CommandBatchService
+
+    async def test_missing_context_mark_is_repaired_from_window_environment(self):
+        """Scoped windows should restore missing ctx marks from live I3PM env."""
+        windows = [
+            MockWindow(
+                14,
+                "Ghostty",
+                marks=["scoped:terminal:vpittamp/nixos-config:main:14"],
+                pid=4242,
+            ),
+        ]
+
+        mock_conn = AsyncMock()
+        mock_conn.get_tree = AsyncMock(return_value=MockTree(windows))
+        mock_conn.command = AsyncMock(return_value=None)
+
+        from home_modules.desktop.i3_project_event_daemon.services import window_filter as window_filter_module
+
+        with patch.object(
+            window_filter_module,
+            "read_process_environ_with_fallback",
+            return_value={"I3PM_CONTEXT_KEY": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22"},
+        ):
+            result = await window_filter_module.filter_windows_by_project(
+                mock_conn,
+                active_project="vpittamp/nixos-config:main",
+                workspace_tracker=None,
+                active_context_key="vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+            )
+
+        assert result["visible"] == 1
+        assert 'ctx:vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22' in windows[0].marks
+        mock_conn.command.assert_any_call(
+            '[con_id=14] mark --add "ctx:vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22"'
+        )
