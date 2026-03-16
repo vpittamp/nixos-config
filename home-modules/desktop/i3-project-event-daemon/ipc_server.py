@@ -6399,6 +6399,30 @@ class IPCServer:
             context_key or source_connection_key or "unknown",
         ])
 
+    @staticmethod
+    def _canonical_tmux_surface_key(
+        *,
+        context_key: str,
+        tmux_server_key: str,
+        tmux_session: str,
+        tmux_window: str,
+        tmux_pane: str,
+        pty: str,
+    ) -> str:
+        """Build the tmux-first surface key used across mixed-version session payloads."""
+        if not str(tmux_pane or "").strip():
+            return ""
+        parts = [
+            str(context_key or "").strip() or "unknown-context",
+            str(tmux_server_key or "").strip() or "unknown-tmux-server",
+            str(tmux_session or "").strip() or "unknown-session",
+            str(tmux_window or "").strip() or "unknown-window",
+            str(tmux_pane or "").strip(),
+        ]
+        if str(pty or "").strip():
+            parts.append(str(pty or "").strip())
+        return "::".join(parts)
+
     def _build_session_focus_target(self, session_key: str) -> Dict[str, Any]:
         """Return a daemon-owned focus target for a session entry."""
         return {
@@ -6671,10 +6695,16 @@ class IPCServer:
         session_phase: str,
         bridge_window_id: int,
         remote_source_stale: bool,
+        source_is_current_host: bool,
+        execution_mode: str,
+        has_tmux_identity: bool,
+        binding_state: str,
     ) -> str:
         """Return the user-facing availability bucket for a normalized session."""
         normalized_phase = str(session_phase or "").strip().lower()
         normalized_focus_mode = str(focus_mode or "").strip().lower()
+        normalized_execution_mode = str(execution_mode or "").strip().lower()
+        normalized_binding_state = str(binding_state or "").strip().lower()
         if remote_source_stale or normalized_phase == "stale_source":
             return "stale_source"
         if normalized_phase == "tmux_missing":
@@ -6683,6 +6713,13 @@ class IPCServer:
             return "attached_here" if int(bridge_window_id or 0) > 0 else "remote_available"
         if normalized_focus_mode == "local":
             return "available_here"
+        if (
+            source_is_current_host
+            and normalized_execution_mode == "local"
+            and has_tmux_identity
+            and normalized_binding_state in {"tmux_present_unbound", "rebound_local", "bound_local"}
+        ):
+            return "local_unbound"
         return "unfocusable"
 
     @staticmethod
@@ -6694,10 +6731,15 @@ class IPCServer:
         window_id: int,
         remote_source_stale: bool,
         has_tmux_identity: bool,
+        source_is_current_host: bool,
+        execution_mode: str,
+        binding_state: str,
     ) -> str:
         """Return the primary reason a session can or cannot be focused."""
         normalized_phase = str(session_phase or "").strip().lower()
         normalized_focus_mode = str(focus_mode or "").strip().lower()
+        normalized_execution_mode = str(execution_mode or "").strip().lower()
+        normalized_binding_state = str(binding_state or "").strip().lower()
         if remote_source_stale or normalized_phase == "stale_source":
             return "remote_source_stale"
         if normalized_phase == "tmux_missing":
@@ -6706,6 +6748,13 @@ class IPCServer:
             return "attached_bridge_window" if int(bridge_window_id or 0) > 0 else "remote_tmux_available"
         if normalized_focus_mode == "local":
             return "local_window_bound" if int(window_id or 0) > 0 else "local_focus_target"
+        if (
+            source_is_current_host
+            and normalized_execution_mode == "local"
+            and has_tmux_identity
+            and normalized_binding_state in {"tmux_present_unbound", "rebound_local", "bound_local"}
+        ):
+            return "local_tmux_unbound"
         if not has_tmux_identity:
             return "no_focus_target"
         return "focus_target_unavailable"
@@ -6753,14 +6802,59 @@ class IPCServer:
                 or ""
             ).strip()
             display_project = str(raw_session.get("display_project") or project_name or "global").strip() or "global"
-            session_key = self._build_session_key(raw_session, connection_key)
             stats_source = str(raw_session.get("stats_source") or "missing").strip() or "missing"
             if source_received_at > 0 and stats_source == "local_process":
                 stats_source = "remote_process"
-            surface_key = str(raw_session.get("surface_key") or "").strip()
             tmux_session = str(terminal_context.get("tmux_session") or "").strip()
             tmux_window = str(terminal_context.get("tmux_window") or "").strip()
             tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
+            tmux_server_key = str(terminal_context.get("tmux_server_key") or terminal_context.get("tmux_socket") or "").strip()
+            pane_tty = str(terminal_context.get("pty") or "").strip()
+            surface_key = (
+                self._canonical_tmux_surface_key(
+                    context_key=context_key,
+                    tmux_server_key=tmux_server_key,
+                    tmux_session=tmux_session,
+                    tmux_window=tmux_window,
+                    tmux_pane=tmux_pane,
+                    pty=pane_tty,
+                )
+                if tmux_pane
+                else str(raw_session.get("surface_key") or "").strip()
+            )
+            binding_state = str(
+                raw_session.get("binding_state")
+                or terminal_context.get("binding_state")
+                or ""
+            ).strip()
+            binding_anchor_id = str(
+                raw_session.get("binding_anchor_id")
+                or terminal_context.get("binding_anchor_id")
+                or terminal_context.get("terminal_anchor_id")
+                or ""
+            ).strip()
+            binding_source = str(
+                raw_session.get("binding_source")
+                or terminal_context.get("binding_source")
+                or ""
+            ).strip()
+            if not binding_state and tmux_pane:
+                binding_state = "bound_local" if binding_anchor_id else "tmux_present_unbound"
+            if not binding_source and binding_anchor_id:
+                binding_source = "legacy_anchor"
+            session_key = self._build_session_key(
+                {
+                    **raw_session,
+                    "surface_key": surface_key,
+                    "terminal_context": {
+                        **terminal_context,
+                        "binding_anchor_id": binding_anchor_id,
+                        "binding_state": binding_state,
+                        "binding_source": binding_source,
+                    },
+                },
+                connection_key,
+            )
             pane_title = str(terminal_context.get("pane_title") or "").strip()
             pane_label = str(raw_session.get("pane_label") or "").strip() or pane_title or tmux_pane
             host_name = str(terminal_context.get("host_name") or source_host_name or "").strip().lower()
@@ -6809,6 +6903,10 @@ class IPCServer:
                 session_phase=session_phase,
                 bridge_window_id=bridge_window_id,
                 remote_source_stale=bool(source_stale),
+                source_is_current_host=source_is_current_host,
+                execution_mode=execution_mode,
+                has_tmux_identity=bool(tmux_session and tmux_pane),
+                binding_state=binding_state,
             )
             focusability_reason = self._session_focusability_reason(
                 focus_mode=focus_mode,
@@ -6817,6 +6915,9 @@ class IPCServer:
                 window_id=bound_window_id,
                 remote_source_stale=bool(source_stale),
                 has_tmux_identity=bool(tmux_session and tmux_pane),
+                source_is_current_host=source_is_current_host,
+                execution_mode=execution_mode,
+                binding_state=binding_state,
             )
             normalized.append({
                 "session_key": session_key,
@@ -6833,6 +6934,9 @@ class IPCServer:
                 "connection_key": connection_key,
                 "context_key": context_key,
                 "terminal_anchor_id": str(terminal_context.get("terminal_anchor_id") or "").strip(),
+                "binding_anchor_id": binding_anchor_id,
+                "binding_state": binding_state,
+                "binding_source": binding_source,
                 "terminal_context": dict(terminal_context),
                 "surface_kind": str(raw_session.get("surface_kind") or "terminal-window").strip() or "terminal-window",
                 "surface_key": surface_key,

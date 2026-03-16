@@ -2261,6 +2261,9 @@ def _session_terminal_anchor(session: Dict[str, Any]) -> str:
     if not isinstance(terminal_context, dict):
         terminal_context = {}
     terminal_anchor_id = str(
+        session.get("binding_anchor_id")
+        or terminal_context.get("binding_anchor_id")
+        or
         session.get("terminal_anchor_id")
         or terminal_context.get("terminal_anchor_id")
         or ""
@@ -2277,7 +2280,7 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
     A session is eligible only when:
     - tool is one of supported AI CLIs
     - execution identity is concrete (local/ssh + connection key)
-    - terminal anchor is concrete (daemon-issued anchor ID)
+    - tracked surface identity is concrete (bound anchor or tmux pane identity)
     """
     tool = str(session.get("tool") or "").strip().lower()
     if tool not in _AI_TRACKABLE_TOOLS:
@@ -2294,7 +2297,14 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
         return False
     if str(session.get("invalid_reason") or "").strip():
         return False
-    return bool(_session_terminal_anchor(session))
+    terminal_context = session.get("terminal_context", {}) or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+    has_tmux_identity = bool(
+        str(terminal_context.get("tmux_session") or "").strip()
+        and str(terminal_context.get("tmux_pane") or "").strip()
+    )
+    return bool(_session_terminal_anchor(session) or has_tmux_identity)
 
 
 def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
@@ -2316,6 +2326,9 @@ def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
     pane = str(terminal_context.get("tmux_pane") or "")
     pty = str(terminal_context.get("pty") or "")
     terminal_anchor_id = str(
+        terminal_context.get("binding_anchor_id")
+        or session.get("binding_anchor_id")
+        or
         terminal_context.get("terminal_anchor_id")
         or session.get("terminal_anchor_id")
         or ""
@@ -2323,10 +2336,13 @@ def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
 
     # Highest-priority dedupe scope: tool + concrete terminal context.
     # This keeps one badge per pane/pty even when many native session ids exist.
+    if pane:
+        tmux_server_key = str(terminal_context.get("tmux_server_key") or "")
+        tmux_session = str(terminal_context.get("tmux_session") or "")
+        tmux_window = str(terminal_context.get("tmux_window") or "")
+        return f"tool={tool}|tmux={tmux_server_key}|session={tmux_session}|window={tmux_window}|pane={pane}"
     if terminal_anchor_id:
         return f"tool={tool}|anchor={terminal_anchor_id}"
-    if pane:
-        return f"tool={tool}|pane={pane}"
     if pty:
         return f"tool={tool}|pty={pty}"
     if window_id is not None:

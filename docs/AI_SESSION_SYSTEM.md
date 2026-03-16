@@ -1,6 +1,6 @@
 # AI Session System
 
-Last updated: 2026-03-14
+Last updated: 2026-03-16
 
 ## Purpose
 
@@ -55,14 +55,25 @@ Important runtime files:
 
 The intended identity boundary is one tracked AI surface per tmux pane.
 
+Managed-session identity is tmux-first:
+- tmux pane identity is the durable session surface
+- `terminal_anchor_id` is a rebindable local window attachment
+- logout/login or terminal reattach may change the bound anchor without changing the underlying session
+- local panel/runtime code must keep the same session identity when a tmux pane is rebound to a new anchor
+
 Primary identity fields:
 - `tool`
 - `connection_key`
 - `context_key`
-- `terminal_anchor_id`
 - `tmux_session`
 - `tmux_window`
 - `tmux_pane`
+
+Binding fields:
+- `binding_anchor_id`
+- `binding_state`
+- `binding_source`
+- `terminal_anchor_id`
 
 Additional identity/debug fields:
 - `session_key`
@@ -74,6 +85,8 @@ Additional identity/debug fields:
 Rules:
 - `pid` is the preferred process identity for the actual AI process.
 - `pane_pid` is only the tmux pane shell anchor and is diagnostic.
+- when tmux identity exists, `surface_key` and native collision handling must not depend on `terminal_anchor_id`
+- `terminal_anchor_id` remains a compatibility/debug field and should resolve to the effective current binding when one exists
 - sessions without tmux/anchor identity are intentionally not first-class in the panel model.
 
 ## Host Model

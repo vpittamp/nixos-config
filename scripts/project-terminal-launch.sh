@@ -30,6 +30,7 @@ if managed_tmux has-session -t "$TMUX_SESSION_NAME" 2>/dev/null; then
         managed_tmux kill-session -t "$TMUX_SESSION_NAME" >/dev/null 2>&1 || true
     else
         managed_tmux_export_current_env "$TMUX_SESSION_NAME"
+        managed_tmux_set_metadata "$TMUX_SESSION_NAME"
         if [[ $# -gt 0 ]]; then
             window_name="$(basename -- "$1")"
             command_string="$(printf '%q ' "$@")"

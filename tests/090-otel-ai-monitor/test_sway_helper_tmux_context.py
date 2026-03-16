@@ -55,8 +55,38 @@ async def test_get_tmux_context_for_pid_returns_session_window_and_pane(monkeypa
         "/dev/pts/5\tworkflow-builder/main\t1:node\t%5\t1\t1234\tnode\t1\t0\n"
     ).encode("utf-8")
 
-    async def _fake_create_subprocess_exec(*_args, **_kwargs):
-        return _FakeProc(stdout=fake_output, returncode=0)
+    async def _fake_create_subprocess_exec(*args, **_kwargs):
+        if args[:3] == ("tmux", "-S", "/run/user/1000/tmux-1000/default") and args[3:] == (
+            "list-panes",
+            "-a",
+            "-F",
+            sway_helper_module._TMUX_LIST_PANES_FORMAT,
+        ):
+            return _FakeProc(stdout=fake_output, returncode=0)
+        if args[:3] == ("tmux", "-S", "/run/user/1000/tmux-1000/default") and args[3:] == (
+            "show-environment",
+            "-t",
+            "workflow-builder/main",
+        ):
+            return _FakeProc(
+                stdout=(
+                    "I3PM_TERMINAL_ANCHOR_ID=terminal-workflow-builder-main-200-1\n"
+                    "I3PM_PROJECT_NAME=PittampalliOrg/workflow-builder:main\n"
+                    "I3PM_CONTEXT_KEY=PittampalliOrg/workflow-builder:main::local::local@ryzen\n"
+                    "I3PM_CONNECTION_KEY=local@ryzen\n"
+                    "I3PM_CONTEXT_VARIANT=local\n"
+                ).encode("utf-8"),
+                returncode=0,
+            )
+        if args[:3] == ("tmux", "-S", "/run/user/1000/tmux-1000/default") and args[3:] == (
+            "show-options",
+            "-t",
+            "workflow-builder/main",
+            "-qv",
+            "@i3pm_terminal_anchor",
+        ):
+            return _FakeProc(stdout=b"terminal-workflow-builder-main-legacy\n", returncode=0)
+        return _FakeProc(stdout=b"", returncode=1)
 
     monkeypatch.setattr(
         sway_helper_module.asyncio,
@@ -78,6 +108,12 @@ async def test_get_tmux_context_for_pid_returns_session_window_and_pane(monkeypa
     assert context["tmux_socket"] == "/run/user/1000/tmux-1000/default"
     assert context["tmux_server_key"] == "/run/user/1000/tmux-1000/default"
     assert context["tmux_resolution_source"] == "discovered"
+    assert context["terminal_anchor_id"] == "terminal-workflow-builder-main-200-1"
+    assert context["binding_anchor_id"] == "terminal-workflow-builder-main-200-1"
+    assert context["binding_state"] == "bound_local"
+    assert context["binding_source"] == "tmux_metadata"
+    assert context["project_name"] == "PittampalliOrg/workflow-builder:main"
+    assert context["context_key"] == "PittampalliOrg/workflow-builder:main::local::local@ryzen"
 
 
 @pytest.mark.asyncio

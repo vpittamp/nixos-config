@@ -782,6 +782,10 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Any]:
         "pane_active": None,
         "window_active": None,
         "pty": tty_path,
+        "source_terminal_anchor_id": None,
+        "binding_anchor_id": None,
+        "binding_state": "unresolved",
+        "binding_source": None,
     }
     if not tty_path:
         return context
@@ -803,6 +807,23 @@ async def get_tmux_context_for_pid(pid: int) -> dict[str, Any]:
             context["pane_title"] = pane.get("pane_title")
             context["pane_active"] = pane.get("pane_active")
             context["window_active"] = pane.get("window_active")
+            session_metadata = await _read_tmux_session_i3pm_metadata(
+                context.get("tmux_socket"),
+                context.get("tmux_session"),
+            )
+            for key, value in session_metadata.items():
+                if value:
+                    context[key] = value
+            context["terminal_anchor_id"] = (
+                context.get("binding_anchor_id")
+                or context.get("source_terminal_anchor_id")
+                or context.get("terminal_anchor_id")
+            )
+            if context.get("binding_anchor_id"):
+                context["binding_state"] = "bound_local"
+                context["binding_source"] = context.get("binding_source") or "tmux_metadata"
+            else:
+                context["binding_state"] = "tmux_present_unbound"
             return context
     except FileNotFoundError:
         return context
@@ -869,6 +890,241 @@ def _parse_tmux_panes_output(
             "pty": str(pane_tty or "").strip() or None,
         })
     return panes
+
+
+async def _read_tmux_session_i3pm_metadata(
+    socket_path: Optional[str],
+    session_name: Optional[str],
+) -> dict[str, Optional[str]]:
+    """Read managed I3PM metadata exported at the tmux session level."""
+    return await _read_tmux_session_i3pm_metadata_common(socket_path, session_name, async_mode=True)
+
+
+def read_tmux_session_i3pm_metadata_sync(
+    socket_path: Optional[str],
+    session_name: Optional[str],
+) -> dict[str, Optional[str]]:
+    """Read managed I3PM metadata synchronously for export-time reconciliation."""
+    normalized_session = str(session_name or "").strip()
+    if not normalized_session:
+        return {}
+
+    env_cmd = ["tmux"]
+    if socket_path:
+        env_cmd.extend(["-S", socket_path])
+    env_cmd.extend(["show-environment", "-t", normalized_session])
+
+    env_values: dict[str, str] = {}
+    try:
+        proc = subprocess.run(
+            env_cmd,
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+        if proc.returncode == 0:
+            for raw_line in str(proc.stdout or "").splitlines():
+                line = str(raw_line or "").strip()
+                if not line or "=" not in line or line.startswith("-"):
+                    continue
+                key, value = line.split("=", 1)
+                env_values[key] = value
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+    except Exception as exc:
+        logger.debug(
+            "read_tmux_session_i3pm_metadata_sync failed for %s: %s",
+            normalized_session,
+            exc,
+        )
+        return {}
+
+    option_anchor: Optional[str] = None
+    option_cmd = ["tmux"]
+    if socket_path:
+        option_cmd.extend(["-S", socket_path])
+    option_cmd.extend(["show-options", "-t", normalized_session, "-qv", "@i3pm_terminal_anchor"])
+    try:
+        proc = subprocess.run(
+            option_cmd,
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+        if proc.returncode == 0:
+            text = str(proc.stdout or "").strip()
+            option_anchor = text or None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        option_anchor = None
+    except Exception as exc:
+        logger.debug(
+            "read_tmux_session_i3pm_metadata_sync option lookup failed for %s: %s",
+            normalized_session,
+            exc,
+        )
+        option_anchor = None
+
+    return _parse_tmux_session_i3pm_metadata(env_values, option_anchor=option_anchor)
+
+
+def _parse_tmux_session_i3pm_metadata(
+    env_values: dict[str, str],
+    *,
+    option_anchor: Optional[str],
+) -> dict[str, Optional[str]]:
+    remote_user = str(env_values.get("I3PM_REMOTE_USER") or "").strip()
+    remote_host = str(env_values.get("I3PM_REMOTE_HOST") or "").strip()
+    remote_port = str(env_values.get("I3PM_REMOTE_PORT") or "").strip() or "22"
+    remote_target: Optional[str] = None
+    if remote_host:
+        remote_target = (
+            f"{remote_user}@{remote_host}:{remote_port}"
+            if remote_user
+            else f"{remote_host}:{remote_port}"
+        )
+
+    binding_anchor = (
+        str(env_values.get("I3PM_TERMINAL_ANCHOR_ID") or "").strip()
+        or str(env_values.get("I3PM_APP_ID") or "").strip()
+        or option_anchor
+        or None
+    )
+    return {
+        "terminal_anchor_id": binding_anchor,
+        "source_terminal_anchor_id": None,
+        "binding_anchor_id": binding_anchor,
+        "binding_state": "bound_local" if binding_anchor else "tmux_present_unbound",
+        "binding_source": "tmux_metadata" if binding_anchor else None,
+        "execution_mode": (
+            str(env_values.get("I3PM_CONTEXT_VARIANT") or "").strip()
+            or str(env_values.get("I3PM_EXECUTION_MODE") or "").strip()
+            or None
+        ),
+        "connection_key": str(env_values.get("I3PM_CONNECTION_KEY") or "").strip() or None,
+        "context_key": str(env_values.get("I3PM_CONTEXT_KEY") or "").strip() or None,
+        "project_name": str(env_values.get("I3PM_PROJECT_NAME") or "").strip() or None,
+        "remote_target": remote_target,
+    }
+
+
+async def _read_tmux_session_i3pm_metadata_common(
+    socket_path: Optional[str],
+    session_name: Optional[str],
+    *,
+    async_mode: bool,
+) -> dict[str, Optional[str]]:
+    """Read managed I3PM metadata exported at the tmux session level."""
+    normalized_session = str(session_name or "").strip()
+    if not normalized_session:
+        return {}
+
+    env_cmd = ["tmux"]
+    if socket_path:
+        env_cmd.extend(["-S", socket_path])
+    env_cmd.extend(["show-environment", "-t", normalized_session])
+
+    env_values: dict[str, str] = {}
+    if async_mode:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *env_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            if proc.returncode == 0:
+                for raw_line in stdout.decode("utf-8", errors="replace").splitlines():
+                    line = str(raw_line or "").strip()
+                    if not line or "=" not in line or line.startswith("-"):
+                        continue
+                    key, value = line.split("=", 1)
+                    env_values[key] = value
+        except (FileNotFoundError, asyncio.TimeoutError):
+            return {}
+        except Exception as exc:
+            logger.debug(
+                "read_tmux_session_i3pm_metadata failed for %s: %s",
+                normalized_session,
+                exc,
+            )
+            return {}
+    else:
+        try:
+            proc = subprocess.run(
+                env_cmd,
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+                check=False,
+            )
+            if proc.returncode == 0:
+                for raw_line in str(proc.stdout or "").splitlines():
+                    line = str(raw_line or "").strip()
+                    if not line or "=" not in line or line.startswith("-"):
+                        continue
+                    key, value = line.split("=", 1)
+                    env_values[key] = value
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return {}
+        except Exception as exc:
+            logger.debug(
+                "read_tmux_session_i3pm_metadata_sync failed for %s: %s",
+                normalized_session,
+                exc,
+            )
+            return {}
+
+    option_anchor: Optional[str] = None
+    option_cmd = ["tmux"]
+    if socket_path:
+        option_cmd.extend(["-S", socket_path])
+    option_cmd.extend(["show-options", "-t", normalized_session, "-qv", "@i3pm_terminal_anchor"])
+
+    if async_mode:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *option_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            if proc.returncode == 0:
+                text = stdout.decode("utf-8", errors="replace").strip()
+                option_anchor = text or None
+        except (FileNotFoundError, asyncio.TimeoutError):
+            option_anchor = None
+        except Exception as exc:
+            logger.debug(
+                "read_tmux_session_i3pm_metadata option lookup failed for %s: %s",
+                normalized_session,
+                exc,
+            )
+            option_anchor = None
+    else:
+        try:
+            proc = subprocess.run(
+                option_cmd,
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+                check=False,
+            )
+            if proc.returncode == 0:
+                text = str(proc.stdout or "").strip()
+                option_anchor = text or None
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            option_anchor = None
+        except Exception as exc:
+            logger.debug(
+                "read_tmux_session_i3pm_metadata_sync option lookup failed for %s: %s",
+                normalized_session,
+                exc,
+            )
+            option_anchor = None
+
+    return _parse_tmux_session_i3pm_metadata(env_values, option_anchor=option_anchor)
 
 
 def tmux_target_exists(

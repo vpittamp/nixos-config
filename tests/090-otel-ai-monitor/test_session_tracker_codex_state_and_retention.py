@@ -166,6 +166,72 @@ async def test_process_event_repairs_restored_native_session_window_binding(monk
 
 
 @pytest.mark.asyncio
+async def test_resolve_window_context_prefers_tmux_anchor_over_stale_process_env(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+
+    monkeypatch.setattr(
+        session_tracker_module,
+        "get_process_i3pm_env",
+        lambda _pid: {
+            "I3PM_PROJECT_NAME": "vpittamp/nixos-config:main",
+            "I3PM_TERMINAL_ANCHOR_ID": "terminal-vpittamp/nixos-config:main-stale",
+            "I3PM_CONTEXT_VARIANT": "local",
+            "I3PM_CONNECTION_KEY": "local@thinkpad",
+            "I3PM_CONTEXT_KEY": "vpittamp/nixos-config:main::local::local@thinkpad",
+        },
+    )
+
+    async def _fake_tmux_context(_pid: int):
+        return {
+            "terminal_anchor_id": "terminal-vpittamp/nixos-config:main-fresh",
+            "project_name": "vpittamp/nixos-config:main",
+            "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "tmux_resolution_source": "discovered",
+            "pty": "/dev/pts/5",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        }
+
+    async def _fake_anchor_lookup(anchor_id: str):
+        assert anchor_id == "terminal-vpittamp/nixos-config:main-fresh"
+        return {
+            "binding": "window",
+            "window_id": 5,
+            "project_name": "vpittamp/nixos-config:main",
+        }
+
+    monkeypatch.setattr(session_tracker_module, "get_tmux_context_for_pid", _fake_tmux_context)
+    monkeypatch.setattr(session_tracker_module, "query_daemon_for_terminal_anchor", _fake_anchor_lookup)
+    monkeypatch.setattr(
+        session_tracker_module,
+        "get_window_context_by_id",
+        lambda window_id: {
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        } if window_id == 5 else {},
+    )
+
+    window_id, project, terminal_context = await tracker._resolve_window_context(1416360)
+
+    assert window_id == 5
+    assert project == "vpittamp/nixos-config:main"
+    assert terminal_context["terminal_anchor_id"] == "terminal-vpittamp/nixos-config:main-fresh"
+    assert terminal_context["source_terminal_anchor_id"] == "terminal-vpittamp/nixos-config:main-stale"
+    assert terminal_context["binding_anchor_id"] == "terminal-vpittamp/nixos-config:main-fresh"
+    assert terminal_context["binding_state"] == "rebound_local"
+    assert terminal_context["binding_source"] == "tmux_metadata"
+    assert terminal_context["anchor_lookup"] == "window"
+    assert terminal_context["context_key"] == "vpittamp/nixos-config:main::local::local@thinkpad"
+
+
+@pytest.mark.asyncio
 async def test_cleanup_keeps_native_session_when_pid_exits(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
@@ -252,7 +318,7 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     session_list, _ = tracker._build_session_list_unlocked()
 
     assert len(session_list.sessions) == 1
-    assert session_list.schema_version == "8"
+    assert session_list.schema_version == "9"
     assert session_list.sessions[0].session_id == "codex:pid:706991"
     assert session_list.sessions[0].identity_confidence == IdentityConfidence.PID
     assert session_list.sessions[0].project == "vpittamp/nixos-config:main"
@@ -628,6 +694,83 @@ def test_build_session_list_still_suppresses_unresolved_heuristic_session():
     assert session_list.sessions == []
 
 
+def test_build_session_list_keeps_local_tmux_session_visible_when_window_unbound(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        session_tracker_module,
+        "list_tmux_panes_sync",
+        lambda: [{
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+            "tmux_window": "0:main",
+            "tmux_pane": "%5",
+            "pane_pid": 1234,
+            "pane_title": "codex",
+            "pane_active": True,
+            "window_active": True,
+            "pty": "/dev/pts/5",
+        }],
+    )
+    monkeypatch.setattr(
+        session_tracker_module,
+        "read_tmux_session_i3pm_metadata_sync",
+        lambda _socket, _session: {
+            "binding_anchor_id": None,
+            "binding_state": "tmux_present_unbound",
+            "binding_source": None,
+            "project_name": "vpittamp/nixos-config:main",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "connection_key": "local@thinkpad",
+            "execution_mode": "local",
+        },
+    )
+
+    session = Session(
+        session_id="codex:native-unbound",
+        native_session_id="native-unbound",
+        context_fingerprint="pane=%5",
+        collision_group_id="codex:native-unbound",
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path="/home/vpittamp/repos/vpittamp/nixos-config/main",
+        window_id=None,
+        pid=1234,
+        trace_id="trace-unbound",
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=2,
+        status_reason="process_keepalive",
+    )
+    session.terminal_context.tmux_session = "i3pm-vpittamp-nixos-config-ma-6e1abb85"
+    session.terminal_context.tmux_window = "0:main"
+    session.terminal_context.tmux_pane = "%5"
+    session.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.pty = "/dev/pts/5"
+    session.terminal_context.execution_mode = "local"
+    session.terminal_context.connection_key = "local@thinkpad"
+    session.terminal_context.context_key = "vpittamp/nixos-config:main::local::local@thinkpad"
+
+    tracker._sessions[session.session_id] = session
+
+    session_list, _ = tracker._build_session_list_unlocked()
+
+    assert len(session_list.sessions) == 1
+    item = session_list.sessions[0]
+    assert item.session_id == "codex:native-unbound"
+    assert item.window_id is None
+    assert item.binding_state == "tmux_present_unbound"
+    assert item.binding_anchor_id is None
+    assert item.surface_kind == "tmux-pane"
+
+
 @pytest.mark.asyncio
 async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
@@ -684,3 +827,5 @@ async def test_resolve_window_context_awaits_tmux_context(monkeypatch):
     assert terminal_context["pty"] == "/dev/pts/30"
     assert terminal_context["connection_key"] == "local@thinkpad"
     assert terminal_context["context_key"] == "vpittamp/nixos-config:main::local::local@thinkpad"
+    assert terminal_context["binding_anchor_id"] == "anchor-1234"
+    assert terminal_context["binding_state"] == "bound_local"
