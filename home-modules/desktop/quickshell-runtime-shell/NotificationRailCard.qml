@@ -14,6 +14,7 @@ Rectangle {
     signal dismissRequested(int notificationId)
     signal actionInvoked(int notificationId, string actionId)
     signal markReadRequested(int notificationId)
+    signal detailRequested(int notificationId)
 
     readonly property bool critical: rootObject.notificationIsCritical(itemData)
     readonly property var primaryAction: rootObject.notificationPrimaryAction(itemData)
@@ -35,6 +36,12 @@ Rectangle {
         radius: 2
         color: accentColor
         opacity: critical ? 1 : 0.82
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: card.detailRequested(Number(itemData.id || 0))
     }
 
     RowLayout {
@@ -111,16 +118,28 @@ Rectangle {
                 elide: Text.ElideRight
             }
 
-            Text {
-                visible: !compact && rootObject.notificationBody(itemData).length > 0
+            Item {
                 Layout.fillWidth: true
-                text: rootObject.notificationBody(itemData)
-                color: colorsObject.textDim
-                font.pixelSize: 10
-                wrapMode: Text.Wrap
-                maximumLineCount: 4
-                elide: Text.ElideRight
-                textFormat: rootObject.notificationBodyFormat()
+                visible: !compact && rootObject.notificationBody(itemData).length > 0
+                implicitHeight: railBodyText.implicitHeight
+
+                Text {
+                    id: railBodyText
+                    width: parent.width
+                    text: rootObject.notificationBody(itemData)
+                    color: colorsObject.textDim
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 4
+                    elide: Text.ElideRight
+                    textFormat: rootObject.notificationBodyFormat()
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: card.detailRequested(Number(itemData.id || 0))
+                }
             }
 
             Rectangle {

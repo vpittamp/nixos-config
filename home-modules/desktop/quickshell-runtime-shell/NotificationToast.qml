@@ -15,6 +15,7 @@ Rectangle {
     signal expireRequested(int notificationId)
     signal actionInvoked(int notificationId, string actionId)
     signal defaultInvoked(int notificationId)
+    signal detailRequested(int notificationId)
 
     readonly property bool critical: rootObject.notificationIsCritical(itemData)
     readonly property color accentColor: rootObject.notificationAccentColor(itemData)
@@ -143,16 +144,28 @@ Rectangle {
             }
         }
 
-        Text {
+        Item {
             Layout.fillWidth: true
             visible: rootObject.notificationBody(itemData).length > 0
-            text: rootObject.notificationBody(itemData)
-            color: colorsObject.textDim
-            font.pixelSize: 11
-            wrapMode: Text.Wrap
-            maximumLineCount: imageSource !== "" ? 4 : 6
-            elide: Text.ElideRight
-            textFormat: rootObject.notificationBodyFormat()
+            implicitHeight: bodyText.implicitHeight
+
+            Text {
+                id: bodyText
+                width: parent.width
+                text: rootObject.notificationBody(itemData)
+                color: colorsObject.textDim
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+                maximumLineCount: imageSource !== "" ? 4 : 6
+                elide: Text.ElideRight
+                textFormat: rootObject.notificationBodyFormat()
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: toast.detailRequested(Number(itemData.id || 0))
+            }
         }
 
         Rectangle {

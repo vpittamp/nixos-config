@@ -655,6 +655,19 @@ let
       multi_instance = true;  # Allow multiple search windows
       description = "Floating fuzzy file finder with preview that opens files in nvim";
     })
+    # Runtime Settings (floating utility)
+    # Layer-shell overlay toggled via QuickShell IPC — no real window for the
+    # compositor to manage, so it must not own a workspace.
+    (mkFloatingUtilityApp {
+      name = "runtime-settings";
+      display_name = "Runtime Settings";
+      command = "toggle-runtime-settings";
+      parameters = "";
+      expected_class = "quickshell";  # Layer-shell surface, daemon won't match
+      icon = iconPath "runtime-settings.svg";
+      nix_package = "pkgs.quickshell";
+      description = "QuickShell settings panel for managing curated commands and runtime configuration";
+    })
   ];
 
   nonOwningLaunchables = scratchpadLaunchables ++ floatingUtilityApplications;

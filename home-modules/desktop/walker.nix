@@ -6,16 +6,78 @@ let
   remoteWorktreeUser = "vpittamp";
   onePasswordCacheTtlSeconds = 43200;
   onePasswordRetryDelaySeconds = 1800;
+  # Wrapper script for snippet commands: captures output, times execution,
+  # and sends a desktop notification with the result.
+  #
+  # Usage:  snippet-run "Title" -- command args...
+  #         snippet-run --no-output "Title" -- command args...
+  #
+  # --no-output  Only show timing in the notification, suppress command output.
+  #              Useful for commands that produce no meaningful stdout (e.g. tmux reload).
+  #
+  # On success: low-urgency notification (8s timeout) with last 4 lines of output + elapsed time.
+  # On failure: critical notification (never auto-dismisses) with last 4 lines + exit code + elapsed time.
+  snippetRun = pkgs.writeShellScriptBin "snippet-run" ''
+    set -uo pipefail
+
+    CAPTURE_OUTPUT=1
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --no-output) CAPTURE_OUTPUT=0; shift ;;
+        --) shift; break ;;
+        *)  TITLE="$1"; shift ;;
+      esac
+    done
+
+    if [ -z "''${TITLE:-}" ] || [ $# -eq 0 ]; then
+      echo "Usage: snippet-run [--no-output] \"Title\" -- command args..." >&2
+      exit 1
+    fi
+
+    SECONDS=0
+    if [ "$CAPTURE_OUTPUT" -eq 1 ]; then
+      OUT=$("$@" 2>&1 | tail -20) && s=$? || s=$?
+      TAIL=$(echo "$OUT" | tail -4)
+    else
+      "$@" && s=$? || s=$?
+      TAIL=""
+      OUT=""
+    fi
+    ELAPSED=$SECONDS
+
+    NL=$'\n'
+    if [ $s -eq 0 ]; then
+      BODY="Succeeded in ''${ELAPSED}s"
+      [ -n "$TAIL" ] && BODY="''${BODY}''${NL}''${NL}''${TAIL}"
+      FULL="$TITLE: Succeeded in ''${ELAPSED}s"
+      [ -n "$OUT" ] && FULL="''${FULL}''${NL}''${NL}''${OUT}"
+      ACTION=$(notify-send -u low -t 8000 --action=copy=Copy "$TITLE" "$BODY")
+    else
+      BODY="Failed (exit $s) in ''${ELAPSED}s"
+      [ -n "$TAIL" ] && BODY="''${BODY}''${NL}''${NL}''${TAIL}"
+      FULL="$TITLE: Failed (exit $s) in ''${ELAPSED}s"
+      [ -n "$OUT" ] && FULL="''${FULL}''${NL}''${NL}''${OUT}"
+      ACTION=$(notify-send -u critical -t 0 --action=copy=Copy "$TITLE" "$BODY")
+      STATUS=$s
+    fi
+
+    if [ "$ACTION" = "copy" ]; then
+      printf '%s' "$FULL" | ${pkgs.wl-clipboard}/bin/wl-copy
+    fi
+
+    exit "''${STATUS:-0}"
+  '';
+
   elephantDefaultSnippets = [
     {
-      name = "rebuild ryzen";
-      snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if sudo nixos-rebuild switch --flake .#ryzen; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen switch failed (exit $status)\"; exit $status; fi";
-      description = "Rebuild the ryzen system from this nixos-config checkout";
+      name = "rebuild";
+      snippet = "H=$(hostname -s) && cd /home/vpittamp/repos/vpittamp/nixos-config/main && snippet-run \"NixOS Rebuild ($H)\" -- nh os switch --hostname $H -- --option eval-cache false";
+      description = "Rebuild the current host with nh from this nixos-config checkout";
     }
     {
-      name = "rebuild ryzen (nh)";
-      snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if nh os switch --hostname ryzen -- --option eval-cache false; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen nh switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen nh switch failed (exit $status)\"; exit $status; fi";
-      description = "Rebuild the ryzen system with nh from this nixos-config checkout";
+      name = "reload tmux";
+      snippet = "snippet-run --no-output \"tmux\" -- tmux source-file ~/.config/tmux/tmux.conf";
+      description = "Reload tmux configuration from ~/.config/tmux/tmux.conf";
     }
   ];
   elephantSnippetsTemplate = pkgs.writeText "elephant-snippets.toml" ''
@@ -24,14 +86,14 @@ let
     min_score = 30
 
     [[snippets]]
-    name = "rebuild ryzen"
-    snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if sudo nixos-rebuild switch --flake .#ryzen; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen switch failed (exit $status)\"; exit $status; fi"
-    description = "Rebuild the ryzen system from this nixos-config checkout"
+    name = "rebuild"
+    snippet = "H=$(hostname -s) && cd /home/vpittamp/repos/vpittamp/nixos-config/main && snippet-run \"NixOS Rebuild ($H)\" -- nh os switch --hostname $H -- --option eval-cache false"
+    description = "Rebuild the current host with nh from this nixos-config checkout"
 
     [[snippets]]
-    name = "rebuild ryzen (nh)"
-    snippet = "cd /home/vpittamp/repos/vpittamp/nixos-config/main && if nh os switch --hostname ryzen -- --option eval-cache false; then notify-send -u low -t 5000 \"NixOS Rebuild\" \"ryzen nh switch succeeded\"; else status=$?; notify-send -u critical -t 10000 \"NixOS Rebuild\" \"ryzen nh switch failed (exit $status)\"; exit $status; fi"
-    description = "Rebuild the ryzen system with nh from this nixos-config checkout"
+    name = "reload tmux"
+    snippet = "snippet-run --no-output \"tmux\" -- tmux source-file ~/.config/tmux/tmux.conf"
+    description = "Reload tmux configuration from ~/.config/tmux/tmux.conf"
   '';
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
@@ -1770,6 +1832,7 @@ in
   };
 
   home.packages = [
+    snippetRun
     walkerOpenInNvim
     walkerProjectList
     walkerProjectSwitch
@@ -2949,12 +3012,29 @@ if not isinstance(data, dict):
     raise SystemExit(0)
 
 entries = [dict(item) for item in data.get("snippets", []) if isinstance(item, dict)]
+
+# Rename map: old default names replaced by new parameterized versions.
+# Entries matching an old name are removed so the new default can be added.
+rename_map = {
+    "rebuild ryzen": "rebuild",
+    "rebuild ryzen (nh)": "rebuild",
+    "rebuild": "rebuild",
+    "reload tmux": "reload tmux",
+}
+renamed_out = set()
+before_len = len(entries)
+entries = [
+    entry for entry in entries
+    if str(entry.get("name", "") or "").strip() not in rename_map
+    or str(entry.get("name", "") or "").strip() in renamed_out
+]
+changed = len(entries) != before_len
+
 existing_names = {
     str(entry.get("name", "") or "").strip()
     for entry in entries
     if str(entry.get("name", "") or "").strip()
 }
-changed = False
 for item in defaults:
     name = str(item.get("name", "") or "").strip()
     if not name or name in existing_names:

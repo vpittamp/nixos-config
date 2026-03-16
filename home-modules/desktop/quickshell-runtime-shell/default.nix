@@ -719,6 +719,7 @@ PY
 
     run_in_context() {
       cd "$context_dir"
+      export PATH="${pkgs.libnotify}/bin:$PATH"
       exec ${pkgs.bash}/bin/bash -lc "$command"
     }
 

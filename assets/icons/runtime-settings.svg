@@ -1,0 +1,85 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="256"
+  height="256"
+  viewBox="0 0 256 256"
+  fill="none"
+>
+  <defs>
+    <linearGradient id="bg" x1="32" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f172a" />
+      <stop offset="1" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="gear" x1="80" y1="56" x2="176" y2="168" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7dd3fc" />
+      <stop offset="0.5" stop-color="#60a5fa" />
+      <stop offset="1" stop-color="#818cf8" />
+    </linearGradient>
+    <linearGradient id="inner" x1="100" y1="80" x2="156" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17324a" />
+      <stop offset="1" stop-color="#101a26" />
+    </linearGradient>
+    <linearGradient id="slider-track" x1="62" y1="186" x2="194" y2="186" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e3a5f" />
+      <stop offset="1" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="slider-fill" x1="62" y1="186" x2="152" y2="186" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34d399" />
+      <stop offset="1" stop-color="#5eead4" />
+    </linearGradient>
+    <linearGradient id="toggle" x1="62" y1="214" x2="194" y2="214" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34d399" />
+      <stop offset="1" stop-color="#22d3ee" />
+    </linearGradient>
+    <filter id="shadow" x="12" y="8" width="232" height="240" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity="0.35" />
+    </filter>
+    <filter id="glow" x="60" y="40" width="136" height="136" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <!-- Background -->
+    <rect x="24" y="20" width="208" height="216" rx="44" fill="url(#bg)" />
+    <rect x="24" y="20" width="208" height="216" rx="44" stroke="#334155" stroke-width="2" />
+
+    <!-- Gear body -->
+    <g transform="translate(128, 112)">
+      <!-- Gear teeth -->
+      <path
+        d="M0,-54 L8,-54 L12,-44 L18,-42 L26,-50 L32,-44 L26,-36 L28,-30 L38,-26 L38,-18 L28,-14 L26,-8 L34,0 L28,6 L20,0 L14,2 L12,12 L4,12 L2,2 L-4,0 L-12,6 L-18,0 L-10,-8 L-12,-14 L-22,-18 L-22,-26 L-12,-30 L-10,-36 L-18,-44 L-12,-50 L-4,-42 L2,-44 L4,-54Z"
+        fill="url(#gear)"
+        stroke="#93c5fd"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+        transform="scale(1.35)"
+      />
+      <!-- Inner ring -->
+      <circle cx="0" cy="0" r="22" fill="url(#inner)" stroke="#475569" stroke-width="2.5" />
+      <!-- Center dot -->
+      <circle cx="0" cy="0" r="8" fill="none" stroke="#7dd3fc" stroke-width="3" stroke-opacity="0.7" />
+    </g>
+
+    <!-- Subtle glow behind gear -->
+    <circle cx="128" cy="112" r="36" fill="#60a5fa" opacity="0.06" filter="url(#glow)" />
+
+    <!-- Slider control -->
+    <rect x="62" y="182" width="132" height="8" rx="4" fill="url(#slider-track)" stroke="#475569" stroke-width="1" />
+    <rect x="62" y="182" width="88" height="8" rx="4" fill="url(#slider-fill)" />
+    <circle cx="150" cy="186" r="7" fill="#5eead4" stroke="#0f172a" stroke-width="2.5" />
+
+    <!-- Toggle switch -->
+    <rect x="62" y="204" width="44" height="20" rx="10" fill="url(#toggle)" stroke="#5eead4" stroke-opacity="0.4" stroke-width="1.5" />
+    <circle cx="86" cy="214" r="7" fill="#f0fdfa" stroke="#0f172a" stroke-width="1.5" />
+
+    <!-- Toggle label lines -->
+    <rect x="116" y="210" width="44" height="3" rx="1.5" fill="#475569" />
+    <rect x="116" y="218" width="28" height="3" rx="1.5" fill="#334155" />
+
+    <!-- Small accent dots (status indicators) -->
+    <circle cx="200" cy="76" r="5" fill="#f59e0b" />
+    <circle cx="200" cy="92" r="5" fill="#22c55e" />
+    <circle cx="200" cy="108" r="5" fill="#818cf8" />
+  </g>
+</svg>
