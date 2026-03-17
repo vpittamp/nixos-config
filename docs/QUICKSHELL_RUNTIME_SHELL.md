@@ -239,6 +239,7 @@ The dashboard/session payloads now carry pane-oriented fields such as:
 This allows:
 - separate AI session rows for multiple panes in the same terminal window
 - deterministic session focus through daemon `session.focus`
+- deterministic remote attach for `remote_bridge_attachable` sessions without requiring a local mirror worktree
 - per-session CPU and RSS metrics in QuickShell without guessing from a whole window
 
 ### Performance

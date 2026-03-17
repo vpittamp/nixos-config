@@ -653,6 +653,78 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
 
 
 @pytest.mark.asyncio
+async def test_focus_remote_session_attach_focuses_local_bridge_without_project_context_switch(server):
+    remote_project = "PittampalliOrg/workflow-builder:104-create-coding-agent"
+    remote_session = {
+        "session_key": "session-remote-pane",
+        "surface_key": "surface-remote-pane",
+        "project_name": remote_project,
+        "project": remote_project,
+        "conflict_state": "",
+        "host_name": "ryzen",
+        "tmux_session": "i3pm-pittampalliorg-workflow--919ce57f",
+        "tmux_window": "0:main",
+        "tmux_pane": "%2",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+        },
+    }
+    server._resolve_remote_attach_profile = lambda _session: {
+        "project_name": remote_project,
+        "remote_host": "ryzen",
+        "remote_user": "vpittamp",
+        "remote_port": 22,
+        "remote_dir": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/104-create-coding-agent",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": f"{remote_project}::ssh::vpittamp@ryzen:22",
+    }
+    server._build_remote_session_attach_spec = AsyncMock(return_value={
+        "app_name": "terminal",
+        "project_name": remote_project,
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": f"{remote_project}::ssh::vpittamp@ryzen:22",
+        "terminal_role": "remote-session:abc123",
+        "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
+        "terminal_anchor_id": "bridge-anchor",
+    })
+    server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
+    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server._execute_launch_spec = lambda _spec: {"success": True}
+    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server._wait_for_launch_status = AsyncMock(return_value={
+        "success": True,
+        "launch_id": "launch-1",
+        "status": "attaching_tmux",
+        "reason": "ok",
+    })
+    server._window_focus = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key_after": "",
+        "focused_window_id_after": 44,
+        "focus_state_after": {
+            "success": True,
+            "current_ai_session_key": "",
+            "focused_window_id": 44,
+        },
+    })
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-remote-pane",
+        "focused_window_id": 44,
+    })
+
+    result = await server._focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session=remote_session,
+    )
+
+    assert result["success"] is True
+    server._window_focus.assert_awaited_once_with({"window_id": 44})
+    assert result["focus_mode"] == "remote_bridge_bound"
+
+
+@pytest.mark.asyncio
 async def test_focus_remote_session_attach_prefers_already_bound_window(server):
     remote_session = {
         "session_key": "session-remote-pane",

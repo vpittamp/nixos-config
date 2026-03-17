@@ -8163,7 +8163,6 @@ class IPCServer:
                 reason="superseded_before_remote_attach",
             )
         attach_profile = self._resolve_remote_attach_profile(session)
-        await self._switch_to_explicit_remote_context(attach_profile)
         spec = await self._build_remote_session_attach_spec(session, attach_profile=attach_profile)
         project_name = str(spec.get("project_name") or "").strip()
         connection_key = str(spec.get("connection_key") or "").strip()
@@ -8234,12 +8233,7 @@ class IPCServer:
                 project_name=project_name,
                 reason="superseded_before_remote_focus",
             )
-        focus_result = await self._window_focus({
-            "window_id": local_window_id,
-            "project_name": project_name,
-            "target_variant": "ssh",
-            "connection_key": connection_key,
-        })
+        focus_result = await self._window_focus({"window_id": local_window_id})
 
         terminal_context = session.get("terminal_context") or {}
         if not isinstance(terminal_context, dict):
@@ -14115,53 +14109,33 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "remote_dir": remote_dir,
         }
 
-    async def _switch_to_explicit_remote_context(self, attach_profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Switch daemon runtime state to an explicit SSH context derived from a remote session."""
+    def _build_remote_attach_runtime_context(self, attach_profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Build remote attach context from session metadata without local worktree resolution."""
         project_name = str(attach_profile.get("project_name") or "").strip()
         if not project_name:
             raise RuntimeError("Remote attach context is missing project_name")
-
-        resolved = self._find_worktree_by_qualified_name(project_name)
-        repo = resolved["repo"]
-        worktree = resolved["worktree"]
-        repo_name = resolved["repo_name"]
+        parsed = parse_qualified_name(project_name)
         remote_profile = dict(attach_profile.get("remote_profile") or {})
-        local_directory = str(worktree.get("path") or "").strip()
+        if not remote_profile:
+            remote_profile = {
+                "enabled": True,
+                "host": str(attach_profile.get("remote_host") or "").strip(),
+                "user": str(attach_profile.get("remote_user") or "").strip(),
+                "port": int(attach_profile.get("remote_port", 22) or 22),
+                "remote_dir": str(attach_profile.get("remote_dir") or "").strip(),
+            }
+        identity = self._build_worktree_context_identity(project_name, remote_profile)
         context = {
             "qualified_name": project_name,
-            "repo_qualified_name": repo_name,
-            "branch": worktree.get("branch", ""),
-            "directory": str(remote_profile.get("remote_dir") or "").strip() or local_directory,
-            "local_directory": local_directory,
-            "account": repo.get("account", ""),
-            "repo_name": repo.get("name", ""),
+            "repo_qualified_name": parsed.repo_qualified_name,
+            "branch": parsed.branch,
+            "directory": str(remote_profile.get("remote_dir") or "").strip(),
+            "local_directory": "",
+            "account": parsed.account,
+            "repo_name": parsed.repo,
             "remote": remote_profile,
-            "execution_mode": "ssh",
-            "host_alias": f"{attach_profile.get('remote_user', '')}@{attach_profile.get('remote_host', '')}".strip("@"),
-            "connection_key": str(attach_profile.get("connection_key") or "").strip(),
-            "identity_key": f"ssh:{str(attach_profile.get('connection_key') or '').strip()}",
-            "context_key": str(attach_profile.get("context_key") or "").strip(),
         }
-
-        from .config import save_active_project
-        from .models import ActiveProjectState
-
-        await self.state_manager.set_active_project(project_name)
-        active_state = ActiveProjectState(project_name=project_name)
-        config_dir = Path.home() / ".config" / "i3"
-        save_active_project(active_state, config_dir / "active-project.json")
-        atomic_write_json(config_dir / "active-worktree.json", context)
-        self._set_active_runtime_context(context)
-
-        if self.i3_connection and self.i3_connection.conn:
-            from .services.window_filter import filter_windows_by_project
-            await filter_windows_by_project(
-                self.i3_connection.conn,
-                project_name,
-                self.workspace_tracker,
-                active_context_key=str(context.get("context_key") or "").strip(),
-            )
-        await self._send_tick_barrier(f"i3pm:context-switch:{project_name}:ssh")
+        context.update(identity)
         return context
 
     async def _build_remote_session_attach_spec(
@@ -14189,18 +14163,68 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         if attach_profile is None:
             attach_profile = self._resolve_remote_attach_profile(session)
-        spec = await self._prepare_launch({
-            "app_name": "terminal",
-            "qualified_name": project_name,
-            "context_variant_override": "ssh",
-            "register_launch": False,
-        })
+        else:
+            attach_profile = dict(attach_profile)
+            attach_profile.setdefault("project_name", project_name)
+            attach_profile.setdefault(
+                "remote_profile",
+                {
+                    "enabled": True,
+                    "host": str(attach_profile.get("remote_host") or "").strip(),
+                    "user": str(attach_profile.get("remote_user") or "").strip(),
+                    "port": int(attach_profile.get("remote_port", 22) or 22),
+                    "remote_dir": str(attach_profile.get("remote_dir") or "").strip(),
+                },
+            )
+        remote_context = self._build_remote_attach_runtime_context(attach_profile)
+        remote_profile = dict(remote_context.get("remote") or {})
+        parsed = parse_qualified_name(project_name)
+        app = self._require_registry_app("terminal")
+        launcher_pid = os.getpid()
+        project_directory = str(remote_profile.get("remote_dir") or "").strip()
+        local_project_directory = ""
+        session_name = f"{parsed.repo}_{parsed.branch}" if parsed.repo and parsed.branch else ""
+        launch_identity = self._build_launch_identity(
+            app_name=app.name,
+            project_name=project_name,
+            launcher_pid=launcher_pid,
+        )
+        prepared_args = [
+            self._substitute_launch_parameter(
+                parameter,
+                project_name=project_name,
+                project_dir=project_directory,
+                session_name=session_name,
+                project_display_name=parsed.branch,
+                project_icon="",
+                preferred_workspace=app.preferred_workspace,
+            )
+            for parameter in app.parameters
+        ]
 
         remote_terminal_role = self._remote_session_terminal_role(surface_key)
-        environment = {
-            str(key): str(value)
-            for key, value in (spec.get("environment") or {}).items()
-        }
+        environment = self._build_launch_env(
+            app_name=app.name,
+            scope=app.scope,
+            preferred_workspace=app.preferred_workspace,
+            expected_class=app.expected_class,
+            project_name=project_name,
+            project_dir=project_directory,
+            local_project_dir=local_project_directory,
+            project_display_name=parsed.branch,
+            execution_mode="ssh",
+            connection_key=str(remote_context.get("connection_key") or "").strip(),
+            context_key=str(remote_context.get("context_key") or "").strip(),
+            remote_profile=remote_profile,
+            launcher_pid=launcher_pid,
+            launch_identity=launch_identity,
+            terminal_role=remote_terminal_role,
+            tmux_session_name=tmux_session,
+            remote_session_name=tmux_session,
+            worktree_branch=parsed.branch,
+            worktree_account=parsed.account,
+            worktree_repo=parsed.repo,
+        )
         environment.update({
             "I3PM_CONTEXT_VARIANT": "ssh",
             "I3PM_CONNECTION_KEY": str(attach_profile.get("connection_key") or "").strip(),
@@ -14224,29 +14248,65 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "I3PM_REMOTE_TMUX_WINDOW": tmux_window,
             "I3PM_REMOTE_TMUX_PANE": tmux_pane,
         })
-
-        spec["connection_key"] = str(attach_profile.get("connection_key") or "").strip()
-        spec["context_key"] = str(attach_profile.get("context_key") or "").strip()
-        spec["terminal_role"] = remote_terminal_role
-        spec["tmux_session_name"] = tmux_session
-        spec["environment"] = environment
-        spec["terminal_launch"] = dict(spec.get("terminal_launch") or {})
-        spec["terminal_launch"]["terminal_role"] = remote_terminal_role
-        spec["terminal_launch"]["tmux_session_name"] = tmux_session
-        spec["terminal_launch"]["remote"] = {
-            "host": str(attach_profile.get("remote_host") or ""),
-            "user": str(attach_profile.get("remote_user") or ""),
-            "port": int(attach_profile.get("remote_port", 22) or 22),
-            "remote_dir": str(attach_profile.get("remote_dir") or ""),
+        pending_count = self.state_manager.launch_registry.get_stats().total_pending
+        return {
+            "app_name": app.name,
+            "command": app.command,
+            "args": prepared_args,
+            "terminal": bool(app.terminal),
+            "scope": app.scope,
+            "expected_class": app.expected_class,
+            "preferred_workspace": app.preferred_workspace,
+            "project_name": project_name,
+            "project_directory": project_directory,
+            "local_project_directory": local_project_directory,
+            "project_display_name": parsed.branch,
+            "execution_mode": "ssh",
+            "connection_key": str(remote_context.get("connection_key") or "").strip(),
+            "context_key": str(remote_context.get("context_key") or "").strip(),
+            "launch_strategy": "managed_remote_terminal",
+            "launch_transport": "remote_helper",
+            "ssh_policy": "terminal_only",
+            "remote_profile": remote_profile,
+            "terminal_launch": {
+                "mode": "managed_project_terminal",
+                "tmux_session_name": tmux_session,
+                "terminal_role": remote_terminal_role,
+                "remote_session_name": tmux_session,
+                "helper_name": "project-terminal-launch.sh",
+                "helper_args": [],
+                "remote": {
+                    "host": str(attach_profile.get("remote_host") or ""),
+                    "user": str(attach_profile.get("remote_user") or ""),
+                    "port": int(attach_profile.get("remote_port", 22) or 22),
+                    "remote_dir": str(attach_profile.get("remote_dir") or ""),
+                },
+                "remote_attach": {
+                    "tmux_socket": str(terminal_context.get("tmux_socket") or "").strip(),
+                    "tmux_server_key": str(
+                        terminal_context.get("tmux_server_key")
+                        or terminal_context.get("tmux_socket")
+                        or ""
+                    ).strip(),
+                    "tmux_session": tmux_session,
+                    "tmux_window": tmux_window,
+                    "tmux_pane": tmux_pane,
+                },
+            },
+            "terminal_role": remote_terminal_role,
+            "tmux_session_name": tmux_session,
+            "environment": environment,
+            "launch": {
+                "status": "deferred",
+                "reason": "register_launch_disabled",
+                "launch_id": "",
+                "terminal_anchor_id": launch_identity["terminal_anchor_id"],
+                "expected_class": app.expected_class,
+                "pending_count": pending_count,
+            },
+            "terminal_anchor_id": launch_identity["terminal_anchor_id"],
+            "app_instance_id": launch_identity["app_instance_id"],
         }
-        spec["terminal_launch"]["remote_attach"] = {
-            "tmux_socket": str(terminal_context.get("tmux_socket") or "").strip(),
-            "tmux_server_key": str(terminal_context.get("tmux_server_key") or terminal_context.get("tmux_socket") or "").strip(),
-            "tmux_session": tmux_session,
-            "tmux_window": tmux_window,
-            "tmux_pane": tmux_pane,
-        }
-        return spec
 
     async def _get_reusable_remote_attach_window(
         self,

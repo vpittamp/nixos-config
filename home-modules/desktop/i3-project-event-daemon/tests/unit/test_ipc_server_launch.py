@@ -484,6 +484,54 @@ async def test_build_remote_session_attach_spec_overrides_bridge_context_env(ser
     assert spec["environment"]["I3PM_REMOTE_USER"] == "vpittamp"
 
 
+@pytest.mark.asyncio
+async def test_build_remote_session_attach_spec_does_not_require_local_worktree(server_ssh, monkeypatch):
+    remote_only_project = "PittampalliOrg/workflow-builder:104-create-coding-agent"
+    session = {
+        "session_key": "codex|session-remote",
+        "surface_key": "surface-remote",
+        "project_name": remote_only_project,
+        "project": remote_only_project,
+        "tmux_session": "i3pm-pittampalliorg-workflow--919ce57f",
+        "tmux_window": "0:main",
+        "tmux_pane": "%2",
+        "terminal_context": {
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "tmux_session": "i3pm-pittampalliorg-workflow--919ce57f",
+            "tmux_window": "0:main",
+            "tmux_pane": "%2",
+        },
+    }
+    attach_profile = {
+        "project_name": remote_only_project,
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": f"{remote_only_project}::ssh::vpittamp@ryzen:22",
+        "remote_user": "vpittamp",
+        "remote_host": "ryzen",
+        "remote_port": 22,
+        "remote_dir": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/104-create-coding-agent",
+    }
+
+    monkeypatch.setattr(
+        server_ssh,
+        "_find_worktree_by_qualified_name",
+        lambda _qualified_name: (_ for _ in ()).throw(AssertionError("should not resolve local worktree")),
+    )
+
+    spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
+
+    assert spec["project_name"] == remote_only_project
+    assert spec["execution_mode"] == "ssh"
+    assert spec["launch_transport"] == "remote_helper"
+    assert spec["project_directory"] == "/home/vpittamp/repos/PittampalliOrg/workflow-builder/104-create-coding-agent"
+    assert spec["local_project_directory"] == ""
+    assert spec["context_key"] == f"{remote_only_project}::ssh::vpittamp@ryzen:22"
+    assert spec["environment"]["I3PM_PROJECT_NAME"] == remote_only_project
+    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{remote_only_project}::ssh::vpittamp@ryzen:22"
+    assert spec["terminal_launch"]["remote_attach"]["tmux_pane"] == "%2"
+
+
 def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     spec = {
         "execution_mode": "ssh",

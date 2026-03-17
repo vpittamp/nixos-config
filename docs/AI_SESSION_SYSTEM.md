@@ -103,6 +103,11 @@ Host behavior:
 - local sessions on the current machine are locally focusable
 - sessions from another machine remain visible in the panel
 - remote sessions use daemon-mediated handoff instead of pretending to be local windows
+- remote attachable sessions are focused by exact remote identity only:
+  - SSH destination
+  - tmux server/socket
+  - tmux session/window/pane
+- remote focus does not depend on local worktree presence and does not switch local project context as part of attach
 
 The panel groups sessions by host first, then by project inside each host section.
 
