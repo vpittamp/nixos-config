@@ -17,6 +17,7 @@ PanelWindow {
     screen: root.primaryScreen
     visible: root.panelVisible && root.primaryScreen !== null
     color: "transparent"
+    width: runtimeConfig.panelWidth
     implicitWidth: runtimeConfig.panelWidth
     anchors.top: true
     anchors.bottom: true
