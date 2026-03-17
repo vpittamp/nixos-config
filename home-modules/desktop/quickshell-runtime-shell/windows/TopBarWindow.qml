@@ -106,7 +106,7 @@ PanelWindow {
                     Text {
                         id: layoutLabel
                         anchors.centerIn: parent
-                        text: root.currentLayoutLabel()
+                        text: "Display " + root.currentLayoutLabel()
                         color: root.neutralChipText(layoutMouse.containsMouse)
                         font.pixelSize: 10
                         font.weight: Font.DemiBold
@@ -145,7 +145,7 @@ PanelWindow {
                     Text {
                         id: panelToggleLabel
                         anchors.centerIn: parent
-                        text: root.panelVisible ? "Hide Panel" : "Show Panel"
+                        text: "AI Panel"
                         color: root.stateChipText(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
                         font.pixelSize: 10
                         font.weight: Font.DemiBold
@@ -215,15 +215,10 @@ PanelWindow {
                         font.weight: Font.Medium
                     }
 
-                    ToolTip.visible: memoryMouse.containsMouse
-                    ToolTip.text: root.systemStatsMemoryTooltip()
-
                     MouseArea {
                         id: memoryMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.openSettings("devices")
                     }
                 }
 
@@ -256,9 +251,6 @@ PanelWindow {
                         font.pixelSize: 10
                         font.weight: Font.Medium
                     }
-
-                    ToolTip.visible: networkMouse.containsMouse
-                    ToolTip.text: root.networkDetail()
 
                     MouseArea {
                         id: networkMouse
@@ -305,9 +297,6 @@ PanelWindow {
                         font.pixelSize: 10
                         font.weight: Font.Medium
                     }
-
-                    ToolTip.visible: notificationMouse.containsMouse
-                    ToolTip.text: root.notificationDetail()
 
                     MouseArea {
                         id: notificationMouse
@@ -357,14 +346,11 @@ PanelWindow {
                     Text {
                         id: audioLabel
                         anchors.centerIn: parent
-                        text: root.audioLabel()
+                        text: root.audioLabel() + " ▾"
                         color: root.audioChipText(audioMouse.containsMouse)
                         font.pixelSize: 10
                         font.weight: Font.Medium
                     }
-
-                    ToolTip.visible: audioMouse.containsMouse
-                    ToolTip.text: root.audioDetail()
 
                     MouseArea {
                         id: audioMouse
@@ -410,14 +396,11 @@ PanelWindow {
                     Text {
                         id: bluetoothLabel
                         anchors.centerIn: parent
-                        text: root.bluetoothLabel()
+                        text: root.bluetoothLabel() + " ▾"
                         color: root.neutralChipText(bluetoothMouse.containsMouse)
                         font.pixelSize: 10
                         font.weight: Font.Medium
                     }
-
-                    ToolTip.visible: bluetoothMouse.containsMouse
-                    ToolTip.text: root.bluetoothDetail()
 
                     MouseArea {
                         id: bluetoothMouse
@@ -439,6 +422,8 @@ PanelWindow {
                 Rectangle {
                     id: batteryChip
                     visible: root.batteryReady()
+                    Layout.preferredWidth: implicitWidth
+                    Layout.minimumWidth: implicitWidth
                     radius: 8
                     color: root.neutralChipFill(batteryMouse.containsMouse)
                     border.color: root.batteryChipBorder(batteryMouse.containsMouse)
@@ -475,11 +460,9 @@ PanelWindow {
                             color: root.batteryChipText(batteryMouse.containsMouse)
                             font.pixelSize: 10
                             font.weight: Font.Medium
+                            wrapMode: Text.NoWrap
                         }
                     }
-
-                    ToolTip.visible: batteryMouse.containsMouse
-                    ToolTip.text: root.batteryTooltip()
 
                     MouseArea {
                         id: batteryMouse
@@ -553,8 +536,6 @@ PanelWindow {
                                 }
                             }
 
-                            ToolTip.visible: trayMouse.containsMouse
-                            ToolTip.text: root.stringOrEmpty(trayItem.tooltipTitle || trayItem.title || trayItem.id)
                         }
                     }
                 }
@@ -584,7 +565,7 @@ PanelWindow {
                     Text {
                         id: powerLabel
                         anchors.centerIn: parent
-                        text: "Power"
+                        text: "Power ▾"
                         color: root.powerChipText(powerMouse.containsMouse)
                         font.pixelSize: 10
                         font.weight: Font.DemiBold

@@ -1232,19 +1232,19 @@ ShellRoot {
     }
 
     function neutralChipFill(hovered) {
-        return hovered ? colors.card : colors.cardAlt;
+        return colors.cardAlt;
     }
 
     function neutralChipBorder(hovered) {
-        return hovered ? colors.borderStrong : colors.border;
+        return hovered ? colors.blueMuted : colors.border;
     }
 
     function neutralChipText(hovered) {
-        return hovered ? colors.text : colors.textDim;
+        return colors.text;
     }
 
     function stateChipFill(active, hovered, activeFill) {
-        return active ? activeFill : neutralChipFill(hovered);
+        return active ? activeFill : colors.cardAlt;
     }
 
     function stateChipBorder(active, hovered, activeBorder) {
@@ -1498,28 +1498,72 @@ ShellRoot {
         return !!(device && device.ready && device.isPresent && device.isLaptopBattery);
     }
 
+    function batteryDurationCompact(seconds) {
+        const totalSeconds = Math.max(0, Math.round(Number(seconds || 0)));
+        if (totalSeconds <= 0) {
+            return "";
+        }
+
+        const totalMinutes = Math.round(totalSeconds / 60);
+        if (totalMinutes < 60) {
+            return String(totalMinutes) + "m";
+        }
+
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (minutes <= 0) {
+            return String(hours) + "h";
+        }
+        return String(hours) + "h " + String(minutes) + "m";
+    }
+
+    function batteryDurationLabel() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+
+        if (device.state === UPowerDeviceState.Charging && Number(device.timeToFull || 0) > 0) {
+            return batteryDurationCompact(device.timeToFull) + " to full";
+        }
+        if (device.state === UPowerDeviceState.Discharging && Number(device.timeToEmpty || 0) > 0) {
+            return batteryDurationCompact(device.timeToEmpty) + " left";
+        }
+        return "";
+    }
+
+    function batteryPercentNumber() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return 0;
+        }
+
+        let percentage = Number(device.percentage || 0);
+        if (percentage > 0 && percentage <= 1.5) {
+            percentage *= 100;
+        }
+        return Math.round(Math.max(0, percentage));
+    }
+
     function batteryLabel() {
         const device = batteryDevice();
         if (!batteryReady()) {
             return "";
         }
 
-        const percentage = Math.round(Number(device.percentage || 0));
+        const percentage = batteryPercentNumber();
+        const duration = batteryDurationLabel();
         if (device.state === UPowerDeviceState.Charging) {
-            return "Charging " + String(percentage) + "%";
+            return duration ? "Charging " + String(percentage) + "% · " + duration : "Charging " + String(percentage) + "%";
         }
         if (device.state === UPowerDeviceState.FullyCharged) {
             return "Full " + String(percentage) + "%";
         }
-        return "Battery " + String(percentage) + "%";
+        return duration ? "Battery " + String(percentage) + "% · " + duration : "Battery " + String(percentage) + "%";
     }
 
     function batteryPercentValue() {
-        const device = batteryDevice();
-        if (!batteryReady()) {
-            return 0;
-        }
-        return Math.round(Number(device.percentage || 0));
+        return batteryPercentNumber();
     }
 
     function batteryIsDischarging() {
@@ -1542,10 +1586,9 @@ ShellRoot {
         }
 
         const bits = [batteryLabel()];
-        if (Number(device.timeToEmpty || 0) > 0 && device.state === UPowerDeviceState.Discharging) {
-            bits.push(Math.round(Number(device.timeToEmpty || 0) / 60) + " min left");
-        } else if (Number(device.timeToFull || 0) > 0 && device.state === UPowerDeviceState.Charging) {
-            bits.push(Math.round(Number(device.timeToFull || 0) / 60) + " min to full");
+        const duration = batteryDurationLabel();
+        if (duration) {
+            bits.push(duration);
         }
         return bits.join(" • ");
     }
