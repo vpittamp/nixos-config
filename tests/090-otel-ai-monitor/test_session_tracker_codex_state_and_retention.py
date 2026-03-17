@@ -83,6 +83,37 @@ async def test_codex_api_request_enters_working_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_event_drops_stale_local_pid_before_resolution(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+
+    monkeypatch.setattr(session_tracker_module, "pid_exists", lambda _pid: False)
+
+    async def _unexpected_resolve(_pid: int):
+        raise AssertionError("stale local PID should not resolve window context")
+
+    monkeypatch.setattr(tracker, "_resolve_window_context", _unexpected_resolve)
+
+    event = TelemetryEvent(
+        event_name="codex.api_request",
+        timestamp=datetime.now(timezone.utc),
+        session_id="codex-native-stale-local",
+        tool=AITool.CODEX_CLI,
+        attributes={
+            "process.pid": "424242",
+            "terminal.execution_mode": "local",
+            "terminal.connection_key": "local@thinkpad",
+            "i3pm.context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "project": "vpittamp/nixos-config:main",
+        },
+    )
+
+    await tracker.process_event(event)
+
+    async with tracker._lock:
+        assert tracker._sessions == {}
+
+
+@pytest.mark.asyncio
 async def test_process_event_repairs_restored_native_session_window_binding(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)

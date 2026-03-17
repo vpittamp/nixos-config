@@ -47,6 +47,7 @@ from .sway_helper import (
     get_all_window_ids,
     get_tmux_context_for_pid,
     get_process_i3pm_env,
+    pid_exists,
     list_tmux_panes_sync,
     read_tmux_session_i3pm_metadata_sync,
     tmux_target_exists,
@@ -2654,6 +2655,7 @@ class SessionTracker:
         Args:
             event: Parsed telemetry event from OTLP receiver
         """
+        event_terminal_context_raw = self._extract_terminal_context_from_event(event)
         native_session_id = self._extract_native_session_id(event)
         native_group_id = self._build_native_group_id(event.tool, native_session_id)
 
@@ -2671,6 +2673,16 @@ class SessionTracker:
                 explicit_client_pid = int(explicit_pid_raw)
             except (TypeError, ValueError):
                 explicit_client_pid = None
+
+        if explicit_client_pid is not None and not pid_exists(explicit_client_pid):
+            logger.debug(
+                "Dropping telemetry for exited pid=%s event=%s session=%s",
+                explicit_client_pid,
+                event.event_name,
+                native_session_id or provisional_session_id,
+            )
+            return
+
         client_pid = self._extract_client_pid(
             provisional_session_id,
             native_session_id,
@@ -2689,7 +2701,6 @@ class SessionTracker:
             ) = await self._resolve_window_context(client_pid)
 
         event_project, event_project_path = self._extract_project_context(event)
-        event_terminal_context_raw = self._extract_terminal_context_from_event(event)
         event_terminal_context = dict(event_terminal_context_raw)
         resolved_context_keys: set[str] = set()
         authoritative_resolved_keys = {

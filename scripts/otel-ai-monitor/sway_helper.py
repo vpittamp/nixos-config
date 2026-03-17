@@ -12,6 +12,7 @@ import logging
 import os
 import socket
 import subprocess
+import time
 from glob import glob
 from pathlib import Path
 from typing import Any, Optional
@@ -23,6 +24,10 @@ _DISCOVERED_TMUX_PROJECT_HINT_CACHE = {
     "size": None,
     "mapping": {},
 }
+_ANCHOR_LOOKUP_CACHE: dict[str, tuple[float, Optional[dict[str, Any]]]] = {}
+_ANCHOR_LOOKUP_SUCCESS_TTL_SEC = 0.5
+_ANCHOR_LOOKUP_FAILURE_TTL_SEC = 5.0
+_ANCHOR_LOOKUP_TIMEOUT_SEC = 0.25
 
 _TMUX_LIST_PANES_FORMAT = (
     "#{pane_tty}\t#{session_name}\t#{window_index}:#{window_name}\t"
@@ -530,6 +535,13 @@ def get_process_i3pm_env(pid: int) -> dict[str, str]:
         Dict of I3PM_* variable name to value, empty dict on error
     """
     return get_process_env_values(pid, include_prefixes=("I3PM_",))
+
+
+def pid_exists(pid: int) -> bool:
+    """Return True when the process directory still exists."""
+    if pid <= 1:
+        return False
+    return Path(f"/proc/{pid}").exists()
 
 
 def _normalize_project_path(value: Optional[str]) -> Optional[str]:
@@ -1171,11 +1183,17 @@ async def query_daemon_for_terminal_anchor(terminal_anchor_id: str) -> Optional[
     if not anchor:
         return None
 
+    now = time.monotonic()
+    cached = _ANCHOR_LOOKUP_CACHE.get(anchor)
+    if cached and cached[0] > now:
+        return dict(cached[1]) if isinstance(cached[1], dict) else None
+
     uid = os.getuid()
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}")
     socket_path = os.path.join(runtime_dir, "i3-project-daemon", "ipc.sock")
     if not os.path.exists(socket_path):
         logger.debug(f"Daemon socket not found: {socket_path}")
+        _ANCHOR_LOOKUP_CACHE[anchor] = (now + _ANCHOR_LOOKUP_FAILURE_TTL_SEC, None)
         return None
 
     try:
@@ -1189,23 +1207,34 @@ async def query_daemon_for_terminal_anchor(terminal_anchor_id: str) -> Optional[
         })
         reader, writer = await asyncio.wait_for(
             asyncio.open_unix_connection(socket_path),
-            timeout=2.0,
+            timeout=_ANCHOR_LOOKUP_TIMEOUT_SEC,
         )
         try:
             writer.write(request.encode("utf-8"))
             writer.write_eof()
             await writer.drain()
-            response_data = await asyncio.wait_for(reader.read(), timeout=2.0)
+            response_data = await asyncio.wait_for(
+                reader.read(),
+                timeout=_ANCHOR_LOOKUP_TIMEOUT_SEC,
+            )
             response = json.loads(response_data.decode("utf-8"))
             if "error" in response:
                 logger.debug(f"query_daemon_for_terminal_anchor: daemon error={response['error']}")
+                _ANCHOR_LOOKUP_CACHE[anchor] = (time.monotonic() + _ANCHOR_LOOKUP_FAILURE_TTL_SEC, None)
                 return None
-            return response.get("result", {})
+            result = response.get("result", {})
+            normalized_result = result if isinstance(result, dict) else {}
+            _ANCHOR_LOOKUP_CACHE[anchor] = (
+                time.monotonic() + _ANCHOR_LOOKUP_SUCCESS_TTL_SEC,
+                dict(normalized_result),
+            )
+            return normalized_result
         finally:
             writer.close()
             await writer.wait_closed()
     except Exception as e:
         logger.debug(f"query_daemon_for_terminal_anchor failed: {e}")
+        _ANCHOR_LOOKUP_CACHE[anchor] = (time.monotonic() + _ANCHOR_LOOKUP_FAILURE_TTL_SEC, None)
         return None
 
 

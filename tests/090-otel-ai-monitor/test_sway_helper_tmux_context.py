@@ -163,6 +163,31 @@ async def test_list_tmux_panes_uses_canonical_socket(monkeypatch):
     ]
 
 
+@pytest.mark.asyncio
+async def test_query_daemon_for_terminal_anchor_negative_cache(monkeypatch):
+    sway_helper_module._ANCHOR_LOOKUP_CACHE.clear()
+
+    calls = {"count": 0}
+
+    async def _fake_open_unix_connection(_socket_path: str):
+        calls["count"] += 1
+        raise ConnectionRefusedError("daemon unavailable")
+
+    monkeypatch.setattr(sway_helper_module.os.path, "exists", lambda _path: True)
+    monkeypatch.setattr(
+        sway_helper_module.asyncio,
+        "open_unix_connection",
+        _fake_open_unix_connection,
+    )
+
+    first = await sway_helper_module.query_daemon_for_terminal_anchor("terminal-stale")
+    second = await sway_helper_module.query_daemon_for_terminal_anchor("terminal-stale")
+
+    assert first is None
+    assert second is None
+    assert calls["count"] == 1
+
+
 def test_list_tmux_panes_sync_uses_canonical_socket(monkeypatch):
     fake_output = (
         "/dev/pts/2\tvpittamp/nixos-config/main\t0:main\t%12\t0\t1114052\tryzen\t1\t1\n"
