@@ -82,6 +82,17 @@ let
     # Generate trace token for exact identity correlation
     export I3PM_AI_TRACE_TOKEN="$(date +%s%N)-$RANDOM"
     export I3PM_AI_HOST_ALIAS="''${I3PM_LOCAL_HOST_ALIAS:-''${HOSTNAME:-}}"
+    if [ -n "''${TMUX:-}" ]; then
+      if [ -z "''${TMUX_SESSION:-}" ]; then
+        export TMUX_SESSION="$(${pkgs.tmux}/bin/tmux display-message -p '#S' 2>/dev/null || true)"
+      fi
+      if [ -z "''${TMUX_WINDOW:-}" ]; then
+        export TMUX_WINDOW="$(${pkgs.tmux}/bin/tmux display-message -p '#I:#W' 2>/dev/null || true)"
+      fi
+      if [ -z "''${TMUX_PANE:-}" ]; then
+        export TMUX_PANE="$(${pkgs.tmux}/bin/tmux display-message -p '#D' 2>/dev/null || true)"
+      fi
+    fi
     export I3PM_AI_PANE_KEY=""
     if [ -n "''${I3PM_CONNECTION_KEY:-}" ] && [ -n "''${TMUX_SESSION:-}" ] && [ -n "''${TMUX_WINDOW:-}" ] && [ -n "''${TMUX_PANE:-}" ]; then
       export I3PM_AI_PANE_KEY="''${I3PM_CONNECTION_KEY}::''${TMUX_SESSION}::''${TMUX_WINDOW}::''${TMUX_PANE}"
