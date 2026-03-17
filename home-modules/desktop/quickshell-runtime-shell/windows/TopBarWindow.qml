@@ -156,7 +156,7 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.panelVisible = !root.panelVisible
+                        onClicked: root.togglePanelVisibility()
                     }
                 }
             }

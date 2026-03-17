@@ -3598,6 +3598,35 @@ ShellRoot {
         runtimePanelExpandedSection = runtimePanelExpandedSectionValue();
     }
 
+    function showRuntimePanelSection(section) {
+        const requested = stringOrEmpty(section);
+        showRuntimePanel();
+        if (requested === "balanced") {
+            runtimePanelExpandedSection = runtimePanelDefaultExpandedSection();
+            if (runtimePanelSectionHasContent("sessions") && runtimePanelSectionHasContent("windows")) {
+                runtimePanelExpandedSection = "balanced";
+            }
+            return;
+        }
+        if (runtimePanelSectionHasContent(requested)) {
+            runtimePanelExpandedSection = requested;
+            return;
+        }
+        ensureRuntimePanelExpandedSection();
+    }
+
+    function togglePanelVisibility() {
+        if (panelVisible) {
+            panelVisible = false;
+            return;
+        }
+        if (panelSection === "assistant") {
+            showAssistantPanel();
+            return;
+        }
+        showRuntimePanel();
+    }
+
     function currentSessionKey() {
         return stringOrEmpty(dashboard.current_ai_session_key);
     }

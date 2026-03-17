@@ -603,7 +603,7 @@ Item {
         target: "shell"
 
         function togglePanel() {
-            shellRoot.panelVisible = !shellRoot.panelVisible;
+            shellRoot.togglePanelVisibility();
         }
 
         function toggleDockMode() {
@@ -611,15 +611,15 @@ Item {
         }
 
         function showWindowsTab() {
-            shellRoot.showRuntimePanel();
+            shellRoot.showRuntimePanelSection("windows");
         }
 
         function showSessionsTab() {
-            shellRoot.showRuntimePanel();
+            shellRoot.showRuntimePanelSection("sessions");
         }
 
         function showHealthTab() {
-            shellRoot.showRuntimePanel();
+            shellRoot.showRuntimePanelSection("balanced");
         }
 
         function showAssistant() {
