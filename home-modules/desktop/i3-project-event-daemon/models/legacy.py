@@ -1042,6 +1042,10 @@ class PendingLaunch(BaseModel):
     """
 
     # Core identification
+    launch_id: Optional[str] = Field(
+        default=None,
+        description="Stable launch id assigned by the launch registry"
+    )
     app_name: str = Field(
         ...,
         description="Application name from registry (e.g., 'vscode', 'terminal')"

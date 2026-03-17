@@ -254,6 +254,93 @@ async def test_prepare_launch_terminal_ssh_current_host_uses_remote_transport(se
 
 
 @pytest.mark.asyncio
+async def test_register_launch_for_spec_persists_local_spec_and_status(server_local, tmp_path):
+    server_local._runtime_dir = lambda: tmp_path
+    spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
+
+    registration = await server_local._register_launch_for_spec(spec)
+    launch_id = registration["launch_id"]
+    spec_payload = json.loads(server_local._launch_spec_file(launch_id).read_text())
+    status_payload = json.loads(server_local._launch_status_file(launch_id).read_text())
+
+    assert spec_payload["launch_id"] == launch_id
+    assert spec_payload["launch_transport"] == "local_helper"
+    assert spec_payload["tmux_session_name"].startswith("i3pm-")
+    assert status_payload["status"] == "queued"
+    assert status_payload["reason"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_launch_status_reconciles_managed_session_to_waiting_and_running(server_local, tmp_path):
+    server_local._runtime_dir = lambda: tmp_path
+    spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
+    registration = await server_local._register_launch_for_spec(spec)
+    launch_id = registration["launch_id"]
+
+    server_local._managed_tmux_session_probe = MagicMock(return_value={
+        "exists": True,
+        "healthy": True,
+        "reason": "healthy",
+        "tmux_session_name": spec["tmux_session_name"],
+        "tmux_socket": server_local._canonical_tmux_socket(),
+    })
+    server_local._get_terminal_anchor = AsyncMock(return_value={
+        "matched": False,
+        "window_id": 0,
+    })
+    server_local._write_launch_status(
+        launch_id=launch_id,
+        status="session_validating",
+        spec=spec,
+        reason="session_validating",
+    )
+
+    waiting = await server_local._launch_status({"launch_id": launch_id})
+
+    assert waiting["status"] == "waiting_window"
+    assert waiting["reason"] == "waiting_window"
+
+    server_local._get_terminal_anchor = AsyncMock(return_value={
+        "matched": True,
+        "window_id": 12,
+    })
+    running = await server_local._launch_status({"launch_id": launch_id})
+
+    assert running["status"] == "running"
+    assert running["reason"] == "window_bound"
+
+
+@pytest.mark.asyncio
+async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tmp_path):
+    server_local._runtime_dir = lambda: tmp_path
+    spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
+    registration = await server_local._register_launch_for_spec(spec)
+    launch_id = registration["launch_id"]
+
+    server_local._managed_tmux_session_probe = MagicMock(return_value={
+        "exists": True,
+        "healthy": True,
+        "reason": "healthy",
+        "tmux_session_name": spec["tmux_session_name"],
+        "tmux_socket": server_local._canonical_tmux_socket(),
+    })
+    server_local._write_launch_status(
+        launch_id=launch_id,
+        status="running",
+        spec=spec,
+        reason="window_bound",
+    )
+
+    result = await server_local._mark_launch_window_closed(SimpleNamespace(
+        correlation_launch_id=launch_id,
+        terminal_anchor_id=spec["terminal_anchor_id"],
+    ))
+
+    assert result["status"] == "reusable_headless"
+    assert result["reason"] == "headless_reusable"
+
+
+@pytest.mark.asyncio
 async def test_launch_open_clears_stale_focus_override_for_explicit_project_intent(server_local):
     server_local._set_focus_overrides(
         session_key="session-stale",

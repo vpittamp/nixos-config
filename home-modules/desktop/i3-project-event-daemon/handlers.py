@@ -905,7 +905,11 @@ async def on_window_new(
             # Feature 041 T022: Store correlation metadata if matched via launch
             # T040: Now using full signals from calculate_confidence including workspace details
             correlation_matched=bool(matched_launch),
-            correlation_launch_id=f"{matched_launch.app_name}-{matched_launch.timestamp}" if matched_launch else None,
+            correlation_launch_id=(
+                str(getattr(matched_launch, "launch_id", "") or "").strip()
+                or str(terminal_anchor_id or "").strip()
+                or f"{matched_launch.app_name}-{matched_launch.timestamp}"
+            ) if matched_launch else None,
             correlation_confidence=correlation_confidence if matched_launch else None,
             correlation_confidence_level=confidence_level if matched_launch else None,
             correlation_signals=correlation_signals if matched_launch else None,
@@ -933,6 +937,19 @@ async def on_window_new(
             remote_tmux_pane=str(window_env.remote_tmux_pane or "") if window_env else "",
         )
         await state_manager.add_window(window_info)
+        launch_id = (
+            str(getattr(matched_launch, "launch_id", "") or "").strip()
+            or str(terminal_anchor_id or "").strip()
+        ) if matched_launch else ""
+        if ipc_server and matched_launch and launch_id:
+            try:
+                await ipc_server._mark_launch_window_bound(
+                    launch_id=launch_id,
+                    window_id=window_id,
+                    terminal_anchor_id=terminal_anchor_id or "",
+                )
+            except Exception as exc:
+                logger.debug("Failed to mark launch %s running for window %s: %s", launch_id, window_id, exc)
 
         # Feature 037 T026-T029 + Feature 039 T060-T063 + Feature 056 REFACTORED: Workspace assignment
         #
@@ -1814,6 +1831,12 @@ async def on_window_close(
         logger.debug(f"[Feature 102 T068] Error auto-stopping traces: {e}")
 
     try:
+        tracked_window = state_manager.state.window_map.get(window_id)
+        if ipc_server and tracked_window is not None:
+            try:
+                await ipc_server._mark_launch_window_closed(tracked_window)
+            except Exception as exc:
+                logger.debug("Failed to reconcile launch status for closed window %s: %s", window_id, exc)
         # Feature 076 T033-T034: Clean up marks before removing window from tracking
         if mark_manager:
             try:

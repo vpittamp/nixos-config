@@ -198,6 +198,15 @@ Current model:
 - remote helper scripts are installed into the user profile so the remote host can resolve them on `PATH`
 - remote shell execution uses `bash -c`, not `bash -lc`
 
+Managed project terminal contract:
+- every managed terminal launch gets a persisted `launch_id`, `.spec.json`, and `.status.json` under `$XDG_RUNTIME_DIR/i3-project-daemon/launches`
+- the canonical tmux session is versioned and must carry `@i3pm_managed=1`, `@i3pm_schema_version`, `@i3pm_context_key`, `@i3pm_terminal_role`, and `@i3pm_tmux_server_key`
+- drifted deterministic tmux session names are quarantined by rename, not killed and not silently reused
+- launch status advances through explicit states: `queued`, `starting_terminal`, `session_validating`, `waiting_window`, `running`, `reusable_headless`, or `failed`
+- `running` requires a healthy managed tmux session plus a bound terminal window
+- `reusable_headless` means the canonical managed session is healthy but currently has no attached local window client
+- window close reconciles back into the managed session state instead of assuming terminal death from window death alone
+
 Important runtime consequence:
 - helper lookup is deterministic across `thinkpad` and `ryzen`
 - remote SSH terminal startup no longer depends on login-shell side effects

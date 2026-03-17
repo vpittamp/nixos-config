@@ -26,8 +26,12 @@ managed_tmux_ensure_socket_parent
 
 if managed_tmux has-session -t "$TMUX_SESSION_NAME" 2>/dev/null; then
     if recreate_reason="$(managed_tmux_recreate_reason "$TMUX_SESSION_NAME" 2>/dev/null)"; then
-        echo "project-terminal-launch: replacing stale managed session '$TMUX_SESSION_NAME' ($recreate_reason)" >&2
-        managed_tmux kill-session -t "$TMUX_SESSION_NAME" >/dev/null 2>&1 || true
+        quarantine_name="$(managed_tmux_quarantine_session "$TMUX_SESSION_NAME" "$recreate_reason" 2>/dev/null || true)"
+        if [[ -z "$quarantine_name" ]]; then
+            echo "project-terminal-launch: failed to quarantine stale managed session '$TMUX_SESSION_NAME' ($recreate_reason)" >&2
+            exit 1
+        fi
+        echo "project-terminal-launch: quarantined stale managed session '$TMUX_SESSION_NAME' as '$quarantine_name' ($recreate_reason)" >&2
     else
         managed_tmux_export_current_env "$TMUX_SESSION_NAME"
         managed_tmux_set_metadata "$TMUX_SESSION_NAME"

@@ -342,6 +342,7 @@ class IPCServer:
             "connection_key": "",
         }
         self._user_intent_epoch: int = 0
+        self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
 
     @classmethod
     async def from_systemd_socket(
@@ -442,6 +443,11 @@ class IPCServer:
 
     async def stop(self) -> None:
         """Stop IPC server and close all connections."""
+        for task in list(self._launch_reconcile_tasks.values()):
+            task.cancel()
+        if self._launch_reconcile_tasks:
+            await asyncio.gather(*self._launch_reconcile_tasks.values(), return_exceptions=True)
+            self._launch_reconcile_tasks.clear()
         if self.server:
             self.server.close()
             await self.server.wait_closed()
@@ -5707,6 +5713,308 @@ class IPCServer:
         self.invalidate_window_tree_cache()
         return None
 
+    def _managed_tmux_session_probe(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Inspect managed tmux session health for a deterministic launch spec."""
+        tmux_session_name = str(spec.get("tmux_session_name") or "").strip()
+        if not tmux_session_name:
+            return {
+                "exists": False,
+                "healthy": False,
+                "reason": "missing_session_name",
+            }
+        environment = spec.get("environment") or {}
+        tmux_socket = str(environment.get("I3PM_TMUX_SOCKET") or spec.get("tmux_socket") or "").strip()
+        if not tmux_socket:
+            tmux_socket = self._canonical_tmux_socket()
+        expected_context = str(spec.get("context_key") or "").strip()
+        expected_role = str(spec.get("terminal_role") or "").strip()
+        expected_server_key = str(environment.get("I3PM_TMUX_SERVER_KEY") or tmux_socket).strip()
+        tmux_cmd = [
+            "tmux",
+            "-S",
+            tmux_socket,
+        ]
+
+        def _tmux_stdout(*args: str) -> str:
+            result = subprocess.run(
+                [*tmux_cmd, *args],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError((result.stderr or result.stdout or "").strip() or "tmux error")
+            return (result.stdout or "").strip()
+
+        has_session = subprocess.run(
+            [*tmux_cmd, "has-session", "-t", tmux_session_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if has_session.returncode != 0:
+            return {
+                "exists": False,
+                "healthy": False,
+                "reason": "missing_session",
+                "tmux_session_name": tmux_session_name,
+                "tmux_socket": tmux_socket,
+            }
+
+        def _read_option(option_name: str) -> str:
+            try:
+                return _tmux_stdout("show-options", "-t", tmux_session_name, "-qv", option_name)
+            except RuntimeError:
+                return ""
+
+        metadata = {
+            "managed": _read_option("@i3pm_managed"),
+            "context_key": _read_option("@i3pm_context_key"),
+            "terminal_role": _read_option("@i3pm_terminal_role"),
+            "tmux_server_key": _read_option("@i3pm_tmux_server_key"),
+            "schema_version": _read_option("@i3pm_schema_version"),
+        }
+        healthy = True
+        reason = "healthy"
+        if metadata["managed"] != "1":
+            healthy = False
+            reason = "unmanaged"
+        elif expected_context and metadata["context_key"] != expected_context:
+            healthy = False
+            reason = "context_mismatch"
+        elif expected_role and metadata["terminal_role"] and metadata["terminal_role"] != expected_role:
+            healthy = False
+            reason = "role_mismatch"
+        elif metadata["tmux_server_key"] and metadata["tmux_server_key"] != expected_server_key:
+            healthy = False
+            reason = "server_key_mismatch"
+        elif metadata["schema_version"] and metadata["schema_version"] != "1":
+            healthy = False
+            reason = "schema_mismatch"
+        return {
+            "exists": True,
+            "healthy": healthy,
+            "reason": reason,
+            "tmux_session_name": tmux_session_name,
+            "tmux_socket": tmux_socket,
+            "metadata": metadata,
+        }
+
+    async def _reconcile_launch_runtime_status(
+        self,
+        launch_id: str,
+        *,
+        anchor_bound: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Advance a persisted launch status using tmux metadata and anchor binding."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            return {}
+        status = self._read_launch_status(launch_key)
+        if not status:
+            return {}
+        if str(status.get("status") or "").strip() == "failed":
+            return status
+        spec = self._read_launch_spec(launch_key)
+        if not spec:
+            return status
+        terminal_launch = spec.get("terminal_launch") or {}
+        if str(terminal_launch.get("mode") or "").strip() != "managed_project_terminal":
+            return status
+        if str(spec.get("launch_transport") or "").strip() == "remote_helper":
+            return status
+        if anchor_bound is None:
+            anchor_result = await self._get_terminal_anchor({
+                "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
+            })
+            anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
+        probe = self._managed_tmux_session_probe(spec)
+        current_status = str(status.get("status") or "").strip() or "queued"
+        transitional_states = {"queued", "starting_terminal", "session_validating", "waiting_window"}
+        if not probe.get("exists", False):
+            if current_status in {"queued", "starting_terminal"}:
+                return self._write_launch_status(
+                    launch_id=launch_key,
+                    status="starting_terminal",
+                    spec=spec,
+                    reason="starting_terminal",
+                )
+            return status
+        if not probe.get("healthy", False):
+            if current_status in transitional_states:
+                next_status = "waiting_window" if anchor_bound is False else "session_validating"
+                if anchor_bound:
+                    next_status = "session_validating"
+                return self._write_launch_status(
+                    launch_id=launch_key,
+                    status=next_status,
+                    spec=spec,
+                    reason=str(probe.get("reason") or next_status),
+                    extra={
+                        "tmux_session_exists": True,
+                        "tmux_session_healthy": False,
+                        "tmux_session_name": str(probe.get("tmux_session_name") or ""),
+                        "tmux_socket": str(probe.get("tmux_socket") or ""),
+                        "anchor_bound": bool(anchor_bound),
+                    },
+                )
+            return self._write_launch_status(
+                launch_id=launch_key,
+                status="failed",
+                spec=spec,
+                reason=str(probe.get("reason") or "invalid_managed_session"),
+                error_code="invalid_managed_session",
+                error_message=str(probe.get("reason") or "managed tmux metadata mismatch"),
+                extra={
+                    "tmux_session_exists": True,
+                    "tmux_session_healthy": False,
+                },
+            )
+        next_status = "running" if anchor_bound else "reusable_headless"
+        reason = "window_bound" if anchor_bound else "headless_reusable"
+        if current_status in {"queued", "starting_terminal", "session_validating"} and not anchor_bound:
+            next_status = "waiting_window"
+            reason = "waiting_window"
+        return self._write_launch_status(
+            launch_id=launch_key,
+            status=next_status,
+            spec=spec,
+            reason=reason,
+            extra={
+                "tmux_session_exists": True,
+                "tmux_session_healthy": True,
+                "tmux_session_name": str(probe.get("tmux_session_name") or ""),
+                "tmux_socket": str(probe.get("tmux_socket") or ""),
+                "anchor_bound": bool(anchor_bound),
+            },
+        )
+
+    async def _run_launch_reconcile_loop(
+        self,
+        launch_id: str,
+        *,
+        anchor_bound: Optional[bool],
+        attempts: int,
+        delay_s: float,
+    ) -> None:
+        """Drive a deterministic launch to a terminal state without client polling."""
+        try:
+            last_result: Dict[str, Any] = {}
+            for attempt in range(max(int(attempts), 1)):
+                result = await self._reconcile_launch_runtime_status(
+                    launch_id,
+                    anchor_bound=anchor_bound,
+                )
+                last_result = result
+                status_value = str(result.get("status") or "").strip()
+                if status_value in {"running", "reusable_headless", "failed"}:
+                    return
+                if attempt + 1 < max(int(attempts), 1):
+                    await asyncio.sleep(delay_s)
+            spec = self._read_launch_spec(launch_id)
+            probe = self._managed_tmux_session_probe(spec)
+            status_value = str(last_result.get("status") or "").strip()
+            if spec and status_value in {"queued", "starting_terminal", "session_validating", "waiting_window"}:
+                self._write_launch_status(
+                    launch_id=launch_id,
+                    status="failed",
+                    spec=spec,
+                    reason=str(probe.get("reason") or "launch_reconcile_timeout"),
+                    error_code="invalid_managed_session" if probe.get("exists", False) else "managed_session_missing",
+                    error_message=str(probe.get("reason") or "managed session did not become healthy in time"),
+                    extra={
+                        "tmux_session_exists": bool(probe.get("exists", False)),
+                        "tmux_session_healthy": bool(probe.get("healthy", False)),
+                        "tmux_session_name": str(probe.get("tmux_session_name") or ""),
+                        "tmux_socket": str(probe.get("tmux_socket") or ""),
+                        "anchor_bound": bool(anchor_bound),
+                    },
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("Launch reconcile loop failed for %s: %s", launch_id, exc)
+        finally:
+            task = self._launch_reconcile_tasks.get(launch_id)
+            if task is asyncio.current_task():
+                self._launch_reconcile_tasks.pop(launch_id, None)
+
+    def _schedule_launch_reconcile(
+        self,
+        launch_id: str,
+        *,
+        anchor_bound: Optional[bool],
+        attempts: int = 25,
+        delay_s: float = 0.2,
+    ) -> None:
+        """Ensure a bounded daemon task reconciles launch status without external polling."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            return
+        existing = self._launch_reconcile_tasks.get(launch_key)
+        if existing is not None and not existing.done():
+            return
+        self._launch_reconcile_tasks[launch_key] = asyncio.create_task(
+            self._run_launch_reconcile_loop(
+                launch_key,
+                anchor_bound=anchor_bound,
+                attempts=attempts,
+                delay_s=delay_s,
+            ),
+            name=f"launch-reconcile:{launch_key}",
+        )
+
+    async def _mark_launch_window_bound(
+        self,
+        *,
+        launch_id: str,
+        window_id: int,
+        terminal_anchor_id: str = "",
+    ) -> Dict[str, Any]:
+        """Mark a terminal launch as running once a window is bound."""
+        result = await self._reconcile_launch_runtime_status(launch_id, anchor_bound=True)
+        if not result:
+            return {}
+        if str(result.get("status") or "").strip() == "failed":
+            return result
+        if str(result.get("status") or "").strip() == "running":
+            return result
+        spec = self._read_launch_spec(launch_id)
+        probe = self._managed_tmux_session_probe(spec or {})
+        for _attempt in range(5):
+            if bool(probe.get("exists", False) and probe.get("healthy", False)):
+                break
+            await asyncio.sleep(0.2)
+            probe = self._managed_tmux_session_probe(spec or {})
+        if not bool(probe.get("exists", False) and probe.get("healthy", False)):
+            self._schedule_launch_reconcile(launch_id, anchor_bound=True, attempts=25, delay_s=0.2)
+            return result
+        return self._write_launch_status(
+            launch_id=launch_id,
+            status="running",
+            spec=spec or None,
+            reason="window_bound",
+            extra={
+                "window_id": int(window_id or 0),
+                "anchor_bound": True,
+                "terminal_anchor_id": str(terminal_anchor_id or result.get("terminal_anchor_id") or "").strip(),
+                "tmux_session_exists": True,
+                "tmux_session_healthy": True,
+                "tmux_session_name": str(probe.get("tmux_session_name") or ""),
+                "tmux_socket": str(probe.get("tmux_socket") or ""),
+            },
+        )
+
+    async def _mark_launch_window_closed(self, window_info: Any) -> Dict[str, Any]:
+        """Reconcile a managed-terminal launch after its client window closes."""
+        launch_id = str(getattr(window_info, "correlation_launch_id", "") or "").strip()
+        if not launch_id:
+            return {}
+        result = await self._reconcile_launch_runtime_status(launch_id, anchor_bound=False)
+        if str(result.get("status") or "").strip() not in {"reusable_headless", "failed"}:
+            self._schedule_launch_reconcile(launch_id, anchor_bound=False, attempts=20, delay_s=0.2)
+        return result
+
     async def _get_reusable_remote_project_bridge_window(
         self,
         *,
@@ -5866,7 +6174,7 @@ class IPCServer:
     async def _register_launch_for_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
         """Register a pending launch for a prepared spec."""
         app = self._require_registry_app(str(spec.get("app_name") or "").strip())
-        return await self._register_pending_launch(
+        registration = await self._register_pending_launch(
             app=app,
             project_name=str(spec.get("project_name") or "").strip(),
             project_directory=(
@@ -5881,6 +6189,21 @@ class IPCServer:
                 else None
             ),
         )
+        launch_id = str(registration.get("launch_id") or "").strip()
+        if launch_id:
+            spec["launch"] = {"launch_id": launch_id}
+            launch_transport = str(spec.get("launch_transport") or "").strip()
+            if launch_transport == "remote_helper":
+                self._write_remote_launch_spec(
+                    spec=spec,
+                    launch_kind=str(spec.get("launch_kind") or "open_project_terminal").strip(),
+                )
+            else:
+                self._write_local_launch_spec(
+                    spec=spec,
+                    launch_kind=str(spec.get("launch_kind") or "open_project_terminal").strip(),
+                )
+        return registration
 
     async def _prepare_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Build a deterministic launch spec and register pending launch state."""
@@ -6243,6 +6566,32 @@ class IPCServer:
         """Return the canonical launch-spec file for a launch id."""
         return self._launch_runtime_dir() / f"{str(launch_id or '').strip()}.spec.json"
 
+    def _read_launch_spec(self, launch_id: str) -> Dict[str, Any]:
+        """Return persisted spec for a deterministic launch id."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            return {}
+        payload = self._load_json_file(self._launch_spec_file(launch_key))
+        if not payload:
+            return {}
+        payload.setdefault("launch_id", launch_key)
+        return payload
+
+    def _write_launch_spec_payload(
+        self,
+        *,
+        launch_id: str,
+        payload: Dict[str, Any],
+    ) -> Path:
+        """Persist an exact launch payload for reconciliation and diagnostics."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            raise RuntimeError("launch_id is required for launch spec")
+        spec_file = self._launch_spec_file(launch_key)
+        spec_file.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(spec_file, payload)
+        return spec_file
+
     def _write_launch_status(
         self,
         *,
@@ -6251,6 +6600,8 @@ class IPCServer:
         spec: Optional[Dict[str, Any]] = None,
         error_code: str = "",
         error_message: str = "",
+        reason: str = "",
+        extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Persist deterministic launch status for UI and RPC consumers."""
         launch_key = str(launch_id or "").strip()
@@ -6261,6 +6612,7 @@ class IPCServer:
             "status": str(status or "").strip() or "queued",
             "error_code": str(error_code or "").strip(),
             "error_message": str(error_message or "").strip(),
+            "reason": str(reason or "").strip(),
             "updated_at": int(time.time()),
         }
         if isinstance(spec, dict):
@@ -6271,6 +6623,8 @@ class IPCServer:
                 "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
                 "launch_kind": str(spec.get("launch_kind") or "").strip(),
             })
+        if isinstance(extra, dict):
+            payload.update(extra)
         status_file = self._launch_status_file(launch_key)
         status_file.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(status_file, payload)
@@ -6324,13 +6678,51 @@ class IPCServer:
             "tmux_session_name": str(spec.get("tmux_session_name") or "").strip(),
             "terminal_launch": dict(spec.get("terminal_launch") or {}),
             "environment": dict(spec.get("environment") or {}),
+            "launch_transport": str(spec.get("launch_transport") or "").strip(),
             "status_file": str(self._launch_status_file(launch_id)),
         }
-        spec_file = self._launch_spec_file(launch_id)
-        spec_file.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(spec_file, payload)
-        self._write_launch_status(launch_id=launch_id, status="queued", spec=payload)
-        return spec_file
+        self._write_launch_status(
+            launch_id=launch_id,
+            status="queued",
+            spec=payload,
+            reason="queued",
+        )
+        return self._write_launch_spec_payload(launch_id=launch_id, payload=payload)
+
+    def _write_local_launch_spec(
+        self,
+        *,
+        spec: Dict[str, Any],
+        launch_kind: str,
+    ) -> Path:
+        """Persist the exact local launch payload consumed by managed terminal reconciliation."""
+        launch = spec.get("launch") or {}
+        launch_id = str(launch.get("launch_id") or "").strip()
+        if not launch_id:
+            raise RuntimeError("local launch requires a registered launch_id")
+        payload = {
+            "launch_id": launch_id,
+            "launch_kind": str(launch_kind or "").strip(),
+            "project_name": str(spec.get("project_name") or "").strip(),
+            "execution_mode": str(spec.get("execution_mode") or "").strip(),
+            "connection_key": str(spec.get("connection_key") or "").strip(),
+            "project_directory": str(spec.get("project_directory") or "").strip(),
+            "local_project_directory": str(spec.get("local_project_directory") or "").strip(),
+            "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
+            "tmux_session_name": str(spec.get("tmux_session_name") or "").strip(),
+            "terminal_role": str(spec.get("terminal_role") or "").strip(),
+            "terminal_launch": dict(spec.get("terminal_launch") or {}),
+            "environment": dict(spec.get("environment") or {}),
+            "launch_transport": str(spec.get("launch_transport") or "").strip(),
+            "status_file": str(self._launch_status_file(launch_id)),
+        }
+        self._write_launch_status(
+            launch_id=launch_id,
+            status="queued",
+            spec=payload,
+            reason="queued",
+        )
+        return self._write_launch_spec_payload(launch_id=launch_id, payload=payload)
 
     def _canonical_tmux_socket(self) -> str:
         """Return the canonical managed tmux socket path for the current host user."""
@@ -9139,6 +9531,13 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             systemd_cmd.append(command)
             systemd_cmd.extend(args)
 
+        if launch_id:
+            self._write_launch_status(
+                launch_id=launch_id,
+                status="starting_terminal",
+                spec=spec,
+                reason="starting_terminal",
+            )
         result = subprocess.run(systemd_cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
@@ -9147,17 +9546,29 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     launch_id=launch_id,
                     status="failed",
                     spec=spec,
+                    reason="launch_start_failed",
                     error_code="launch_start_failed",
                     error_message=detail or "systemd-run error",
                 )
             raise RuntimeError(f"Detached launch failed: {detail or 'systemd-run error'}")
 
         if launch_id:
-            self._write_launch_status(
-                launch_id=launch_id,
-                status="starting_terminal",
-                spec=spec,
-            )
+            if terminal_mode == "managed_project_terminal":
+                self._write_launch_status(
+                    launch_id=launch_id,
+                    status="session_validating",
+                    spec=spec,
+                    reason="session_validating",
+                )
+                if launch_transport == "local_helper":
+                    self._schedule_launch_reconcile(launch_id, anchor_bound=None, attempts=30, delay_s=0.2)
+            else:
+                self._write_launch_status(
+                    launch_id=launch_id,
+                    status="waiting_window",
+                    spec=spec,
+                    reason="waiting_window",
+                )
 
         return {
             "success": True,
@@ -9179,6 +9590,13 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         reused_window_id = 0
         terminal_launch = spec.get("terminal_launch") or {}
         terminal_mode = str(terminal_launch.get("mode") or "").strip()
+        launch_transport = str(
+            spec.get("launch_transport")
+            or self._resolve_terminal_launch_transport(
+                execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+                connection_key=str(spec.get("connection_key") or "").strip(),
+            )
+        ).strip() or "local_helper"
         if terminal_mode == "managed_project_terminal":
             existing_window = await self._get_reusable_context_terminal_window(
                 project_name=str(spec.get("project_name") or "").strip(),
@@ -9187,6 +9605,17 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 app_name="terminal",
                 terminal_role=str(spec.get("terminal_role") or "project-main").strip(),
             )
+            if existing_window is not None and launch_transport == "local_helper":
+                probe = self._managed_tmux_session_probe(spec)
+                if not bool(probe.get("exists", False) and probe.get("healthy", False)):
+                    logger.warning(
+                        "Refusing to reuse live terminal window %s for %s because managed session %s is invalid (%s)",
+                        int(getattr(existing_window, "window_id", 0) or 0),
+                        str(spec.get("context_key") or "").strip(),
+                        str(spec.get("tmux_session_name") or "").strip(),
+                        str(probe.get("reason") or "unknown"),
+                    )
+                    existing_window = None
             if existing_window is not None:
                 self._dispatch_managed_terminal_command(spec)
                 focus_result = await self._window_focus({
@@ -9396,6 +9825,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         )
         if pending_launch:
             return {
+                "launch_id": str(getattr(pending_launch, "launch_id", "") or "").strip(),
                 "terminal_anchor_id": terminal_anchor_id,
                 "window_id": None,
                 "project_name": pending_launch.project_name,
@@ -13846,7 +14276,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         launch_id = str(params.get("launch_id") or "").strip()
         if not launch_id:
             raise ValueError("launch_id is required")
-        status = self._read_launch_status(launch_id)
+        status = await self._reconcile_launch_runtime_status(launch_id)
+        if not status:
+            status = self._read_launch_status(launch_id)
         if not status:
             return {
                 "success": False,
@@ -13887,6 +14319,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             if status_value in {"running", "attaching_tmux"} and (not terminal_anchor_id or anchor_bound):
                 current["success"] = True
                 current["reason"] = "ok"
+                current["anchor_bound"] = anchor_bound
+                return current
+            if status_value == "reusable_headless":
+                current["success"] = True
+                current["reason"] = str(current.get("reason") or "headless_reusable")
                 current["anchor_bound"] = anchor_bound
                 return current
             if attempt + 1 < max(int(attempts), 1):

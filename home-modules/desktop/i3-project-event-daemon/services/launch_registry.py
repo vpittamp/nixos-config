@@ -80,8 +80,14 @@ class LaunchRegistry:
                 "Too many pending launches. Wait for existing launches to expire or match."
             )
 
-        # Generate unique launch ID
-        launch_id = f"{launch.app_name}-{launch.timestamp}"
+        # Use the canonical launch anchor when available so status/spec/window
+        # correlation all speak the same deterministic identity.
+        launch_id = (
+            str(launch.launch_id or "").strip()
+            or str(launch.terminal_anchor_id or "").strip()
+            or f"{launch.app_name}-{launch.timestamp}"
+        )
+        launch.launch_id = launch_id
 
         # Store launch
         self._launches[launch_id] = launch
