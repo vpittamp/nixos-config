@@ -354,7 +354,7 @@ ShellRoot {
     }
 
     function panelSessions() {
-        return stableSortedSessions(activeSessions().filter(session => sessionIsDisplayEligible(session)));
+        return stableSortedSessions(activeSessions().filter(session => sessionIsPanelDisplayEligible(session)));
     }
 
     function sessionIdentityKey(session) {
@@ -442,6 +442,25 @@ ShellRoot {
         }
 
         if (boolOrFalse(session.remote_source_stale)) {
+            return false;
+        }
+
+        const phase = sessionPhase(session);
+        if (phase === "working" || phase === "needs_attention" || phase === "done") {
+            return true;
+        }
+
+        return boolOrFalse(session.process_running);
+    }
+
+    function sessionIsPanelDisplayEligible(session) {
+        if (!session || typeof session !== "object") {
+            return false;
+        }
+
+        const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
+        const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
+        if (!terminalAnchor && !hasTmuxIdentity) {
             return false;
         }
 
