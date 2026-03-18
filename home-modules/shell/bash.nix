@@ -156,6 +156,7 @@ in
       kgs = "kubectl get svc";
       kgn = "kubectl get nodes";
       kga = "kubectl get all";
+      kgd = "kubectl get deployment";
       kd = "kubectl describe";
       kdp = "kubectl describe pod";
       kl = "kubectl logs";
@@ -197,12 +198,6 @@ in
       # Background command management (Feature 106: portable wrappers)
       bglast = "${scriptWrappers.view-last-bg-command}/bin/view-last-bg-command";  # View last background command output
       bglog = "less ~/.cache/bg-commands.log";  # View all background command history
-      
-      # Kubernetes
-      k = "kubectl";
-      kgp = "kubectl get pods";
-      kgs = "kubectl get svc";
-      kgd = "kubectl get deployment";
       
       # System
       reload = "source ~/.bashrc";
