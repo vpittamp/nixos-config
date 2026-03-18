@@ -124,10 +124,19 @@ let
     echo "$found process(es) across $hosts"
   '';
 
+  nixosRebuildScript = pkgs.writeShellScriptBin "nixos-rebuild-snippet" ''
+    set -euo pipefail
+    H=$(hostname -s)
+    cd /home/vpittamp/repos/vpittamp/nixos-config/main
+    nh os switch --hostname "$H" -- --option eval-cache false
+    GEN=$(readlink /nix/var/nix/profiles/system | ${pkgs.gnused}/bin/sed 's/system-\([0-9]*\)-link/\1/')
+    echo "Generation: $GEN"
+  '';
+
   elephantDefaultSnippets = [
     {
       name = "rebuild";
-      snippet = "H=$(hostname -s) && cd /home/vpittamp/repos/vpittamp/nixos-config/main && snippet-run \"NixOS Rebuild ($H)\" -- nh os switch --hostname $H -- --option eval-cache false";
+      snippet = "snippet-run \"NixOS Rebuild ($(hostname -s))\" -- nixos-rebuild-snippet";
       description = "Rebuild the current host with nh from this nixos-config checkout";
     }
     {
@@ -140,6 +149,11 @@ let
       snippet = "snippet-run \"AI CLI Status\" -- ai-cli-status";
       description = "Show AI CLI processes (Claude, Codex, Gemini) across thinkpad and ryzen";
     }
+    {
+      name = "sync kubeconfigs";
+      snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub ryzen-k8s-api talos-k8s-api talos-test-api-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\"; done'";
+      description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, talos, talos-test)";
+    }
   ];
   elephantSnippetsTemplate = pkgs.writeText "elephant-snippets.toml" ''
     # Elephant Snippets Provider Configuration
@@ -148,7 +162,7 @@ let
 
     [[snippets]]
     name = "rebuild"
-    snippet = "H=$(hostname -s) && cd /home/vpittamp/repos/vpittamp/nixos-config/main && snippet-run \"NixOS Rebuild ($H)\" -- nh os switch --hostname $H -- --option eval-cache false"
+    snippet = "snippet-run \"NixOS Rebuild ($(hostname -s))\" -- nixos-rebuild-snippet"
     description = "Rebuild the current host with nh from this nixos-config checkout"
 
     [[snippets]]
@@ -160,6 +174,11 @@ let
     name = "ai status"
     snippet = "snippet-run \"AI CLI Status\" -- ai-cli-status"
     description = "Show running AI CLI processes (Claude, Codex, Gemini) with memory usage"
+
+    [[snippets]]
+    name = "sync kubeconfigs"
+    snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub ryzen-k8s-api talos-k8s-api talos-test-api-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\"; done'"
+    description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, talos, talos-test)"
   '';
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
@@ -1899,6 +1918,7 @@ in
 
   home.packages = [
     snippetRun
+    nixosRebuildScript
     aiCliStatusScript
     walkerOpenInNvim
     walkerProjectList
@@ -2986,7 +3006,7 @@ in
     fi
 
     export ELEPHANT_SNIPPETS_PATH="$SNIPPETS_PATH"
-    export ELEPHANT_DEFAULT_SNIPPETS_JSON='${builtins.toJSON elephantDefaultSnippets}'
+    export ELEPHANT_DEFAULT_SNIPPETS_JSON=${lib.escapeShellArg (builtins.toJSON elephantDefaultSnippets)}
 
     ${lib.getExe pkgs.python3} - <<'PY'
 import json
