@@ -319,20 +319,25 @@ PY
         sleep 5
         continue
       fi
-      RESP=$(printf '{"jsonrpc":"2.0","id":1,"method":"get_health_metrics","params":{}}\n' \
+      RESP=$(printf '{"jsonrpc":"2.0","id":1,"method":"health_check","params":{}}\n' \
         | ${pkgs.socat}/bin/socat -t5 STDIO "UNIX-CONNECT:$SOCK" 2>/dev/null || true)
       if [ -z "$RESP" ]; then
         printf '{"status":"unreachable","label":"Daemon unreachable"}\n'
         sleep 5
         continue
       fi
-      STATUS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.health_status // "unknown"' 2>/dev/null || echo "unknown")
-      ERRORS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_errors // 0' 2>/dev/null || echo "0")
+      STATUS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.overall_status // "unknown"' 2>/dev/null || echo "unknown")
       EVENTS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_events_processed // 0' 2>/dev/null || echo "0")
-      MEM=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.memory_rss_mb // 0' 2>/dev/null || echo "0")
-      LAST_ERR=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.last_error_message // ""' 2>/dev/null || echo "")
-      printf '{"status":"%s","errors":%s,"events":%s,"memory_mb":%s,"last_error":"%s"}\n' \
-        "$STATUS" "$ERRORS" "$EVENTS" "$MEM" "$LAST_ERR"
+      WINDOWS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_windows // 0' 2>/dev/null || echo "0")
+      UPTIME=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.uptime_seconds // 0' 2>/dev/null || echo "0")
+      ISSUES=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '[.result.health_issues // [] | .[]] | join("; ")' 2>/dev/null || echo "")
+      ${lib.getExe pkgs.jq} -cn \
+        --arg status "$STATUS" \
+        --argjson events "$EVENTS" \
+        --argjson windows "$WINDOWS" \
+        --argjson uptime "$UPTIME" \
+        --arg issues "$ISSUES" \
+        '{status:$status,events:$events,windows:$windows,uptime:$uptime,issues:$issues}'
       sleep 5
     done
   '';

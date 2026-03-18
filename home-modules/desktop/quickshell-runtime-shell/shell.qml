@@ -87,10 +87,10 @@ ShellRoot {
         })
     property var daemonHealthState: ({
             status: "unknown",
-            errors: 0,
             events: 0,
-            memory_mb: 0,
-            last_error: ""
+            windows: 0,
+            uptime: 0,
+            issues: ""
         })
 
     property var systemStatsState: ({
@@ -6089,14 +6089,19 @@ ShellRoot {
 
     function daemonHealthTooltip() {
         const s = daemonHealthState;
+        const uptime = Math.round(Number(s.uptime || 0));
+        const uptimeLabel = uptime >= 3600
+            ? Math.floor(uptime / 3600) + "h " + Math.floor((uptime % 3600) / 60) + "m"
+            : uptime >= 60 ? Math.floor(uptime / 60) + "m " + (uptime % 60) + "s"
+            : uptime + "s";
         const bits = [
             "Status: " + stringOrEmpty(s.status),
+            "Uptime: " + uptimeLabel,
             "Events: " + String(s.events || 0),
-            "Errors: " + String(s.errors || 0),
-            "Memory: " + String(s.memory_mb || 0) + " MB"
+            "Windows: " + String(s.windows || 0)
         ];
-        if (s.last_error) {
-            bits.push("Last error: " + String(s.last_error));
+        if (s.issues) {
+            bits.push("Issues: " + String(s.issues));
         }
         return bits.join("\n");
     }
