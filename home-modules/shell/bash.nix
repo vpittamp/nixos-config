@@ -149,6 +149,24 @@ in
       dps = "docker ps";
       di = "docker images";
       
+      # Kubernetes
+      k = "kubectl";
+      kg = "kubectl get";
+      kgp = "kubectl get pods";
+      kgs = "kubectl get svc";
+      kgn = "kubectl get nodes";
+      kga = "kubectl get all";
+      kd = "kubectl describe";
+      kdp = "kubectl describe pod";
+      kl = "kubectl logs";
+      klf = "kubectl logs -f";
+      kx = "kubectl exec -it";
+      kns = "kubectl config set-context --current --namespace";
+      kctx = "kubectl config get-contexts";
+      ksw = "kubectl config use-context";
+      ka = "kubectl apply -f";
+      kdel = "kubectl delete";
+
       # Tmux
       t = "tmux";
       ta = "tmux attach -t";
