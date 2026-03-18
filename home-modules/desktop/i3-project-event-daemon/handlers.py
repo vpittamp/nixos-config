@@ -1253,13 +1253,44 @@ async def on_window_new(
                                                 role = explicit_role
                                             break
 
-                                    target_output = output_prefs.get(role, [None])[0] if output_prefs.get(role) else None
+                                    # Get active outputs to avoid moving to non-existent monitors
+                                    active_outputs = set()
+                                    try:
+                                        outputs = await conn.get_outputs()
+                                        active_outputs = {o.name for o in outputs if o.active}
+                                    except Exception:
+                                        pass
+
+                                    # Build candidate list: preferred output, then fallback outputs
+                                    candidates = []
+                                    pref_output = output_prefs.get(role, [None])[0] if output_prefs.get(role) else None
+                                    if pref_output:
+                                        candidates.append(pref_output)
+                                    # Add fallback outputs from the assignment
+                                    for assignment in ws_config.get("assignments", []):
+                                        if assignment.get("workspace_number") == preferred_ws:
+                                            for fb in assignment.get("fallback_outputs", []):
+                                                if fb not in candidates:
+                                                    candidates.append(fb)
+                                            break
+
+                                    target_output = None
+                                    for candidate in candidates:
+                                        if candidate in active_outputs:
+                                            target_output = candidate
+                                            break
+
                                     if target_output:
                                         # Move the workspace to the correct output
                                         await conn.command(f'move workspace to output {target_output}')
                                         logger.debug(
                                             f"Feature 001: Moved workspace {preferred_ws} to output {target_output} "
                                             f"(role: {role})"
+                                        )
+                                    elif candidates:
+                                        logger.debug(
+                                            f"Feature 001: Skipping output move for workspace {preferred_ws} — "
+                                            f"no active output among candidates {candidates}"
                                         )
                             except Exception as e:
                                 logger.warning(f"Feature 001: Failed to move workspace to correct output: {e}")
