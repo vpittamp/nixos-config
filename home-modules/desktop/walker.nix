@@ -151,8 +151,8 @@ let
     }
     {
       name = "sync kubeconfigs";
-      snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub ryzen-k8s-api talos-k8s-api talos-test-api-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\"; done'";
-      description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, talos, talos-test)";
+      snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub k8s-api-ryzen-0 k8s-api-dev k8s-api-staging k8s-api-hub-test-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\" || true; done'";
+      description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, dev, staging, hub-test-v2)";
     }
   ];
   elephantSnippetsTemplate = pkgs.writeText "elephant-snippets.toml" ''
@@ -177,8 +177,8 @@ let
 
     [[snippets]]
     name = "sync kubeconfigs"
-    snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub ryzen-k8s-api talos-k8s-api talos-test-api-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\"; done'"
-    description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, talos, talos-test)"
+    snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub k8s-api-ryzen-0 k8s-api-dev k8s-api-staging k8s-api-hub-test-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\" || true; done'"
+    description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, dev, staging, hub-test-v2)"
   '';
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
