@@ -125,6 +125,10 @@ const TRACE_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
   || (process.env.OTEL_EXPORTER_OTLP_ENDPOINT
     ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/traces'
     : 'http://127.0.0.1:4318/v1/traces');
+const LOGS_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+  || (process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+    ? process.env.OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/$/, '') + '/v1/logs'
+    : 'http://127.0.0.1:4318/v1/logs');
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'claude-code';
 const INTERCEPTOR_VERSION = '3.11.0';
 const WORKING_DIRECTORY = process.cwd();
@@ -1046,7 +1050,45 @@ function endTurnFromHookStop(stopMeta) {
 
   if (!state.currentTurn) return;
   if (ts < state.currentTurn.startTime) return;
+  emitAgUiRunFinishedLog({
+    timestampMs: ts,
+    terminalStateSource: 'claude_stop_hook',
+    providerStopSignal: 'Stop',
+  });
   endCurrentTurn(ts, 'stop_hook');
+}
+
+function emitAgUiRunFinishedLog({ timestampMs, terminalStateSource, providerStopSignal }) {
+  const sessionId = state.session.sessionId;
+  if (!sessionId) return;
+
+  const turnNumber = state.currentTurn && Number.isFinite(state.currentTurn.turnNumber)
+    ? state.currentTurn.turnNumber
+    : 0;
+  const runId = turnNumber > 0 ? `${sessionId}:turn:${turnNumber}` : sessionId;
+  const attributes = [
+    { key: 'event.name', value: { stringValue: 'ag_ui.run_finished' } },
+    { key: 'event.timestamp', value: { stringValue: new Date(timestampMs || Date.now()).toISOString() } },
+    { key: 'session.id', value: { stringValue: sessionId } },
+    { key: 'conversation.id', value: { stringValue: sessionId } },
+    { key: 'ag_ui.type', value: { stringValue: 'RUN_FINISHED' } },
+    { key: 'ag_ui.thread_id', value: { stringValue: sessionId } },
+    { key: 'ag_ui.run_id', value: { stringValue: runId } },
+    { key: 'terminal_state_source', value: { stringValue: terminalStateSource || 'claude_stop_hook' } },
+    { key: 'provider_stop_signal', value: { stringValue: providerStopSignal || 'Stop' } },
+  ];
+  if (state.currentTurn && state.currentTurn.promptPreview) {
+    attributes.push({ key: 'input.value', value: { stringValue: state.currentTurn.promptPreview } });
+  }
+  if (state.currentTurn && state.currentTurn.lastAssistantMessage) {
+    attributes.push({ key: 'assistant.message.preview', value: { stringValue: state.currentTurn.lastAssistantMessage } });
+  }
+
+  postJsonToEndpoint(LOGS_ENDPOINT, createOTLPLogRecord({
+    body: 'ag_ui.run_finished',
+    attributes,
+    timeMs: timestampMs || Date.now(),
+  }));
 }
 
 function pollTurnHookFiles() {
@@ -2057,12 +2099,13 @@ const state = {
 
 /**
  * Low-level OTLP exporter (no buffering)
- * @param {object} spanRecord - Full OTLP resourceSpans structure
+ * @param {string} endpoint - Full OTLP HTTP endpoint
+ * @param {object} payload - Full OTLP payload structure
  */
-function postToAlloy(spanRecord) {
+function postJsonToEndpoint(endpoint, payload) {
   try {
-    const data = JSON.stringify(spanRecord);
-    const alloyUrl = new URL(TRACE_ENDPOINT);
+    const data = JSON.stringify(payload);
+    const alloyUrl = new URL(endpoint);
 
     const postReq = http.request({
       hostname: alloyUrl.hostname,
@@ -2086,6 +2129,10 @@ function postToAlloy(spanRecord) {
   } catch (e) {
     // Silent failure to avoid disrupting Claude Code
   }
+}
+
+function postToAlloy(spanRecord) {
+  postJsonToEndpoint(TRACE_ENDPOINT, spanRecord);
 }
 
 function setSpanAttribute(attributes, key, value) {
@@ -2182,31 +2229,10 @@ function sendToAlloy(spanRecord) {
 }
 
 /**
- * Create OTLP span structure with enhanced resource attributes
- * @param {object} spanData - Span data object
- * @returns {object} Full OTLP resourceSpans structure
+ * Create OTLP resource attributes shared by spans and logs.
+ * @returns {Array} OTLP resource attributes
  */
-function createOTLPSpan(spanData) {
-  const span = {
-    traceId: spanData.traceId,
-    spanId: spanData.spanId,
-    name: spanData.name,
-    kind: spanData.kind || 'SPAN_KIND_INTERNAL',
-    startTimeUnixNano: msToNanos(spanData.startTime),
-    endTimeUnixNano: msToNanos(spanData.endTime || Date.now()),
-    attributes: spanData.attributes || [],
-    status: spanData.status || { code: 'STATUS_CODE_OK' }
-  };
-
-  if (spanData.parentSpanId) {
-    span.parentSpanId = spanData.parentSpanId;
-  }
-
-  if (spanData.links && spanData.links.length > 0) {
-    span.links = spanData.links;
-  }
-
-  // Build resource attributes
+function createResourceAttributes() {
   const resourceAttrs = [
     { key: 'service.name', value: { stringValue: SERVICE_NAME } },
     { key: 'service.version', value: { stringValue: CLAUDE_CODE_VERSION } },
@@ -2266,14 +2292,62 @@ function createOTLPSpan(spanData) {
     }
   }
 
+  return resourceAttrs;
+}
+
+/**
+ * Create OTLP span structure with enhanced resource attributes
+ * @param {object} spanData - Span data object
+ * @returns {object} Full OTLP resourceSpans structure
+ */
+function createOTLPSpan(spanData) {
+  const span = {
+    traceId: spanData.traceId,
+    spanId: spanData.spanId,
+    name: spanData.name,
+    kind: spanData.kind || 'SPAN_KIND_INTERNAL',
+    startTimeUnixNano: msToNanos(spanData.startTime),
+    endTimeUnixNano: msToNanos(spanData.endTime || Date.now()),
+    attributes: spanData.attributes || [],
+    status: spanData.status || { code: 'STATUS_CODE_OK' }
+  };
+
+  if (spanData.parentSpanId) {
+    span.parentSpanId = spanData.parentSpanId;
+  }
+
+  if (spanData.links && spanData.links.length > 0) {
+    span.links = spanData.links;
+  }
+
   return {
     resourceSpans: [{
       resource: {
-        attributes: resourceAttrs
+        attributes: createResourceAttributes()
       },
       scopeSpans: [{
         scope: { name: 'claude-interceptor', version: INTERCEPTOR_VERSION },
         spans: [span]
+      }]
+    }]
+  };
+}
+
+function createOTLPLogRecord({ body, attributes, timeMs }) {
+  const ts = timeMs || Date.now();
+  return {
+    resourceLogs: [{
+      resource: {
+        attributes: createResourceAttributes()
+      },
+      scopeLogs: [{
+        scope: { name: 'claude-interceptor', version: INTERCEPTOR_VERSION },
+        logRecords: [{
+          timeUnixNano: msToNanos(ts),
+          observedTimeUnixNano: msToNanos(ts),
+          body: { stringValue: body },
+          attributes: attributes || []
+        }]
       }]
     }]
   };

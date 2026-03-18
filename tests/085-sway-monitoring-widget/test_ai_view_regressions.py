@@ -50,6 +50,16 @@ def test_session_badge_symbol_and_attention_hooks_cover_unread_output():
     assert "session.output_unseen" in text
 
 
+def test_session_phase_supports_explicit_stopped_state():
+    """Explicit native completion should render as a distinct stopped state."""
+    text = SHELL_QML.read_text()
+    assert "session.llm_stopped" in text
+    assert "terminalState === \"explicit_complete\"" in text
+    assert "return \"stopped\";" in text
+    assert "badgeState === \"stopped\"" in text
+    assert "return \"Stopped\";" in text
+
+
 def test_launcher_session_search_indexes_telemetry_fields():
     """Launcher session search should include telemetry-derived state terms."""
     text = SHELL_QML.read_text()

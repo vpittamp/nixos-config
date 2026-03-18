@@ -285,7 +285,7 @@ class OTLPReceiver:
         if not raw:
             return raw
 
-        valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.")
+        valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.", "ag_ui.")
         if raw.startswith(valid_prefixes):
             return raw
 
@@ -1186,7 +1186,7 @@ class OTLPReceiver:
         # Only use body as event_name if it looks like a valid event prefix
         # (Claude Code uses body for event name, Gemini CLI uses it for description)
         if body_value:
-            valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.")
+            valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.", "ag_ui.")
             if any(body_value.startswith(p) for p in valid_prefixes):
                 event_name = body_value
 

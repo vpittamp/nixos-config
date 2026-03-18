@@ -144,3 +144,27 @@ def test_parse_log_record_json_normalizes_gemini_short_event_name():
     assert event.event_name == "gemini_cli.api_request"
     assert event.tool == AITool.GEMINI_CLI
     assert event.attributes.get("process.pid") == 4321
+
+
+def test_parse_log_record_json_keeps_ag_ui_run_finished_event():
+    receiver = _make_receiver()
+    log_record = {
+        "timeUnixNano": "1771931000000000000",
+        "body": {"stringValue": "ag_ui.run_finished"},
+        "attributes": [
+            {"key": "conversation.id", "value": {"stringValue": "sid-codex-1"}},
+            {"key": "event.name", "value": {"stringValue": "ag_ui.run_finished"}},
+            {"key": "ag_ui.type", "value": {"stringValue": "RUN_FINISHED"}},
+        ],
+    }
+
+    event = receiver._parse_log_record_json(
+        log_record=log_record,
+        service_name="codex",
+        resource_attrs={"process.pid": 9876},
+    )
+
+    assert event is not None
+    assert event.event_name == "ag_ui.run_finished"
+    assert event.tool == AITool.CODEX_CLI
+    assert event.attributes.get("process.pid") == 9876

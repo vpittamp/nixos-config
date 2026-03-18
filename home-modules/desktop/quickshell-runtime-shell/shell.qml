@@ -4044,10 +4044,11 @@ ShellRoot {
     function sessionPhase(session) {
         const phase = stringOrEmpty(session && session.session_phase).toLowerCase();
         if (phase.length > 0) {
-            if (phase === "done" && !sessionIsCurrent(session)) {
-                return "needs_attention";
-            }
             return phase;
+        }
+        const terminalState = stringOrEmpty(session && session.terminal_state).toLowerCase();
+        if (boolOrFalse(session && session.llm_stopped) || terminalState === "explicit_complete") {
+            return "stopped";
         }
         if (boolOrFalse(session && session.output_unseen) || boolOrFalse(session && session.review_pending) || boolOrFalse(session && session.needs_user_action)) {
             return "needs_attention";
@@ -4072,6 +4073,9 @@ ShellRoot {
         if (phase === "needs_attention") {
             return colors.amber;
         }
+        if (phase === "stopped") {
+            return colors.blueMuted;
+        }
         if (phase === "done") {
             return colors.accent;
         }
@@ -4091,6 +4095,9 @@ ShellRoot {
         const phase = sessionPhase(session);
         if (phase === "needs_attention") {
             return colors.amberBg;
+        }
+        if (phase === "stopped") {
+            return colors.blueWash;
         }
         if (phase === "done") {
             return colors.accentBg;
@@ -4170,6 +4177,9 @@ ShellRoot {
         if (state === "needs_attention") {
             return colors.amber;
         }
+        if (state === "stopped") {
+            return colors.violet;
+        }
         if (state === "done") {
             return colors.accent;
         }
@@ -4190,6 +4200,9 @@ ShellRoot {
         if (state === "needs_attention") {
             return colors.amberBg;
         }
+        if (state === "stopped") {
+            return Qt.tint(colors.violetBg, Qt.rgba(1, 1, 1, 0.04));
+        }
         if (state === "done") {
             return colors.accentBg;
         }
@@ -4203,6 +4216,14 @@ ShellRoot {
             return colors.bg;
         }
         return colors.cardAlt;
+    }
+
+    function sessionBadgeBorderColor(session) {
+        const state = sessionBadgeState(session);
+        if (state === "stopped") {
+            return Qt.tint(colors.violet, Qt.rgba(1, 1, 1, 0.16));
+        }
+        return "transparent";
     }
 
     function sessionAvailabilityState(session) {
@@ -4307,6 +4328,9 @@ ShellRoot {
     }
 
     function sessionActivitySubstateLabel(session) {
+        if (sessionBadgeState(session) === "stopped") {
+            return "";
+        }
         const explicit = stringOrEmpty(session && session.activity_substate_label);
         if (explicit.length > 0) {
             return explicit;
@@ -4330,11 +4354,56 @@ ShellRoot {
         return sessionAgeCompactLabel(session);
     }
 
+    function sessionActivityChipLabel(session) {
+        const state = sessionBadgeState(session);
+        const stage = stringOrEmpty(session && session.activity_substate).toLowerCase();
+        const substateLabel = sessionActivitySubstateLabel(session);
+
+        if (state === "needs_attention") {
+            return substateLabel.length > 0 ? substateLabel : "Needs attention";
+        }
+        if (stage === "tool_running") {
+            return "Tool";
+        }
+        if (stage === "streaming") {
+            return "Streaming";
+        }
+        if (stage === "starting" || stage === "thinking") {
+            return "Thinking";
+        }
+        if (state === "stopped") {
+            return "";
+        }
+        if (state === "done") {
+            return "Done";
+        }
+        if (substateLabel.length > 0) {
+            return substateLabel;
+        }
+        return compactSessionStateLabel(session);
+    }
+
     function sessionBadgeSymbol(session) {
+        const stage = stringOrEmpty(session && session.activity_substate).toLowerCase();
         const owner = sessionTurnOwner(session);
         const state = sessionBadgeState(session);
         if (owner === "blocked" || state === "needs_attention") {
             return "!";
+        }
+        if (stage === "tool_running") {
+            return "⚙";
+        }
+        if (stage === "streaming") {
+            return "≈";
+        }
+        if (stage === "starting" || stage === "thinking") {
+            return "◔";
+        }
+        if (state === "stopped") {
+            return "●";
+        }
+        if (state === "done") {
+            return "✓";
         }
         if (owner === "llm" || state === "working") {
             return "◔";
@@ -4436,6 +4505,9 @@ ShellRoot {
         const badgeState = sessionBadgeState(session);
         if (badgeState === "needs_attention") {
             return "Needs attention";
+        }
+        if (badgeState === "stopped") {
+            return "";
         }
         if (badgeState === "done") {
             return "Done";

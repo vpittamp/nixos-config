@@ -1,7 +1,7 @@
 import importlib.util
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -34,6 +34,7 @@ from otel_ai_monitor.models import (  # type: ignore  # noqa: E402
     Provider,
     Session,
     SessionState,
+    TerminalState,
     TelemetryEvent,
 )
 from otel_ai_monitor.session_tracker import SessionTracker, _derive_session_stage  # type: ignore  # noqa: E402
@@ -563,6 +564,223 @@ async def test_codex_response_completed_exports_user_turn_owner(monkeypatch):
 
     assert getattr(stage_fields["turn_owner"], "value", stage_fields["turn_owner"]) == "user"
     assert getattr(stage_fields["activity_substate"], "value", stage_fields["activity_substate"]) == "output_ready"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "source", "provider_signal", "session_id", "native_session_id"),
+    [
+        (AITool.CODEX_CLI, "codex_notify", "agent-turn-complete", "codex-native-session-stopped", "codex-native-session-stopped"),
+        (AITool.CLAUDE_CODE, "claude_stop_hook", "Stop", "claude-native-session-stopped", "claude-native-session-stopped"),
+        (AITool.GEMINI_CLI, "gemini_after_agent", "AfterAgent", "gemini-native-session-stopped", "gemini-native-session-stopped"),
+    ],
+)
+async def test_explicit_run_finished_marks_stopped_state(
+    monkeypatch,
+    tool,
+    source,
+    provider_signal,
+    session_id,
+    native_session_id,
+):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request" if tool == AITool.CODEX_CLI else (
+                "claude_code.api_request" if tool == AITool.CLAUDE_CODE else "gemini_cli.api_request"
+            ),
+            timestamp=now,
+            session_id=session_id,
+            tool=tool,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%56",
+            },
+        )
+    )
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="ag_ui.run_finished",
+            timestamp=now,
+            session_id=session_id,
+            tool=tool,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%56",
+                "terminal_state_source": source,
+                "provider_stop_signal": provider_signal,
+            },
+        )
+    )
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == native_session_id
+        ]
+        assert len(matches) == 1
+        assert matches[0].state == SessionState.COMPLETED
+        stage_fields = _derive_session_stage(matches[0], now=now)
+
+    assert stage_fields["llm_stopped"] is True
+    assert stage_fields["session_phase"] == "stopped"
+    assert stage_fields["session_phase_label"] == "Stopped"
+    assert stage_fields["terminal_state"] == TerminalState.EXPLICIT_COMPLETE
+    assert stage_fields["terminal_state_label"] == "Stopped"
+    assert stage_fields["terminal_state_source"] == source
+    assert stage_fields["provider_stop_signal"] == provider_signal
+    assert getattr(stage_fields["turn_owner"], "value", stage_fields["turn_owner"]) == "user"
+
+
+@pytest.mark.asyncio
+async def test_explicit_run_finished_survives_completed_timeout(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request",
+            timestamp=now,
+            session_id="codex-native-session-timeout-stopped",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%57",
+            },
+        )
+    )
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="ag_ui.run_finished",
+            timestamp=now + timedelta(seconds=1),
+            session_id="codex-native-session-timeout-stopped",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%57",
+                "terminal_state_source": "codex_notify",
+                "provider_stop_signal": "agent-turn-complete",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "codex-native-session-timeout-stopped"
+        ]
+        assert len(matches) == 1
+        session = matches[0]
+        canonical_session_id = session.session_id
+
+    await tracker._on_completed_timeout(canonical_session_id)
+
+    async with tracker._lock:
+        session = tracker._sessions[canonical_session_id]
+        stage_fields = _derive_session_stage(session, now=now + timedelta(seconds=2))
+        assert session.state == SessionState.IDLE
+        assert session.terminal_state == TerminalState.EXPLICIT_COMPLETE
+        assert session.terminal_state_source == "codex_notify"
+        assert session.provider_stop_signal == "agent-turn-complete"
+
+    assert stage_fields["output_ready"] is True
+    assert stage_fields["llm_stopped"] is True
+    assert stage_fields["session_phase"] == "stopped"
+    assert stage_fields["terminal_state"] == TerminalState.EXPLICIT_COMPLETE
+    assert stage_fields["terminal_state_source"] == "codex_notify"
+    assert stage_fields["provider_stop_signal"] == "agent-turn-complete"
+    assert getattr(stage_fields["turn_owner"], "value", stage_fields["turn_owner"]) == "user"
+
+
+@pytest.mark.asyncio
+async def test_explicit_run_finished_ignores_older_activity_and_clears_on_newer_turn(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request",
+            timestamp=now,
+            session_id="codex-native-session-sticky-stop",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%58",
+            },
+        )
+    )
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="ag_ui.run_finished",
+            timestamp=now + timedelta(seconds=10),
+            session_id="codex-native-session-sticky-stop",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%58",
+                "terminal_state_source": "codex_notify",
+                "provider_stop_signal": "agent-turn-complete",
+            },
+        )
+    )
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request",
+            timestamp=now + timedelta(seconds=5),
+            session_id="codex-native-session-sticky-stop",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%58",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "codex-native-session-sticky-stop"
+        ]
+        assert len(matches) == 1
+        session = matches[0]
+        stage_fields = _derive_session_stage(session, now=now + timedelta(seconds=11))
+        assert session.state == SessionState.COMPLETED
+        assert session.terminal_state == TerminalState.EXPLICIT_COMPLETE
+
+    assert stage_fields["session_phase"] == "stopped"
+    assert stage_fields["llm_stopped"] is True
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request",
+            timestamp=now + timedelta(seconds=20),
+            session_id="codex-native-session-sticky-stop",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "terminal.tmux.pane": "%58",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        session = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "codex-native-session-sticky-stop"
+        ][0]
+        stage_fields = _derive_session_stage(session, now=now + timedelta(seconds=21))
+        assert session.state == SessionState.WORKING
+        assert session.terminal_state == TerminalState.NONE
+        assert session.terminal_state_source is None
+        assert session.provider_stop_signal is None
+
+    assert stage_fields["session_phase"] == "working"
+    assert stage_fields["llm_stopped"] is False
 
 
 @pytest.mark.asyncio

@@ -44,11 +44,34 @@ if [ -z "$WORKING_DIR" ]; then
     WORKING_DIR="$PWD"
 fi
 
+SESSION_ID=$(echo "$INPUT" | jq -r '.sessionId // .session_id // ."session.id" // .session.id // ""' 2>/dev/null || echo "")
+LAST_ASSISTANT_MESSAGE=$(echo "$INPUT" | jq -r '.lastAssistantMessage // ."last-assistant-message" // .response // .output // .message // .text // ""' 2>/dev/null || echo "")
+
 # Build message
 MESSAGE="Task complete"
 if [ -n "$WORKING_DIR" ]; then
     DIR_NAME=$(basename "$WORKING_DIR")
     MESSAGE="${MESSAGE} - ${DIR_NAME}"
+fi
+
+if command -v curl >/dev/null 2>&1; then
+    NOTIFY_PAYLOAD=$(jq -n \
+        --arg type "after-agent" \
+        --arg sessionId "$SESSION_ID" \
+        --arg cwd "$WORKING_DIR" \
+        --arg message "$LAST_ASSISTANT_MESSAGE" \
+        '{
+          type: $type,
+          sessionId: (if $sessionId == "" then null else $sessionId end),
+          cwd: (if $cwd == "" then null else $cwd end),
+          "last-assistant-message": (if $message == "" then null else $message end)
+        }')
+    timeout 2 curl -fsS \
+        -X POST \
+        -H 'Content-Type: application/json' \
+        --data "$NOTIFY_PAYLOAD" \
+        "http://127.0.0.1:${GEMINI_OTEL_INTERCEPTOR_PORT:-4322}/notify" \
+        >/dev/null 2>&1 || true
 fi
 
 echo "Delegating to ai-finished-notification.sh" >> "$LOG_FILE"

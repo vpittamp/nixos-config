@@ -63,6 +63,14 @@ class UserActionReason(str, Enum):
     ERROR = "error"
 
 
+class TerminalState(str, Enum):
+    """Explicit terminal stop provenance for the current session turn."""
+
+    NONE = ""
+    EXPLICIT_COMPLETE = "explicit_complete"
+    INFERRED_COMPLETE = "inferred_complete"
+
+
 class AITool(str, Enum):
     """Supported AI assistant tools."""
 
@@ -320,6 +328,22 @@ class Session(BaseModel):
         default=SessionStage.IDLE,
         description="Canonical activity substate used to refine the current turn owner",
     )
+    terminal_state: TerminalState = Field(
+        default=TerminalState.NONE,
+        description="Explicit terminal stop provenance for the current session turn",
+    )
+    terminal_state_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp when terminal_state was most recently established",
+    )
+    terminal_state_source: Optional[str] = Field(
+        default=None,
+        description="Machine-readable source for terminal_state",
+    )
+    provider_stop_signal: Optional[str] = Field(
+        default=None,
+        description="Provider-native signal that triggered the explicit stop state",
+    )
 
     # Streaming metrics (Feature 136: fix missing fields referenced by session_tracker.py)
     first_token_time: Optional[datetime] = Field(
@@ -517,9 +541,33 @@ class SessionListItem(BaseModel):
     )
     output_ready: bool = Field(default=False, description="True when the session has a completed result")
     output_unseen: bool = Field(default=False, description="True when output is ready but still unseen")
+    llm_stopped: bool = Field(
+        default=False,
+        description="True when an explicit provider completion signal says the model has fully stopped",
+    )
+    terminal_state: TerminalState = Field(
+        default=TerminalState.NONE,
+        description="Explicit terminal stop provenance for the current session turn",
+    )
+    terminal_state_at: Optional[str] = Field(
+        default=None,
+        description="RFC3339 timestamp when terminal_state was most recently established",
+    )
+    terminal_state_label: str = Field(
+        default="",
+        description="User-facing label for terminal_state",
+    )
+    terminal_state_source: Optional[str] = Field(
+        default=None,
+        description="Machine-readable source for terminal_state",
+    )
+    provider_stop_signal: Optional[str] = Field(
+        default=None,
+        description="Provider-native signal that triggered the explicit stop state",
+    )
     session_phase: str = Field(
         default="idle",
-        description="Collapsed session phase used by downstream UIs (working, needs_attention, done, idle)",
+        description="Collapsed session phase used by downstream UIs (working, needs_attention, stopped, done, idle)",
     )
     session_phase_label: str = Field(
         default="Idle",
@@ -601,11 +649,15 @@ class EventNames:
     # Interceptor / derived spans (kept distinct from native log events)
     CLAUDE_LLM_CALL = "claude_code.llm_call"
 
+    # Normalized AG-UI aligned lifecycle events
+    AG_UI_RUN_FINISHED = "ag_ui.run_finished"
+
     # Codex CLI events
     CODEX_CONVERSATION_STARTS = "codex.conversation_starts"
     CODEX_USER_PROMPT = "codex.user_prompt"
     CODEX_API_REQUEST = "codex.api_request"
     CODEX_SSE_EVENT = "codex.sse_event"
+    CODEX_AGENT_TURN_COMPLETE = "codex.agent_turn_complete"
     CODEX_TOOL_DECISION = "codex.tool_decision"
     CODEX_TOOL_RESULT = "codex.tool_result"
 
@@ -668,6 +720,11 @@ class EventNames:
         GEMINI_TOOL_CALL,
         GENAI_TOKEN_USAGE,
         GENAI_OPERATION,
+    }
+
+    EXPLICIT_COMPLETION_EVENTS = {
+        AG_UI_RUN_FINISHED,
+        CODEX_AGENT_TURN_COMPLETE,
     }
 
     @staticmethod

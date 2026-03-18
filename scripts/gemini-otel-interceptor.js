@@ -12,7 +12,7 @@
  * - Start turn: `gemini_cli.user_prompt`
  * - LLM call: `gemini_cli.api_request` + `gemini_cli.api_response`/`gemini_cli.api_error`
  * - Tool: `gemini_cli.tool_call`
- * - End turn: idle debounce (no official hook available)
+ * - End turn: explicit AfterAgent hook when available, idle debounce fallback otherwise
  */
 
 'use strict';
@@ -440,6 +440,15 @@ function finalizeTurn(sessionId, endTimeMs, reason) {
   }
 }
 
+function scheduleOneShotFinalize(sessionId, reason) {
+  const session = state.sessions.get(sessionId);
+  if (!session || session.interactive !== false) return;
+  const delay = Number.isFinite(ONESHOT_SESSION_FINALIZE_MS) && ONESHOT_SESSION_FINALIZE_MS > 0
+    ? ONESHOT_SESSION_FINALIZE_MS
+    : 0;
+  setTimeout(() => finalizeSession(sessionId, reason || 'explicit_turn_complete'), delay);
+}
+
 function finalizeSession(sessionId, reason) {
   const session = state.sessions.get(sessionId);
   if (!session) return;
@@ -493,6 +502,79 @@ function finalizeSession(sessionId, reason) {
   });
 
   state.sessions.delete(sessionId);
+}
+
+function emitAgUiRunFinishedLog(session, details = {}) {
+  if (!session) return;
+  const sessionId = String(session.sessionId || '').trim();
+  if (!sessionId) return;
+
+  const nowMs = details.timestampMs || Date.now();
+  const runId = session.currentTurn
+    ? `${sessionId}:turn:${session.currentTurn.turnNumber || 0}`
+    : sessionId;
+  const resourceAttrs = [
+    { key: 'service.name', value: { stringValue: session.serviceName || 'gemini-cli' } },
+    { key: 'service.version', value: { stringValue: session.serviceVersion || 'unknown' } },
+    { key: 'host.name', value: { stringValue: os.hostname() } },
+    { key: 'env', value: { stringValue: session.env || 'dev' } },
+    { key: 'deployment.environment', value: { stringValue: session.env || 'dev' } },
+  ];
+
+  if (session.clientPid) resourceAttrs.push({ key: 'process.pid', value: { intValue: String(session.clientPid) } });
+  if (session.cwd) resourceAttrs.push({ key: 'working_directory', value: { stringValue: session.cwd } });
+  if (session.projectPath) {
+    resourceAttrs.push({ key: 'project_path', value: { stringValue: session.projectPath } });
+    resourceAttrs.push({ key: 'i3pm.project_path', value: { stringValue: session.projectPath } });
+  }
+  if (session.projectName) resourceAttrs.push({ key: 'i3pm.project_name', value: { stringValue: session.projectName } });
+  if (session.terminalAnchorId) resourceAttrs.push({ key: 'terminal.anchor_id', value: { stringValue: session.terminalAnchorId } });
+  if (session.tmuxSession) resourceAttrs.push({ key: 'terminal.tmux.session', value: { stringValue: session.tmuxSession } });
+  if (session.tmuxWindow) resourceAttrs.push({ key: 'terminal.tmux.window', value: { stringValue: session.tmuxWindow } });
+  if (session.tmuxPane) resourceAttrs.push({ key: 'terminal.tmux.pane', value: { stringValue: session.tmuxPane } });
+  if (session.pty) resourceAttrs.push({ key: 'terminal.pty', value: { stringValue: session.pty } });
+
+  const logAttrs = [
+    { key: 'event.name', value: { stringValue: 'ag_ui.run_finished' } },
+    { key: 'event.timestamp', value: { stringValue: new Date(nowMs).toISOString() } },
+    { key: 'session.id', value: { stringValue: sessionId } },
+    { key: 'conversation.id', value: { stringValue: sessionId } },
+    { key: 'ag_ui.type', value: { stringValue: 'RUN_FINISHED' } },
+    { key: 'ag_ui.thread_id', value: { stringValue: sessionId } },
+    { key: 'ag_ui.run_id', value: { stringValue: runId } },
+    { key: 'terminal_state_source', value: { stringValue: details.terminalStateSource || 'gemini_after_agent' } },
+    { key: 'provider_stop_signal', value: { stringValue: details.providerStopSignal || 'AfterAgent' } },
+  ];
+
+  if (details.cwd && typeof details.cwd === 'string' && details.cwd.trim()) {
+    logAttrs.push({ key: 'working_directory', value: { stringValue: details.cwd.trim() } });
+  }
+  if (details.lastAssistantMessage && typeof details.lastAssistantMessage === 'string') {
+    logAttrs.push({ key: 'assistant.message.preview', value: { stringValue: getPreview(details.lastAssistantMessage, 400) } });
+  } else if (session.currentTurn && session.currentTurn.lastAssistantMessage) {
+    logAttrs.push({ key: 'assistant.message.preview', value: { stringValue: session.currentTurn.lastAssistantMessage } });
+  }
+
+  httpPostJson(FORWARD_LOGS_ENDPOINT, {
+    resourceLogs: [
+      {
+        resource: { attributes: resourceAttrs },
+        scopeLogs: [
+          {
+            scope: { name: 'gemini-otel-interceptor', version: INTERCEPTOR_VERSION },
+            logRecords: [
+              {
+                timeUnixNano: msToNanos(nowMs),
+                observedTimeUnixNano: msToNanos(nowMs),
+                body: { stringValue: 'ag_ui.run_finished' },
+                attributes: logAttrs,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  }, { timeoutMs: 1000 });
 }
 
 function extractCwdFromRequestText(requestText) {
@@ -928,6 +1010,51 @@ async function handleGeminiOtlpEnvelope(req, res) {
   return jsonOk(res);
 }
 
+async function handleNotifyRequest(req, res) {
+  const raw = await readRequestBody(req);
+
+  let notification;
+  try {
+    notification = JSON.parse(raw.toString('utf8'));
+  } catch {
+    return jsonOk(res);
+  }
+
+  if (!notification || typeof notification !== 'object') return jsonOk(res);
+  if (notification.type !== 'after-agent') return jsonOk(res);
+
+  const sessionId = String(
+    notification.sessionId
+    || notification.session_id
+    || notification['session.id']
+    || ''
+  ).trim();
+  if (!sessionId) return jsonOk(res);
+
+  const session = state.sessions.get(sessionId);
+  if (!session) return jsonOk(res);
+
+  if (typeof notification.cwd === 'string' && notification.cwd.trim()) {
+    session.cwd = notification.cwd.trim();
+  }
+  const msg = notification['last-assistant-message'];
+  if (session.currentTurn && typeof msg === 'string' && msg.trim()) {
+    session.currentTurn.lastAssistantMessage = getPreview(msg, 400);
+  }
+
+  emitAgUiRunFinishedLog(session, {
+    timestampMs: Date.now(),
+    terminalStateSource: 'gemini_after_agent',
+    providerStopSignal: 'AfterAgent',
+    cwd: notification.cwd,
+    lastAssistantMessage: msg,
+  });
+
+  finalizeTurn(sessionId, Date.now(), 'hook.after-agent');
+  scheduleOneShotFinalize(sessionId, 'after_agent');
+  return jsonOk(res);
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -937,6 +1064,10 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ status: 'ok' }));
       return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/notify') {
+      return await handleNotifyRequest(req, res);
     }
 
     if (req.method === 'POST') {

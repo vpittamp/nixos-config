@@ -100,6 +100,14 @@
   # CA is synced by: stacks/scripts/certificates/sync-cluster-certificates.sh
   services.clusterCerts.enable = true;
 
+  # Keep crash dumps available for debugging, but cap total retained space.
+  systemd.coredump.extraConfig = ''
+    Storage=external
+    Compress=yes
+    MaxUse=1G
+    KeepFree=5G
+  '';
+
   # Core Nix configuration
   nix = {
     # Pin the daemon/client to the latest stable Nix to avoid 2.31.2 crash bug

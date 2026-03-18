@@ -341,6 +341,7 @@ class IPCServer:
             "window_id": 0,
             "connection_key": "",
         }
+        self._stopped_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_intent_epoch: int = 0
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
 
@@ -7298,6 +7299,7 @@ class IPCServer:
         mapping = {
             "needs_attention": "Needs attention",
             "working": "Working",
+            "stopped": "Stopped",
             "quiet_alive": "Quiet",
             "done": "Done",
             "idle": "Idle",
@@ -7589,6 +7591,12 @@ class IPCServer:
                 "user_action_reason": str(raw_session.get("user_action_reason") or "").strip(),
                 "output_ready": bool(raw_session.get("output_ready", False)),
                 "output_unseen": bool(raw_session.get("output_unseen", False)),
+                "llm_stopped": bool(raw_session.get("llm_stopped", False)),
+                "terminal_state": str(raw_session.get("terminal_state") or "").strip(),
+                "terminal_state_at": str(raw_session.get("terminal_state_at") or "").strip(),
+                "terminal_state_label": str(raw_session.get("terminal_state_label") or "").strip(),
+                "terminal_state_source": str(raw_session.get("terminal_state_source") or "").strip(),
+                "provider_stop_signal": str(raw_session.get("provider_stop_signal") or "").strip(),
                 "review_pending": bool(raw_session.get("review_pending", raw_session.get("output_unseen", False))),
                 "session_phase": session_phase,
                 "session_phase_label": session_phase_label,
@@ -7719,6 +7727,7 @@ class IPCServer:
             "needs_attention": 5,
             "working": 4,
             "quiet_alive": 3,
+            "stopped": 2,
             "done": 2,
             "idle": 1,
             "tmux_missing": 0,
@@ -7954,6 +7963,37 @@ class IPCServer:
                 and str(session.get("session_key") or "").strip() == current_key
             )
 
+    @staticmethod
+    def _session_matches_current(
+        session: Dict[str, Any],
+        *,
+        current_session_key: str,
+        focused_window_id: int,
+    ) -> bool:
+        """Return whether a session currently owns the visible interaction surface."""
+        session_key = str(session.get("session_key") or "").strip()
+        if session_key and session_key == str(current_session_key or "").strip():
+            return True
+        return bool(
+            int(session.get("window_id") or 0) == focused_window_id
+            and focused_window_id > 0
+            and bool(session.get("pane_active", False))
+        )
+
+    @staticmethod
+    def _stopped_boundary_key(session: Dict[str, Any]) -> str:
+        """Return a stable token for the current explicit-stop boundary."""
+        terminal_state_at = str(session.get("terminal_state_at") or "").strip()
+        if terminal_state_at:
+            return terminal_state_at
+        updated_at = str(session.get("updated_at") or "").strip()
+        if updated_at:
+            return updated_at
+        state_seq = int(session.get("state_seq") or 0)
+        if state_seq > 0:
+            return f"state-seq:{state_seq}"
+        return str(session.get("session_phase") or "").strip()
+
     def _apply_session_attention_state(
         self,
         sessions: List[Dict[str, Any]],
@@ -7963,27 +8003,64 @@ class IPCServer:
     ) -> None:
         """Promote completed background sessions into a retained needs-attention state."""
         current_key = str(current_session_key or "").strip()
+        active_stopped_keys: set[str] = set()
         for session in sessions:
             if not isinstance(session, dict):
                 continue
+            session_key = str(session.get("session_key") or "").strip()
+            is_current = self._session_matches_current(
+                session,
+                current_session_key=current_key,
+                focused_window_id=focused_window_id,
+            )
+            explicit_stopped = bool(session.get("llm_stopped", False)) or (
+                str(session.get("terminal_state") or "").strip().lower() == "explicit_complete"
+            )
+            if explicit_stopped and session_key:
+                active_stopped_keys.add(session_key)
+                boundary_key = self._stopped_boundary_key(session)
+                notification_state = self._stopped_session_notifications.get(session_key)
+                if not isinstance(notification_state, dict) or str(notification_state.get("boundary_key") or "") != boundary_key:
+                    notification_state = {
+                        "boundary_key": boundary_key,
+                        "started_current": is_current,
+                        "left_since_boundary": not is_current,
+                        "acknowledged": False,
+                    }
+                else:
+                    if not is_current:
+                        notification_state["left_since_boundary"] = True
+                    elif not bool(notification_state.get("acknowledged", False)) and (
+                        not bool(notification_state.get("started_current", False))
+                        or bool(notification_state.get("left_since_boundary", False))
+                    ):
+                        notification_state["acknowledged"] = True
+
+                self._stopped_session_notifications[session_key] = notification_state
+                stopped_notification_pending = not bool(notification_state.get("acknowledged", False))
+                session["stopped_notification_pending"] = stopped_notification_pending
+                if stopped_notification_pending:
+                    session["session_phase"] = "stopped"
+                    session["session_phase_label"] = "Stopped"
+                else:
+                    session["session_phase"] = "done"
+                    session["session_phase_label"] = "Done"
+                continue
+
+            session["stopped_notification_pending"] = False
             phase = str(session.get("session_phase") or "").strip().lower()
             if phase != "done":
                 continue
-            session_key = str(session.get("session_key") or "").strip()
-            is_current = (
-                session_key == current_key
-                or (
-                    int(session.get("window_id") or 0) == focused_window_id
-                    and focused_window_id > 0
-                    and bool(session.get("pane_active", False))
-                )
-            )
             if is_current:
                 session["session_phase"] = "done"
                 session["session_phase_label"] = "Done"
             else:
                 session["session_phase"] = "needs_attention"
                 session["session_phase_label"] = "Needs attention"
+
+        for session_key in list(self._stopped_session_notifications.keys()):
+            if session_key not in active_stopped_keys:
+                self._stopped_session_notifications.pop(session_key, None)
 
     def _load_session_items(
         self,

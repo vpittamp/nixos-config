@@ -35,6 +35,7 @@ from .models import (
     SessionStage,
     SessionState,
     TerminalContext,
+    TerminalState,
     SessionUpdate,
     TurnOwner,
     TelemetryEvent,
@@ -195,6 +196,11 @@ _STATUS_REASON_DETAILS = {
     "quiet_period_expired": "Response finished",
     "completed_timeout": "Session idle",
 }
+_EXPLICIT_STOP_METADATA: dict[AITool, tuple[str, str]] = {
+    AITool.CODEX_CLI: ("codex_notify", "agent-turn-complete"),
+    AITool.CLAUDE_CODE: ("claude_stop_hook", "Stop"),
+    AITool.GEMINI_CLI: ("gemini_after_agent", "AfterAgent"),
+}
 
 
 def _classify_user_action_reason(session: Session) -> UserActionReason:
@@ -237,6 +243,8 @@ def _humanize_status_reason(session: Session) -> str:
         return "Response hit max tokens"
     if user_action_reason == UserActionReason.ERROR:
         return "Needs user attention"
+    if session.terminal_state == TerminalState.EXPLICIT_COMPLETE:
+        return "Model stopped"
 
     status_reason = str(session.status_reason or "").strip()
     if not status_reason:
@@ -246,6 +254,8 @@ def _humanize_status_reason(session: Session) -> str:
         return _STATUS_REASON_DETAILS[lowered]
     if lowered.startswith("event:"):
         event_name = lowered.split("event:", 1)[1]
+        if event_name == EventNames.AG_UI_RUN_FINISHED:
+            return "Model stopped"
         if "tool_start" in event_name:
             return "Tool started"
         if "tool_complete" in event_name or "tool_result" in event_name:
@@ -286,10 +296,16 @@ def _lifecycle_source(session: Session) -> str:
 _SESSION_PHASE_LABELS: dict[str, str] = {
     "working": "Working",
     "needs_attention": "Needs attention",
+    "stopped": "Stopped",
     "quiet_alive": "Quiet",
     "done": "Done",
     "idle": "Idle",
     "tmux_missing": "Tmux missing",
+}
+_TERMINAL_STATE_LABELS: dict[TerminalState, str] = {
+    TerminalState.NONE: "",
+    TerminalState.EXPLICIT_COMPLETE: "Stopped",
+    TerminalState.INFERRED_COMPLETE: "",
 }
 _TURN_OWNER_LABELS: dict[TurnOwner, str] = {
     TurnOwner.LLM: "LLM",
@@ -316,12 +332,54 @@ def _status_reason_is_heartbeat_like(status_reason: Optional[str]) -> bool:
     return lowered.startswith("event:codex.sse_event:response.completed")
 
 
+def _is_newer_than_terminal_boundary(session: Session, event: TelemetryEvent) -> bool:
+    """Return whether an event happened after the current explicit terminal boundary."""
+    boundary = session.terminal_state_at
+    if boundary is None:
+        return True
+    return event.timestamp > boundary
+
+
+def _event_should_clear_explicit_terminal_state(session: Session, event: TelemetryEvent) -> bool:
+    """Return whether an event proves a newer turn has started."""
+    if session.terminal_state != TerminalState.EXPLICIT_COMPLETE:
+        return False
+    if event.event_name not in EventNames.WORKING_TRIGGERS:
+        return False
+    return _is_newer_than_terminal_boundary(session, event)
+
+
+def _clear_terminal_state(session: Session) -> None:
+    """Clear persisted terminal-state metadata from the raw session."""
+    session.terminal_state = TerminalState.NONE
+    session.terminal_state_at = None
+    session.terminal_state_source = None
+    session.provider_stop_signal = None
+
+
+def _set_explicit_terminal_state(session: Session, event: TelemetryEvent) -> None:
+    """Persist explicit provider stop metadata on the raw session."""
+    source, provider_signal = _EXPLICIT_STOP_METADATA.get(
+        session.tool,
+        ("explicit_signal", None),
+    )
+    session.terminal_state = TerminalState.EXPLICIT_COMPLETE
+    session.terminal_state_at = event.timestamp
+    session.terminal_state_source = str(
+        event.attributes.get("terminal_state_source") or source or ""
+    ).strip() or source
+    session.provider_stop_signal = str(
+        event.attributes.get("provider_stop_signal") or provider_signal or ""
+    ).strip() or provider_signal
+
+
 def _derive_session_phase(
     *,
     stage: SessionStage,
     output_ready: bool,
     output_unseen: bool,
     needs_user_action: bool,
+    terminal_state: TerminalState,
     is_streaming: bool,
     pending_tools: int,
     last_activity_at: Optional[datetime],
@@ -330,6 +388,8 @@ def _derive_session_phase(
     """Collapse raw session data into the canonical UI phase."""
     if output_unseen or needs_user_action or stage in {SessionStage.WAITING_INPUT, SessionStage.ATTENTION}:
         return "needs_attention"
+    if terminal_state == TerminalState.EXPLICIT_COMPLETE:
+        return "stopped"
     if output_ready or stage == SessionStage.OUTPUT_READY:
         return "done"
     if is_streaming or pending_tools > 0:
@@ -357,11 +417,42 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
     user_action_reason = _classify_user_action_reason(session)
     output_ready = session.state == SessionState.COMPLETED
     output_unseen = False
+    terminal_state = session.terminal_state or TerminalState.NONE
+    terminal_state_source: Optional[str] = session.terminal_state_source
+    provider_stop_signal: Optional[str] = session.provider_stop_signal
+
+    if terminal_state == TerminalState.EXPLICIT_COMPLETE:
+        output_ready = True
+
+    if output_ready and terminal_state != TerminalState.EXPLICIT_COMPLETE:
+        status_reason = str(session.status_reason or "").strip().lower()
+        event_name = _status_reason_event_name(session.status_reason)
+        if event_name in EventNames.EXPLICIT_COMPLETION_EVENTS:
+            terminal_state = TerminalState.EXPLICIT_COMPLETE
+            terminal_state_source, provider_stop_signal = _EXPLICIT_STOP_METADATA.get(
+                session.tool,
+                ("explicit_signal", None),
+            )
+        elif status_reason in {
+            "quiet_period_expired",
+            "completed_timeout",
+            "finished_unseen_retained",
+            "process_exited_retained",
+        } or "response.completed" in event_name:
+            terminal_state = TerminalState.INFERRED_COMPLETE
+            if status_reason in {"quiet_period_expired", "completed_timeout"}:
+                terminal_state_source = "quiet_period"
+            elif status_reason == "process_exited_retained":
+                terminal_state_source = "process_exit"
+            elif "response.completed" in event_name:
+                terminal_state_source = "sse_response_completed"
 
     if user_action_reason == UserActionReason.PERMISSION:
         stage = SessionStage.WAITING_INPUT
     elif user_action_reason != UserActionReason.NONE or session.state == SessionState.ATTENTION:
         stage = SessionStage.ATTENTION
+    elif terminal_state == TerminalState.EXPLICIT_COMPLETE:
+        stage = SessionStage.OUTPUT_READY
     elif session.pending_tools > 0:
         stage = SessionStage.TOOL_RUNNING
     elif session.is_streaming:
@@ -420,6 +511,7 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         output_ready=output_ready,
         output_unseen=output_unseen,
         needs_user_action=stage in {SessionStage.WAITING_INPUT, SessionStage.ATTENTION},
+        terminal_state=terminal_state,
         is_streaming=session.is_streaming,
         pending_tools=session.pending_tools,
         last_activity_at=session.last_activity_at,
@@ -457,6 +549,12 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         "user_action_reason": user_action_reason,
         "output_ready": output_ready,
         "output_unseen": output_unseen,
+        "llm_stopped": terminal_state == TerminalState.EXPLICIT_COMPLETE,
+        "terminal_state": terminal_state,
+        "terminal_state_at": session.terminal_state_at.isoformat() if session.terminal_state_at else None,
+        "terminal_state_label": _TERMINAL_STATE_LABELS.get(terminal_state, ""),
+        "terminal_state_source": terminal_state_source,
+        "provider_stop_signal": provider_stop_signal,
         "session_phase": session_phase,
         "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
         "turn_owner": turn_owner,
@@ -1092,6 +1190,12 @@ class SessionTracker:
                     status_reason=str(raw.get("status_reason") or "").strip() or "restored_snapshot",
                     pending_tools=int(raw.get("pending_tools", 0) or 0),
                     is_streaming=bool(raw.get("is_streaming", False)),
+                    terminal_state=raw.get("terminal_state") or TerminalState.NONE,
+                    terminal_state_at=(
+                        updated_at if str(raw.get("terminal_state") or "").strip() else None
+                    ),
+                    terminal_state_source=str(raw.get("terminal_state_source") or "").strip() or None,
+                    provider_stop_signal=str(raw.get("provider_stop_signal") or "").strip() or None,
                 )
                 session.terminal_context.window_id = raw.get("window_id")
                 for key in (
@@ -3083,6 +3187,11 @@ class SessionTracker:
             elif event_status_reason:
                 session.status_reason = event_status_reason
 
+            if event.event_name in EventNames.EXPLICIT_COMPLETION_EVENTS:
+                _set_explicit_terminal_state(session, event)
+            elif _event_should_clear_explicit_terminal_state(session, event):
+                _clear_terminal_state(session)
+
             if self._has_full_tmux_identity(event_terminal_context) and session.identity_confidence not in (
                 IdentityConfidence.NATIVE,
                 IdentityConfidence.PID,
@@ -3110,6 +3219,13 @@ class SessionTracker:
                     new_state,
                 )
                 await self._handle_state_change(session, old_state, new_state)
+                if new_state == SessionState.COMPLETED:
+                    if canonical_session_id in self._quiet_timers:
+                        self._quiet_timers.pop(canonical_session_id).cancel()
+                    self._start_completed_timer(canonical_session_id)
+                elif new_state in {SessionState.WORKING, SessionState.ATTENTION}:
+                    if canonical_session_id in self._completed_timers:
+                        self._completed_timers.pop(canonical_session_id).cancel()
 
             if (
                 session.state == SessionState.WORKING
@@ -3316,6 +3432,16 @@ class SessionTracker:
         current = session.state
         event_name = event.event_name
         attrs = event.attributes
+
+        if event_name in EventNames.EXPLICIT_COMPLETION_EVENTS:
+            return SessionState.COMPLETED
+
+        if (
+            session.terminal_state == TerminalState.EXPLICIT_COMPLETE
+            and event_name in EventNames.WORKING_TRIGGERS
+            and not _is_newer_than_terminal_boundary(session, event)
+        ):
+            return current
 
         # Feature 135: Pending tool tracking
         # If there are active tools, stay WORKING regardless of other signals.
@@ -4162,6 +4288,24 @@ class SessionTracker:
                 user_action_reason=stage_fields["user_action_reason"],
                 output_ready=bool(stage_fields["output_ready"]),
                 output_unseen=bool(stage_fields["output_unseen"]),
+                llm_stopped=bool(stage_fields["llm_stopped"]),
+                terminal_state=stage_fields["terminal_state"],
+                terminal_state_at=(
+                    str(stage_fields["terminal_state_at"])
+                    if stage_fields["terminal_state_at"] is not None
+                    else None
+                ),
+                terminal_state_label=str(stage_fields["terminal_state_label"]),
+                terminal_state_source=(
+                    str(stage_fields["terminal_state_source"])
+                    if stage_fields["terminal_state_source"] is not None
+                    else None
+                ),
+                provider_stop_signal=(
+                    str(stage_fields["provider_stop_signal"])
+                    if stage_fields["provider_stop_signal"] is not None
+                    else None
+                ),
                 session_phase=str(stage_fields["session_phase"]),
                 session_phase_label=str(stage_fields["session_phase_label"]),
                 turn_owner=stage_fields["turn_owner"],
@@ -4229,6 +4373,7 @@ class SessionTracker:
                     str(stage_fields["user_action_reason"]),
                     bool(stage_fields["output_ready"]),
                     bool(stage_fields["output_unseen"]),
+                    str(stage_fields["terminal_state_at"] or ""),
                     str(stage_fields["session_phase"]),
                     str(stage_fields["session_phase_label"]),
                     str(stage_fields["turn_owner"]),

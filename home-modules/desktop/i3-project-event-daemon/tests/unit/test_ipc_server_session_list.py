@@ -175,6 +175,11 @@ def make_local_payload():
                 "needs_user_action": False,
                 "output_ready": False,
                 "output_unseen": False,
+                "llm_stopped": False,
+                "terminal_state": "",
+                "terminal_state_at": "",
+                "terminal_state_label": "",
+                "terminal_state_source": "",
                 "review_pending": False,
                 "session_phase": "working",
                 "session_phase_label": "Working",
@@ -333,6 +338,216 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
     assert result["current_session_key"] == session["session_key"]
     assert session["availability_state"] == "remote_bridge_bound"
     assert session["focusability_reason"] == "exact_remote_bridge_bound"
+
+
+@pytest.mark.asyncio
+async def test_session_list_preserves_explicit_stopped_phase(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    local_payload = make_local_payload()
+    local_payload["sessions"][0].update({
+        "stage": "output_ready",
+        "stage_rank": 1,
+        "stage_label": "Ready",
+        "stage_class": "stage-output_ready",
+        "stage_visual_state": "completed",
+        "output_ready": True,
+        "llm_stopped": True,
+        "terminal_state": "explicit_complete",
+        "terminal_state_at": "2026-03-14T15:00:02Z",
+        "terminal_state_label": "Stopped",
+        "terminal_state_source": "codex_notify",
+        "provider_stop_signal": "agent-turn-complete",
+        "session_phase": "stopped",
+        "session_phase_label": "Stopped",
+        "turn_owner": "user",
+        "turn_owner_label": "User",
+        "activity_substate": "output_ready",
+        "activity_substate_label": "Ready",
+        "status_reason": "event:ag_ui.run_finished",
+    })
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return {"sources": {}}
+        return {}
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
+
+    result = await server._session_list({})
+
+    assert result["total"] == 1
+    session = result["sessions"][0]
+    assert session["session_phase"] == "stopped"
+    assert session["session_phase_label"] == "Stopped"
+    assert session["stopped_notification_pending"] is True
+    assert session["llm_stopped"] is True
+    assert session["terminal_state"] == "explicit_complete"
+    assert session["terminal_state_at"] == "2026-03-14T15:00:02Z"
+    assert session["terminal_state_label"] == "Stopped"
+    assert session["terminal_state_source"] == "codex_notify"
+    assert session["provider_stop_signal"] == "agent-turn-complete"
+
+
+@pytest.mark.asyncio
+async def test_session_list_acknowledges_background_stopped_session_on_focus(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            **runtime_snapshot["tracked_windows"][0],
+            "focused": False,
+        },
+        {
+            "id": 202,
+            "window_id": 202,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "terminal_anchor_id": "other-terminal-anchor",
+            "focused": True,
+            "hidden": False,
+        },
+    ]
+    local_payload = make_local_payload()
+    local_payload["sessions"][0].update({
+        "stage": "output_ready",
+        "stage_rank": 1,
+        "stage_label": "Ready",
+        "stage_class": "stage-output_ready",
+        "stage_visual_state": "completed",
+        "output_ready": True,
+        "llm_stopped": True,
+        "terminal_state": "explicit_complete",
+        "terminal_state_at": "2026-03-14T15:00:02Z",
+        "terminal_state_label": "Stopped",
+        "terminal_state_source": "codex_notify",
+        "provider_stop_signal": "agent-turn-complete",
+        "session_phase": "stopped",
+        "session_phase_label": "Stopped",
+        "turn_owner": "user",
+        "turn_owner_label": "User",
+        "activity_substate": "output_ready",
+        "activity_substate_label": "Ready",
+        "status_reason": "event:ag_ui.run_finished",
+    })
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return {"sources": {}}
+        return {}
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
+
+    initial = await server._session_list({})
+    initial_session = initial["sessions"][0]
+    assert initial_session["session_phase"] == "stopped"
+    assert initial_session["stopped_notification_pending"] is True
+
+    runtime_snapshot["tracked_windows"][0]["focused"] = True
+    runtime_snapshot["tracked_windows"][1]["focused"] = False
+    acknowledged = await server._session_list({})
+    acknowledged_session = acknowledged["sessions"][0]
+    assert acknowledged_session["session_phase"] == "done"
+    assert acknowledged_session["session_phase_label"] == "Done"
+    assert acknowledged_session["stopped_notification_pending"] is False
+
+
+@pytest.mark.asyncio
+async def test_session_list_stopped_current_session_requires_leave_and_return_to_acknowledge(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            **runtime_snapshot["tracked_windows"][0],
+            "focused": True,
+        },
+        {
+            "id": 202,
+            "window_id": 202,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "terminal_anchor_id": "other-terminal-anchor",
+            "focused": False,
+            "hidden": False,
+        },
+    ]
+    local_payload = make_local_payload()
+    local_payload["sessions"][0].update({
+        "stage": "output_ready",
+        "stage_rank": 1,
+        "stage_label": "Ready",
+        "stage_class": "stage-output_ready",
+        "stage_visual_state": "completed",
+        "output_ready": True,
+        "llm_stopped": True,
+        "terminal_state": "explicit_complete",
+        "terminal_state_at": "2026-03-14T15:00:02Z",
+        "terminal_state_label": "Stopped",
+        "terminal_state_source": "codex_notify",
+        "provider_stop_signal": "agent-turn-complete",
+        "session_phase": "stopped",
+        "session_phase_label": "Stopped",
+        "turn_owner": "user",
+        "turn_owner_label": "User",
+        "activity_substate": "output_ready",
+        "activity_substate_label": "Ready",
+        "status_reason": "event:ag_ui.run_finished",
+    })
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return {"sources": {}}
+        return {}
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
+
+    initial = await server._session_list({})
+    initial_session = initial["sessions"][0]
+    assert initial_session["session_phase"] == "stopped"
+    assert initial_session["stopped_notification_pending"] is True
+
+    runtime_snapshot["tracked_windows"][0]["focused"] = False
+    runtime_snapshot["tracked_windows"][1]["focused"] = True
+    away = await server._session_list({})
+    away_session = away["sessions"][0]
+    assert away_session["session_phase"] == "stopped"
+    assert away_session["stopped_notification_pending"] is True
+
+    runtime_snapshot["tracked_windows"][0]["focused"] = True
+    runtime_snapshot["tracked_windows"][1]["focused"] = False
+    returned = await server._session_list({})
+    returned_session = returned["sessions"][0]
+    assert returned_session["session_phase"] == "done"
+    assert returned_session["session_phase_label"] == "Done"
+    assert returned_session["stopped_notification_pending"] is False
 
 
 @pytest.mark.asyncio

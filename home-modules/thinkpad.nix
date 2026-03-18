@@ -24,6 +24,7 @@
     ./services/otel-ai-monitor.nix    # Feature 123: OTEL-based AI session monitoring
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
+    ./tools/disk-guardrails.nix
     # Application launcher and registry
     ./desktop/walker.nix
     ./desktop/app-registry.nix
@@ -48,6 +49,8 @@
     enable = true;
     logLevel = "DEBUG";  # Temporary for testing
   };
+
+  programs.disk-guardrails.enable = true;
 
   # Feature 123: OTEL AI assistant monitor service
   # Receives forwarded telemetry from OTEL Collector on port 4320

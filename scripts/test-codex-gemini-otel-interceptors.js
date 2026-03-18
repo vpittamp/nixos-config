@@ -40,6 +40,16 @@ function getSpansFromOtlpJson(payload) {
   return out;
 }
 
+function getLogsFromOtlpJson(payload) {
+  const out = [];
+  for (const rl of payload?.resourceLogs || []) {
+    for (const sl of rl?.scopeLogs || []) {
+      for (const lr of sl?.logRecords || []) out.push(lr);
+    }
+  }
+  return out;
+}
+
 function getAttr(span, key) {
   for (const a of span?.attributes || []) {
     if (a?.key !== key) continue;
@@ -131,6 +141,7 @@ async function withCollector(fn) {
       base,
       received,
       getSpans: () => received.flatMap(getSpansFromOtlpJson),
+      getLogs: () => received.flatMap(getLogsFromOtlpJson),
     });
   } finally {
     await new Promise((r) => collector.close(r));
@@ -304,8 +315,15 @@ async function runCodexTest(collector) {
     await new Promise((r) => setTimeout(r, 250));
 
     const spans = collector.getSpans();
+    const logs = collector.getLogs();
     const tool = spans.find((s) => (s.name || '').includes('Tool: shell_command (ls -la)'));
     if (!tool) throw new Error('codex: missing semantic tool span name (expected "(ls -la)")');
+
+    const turnCompleteLog = logs.find((record) => {
+      const body = record?.body?.stringValue || '';
+      return body === 'ag_ui.run_finished';
+    });
+    if (!turnCompleteLog) throw new Error('codex: missing synthetic ag_ui.run_finished log');
 
     const producedBy = tool.links?.find((l) => (l.attributes || []).some((a) => a?.key === 'link.type' && a?.value?.stringValue === 'produced_by_llm'));
     if (!producedBy) throw new Error('codex: tool span missing produced_by_llm link');
@@ -473,11 +491,30 @@ async function runGeminiTest(collector) {
       body: envelopes,
     });
 
+    await httpJson({
+      hostname: '127.0.0.1',
+      port: interceptorPort,
+      path: '/notify',
+      body: {
+        type: 'after-agent',
+        sessionId,
+        cwd: '/tmp',
+        'last-assistant-message': 'Hello from Gemini.',
+      },
+    });
+
     await new Promise((r) => setTimeout(r, 250));
 
     const spans = collector.getSpans();
+    const logs = collector.getLogs();
     const tool = spans.find((s) => (s.name || '').includes('Tool: list_directory (/tmp)'));
     if (!tool) throw new Error('gemini: missing semantic tool span name (expected "(/tmp)")');
+
+    const runFinishedLog = logs.find((record) => {
+      const body = record?.body?.stringValue || '';
+      return body === 'ag_ui.run_finished';
+    });
+    if (!runFinishedLog) throw new Error('gemini: missing synthetic ag_ui.run_finished log');
 
     const llms = spans.filter((s) => (s.name || '').startsWith('LLM Call: gemini-3-flash-preview'));
     const consumes = llms.find((s) => (s.links || []).some((l) => l?.spanId === tool.spanId));

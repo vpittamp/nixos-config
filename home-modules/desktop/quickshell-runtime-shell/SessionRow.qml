@@ -22,11 +22,15 @@ Rectangle {
     signal closeRequested
 
     readonly property bool effectiveHovered: interactive ? sessionRowMouse.containsMouse : hovered
+    readonly property bool isCurrent: rootObject.sessionIsCurrent(session)
     readonly property string primaryLabel: rootObject.sessionPrimaryLabel(session)
     readonly property string secondaryLabel: rootObject.sessionSecondaryLabel(session)
-    readonly property string activityLabel: rootObject.sessionBadgeLabel(session)
+    readonly property string activityLabel: rootObject.sessionActivityChipLabel(session)
+    readonly property string activitySymbol: rootObject.sessionBadgeSymbol(session)
+    readonly property string activityState: rootObject.sessionBadgeState(session)
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
+    readonly property color currentAccentColor: colorsObject.textDim
     readonly property string projectLabel: rootObject.stringOrEmpty(session && (session.project_label || rootObject.shortProject(rootObject.stringOrEmpty(session.project_name || session.project || "global"))))
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     property bool hasMotion: rootObject.sessionHasMotion(session)
@@ -35,13 +39,30 @@ Rectangle {
     readonly property int iconWrapSize: compact ? 28 : 34
     readonly property int iconGlyphSize: compact ? 14 : 16
     readonly property int chipHeight: compact ? 18 : 20
+    readonly property bool stoppedNotification: activityState === "stopped"
 
     implicitHeight: rowHeight
     radius: compact ? 7 : 8
-    color: selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent")
-    border.color: selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent")
+    color: isCurrent
+        ? (selected
+            ? Qt.tint(colorsObject.blueBg, Qt.rgba(0.40, 0.86, 0.92, 0.08))
+            : Qt.tint(colorsObject.cardAlt, Qt.rgba(0.40, 0.86, 0.92, effectiveHovered ? 0.11 : 0.07)))
+        : (selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
+    border.color: isCurrent
+        ? (effectiveHovered ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+        : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
     border.width: 1
     opacity: closePending ? 0.9 : 1
+
+    Rectangle {
+        visible: isCurrent
+        anchors.fill: parent
+        anchors.margins: 1
+        radius: compact ? 6 : 7
+        color: Qt.rgba(1, 1, 1, effectiveHovered ? 0.018 : 0.012)
+        border.color: "transparent"
+        border.width: 0
+    }
 
     function resetMotionVisuals() {
         sessionWorkingHalo.opacity = hasMotion ? 0.05 : 0;
@@ -56,19 +77,29 @@ Rectangle {
     Rectangle {
         visible: showAccentRail
         anchors.left: parent.left
-        anchors.leftMargin: 6
+        anchors.leftMargin: isCurrent ? 10 : 8
         anchors.verticalCenter: parent.verticalCenter
-        width: 4
-        height: railHeight
-        radius: 3
-        color: accentColor
-        opacity: selected ? 1 : (effectiveHovered ? 0.75 : 0.5)
+        width: isCurrent ? 3 : 2
+        height: isCurrent ? (compact ? 22 : 28) : railHeight
+        radius: 1
+        color: isCurrent ? currentAccentColor : accentColor
+        opacity: isCurrent ? 0.28 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))
+
+        Rectangle {
+            visible: isCurrent
+            anchors.centerIn: parent
+            width: 1
+            height: Math.max(10, parent.height - (compact ? 8 : 10))
+            radius: 1
+            color: colorsObject.text
+            opacity: 0.72
+        }
     }
 
         RowLayout {
             z: 1
             anchors.fill: parent
-            anchors.leftMargin: compact ? 12 : 16
+            anchors.leftMargin: compact ? 16 : 20
             anchors.rightMargin: compact ? 10 : 12
             spacing: compact ? 10 : 12
 
@@ -76,9 +107,11 @@ Rectangle {
             width: iconWrapSize
             height: iconWrapSize
             radius: compact ? 7 : 8
-            color: selected ? colorsObject.bg : rootObject.sessionTint(session)
-            border.color: selected ? colorsObject.blueMuted : "transparent"
-            border.width: 1
+            color: isCurrent
+                ? Qt.tint(rootObject.sessionTint(session), Qt.rgba(0.42, 0.84, 0.9, 0.06))
+                : (selected ? colorsObject.bg : rootObject.sessionTint(session))
+            border.color: "transparent"
+            border.width: 0
 
             Rectangle {
                 id: sessionWorkingHalo
@@ -201,7 +234,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: primaryLabel
-                color: selected ? colorsObject.blue : colorsObject.text
+                color: isCurrent ? colorsObject.text : (selected ? colorsObject.blue : colorsObject.text)
                 font.pixelSize: compact ? 12 : 13
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
@@ -210,7 +243,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: secondaryLabel
-                color: selected ? colorsObject.textDim : colorsObject.subtle
+                color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
                 font.pixelSize: compact ? 9 : 10
                 elide: Text.ElideRight
             }
@@ -274,8 +307,8 @@ Rectangle {
             visible: showProjectChip && projectLabel.length > 0
             height: chipHeight
             radius: 6
-            color: selected ? colorsObject.bg : colorsObject.panelAlt
-            border.color: selected ? colorsObject.blue : colorsObject.lineSoft
+            color: isCurrent ? colorsObject.panelAlt : (selected ? colorsObject.bg : colorsObject.panelAlt)
+            border.color: isCurrent ? colorsObject.lineSoft : (selected ? colorsObject.blue : colorsObject.lineSoft)
             border.width: 1
             Layout.preferredWidth: projectText.implicitWidth + 12
 
@@ -283,51 +316,48 @@ Rectangle {
                 id: projectText
                 anchors.centerIn: parent
                 text: projectLabel
-                color: selected ? colorsObject.blue : colorsObject.textDim
+                color: isCurrent ? currentAccentColor : (selected ? colorsObject.blue : colorsObject.textDim)
                 font.pixelSize: compact ? 7 : 8
                 font.weight: Font.DemiBold
             }
         }
 
         Rectangle {
-            visible: showCurrentChip && !!rootObject.sessionIsCurrent(session)
-            height: chipHeight
-            radius: 6
-            color: colorsObject.accentBg
-            border.color: colorsObject.accent
-            border.width: 1
-            Layout.preferredWidth: currentText.implicitWidth + 12
-
-            Text {
-                id: currentText
-                anchors.centerIn: parent
-                text: "Current"
-                color: colorsObject.accent
-                font.pixelSize: compact ? 7 : 8
-                font.weight: Font.DemiBold
-            }
-        }
-
-        Rectangle {
-            visible: activityLabel.length > 0
-            height: chipHeight
-            radius: 6
-            color: rootObject.sessionBadgeBackground(session)
-            border.color: "transparent"
-            border.width: 0
-            Layout.preferredWidth: activityText.implicitWidth + 16
+            visible: activityLabel.length > 0 || activitySymbol.length > 0
+            height: stoppedNotification ? (compact ? 14 : 16) : chipHeight
+            radius: stoppedNotification ? 5 : 6
+            color: stoppedNotification
+                ? Qt.tint(rootObject.sessionBadgeBackground(session), Qt.rgba(1, 1, 1, isCurrent ? 0.05 : 0.02))
+                : rootObject.sessionBadgeBackground(session)
+            border.color: rootObject.sessionBadgeBorderColor(session)
+            border.width: border.color === "transparent" ? 0 : 1
+            Layout.preferredWidth: stoppedNotification
+                ? (compact ? 20 : 22)
+                : (activityLabel.length > 0
+                    ? activityText.implicitWidth + 16
+                    : ((compact ? 18 : 20) + 12))
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 6
-                anchors.rightMargin: 8
-                spacing: compact ? 3 : 4
+                anchors.leftMargin: stoppedNotification ? 0 : 6
+                anchors.rightMargin: stoppedNotification ? 0 : 8
+                spacing: stoppedNotification ? 0 : (compact ? 3 : 4)
 
                 Rectangle {
-                    width: compact ? 5 : 6
-                    height: compact ? 5 : 6
-                    radius: compact ? 2 : 3
+                    Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                    visible: stoppedNotification
+                    width: compact ? 6 : 7
+                    height: width
+                    radius: width / 2
                     color: rootObject.sessionBadgeColor(session)
+                }
+
+                Text {
+                    visible: !stoppedNotification && activitySymbol.length > 0
+                    text: activitySymbol
+                    color: rootObject.sessionBadgeColor(session)
+                    font.pixelSize: compact ? 8 : 9
+                    font.weight: Font.DemiBold
                 }
 
                 Text {

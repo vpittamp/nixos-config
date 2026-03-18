@@ -144,6 +144,14 @@ function upsertIntAttr(attrs, key, value) {
   attrUpsert(attrs, key, { intValue: String(parsed) });
 }
 
+function stringAttr(key, value) {
+  return { key, value: { stringValue: String(value) } };
+}
+
+function intAttr(key, value) {
+  return { key, value: { intValue: String(value) } };
+}
+
 function buildRemoteTarget(remoteUser, remoteHost, remotePort) {
   const host = String(remoteHost || '').trim();
   if (!host) return '';
@@ -938,11 +946,100 @@ function handleNotify(notification) {
     session.currentTurn.lastAssistantMessage = getPreview(msg, 400);
   }
 
+  emitExplicitRunFinishedLog(session, {
+    terminalStateSource: 'codex_notify',
+    providerStopSignal: 'agent-turn-complete',
+    notification,
+  });
+
   finalizeTurn(conversationId, Date.now(), 'notify.agent-turn-complete');
 
   // One-shot commands (codex_exec, codex_review, etc) should export the session root span quickly
   // to avoid Tempo showing "<root span not yet received>".
   scheduleOneShotFinalize(session, 'agent-turn-complete');
+}
+
+function emitExplicitRunFinishedLog(session, details) {
+  if (!session || !details || typeof details !== 'object') return;
+
+  const notification = details.notification;
+  if (!notification || typeof notification !== 'object') return;
+
+  const nowMs = Date.now();
+  const timestampIso = new Date(nowMs).toISOString();
+  const conversationId = String(notification['thread-id'] || session.conversationId || '').trim();
+  if (!conversationId) return;
+  const runId = session.currentTurn
+    ? `${conversationId}:turn:${session.currentTurn.turnNumber || 0}`
+    : conversationId;
+
+  const resourceAttrs = [
+    stringAttr('service.name', session.serviceName || 'codex'),
+    stringAttr('service.version', session.serviceVersion || 'unknown'),
+    stringAttr('host.name', os.hostname()),
+    stringAttr('env', session.env || 'dev'),
+    stringAttr('deployment.environment', session.env || 'dev'),
+  ];
+
+  if (session.clientPid) resourceAttrs.push(intAttr('process.pid', session.clientPid));
+  if (session.cwd) resourceAttrs.push(stringAttr('working_directory', session.cwd));
+  if (session.projectPath) {
+    resourceAttrs.push(stringAttr('project_path', session.projectPath));
+    resourceAttrs.push(stringAttr('i3pm.project_path', session.projectPath));
+  }
+  if (session.projectName) resourceAttrs.push(stringAttr('i3pm.project_name', session.projectName));
+  if (session.terminalAnchorId) {
+    resourceAttrs.push(stringAttr('terminal.anchor_id', session.terminalAnchorId));
+    resourceAttrs.push(stringAttr('i3pm.terminal_anchor_id', session.terminalAnchorId));
+  }
+  if (session.tmuxSession) resourceAttrs.push(stringAttr('terminal.tmux.session', session.tmuxSession));
+  if (session.tmuxWindow) resourceAttrs.push(stringAttr('terminal.tmux.window', session.tmuxWindow));
+  if (session.tmuxPane) resourceAttrs.push(stringAttr('terminal.tmux.pane', session.tmuxPane));
+  if (session.pty) resourceAttrs.push(stringAttr('terminal.pty', session.pty));
+
+  const logAttrs = [
+    stringAttr('event.name', 'ag_ui.run_finished'),
+    stringAttr('event.timestamp', timestampIso),
+    stringAttr('conversation.id', conversationId),
+    stringAttr('session.id', conversationId),
+    stringAttr('thread_id', conversationId),
+    stringAttr('ag_ui.type', 'RUN_FINISHED'),
+    stringAttr('ag_ui.thread_id', conversationId),
+    stringAttr('ag_ui.run_id', runId),
+    stringAttr('terminal_state_source', details.terminalStateSource || 'codex_notify'),
+    stringAttr('provider_stop_signal', details.providerStopSignal || 'agent-turn-complete'),
+    stringAttr('codex.notify.type', 'agent-turn-complete'),
+  ];
+
+  if (typeof notification.cwd === 'string' && notification.cwd.trim()) {
+    logAttrs.push(stringAttr('working_directory', notification.cwd.trim()));
+  }
+  if (typeof notification['last-assistant-message'] === 'string' && notification['last-assistant-message'].trim()) {
+    logAttrs.push(stringAttr('assistant.message.preview', getPreview(notification['last-assistant-message'], 400)));
+  }
+
+  const payload = {
+    resourceLogs: [
+      {
+        resource: { attributes: resourceAttrs },
+        scopeLogs: [
+          {
+            scope: { name: 'codex-otel-interceptor', version: INTERCEPTOR_VERSION },
+            logRecords: [
+              {
+                timeUnixNano: msToNanos(nowMs),
+                observedTimeUnixNano: msToNanos(nowMs),
+                body: { stringValue: 'ag_ui.run_finished' },
+                attributes: logAttrs,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  httpPostJson(FORWARD_LOGS_ENDPOINT, payload, { timeoutMs: 1000 });
 }
 
 // =============================================================================

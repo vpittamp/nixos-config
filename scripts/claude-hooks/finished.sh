@@ -12,6 +12,11 @@ echo "--- $(date) ---" >> "$LOG_FILE"
 
 # Read hook input JSON from stdin
 INPUT=$(cat)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Feed the interceptor's stop-hook file path before doing notification work.
+# This keeps QuickShell/session state in sync with the desktop toast.
+printf '%s' "$INPUT" | "${SCRIPT_DIR}/otel-stop.sh" >/dev/null 2>&1 || true
 
 # Extract context from hook input
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
@@ -61,7 +66,6 @@ fi
 echo "Delegating to ai-finished-notification.sh" >> "$LOG_FILE"
 
 # Call shared notification script in background (non-blocking)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 nohup "${SCRIPT_DIR}/../ai-finished-notification.sh" "Claude Code" "$MESSAGE" \
     >/dev/null 2>&1 &
 
