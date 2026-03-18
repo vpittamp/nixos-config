@@ -554,6 +554,7 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
         "connection_key": "vpittamp@ryzen:22",
         "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
         "terminal_role": "remote-session:abc123",
+        "execution_mode": "ssh",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
         window_id=20,
@@ -620,6 +621,7 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
         "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
         "terminal_role": "remote-session:abc123",
         "terminal_anchor_id": "bridge-anchor",
+        "execution_mode": "ssh",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
         window_id=20,
@@ -697,6 +699,7 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
         "terminal_anchor_id": "bridge-anchor",
+        "execution_mode": "ssh",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
     server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
@@ -765,6 +768,7 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
         "terminal_anchor_id": "bridge-anchor",
+        "execution_mode": "ssh",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
     server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
@@ -798,7 +802,12 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
     )
 
     assert result["success"] is True
-    server._window_focus.assert_awaited_once_with({"window_id": 44})
+    server._window_focus.assert_awaited_once_with({
+        "window_id": 44,
+        "project_name": remote_project,
+        "target_variant": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+    })
     assert result["focus_mode"] == "remote_bridge_bound"
 
 
@@ -835,6 +844,7 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
         "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
+        "execution_mode": "ssh",
     })
     server.state_manager.state.window_map[39] = SimpleNamespace(
         window_id=39,
@@ -919,6 +929,7 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
         "terminal_anchor_id": "bridge-anchor",
+        "execution_mode": "ssh",
     })
     server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=44))
     server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))

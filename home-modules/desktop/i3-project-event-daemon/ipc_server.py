@@ -8311,7 +8311,12 @@ class IPCServer:
                 project_name=project_name,
                 reason="superseded_before_remote_focus",
             )
-        focus_result = await self._window_focus({"window_id": local_window_id})
+        focus_result = await self._window_focus({
+            "window_id": local_window_id,
+            "project_name": project_name,
+            "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+            "connection_key": connection_key,
+        })
 
         terminal_context = session.get("terminal_context") or {}
         if not isinstance(terminal_context, dict):
