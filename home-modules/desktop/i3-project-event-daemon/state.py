@@ -260,6 +260,8 @@ class StateManager:
                         if len(parsed_context) == 3 and parsed_context[1] in {"local", "ssh"}
                         else ""
                     )
+                    if not parsed_execution_mode and "i3pm_exec:ssh" in container.marks:
+                        parsed_execution_mode = "ssh"
                     parsed_connection_key = (
                         parsed_context[2]
                         if len(parsed_context) == 3

@@ -251,6 +251,7 @@ async def test_prepare_launch_terminal_ssh_current_host_uses_remote_transport(se
     assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
     assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@ryzen:22"
     assert spec["environment"]["I3PM_CONTEXT_VARIANT"] == "ssh"
+    assert spec["environment"]["I3PM_EXECUTION_MODE"] == "ssh"
 
 
 @pytest.mark.asyncio

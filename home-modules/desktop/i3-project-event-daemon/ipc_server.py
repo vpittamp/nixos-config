@@ -6099,6 +6099,7 @@ class IPCServer:
             "I3PM_LAUNCHER_PID": str(launcher_pid),
             "I3PM_TARGET_WORKSPACE": str(preferred_workspace or ""),
             "I3PM_EXPECTED_CLASS": expected_class,
+            "I3PM_EXECUTION_MODE": execution_mode,
             "I3PM_CONTEXT_VARIANT": execution_mode,
             "I3PM_CONNECTION_KEY": connection_key,
             "I3PM_CONTEXT_KEY": context_key,
@@ -14029,9 +14030,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             return "local_window"
         return "unavailable"
 
-    def _remote_session_terminal_role(self, surface_key: str) -> str:
-        """Return the deterministic local terminal role used for a remote AI session bridge."""
-        raw = str(surface_key or "").strip() or "remote-session"
+    def _remote_session_terminal_role(self, context_key: str) -> str:
+        """Return the deterministic local terminal role for a remote AI session bridge."""
+        raw = str(context_key or "").strip() or "remote-session"
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
         return f"remote-session:{digest}"
 
@@ -14490,7 +14491,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             for parameter in app.parameters
         ]
 
-        remote_terminal_role = self._remote_session_terminal_role(surface_key)
+        remote_terminal_role = self._remote_session_terminal_role(
+            str(remote_context.get("context_key") or "").strip()
+        )
         environment = self._build_launch_env(
             app_name=app.name,
             scope=app.scope,

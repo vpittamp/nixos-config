@@ -873,6 +873,10 @@ async def on_window_new(
             await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
             if window_env and window_env.context_key:
                 await conn.command(f'[con_id={window_id}] mark --add "ctx:{window_env.context_key}"')
+                # Deterministic SSH flag mark — survives daemon restart, no /proc needed
+                parsed_ctx = str(window_env.context_key).split("::", 2)
+                if len(parsed_ctx) == 3 and parsed_ctx[1] == "ssh":
+                    await conn.command(f'[con_id={window_id}] mark --add "i3pm_exec:ssh"')
 
             logger.info(f"[Feature 103] Marked window {window_id} with {mark} (fallback for manually launched app)")
 
