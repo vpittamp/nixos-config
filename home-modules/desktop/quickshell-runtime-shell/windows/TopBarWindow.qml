@@ -186,6 +186,98 @@ PanelWindow {
                 spacing: 6
 
                 Rectangle {
+                    id: daemonHealthChip
+                    radius: 8
+                    color: root.daemonHealthColor(daemonHealthMouse.containsMouse)
+                    border.color: root.daemonHealthBorderColor(daemonHealthMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: daemonHealthRow.implicitWidth + 18
+                    implicitHeight: parent.height
+                    visible: root.daemonHealthState.status !== "healthy"
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    RowLayout {
+                        id: daemonHealthRow
+                        anchors.centerIn: parent
+                        spacing: 5
+
+                        Rectangle {
+                            width: 6
+                            height: 6
+                            radius: 3
+                            color: root.daemonHealthDotColor()
+                        }
+
+                        Text {
+                            text: root.daemonHealthLabel()
+                            color: root.daemonHealthTextColor(daemonHealthMouse.containsMouse)
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    MouseArea {
+                        id: daemonHealthMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+
+                    ToolTip {
+                        visible: daemonHealthMouse.containsMouse
+                        text: root.daemonHealthTooltip()
+                        delay: 500
+                    }
+                }
+
+                Rectangle {
+                    id: generationChip
+                    radius: 8
+                    color: root.neutralChipFill(generationMouse.containsMouse)
+                    border.color: root.neutralChipBorder(generationMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: generationLabel.implicitWidth + 18
+                    implicitHeight: parent.height
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: generationLabel
+                        anchors.centerIn: parent
+                        text: root.systemGenerationLabel()
+                        color: root.neutralChipText(generationMouse.containsMouse)
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                    }
+
+                    MouseArea {
+                        id: generationMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+                }
+
+                Rectangle {
                     id: memoryChip
                     radius: 8
                     color: root.neutralChipFill(memoryMouse.containsMouse)

@@ -368,6 +368,36 @@ Item {
     }
 
     Process {
+        id: daemonHealthWatcher
+        command: [runtimeConfig.daemonHealthBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.parseDaemonHealth(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("daemon.health:", data);
+                }
+            }
+        }
+        onExited: function () {
+            daemonHealthRestartTimer.restart();
+        }
+    }
+
+    Timer {
+        id: daemonHealthRestartTimer
+        interval: 5000
+        repeat: false
+        onTriggered: daemonHealthWatcher.running = true
+    }
+
+    Process {
         id: systemStatsWatcher
         command: [runtimeConfig.systemStatsBin]
         running: true

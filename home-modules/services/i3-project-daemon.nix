@@ -70,6 +70,30 @@ let
     '';
   };
 
+  # Notification script for daemon lifecycle events
+  daemonNotifyScript = pkgs.writeShellScriptBin "i3pm-daemon-notify" ''
+    # Notify user about daemon lifecycle events
+    # Usage: i3pm-daemon-notify <started|stopped|failed>
+    EVENT="''${1:-unknown}"
+    case "$EVENT" in
+      started)
+        # Only notify on restart (not first boot) — check if this is a restart
+        INVOCATIONS=$(${pkgs.systemd}/bin/systemctl --user show i3-project-daemon.service -p NRestarts --value 2>/dev/null || echo "0")
+        if [ "$INVOCATIONS" -gt 0 ]; then
+          ${pkgs.libnotify}/bin/notify-send -i "dialog-warning" -u normal --transient \
+            "i3pm daemon restarted" \
+            "Restart #$INVOCATIONS — daemon recovered automatically"
+        fi
+        ;;
+      failed)
+        RESULT="''${SERVICE_RESULT:-unknown}"
+        ${pkgs.libnotify}/bin/notify-send -i "dialog-error" -u critical \
+          "i3pm daemon failed" \
+          "Exit reason: $RESULT. Restarting..."
+        ;;
+    esac
+  '';
+
   # Wrapper script that discovers SWAYSOCK dynamically before starting daemon
   # This ensures the daemon can reconnect to Sway even after Sway restarts
   daemonWrapper = pkgs.writeShellScriptBin "i3-project-daemon-wrapper" ''
@@ -181,6 +205,8 @@ in
         # Use wrapper script that dynamically discovers SWAYSOCK
         # This ensures the daemon works even after Sway restarts
         ExecStart = "${daemonWrapper}/bin/i3-project-daemon-wrapper";
+        ExecStartPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify started";
+        ExecStopPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify failed";
 
         # Working directory for project config
         WorkingDirectory = "%h/.config/i3";

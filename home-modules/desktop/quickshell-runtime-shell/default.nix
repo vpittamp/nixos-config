@@ -40,6 +40,7 @@ QtObject {
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
+  readonly property string daemonHealthBin: "${daemonHealthScript}/bin/quickshell-daemon-health"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-elephant-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
   readonly property string fileListBin: "${fileListScript}/bin/quickshell-elephant-file-list"
@@ -62,6 +63,7 @@ QtObject {
   readonly property string claudeIcon: "${../../../assets/icons/claude.svg}"
   readonly property string geminiIcon: "${../../../assets/icons/gemini.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
+  readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
 }
 EOF
   '';
@@ -229,6 +231,15 @@ def read_loadavg() -> list[float]:
     return values
 
 
+def read_system_generation() -> int:
+    try:
+        target = Path("/nix/var/nix/profiles/system").readlink()
+        name = target.name  # e.g. "system-1609-link"
+        return int(name.split("-")[1])
+    except Exception:
+        return 0
+
+
 def read_temperature_c() -> int | None:
     thermal_root = Path("/sys/class/thermal")
     if thermal_root.exists():
@@ -278,6 +289,7 @@ while True:
             "load5": round(load5, 2),
             "load15": round(load15, 2),
             "temperature_c": read_temperature_c(),
+            "system_generation": read_system_generation(),
         }
         print(json.dumps(payload), flush=True)
     except Exception as error:
@@ -291,10 +303,38 @@ while True:
             "load5": 0,
             "load15": 0,
             "temperature_c": None,
+            "system_generation": 0,
             "error": str(error),
         }), flush=True)
     time.sleep(1)
 PY
+  '';
+
+  daemonHealthScript = pkgs.writeShellScriptBin "quickshell-daemon-health" ''
+    set -euo pipefail
+    SOCK="$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock"
+    while true; do
+      if [ ! -S "$SOCK" ]; then
+        printf '{"status":"dead","label":"Daemon offline"}\n'
+        sleep 5
+        continue
+      fi
+      RESP=$(printf '{"jsonrpc":"2.0","id":1,"method":"get_health_metrics","params":{}}\n' \
+        | ${pkgs.socat}/bin/socat -t5 STDIO "UNIX-CONNECT:$SOCK" 2>/dev/null || true)
+      if [ -z "$RESP" ]; then
+        printf '{"status":"unreachable","label":"Daemon unreachable"}\n'
+        sleep 5
+        continue
+      fi
+      STATUS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.health_status // "unknown"' 2>/dev/null || echo "unknown")
+      ERRORS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_errors // 0' 2>/dev/null || echo "0")
+      EVENTS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_events_processed // 0' 2>/dev/null || echo "0")
+      MEM=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.memory_rss_mb // 0' 2>/dev/null || echo "0")
+      LAST_ERR=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.last_error_message // ""' 2>/dev/null || echo "")
+      printf '{"status":"%s","errors":%s,"events":%s,"memory_mb":%s,"last_error":"%s"}\n' \
+        "$STATUS" "$ERRORS" "$EVENTS" "$MEM" "$LAST_ERR"
+      sleep 5
+    done
   '';
 
   launcherQueryScript = pkgs.writeShellScriptBin "quickshell-elephant-launcher-query" ''
@@ -1317,6 +1357,7 @@ in
       notificationMonitorScript
       networkStatusScript
       systemStatsScript
+      daemonHealthScript
       launcherQueryScript
       launcherLaunchScript
       runnerListScript

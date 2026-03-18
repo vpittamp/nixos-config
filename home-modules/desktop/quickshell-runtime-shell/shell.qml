@@ -85,6 +85,14 @@ ShellRoot {
             label: "Offline",
             signal: null
         })
+    property var daemonHealthState: ({
+            status: "unknown",
+            errors: 0,
+            events: 0,
+            memory_mb: 0,
+            last_error: ""
+        })
+
     property var systemStatsState: ({
             memory_percent: 0,
             memory_used_gb: 0,
@@ -94,7 +102,8 @@ ShellRoot {
             load1: 0,
             load5: 0,
             load15: 0,
-            temperature_c: null
+            temperature_c: null,
+            system_generation: 0
         })
     property bool panelVisible: true
     property string panelSection: "runtime"
@@ -713,6 +722,9 @@ ShellRoot {
             for (let j = 0; j < workspaces.length; j += 1) {
                 const workspace = workspaces[j];
                 const name = stringOrEmpty(workspace ? workspace.name : "");
+                if (name.indexOf("scratchpad") === 0) {
+                    continue;
+                }
                 items.push({
                     num: Number(workspace?.number || 0),
                     name: name,
@@ -1650,6 +1662,11 @@ ShellRoot {
             bits.push(String(systemStatsState.temperature_c) + "°C");
         }
         return bits.join(" • ");
+    }
+
+    function systemGenerationLabel() {
+        var gen = Number(systemStatsState.system_generation || 0);
+        return gen > 0 ? ("Gen " + String(gen)) : "Gen ?";
     }
 
     function systemStatsSummaryLabel() {
@@ -3976,7 +3993,7 @@ ShellRoot {
         const normalizedMode = stringOrEmpty(mode).toLowerCase() === "ssh" ? "ssh" : "local";
         const isRemote = normalizedMode === "ssh";
         const label = displayHostName(hostName) || hostNameFromConnectionKey(connectionKey) || (isRemote ? "Remote" : localHostDisplayName());
-        const icon = isRemote ? resolveThemeIcon(["network-server-symbolic", "network-workgroup-symbolic", "network-wired-symbolic", "utilities-terminal-symbolic"]) : resolveThemeIcon(["computer-symbolic", "computer-laptop-symbolic", "video-display-symbolic", "desktop-symbolic"]);
+        const icon = isRemote ? ("file://" + shellConfig.tailscaleIcon) : resolveThemeIcon(["computer-symbolic", "computer-laptop-symbolic", "video-display-symbolic", "desktop-symbolic"]);
 
         return {
             label: label,
@@ -6018,6 +6035,70 @@ ShellRoot {
         } catch (error) {
             console.warn("Failed to parse network payload", error, raw);
         }
+    }
+
+    function parseDaemonHealth(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw.indexOf("{") !== 0) {
+            return;
+        }
+        try {
+            daemonHealthState = Object.assign({}, daemonHealthState, JSON.parse(raw));
+        } catch (error) {
+            console.warn("Failed to parse daemon health payload", error, raw);
+        }
+    }
+
+    function daemonHealthLabel() {
+        const status = stringOrEmpty(daemonHealthState.status);
+        if (status === "healthy") return "Daemon";
+        if (status === "degraded") return "Daemon !";
+        if (status === "unhealthy") return "Daemon !!";
+        if (status === "dead" || status === "unreachable") return "Daemon X";
+        return "Daemon ?";
+    }
+
+    function daemonHealthColor(hovered) {
+        const status = stringOrEmpty(daemonHealthState.status);
+        if (status === "healthy") return neutralChipFill(hovered);
+        if (status === "degraded") return hovered ? Qt.lighter(colors.amberBg, 1.15) : colors.amberBg;
+        return hovered ? Qt.lighter(colors.redBg, 1.15) : colors.redBg;
+    }
+
+    function daemonHealthBorderColor(hovered) {
+        const status = stringOrEmpty(daemonHealthState.status);
+        if (status === "healthy") return neutralChipBorder(hovered);
+        if (status === "degraded") return colors.amber;
+        return colors.red;
+    }
+
+    function daemonHealthTextColor(hovered) {
+        const status = stringOrEmpty(daemonHealthState.status);
+        if (status === "healthy") return neutralChipText(hovered);
+        if (status === "degraded") return hovered ? colors.amber : colors.subtle;
+        return hovered ? colors.red : colors.subtle;
+    }
+
+    function daemonHealthDotColor() {
+        const status = stringOrEmpty(daemonHealthState.status);
+        if (status === "healthy") return colors.green;
+        if (status === "degraded") return colors.amber;
+        if (status === "dead" || status === "unreachable") return colors.red;
+        return colors.muted;
+    }
+
+    function daemonHealthTooltip() {
+        const s = daemonHealthState;
+        const bits = [
+            "Status: " + stringOrEmpty(s.status),
+            "Events: " + String(s.events || 0),
+            "Errors: " + String(s.errors || 0),
+            "Memory: " + String(s.memory_mb || 0) + " MB"
+        ];
+        if (s.last_error) {
+            bits.push("Last error: " + String(s.last_error));
+        }
+        return bits.join("\n");
     }
 
     function parseSystemStats(payload) {
