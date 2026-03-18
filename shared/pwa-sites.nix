@@ -1794,6 +1794,22 @@ let
       # Feature 113: URL routing domains
       routing_domains = [ "participant.empower-retirement.com" ];
     }
+
+    # Mediaite
+    {
+      name = "mediaite";
+      url = "https://www.mediaite.com";
+      domain = "mediaite.com";
+      icon = iconPath "mediaite.png";
+      description = "Mediaite - Media and politics news";
+      categories = "Network;";
+      keywords = "mediaite;media;politics;news;tv;";
+      scope = "https://www.mediaite.com/";
+      ulid = "7S4CPFDTHNHMJ25NMZAP2557KK";
+      app_scope = "global";
+      preferred_workspace = 158;
+      routing_domains = [ "mediaite.com" "www.mediaite.com" ];
+    }
   ];
 
   # Filter and format sites

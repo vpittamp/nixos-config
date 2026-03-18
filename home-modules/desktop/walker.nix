@@ -15,8 +15,8 @@ let
   # --no-output  Only show timing in the notification, suppress command output.
   #              Useful for commands that produce no meaningful stdout (e.g. tmux reload).
   #
-  # On success: low-urgency notification (8s timeout) with last 4 lines of output + elapsed time.
-  # On failure: critical notification (never auto-dismisses) with last 4 lines + exit code + elapsed time.
+  # On success: low-urgency notification (8s timeout) with full output + elapsed time.
+  # On failure: critical notification (never auto-dismisses) with full output + exit code + elapsed time.
   snippetRun = pkgs.writeShellScriptBin "snippet-run" ''
     set -uo pipefail
 
@@ -36,36 +36,92 @@ let
 
     SECONDS=0
     if [ "$CAPTURE_OUTPUT" -eq 1 ]; then
-      OUT=$("$@" 2>&1 | tail -20) && s=$? || s=$?
-      TAIL=$(echo "$OUT" | tail -4)
+      OUT=$("$@" 2>&1) && s=$? || s=$?
     else
       "$@" && s=$? || s=$?
-      TAIL=""
       OUT=""
     fi
     ELAPSED=$SECONDS
 
     NL=$'\n'
+    TIMESTAMP=$(date '+%b %-d at %-I:%M %p')
     if [ $s -eq 0 ]; then
-      BODY="Succeeded in ''${ELAPSED}s"
-      [ -n "$TAIL" ] && BODY="''${BODY}''${NL}''${NL}''${TAIL}"
-      FULL="$TITLE: Succeeded in ''${ELAPSED}s"
-      [ -n "$OUT" ] && FULL="''${FULL}''${NL}''${NL}''${OUT}"
+      BODY="Succeeded in ''${ELAPSED}s · $TIMESTAMP"
+      [ -n "$OUT" ] && BODY="''${BODY}''${NL}''${NL}''${OUT}"
       ACTION=$(notify-send -u low -t 8000 --action=copy=Copy "$TITLE" "$BODY")
     else
-      BODY="Failed (exit $s) in ''${ELAPSED}s"
-      [ -n "$TAIL" ] && BODY="''${BODY}''${NL}''${NL}''${TAIL}"
-      FULL="$TITLE: Failed (exit $s) in ''${ELAPSED}s"
-      [ -n "$OUT" ] && FULL="''${FULL}''${NL}''${NL}''${OUT}"
+      BODY="Failed (exit $s) in ''${ELAPSED}s · $TIMESTAMP"
+      [ -n "$OUT" ] && BODY="''${BODY}''${NL}''${NL}''${OUT}"
       ACTION=$(notify-send -u critical -t 0 --action=copy=Copy "$TITLE" "$BODY")
       STATUS=$s
     fi
 
     if [ "$ACTION" = "copy" ]; then
-      printf '%s' "$FULL" | ${pkgs.wl-clipboard}/bin/wl-copy
+      printf '%s' "$BODY" | ${pkgs.wl-clipboard}/bin/wl-copy
     fi
 
     exit "''${STATUS:-0}"
+  '';
+
+  aiCliStatusScript = pkgs.writeShellScriptBin "ai-cli-status" ''
+    set -euo pipefail
+
+    AWK=${pkgs.gawk}/bin/awk
+    GREP=${pkgs.gnugrep}/bin/grep
+    PS=${pkgs.procps}/bin/ps
+    SSH=${pkgs.openssh}/bin/ssh
+
+    fmt_mb() { echo "$(( $1 / 1024 ))MB"; }
+
+    scan_host() {
+      local host="$1"
+      local ps_output
+
+      if [ "$host" = "$(hostname -s)" ]; then
+        ps_output=$($PS -eo pid,rss,args --no-headers 2>/dev/null) || return
+      else
+        ps_output=$($SSH -o ConnectTimeout=3 -o BatchMode=yes "$host" \
+          'ps -eo pid,rss,args --no-headers' 2>/dev/null) || {
+          echo "[$host]  unreachable"
+          return
+        }
+      fi
+
+      local host_found=0
+      for cli in claude codex gemini; do
+        local label pattern
+        case "$cli" in
+          claude)  label="Claude Code"; pattern='\.claude-unwrapped' ;;
+          codex)   label="Codex CLI";   pattern='bin/codex' ;;
+          gemini)  label="Gemini CLI";  pattern='bin/gemini' ;;
+        esac
+
+        while IFS= read -r line; do
+          [ -z "$line" ] && continue
+          local pid rss mem
+          pid=$(echo "$line" | $AWK '{print $1}')
+          rss=$(echo "$line" | $AWK '{print $2}')
+          mem=$(fmt_mb "$rss")
+          found=$((found + 1))
+          host_found=$((host_found + 1))
+          echo "[$host]  $label  PID=$pid  MEM=$mem"
+        done < <(echo "$ps_output" | $GREP -E "$pattern" | $GREP -v 'interceptor\|grep' || true)
+      done
+
+      if [ "$host_found" -eq 0 ]; then
+        echo "[$host]  no AI CLI processes"
+      fi
+    }
+
+    found=0
+    hosts="thinkpad ryzen"
+
+    for host in $hosts; do
+      scan_host "$host"
+    done
+
+    echo ""
+    echo "$found process(es) across $hosts"
   '';
 
   elephantDefaultSnippets = [
@@ -78,6 +134,11 @@ let
       name = "reload tmux";
       snippet = "snippet-run --no-output \"tmux\" -- tmux source-file ~/.config/tmux/tmux.conf";
       description = "Reload tmux configuration from ~/.config/tmux/tmux.conf";
+    }
+    {
+      name = "ai status";
+      snippet = "snippet-run \"AI CLI Status\" -- ai-cli-status";
+      description = "Show AI CLI processes (Claude, Codex, Gemini) across thinkpad and ryzen";
     }
   ];
   elephantSnippetsTemplate = pkgs.writeText "elephant-snippets.toml" ''
@@ -94,6 +155,11 @@ let
     name = "reload tmux"
     snippet = "snippet-run --no-output \"tmux\" -- tmux source-file ~/.config/tmux/tmux.conf"
     description = "Reload tmux configuration from ~/.config/tmux/tmux.conf"
+
+    [[snippets]]
+    name = "ai status"
+    snippet = "snippet-run \"AI CLI Status\" -- ai-cli-status"
+    description = "Show running AI CLI processes (Claude, Codex, Gemini) with memory usage"
   '';
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
@@ -1833,6 +1899,7 @@ in
 
   home.packages = [
     snippetRun
+    aiCliStatusScript
     walkerOpenInNvim
     walkerProjectList
     walkerProjectSwitch

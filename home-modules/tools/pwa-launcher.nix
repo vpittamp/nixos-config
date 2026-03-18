@@ -97,7 +97,8 @@ let
       --app="$TARGET_URL" \
       --no-first-run \
       --no-default-browser-check \
-      --password-store=basic
+      --password-store=basic \
+      --disable-features=DesktopPWAsElidedExtensionsMenu
   '';
 in
 {
