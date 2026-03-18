@@ -449,10 +449,6 @@ ShellRoot {
             return false;
         }
 
-        if (sessionIsCurrent(session)) {
-            return false;
-        }
-
         const phase = sessionPhase(session);
         if (phase === "working" || phase === "needs_attention" || phase === "done") {
             return true;
@@ -469,10 +465,6 @@ ShellRoot {
         const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
         const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
         if (!terminalAnchor && !hasTmuxIdentity) {
-            return false;
-        }
-
-        if (sessionIsCurrent(session)) {
             return false;
         }
 
