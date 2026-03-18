@@ -1,12 +1,36 @@
 """Integration tests for RunRaiseManager (Feature 051)."""
 
 import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import importlib
+import importlib.util
+import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.run_raise_manager import RunRaiseManager
-from models.window_state import WindowState, WindowStateInfo
+import pytest
+
+
+PACKAGE_ROOT = Path(__file__).parent.parent.parent
+
+
+if "i3_project_daemon" not in sys.modules:
+    package_spec = importlib.util.spec_from_file_location(
+        "i3_project_daemon",
+        PACKAGE_ROOT / "__init__.py",
+        submodule_search_locations=[str(PACKAGE_ROOT)],
+    )
+    package_module = importlib.util.module_from_spec(package_spec)
+    sys.modules["i3_project_daemon"] = package_module
+    assert package_spec.loader is not None
+    package_spec.loader.exec_module(package_module)
+
+
+run_raise_manager_module = importlib.import_module("i3_project_daemon.services.run_raise_manager")
+window_state_module = importlib.import_module("i3_project_daemon.models.window_state")
+
+RunRaiseManager = run_raise_manager_module.RunRaiseManager
+WindowState = window_state_module.WindowState
+WindowStateInfo = window_state_module.WindowStateInfo
 
 
 @pytest.fixture
@@ -239,14 +263,13 @@ class TestTransitions:
 
         result = await manager._transition_summon(mock_window, "1")
 
-        # Should move, focus, set floating, and restore geometry
-        assert mock_sway.command.call_count >= 4
-        calls = [str(call) for call in mock_sway.command.call_args_list]
-
-        # Verify key commands were called
-        assert any("move container to workspace" in str(call) for call in calls)
-        assert any("focus" in str(call) for call in calls)
-        assert any("floating enable" in str(call) for call in calls)
+        assert mock_sway.command.call_count == 1
+        commands = str(mock_sway.command.call_args_list[0])
+        assert "move container to workspace 1" in commands
+        assert "floating enable" in commands
+        assert "move position 100 200" in commands
+        assert "resize set 1600 900" in commands
+        assert "focus" in commands
 
         assert result["action"] == "summoned"
         assert result["focused"] is True
@@ -286,8 +309,10 @@ class TestTransitions:
         """Test _transition_show restores state from storage."""
         # Setup: Stored state with geometry
         mock_workspace_tracker.get_window_state.return_value = {
+            "workspace_number": 3,
             "is_floating": True,
-            "geometry": {"x": 100, "y": 200, "width": 1600, "height": 900}
+            "geometry": {"x": 100, "y": 200, "width": 1600, "height": 900},
+            "fullscreen_mode": 1,
         }
 
         mock_window = MagicMock()
@@ -295,18 +320,15 @@ class TestTransitions:
 
         result = await manager._transition_show(mock_window, "firefox")
 
-        # Should show from scratchpad
-        assert any("scratchpad show" in str(call)
-                  for call in mock_sway.command.call_args_list)
-
-        # Should restore floating state
-        assert any("floating enable" in str(call)
-                  for call in mock_sway.command.call_args_list)
-
-        # Should restore geometry
-        calls_str = " ".join(str(call) for call in mock_sway.command.call_args_list)
+        assert mock_sway.command.call_count == 1
+        calls_str = str(mock_sway.command.call_args_list[0])
+        assert "workspace number 3" in calls_str
+        assert "scratchpad show" in calls_str
+        assert "floating enable" in calls_str
         assert "move position 100 200" in calls_str
         assert "resize set 1600 900" in calls_str
+        assert "fullscreen enable" in calls_str
+        assert "focus" in calls_str
 
         assert result["action"] == "shown"
         assert result["focused"] is True

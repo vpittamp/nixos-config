@@ -5,6 +5,7 @@ import logging
 import shutil
 import subprocess
 import time
+import inspect
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -82,6 +83,39 @@ class RunRaiseManager:
             Window ID or None if not found
         """
         return self._window_tracking.get(app_name)
+
+    @staticmethod
+    def _window_selector(window_id: int) -> str:
+        return f"[con_id={int(window_id)}]"
+
+    async def _load_stored_window_state(self, window_id: int) -> Dict[str, Any]:
+        """Load saved window state from whichever tracker API is available."""
+        if not self.workspace_tracker:
+            return {}
+
+        try:
+            getter = getattr(self.workspace_tracker, "get_window_workspace", None)
+            if callable(getter):
+                result = getter(window_id)
+                if inspect.isawaitable(result):
+                    result = await result
+                if isinstance(result, dict):
+                    return result
+        except Exception as e:
+            logger.debug("Failed to load tracked workspace state for %s: %s", window_id, e)
+
+        try:
+            getter = getattr(self.workspace_tracker, "get_window_state", None)
+            if callable(getter):
+                result = getter(window_id)
+                if inspect.isawaitable(result):
+                    result = await result
+                if isinstance(result, dict):
+                    return result
+        except Exception as e:
+            logger.debug("Failed to load tracked window state for %s: %s", window_id, e)
+
+        return {}
 
     async def detect_window_state(self, app_name: str) -> WindowStateInfo:
         """Detect current state of window for given app.
@@ -369,6 +403,7 @@ class RunRaiseManager:
             is_floating = window.type == "floating_con" or (
                 hasattr(window, 'floating') and window.floating and window.floating != 'auto_off'
             )
+            fullscreen_mode = int(getattr(window, "fullscreen_mode", 0) or 0)
             geometry = None
 
             if is_floating and window.rect:
@@ -380,27 +415,24 @@ class RunRaiseManager:
                 }
                 logger.debug(f"Captured geometry for window {window.id}: {geometry}")
 
-            # Move to current workspace
-            await self.sway.command(f'[con_id={window.id}] move container to workspace {current_workspace}')
-
-            # Focus the window
-            await self.sway.command(f'[con_id={window.id}] focus')
-
-            # Restore floating state if it was floating
+            selector = self._window_selector(window.id)
+            commands = [
+                f"{selector} move container to workspace {current_workspace}",
+            ]
             if is_floating:
-                await self.sway.command(f'[con_id={window.id}] floating enable')
-
-                # Restore geometry if we captured it
+                commands.append(f"{selector} floating enable")
                 if geometry:
-                    await self.sway.command(
-                        f'[con_id={window.id}] '
-                        f'move position {geometry["x"]} {geometry["y"]}'
+                    commands.append(
+                        f'{selector} move position {geometry["x"]} {geometry["y"]}'
                     )
-                    await self.sway.command(
-                        f'[con_id={window.id}] '
-                        f'resize set {geometry["width"]} {geometry["height"]}'
+                    commands.append(
+                        f'{selector} resize set {geometry["width"]} {geometry["height"]}'
                     )
-                    logger.debug(f"Restored geometry for window {window.id}")
+            if fullscreen_mode > 0:
+                commands.append(f"{selector} fullscreen enable")
+            commands.append(f"{selector} focus")
+
+            await self.sway.command("; ".join(commands))
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             logger.debug(f"[perf] _transition_summon({window.id}, ws={current_workspace}): {elapsed_ms:.2f}ms")
@@ -490,30 +522,40 @@ class RunRaiseManager:
 
         try:
             # Load stored state from WorkspaceTracker
-            stored_state = self.workspace_tracker.get_window_state(window.id)
-
-            # Show from scratchpad
-            await self.sway.command(f'[con_id={window.id}] scratchpad show')
+            stored_state = await self._load_stored_window_state(window.id)
+            selector = self._window_selector(window.id)
+            commands = []
 
             # Restore state if we have it
             if stored_state:
-                is_floating = stored_state.get("is_floating", False)
+                workspace_number = int(stored_state.get("workspace_number", 0) or 0)
+                if workspace_number > 0:
+                    commands.append(f"workspace number {workspace_number}")
+
+                is_floating = bool(
+                    stored_state.get("is_floating", stored_state.get("floating", False))
+                )
                 geometry = stored_state.get("geometry")
+                fullscreen_mode = int(stored_state.get("fullscreen_mode", 0) or 0)
 
-                if is_floating:
-                    await self.sway.command(f'[con_id={window.id}] floating enable')
-                    logger.debug(f"Restored floating state for window {window.id}")
+                commands.append(f"{selector} scratchpad show")
+                commands.append(f"{selector} floating enable" if is_floating else f"{selector} floating disable")
 
-                if geometry:
-                    await self.sway.command(
-                        f'[con_id={window.id}] '
-                        f'move position {geometry["x"]} {geometry["y"]}'
+                if geometry and is_floating:
+                    commands.append(
+                        f'{selector} move position {geometry["x"]} {geometry["y"]}'
                     )
-                    await self.sway.command(
-                        f'[con_id={window.id}] '
-                        f'resize set {geometry["width"]} {geometry["height"]}'
+                    commands.append(
+                        f'{selector} resize set {geometry["width"]} {geometry["height"]}'
                     )
-                    logger.debug(f"Restored geometry for window {window.id}: {geometry}")
+
+                if fullscreen_mode > 0:
+                    commands.append(f"{selector} fullscreen enable")
+            else:
+                commands.append(f"{selector} scratchpad show")
+
+            commands.append(f"{selector} focus")
+            await self.sway.command("; ".join(commands))
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             logger.debug(f"[perf] _transition_show({window.id}, '{app_name}'): {elapsed_ms:.2f}ms")

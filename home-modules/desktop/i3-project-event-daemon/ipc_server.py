@@ -46,6 +46,7 @@ from .services.window_filter import (
     read_process_environ_with_fallback,
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
+from .models.window_command import CommandBatch
 
 logger = logging.getLogger(__name__)
 
@@ -11408,6 +11409,197 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 return match
         return None
 
+    @staticmethod
+    def _container_is_in_scratchpad(container: Any) -> bool:
+        """Return whether a container is currently attached to the scratchpad tree."""
+        parent = container
+        while parent:
+            scratchpad_state = str(getattr(parent, "scratchpad_state", "") or "").strip().lower()
+            if scratchpad_state and scratchpad_state != "none":
+                return True
+            parent = getattr(parent, "parent", None)
+        return False
+
+    @staticmethod
+    def _workspace_switch_command(workspace_name: str) -> str:
+        """Build a safe workspace switch command for an arbitrary workspace name."""
+        return f"workspace {shlex_quote(str(workspace_name or '').strip())}"
+
+    async def _get_window_transition_state(self, window_id: int) -> Dict[str, Any]:
+        """Return live and tracked state used to plan a focus transition."""
+        empty_state = {
+            "exists": False,
+            "window_id": int(window_id or 0),
+            "current_workspace": "",
+            "workspace_name": "",
+            "workspace_number": 0,
+            "in_scratchpad": False,
+            "floating": False,
+            "floating_state": "",
+            "fullscreen_mode": 0,
+            "geometry": None,
+            "saved_state": None,
+            "node": None,
+        }
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            return empty_state
+
+        try:
+            tree = await self.i3_connection.conn.get_tree()
+            focused = self._find_focused_tree_node(tree)
+            current_workspace = ""
+            if focused is not None:
+                focused_workspace = focused.workspace()
+                current_workspace = str(getattr(focused_workspace, "name", "") or "").strip()
+
+            node = self._find_tree_node_by_id(tree, int(window_id or 0))
+            if node is None:
+                return empty_state
+
+            workspace = node.workspace()
+            workspace_name = str(getattr(workspace, "name", "") or "").strip()
+            workspace_number = int(getattr(workspace, "num", 0) or 0) if workspace is not None else 0
+            floating_state = str(getattr(node, "floating", "") or "").strip().lower()
+            floating = bool(floating_state and not floating_state.endswith("_off"))
+            fullscreen_mode = int(getattr(node, "fullscreen_mode", 0) or 0)
+            geometry = None
+            rect = getattr(node, "rect", None)
+            if rect is not None:
+                geometry = {
+                    "x": int(getattr(rect, "x", 0) or 0),
+                    "y": int(getattr(rect, "y", 0) or 0),
+                    "width": int(getattr(rect, "width", 0) or 0),
+                    "height": int(getattr(rect, "height", 0) or 0),
+                }
+
+            saved_state = None
+            if self.workspace_tracker:
+                try:
+                    saved_state = await self.workspace_tracker.get_window_workspace(int(window_id or 0))
+                except Exception as e:
+                    logger.debug("Failed to load tracked window state for %s: %s", window_id, e)
+
+            return {
+                "exists": True,
+                "window_id": int(window_id or 0),
+                "current_workspace": current_workspace,
+                "workspace_name": workspace_name,
+                "workspace_number": workspace_number,
+                "in_scratchpad": bool(
+                    workspace_name == "__i3_scratch" or self._container_is_in_scratchpad(node)
+                ),
+                "floating": floating,
+                "floating_state": floating_state,
+                "fullscreen_mode": fullscreen_mode,
+                "geometry": geometry,
+                "saved_state": saved_state if isinstance(saved_state, dict) else None,
+                "node": node,
+            }
+        except Exception as e:
+            logger.debug("Failed to inspect transition state for window %s: %s", window_id, e)
+            return empty_state
+
+    def _build_window_focus_transition(
+        self,
+        *,
+        window_id: int,
+        state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Plan the commands and expected final state for focusing a window."""
+        selector = f"[con_id={int(window_id)}]"
+        saved_state = dict(state.get("saved_state") or {})
+        saved_workspace_number = int(saved_state.get("workspace_number") or 0)
+        saved_original_scratchpad = bool(saved_state.get("original_scratchpad", False))
+        live_workspace_name = str(state.get("workspace_name") or "").strip()
+        current_workspace = str(state.get("current_workspace") or "").strip()
+        in_scratchpad = bool(state.get("in_scratchpad", False))
+
+        expected_workspace_name = live_workspace_name
+        expected_workspace_number = int(state.get("workspace_number") or 0)
+        if in_scratchpad and saved_workspace_number > 0 and not saved_original_scratchpad:
+            expected_workspace_number = saved_workspace_number
+            expected_workspace_name = str(saved_workspace_number)
+
+        expected_floating = bool(
+            saved_state.get("floating", state.get("floating", False))
+        )
+        expected_fullscreen_mode = int(
+            saved_state.get("fullscreen_mode", state.get("fullscreen_mode", 0)) or 0
+        )
+        expected_geometry = saved_state.get("geometry")
+        if not isinstance(expected_geometry, dict):
+            expected_geometry = state.get("geometry") if expected_floating else None
+
+        commands: List[str] = []
+        if in_scratchpad:
+            if expected_workspace_number > 0:
+                commands.append(f"workspace number {expected_workspace_number}")
+            commands.extend(CommandBatch.from_window_state(
+                window_id=int(window_id),
+                workspace_num=0,
+                is_floating=expected_floating,
+                geometry=expected_geometry if expected_floating else None,
+                fullscreen_mode=expected_fullscreen_mode,
+            ).to_batched_command().split("; "))
+            if expected_workspace_number > 0:
+                commands.append(f"{selector} move workspace number {expected_workspace_number}")
+            if not expected_floating:
+                commands.append(f"{selector} floating disable")
+            if expected_fullscreen_mode > 0:
+                commands.append(f"{selector} fullscreen enable")
+        else:
+            if expected_workspace_name and expected_workspace_name != current_workspace:
+                commands.append(self._workspace_switch_command(expected_workspace_name))
+            if expected_floating:
+                if expected_geometry:
+                    commands.extend(CommandBatch.from_window_state(
+                        window_id=int(window_id),
+                        workspace_num=max(expected_workspace_number, 1),
+                        is_floating=True,
+                        geometry=expected_geometry,
+                        fullscreen_mode=expected_fullscreen_mode,
+                    ).to_batched_command().split("; "))
+                else:
+                    commands.append(f"{selector} floating enable")
+                    if expected_fullscreen_mode > 0:
+                        commands.append(f"{selector} fullscreen enable")
+            else:
+                if str(state.get("floating_state") or "").strip():
+                    commands.append(f"{selector} floating disable")
+                if int(state.get("fullscreen_mode") or 0) > 0 and expected_fullscreen_mode <= 0:
+                    commands.append(f"{selector} fullscreen disable")
+                elif expected_fullscreen_mode > 0:
+                    commands.append(f"{selector} fullscreen enable")
+
+        commands.append(f"{selector} focus")
+
+        transition_kind = "scratchpad_restore" if in_scratchpad else (
+            "workspace_switch" if expected_workspace_name and expected_workspace_name != current_workspace else "direct_focus"
+        )
+        return {
+            "kind": transition_kind,
+            "commands": commands,
+            "expected": {
+                "window_id": int(window_id),
+                "in_scratchpad": False,
+                "floating": expected_floating,
+                "fullscreen_mode": expected_fullscreen_mode,
+                "workspace_name": expected_workspace_name,
+                "workspace_number": expected_workspace_number,
+            },
+        }
+
+    async def _window_matches_transition_target(self, expected: Dict[str, Any]) -> bool:
+        """Verify the focused window converged to the planned visible state."""
+        state = await self._get_window_transition_state(int(expected.get("window_id") or 0))
+        if not bool(state.get("exists", False)):
+            return False
+        if bool(state.get("in_scratchpad", False)) != bool(expected.get("in_scratchpad", False)):
+            return False
+        if bool(state.get("floating", False)) != bool(expected.get("floating", False)):
+            return False
+        return int(state.get("fullscreen_mode", 0) or 0) == int(expected.get("fullscreen_mode", 0) or 0)
+
     async def _is_window_in_regular_state(self, window_id: int) -> bool:
         """Check whether a container is focused as a normal tiled window."""
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
@@ -11754,7 +11946,6 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             runtime_target_variant,
             runtime_connection_key,
         )
-        selector = f"[con_id={int(window_id)}]"
         last_error = ""
         verification: Dict[str, Any] = {
             "success": False,
@@ -11765,20 +11956,35 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         for _ in range(max(int(attempts), 1)):
             try:
-                await self.i3_connection.conn.command(f"{selector} scratchpad show")
-                focus_result = await self.i3_connection.conn.command(f"{selector} focus")
+                transition_state = await self._get_window_transition_state(window_id)
+                if not bool(transition_state.get("exists", False)):
+                    last_error = "window_not_found"
+                    await asyncio.sleep(delay_s)
+                    continue
+                transition = self._build_window_focus_transition(
+                    window_id=window_id,
+                    state=transition_state,
+                )
+                logger.info(
+                    "window.focus transition=%s window=%s current_ws=%s target_ws=%s scratchpad=%s floating=%s fullscreen=%s",
+                    transition.get("kind"),
+                    window_id,
+                    str(transition_state.get("current_workspace") or ""),
+                    str((transition.get("expected") or {}).get("workspace_name") or ""),
+                    bool(transition_state.get("in_scratchpad", False)),
+                    bool((transition.get("expected") or {}).get("floating", False)),
+                    int((transition.get("expected") or {}).get("fullscreen_mode", 0) or 0),
+                )
+                focus_result = await self.i3_connection.conn.command("; ".join(transition.get("commands") or []))
                 if not self._sway_command_succeeded(focus_result):
                     last_error = "focus_failed"
                     await asyncio.sleep(delay_s)
                     continue
-                await self.i3_connection.conn.command(f"{selector} floating disable")
-                await self.i3_connection.conn.command("floating disable")
-                await self.i3_connection.conn.command(f"{selector} fullscreen disable")
-                await self.i3_connection.conn.command("fullscreen disable")
-                await self.i3_connection.conn.command(f"{selector} focus")
                 await self._send_tick_barrier(f"i3pm:focus-window:{window_id}")
                 verification = await self._verify_window_focus(window_id)
-                if bool(verification.get("success", False)) and await self._is_window_in_regular_state(window_id):
+                if bool(verification.get("success", False)) and await self._window_matches_transition_target(
+                    dict(transition.get("expected") or {})
+                ):
                     focus_state_after = await self._focus_state({})
                     self._set_focus_overrides(
                         session_key=str(focus_state_after.get("current_ai_session_key") or "").strip(),
@@ -11799,7 +12005,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     }
                 last_error = str(verification.get("reason") or "window_focus_unverified")
                 if last_error == "ok":
-                    last_error = "window_not_tiled"
+                    last_error = "window_state_mismatch"
             except Exception as e:
                 last_error = str(e)
             await asyncio.sleep(delay_s)

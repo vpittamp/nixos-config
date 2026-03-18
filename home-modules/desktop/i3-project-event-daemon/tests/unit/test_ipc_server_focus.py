@@ -338,9 +338,21 @@ async def test_focus_window_remote_handoff_does_not_require_local_sway(server, m
 async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server, monkeypatch):
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
     server._connection_target_is_current_host = lambda _connection_key: True
+    server._window_is_locally_tracked = AsyncMock(return_value=False)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
-    server._is_window_in_regular_state = AsyncMock(return_value=True)
+    server._get_window_transition_state = AsyncMock(return_value={
+        "exists": True,
+        "current_workspace": "1",
+        "workspace_name": "1",
+        "workspace_number": 1,
+        "in_scratchpad": False,
+        "floating": False,
+        "floating_state": "auto_off",
+        "fullscreen_mode": 0,
+        "saved_state": None,
+    })
+    server._window_matches_transition_target = AsyncMock(return_value=True)
     server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
@@ -379,7 +391,18 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
     server._window_is_locally_tracked = AsyncMock(return_value=True)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
-    server._is_window_in_regular_state = AsyncMock(return_value=True)
+    server._get_window_transition_state = AsyncMock(return_value={
+        "exists": True,
+        "current_workspace": "1",
+        "workspace_name": "2",
+        "workspace_number": 2,
+        "in_scratchpad": False,
+        "floating": False,
+        "floating_state": "auto_off",
+        "fullscreen_mode": 0,
+        "saved_state": None,
+    })
+    server._window_matches_transition_target = AsyncMock(return_value=True)
     server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
@@ -409,6 +432,61 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
         "",
     )
     assert result["focused_window_id_after"] == 175
+
+
+@pytest.mark.asyncio
+async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_fullscreen(server):
+    commands = []
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server._connection_target_is_current_host = lambda _connection_key: True
+    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
+    server._send_tick_barrier = AsyncMock()
+    server._get_window_transition_state = AsyncMock(return_value={
+        "exists": True,
+        "current_workspace": "1",
+        "workspace_name": "__i3_scratch",
+        "workspace_number": 0,
+        "in_scratchpad": True,
+        "floating": True,
+        "floating_state": "user_on",
+        "fullscreen_mode": 0,
+        "saved_state": {
+            "workspace_number": 3,
+            "floating": False,
+            "geometry": None,
+            "fullscreen_mode": 1,
+            "original_scratchpad": False,
+        },
+    })
+    server._window_matches_transition_target = AsyncMock(return_value=True)
+    server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "",
+        "focused_window_id": 44,
+    })
+
+    async def command(cmd):
+        commands.append(cmd)
+        return [{"success": True}]
+
+    server.i3_connection.conn.command = command
+
+    result = await server._focus_window_impl(
+        window_id=44,
+        project_name="vpittamp/nixos-config:main",
+        target_variant="local",
+        connection_key="local@ryzen",
+    )
+
+    assert result["success"] is True
+    assert len(commands) == 1
+    assert "workspace number 3" in commands[0]
+    assert "scratchpad show" in commands[0]
+    assert "move workspace number 3" in commands[0]
+    assert "fullscreen enable" in commands[0]
+    assert "fullscreen disable" not in commands[0]
 
 
 @pytest.mark.asyncio

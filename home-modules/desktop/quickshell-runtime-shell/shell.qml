@@ -430,6 +430,10 @@ ShellRoot {
         return boolOrFalse(session && session.is_current_host);
     }
 
+    function windowIsCurrentTarget(windowData) {
+        return boolOrFalse(windowData && windowData.focused);
+    }
+
     function sessionIsDisplayEligible(session) {
         if (!session || typeof session !== "object") {
             return false;
@@ -442,6 +446,10 @@ ShellRoot {
         }
 
         if (boolOrFalse(session.remote_source_stale)) {
+            return false;
+        }
+
+        if (sessionIsCurrent(session)) {
             return false;
         }
 
@@ -461,6 +469,10 @@ ShellRoot {
         const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
         const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
         if (!terminalAnchor && !hasTmuxIdentity) {
+            return false;
+        }
+
+        if (sessionIsCurrent(session)) {
             return false;
         }
 
@@ -3517,7 +3529,20 @@ ShellRoot {
 
     function panelProjects() {
         const projects = arrayOrEmpty(dashboard.projects);
-        return projects.filter(projectGroup => arrayOrEmpty(projectGroup && projectGroup.windows).length > 0);
+        const visibleProjects = [];
+        for (let i = 0; i < projects.length; i += 1) {
+            const projectGroup = projects[i];
+            const windows = arrayOrEmpty(projectGroup && projectGroup.windows).filter(function(windowData) {
+                return !windowIsCurrentTarget(windowData);
+            });
+            if (!windows.length) {
+                continue;
+            }
+            visibleProjects.push(Object.assign({}, projectGroup, {
+                windows: windows
+            }));
+        }
+        return visibleProjects;
     }
 
     function panelWindowCount() {
