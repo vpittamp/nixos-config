@@ -451,6 +451,100 @@ async def test_cleanup_keeps_native_session_when_pid_exits(monkeypatch):
         assert kept.status_reason == "process_exited_retained"
 
 
+@pytest.mark.asyncio
+async def test_expire_sessions_retains_working_session_when_pid_is_still_running(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:pid:retain-live-process",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path="/home/vpittamp/repos/vpittamp/nixos-config/main",
+        window_id=174,
+        pid=424242,
+        trace_id=None,
+        created_at=now - timedelta(minutes=20),
+        last_event_at=now - timedelta(minutes=10),
+        state_changed_at=now - timedelta(minutes=10),
+        state_seq=1,
+        status_reason="event:codex.api_request",
+    )
+    session.terminal_context.execution_mode = "local"
+
+    async with tracker._lock:
+        tracker._sessions[session.session_id] = session
+
+    monkeypatch.setattr(session_tracker_module.os, "kill", lambda pid, signal: None)
+
+    await tracker._expire_sessions()
+
+    async with tracker._lock:
+        kept = tracker._sessions.get(session.session_id)
+        assert kept is not None
+        assert kept.status_reason == "process_keepalive"
+        assert (datetime.now(timezone.utc) - kept.last_event_at).total_seconds() < 5
+
+
+@pytest.mark.asyncio
+async def test_expire_sessions_retains_working_session_when_tmux_target_is_still_live(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:pid:retain-live-tmux",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="PittampalliOrg/stacks:main",
+        project_path="/home/vpittamp/repos/PittampalliOrg/stacks/main",
+        window_id=18,
+        pid=None,
+        trace_id=None,
+        created_at=now - timedelta(minutes=20),
+        last_event_at=now - timedelta(minutes=10),
+        state_changed_at=now - timedelta(minutes=10),
+        state_seq=1,
+        status_reason="event:codex.api_request",
+    )
+    session.terminal_context.execution_mode = "local"
+    session.terminal_context.connection_key = "local@ryzen"
+    session.terminal_context.context_key = "PittampalliOrg/stacks:main::local::local@ryzen"
+    session.terminal_context.tmux_session = "i3pm-pittampalliorg-stacks-ma-bc1d1663"
+    session.terminal_context.tmux_window = "0:main"
+    session.terminal_context.tmux_pane = "%6"
+    session.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.pty = "/dev/pts/10"
+
+    async with tracker._lock:
+        tracker._sessions[session.session_id] = session
+
+    def _missing_process(pid: int, signal: int) -> None:
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(session_tracker_module.os, "kill", _missing_process)
+    monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
+
+    await tracker._expire_sessions()
+
+    async with tracker._lock:
+        kept = tracker._sessions.get(session.session_id)
+        assert kept is not None
+        assert kept.status_reason == "tmux_keepalive"
+        assert (datetime.now(timezone.utc) - kept.last_event_at).total_seconds() < 5
+
+
 def test_build_session_list_includes_resolved_pid_session_after_restart():
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)

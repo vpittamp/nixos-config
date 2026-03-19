@@ -206,6 +206,7 @@ _STATUS_REASON_DETAILS = {
     "metrics_heartbeat_created": "Heartbeat detected",
     "process_detected": "Process detected",
     "process_keepalive": "Still active",
+    "tmux_keepalive": "Still attached",
     "process_exited_retained": "Exited, retaining result",
     "quiet_period_expired": "Response finished",
     "completed_timeout": "Session idle",
@@ -300,7 +301,7 @@ def _identity_source(session: Session) -> str:
 def _lifecycle_source(session: Session) -> str:
     """Describe the primary lifecycle source backing the current status."""
     status_reason = str(session.status_reason or "").strip().lower()
-    if status_reason in {"metrics_heartbeat_created", "process_keepalive"}:
+    if status_reason in {"metrics_heartbeat_created", "process_keepalive", "tmux_keepalive"}:
         return "heartbeat"
     if session.trace_id or session.native_session_id:
         return "trace"
@@ -341,7 +342,7 @@ def _status_reason_is_heartbeat_like(status_reason: Optional[str]) -> bool:
     lowered = str(status_reason or "").strip().lower()
     if not lowered:
         return False
-    if lowered in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
+    if lowered in {"process_detected", "process_keepalive", "tmux_keepalive", "metrics_heartbeat_created"}:
         return True
     return lowered.startswith("event:codex.sse_event:response.completed")
 
@@ -4217,6 +4218,41 @@ class SessionTracker:
             except Exception as e:
                 logger.error(f"Expiry check error: {e}")
 
+    @staticmethod
+    def _session_pid_is_running(session: Session) -> bool:
+        """Return whether a session still has a live local process."""
+        pid = int(session.pid or 0)
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def _session_has_live_local_tmux_target(self, session: Session) -> bool:
+        """Return whether a local working session still has its tmux surface."""
+        if session.state != SessionState.WORKING:
+            return False
+
+        terminal_context = session.terminal_context or TerminalContext()
+        execution_mode = str(terminal_context.execution_mode or "").strip().lower()
+        if execution_mode and execution_mode != "local":
+            return False
+        if not self._has_full_tmux_identity(terminal_context.model_dump()):
+            return False
+
+        return tmux_target_exists(
+            tmux_session=terminal_context.tmux_session,
+            tmux_window=terminal_context.tmux_window,
+            tmux_pane=terminal_context.tmux_pane,
+            pty=terminal_context.pty,
+            tmux_socket=terminal_context.tmux_socket,
+            tmux_server_key=terminal_context.tmux_server_key,
+        )
+
     async def _expire_sessions(self) -> None:
         """Check for and remove expired sessions."""
         now = datetime.now(timezone.utc)
@@ -4229,6 +4265,27 @@ class SessionTracker:
                 if not session.project and age > UNRESOLVED_SESSION_TTL_SEC:
                     expired.append((session_id, "unresolved_ttl"))
                 elif age > self.session_timeout_sec:
+                    if self._session_pid_is_running(session):
+                        session.last_event_at = now
+                        if session.state == SessionState.WORKING:
+                            session.status_reason = "process_keepalive"
+                        self._mark_dirty_unlocked()
+                        logger.debug(
+                            "Retaining session %s after timeout because pid %s is still running",
+                            session_id,
+                            session.pid,
+                        )
+                        continue
+                    if self._session_has_live_local_tmux_target(session):
+                        session.last_event_at = now
+                        session.status_reason = "tmux_keepalive"
+                        self._mark_dirty_unlocked()
+                        logger.debug(
+                            "Retaining session %s after timeout because tmux pane %s is still live",
+                            session_id,
+                            session.terminal_context.tmux_pane,
+                        )
+                        continue
                     expired.append((session_id, "session_timeout"))
 
             for session_id, reason in expired:
