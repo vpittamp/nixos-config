@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from .models import AITool, SessionState
+from .models import AITool, IdentityConfidence, SessionState
 
 if TYPE_CHECKING:
     from .session_tracker import SessionTracker
@@ -219,23 +219,30 @@ class ProcessMonitor:
                     self._process_sessions[pid] = session_id
                 else:
                     logger.debug(
-                        "Process monitor: ignoring untracked %s pid=%s during anchor-only cutover",
+                        "Process monitor: ignoring untracked %s pid=%d during anchor-only cutover",
                         tool.value,
                         pid,
                     )
 
             else:
-                # Existing process - refresh session context, then keep session alive.
-                refreshed_session_id = await self.tracker._ensure_process_session_for_pid(
-                    tool,
-                    pid,
-                )
-                if refreshed_session_id:
-                    self._process_sessions[pid] = refreshed_session_id
-                    await self._keepalive_session(refreshed_session_id, pid)
-                else:
-                    session_id = self._process_sessions[pid]
-                    await self._keepalive_session(session_id, pid)
+                # Existing process — only refresh context for non-NATIVE sessions.
+                # NATIVE sessions (Claude Code) get context from OTEL events directly.
+                # PID sessions (Codex, cold-start) still need /proc + tmux polling.
+                session_id = self._process_sessions[pid]
+                async with self.tracker._lock:
+                    session = self.tracker._sessions.get(session_id)
+                    is_native = session and session.identity_confidence == IdentityConfidence.NATIVE
+
+                if not is_native:
+                    refreshed_session_id = await self.tracker._ensure_process_session_for_pid(
+                        tool,
+                        pid,
+                    )
+                    if refreshed_session_id:
+                        self._process_sessions[pid] = refreshed_session_id
+                        session_id = refreshed_session_id
+
+                await self._keepalive_session(session_id, pid)
 
         # Find terminated processes
         terminated_pids = set(self._process_sessions.keys()) - set(current_pids.keys())

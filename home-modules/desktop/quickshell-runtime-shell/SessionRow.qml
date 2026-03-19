@@ -65,8 +65,6 @@ Rectangle {
     }
 
     function resetMotionVisuals() {
-        sessionWorkingHalo.opacity = hasMotion ? 0.05 : 0;
-        sessionWorkingHalo.scale = 1;
         sessionToolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
         sessionToolIconWrap.scale = 1;
     }
@@ -112,55 +110,6 @@ Rectangle {
                 : (selected ? colorsObject.bg : rootObject.sessionTint(session))
             border.color: "transparent"
             border.width: 0
-
-            Rectangle {
-                id: sessionWorkingHalo
-                visible: hasMotion
-                anchors.centerIn: parent
-                width: compact ? 24 : 30
-                height: compact ? 24 : 30
-                radius: compact ? 7 : 9
-                color: rootObject.sessionAccentColor(session)
-                border.color: "transparent"
-                border.width: 0
-                opacity: hasMotion ? 0.05 : 0
-                scale: 1
-
-                ParallelAnimation {
-                    running: hasMotion
-                    loops: Animation.Infinite
-
-                    SequentialAnimation {
-                        OpacityAnimator {
-                            target: sessionWorkingHalo
-                            from: 0.03
-                            to: 0.08
-                            duration: 800
-                        }
-                        OpacityAnimator {
-                            target: sessionWorkingHalo
-                            from: 0.08
-                            to: 0.03
-                            duration: 800
-                        }
-                    }
-
-                    SequentialAnimation {
-                        ScaleAnimator {
-                            target: sessionWorkingHalo
-                            from: 0.96
-                            to: 1.05
-                            duration: 800
-                        }
-                        ScaleAnimator {
-                            target: sessionWorkingHalo
-                            from: 1.05
-                            to: 0.96
-                            duration: 800
-                        }
-                    }
-                }
-            }
 
             Item {
                 id: sessionToolIconWrap

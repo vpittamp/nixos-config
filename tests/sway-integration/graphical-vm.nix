@@ -128,12 +128,7 @@ let
           Unit.ConditionPathExists = lib.mkForce "/nonexistent";  # Disable service
         };
 
-        # Override eww service to reduce log spam
-        systemd.user.services.eww-monitoring-panel = {
-          Service = {
-            StandardError = lib.mkForce "null";
-          };
-        };
+
       };
     };
 

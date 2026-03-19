@@ -42,7 +42,6 @@ from .models import (
     TOOL_PROVIDER,
     UserActionReason,
 )
-from .pricing import calculate_cost
 from .sway_helper import (
     get_focused_window_info,
     get_all_window_ids,
@@ -66,6 +65,21 @@ _DISCOVERED_TMUX_PROJECT_HINT_CACHE: dict[str, object] = {
     "size": None,
     "mapping": {},
 }
+
+_tmux_panes_cache: tuple[float, list[dict]] = (0.0, [])
+_TMUX_PANES_CACHE_TTL = 4.0
+
+
+def _cached_list_tmux_panes_sync() -> list[dict]:
+    """Cached wrapper around list_tmux_panes_sync() to avoid spawning tmux every broadcast."""
+    global _tmux_panes_cache
+    now = time.monotonic()
+    if now - _tmux_panes_cache[0] < _TMUX_PANES_CACHE_TTL:
+        return _tmux_panes_cache[1]
+    result = list_tmux_panes_sync()
+    _tmux_panes_cache = (now, result)
+    return result
+
 
 _BOOTSTRAP_RESTOREABLE_STATES = {
     SessionState.WORKING,
@@ -1858,7 +1872,7 @@ class SessionTracker:
     ) -> tuple[Optional[int], Optional[str], dict]:
         """Resolve PID -> daemon-owned terminal anchor context with short TTL cache."""
         now = datetime.now(timezone.utc).timestamp()
-        if len(self._pid_context_cache) > 512:
+        if len(self._pid_context_cache) > 64:
             self._pid_context_cache = {
                 cache_pid: cache_entry
                 for cache_pid, cache_entry in self._pid_context_cache.items()
@@ -2797,7 +2811,36 @@ class SessionTracker:
         resolved_window_id: Optional[int] = None
         resolved_project: Optional[str] = None
         resolved_terminal_context: dict = {}
-        if client_pid is not None:
+        # Skip expensive /proc + daemon resolution for established NATIVE sessions
+        # that already have window context.  The session won't move terminals mid-run.
+        _skip_resolve = False
+        if client_pid is not None and native_session_id:
+            _sid_hint = self._session_pids.get(native_group_id) or self._session_pids.get(
+                f"{event.tool}:{native_session_id}"
+            )
+            if _sid_hint is not None:
+                _s = self._sessions.get(
+                    f"{event.tool}:{native_session_id}:{_sid_hint}"
+                ) or self._sessions.get(
+                    f"{event.tool}:{native_session_id}"
+                )
+                if not _s:
+                    # Try looking up by the sid hint itself as session_id
+                    for _candidate_sid, _candidate in self._sessions.items():
+                        if (
+                            _candidate.native_session_id == native_session_id
+                            and _candidate.identity_confidence == IdentityConfidence.NATIVE
+                        ):
+                            _s = _candidate
+                            break
+                if (
+                    _s
+                    and _s.identity_confidence == IdentityConfidence.NATIVE
+                    and _s.window_id is not None
+                    and _s.project is not None
+                ):
+                    _skip_resolve = True
+        if client_pid is not None and not _skip_resolve:
             (
                 resolved_window_id,
                 resolved_project,
@@ -3166,12 +3209,16 @@ class SessionTracker:
                 if value:
                     setattr(session.terminal_context, key, value)
 
-            session.terminal_context = TerminalContext(
-                **self._normalize_terminal_binding_context(
-                    session.terminal_context.model_dump(),
-                    window_id=session.window_id,
+            # Only rebuild TerminalContext when terminal fields actually changed.
+            # For established NATIVE sessions with stable context, this avoids
+            # model_dump() + dict manipulation + Pydantic construction per event.
+            if resolved_context_keys or not session.native_session_id:
+                session.terminal_context = TerminalContext(
+                    **self._normalize_terminal_binding_context(
+                        session.terminal_context.model_dump(),
+                        window_id=session.window_id,
+                    )
                 )
-            )
 
             session.last_event_at = now
             session.last_event_name = event.event_name
@@ -3508,138 +3555,17 @@ class SessionTracker:
         return current
 
     def _update_metrics(self, session: Session, event: TelemetryEvent) -> None:
-        """Update session token metrics from event attributes.
-
-        Args:
-            session: Session to update
-            event: Event with potential token metrics
-        """
+        """Update session error metrics from event attributes."""
         attrs = event.attributes
 
-        # Extract model name if available (for cost calculation)
-        model = self._extract_model(attrs)
-        if model and not session.model:
-            session.model = model
-
-        # Handle Codex token events
-        if event.event_name == EventNames.CODEX_SSE_EVENT:
-            # Codex emits per-request token counts on `response.completed`.
-            # Prefer the `*_token_count` fields (Codex), but accept generic fallbacks.
-            try:
-                kind = attrs.get("event.kind")
-                if kind and str(kind) != "response.completed":
-                    return
-
-                input_tokens = int(
-                    attrs.get("input_token_count")
-                    or attrs.get("gen_ai.usage.input_tokens")
-                    or attrs.get("input_tokens")
-                    or 0
-                )
-                output_tokens = int(
-                    attrs.get("output_token_count")
-                    or attrs.get("gen_ai.usage.output_tokens")
-                    or attrs.get("output_tokens")
-                    or 0
-                )
-                cached_tokens = int(
-                    attrs.get("cached_token_count")
-                    or attrs.get("cache_tokens")
-                    or 0
-                )
-
-                session.input_tokens += input_tokens
-                session.output_tokens += output_tokens
-                session.cache_tokens += cached_tokens
-
-                # Calculate cost for Codex (not included in telemetry)
-                if input_tokens > 0 or output_tokens > 0:
-                    cost, is_estimated = calculate_cost(
-                        session.provider,
-                        session.model,
-                        input_tokens,
-                        output_tokens,
-                    )
-                    session.cost_usd += cost
-                    session.cost_estimated = is_estimated
-            except Exception:
-                pass
-
-        # Handle Gemini/GenAI standard token events
-        elif event.event_name in (EventNames.GEMINI_TOKEN_USAGE, EventNames.GENAI_TOKEN_USAGE):
-            # GenAI semantic conventions use gen_ai.usage.*
-            # but CLI might use flattened attributes
-            input_keys = ("gen_ai.usage.input_tokens", "gen_ai.client.token.usage.input", "input_tokens", "prompt_tokens")
-            output_keys = ("gen_ai.usage.output_tokens", "gen_ai.client.token.usage.output", "output_tokens", "completion_tokens")
-
-            input_tokens = 0
-            output_tokens = 0
-
-            for key in input_keys:
-                if key in attrs:
-                    input_tokens = int(attrs[key])
-                    session.input_tokens += input_tokens
-                    break
-
-            for key in output_keys:
-                if key in attrs:
-                    output_tokens = int(attrs[key])
-                    session.output_tokens += output_tokens
-                    break
-
-            # Calculate cost for Gemini (not included in telemetry)
-            if input_tokens > 0 or output_tokens > 0:
-                cost, is_estimated = calculate_cost(
-                    session.provider,
-                    session.model,
-                    input_tokens,
-                    output_tokens,
-                )
-                session.cost_usd += cost
-                session.cost_estimated = is_estimated
-
-        # Gemini CLI per-request token usage (api_response/api_error)
-        elif event.event_name in {
+        # Gemini API response/error events may carry error info
+        if event.event_name in {
             EventNames.GEMINI_API_RESPONSE,
             EventNames.GEMINI_API_ERROR,
             EventNames.GEMINI_API_RESPONSE_DOT,
             EventNames.GEMINI_API_ERROR_DOT,
         }:
             try:
-                input_tokens = int(
-                    attrs.get("input_token_count")
-                    or attrs.get("gen_ai.usage.input_tokens")
-                    or attrs.get("prompt_tokens")
-                    or 0
-                )
-                output_tokens = int(
-                    attrs.get("output_token_count")
-                    or attrs.get("gen_ai.usage.output_tokens")
-                    or attrs.get("completion_tokens")
-                    or 0
-                )
-                cached_tokens = int(
-                    attrs.get("cached_content_token_count")
-                    or attrs.get("cache_tokens")
-                    or 0
-                )
-
-                session.input_tokens += input_tokens
-                session.output_tokens += output_tokens
-                session.cache_tokens += cached_tokens
-
-                # Calculate cost for Gemini API events
-                if input_tokens > 0 or output_tokens > 0:
-                    cost, is_estimated = calculate_cost(
-                        session.provider,
-                        session.model,
-                        input_tokens,
-                        output_tokens,
-                    )
-                    session.cost_usd += cost
-                    session.cost_estimated = is_estimated
-
-                # Check for errors
                 error_type = self._extract_error(attrs)
                 if error_type:
                     session.error_count += 1
@@ -3647,60 +3573,14 @@ class SessionTracker:
             except Exception:
                 pass
 
-        # Handle Claude Code per-request token usage (sum across the session)
-        elif event.event_name == EventNames.CLAUDE_API_REQUEST:
-            try:
-                input_tokens = int(attrs.get("input_tokens") or 0)
-                output_tokens = int(attrs.get("output_tokens") or 0)
-                session.input_tokens += input_tokens
-                session.output_tokens += output_tokens
-                cache_read = int(attrs.get("cache_read_tokens") or 0)
-                cache_create = int(attrs.get("cache_creation_tokens") or 0)
-                session.cache_tokens += cache_read + cache_create
-                # Claude Code interceptor already calculates cost, but if not present, calculate
-                if "cost_usd" not in attrs and (input_tokens > 0 or output_tokens > 0):
-                    cost, is_estimated = calculate_cost(
-                        session.provider,
-                        session.model,
-                        input_tokens,
-                        output_tokens,
-                    )
-                    session.cost_usd += cost
-                    session.cost_estimated = is_estimated
-            except Exception:
-                # Best-effort only; don't let parsing break session tracking
-                pass
-
-        # Handle Claude Code LLM spans (from interceptor) with cost and error metrics
+        # Claude LLM call spans may carry error info
         elif event.event_name == EventNames.CLAUDE_LLM_CALL:
             try:
-                # These attributes come from the interceptor spans (gen_ai.usage.*)
-                input_tokens = attrs.get("gen_ai.usage.input_tokens") or attrs.get("input_tokens")
-                output_tokens = attrs.get("gen_ai.usage.output_tokens") or attrs.get("output_tokens")
-                cost_usd = attrs.get("gen_ai.usage.cost_usd") or attrs.get("cost_usd")
                 error_type = attrs.get("error.type")
-
-                if input_tokens:
-                    session.input_tokens += int(input_tokens)
-                if output_tokens:
-                    session.output_tokens += int(output_tokens)
-                if cost_usd:
-                    session.cost_usd += float(cost_usd)
-                elif input_tokens or output_tokens:
-                    # Calculate cost if not provided by interceptor
-                    cost, is_estimated = calculate_cost(
-                        session.provider,
-                        session.model,
-                        int(input_tokens or 0),
-                        int(output_tokens or 0),
-                    )
-                    session.cost_usd += cost
-                    session.cost_estimated = is_estimated
                 if error_type:
                     session.error_count += 1
                     session.last_error_type = str(error_type)
             except Exception:
-                # Best-effort only
                 pass
 
     async def _handle_tool_lifecycle(self, session: Session, event: TelemetryEvent) -> None:
@@ -3795,27 +3675,6 @@ class SessionTracker:
                 session.is_streaming = False
                 session.streaming_tokens = 0
                 session.first_token_time = None
-
-    def _extract_model(self, attrs: dict) -> Optional[str]:
-        """Extract model name from event attributes.
-
-        Args:
-            attrs: Event attributes dict
-
-        Returns:
-            Model name if found, None otherwise
-        """
-        # Try various model attribute names
-        model_keys = (
-            "gen_ai.request.model",
-            "gen_ai.model",
-            "model",
-            "llm.model_name",
-        )
-        for key in model_keys:
-            if key in attrs:
-                return str(attrs[key])
-        return None
 
     def _extract_error(self, attrs: dict) -> Optional[str]:
         """Extract and classify error type from event attributes.
@@ -4052,33 +3911,6 @@ class SessionTracker:
 
         await send_completion_notification(session)
 
-    def _get_metrics_dict(self, session: Session) -> dict:
-        """Get metrics as dictionary for JSON output.
-
-        Args:
-            session: Session with metrics
-
-        Returns:
-            Dictionary of token, cost, error, and streaming metrics
-        """
-        metrics = {
-            "input_tokens": session.input_tokens,
-            "output_tokens": session.output_tokens,
-            "cache_tokens": session.cache_tokens,
-            "cost_usd": round(session.cost_usd, 6),  # Round to micro-dollars
-        }
-        # Only include error metrics if there are errors
-        if session.error_count > 0:
-            metrics["error_count"] = session.error_count
-            if session.last_error_type:
-                metrics["last_error_type"] = session.last_error_type
-
-        # Feature 135: Include pending_tools and streaming state for visual indicators
-        metrics["pending_tools"] = session.pending_tools
-        metrics["is_streaming"] = session.is_streaming
-
-        return metrics
-
     async def _broadcast_loop(self) -> None:
         """Debounced session list broadcaster."""
         while self._running:
@@ -4135,7 +3967,7 @@ class SessionTracker:
         diagnostics = []
         fingerprint_source = []
         snapshot_now = datetime.now(timezone.utc)
-        live_tmux_panes = list_tmux_panes_sync()
+        live_tmux_panes = _cached_list_tmux_panes_sync()
         live_tmux_by_server_pane = {
             (
                 str(pane.get("tmux_server_key") or "").strip(),
@@ -4168,7 +4000,7 @@ class SessionTracker:
             if live_tmux_entry is None and pane_tty:
                 live_tmux_entry = live_tmux_by_pty.get(pane_tty)
             if isinstance(live_tmux_entry, dict):
-                terminal_context = terminal_context.model_copy(deep=True)
+                terminal_context = terminal_context.model_copy()
                 terminal_context.tmux_session = str(live_tmux_entry.get("tmux_session") or "").strip() or terminal_context.tmux_session
                 terminal_context.tmux_window = str(live_tmux_entry.get("tmux_window") or "").strip() or terminal_context.tmux_window
                 terminal_context.tmux_pane = str(live_tmux_entry.get("tmux_pane") or "").strip() or terminal_context.tmux_pane
@@ -4204,7 +4036,7 @@ class SessionTracker:
                     tmux_server_key=terminal_context.tmux_server_key,
                 )
             ):
-                terminal_context = terminal_context.model_copy(deep=True)
+                terminal_context = terminal_context.model_copy()
                 terminal_context.tmux_session = None
                 terminal_context.tmux_window = None
                 terminal_context.tmux_pane = None

@@ -170,54 +170,6 @@ class TerminalContext(BaseModel):
     )
 
 
-# Provider pricing tables (USD per 1M tokens)
-# Source: research.md from feature 125-tracing-parity-codex
-PROVIDER_PRICING: dict[str, dict[str, tuple[float, float]]] = {
-    # Anthropic models (input, output)
-    Provider.ANTHROPIC: {
-        "claude-opus-4-5": (15.00, 75.00),
-        "claude-opus-4-5-20251101": (15.00, 75.00),
-        "claude-sonnet-4": (3.00, 15.00),
-        "claude-sonnet-4-20250514": (3.00, 15.00),
-        "claude-3-5-haiku": (0.80, 4.00),
-        "claude-3-5-haiku-20241022": (0.80, 4.00),
-        "claude-3-5-sonnet": (3.00, 15.00),
-        "claude-3-5-sonnet-20241022": (3.00, 15.00),
-        # Older models
-        "claude-3-opus": (15.00, 75.00),
-        "claude-3-sonnet": (3.00, 15.00),
-        "claude-3-haiku": (0.25, 1.25),
-    },
-    # OpenAI models (input, output)
-    Provider.OPENAI: {
-        "gpt-4o": (2.50, 10.00),
-        "gpt-4o-2024-11-20": (2.50, 10.00),
-        "gpt-4o-mini": (0.15, 0.60),
-        "gpt-4o-mini-2024-07-18": (0.15, 0.60),
-        "gpt-5-codex": (2.50, 10.00),  # Assume same as gpt-4o for now
-        "o1": (15.00, 60.00),
-        "o1-preview": (15.00, 60.00),
-        "o1-mini": (3.00, 12.00),
-        "o3-mini": (1.10, 4.40),
-    },
-    # Google models (input, output)
-    Provider.GOOGLE: {
-        "gemini-2.0-flash": (0.075, 0.30),
-        "gemini-2.0-flash-exp": (0.075, 0.30),
-        "gemini-2.5-flash": (0.075, 0.30),
-        "gemini-2.5-flash-lite": (0.05, 0.20),
-        "gemini-2.5-pro": (1.25, 5.00),
-        "gemini-1.5-pro": (1.25, 5.00),
-        "gemini-1.5-flash": (0.075, 0.30),
-        "gemini-3-flash-preview": (0.10, 0.40),  # Estimated
-        "gemini-3-pro-preview": (2.50, 10.00),  # Estimated
-        "gemini-3-pro-preview-11-2025": (2.50, 10.00),  # Estimated
-    },
-}
-
-# Default rate for unrecognized models (USD per 1M tokens)
-DEFAULT_PRICING = (5.00, 15.00)  # Conservative estimate
-
 # Tool to Provider mapping
 TOOL_PROVIDER: dict[AITool, Provider] = {
     AITool.CLAUDE_CODE: Provider.ANTHROPIC,
@@ -279,12 +231,6 @@ class Session(BaseModel):
     trace_id: Optional[str] = Field(
         default=None, description="OTLP trace ID for Langfuse link"
     )
-    model: Optional[str] = Field(
-        default=None, description="LLM model name for cost calculation"
-    )
-    cost_estimated: bool = Field(
-        default=False, description="True if cost uses default rate (model not in pricing table)"
-    )
     focusable: bool = Field(
         default=True, description="True when the session has deterministic focus/navigation context"
     )
@@ -301,11 +247,7 @@ class Session(BaseModel):
     )
     state_changed_at: datetime = Field(description="When state last transitioned")
 
-    # Metrics (optional, for P3 user story)
-    input_tokens: int = Field(default=0, description="Cumulative input tokens")
-    output_tokens: int = Field(default=0, description="Cumulative output tokens")
-    cache_tokens: int = Field(default=0, description="Cumulative cache tokens")
-    cost_usd: float = Field(default=0.0, description="Cumulative cost in USD")
+    # Error tracking
     error_count: int = Field(default=0, description="Cumulative error count")
     last_error_type: Optional[str] = Field(default=None, description="Last error type if any")
 
@@ -406,9 +348,6 @@ class SessionUpdate(BaseModel):
     state: str = Field(description="Current session state")
     project: Optional[str] = Field(default=None, description="Project context if available")
     timestamp: int = Field(description="Unix timestamp in seconds")
-    metrics: Optional[dict] = Field(
-        default=None, description="Token counts if available"
-    )
 
 
 class SessionListItem(BaseModel):

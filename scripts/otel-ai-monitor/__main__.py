@@ -182,6 +182,10 @@ def setup_logging(verbose: bool) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stderr,
     )
+    # The receiver processes hundreds of events/sec; its DEBUG output creates
+    # massive string allocations (full resource-attr dicts) that drive memory
+    # growth.  Keep it at INFO even in verbose mode.
+    logging.getLogger("otel_ai_monitor.receiver").setLevel(logging.INFO)
 
 
 async def main_async(args: argparse.Namespace) -> int:

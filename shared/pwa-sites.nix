@@ -827,23 +827,58 @@ let
       routing_domains = [ "crawl4ai-ryzen.tail286401.ts.net" ];
     }
 
-    # AI Chatbot (Ryzen K8s via Tailscale)
+    # AI Chatbot Ryzen
     {
-      name = "AI Chatbot";
+      name = "AI Chatbot Ryzen";
       url = "https://ai-chatbot-ryzen.tail286401.ts.net";
       domain = "ai-chatbot-ryzen.tail286401.ts.net";
-      icon = iconPath "nextjs.svg";
-      description = "Vercel AI SDK Chatbot - Next.js AI chat template";
+      icon = iconPath "ai-chatbot-ryzen.png";
+      description = "Vercel AI SDK Chatbot - Ryzen environment";
       categories = "Development;Network;";
-      keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;";
+      keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;ryzen;";
       scope = "https://ai-chatbot-ryzen.tail286401.ts.net/";
       ulid = "6EBKR8NA2A8TMS02SJ7NSR77RG";  # Generated 2026-01-12
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 103;
       preferred_monitor_role = "secondary";
-      # Feature 113: URL routing domains
       routing_domains = [ "ai-chatbot-ryzen.tail286401.ts.net" ];
+    }
+
+    # AI Chatbot Dev
+    {
+      name = "AI Chatbot Dev";
+      url = "https://ai-chatbot-dev.tail286401.ts.net";
+      domain = "ai-chatbot-dev.tail286401.ts.net";
+      icon = iconPath "ai-chatbot-dev.png";
+      description = "Vercel AI SDK Chatbot - Dev environment";
+      categories = "Development;Network;";
+      keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;dev;";
+      scope = "https://ai-chatbot-dev.tail286401.ts.net/";
+      ulid = "2EJQSG113M3NJEAV4M0YXZKT9J";  # Generated 2026-03-18
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 159;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "ai-chatbot-dev.tail286401.ts.net" ];
+    }
+
+    # AI Chatbot Staging
+    {
+      name = "AI Chatbot Staging";
+      url = "https://ai-chatbot-staging.tail286401.ts.net";
+      domain = "ai-chatbot-staging.tail286401.ts.net";
+      icon = iconPath "ai-chatbot-staging.png";
+      description = "Vercel AI SDK Chatbot - Staging environment";
+      categories = "Development;Network;";
+      keywords = "ai;chatbot;vercel;nextjs;llm;chat;kubernetes;staging;";
+      scope = "https://ai-chatbot-staging.tail286401.ts.net/";
+      ulid = "447YB4JM1ZX09QPAJ1RD3JDH01";  # Generated 2026-03-18
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 160;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "ai-chatbot-staging.tail286401.ts.net" ];
     }
 
     # Open SWE (Ryzen K8s via Tailscale)

@@ -572,13 +572,8 @@ class ScratchpadManager:
             mark: Window mark to identify the scratchpad terminal
         """
         try:
-            # Read dock mode state file
-            state_file = Path.home() / ".local/state/eww-monitoring-panel/dock-mode"
+            # Quickshell manages dock state in-memory; default to overlay positioning
             is_docked = False
-
-            if state_file.exists():
-                mode = state_file.read_text().strip()
-                is_docked = (mode == "docked")
 
             # Get workspace rect (accounts for all reserved space: top bar, docked panels, etc.)
             workspaces = await self.sway.get_workspaces()

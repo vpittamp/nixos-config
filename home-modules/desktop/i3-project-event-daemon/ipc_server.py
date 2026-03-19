@@ -11538,18 +11538,23 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         commands: List[str] = []
         if in_scratchpad:
+            # Use deterministic 'move to workspace' instead of toggling 'scratchpad show'
+            # to avoid race with the window filter which may have already shown the window.
             if expected_workspace_number > 0:
                 commands.append(f"workspace number {expected_workspace_number}")
-            commands.extend(CommandBatch.from_window_state(
-                window_id=int(window_id),
-                workspace_num=0,
-                is_floating=expected_floating,
-                geometry=expected_geometry if expected_floating else None,
-                fullscreen_mode=expected_fullscreen_mode,
-            ).to_batched_command().split("; "))
-            if expected_workspace_number > 0:
                 commands.append(f"{selector} move workspace number {expected_workspace_number}")
-            if not expected_floating:
+            else:
+                commands.append(f"{selector} move workspace current")
+            if expected_floating:
+                commands.append(f"{selector} floating enable")
+                if expected_geometry:
+                    commands.append(
+                        f"{selector} resize set {expected_geometry['width']} px {expected_geometry['height']} px"
+                    )
+                    commands.append(
+                        f"{selector} move position {expected_geometry['x']} px {expected_geometry['y']} px"
+                    )
+            else:
                 commands.append(f"{selector} floating disable")
             if expected_fullscreen_mode > 0:
                 commands.append(f"{selector} fullscreen enable")

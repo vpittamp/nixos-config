@@ -28,10 +28,11 @@ declare -A ICON_MAP=(
   [phoenix]="phoenix-azire.svg"
   [redisinsight]="redis-insights.svg"
   [workflow-builder]="ai-workflow-builder.svg"
+  [ai-chatbot]="ai-chatbot.svg"
 )
 
 # Services that exist on all 4 environments (including ryzen)
-ALL_ENV_SERVICES=(dapr grafana keycloak langfuse mcp-inspector-client mcp-inspector-proxy phoenix redisinsight workflow-builder)
+ALL_ENV_SERVICES=(ai-chatbot dapr grafana keycloak langfuse mcp-inspector-client mcp-inspector-proxy phoenix redisinsight workflow-builder)
 
 # Services that only exist on dev/staging/prod (no ryzen deployment)
 NO_RYZEN_SERVICES=(loki mimir)

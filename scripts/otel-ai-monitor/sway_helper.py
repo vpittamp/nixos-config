@@ -515,10 +515,10 @@ def get_process_env_values(
             except ValueError:
                 continue
         if result:
-            logger.debug(f"PID {pid} env values: {list(result.keys())}")
+            logger.debug("PID %d env: %d keys", pid, len(result))
         return result
     except (PermissionError, FileNotFoundError, ProcessLookupError) as e:
-        logger.debug(f"Cannot read PID {pid} environ: {e}")
+        logger.debug("Cannot read PID %d environ: %s", pid, e)
         return {}
 
 

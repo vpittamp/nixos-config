@@ -563,6 +563,17 @@ PanelWindow {
                                             elide: Text.ElideRight
                                         }
 
+                                        Image {
+                                            visible: root.stringOrEmpty(group.execution_mode).toLowerCase() === "ssh"
+                                            source: "file://" + shellConfig.tailscaleIcon
+                                            sourceSize.width: 14
+                                            sourceSize.height: 14
+                                            Layout.preferredWidth: 14
+                                            Layout.preferredHeight: 14
+                                            mipmap: true
+                                            opacity: 0.9
+                                        }
+
                                         Text {
                                             visible: !sessionGroupCard.expanded && root.sessionGroupMetaLabel(group).length > 0
                                             text: root.sessionGroupMetaLabel(group)
@@ -634,25 +645,6 @@ PanelWindow {
                                                         font.weight: Font.DemiBold
                                                         elide: Text.ElideRight
                                                         width: Math.max(0, parent.width - 12)
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    visible: root.stringOrEmpty(projectGroup.execution_mode).toLowerCase() === "ssh"
-                                                    height: 18
-                                                    radius: 6
-                                                    color: colors.tealBg
-                                                    border.color: "transparent"
-                                                    border.width: 0
-                                                    Layout.preferredWidth: sessionProjectModeText.implicitWidth + 10
-
-                                                    Text {
-                                                        id: sessionProjectModeText
-                                                        anchors.centerIn: parent
-                                                        text: "SSH"
-                                                        color: colors.teal
-                                                        font.pixelSize: 8
-                                                        font.weight: Font.DemiBold
                                                     }
                                                 }
 

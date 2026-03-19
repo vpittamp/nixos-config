@@ -589,8 +589,6 @@ PanelWindow {
                                         if (!sessionEntry) {
                                             return;
                                         }
-                                        sessionWorkingHalo.opacity = hasMotion ? 0.05 : 0;
-                                        sessionWorkingHalo.scale = 1;
                                         sessionToolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
                                         sessionToolIconWrap.scale = 1;
                                     }
@@ -614,6 +612,7 @@ PanelWindow {
                                         selected: parent.selected
                                         hovered: entryMouse.containsMouse
                                         interactive: false
+                                        showHostToken: false
                                     }
 
                                     Rectangle {
@@ -642,55 +641,6 @@ PanelWindow {
                                             color: sessionEntry ? (selected ? colors.bg : root.sessionTint(entry)) : (selected ? colors.bg : colors.panelAlt)
                                             border.color: (sessionEntry || windowEntry) ? (selected ? colors.blueMuted : "transparent") : (selected ? colors.blueMuted : colors.lineSoft)
                                             border.width: 1
-
-                                            Rectangle {
-                                                id: sessionWorkingHalo
-                                                visible: sessionEntry && hasMotion
-                                                anchors.centerIn: parent
-                                                width: 30
-                                                height: 30
-                                                radius: 9
-                                                color: root.sessionAccentColor(entry)
-                                                border.color: "transparent"
-                                                border.width: 0
-                                                opacity: hasMotion ? 0.05 : 0
-                                                scale: 1
-
-                                                ParallelAnimation {
-                                                    running: sessionEntry && hasMotion
-                                                    loops: Animation.Infinite
-
-                                                    SequentialAnimation {
-                                                        OpacityAnimator {
-                                                            target: sessionWorkingHalo
-                                                            from: 0.03
-                                                            to: 0.08
-                                                            duration: 800
-                                                        }
-                                                        OpacityAnimator {
-                                                            target: sessionWorkingHalo
-                                                            from: 0.08
-                                                            to: 0.03
-                                                            duration: 800
-                                                        }
-                                                    }
-
-                                                    SequentialAnimation {
-                                                        ScaleAnimator {
-                                                            target: sessionWorkingHalo
-                                                            from: 0.96
-                                                            to: 1.05
-                                                            duration: 800
-                                                        }
-                                                        ScaleAnimator {
-                                                            target: sessionWorkingHalo
-                                                            from: 1.05
-                                                            to: 0.96
-                                                            duration: 800
-                                                        }
-                                                    }
-                                                }
-                                            }
 
                                             Image {
                                                 visible: clipboardImageEntry && clipboardThumbnailSource !== ""
@@ -914,60 +864,6 @@ PanelWindow {
                                                 color: selected ? colors.blue : colors.textDim
                                                 font.pixelSize: 8
                                                 font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: (sessionEntry || windowEntry) && hostTokenData && root.stringOrEmpty(hostTokenData.label).length > 0
-                                            height: 20
-                                            radius: 6
-                                            color: hostTokenData ? hostTokenData.background : colors.panelAlt
-                                            border.color: hostTokenData ? hostTokenData.border : colors.lineSoft
-                                            border.width: 1
-                                            Layout.preferredWidth: launcherHostTokenRow.implicitWidth + 16
-                                            Layout.maximumWidth: 132
-
-                                            RowLayout {
-                                                id: launcherHostTokenRow
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 6
-                                                anchors.rightMargin: 8
-                                                spacing: 5
-
-                                                Rectangle {
-                                                    width: 12
-                                                    height: 12
-                                                    radius: 4
-                                                    color: hostTokenData ? hostTokenData.border : colors.lineSoft
-                                                    border.color: "transparent"
-                                                    border.width: 0
-
-                                                    IconImage {
-                                                        visible: hostTokenData && root.stringOrEmpty(hostTokenData.icon).length > 0
-                                                        anchors.centerIn: parent
-                                                        implicitSize: 10
-                                                        source: hostTokenData ? hostTokenData.icon : ""
-                                                        mipmap: true
-                                                    }
-
-                                                    Text {
-                                                        visible: !hostTokenData || root.stringOrEmpty(hostTokenData.icon).length === 0
-                                                        anchors.centerIn: parent
-                                                        text: hostTokenData ? root.stringOrEmpty(hostTokenData.monogram) : ""
-                                                        color: colors.bg
-                                                        font.pixelSize: 7
-                                                        font.weight: Font.Bold
-                                                    }
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: hostTokenData ? root.stringOrEmpty(hostTokenData.label) : ""
-                                                    color: hostTokenData ? hostTokenData.foreground : colors.textDim
-                                                    font.pixelSize: 8
-                                                    font.weight: Font.DemiBold
-                                                    elide: Text.ElideRight
-                                                }
                                             }
                                         }
 

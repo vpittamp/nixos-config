@@ -458,12 +458,13 @@ ShellRoot {
             return false;
         }
 
-        const phase = sessionPhase(session);
-        if (phase === "working" || phase === "needs_attention" || phase === "done") {
+        // Live processes are always eligible regardless of phase
+        if (boolOrFalse(session.process_running)) {
             return true;
         }
 
-        return boolOrFalse(session.process_running);
+        const phase = sessionPhase(session);
+        return phase === "working" || phase === "needs_attention" || phase === "done" || phase === "quiet_alive" || phase === "idle";
     }
 
     function sessionIsPanelDisplayEligible(session) {
@@ -477,12 +478,13 @@ ShellRoot {
             return false;
         }
 
-        const phase = sessionPhase(session);
-        if (phase === "working" || phase === "needs_attention" || phase === "done") {
+        // Live processes are always eligible regardless of phase
+        if (boolOrFalse(session.process_running)) {
             return true;
         }
 
-        return boolOrFalse(session.process_running);
+        const phase = sessionPhase(session);
+        return phase === "working" || phase === "needs_attention" || phase === "done" || phase === "quiet_alive" || phase === "idle";
     }
 
     function stableSessionCompare(left, right) {
@@ -4794,7 +4796,7 @@ ShellRoot {
         if (expandedSessionGroups[key] !== undefined) {
             return !!expandedSessionGroups[key];
         }
-        return boolOrFalse(group && group.is_current_host);
+        return true;
     }
 
     function toggleSessionGroup(group) {
