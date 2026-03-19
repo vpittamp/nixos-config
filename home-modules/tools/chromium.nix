@@ -1,8 +1,6 @@
 { config, pkgs, lib, osConfig ? null, ... }:
 
 let
-  # Use Nix package reference for 1Password browser support
-  onePasswordBrowserSupport = "/run/wrappers/bin/1Password-BrowserSupport";
   hostName =
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName

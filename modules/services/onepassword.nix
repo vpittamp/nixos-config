@@ -13,6 +13,19 @@ let
 
   chromeExtensionId = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
   chromeExtensionOrigin = "chrome-extension://${chromeExtensionId}/";
+  browserSupportHostLauncher = pkgs.writeShellScriptBin "1password-browser-support-host" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    cmd=("${pkgs._1password-gui}/share/1password/1Password-BrowserSupport")
+    for arg in "$@"; do
+      cmd+=("$arg")
+    done
+
+    printf -v quoted '%q ' "''${cmd[@]}"
+    exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
+  '';
+  browserSupportHostPath = "/run/current-system/sw/bin/1password-browser-support-host";
   chromePolicyJson = builtins.toJSON {
     NativeMessagingAllowlist = [
       "com.1password.1password"
@@ -37,7 +50,7 @@ let
       inherit name description;
       type = "stdio";
       allowed_origins = [ chromeExtensionOrigin ];
-      path = "/run/wrappers/bin/1Password-BrowserSupport";
+      path = browserSupportHostPath;
     };
     mode = "0644";
   };
@@ -153,6 +166,7 @@ in
         _1password-cli
       ] ++ optionals cfg.gui.enable [
         _1password-gui
+        browserSupportHostLauncher
       ];
 
       # Enable 1Password system integration
@@ -236,7 +250,7 @@ in
             allowed_origins = [
               chromeExtensionOrigin
             ];
-            path = "/run/wrappers/bin/1Password-BrowserSupport";
+            path = browserSupportHostPath;
           };
           mode = "0644";
         };
@@ -249,7 +263,7 @@ in
             allowed_origins = [
               chromeExtensionOrigin
             ];
-            path = "/run/wrappers/bin/1Password-BrowserSupport";
+            path = browserSupportHostPath;
           };
           mode = "0644";
         };

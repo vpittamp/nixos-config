@@ -88,11 +88,15 @@
       # --silent: Start minimized to system tray (persists in tray)
       # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
       # --ozone-platform-hint=auto: Auto-detect X11/Wayland
-      # Launch as the normal user session. The upstream NixOS module already
-      # provides setgid wrappers for `op` and `1Password-BrowserSupport`;
-      # forcing the desktop app itself to run under a different primary group
-      # breaks peer-credential checks for browser/CLI lock-state sharing.
-      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
+      # 1Password validates SO_PEERCRED on its internal browser-support IPC path
+      # and rejects peers when the desktop app is still on the default `users`
+      # primary group. Launch under the dedicated `onepassword` primary group so
+      # BrowserSupport and the app agree on the credential boundary.
+      ExecStart = let
+        launcher = pkgs.writeShellScript "1password-launch" ''
+          exec /run/wrappers/bin/sg onepassword -c 'exec ${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform'
+        '';
+      in "${launcher}";
       Restart = "on-failure";
       RestartSec = 5;
       # Ensure 1Password stays running

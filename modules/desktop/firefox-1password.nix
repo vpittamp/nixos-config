@@ -6,6 +6,7 @@ with lib;
 
 let
   cfg = config.programs.firefox-1password;
+  browserSupportHostPath = "/run/current-system/sw/bin/1password-browser-support-host";
 in
 {
   options.programs.firefox-1password = {
@@ -110,7 +111,7 @@ in
               "onepassword@1password.com"
               "{d634138d-c276-4fc8-924b-40a0ea21d284}"  # 1Password extension ID
             ];
-            path = "/run/wrappers/bin/1Password-BrowserSupport";
+            path = browserSupportHostPath;
           };
           mode = "0644";
         };
@@ -125,7 +126,7 @@ in
               "onepassword@1password.com"
               "{d634138d-c276-4fc8-924b-40a0ea21d284}"
             ];
-            path = "/run/wrappers/bin/1Password-BrowserSupport";
+            path = browserSupportHostPath;
           };
           mode = "0644";
         };
