@@ -170,6 +170,16 @@ Environment Variables:
         help="HTTP timeout for remote push requests in seconds",
     )
 
+    default_push_state_file = str(
+        Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "eww-monitoring-panel" / "remote-otel-push-state.json"
+    )
+    parser.add_argument(
+        "--remote-push-state-file",
+        type=str,
+        default=os.environ.get("OTEL_AI_REMOTE_PUSH_STATE_FILE", default_push_state_file),
+        help="File path for persisted remote push sequence state",
+    )
+
     return parser.parse_args()
 
 
@@ -213,6 +223,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 auth_token=args.remote_push_token,
                 max_interval_sec=args.remote_push_max_interval,
                 request_timeout_sec=args.remote_push_timeout,
+                state_file_path=Path(args.remote_push_state_file),
             )
 
     # Create output writer

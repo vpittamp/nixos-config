@@ -756,6 +756,100 @@ def test_build_session_list_collapses_duplicate_sessions_on_same_tmux_surface(mo
     assert winner.focusable is True
 
 
+@pytest.mark.asyncio
+async def test_ensure_process_session_reuses_canonical_same_surface_and_drops_pid_duplicate(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    pid = 1304538
+    canonical_session_id = "codex:native-keep:7bb8dbd5a92e"
+    duplicate_session_id = f"codex:pid:{pid}"
+
+    canonical = Session(
+        session_id=canonical_session_id,
+        native_session_id="native-keep",
+        context_fingerprint="7bb8dbd5a92e",
+        collision_group_id="codex:native-keep",
+        identity_confidence=IdentityConfidence.NATIVE,
+        identity_phase="canonical",
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path="/home/vpittamp/repos/vpittamp/nixos-config/main",
+        window_id=14,
+        pid=pid,
+        trace_id="trace-native",
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=9,
+        status_reason="event:stream_token",
+    )
+    duplicate = Session(
+        session_id=duplicate_session_id,
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        identity_phase="provisional",
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=14,
+        pid=pid,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="process_detected",
+    )
+    for session in (canonical, duplicate):
+        session.terminal_context.window_id = 14
+        session.terminal_context.tmux_session = "i3pm-vpittamp-nixos-config-ma-6e1abb85"
+        session.terminal_context.tmux_window = "0:main"
+        session.terminal_context.tmux_pane = "%4"
+        session.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+        session.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+        session.terminal_context.execution_mode = "local"
+        session.terminal_context.connection_key = "local@thinkpad"
+        session.terminal_context.context_key = "vpittamp/nixos-config:main::local::local@thinkpad"
+
+    async with tracker._lock:
+        tracker._sessions[canonical_session_id] = canonical
+        tracker._sessions[duplicate_session_id] = duplicate
+
+    async def _resolve_window_context(_pid: int):
+        return (
+            14,
+            "vpittamp/nixos-config:main",
+            {
+                "window_id": 14,
+                "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+                "tmux_window": "0:main",
+                "tmux_pane": "%4",
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            },
+        )
+
+    monkeypatch.setattr(tracker, "_refresh_metadata_cache", lambda: None)
+    monkeypatch.setattr(tracker, "_load_pid_metadata", lambda _pid: {"project": "vpittamp/nixos-config:main"})
+    monkeypatch.setattr(tracker, "_resolve_window_context", _resolve_window_context)
+
+    resolved = await tracker._ensure_process_session_for_pid(AITool.CODEX_CLI, pid)
+
+    assert resolved == canonical_session_id
+    async with tracker._lock:
+        assert canonical_session_id in tracker._sessions
+        assert duplicate_session_id not in tracker._sessions
+
+
 def test_build_context_fingerprint_ignores_pid_and_window_for_tmux_identity():
     first_terminal_context = {
         "tmux_server_key": "/run/user/1000/tmux-1000/default",

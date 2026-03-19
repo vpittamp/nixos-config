@@ -27,6 +27,7 @@ def _load_otel_monitor_package():
 
 
 _load_otel_monitor_package()
+import otel_ai_monitor.remote_transport as remote_transport_module  # type: ignore  # noqa: E402
 from otel_ai_monitor.remote_transport import (  # type: ignore  # noqa: E402
     RemoteSessionPushClient,
     RemoteSessionSinkStore,
@@ -41,6 +42,33 @@ def test_push_client_uses_more_tolerant_default_timeout():
     )
 
     assert client.request_timeout_sec == 5.0
+
+
+def test_push_client_persists_sequence_within_same_boot(monkeypatch, tmp_path):
+    state_file = tmp_path / "remote-otel-push-state.json"
+    monkeypatch.setattr(remote_transport_module, "_load_system_boot_id", lambda: "boot-host-1")
+
+    first = RemoteSessionPushClient(
+        endpoint_url="http://thinkpad:4320/v1/i3pm/remote-sessions",
+        source_connection_key="vpittamp@ryzen:22",
+        source_host_name="ryzen",
+        state_file_path=state_file,
+    )
+    first._sequence = 1
+    first._last_sent_hash = "hash-1"
+    first._last_sent_sequence = 1
+    first._persist_state_unlocked()
+
+    second = RemoteSessionPushClient(
+        endpoint_url="http://thinkpad:4320/v1/i3pm/remote-sessions",
+        source_connection_key="vpittamp@ryzen:22",
+        source_host_name="ryzen",
+        state_file_path=state_file,
+    )
+    second._restore_state()
+
+    assert second.boot_id == "boot-host-1"
+    assert second._sequence == 1
 
 
 def _build_payload(
@@ -208,7 +236,7 @@ async def test_sink_accepts_new_boot_epoch_when_sequence_restarts(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_sink_rejects_new_boot_with_non_reset_sequence(tmp_path):
+async def test_sink_accepts_new_boot_with_non_reset_sequence_when_newer(tmp_path):
     sink_file = tmp_path / "remote-otel-sink.json"
     sink = RemoteSessionSinkStore(sink_file)
     await sink.start()
@@ -233,9 +261,15 @@ async def test_sink_rejects_new_boot_with_non_reset_sequence(tmp_path):
                 sent_at="2026-02-23T20:01:00+00:00",
             )
         )
-        assert accepted is False
-        assert reason == "invalid_boot_sequence"
-        assert status == 202
+        assert accepted is True
+        assert reason == "accepted"
+        assert status == 200
+
+        payload = json.loads(sink_file.read_text())
+        source = payload["sources"]["vpittamp@ryzen:22"]
+        assert source["source_boot_id"] == "boot-new"
+        assert int(source["sequence"]) == 2
+        assert source["sessions"][0]["session_id"] == "sid-new"
     finally:
         await sink.stop()
 

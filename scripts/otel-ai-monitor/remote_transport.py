@@ -82,6 +82,19 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
                 pass
 
 
+def _default_remote_push_state_file() -> Path:
+    return Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "eww-monitoring-panel" / "remote-otel-push-state.json"
+
+
+def _load_system_boot_id() -> str:
+    boot_id_path = Path("/proc/sys/kernel/random/boot_id")
+    try:
+        raw = boot_id_path.read_text().strip()
+    except OSError:
+        raw = ""
+    return raw or str(uuid.uuid4())
+
+
 class RemoteSessionPushClient:
     """Pushes session snapshots to a remote sink endpoint with sequence ordering."""
 
@@ -94,6 +107,7 @@ class RemoteSessionPushClient:
         auth_token: str = "",
         max_interval_sec: float = 8.0,
         request_timeout_sec: float = 5.0,
+        state_file_path: Path | str | None = None,
     ) -> None:
         self.endpoint_url = str(endpoint_url or "").strip()
         self.source_connection_key = _normalize_connection_key(source_connection_key)
@@ -101,8 +115,9 @@ class RemoteSessionPushClient:
         self.auth_token = str(auth_token or "").strip()
         self.max_interval_sec = max(1.0, float(max_interval_sec))
         self.request_timeout_sec = max(0.5, float(request_timeout_sec))
+        self.state_file_path = Path(state_file_path) if state_file_path else _default_remote_push_state_file()
 
-        self.boot_id = str(uuid.uuid4())
+        self.boot_id = _load_system_boot_id()
         self._lock = asyncio.Lock()
         self._running = False
         self._event = asyncio.Event()
@@ -125,11 +140,14 @@ class RemoteSessionPushClient:
         self._running = True
         timeout = ClientTimeout(total=self.request_timeout_sec)
         self._session = ClientSession(timeout=timeout)
+        self._restore_state()
         self._worker_task = asyncio.create_task(self._worker_loop())
         logger.info(
-            "Remote OTEL push enabled: endpoint=%s source=%s",
+            "Remote OTEL push enabled: endpoint=%s source=%s boot_id=%s sequence=%s",
             self.endpoint_url,
             self.source_connection_key,
+            self.boot_id,
+            self._sequence,
         )
 
     async def stop(self) -> None:
@@ -161,6 +179,7 @@ class RemoteSessionPushClient:
             self._latest_payload_hash = payload_hash
             if changed:
                 self._sequence += 1
+                self._persist_state_unlocked()
         self._event.set()
 
     async def _worker_loop(self) -> None:
@@ -233,6 +252,8 @@ class RemoteSessionPushClient:
                     self._last_sent_monotonic = time.monotonic()
                     self._last_sent_hash = payload_hash
                     self._last_sent_sequence = sequence
+                    async with self._lock:
+                        self._persist_state_unlocked()
                     return
                 body = await response.text()
                 logger.warning(
@@ -247,6 +268,43 @@ class RemoteSessionPushClient:
                 self.source_connection_key,
                 _format_exception_detail(exc),
             )
+
+    def _restore_state(self) -> None:
+        if not self.state_file_path.exists():
+            return
+        try:
+            payload = json.loads(self.state_file_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        if str(payload.get("source_connection_key") or "") != self.source_connection_key:
+            return
+        if str(payload.get("boot_id") or "") != self.boot_id:
+            return
+        try:
+            self._sequence = max(int(payload.get("sequence", 0) or 0), 0)
+        except (TypeError, ValueError):
+            self._sequence = 0
+        self._last_sent_hash = str(payload.get("last_sent_hash") or "").strip() or None
+        try:
+            self._last_sent_sequence = max(int(payload.get("last_sent_sequence", 0) or 0), 0)
+        except (TypeError, ValueError):
+            self._last_sent_sequence = 0
+
+    def _persist_state_unlocked(self) -> None:
+        _atomic_write_json(
+            self.state_file_path,
+            {
+                "schema_version": "1",
+                "source_connection_key": self.source_connection_key,
+                "boot_id": self.boot_id,
+                "sequence": int(self._sequence),
+                "last_sent_hash": str(self._last_sent_hash or ""),
+                "last_sent_sequence": int(self._last_sent_sequence),
+                "updated_at": _utc_now_iso(),
+            },
+        )
 
 
 class RemoteSessionSinkStore:
@@ -352,19 +410,36 @@ class RemoteSessionSinkStore:
             # Deterministic monotonic sequence validation.
             if source_boot_id and existing_boot and source_boot_id == existing_boot:
                 if sequence < existing_seq:
+                    logger.info(
+                        "Remote OTEL sink rejected %s: reason=stale_sequence boot_id=%s incoming_sequence=%s existing_sequence=%s payload_hash=%s existing_hash=%s",
+                        source_connection_key,
+                        source_boot_id,
+                        sequence,
+                        existing_seq,
+                        payload_hash,
+                        existing_hash,
+                    )
                     return False, "stale_sequence", 202
                 if sequence == existing_seq and payload_hash and existing_hash and payload_hash != existing_hash:
                     return False, "conflicting_same_sequence", 409
             elif source_boot_id and existing_boot and source_boot_id != existing_boot:
-                # New boot epochs must restart sequence from 1 and be newer than
-                # the currently tracked epoch when sent_at is available.
-                if sequence != 1:
-                    return False, "invalid_boot_sequence", 202
+                # Accept newer boot epochs even if the sender already advanced
+                # its in-memory counter before the first successful delivery.
                 if (
                     sent_at_epoch > 0
                     and existing_sent_epoch > 0
                     and sent_at_epoch <= existing_sent_epoch
                 ):
+                    logger.info(
+                        "Remote OTEL sink rejected %s: reason=stale_boot_epoch incoming_boot_id=%s existing_boot_id=%s incoming_sent_at=%s existing_sent_at=%s incoming_sequence=%s existing_sequence=%s",
+                        source_connection_key,
+                        source_boot_id,
+                        existing_boot,
+                        sent_at,
+                        existing.get("sent_at"),
+                        sequence,
+                        existing_seq,
+                    )
                     return False, "stale_boot_epoch", 202
 
             sources[source_connection_key] = {

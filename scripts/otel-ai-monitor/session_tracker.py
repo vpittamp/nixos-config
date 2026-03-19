@@ -997,6 +997,18 @@ class SessionTracker:
                     canonical_session_id = resolved_native_key
                     session = self._sessions.get(canonical_session_id)
 
+            if session is None:
+                existing_process_session_id = self._resolve_existing_process_session_unlocked(
+                    tool=tool,
+                    client_pid=pid,
+                    terminal_context=terminal_context,
+                    window_id=resolved_window_id,
+                    preferred_project=project,
+                )
+                if existing_process_session_id:
+                    canonical_session_id = existing_process_session_id
+                    session = self._sessions.get(existing_process_session_id)
+
             if session is None and canonical_ready and native_group_id:
                 provisional_session_id = self._find_provisional_native_session_unlocked(
                     tool,
@@ -1092,6 +1104,13 @@ class SessionTracker:
                 session.collision_group_id = native_group_id
                 if str(session.identity_phase or "").strip().lower() != "canonical":
                     session.identity_phase = "provisional"
+
+            self._retire_weaker_process_duplicates_unlocked(
+                survivor_session_id=session.session_id,
+                tool=tool,
+                client_pid=pid,
+                terminal_context=terminal_context,
+            )
 
             session.pid = pid
             session.project = project or session.project
@@ -1684,6 +1703,131 @@ class SessionTracker:
             int(item.pid or 0),
             str(item.session_id or ""),
         )
+
+    @staticmethod
+    def _session_matches_canonical_surface(
+        session: Session,
+        terminal_context: dict,
+    ) -> bool:
+        expected = (
+            str(terminal_context.get("context_key") or "").strip(),
+            str(terminal_context.get("tmux_server_key") or "").strip(),
+            str(terminal_context.get("tmux_session") or "").strip(),
+            str(terminal_context.get("tmux_window") or "").strip(),
+            str(terminal_context.get("tmux_pane") or "").strip(),
+        )
+        if not all(expected):
+            return False
+        actual = (
+            str(session.terminal_context.context_key or "").strip(),
+            str(session.terminal_context.tmux_server_key or "").strip(),
+            str(session.terminal_context.tmux_session or "").strip(),
+            str(session.terminal_context.tmux_window or "").strip(),
+            str(session.terminal_context.tmux_pane or "").strip(),
+        )
+        return actual == expected
+
+    def _existing_process_session_sort_key(
+        self,
+        session: Session,
+        *,
+        client_pid: int,
+        terminal_context: dict,
+        window_id: Optional[int],
+        preferred_project: Optional[str],
+    ) -> tuple:
+        same_surface = self._session_matches_canonical_surface(session, terminal_context)
+        same_window = bool(window_id is not None and session.window_id == window_id)
+        same_project = bool(
+            preferred_project and session.project and self._project_names_match(preferred_project, session.project)
+        )
+        return (
+            int(same_surface),
+            int(same_window),
+            int(str(session.identity_phase or "").strip().lower() == "canonical"),
+            int(bool(session.native_session_id)),
+            self._session_list_identity_confidence_rank(session.identity_confidence),
+            int(same_project),
+            int(session.pid == client_pid),
+            state_priority(SessionState(session.state)),
+            session.last_event_at.timestamp(),
+            int(session.state_seq or 0),
+            session.session_id,
+        )
+
+    def _resolve_existing_process_session_unlocked(
+        self,
+        *,
+        tool: AITool,
+        client_pid: int,
+        terminal_context: dict,
+        window_id: Optional[int],
+        preferred_project: Optional[str],
+    ) -> Optional[str]:
+        candidates = [
+            session
+            for session in self._sessions.values()
+            if session.tool == tool
+            and session.state != SessionState.EXPIRED
+            and session.pid == client_pid
+        ]
+        if not candidates:
+            return None
+
+        chosen = max(
+            candidates,
+            key=lambda session: self._existing_process_session_sort_key(
+                session,
+                client_pid=client_pid,
+                terminal_context=terminal_context,
+                window_id=window_id,
+                preferred_project=preferred_project,
+            ),
+        )
+        return chosen.session_id
+
+    def _drop_session_unlocked(self, session_id: str) -> None:
+        session = self._sessions.pop(session_id, None)
+        if not session:
+            return
+        if session_id in self._quiet_timers:
+            self._quiet_timers.pop(session_id).cancel()
+        if session_id in self._completed_timers:
+            self._completed_timers.pop(session_id).cancel()
+        self._remove_session_indexes_unlocked(session_id, session)
+
+    def _retire_weaker_process_duplicates_unlocked(
+        self,
+        *,
+        survivor_session_id: str,
+        tool: AITool,
+        client_pid: int,
+        terminal_context: dict,
+    ) -> int:
+        survivor = self._sessions.get(survivor_session_id)
+        if not survivor:
+            return 0
+        if str(survivor.identity_phase or "").strip().lower() != "canonical":
+            return 0
+
+        duplicate_ids = [
+            session_id
+            for session_id, session in self._sessions.items()
+            if session_id != survivor_session_id
+            and session.tool == tool
+            and session.state != SessionState.EXPIRED
+            and session.pid == client_pid
+            and str(session.identity_phase or "").strip().lower() != "canonical"
+            and self._session_matches_canonical_surface(session, terminal_context)
+        ]
+        for duplicate_id in duplicate_ids:
+            self._drop_session_unlocked(duplicate_id)
+            logger.info(
+                "Retired weaker process duplicate %s in favor of canonical session %s",
+                duplicate_id,
+                survivor_session_id,
+            )
+        return len(duplicate_ids)
 
     def _collapse_duplicate_tmux_surface_items(
         self,
