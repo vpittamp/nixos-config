@@ -7843,6 +7843,9 @@ class IPCServer:
                 "focusability_reason": focusability_reason,
                 "identity_source": str(raw_session.get("identity_source") or "").strip(),
                 "identity_phase": identity_phase,
+                "canonicalization_blocker": str(
+                    raw_session.get("canonicalization_blocker") or ""
+                ).strip(),
                 "native_session_id": str(raw_session.get("native_session_id") or "").strip(),
                 "session_id": str(raw_session.get("session_id") or "").strip(),
                 "context_fingerprint": str(raw_session.get("context_fingerprint") or "").strip(),

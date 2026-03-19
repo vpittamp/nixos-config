@@ -19,6 +19,7 @@
 const http = require('node:http');
 const os = require('node:os');
 const fs = require('node:fs');
+const path = require('node:path');
 const {
   anyValueToJs,
   attrGet,
@@ -71,6 +72,11 @@ const TURN_IDLE_END_MS = Number.parseInt(
   process.env.CODEX_OTEL_INTERCEPTOR_TURN_IDLE_END_MS || '15000',
   10
 ); // default: 15 seconds (fallback only; prefer notify hook)
+
+const RUNTIME_DIR =
+  process.env.XDG_RUNTIME_DIR
+  || `/run/user/${typeof process.getuid === 'function' ? process.getuid() : ''}`
+  || '/tmp';
 
 // For one-shot commands (like `codex exec`), export the Session/root span shortly after the
 // Turn completes so Tempo doesn't show "<root span not yet received>" for minutes.
@@ -159,6 +165,57 @@ function buildRemoteTarget(remoteUser, remoteHost, remotePort) {
   const port = String(remotePort || '').trim() || '22';
   if (user) return `${user}@${host}:${port}`;
   return `${host}:${port}`;
+}
+
+function tmuxSocketFromEnv(tmuxEnvValue) {
+  const raw = String(tmuxEnvValue || '').trim();
+  if (!raw) return null;
+  return raw.split(',', 1)[0] || null;
+}
+
+function persistSessionMetadata(session) {
+  if (!session || typeof session !== 'object') return;
+  const sessionId = String(session.sessionId || session.conversationId || '').trim();
+  const clientPid = Number.parseInt(String(session.clientPid || ''), 10);
+  if (!sessionId || !Number.isFinite(clientPid) || clientPid <= 1) return;
+
+  try {
+    const pidEnv = readProcessEnvByPid(clientPid);
+    const executionMode =
+      String(pidEnv.I3PM_EXECUTION_MODE || pidEnv.I3PM_CONTEXT_VARIANT || '').trim().toLowerCase() || null;
+    const connectionKey = String(pidEnv.I3PM_CONNECTION_KEY || '').trim() || null;
+    const contextKey = String(pidEnv.I3PM_CONTEXT_KEY || '').trim() || null;
+    const remoteTarget = buildRemoteTarget(pidEnv.I3PM_REMOTE_USER, pidEnv.I3PM_REMOTE_HOST, pidEnv.I3PM_REMOTE_PORT) || null;
+    const tmuxSocket = tmuxSocketFromEnv(pidEnv.TMUX);
+    const metadataPath = path.join(RUNTIME_DIR, `codex-session-${clientPid}.json`);
+    const tempPath = `${metadataPath}.tmp-${process.pid}`;
+    const metadata = {
+      version: 1,
+      tool: 'codex',
+      sessionId,
+      pid: clientPid,
+      projectName: session.projectName || pidEnv.I3PM_PROJECT_NAME || null,
+      projectPath: session.projectPath || session.cwd || pidEnv.I3PM_PROJECT_PATH || null,
+      terminalAnchorId: session.terminalAnchorId || pidEnv.I3PM_TERMINAL_ANCHOR_ID || null,
+      tmuxSession: session.tmuxSession || pidEnv.TMUX_SESSION || null,
+      tmuxWindow: session.tmuxWindow || pidEnv.TMUX_WINDOW || null,
+      tmuxPane: session.tmuxPane || pidEnv.TMUX_PANE || null,
+      tmuxSocket,
+      tmuxServerKey: tmuxSocket,
+      pty: session.pty || pidEnv.TTY || null,
+      hostName: os.hostname(),
+      executionMode,
+      connectionKey,
+      contextKey,
+      remoteTarget,
+      updatedAt: new Date().toISOString(),
+    };
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    fs.writeFileSync(tempPath, `${JSON.stringify(metadata)}\n`, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tempPath, metadataPath);
+  } catch {
+    // best-effort only
+  }
 }
 
 function enrichLogAttrsForCorrelation(attrs, meta, pidEnv) {
@@ -587,7 +644,9 @@ function getOrCreateSession(conversationId, meta) {
   const existing = state.sessions.get(conversationId);
   if (existing) return existing;
   const created = newSession(conversationId, meta);
+  created.sessionId = conversationId;
   state.sessions.set(conversationId, created);
+  persistSessionMetadata(created);
   return created;
 }
 
@@ -618,6 +677,7 @@ function handleCodexLogEvent(meta, attrsObj) {
   if (meta.tmuxWindow) session.tmuxWindow = meta.tmuxWindow;
   if (meta.tmuxPane) session.tmuxPane = meta.tmuxPane;
   if (meta.pty) session.pty = meta.pty;
+  persistSessionMetadata(session);
 
   // Fallback turn completion if notify isn't configured.
   scheduleTurnIdleFallback(session);
@@ -940,6 +1000,7 @@ function handleNotify(notification) {
   if (notification.cwd && typeof notification.cwd === 'string') {
     session.cwd = notification.cwd;
   }
+  persistSessionMetadata(session);
 
   const msg = notification['last-assistant-message'];
   if (session.currentTurn && typeof msg === 'string') {

@@ -97,7 +97,7 @@ BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid(
 # Feature 123: OTEL AI sessions file path
 # Written by otel-ai-monitor service, read here to include in monitoring_data output
 OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
-AI_SESSION_SCHEMA_VERSION = "10"
+AI_SESSION_SCHEMA_VERSION = "11"
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
 AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"

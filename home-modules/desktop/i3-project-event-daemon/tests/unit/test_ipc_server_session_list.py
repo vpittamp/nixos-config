@@ -1306,6 +1306,7 @@ def test_load_session_items_prefers_canonical_identity_on_same_tmux_surface(serv
                 **make_local_payload()["sessions"][0],
                 "surface_kind": "tmux-pane",
                 "identity_phase": "provisional",
+                "canonicalization_blocker": "missing_native_session_id",
                 "native_session_id": "native-1",
                 "session_id": "codex:pid:12345",
                 "context_fingerprint": "",
@@ -1314,6 +1315,7 @@ def test_load_session_items_prefers_canonical_identity_on_same_tmux_surface(serv
                 **make_local_payload()["sessions"][0],
                 "surface_kind": "tmux-pane",
                 "identity_phase": "canonical",
+                "canonicalization_blocker": "",
                 "native_session_id": "native-1",
                 "session_id": "codex:native-1:abc123def456",
                 "context_fingerprint": "abc123def456",
@@ -1338,6 +1340,7 @@ def test_load_session_items_prefers_canonical_identity_on_same_tmux_surface(serv
 
     assert len(sessions) == 1
     assert sessions[0]["identity_phase"] == "canonical"
+    assert sessions[0]["canonicalization_blocker"] == ""
     assert sessions[0]["session_id"] == "codex:native-1:abc123def456"
 
 

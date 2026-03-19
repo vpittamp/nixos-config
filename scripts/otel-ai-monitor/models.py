@@ -204,6 +204,10 @@ class Session(BaseModel):
         default=None,
         description="Native collision group identifier in format tool:native_session_id",
     )
+    canonicalization_blocker: Optional[str] = Field(
+        default=None,
+        description="Reason the session could not yet be promoted to canonical identity",
+    )
     identity_confidence: IdentityConfidence = Field(
         default=IdentityConfidence.HEURISTIC,
         description="How strongly session identity was established",
@@ -386,6 +390,10 @@ class SessionListItem(BaseModel):
     )
     collision_group_id: Optional[str] = Field(
         default=None, description="Native collision group ID (tool:native_session_id)"
+    )
+    canonicalization_blocker: Optional[str] = Field(
+        default=None,
+        description="Reason the rendered session identity remains provisional",
     )
     identity_confidence: IdentityConfidence = Field(
         default=IdentityConfidence.HEURISTIC,

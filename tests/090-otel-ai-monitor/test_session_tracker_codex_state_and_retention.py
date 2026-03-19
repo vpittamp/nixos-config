@@ -988,6 +988,102 @@ async def test_process_event_promotes_provisional_native_session_to_canonical_on
         assert promoted.context_fingerprint == stable_fingerprint
 
 
+@pytest.mark.asyncio
+async def test_process_bootstrap_recovers_codex_native_session_from_surface_metadata(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    pid = 1932482
+
+    async def _resolve_window_context(_pid: int):
+        return (
+            75,
+            "NVIDIA/OpenShell:main",
+            {
+                "window_id": 75,
+                "terminal_anchor_id": "terminal-NVIDIA/OpenShell:main-1801281-1773939293",
+                "tmux_session": "i3pm-nvidia-openshell-main-5df2ad13",
+                "tmux_window": "0:main",
+                "tmux_pane": "%12",
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "NVIDIA/OpenShell:main::local::local@ryzen",
+                "pty": "/dev/pts/13",
+            },
+        )
+
+    monkeypatch.setattr(tracker, "_refresh_metadata_cache", lambda: None)
+    monkeypatch.setattr(tracker, "_resolve_window_context", _resolve_window_context)
+    tracker._pid_metadata_cache = {}
+    tracker._metadata_file_cache = {
+        "native-openshell": {
+            "session_id": "native-openshell",
+            "pid": 999999,
+            "tool": "codex",
+            "project": "NVIDIA/OpenShell:main",
+            "terminal_anchor_id": "terminal-NVIDIA/OpenShell:main-1801281-1773939293",
+            "tmux_session": "i3pm-nvidia-openshell-main-5df2ad13",
+            "tmux_window": "0:main",
+            "tmux_pane": "%12",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "execution_mode": "local",
+            "connection_key": "local@ryzen",
+            "context_key": "NVIDIA/OpenShell:main::local::local@ryzen",
+            "updated_at": "2026-03-19T23:06:24.000Z",
+        }
+    }
+
+    resolved = await tracker._ensure_process_session_for_pid(AITool.CODEX_CLI, pid)
+
+    async with tracker._lock:
+        session = tracker._sessions[resolved]
+        assert session.native_session_id == "native-openshell"
+        assert session.identity_phase == "canonical"
+        assert session.canonicalization_blocker is None
+        assert resolved == f"codex:native-openshell:{session.context_fingerprint}"
+
+
+@pytest.mark.asyncio
+async def test_process_bootstrap_marks_codex_missing_native_session_id_blocker(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    pid = 424299
+
+    async def _resolve_window_context(_pid: int):
+        return (
+            88,
+            "NVIDIA/OpenShell:main",
+            {
+                "window_id": 88,
+                "terminal_anchor_id": "terminal-NVIDIA/OpenShell:main-ephemeral",
+                "tmux_session": "i3pm-nvidia-openshell-main-5df2ad13",
+                "tmux_window": "0:main",
+                "tmux_pane": "%12",
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "NVIDIA/OpenShell:main::local::local@ryzen",
+                "pty": "/dev/pts/13",
+            },
+        )
+
+    monkeypatch.setattr(tracker, "_refresh_metadata_cache", lambda: None)
+    monkeypatch.setattr(tracker, "_resolve_window_context", _resolve_window_context)
+    tracker._pid_metadata_cache = {}
+    tracker._metadata_file_cache = {}
+
+    resolved = await tracker._ensure_process_session_for_pid(AITool.CODEX_CLI, pid)
+
+    async with tracker._lock:
+        session = tracker._sessions[resolved]
+        assert session.identity_phase == "provisional"
+        assert session.canonicalization_blocker == "missing_native_session_id"
+
+    async with tracker._lock:
+        session_list, _ = tracker._build_session_list_unlocked()
+    assert session_list.sessions[0].canonicalization_blocker == "missing_native_session_id"
+
+
 def test_build_session_list_prefers_live_session_over_retained_output_ready_on_same_tmux_surface(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)

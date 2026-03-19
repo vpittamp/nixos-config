@@ -716,6 +716,9 @@ class SessionTracker:
                                 "tmux_session": str(data.get("tmuxSession") or "").strip() or None,
                                 "tmux_window": str(data.get("tmuxWindow") or "").strip() or None,
                                 "tmux_pane": str(data.get("tmuxPane") or "").strip() or None,
+                                "tmux_server_key": str(
+                                    data.get("tmuxServerKey") or data.get("tmuxSocket") or ""
+                                ).strip() or None,
                                 "pty": str(data.get("pty") or "").strip() or None,
                                 "host_name": str(data.get("hostName") or "").strip() or None,
                                 "execution_mode": str(data.get("executionMode") or "").strip().lower() or None,
@@ -899,6 +902,146 @@ class SessionTracker:
         entry = self._pid_metadata_cache.get(pid)
         return dict(entry) if isinstance(entry, dict) else {}
 
+    @staticmethod
+    def _metadata_updated_at(entry: dict[str, object]) -> str:
+        return str(entry.get("updated_at") or "").strip()
+
+    def _metadata_surface_match_rank(
+        self,
+        *,
+        entry: dict[str, object],
+        tool: AITool,
+        pid: int,
+        terminal_context: dict,
+        preferred_project: Optional[str],
+    ) -> tuple[int, int, int, int, int, int, str, str]:
+        entry_tool = str(entry.get("tool") or "").strip().lower()
+        tool_match = int(not entry_tool or entry_tool == tool.value)
+        entry_pid = int(entry.get("pid") or 0) if entry.get("pid") is not None else 0
+        exact_pid = int(entry_pid == pid and entry_pid > 0)
+        current_anchor = str(
+            terminal_context.get("binding_anchor_id")
+            or terminal_context.get("terminal_anchor_id")
+            or ""
+        ).strip()
+        entry_anchor = str(entry.get("terminal_anchor_id") or "").strip()
+        anchor_match = int(bool(current_anchor and entry_anchor and current_anchor == entry_anchor))
+
+        current_context_key = str(terminal_context.get("context_key") or "").strip()
+        current_server_key = str(
+            terminal_context.get("tmux_server_key") or terminal_context.get("tmux_socket") or ""
+        ).strip()
+        current_tmux_session = str(terminal_context.get("tmux_session") or "").strip()
+        current_tmux_window = str(terminal_context.get("tmux_window") or "").strip()
+        current_tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
+
+        entry_context_key = str(entry.get("context_key") or "").strip()
+        entry_server_key = str(entry.get("tmux_server_key") or "").strip()
+        entry_tmux_session = str(entry.get("tmux_session") or "").strip()
+        entry_tmux_window = str(entry.get("tmux_window") or "").strip()
+        entry_tmux_pane = str(entry.get("tmux_pane") or "").strip()
+
+        canonical_surface_match = int(
+            bool(
+                current_context_key
+                and current_server_key
+                and current_tmux_session
+                and current_tmux_window
+                and current_tmux_pane
+                and entry_context_key
+                and entry_server_key
+                and entry_tmux_session
+                and entry_tmux_window
+                and entry_tmux_pane
+                and current_context_key == entry_context_key
+                and current_server_key == entry_server_key
+                and current_tmux_session == entry_tmux_session
+                and current_tmux_window == entry_tmux_window
+                and current_tmux_pane == entry_tmux_pane
+            )
+        )
+        tmux_surface_match = int(
+            bool(
+                current_tmux_session
+                and current_tmux_window
+                and current_tmux_pane
+                and entry_tmux_session
+                and entry_tmux_window
+                and entry_tmux_pane
+                and current_tmux_session == entry_tmux_session
+                and current_tmux_window == entry_tmux_window
+                and current_tmux_pane == entry_tmux_pane
+            )
+        )
+
+        entry_project = str(entry.get("project") or "").strip()
+        project_match = int(
+            bool(
+                preferred_project
+                and entry_project
+                and self._project_names_match(preferred_project, entry_project)
+            )
+        )
+        has_native_session = int(bool(str(entry.get("session_id") or "").strip()))
+        return (
+            tool_match,
+            exact_pid,
+            anchor_match,
+            canonical_surface_match,
+            tmux_surface_match,
+            project_match,
+            self._metadata_updated_at(entry),
+            str(entry.get("session_id") or "").strip(),
+        )
+
+    def _recover_native_metadata_for_process(
+        self,
+        *,
+        tool: AITool,
+        pid: int,
+        terminal_context: dict,
+        preferred_project: Optional[str],
+    ) -> dict[str, object]:
+        direct = self._load_pid_metadata(pid)
+        if str(direct.get("session_id") or "").strip():
+            return direct
+
+        candidates: list[dict[str, object]] = []
+        for entry in self._metadata_file_cache.values():
+            if not isinstance(entry, dict):
+                continue
+            rank = self._metadata_surface_match_rank(
+                entry=entry,
+                tool=tool,
+                pid=pid,
+                terminal_context=terminal_context,
+                preferred_project=preferred_project,
+            )
+            if not rank[0]:
+                continue
+            if not any(rank[1:6]):
+                continue
+            candidates.append((rank, dict(entry)))
+
+        if not candidates:
+            return direct
+
+        _, recovered = max(candidates, key=lambda item: item[0])
+        return recovered
+
+    @staticmethod
+    def _canonicalization_blocker(
+        native_session_id: Optional[str],
+        terminal_context: dict,
+        *,
+        metadata_available: bool,
+    ) -> Optional[str]:
+        if native_session_id and SessionTracker._has_canonical_tmux_identity(terminal_context):
+            return None
+        if not native_session_id:
+            return "metadata_lookup_failed" if metadata_available else "missing_native_session_id"
+        return "missing_canonical_tmux_identity"
+
     async def _ensure_process_session_for_pid(
         self,
         tool: AITool,
@@ -913,11 +1056,17 @@ class SessionTracker:
             if isinstance(resolved_terminal_context, dict)
             else {}
         )
-        metadata = self._load_pid_metadata(pid)
         live_tmux_target = bool(
             terminal_context.get("tmux_session")
             or terminal_context.get("tmux_window")
         )
+        metadata = self._recover_native_metadata_for_process(
+            tool=tool,
+            pid=pid,
+            terminal_context=terminal_context,
+            preferred_project=resolved_project,
+        )
+        metadata_available = bool(metadata)
 
         for key in (
             "terminal_anchor_id",
@@ -976,6 +1125,11 @@ class SessionTracker:
             self._compose_native_session_key(native_group_id, context_fingerprint)
             if canonical_ready and context_fingerprint
             else self._build_provisional_session_id(tool, native_group_id, pid)
+        )
+        canonicalization_blocker = self._canonicalization_blocker(
+            native_session_id,
+            terminal_context,
+            metadata_available=metadata_available,
         )
         provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
         now = datetime.now(timezone.utc)
@@ -1045,6 +1199,7 @@ class SessionTracker:
                     context_fingerprint=context_fingerprint if canonical_ready else None,
                     identity_phase="canonical" if canonical_ready else "provisional",
                     collision_group_id=native_group_id if native_session_id else None,
+                    canonicalization_blocker=canonicalization_blocker,
                     identity_confidence=(
                         IdentityConfidence.NATIVE
                         if canonical_ready
@@ -1096,6 +1251,7 @@ class SessionTracker:
                 if context_fingerprint:
                     session.context_fingerprint = context_fingerprint
                 session.identity_phase = "canonical"
+                session.canonicalization_blocker = None
                 self._register_native_session_unlocked(native_group_id, session.session_id)
                 self._session_pids[native_group_id] = pid
                 self._session_pids[native_session_id] = pid
@@ -1104,6 +1260,7 @@ class SessionTracker:
                 session.collision_group_id = native_group_id
                 if str(session.identity_phase or "").strip().lower() != "canonical":
                     session.identity_phase = "provisional"
+                session.canonicalization_blocker = canonicalization_blocker
 
             self._retire_weaker_process_duplicates_unlocked(
                 survivor_session_id=session.session_id,
@@ -1123,6 +1280,10 @@ class SessionTracker:
                     session.state_changed_at = now
                     session.state_seq += 1
                 session.status_reason = "process_detected"
+            if str(session.identity_phase or "").strip().lower() != "canonical":
+                session.canonicalization_blocker = canonicalization_blocker
+            else:
+                session.canonicalization_blocker = None
             if not native_session_id and session.identity_confidence != IdentityConfidence.NATIVE:
                 session.identity_confidence = IdentityConfidence.PID
 
@@ -1258,6 +1419,9 @@ class SessionTracker:
                     context_fingerprint=context_fingerprint,
                     identity_phase=identity_phase,
                     collision_group_id=str(raw.get("collision_group_id") or "").strip() or None,
+                    canonicalization_blocker=str(
+                        raw.get("canonicalization_blocker") or ""
+                    ).strip() or None,
                     identity_confidence=identity_confidence,
                     tool=tool,
                     provider=provider,
@@ -3192,6 +3356,14 @@ class SessionTracker:
             if canonical_ready and context_fingerprint and native_group_id
             else provisional_session_id
         )
+        event_metadata_available = False
+        if client_pid is not None:
+            event_metadata_available = bool(self._load_pid_metadata(client_pid))
+        canonicalization_blocker = self._canonicalization_blocker(
+            native_session_id,
+            event_terminal_context,
+            metadata_available=event_metadata_available,
+        )
 
         async with self._lock:
             now = datetime.now(timezone.utc)
@@ -3251,6 +3423,7 @@ class SessionTracker:
                     context_fingerprint=context_fingerprint if canonical_ready else None,
                     identity_phase="canonical" if canonical_ready else "provisional",
                     collision_group_id=native_group_id if native_session_id else None,
+                    canonicalization_blocker=canonicalization_blocker,
                     identity_confidence=identity_confidence,
                     tool=tool,
                     provider=provider,
@@ -3359,6 +3532,7 @@ class SessionTracker:
                     session.context_fingerprint = context_fingerprint
                 session.collision_group_id = native_group_id
                 session.identity_phase = "canonical"
+                session.canonicalization_blocker = None
                 session.identity_confidence = IdentityConfidence.NATIVE
                 self._register_native_session_unlocked(
                     native_group_id, canonical_session_id
@@ -3369,6 +3543,7 @@ class SessionTracker:
                     session.collision_group_id = native_group_id
                 if str(session.identity_phase or "").strip().lower() != "canonical":
                     session.identity_phase = "provisional"
+                session.canonicalization_blocker = canonicalization_blocker
 
             # Cache PID for this session and native group alias to preserve correlation.
             if client_pid is not None:
@@ -3381,6 +3556,10 @@ class SessionTracker:
                     session.context_fingerprint = None
                 if session.identity_confidence != IdentityConfidence.NATIVE:
                     session.identity_confidence = IdentityConfidence.PID
+            if str(session.identity_phase or "").strip().lower() != "canonical":
+                session.canonicalization_blocker = canonicalization_blocker
+            else:
+                session.canonicalization_blocker = None
 
             has_fresh_pid_context = bool(client_pid is not None)
             stale_window_binding = bool(
@@ -4325,6 +4504,7 @@ class SessionTracker:
                 context_fingerprint=s.context_fingerprint,
                 identity_phase=s.identity_phase,
                 collision_group_id=s.collision_group_id,
+                canonicalization_blocker=s.canonicalization_blocker,
                 identity_confidence=s.identity_confidence,
                 tool=s.tool,
                 state=s.state,
@@ -4412,6 +4592,7 @@ class SessionTracker:
                     s.context_fingerprint,
                     s.identity_phase,
                     s.collision_group_id,
+                    str(s.canonicalization_blocker or ""),
                     str(s.tool),
                     str(s.state),
                     item.project,
