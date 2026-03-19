@@ -446,7 +446,7 @@ in
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
   # Add user to required groups
-  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" ];
+  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "onepassword" ];
 
   # Bluetooth support (common in ThinkPads)
   hardware.bluetooth = {

@@ -429,7 +429,7 @@ in
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
   # Add user to required groups
-  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "incus-admin" ];
+  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "incus-admin" "onepassword" ];
 
   # ========== BLUETOOTH SUPPORT ==========
   # For USB Bluetooth adapter or motherboard Bluetooth
