@@ -71,8 +71,9 @@ async def test_update_window_accepts_title_alias_without_warning():
 
 
 class _DummyWriter:
-    def __init__(self, peername=("local", 0)):
+    def __init__(self, peername=("local", 0), wait_closed_delay: float = 0):
         self.peername = peername
+        self.wait_closed_delay = wait_closed_delay
         self.buffer = bytearray()
         self.closed = False
 
@@ -91,6 +92,8 @@ class _DummyWriter:
         self.closed = True
 
     async def wait_closed(self):
+        if self.wait_closed_delay:
+            await asyncio.sleep(self.wait_closed_delay)
         return None
 
 
@@ -115,3 +118,15 @@ async def test_ipc_server_tracks_malformed_json_in_status():
     assert ipc_stats["last_malformed_json_peer"] == "tester:9999"
     assert ipc_stats["last_malformed_json_error"] is not None
     assert ipc_stats["top_malformed_json_peers"] == [{"peer": "tester:9999", "count": 1}]
+
+
+@pytest.mark.asyncio
+async def test_ipc_server_stop_does_not_block_on_slow_client_close():
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    slow_writer = _DummyWriter(wait_closed_delay=10)
+    server.clients.add(slow_writer)
+
+    await asyncio.wait_for(server.stop(), timeout=1.0)
+
+    assert slow_writer.closed is True

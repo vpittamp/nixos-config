@@ -87,7 +87,7 @@ class MonitorProfileService:
         self._profiles = {}
 
         if not PROFILES_DIR.exists():
-            logger.warning(f"Profiles directory not found: {PROFILES_DIR}")
+            logger.info(f"Profiles directory not found: {PROFILES_DIR}")
             return
 
         for profile_path in PROFILES_DIR.glob("*.json"):
@@ -113,7 +113,7 @@ class MonitorProfileService:
         self._hybrid_profiles = {}
 
         if not PROFILES_DIR.exists():
-            logger.warning(f"Profiles directory not found: {PROFILES_DIR}")
+            logger.info(f"Profiles directory not found: {PROFILES_DIR}")
             return
 
         for profile_path in PROFILES_DIR.glob("*.json"):
@@ -300,10 +300,18 @@ class MonitorProfileService:
             profile_name = CURRENT_PROFILE_FILE.read_text().strip()
             if profile_name in self._profiles:
                 return profile_name
-            else:
-                logger.warning(f"Current profile '{profile_name}' not found, "
-                             f"available: {list(self._profiles.keys())}")
+            if not self._profiles:
+                logger.info(
+                    "Current profile '%s' not found because no monitor profiles are installed",
+                    profile_name,
+                )
                 return None
+            logger.warning(
+                "Current profile '%s' not found, available: %s",
+                profile_name,
+                list(self._profiles.keys()),
+            )
+            return None
         except Exception as e:
             logger.error(f"Failed to read current profile: {e}")
             return None

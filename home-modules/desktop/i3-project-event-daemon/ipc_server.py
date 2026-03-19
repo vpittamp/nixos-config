@@ -279,6 +279,8 @@ I3_IPC_ERROR = 1005
 class IPCServer:
     """JSON-RPC IPC server for CLI tool queries."""
 
+    _CLIENT_CLOSE_TIMEOUT_SECONDS = 0.25
+
     def __init__(
         self,
         state_manager: StateManager,
@@ -396,7 +398,7 @@ class IPCServer:
             sock = socket.socket(fileno=fd)
             await server.start(sock)
         else:
-            logger.warning("No systemd socket provided, creating new socket")
+            logger.info("No systemd socket provided, creating new socket")
             await server.start(None)
 
         return server
@@ -463,12 +465,11 @@ class IPCServer:
             await self.server.wait_closed()
 
         # Close all client connections
-        for writer in list(self.clients):
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception as e:
-                logger.debug(f"Error closing client connection during shutdown: {e}")
+        if self.clients:
+            await asyncio.gather(
+                *(self._close_client_writer(writer) for writer in list(self.clients)),
+                return_exceptions=True,
+            )
 
         logger.info("IPC server stopped")
 
@@ -514,11 +515,27 @@ class IPCServer:
             logger.error(f"Error handling client {addr}: {e}", exc_info=True)
 
         finally:
-            self.clients.remove(writer)
+            self.clients.discard(writer)
             self.subscribed_clients.discard(writer)  # Remove from subscriptions if subscribed
             self.state_change_subscribers.discard(writer)  # Feature 123: Remove from state change subscriptions
+            await self._close_client_writer(writer)
+
+    async def _close_client_writer(self, writer: asyncio.StreamWriter) -> None:
+        """Close a client writer without blocking daemon shutdown indefinitely."""
+        try:
             writer.close()
-            await writer.wait_closed()
+            await asyncio.wait_for(
+                writer.wait_closed(),
+                timeout=self._CLIENT_CLOSE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            addr = self._format_client_peer(writer.get_extra_info("peername"))
+            logger.debug(
+                "Timed out waiting for client %s to close; continuing shutdown",
+                addr,
+            )
+        except Exception as e:
+            logger.debug(f"Error closing client connection during shutdown: {e}")
 
     def _format_client_peer(self, addr: Any) -> str:
         """Return a compact stable label for a client peer."""
