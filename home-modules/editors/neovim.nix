@@ -13,6 +13,7 @@
     nodePackages_latest.typescript                  # Provides tsserver runtime
     pyright                                          # LSP: Python
     nil                                              # LSP: Nix
+    nodePackages_latest.yaml-language-server          # LSP: YAML
     lua-language-server                              # LSP: Lua
     nixpkgs-fmt                                      # Formatter used by nil_ls
     (writeShellScriptBin "nvim-telescope-picker" ''

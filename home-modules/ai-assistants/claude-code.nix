@@ -96,6 +96,56 @@ lib.mkIf enableClaudeCode {
         executable = true;
         force = true;
       };
+
+      # LSP plugin for Claude Code — provides code intelligence via language servers
+      # All binaries are Nix-managed and available in PATH
+      ".claude/plugins/nix-lsp/.claude-plugin/plugin.json".text = builtins.toJSON {
+        name = "nix-lsp";
+        description = "Language servers for Python, TypeScript, Nix, QML, and YAML";
+        version = "1.0.0";
+      };
+      ".claude/plugins/nix-lsp/.lsp.json".text = builtins.toJSON {
+        python = {
+          command = "${pkgs.pyright}/bin/pyright-langserver";
+          args = [ "--stdio" ];
+          extensionToLanguage = {
+            ".py" = "python";
+            ".pyi" = "python";
+          };
+        };
+        typescript = {
+          command = "${pkgs.nodePackages_latest.typescript-language-server}/bin/typescript-language-server";
+          args = [ "--stdio" ];
+          extensionToLanguage = {
+            ".ts" = "typescript";
+            ".tsx" = "typescriptreact";
+            ".js" = "javascript";
+            ".jsx" = "javascriptreact";
+          };
+        };
+        nix = {
+          command = "${pkgs.nil}/bin/nil";
+          args = [];
+          extensionToLanguage = {
+            ".nix" = "nix";
+          };
+        };
+        qml = {
+          command = "${pkgs.kdePackages.qtdeclarative}/bin/qmlls";
+          args = [];
+          extensionToLanguage = {
+            ".qml" = "qml";
+          };
+        };
+        yaml = {
+          command = "${pkgs.nodePackages_latest.yaml-language-server}/bin/yaml-language-server";
+          args = [ "--stdio" ];
+          extensionToLanguage = {
+            ".yaml" = "yaml";
+            ".yml" = "yaml";
+          };
+        };
+      };
     };
 
   # Patch Claude Code plugin scripts for NixOS compatibility
@@ -189,6 +239,9 @@ lib.mkIf enableClaudeCode {
 
         # Agent SDK Dev - development tools for building Claude Code agents
         "agent-sdk-dev@claude-code-plugins" = false;
+
+        # LSP plugin - Nix-managed language servers for code intelligence
+        "nix-lsp" = true;
       };
 
       # Experimental: Agent Teams - coordinate multiple Claude instances as a team
