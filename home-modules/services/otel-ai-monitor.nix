@@ -234,7 +234,8 @@ in
         RestartSec = 2;
 
         # Resource limits (async Python service with protobuf parsing)
-        MemoryMax = "100M";
+        # 200M accommodates long-running sessions with verbose debug logging
+        MemoryMax = "200M";
         CPUQuota = "10%";
 
         # Environment for notifications and tmux client lookup
