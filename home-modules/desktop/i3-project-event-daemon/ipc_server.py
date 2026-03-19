@@ -485,6 +485,8 @@ class IPCServer:
                 data = await reader.readline()
                 if not data:
                     break
+                if not data.strip():
+                    continue
 
                 try:
                     request = json.loads(data.decode())
@@ -493,7 +495,7 @@ class IPCServer:
                     await writer.drain()
 
                 except json.JSONDecodeError as e:
-                    logger.error("JSON decode error from %s: %s", addr, e)
+                    logger.warning("Ignoring malformed JSON from %s: %s", addr, e)
                     error_response = {
                         "jsonrpc": "2.0",
                         "error": {"code": -32700, "message": "Parse error"},

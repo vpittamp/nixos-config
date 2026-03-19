@@ -1691,7 +1691,7 @@ async def on_window_title(
         await state_manager.update_window(
             window_id,
             window_class=window_class,
-            title=window_title,
+            window_title=window_title,
         )
 
         # Feature 039 FIX: VS Code project mark update on title change

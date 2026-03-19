@@ -237,7 +237,8 @@ class ResilientI3Connection:
         connection has gone stale (e.g., corrupted i3ipc connection state).
 
         Returns:
-            True if connection is valid or reconnection succeeded, False otherwise
+            True only when a reconnection was actually performed successfully.
+            False when the existing connection is healthy or when reconnect failed.
         """
         if self.is_shutting_down:
             return False
@@ -257,7 +258,7 @@ class ResilientI3Connection:
                 if self.conn:
                     # Use get_tree() for health check - it's more likely to fail on stale connections
                     await self.conn.get_tree()
-                    return True
+                    return False
             except Exception as e:
                 logger.warning(f"Socket exists but connection health check failed: {type(e).__name__}: {e}")
                 health_check_failed = True

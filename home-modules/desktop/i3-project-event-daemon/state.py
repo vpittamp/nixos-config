@@ -123,9 +123,12 @@ class StateManager:
                 return
 
             window_info = self.state.window_map[window_id]
+            normalized_updates = dict(kwargs)
+            if "title" in normalized_updates and "window_title" not in normalized_updates:
+                normalized_updates["window_title"] = normalized_updates.pop("title")
 
             # Update allowed fields
-            for key, value in kwargs.items():
+            for key, value in normalized_updates.items():
                 if hasattr(window_info, key):
                     setattr(window_info, key, value)
                     logger.debug(f"Updated window {window_id}: {key}={value}")
