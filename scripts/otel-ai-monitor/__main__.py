@@ -166,7 +166,7 @@ Environment Variables:
     parser.add_argument(
         "--remote-push-timeout",
         type=float,
-        default=float(os.environ.get("OTEL_AI_REMOTE_PUSH_TIMEOUT", "1.5")),
+        default=float(os.environ.get("OTEL_AI_REMOTE_PUSH_TIMEOUT", "5")),
         help="HTTP timeout for remote push requests in seconds",
     )
 

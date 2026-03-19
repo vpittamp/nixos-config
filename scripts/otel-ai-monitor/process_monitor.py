@@ -36,6 +36,26 @@ class ProcessMonitor:
         # Track known process sessions: pid -> session_id
         self._process_sessions: dict[int, str] = {}
 
+    @staticmethod
+    def _session_resolution_rank(session_id: str, requested_session_id: str, session) -> tuple:
+        """Prefer canonical/native sessions when multiple live rows share one pid."""
+        identity_confidence = str(getattr(session.identity_confidence, "value", session.identity_confidence) or "").strip().lower()
+        return (
+            int(str(getattr(session, "identity_phase", "") or "").strip().lower() == "canonical"),
+            int(bool(getattr(session, "native_session_id", None))),
+            {
+                IdentityConfidence.NATIVE.value: 4,
+                IdentityConfidence.PID.value: 3,
+                IdentityConfidence.PANE.value: 2,
+                IdentityConfidence.HEURISTIC.value: 1,
+            }.get(identity_confidence, 0),
+            int(bool(getattr(session, "trace_id", None))),
+            getattr(session, "last_event_at", None) or datetime.min.replace(tzinfo=timezone.utc),
+            int(getattr(session, "state_seq", 0) or 0),
+            int(session_id == requested_session_id),
+            session_id,
+        )
+
     async def start(self) -> None:
         """Start the process monitor loop."""
         self._running = True
@@ -257,20 +277,31 @@ class ProcessMonitor:
     ) -> Optional[str]:
         """Resolve session IDs that may have been re-keyed by native identity."""
         async with self.tracker._lock:
-            if session_id in self.tracker._sessions:
-                return session_id
-
+            candidates: list[tuple[str, object]] = []
             for live_session_id, session in self.tracker._sessions.items():
                 if session.pid != pid or session.state == SessionState.EXPIRED:
                     continue
-                self._process_sessions[pid] = live_session_id
+                candidates.append((live_session_id, session))
+
+            if not candidates:
+                requested = self.tracker._sessions.get(session_id)
+                if requested and requested.state != SessionState.EXPIRED:
+                    return session_id
+                return None
+
+            resolved_session_id, _ = max(
+                candidates,
+                key=lambda item: self._session_resolution_rank(item[0], session_id, item[1]),
+            )
+            self._process_sessions[pid] = resolved_session_id
+            if resolved_session_id != session_id:
                 logger.debug(
                     "Process monitor: remapped pid %s session %s -> %s after rekey",
                     pid,
                     session_id,
-                    live_session_id,
+                    resolved_session_id,
                 )
-                return live_session_id
+            return resolved_session_id
         return None
 
     async def _keepalive_session(self, session_id: str, pid: int) -> None:

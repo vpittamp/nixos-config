@@ -93,7 +93,7 @@ class RemoteSessionPushClient:
         source_host_name: str,
         auth_token: str = "",
         max_interval_sec: float = 8.0,
-        request_timeout_sec: float = 1.5,
+        request_timeout_sec: float = 5.0,
     ) -> None:
         self.endpoint_url = str(endpoint_url or "").strip()
         self.source_connection_key = _normalize_connection_key(source_connection_key)

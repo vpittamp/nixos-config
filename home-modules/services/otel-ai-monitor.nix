@@ -179,7 +179,7 @@ in
 
       timeoutSec = mkOption {
         type = types.number;
-        default = 1.5;
+        default = 5;
         description = "HTTP timeout for remote push requests";
       };
     };

@@ -33,6 +33,16 @@ from otel_ai_monitor.remote_transport import (  # type: ignore  # noqa: E402
 )
 
 
+def test_push_client_uses_more_tolerant_default_timeout():
+    client = RemoteSessionPushClient(
+        endpoint_url="http://thinkpad:4320/v1/i3pm/remote-sessions",
+        source_connection_key="vpittamp@ryzen:22",
+        source_host_name="ryzen",
+    )
+
+    assert client.request_timeout_sec == 5.0
+
+
 def _build_payload(
     *,
     sequence: int,

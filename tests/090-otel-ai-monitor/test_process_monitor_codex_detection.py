@@ -240,3 +240,68 @@ async def test_complete_session_resolves_rekeyed_native_session_by_pid():
 
     assert tracker._sessions[native_session_id].state == SessionState.COMPLETED
     assert monitor._process_sessions[12345] == native_session_id
+
+
+@pytest.mark.asyncio
+async def test_keepalive_session_prefers_canonical_native_session_over_stale_pid_mapping():
+    class _DummyTracker:
+        def __init__(self):
+            self._lock = asyncio.Lock()
+            self._sessions = {}
+            self.enable_notifications = False
+
+        async def _ensure_process_session_for_pid(self, _tool, _pid):
+            return None
+
+        def _mark_dirty_unlocked(self):
+            return None
+
+    tracker = _DummyTracker()
+    monitor = ProcessMonitor(tracker=tracker)  # type: ignore[arg-type]
+    now = datetime.now(timezone.utc)
+    stale_session_id = "codex:pid:12345"
+    canonical_session_id = "codex:native-sid-1:abc123def456"
+
+    tracker._sessions[stale_session_id] = Session(
+        session_id=stale_session_id,
+        native_session_id="native-sid-1",
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=174,
+        pid=12345,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="process_detected",
+        identity_phase="provisional",
+        identity_confidence="pid",
+    )
+    tracker._sessions[canonical_session_id] = Session(
+        session_id=canonical_session_id,
+        native_session_id="native-sid-1",
+        context_fingerprint="abc123def456",
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="vpittamp/nixos-config:main",
+        project_path=None,
+        window_id=174,
+        pid=12345,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=2,
+        status_reason="event:stream_token",
+        identity_phase="canonical",
+        identity_confidence="native",
+    )
+    monitor._process_sessions[12345] = stale_session_id
+
+    await monitor._keepalive_session(stale_session_id, 12345)
+
+    assert monitor._process_sessions[12345] == canonical_session_id
+    assert tracker._sessions[canonical_session_id].last_event_at >= now
