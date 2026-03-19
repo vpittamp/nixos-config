@@ -432,7 +432,7 @@ in
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "incus-admin" "onepassword" ];
 
   # ========== BLUETOOTH SUPPORT ==========
-  # For USB Bluetooth adapter or motherboard Bluetooth
+  # Realtek RTL8850 USB adapter (0bda:b850) + Jabra Evolve2 85
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;
@@ -440,9 +440,20 @@ in
       General = {
         Enable = "Source,Sink,Media,Socket";
         Experimental = true;
+        FastConnectable = true;
+        ReconnectAttempts = 7;
+        ReconnectIntervals = "1,2,4,8,16,32,64";
+      };
+      Policy = {
+        AutoEnable = true;
       };
     };
   };
+
+  # Disable USB autosuspend for Realtek BT adapter — prevents intermittent drops
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="b850", ATTR{power/autosuspend_delay_ms}="-1", ATTR{power/control}="on"
+  '';
 
   # Bluetooth manager GUI
   services.blueman.enable = true;
@@ -599,7 +610,7 @@ in
       };
     };
 
-    # WirePlumber configuration for Bluetooth audio (Bose QC35, etc.)
+    # WirePlumber configuration for Bluetooth audio
     wireplumber.extraConfig = {
       "10-bluez" = {
         "monitor.bluez.properties" = {
@@ -608,6 +619,47 @@ in
           "bluez5.enable-hw-volume" = true;
           "bluez5.codecs" = [ "sbc" "sbc_xq" "aac" "ldac" "aptx" "aptx_hd" ];
         };
+      };
+
+      # Jabra Evolve2 85 Bluetooth - auto-prioritize when connected
+      "50-jabra-bluetooth" = {
+        "monitor.bluez.rules" = [
+          {
+            matches = [
+              { "device.name" = "~bluez_card.*Jabra*"; }
+            ];
+            actions = {
+              update-props = {
+                "device.description" = "Jabra Evolve2 85";
+                "bluez5.auto-connect" = [ "a2dp_sink" "hfp_hf" ];
+              };
+            };
+          }
+          {
+            matches = [
+              { "node.name" = "~bluez_output.*Jabra*"; }
+            ];
+            actions = {
+              update-props = {
+                "node.description" = "Jabra Evolve2 85 Output";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+          {
+            matches = [
+              { "node.name" = "~bluez_input.*Jabra*"; }
+            ];
+            actions = {
+              update-props = {
+                "node.description" = "Jabra Evolve2 85 Mic";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+        ];
       };
     };
   };

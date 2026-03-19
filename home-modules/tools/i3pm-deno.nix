@@ -127,6 +127,12 @@ in
           is_default = false;
           ssh_host = "github.com";
         }
+        {
+          name = "NVIDIA";
+          path = "${config.home.homeDirectory}/repos/NVIDIA";
+          is_default = false;
+          ssh_host = "github.com";
+        }
       ];
     };
 

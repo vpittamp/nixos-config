@@ -315,6 +315,49 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: diskChip
+                    radius: 8
+                    color: root.diskChipFill(diskMouse.containsMouse)
+                    border.color: root.diskChipBorder(diskMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: diskLabel.implicitWidth + 18
+                    implicitHeight: parent.height
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: diskLabel
+                        anchors.centerIn: parent
+                        text: root.systemStatsDiskLabel()
+                        color: root.diskChipText(diskMouse.containsMouse)
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                    }
+
+                    MouseArea {
+                        id: diskMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+
+                    ToolTip {
+                        visible: diskMouse.containsMouse
+                        text: root.systemStatsDiskTooltip()
+                        delay: 400
+                    }
+                }
+
+                Rectangle {
                     id: networkChip
                     radius: 8
                     color: root.neutralChipFill(networkMouse.containsMouse)

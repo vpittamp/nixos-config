@@ -240,6 +240,20 @@ def read_system_generation() -> int:
         return 0
 
 
+def read_disk_usage() -> dict:
+    try:
+        st = __import__("os").statvfs("/")
+        total = st.f_frsize * st.f_blocks
+        free = st.f_frsize * st.f_bfree
+        used = total - free
+        total_gb = total / (1024 ** 3)
+        used_gb = used / (1024 ** 3)
+        percent = round((used / total) * 100, 1) if total > 0 else 0
+        return {"disk_percent": percent, "disk_used_gb": round(used_gb, 1), "disk_total_gb": round(total_gb, 1)}
+    except Exception:
+        return {"disk_percent": 0, "disk_used_gb": 0, "disk_total_gb": 0}
+
+
 def read_temperature_c() -> int | None:
     thermal_root = Path("/sys/class/thermal")
     if thermal_root.exists():
@@ -279,6 +293,7 @@ while True:
         swap_used_kb = max(0, swap_total_kb - swap_free_kb)
         load1, load5, load15 = read_loadavg()
 
+        disk = read_disk_usage()
         payload = {
             "memory_percent": round((used_kb / total_kb) * 100, 1),
             "memory_used_gb": round(used_kb / (1024 * 1024), 1),
@@ -290,6 +305,7 @@ while True:
             "load15": round(load15, 2),
             "temperature_c": read_temperature_c(),
             "system_generation": read_system_generation(),
+            **disk,
         }
         print(json.dumps(payload), flush=True)
     except Exception as error:
@@ -304,6 +320,9 @@ while True:
             "load15": 0,
             "temperature_c": None,
             "system_generation": 0,
+            "disk_percent": 0,
+            "disk_used_gb": 0,
+            "disk_total_gb": 0,
             "error": str(error),
         }), flush=True)
     time.sleep(1)
