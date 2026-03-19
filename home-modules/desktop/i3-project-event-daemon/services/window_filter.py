@@ -105,7 +105,7 @@ def read_process_environ(pid: int) -> Dict[str, str]:
         return env_dict
 
     except PermissionError as e:
-        logger.warning(f"Permission denied reading /proc/{pid}/environ: {e}")
+        logger.debug(f"Permission denied reading /proc/{pid}/environ: {e}")
         raise
     except FileNotFoundError as e:
         logger.debug(f"Process {pid} not found (may have exited): {e}")

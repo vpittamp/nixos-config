@@ -659,7 +659,7 @@ class TestQueryMonitoringData:
             ]
         }
         otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [
                 {
                     "tool": "codex",
@@ -759,7 +759,7 @@ class TestQueryMonitoringData:
             ]
         }
         otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [
                 {
                     "tool": "codex",
@@ -877,7 +877,7 @@ class TestQueryMonitoringData:
             ]
         }
         otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [
                 {
                     "tool": "codex",
@@ -978,7 +978,7 @@ class TestQueryMonitoringData:
         }
 
         local_otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [],
             "has_working": False,
             "timestamp": 0,
@@ -996,7 +996,7 @@ class TestQueryMonitoringData:
                     "source_boot_id": "boot-1",
                     "sequence": 12,
                     "payload_hash": "hash-1",
-                    "session_schema_version": "10",
+                    "session_schema_version": "11",
                     "updated_at": "2026-02-23T18:40:00+00:00",
                     "sent_at": "2026-02-23T18:40:00+00:00",
                     "received_at": time.time(),
@@ -1153,7 +1153,7 @@ class TestQueryMonitoringData:
         }
 
         local_otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [],
             "has_working": False,
             "timestamp": 0,
@@ -1171,7 +1171,7 @@ class TestQueryMonitoringData:
                     "source_boot_id": "boot-2",
                     "sequence": 42,
                     "payload_hash": "hash-2",
-                    "session_schema_version": "10",
+                    "session_schema_version": "11",
                     "updated_at": "2026-02-23T19:10:00+00:00",
                     "sent_at": "2026-02-23T19:10:00+00:00",
                     "received_at": time.time(),
@@ -1296,7 +1296,7 @@ class TestQueryMonitoringData:
         }
 
         local_otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [],
             "has_working": False,
             "timestamp": 0,
@@ -1314,7 +1314,7 @@ class TestQueryMonitoringData:
                     "source_boot_id": "boot-3",
                     "sequence": 43,
                     "payload_hash": "hash-3",
-                    "session_schema_version": "10",
+                    "session_schema_version": "11",
                     "updated_at": "2026-02-23T19:20:00+00:00",
                     "sent_at": "2026-02-23T19:20:00+00:00",
                     "received_at": time.time(),
@@ -1782,7 +1782,7 @@ class TestQueryMonitoringData:
                 "vpittamp@ryzen:22": {
                     "connection_key": "vpittamp@ryzen:22",
                     "host_name": "ryzen",
-                    "session_schema_version": "10",
+                    "session_schema_version": "11",
                     "received_at": time.time() - 120.0,
                     "sessions": [
                         {
@@ -1823,7 +1823,7 @@ class TestQueryMonitoringData:
                 "vpittamp@ryzen:22": {
                     "connection_key": "vpittamp@ryzen:22",
                     "host_name": "ryzen",
-                    "session_schema_version": "10",
+                    "session_schema_version": "11",
                     "received_at": time.time(),
                     "sessions": [
                         {
@@ -3425,7 +3425,7 @@ class TestAiReviewLifecycle:
             "current_ai_session_key": "daemon-workflow-session",
         }
         local_otel_payload = {
-            "schema_version": "10",
+            "schema_version": "11",
             "sessions": [
                 {
                     "tool": "codex",
@@ -3559,7 +3559,7 @@ class TestAiReviewLifecycle:
         }
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "10", "sessions": []}), \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):

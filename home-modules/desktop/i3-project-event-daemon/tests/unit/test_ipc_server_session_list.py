@@ -124,6 +124,7 @@ def make_runtime_session(overrides: dict | None = None) -> dict:
         "window_active": True,
         "pane_active": True,
         "focusable": True,
+        "identity_phase": "canonical",
         "native_session_id": "native-1",
         "session_id": "session-1",
         "process_running": True,
@@ -241,7 +242,7 @@ async def test_runtime_snapshot_keeps_transient_unbound_window_visible(server, m
 
 def make_local_payload():
     return {
-        "schema_version": "10",
+        "schema_version": "11",
         "sessions": [
             {
                 "tool": "codex",
@@ -274,8 +275,10 @@ def make_local_payload():
                 "is_streaming": False,
                 "pending_tools": 0,
                 "identity_source": "pane",
+                "identity_phase": "canonical",
                 "native_session_id": "native-1",
                 "session_id": "session-1",
+                "context_fingerprint": "abc123def456",
                 "trace_id": "trace-1",
                 "pid": 12345,
                 "process_running": True,
@@ -1142,7 +1145,7 @@ async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
 def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     local_payload = {
-        "schema_version": "10",
+        "schema_version": "11",
         "sessions": [
             {
                 "tool": "codex",
@@ -1159,8 +1162,10 @@ def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monk
                 "session_phase_label": "Working",
                 "turn_owner": "llm",
                 "turn_owner_label": "LLM",
+                "identity_phase": "canonical",
                 "native_session_id": "native-main",
                 "session_id": "session-main",
+                "context_fingerprint": "f-main",
                 "activity_substate": "thinking",
                 "activity_substate_label": "Thinking",
                 "pending_tools": 0,
@@ -1194,8 +1199,10 @@ def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monk
                 "session_phase_label": "Working",
                 "turn_owner": "llm",
                 "turn_owner_label": "LLM",
+                "identity_phase": "canonical",
                 "native_session_id": "native-raw",
                 "session_id": "session-raw",
+                "context_fingerprint": "f-raw",
                 "activity_substate": "thinking",
                 "activity_substate_label": "Thinking",
                 "pending_tools": 0,
@@ -1251,6 +1258,87 @@ def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monk
     assert sessions_by_pane["%1"]["window_active"] is True
     assert sessions_by_pane["%0"]["pane_active"] is False
     assert sessions_by_pane["%1"]["pane_active"] is True
+
+
+def test_load_session_items_reuses_cache_when_inputs_are_unchanged(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    local_payload = {
+        "schema_version": "11",
+        "sessions": [make_local_payload()["sessions"][0]],
+    }
+    load_calls: list[str] = []
+    normalize_calls: list[str] = []
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        load_calls.append(path_str)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return {"sources": {}}
+        return {}
+
+    original_normalize = server._normalize_session_items
+
+    def fake_normalize_session_items(*args, **kwargs):
+        normalize_calls.append("normalize")
+        return original_normalize(*args, **kwargs)
+
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_load_live_tmux_focus_state", lambda _tmux_sessions: {})
+    monkeypatch.setattr(server, "_normalize_session_items", fake_normalize_session_items)
+
+    first = server._load_session_items(runtime_snapshot)
+    second = server._load_session_items(runtime_snapshot)
+
+    assert len(first) == len(second) == 1
+    assert normalize_calls == ["normalize"]
+    assert len(load_calls) == 2
+
+
+def test_load_session_items_prefers_canonical_identity_on_same_tmux_surface(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    local_payload = {
+        "schema_version": "11",
+        "sessions": [
+            {
+                **make_local_payload()["sessions"][0],
+                "surface_kind": "tmux-pane",
+                "identity_phase": "provisional",
+                "native_session_id": "native-1",
+                "session_id": "codex:pid:12345",
+                "context_fingerprint": "",
+            },
+            {
+                **make_local_payload()["sessions"][0],
+                "surface_kind": "tmux-pane",
+                "identity_phase": "canonical",
+                "native_session_id": "native-1",
+                "session_id": "codex:native-1:abc123def456",
+                "context_fingerprint": "abc123def456",
+                "updated_at": "2026-03-14T15:00:02Z",
+            },
+        ],
+    }
+
+    def fake_load_json_file(path):
+        path_str = str(path)
+        if path_str.endswith("otel-ai-sessions.json"):
+            return local_payload
+        if path_str.endswith("remote-otel-sink.json"):
+            return {"sources": {}}
+        return {}
+
+    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_load_live_tmux_focus_state", lambda _tmux_sessions: {})
+
+    sessions = server._load_session_items(runtime_snapshot)
+
+    assert len(sessions) == 1
+    assert sessions[0]["identity_phase"] == "canonical"
+    assert sessions[0]["session_id"] == "codex:native-1:abc123def456"
 
 
 @pytest.mark.asyncio

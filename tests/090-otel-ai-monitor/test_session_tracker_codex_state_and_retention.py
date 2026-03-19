@@ -582,8 +582,9 @@ def test_build_session_list_includes_resolved_pid_session_after_restart():
     session_list, _ = tracker._build_session_list_unlocked()
 
     assert len(session_list.sessions) == 1
-    assert session_list.schema_version == "10"
+    assert session_list.schema_version == "11"
     assert session_list.sessions[0].session_id == "codex:pid:706991"
+    assert session_list.sessions[0].identity_phase == "provisional"
     assert session_list.sessions[0].identity_confidence == IdentityConfidence.PID
     assert session_list.sessions[0].project == "vpittamp/nixos-config:main"
     assert session_list.sessions[0].session_kind == "process"
@@ -654,7 +655,7 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
     assert item.project_source == "anchor"
 
 
-def test_build_session_list_preserves_all_sessions_on_same_tmux_surface(monkeypatch):
+def test_build_session_list_collapses_duplicate_sessions_on_same_tmux_surface(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
     monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
@@ -745,13 +746,247 @@ def test_build_session_list_preserves_all_sessions_on_same_tmux_surface(monkeypa
 
     session_list, _ = tracker._build_session_list_unlocked()
 
-    assert len(session_list.sessions) == 2
-    ids = {s.session_id for s in session_list.sessions}
-    assert ids == {"codex:native-pane", "codex:pid:283369"}
-    for s in session_list.sessions:
-        assert s.surface_kind == "tmux-pane"
-        assert "::%4::" in s.surface_key
-        assert s.focusable is True
+    assert len(session_list.sessions) == 1
+    winner = session_list.sessions[0]
+    assert winner.session_id == "codex:native-pane"
+    assert winner.identity_confidence == IdentityConfidence.NATIVE
+    assert winner.pending_tools == 1
+    assert winner.surface_kind == "tmux-pane"
+    assert "::%4::" in winner.surface_key
+    assert winner.focusable is True
+
+
+def test_build_context_fingerprint_ignores_pid_and_window_for_tmux_identity():
+    first_terminal_context = {
+        "tmux_server_key": "/run/user/1000/tmux-1000/default",
+        "tmux_socket": "/run/user/1000/tmux-1000/default",
+        "tmux_session": "i3pm-pittampalliorg-workflow--9594e5c9",
+        "tmux_window": "0:main",
+        "tmux_pane": "%0",
+        "pty": "/dev/pts/1",
+        "host_name": "thinkpad",
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "context_key": "PittampalliOrg/workflow-builder:main::local::local@thinkpad",
+    }
+
+    first = SessionTracker._build_context_fingerprint(
+        12345,
+        9,
+        first_terminal_context,
+        "PittampalliOrg/workflow-builder:main",
+        "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+    )
+    second_terminal_context = dict(first_terminal_context)
+    second_terminal_context["pty"] = "/dev/pts/99"
+    second_terminal_context["tmux_socket"] = "/tmp/other-socket"
+    second = SessionTracker._build_context_fingerprint(
+        67890,
+        114,
+        second_terminal_context,
+        "some-other-project",
+        "/tmp/other-project",
+    )
+
+    assert first is not None
+    assert first == second
+
+
+@pytest.mark.asyncio
+async def test_process_event_promotes_provisional_native_session_to_canonical_once_identity_is_complete(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    start = datetime.now(timezone.utc)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+    monkeypatch.setattr(session_tracker_module, "pid_exists", lambda _pid: True)
+
+    async def _fake_resolve_window_context(pid: int):
+        assert pid == 424242
+        return (101, "vpittamp/nixos-config:main", {})
+
+    monkeypatch.setattr(tracker, "_resolve_window_context", _fake_resolve_window_context)
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.api_request",
+            timestamp=start,
+            session_id="native-promote",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "process.pid": "424242",
+                "project": "vpittamp/nixos-config:main",
+                "terminal.execution_mode": "local",
+                "terminal.connection_key": "local@thinkpad",
+                "terminal.tmux.session": "i3pm-vpittamp-nixos-config-main",
+                "terminal.tmux.window": "0:main",
+                "terminal.tmux.pane": "%5",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        provisional = tracker._sessions["codex:pid:424242"]
+        assert provisional.identity_phase == "provisional"
+        assert provisional.context_fingerprint is None
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.tool_result",
+            timestamp=start + timedelta(seconds=1),
+            session_id="native-promote",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "process.pid": "424242",
+                "project": "vpittamp/nixos-config:main",
+                "terminal.execution_mode": "local",
+                "terminal.connection_key": "local@thinkpad",
+                "terminal.context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                "terminal.tmux.server_key": "/run/user/1000/tmux-1000/default",
+                "terminal.tmux.socket": "/run/user/1000/tmux-1000/default",
+                "terminal.tmux.session": "i3pm-vpittamp-nixos-config-main",
+                "terminal.tmux.window": "0:main",
+                "terminal.tmux.pane": "%5",
+                "terminal.pty": "/dev/pts/5",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        matches = [s for s in tracker._sessions.values() if s.native_session_id == "native-promote"]
+        assert len(matches) == 1
+        promoted = matches[0]
+        assert promoted.identity_phase == "canonical"
+        assert promoted.session_id == f"codex:native-promote:{promoted.context_fingerprint}"
+        assert promoted.context_fingerprint is not None
+        assert "codex:pid:424242" not in tracker._sessions
+        assert tracker._native_session_map["codex:native-promote"] == {promoted.session_id}
+        stable_session_id = promoted.session_id
+        stable_fingerprint = promoted.context_fingerprint
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="codex.sse_event",
+            timestamp=start + timedelta(seconds=2),
+            session_id="native-promote",
+            tool=AITool.CODEX_CLI,
+            attributes={
+                "process.pid": "424242",
+                "project": "some-other-project",
+                "host.name": "renamed-host",
+                "terminal.execution_mode": "local",
+                "terminal.connection_key": "local@thinkpad",
+                "terminal.context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                "terminal.tmux.server_key": "/run/user/1000/tmux-1000/default",
+                "terminal.tmux.socket": "/tmp/changed-socket",
+                "terminal.tmux.session": "i3pm-vpittamp-nixos-config-main",
+                "terminal.tmux.window": "0:main",
+                "terminal.tmux.pane": "%5",
+                "terminal.pty": "/dev/pts/99",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        matches = [s for s in tracker._sessions.values() if s.native_session_id == "native-promote"]
+        assert len(matches) == 1
+        promoted = matches[0]
+        assert promoted.identity_phase == "canonical"
+        assert promoted.session_id == stable_session_id
+        assert promoted.context_fingerprint == stable_fingerprint
+
+
+def test_build_session_list_prefers_live_session_over_retained_output_ready_on_same_tmux_surface(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        session_tracker_module,
+        "list_tmux_panes_sync",
+        lambda: [{
+            "tmux_socket": "/run/user/1000/tmux-1000/default",
+            "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "tmux_session": "i3pm-pittampalliorg-workflow--9594e5c9",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+            "pane_pid": 2123637,
+            "pane_title": "codex resume --yolo",
+            "pane_active": True,
+            "window_active": True,
+            "pty": "/dev/pts/1",
+        }],
+    )
+
+    retained = Session(
+        session_id="codex:old-session",
+        native_session_id="old-session",
+        context_fingerprint="pane=%0",
+        collision_group_id="codex:old-session",
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.COMPLETED,
+        project="PittampalliOrg/workflow-builder:main",
+        project_path="/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+        window_id=9,
+        pid=2123637,
+        trace_id="trace-old",
+        created_at=now - timedelta(minutes=20),
+        last_event_at=now - timedelta(minutes=10),
+        last_activity_at=now - timedelta(minutes=10),
+        state_changed_at=now - timedelta(minutes=10),
+        state_seq=8,
+        status_reason="event:codex.Codex Session",
+    )
+    retained.terminal_context.window_id = 9
+    retained.terminal_context.tmux_session = "i3pm-pittampalliorg-workflow--9594e5c9"
+    retained.terminal_context.tmux_window = "0:main"
+    retained.terminal_context.tmux_pane = "%0"
+    retained.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    retained.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    retained.terminal_context.pty = "/dev/pts/1"
+    retained.terminal_context.execution_mode = "local"
+    retained.terminal_context.connection_key = "local@thinkpad"
+    retained.terminal_context.context_key = "PittampalliOrg/workflow-builder:main::local::local@thinkpad"
+    retained.terminal_state = TerminalState.EXPLICIT_COMPLETE
+
+    live = Session(
+        session_id="codex:live-session",
+        native_session_id="live-session",
+        context_fingerprint="pane=%0-live",
+        collision_group_id="codex:live-session",
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="PittampalliOrg/workflow-builder:main",
+        project_path="/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+        window_id=9,
+        pid=2123637,
+        trace_id="trace-live",
+        created_at=now - timedelta(minutes=1),
+        last_event_at=now,
+        last_activity_at=now,
+        state_changed_at=now,
+        state_seq=3,
+        status_reason="event:codex.tool_result",
+    )
+    live.terminal_context.window_id = 9
+    live.terminal_context.tmux_session = "i3pm-pittampalliorg-workflow--9594e5c9"
+    live.terminal_context.tmux_window = "0:main"
+    live.terminal_context.tmux_pane = "%0"
+    live.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    live.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    live.terminal_context.pty = "/dev/pts/1"
+    live.terminal_context.execution_mode = "local"
+    live.terminal_context.connection_key = "local@thinkpad"
+    live.terminal_context.context_key = "PittampalliOrg/workflow-builder:main::local::local@thinkpad"
+
+    tracker._sessions[retained.session_id] = retained
+    tracker._sessions[live.session_id] = live
+
+    session_list, _ = tracker._build_session_list_unlocked()
+
+    assert len(session_list.sessions) == 1
+    assert session_list.sessions[0].session_id == "codex:live-session"
 
 
 @pytest.mark.asyncio
@@ -1020,13 +1255,14 @@ async def test_tracker_restores_recent_working_session_from_previous_snapshot(tm
     snapshot_path = tmp_path / "otel-ai-sessions.json"
     updated_at = datetime.now(timezone.utc).isoformat()
     snapshot_path.write_text(json.dumps({
-        "schema_version": "6",
+        "schema_version": "11",
         "type": "session_list",
         "updated_at": updated_at,
         "sessions": [{
             "session_id": "codex:native-restore",
             "native_session_id": "native-restore",
             "context_fingerprint": "pane=%9",
+            "identity_phase": "canonical",
             "collision_group_id": "codex:native-restore",
             "identity_confidence": "native",
             "tool": "codex",

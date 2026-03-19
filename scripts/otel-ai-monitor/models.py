@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SessionState(str, Enum):
@@ -196,6 +196,10 @@ class Session(BaseModel):
         default=None,
         description="Deterministic context key suffix for disambiguating same native session IDs",
     )
+    identity_phase: str = Field(
+        default="provisional",
+        description="Whether the session identity is still provisional or has been promoted to canonical",
+    )
     collision_group_id: Optional[str] = Field(
         default=None,
         description="Native collision group identifier in format tool:native_session_id",
@@ -300,6 +304,22 @@ class Session(BaseModel):
 
         use_enum_values = True
 
+    @model_validator(mode="after")
+    def _normalize_identity_phase(self) -> "Session":
+        phase = str(self.identity_phase or "").strip().lower()
+        if phase not in {"provisional", "canonical"}:
+            phase = ""
+        if not phase:
+            phase = (
+                "canonical"
+                if self.native_session_id and self.context_fingerprint
+                else "provisional"
+            )
+        elif phase == "provisional" and self.native_session_id and self.context_fingerprint:
+            phase = "canonical"
+        self.identity_phase = phase
+        return self
+
 
 class TelemetryEvent(BaseModel):
     """Parsed telemetry event from OTLP log record.
@@ -359,6 +379,10 @@ class SessionListItem(BaseModel):
     )
     context_fingerprint: Optional[str] = Field(
         default=None, description="Deterministic context key suffix for collision handling"
+    )
+    identity_phase: str = Field(
+        default="provisional",
+        description="Whether the rendered session identity is provisional or canonical",
     )
     collision_group_id: Optional[str] = Field(
         default=None, description="Native collision group ID (tool:native_session_id)"
@@ -541,6 +565,22 @@ class SessionListItem(BaseModel):
     lifecycle_source: str = Field(default="trace", description="Primary source of lifecycle state")
     updated_at: str = Field(description="RFC3339 timestamp when session was last updated")
 
+    @model_validator(mode="after")
+    def _normalize_identity_phase(self) -> "SessionListItem":
+        phase = str(self.identity_phase or "").strip().lower()
+        if phase not in {"provisional", "canonical"}:
+            phase = ""
+        if not phase:
+            phase = (
+                "canonical"
+                if self.native_session_id and self.context_fingerprint
+                else "provisional"
+            )
+        elif phase == "provisional" and self.native_session_id and self.context_fingerprint:
+            phase = "canonical"
+        self.identity_phase = phase
+        return self
+
 
 class SessionList(BaseModel):
     """Full session list output.
@@ -551,7 +591,7 @@ class SessionList(BaseModel):
     Feature 136: Added sessions_by_window for multiple AI indicators per terminal.
     """
 
-    schema_version: str = Field(default="10", description="Session payload schema version")
+    schema_version: str = Field(default="11", description="Session payload schema version")
     type: str = Field(default="session_list", description="Event type for consumer routing")
     sessions: list[SessionListItem] = Field(
         default_factory=list, description="All active sessions (not deduplicated)"

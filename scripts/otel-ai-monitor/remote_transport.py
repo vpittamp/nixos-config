@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
-AI_SESSION_SCHEMA_VERSION = "10"
+AI_SESSION_SCHEMA_VERSION = "11"
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession

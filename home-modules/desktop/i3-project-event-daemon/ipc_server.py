@@ -6831,7 +6831,6 @@ class IPCServer:
             str(active_context.get("context_key") or "").strip(),
             str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
             self._local_host_alias(),
-            int(time.time()),
         )
 
     def _parse_remote_target(self, remote_target: str, connection_key: str = "") -> Tuple[str, str, int]:
@@ -7075,6 +7074,16 @@ class IPCServer:
             "reason": "ok" if result.returncode == 0 else "local_tmux_kill_failed",
             "stderr": str(result.stderr or "").strip(),
         }
+
+    @staticmethod
+    def _normalize_session_identity_phase(session: Dict[str, Any]) -> str:
+        """Return the explicit session identity phase for daemon reconciliation."""
+        phase = str(session.get("identity_phase") or "").strip().lower()
+        if phase in {"provisional", "canonical"}:
+            return phase
+        native_session_id = str(session.get("native_session_id") or "").strip()
+        context_fingerprint = str(session.get("context_fingerprint") or "").strip()
+        return "canonical" if native_session_id and context_fingerprint else "provisional"
 
     @staticmethod
     def _session_render_identity(session: Dict[str, Any]) -> str:
@@ -7594,9 +7603,11 @@ class IPCServer:
                 binding_state = "bound_local" if binding_anchor_id else "tmux_present_unbound"
             if not binding_source and binding_anchor_id:
                 binding_source = "tmux_metadata"
+            identity_phase = self._normalize_session_identity_phase(raw_session)
             session_key = self._build_session_key(
                 {
                     **raw_session,
+                    "identity_phase": identity_phase,
                     "surface_key": surface_key,
                     "terminal_context": {
                         **terminal_context,
@@ -7732,8 +7743,10 @@ class IPCServer:
                 "availability_state": availability_state,
                 "focusability_reason": focusability_reason,
                 "identity_source": str(raw_session.get("identity_source") or "").strip(),
+                "identity_phase": identity_phase,
                 "native_session_id": str(raw_session.get("native_session_id") or "").strip(),
                 "session_id": str(raw_session.get("session_id") or "").strip(),
+                "context_fingerprint": str(raw_session.get("context_fingerprint") or "").strip(),
                 "trace_id": str(raw_session.get("trace_id") or "").strip(),
                 "pid": raw_session.get("pid"),
                 "process_running": bool(raw_session.get("process_running", False)),
@@ -7800,6 +7813,7 @@ class IPCServer:
     def _session_item_preference_key(self, session: Dict[str, Any]) -> Tuple[Any, ...]:
         """Return a comparison key that prefers the newest, richest session snapshot."""
         return (
+            int(self._normalize_session_identity_phase(session) == "canonical"),
             self._session_phase_priority(str(session.get("session_phase") or "")),
             int(session.get("pending_tools", 0) or 0),
             bool(session.get("process_running", False)),
@@ -7890,7 +7904,23 @@ class IPCServer:
             existing = deduped.get(identity_key)
             if existing is None or self._session_item_preference_key(session) > self._session_item_preference_key(existing):
                 deduped[identity_key] = session
-        return list(deduped.values())
+
+        pane_first: Dict[str, Dict[str, Any]] = {}
+        output: List[Dict[str, Any]] = []
+        for session in deduped.values():
+            if not isinstance(session, dict):
+                continue
+            surface_key = str(session.get("surface_key") or "").strip()
+            surface_kind = str(session.get("surface_kind") or "").strip()
+            if surface_kind != "tmux-pane" or not surface_key:
+                output.append(session)
+                continue
+            existing = pane_first.get(surface_key)
+            if existing is None or self._session_item_preference_key(session) > self._session_item_preference_key(existing):
+                pane_first[surface_key] = session
+
+        output.extend(pane_first.values())
+        return output
 
     def _set_focus_overrides(
         self,
@@ -8223,7 +8253,7 @@ class IPCServer:
             sessions = copy.deepcopy(self._session_items_cache_rows)
         else:
             local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
-            if str(local_payload.get("schema_version") or "").strip() != "10":
+            if str(local_payload.get("schema_version") or "").strip() != "11":
                 local_payload = {}
             local_sessions_raw = [
                 item for item in local_payload.get("sessions", [])
@@ -8243,7 +8273,7 @@ class IPCServer:
                 for source_connection_key, source_data in sources.items():
                     if not isinstance(source_data, dict):
                         continue
-                    if str(source_data.get("session_schema_version") or "").strip() != "10":
+                    if str(source_data.get("session_schema_version") or "").strip() != "11":
                         continue
                     source_sessions = [
                         item for item in source_data.get("sessions", [])

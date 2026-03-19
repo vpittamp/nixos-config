@@ -957,18 +957,25 @@ class SessionTracker:
         if not project and not project_path:
             return None
 
-        context_fingerprint = self._build_context_fingerprint(
-            pid,
-            resolved_window_id,
-            terminal_context,
-            project,
-            project_path,
-        )
         native_group_id = self._build_native_group_id(tool, native_session_id)
+        canonical_ready = bool(
+            native_group_id and self._has_canonical_tmux_identity(terminal_context)
+        )
+        context_fingerprint = (
+            self._build_context_fingerprint(
+                pid,
+                resolved_window_id,
+                terminal_context,
+                project,
+                project_path,
+            )
+            if canonical_ready
+            else None
+        )
         desired_session_id = (
             self._compose_native_session_key(native_group_id, context_fingerprint)
-            if native_group_id
-            else f"{tool.value}:pid:{pid}"
+            if canonical_ready and context_fingerprint
+            else self._build_provisional_session_id(tool, native_group_id, pid)
         )
         provider = TOOL_PROVIDER.get(tool, Provider.ANTHROPIC)
         now = datetime.now(timezone.utc)
@@ -990,6 +997,30 @@ class SessionTracker:
                     canonical_session_id = resolved_native_key
                     session = self._sessions.get(canonical_session_id)
 
+            if session is None and canonical_ready and native_group_id:
+                provisional_session_id = self._find_provisional_native_session_unlocked(
+                    tool,
+                    native_session_id,
+                    native_group_id,
+                    pid,
+                )
+                if (
+                    provisional_session_id
+                    and provisional_session_id != canonical_session_id
+                    and canonical_session_id not in self._sessions
+                ):
+                    upgraded = self._rekey_session_unlocked(
+                        provisional_session_id,
+                        canonical_session_id,
+                    )
+                    if upgraded:
+                        session = upgraded
+                        logger.info(
+                            "Promoted provisional live session %s -> canonical session %s",
+                            provisional_session_id,
+                            canonical_session_id,
+                        )
+
             if session is None:
                 session = self._sessions.get(canonical_session_id)
 
@@ -999,11 +1030,12 @@ class SessionTracker:
                 session = Session(
                     session_id=canonical_session_id,
                     native_session_id=native_session_id,
-                    context_fingerprint=context_fingerprint if native_session_id else None,
+                    context_fingerprint=context_fingerprint if canonical_ready else None,
+                    identity_phase="canonical" if canonical_ready else "provisional",
                     collision_group_id=native_group_id if native_session_id else None,
                     identity_confidence=(
                         IdentityConfidence.NATIVE
-                        if native_session_id
+                        if canonical_ready
                         else IdentityConfidence.PID
                     ),
                     tool=tool,
@@ -1031,13 +1063,14 @@ class SessionTracker:
                     project,
                 )
 
-            if native_session_id and native_group_id:
+            if native_session_id and native_group_id and canonical_ready:
                 desired_native_session_id = self._compose_native_session_key(
                     native_group_id,
                     context_fingerprint,
                 )
                 if (
                     desired_native_session_id != session.session_id
+                    and str(session.identity_phase or "").strip().lower() != "canonical"
                     and desired_native_session_id not in self._sessions
                 ):
                     rekeyed = self._rekey_session_unlocked(
@@ -1050,9 +1083,15 @@ class SessionTracker:
                 session.collision_group_id = native_group_id
                 if context_fingerprint:
                     session.context_fingerprint = context_fingerprint
+                session.identity_phase = "canonical"
                 self._register_native_session_unlocked(native_group_id, session.session_id)
                 self._session_pids[native_group_id] = pid
                 self._session_pids[native_session_id] = pid
+            elif native_session_id and native_group_id:
+                session.native_session_id = native_session_id
+                session.collision_group_id = native_group_id
+                if str(session.identity_phase or "").strip().lower() != "canonical":
+                    session.identity_phase = "provisional"
 
             session.pid = pid
             session.project = project or session.project
@@ -1136,6 +1175,13 @@ class SessionTracker:
             logger.debug("Failed to load previous session snapshot: %s", exc)
             return
 
+        if str(payload.get("schema_version") or "").strip() != "11":
+            logger.info(
+                "Skipping previous session snapshot with incompatible schema_version=%s",
+                str(payload.get("schema_version") or "").strip() or "unknown",
+            )
+            return
+
         items = payload.get("sessions", [])
         if not isinstance(items, list):
             return
@@ -1177,11 +1223,21 @@ class SessionTracker:
                     identity_confidence = IdentityConfidence(identity_raw)
                 except ValueError:
                     identity_confidence = IdentityConfidence.HEURISTIC
+                native_session_id = str(raw.get("native_session_id") or "").strip() or None
+                context_fingerprint = str(raw.get("context_fingerprint") or "").strip() or None
+                identity_phase = str(raw.get("identity_phase") or "").strip().lower()
+                if identity_phase not in {"provisional", "canonical"}:
+                    identity_phase = (
+                        "canonical"
+                        if native_session_id and context_fingerprint
+                        else "provisional"
+                    )
 
                 session = Session(
                     session_id=session_id,
-                    native_session_id=str(raw.get("native_session_id") or "").strip() or None,
-                    context_fingerprint=str(raw.get("context_fingerprint") or "").strip() or None,
+                    native_session_id=native_session_id,
+                    context_fingerprint=context_fingerprint,
+                    identity_phase=identity_phase,
                     collision_group_id=str(raw.get("collision_group_id") or "").strip() or None,
                     identity_confidence=identity_confidence,
                     tool=tool,
@@ -1277,8 +1333,9 @@ class SessionTracker:
                     if session.native_session_id:
                         self._session_pids[session.native_session_id] = pid_int
                 if session.collision_group_id:
-                    self._register_native_session_unlocked(session.collision_group_id, session_id)
-                    if session.pid is not None:
+                    if str(session.identity_phase or "").strip().lower() == "canonical":
+                        self._register_native_session_unlocked(session.collision_group_id, session_id)
+                    if session.pid is not None and str(session.identity_phase or "").strip().lower() == "canonical":
                         self._session_pids[session.collision_group_id] = int(session.pid)
                 restored += 1
 
@@ -1493,28 +1550,74 @@ class SessionTracker:
                 return
             parts.append(f"{name}={text}")
 
-        if not has_tmux_identity:
+        if not has_tmux_identity or not SessionTracker._has_canonical_tmux_identity(terminal_context):
             return None
         add_part("tmux_server", terminal_context.get("tmux_server_key"))
-        add_part("tmux_socket", terminal_context.get("tmux_socket"))
-        add_part("pane", terminal_context.get("tmux_pane"))
-        add_part("pty", terminal_context.get("pty"))
         add_part("tmux_session", terminal_context.get("tmux_session"))
         add_part("tmux_window", terminal_context.get("tmux_window"))
-        add_part("host", terminal_context.get("host_name"))
-        add_part("mode", terminal_context.get("execution_mode"))
-        add_part("connection", terminal_context.get("connection_key"))
+        add_part("pane", terminal_context.get("tmux_pane"))
         add_part("context", terminal_context.get("context_key"))
-        add_part("window", window_id)
-        add_part("pid", client_pid)
-        add_part("project_path", project_path)
-        add_part("project", project)
 
         if not parts:
             return None
 
         raw = "|".join(parts)
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+    @staticmethod
+    def _has_canonical_tmux_identity(terminal_context: dict) -> bool:
+        return bool(
+            str(terminal_context.get("context_key") or "").strip()
+            and str(terminal_context.get("tmux_server_key") or "").strip()
+            and str(terminal_context.get("tmux_session") or "").strip()
+            and str(terminal_context.get("tmux_window") or "").strip()
+            and str(terminal_context.get("tmux_pane") or "").strip()
+        )
+
+    def _build_provisional_session_id(
+        self,
+        tool: Optional[AITool],
+        native_group_id: Optional[str],
+        client_pid: Optional[int],
+    ) -> str:
+        tool_name = self._tool_name(tool)
+        if client_pid is not None:
+            return f"{tool_name}:pid:{client_pid}"
+        if native_group_id:
+            return f"{native_group_id}:provisional"
+        self._fallback_counter += 1
+        return f"{tool_name}:ephemeral:{time.monotonic_ns()}:{self._fallback_counter}"
+
+    def _find_provisional_native_session_unlocked(
+        self,
+        tool: Optional[AITool],
+        native_session_id: Optional[str],
+        native_group_id: Optional[str],
+        client_pid: Optional[int],
+    ) -> Optional[str]:
+        candidate_ids: list[str] = []
+        if client_pid is not None:
+            candidate_ids.append(f"{self._tool_name(tool)}:pid:{client_pid}")
+        if native_group_id:
+            candidate_ids.append(f"{native_group_id}:provisional")
+
+        for sid in candidate_ids:
+            session = self._sessions.get(sid)
+            if not session:
+                continue
+            if native_session_id and session.native_session_id and session.native_session_id != native_session_id:
+                continue
+            if str(getattr(session, "identity_phase", "provisional") or "provisional") == "canonical":
+                continue
+            return sid
+
+        for sid, session in self._sessions.items():
+            if native_session_id and session.native_session_id != native_session_id:
+                continue
+            if str(getattr(session, "identity_phase", "provisional") or "provisional") == "canonical":
+                continue
+            return sid
+        return None
 
     @staticmethod
     def _build_surface_key(
@@ -1562,6 +1665,72 @@ class SessionTracker:
             "pane": 2,
             "heuristic": 1,
         }.get(normalized, 0)
+
+    @classmethod
+    def _canonical_surface_item_sort_key(cls, item: SessionListItem) -> tuple:
+        """Return the canonical winner sort key for duplicate tmux-surface items."""
+        return (
+            int(str(item.identity_phase or "").strip().lower() == "canonical"),
+            int(bool(item.process_running)),
+            int(not bool(item.llm_stopped)),
+            cls._session_list_identity_confidence_rank(item.identity_confidence),
+            int(bool(item.needs_user_action or item.output_unseen)),
+            int(bool(item.is_streaming)),
+            int(item.pending_tools or 0),
+            int(item.stage_rank or 0),
+            str(item.last_activity_at or ""),
+            int(item.state_seq or 0),
+            str(item.updated_at or ""),
+            int(item.pid or 0),
+            str(item.session_id or ""),
+        )
+
+    def _collapse_duplicate_tmux_surface_items(
+        self,
+        items: list[SessionListItem],
+        fingerprint_source: list[tuple[object, ...]],
+    ) -> list[SessionListItem]:
+        """Collapse multiple exported sessions for the same tmux pane into one canonical item."""
+        buckets: dict[str, list[SessionListItem]] = {}
+        passthrough: list[SessionListItem] = []
+        for item in items:
+            surface_key = str(item.surface_key or "").strip()
+            if item.surface_kind == "tmux-pane" and surface_key:
+                buckets.setdefault(surface_key, []).append(item)
+                continue
+            passthrough.append(item)
+
+        collapsed: list[SessionListItem] = list(passthrough)
+        for surface_key, bucket in buckets.items():
+            if len(bucket) == 1:
+                collapsed.append(bucket[0])
+                continue
+
+            ordered = sorted(
+                bucket,
+                key=self._canonical_surface_item_sort_key,
+                reverse=True,
+            )
+            winner = ordered[0].model_copy(deep=True)
+            winner.conflict_state = None
+            winner.conflict_detail = None
+            winner.focusable = bool(winner.focusable and not winner.invalid_reason)
+            collapsed.append(winner)
+
+            fingerprint_source.append((
+                "surface_canonicalized",
+                surface_key,
+                winner.session_id,
+                tuple(str(item.session_id or "") for item in ordered),
+            ))
+            logger.debug(
+                "Collapsed %d exported sessions onto tmux surface %s; keeping %s",
+                len(bucket),
+                surface_key,
+                winner.session_id,
+            )
+
+        return collapsed
 
     def _register_native_session_unlocked(self, group_id: str, session_id: str) -> None:
         bucket = self._native_session_map.setdefault(group_id, set())
@@ -1738,9 +1907,9 @@ class SessionTracker:
         native_session_id: Optional[str],
         context_fingerprint: Optional[str] = None,
     ) -> str:
-        """Build canonical session key with native IDs taking priority."""
+        """Build a canonical session key when strict native identity is ready."""
         tool_name = self._tool_name(event.tool)
-        if native_session_id:
+        if native_session_id and context_fingerprint:
             native_group_id = self._build_native_group_id(event.tool, native_session_id)
             if native_group_id:
                 return self._compose_native_session_key(
@@ -2712,9 +2881,6 @@ class SessionTracker:
         native_session_id = self._extract_native_session_id(event)
         native_group_id = self._build_native_group_id(event.tool, native_session_id)
 
-        provisional_session_id = self._build_session_id(
-            event, native_session_id, None
-        )
         explicit_pid_raw = (
             event.attributes.get("process.pid")
             if event.attributes.get("process.pid") is not None
@@ -2726,6 +2892,11 @@ class SessionTracker:
                 explicit_client_pid = int(explicit_pid_raw)
             except (TypeError, ValueError):
                 explicit_client_pid = None
+        provisional_session_id = self._build_provisional_session_id(
+            event.tool,
+            native_group_id,
+            explicit_client_pid,
+        )
 
         if explicit_client_pid is not None and not pid_exists(explicit_client_pid):
             logger.debug(
@@ -2853,15 +3024,29 @@ class SessionTracker:
         allow_native_context_override = bool(
             explicit_client_pid is not None or has_explicit_terminal_identity
         )
-        context_fingerprint = self._build_context_fingerprint(
-            client_pid,
-            resolved_window_id,
-            event_terminal_context,
-            project_for_identity,
-            event_project_path,
+        canonical_ready = bool(
+            native_group_id and self._has_canonical_tmux_identity(event_terminal_context)
         )
-        desired_session_id = self._build_session_id(
-            event, native_session_id, context_fingerprint
+        context_fingerprint = (
+            self._build_context_fingerprint(
+                client_pid,
+                resolved_window_id,
+                event_terminal_context,
+                project_for_identity,
+                event_project_path,
+            )
+            if canonical_ready
+            else None
+        )
+        provisional_session_id = self._build_provisional_session_id(
+            event.tool,
+            native_group_id,
+            client_pid,
+        )
+        desired_session_id = (
+            self._compose_native_session_key(native_group_id, context_fingerprint)
+            if canonical_ready and context_fingerprint and native_group_id
+            else provisional_session_id
         )
 
         async with self._lock:
@@ -2884,23 +3069,29 @@ class SessionTracker:
 
             session = self._sessions.get(session_id)
 
-            # If we first saw this process without native session ID, upgrade that
-            # process-keyed session once native session ID appears.
-            if session is None and native_session_id and client_pid is not None:
-                pid_key = f"{tool.value}:pid:{client_pid}"
-                if pid_key in self._sessions:
-                    if session_id not in self._sessions or session_id == pid_key:
-                        upgraded = self._rekey_session_unlocked(pid_key, session_id)
-                        if upgraded:
-                            session = upgraded
-                            logger.info(
-                                "Upgraded process session %s -> native session %s",
-                                pid_key,
-                                session_id,
-                            )
+            if session is None and canonical_ready and native_group_id:
+                provisional_match = self._find_provisional_native_session_unlocked(
+                    tool,
+                    native_session_id,
+                    native_group_id,
+                    client_pid,
+                )
+                if (
+                    provisional_match
+                    and provisional_match != session_id
+                    and session_id not in self._sessions
+                ):
+                    upgraded = self._rekey_session_unlocked(provisional_match, session_id)
+                    if upgraded:
+                        session = upgraded
+                        logger.info(
+                            "Promoted provisional session %s -> canonical session %s",
+                            provisional_match,
+                            session_id,
+                        )
 
             if session is None:
-                if native_session_id:
+                if canonical_ready and native_session_id:
                     identity_confidence = IdentityConfidence.NATIVE
                 elif client_pid is not None:
                     identity_confidence = IdentityConfidence.PID
@@ -2913,7 +3104,8 @@ class SessionTracker:
                 session = Session(
                     session_id=session_id,
                     native_session_id=native_session_id,
-                    context_fingerprint=context_fingerprint if native_session_id else None,
+                    context_fingerprint=context_fingerprint if canonical_ready else None,
+                    identity_phase="canonical" if canonical_ready else "provisional",
                     collision_group_id=native_group_id if native_session_id else None,
                     identity_confidence=identity_confidence,
                     tool=tool,
@@ -2991,7 +3183,7 @@ class SessionTracker:
 
             canonical_session_id = session.session_id
 
-            if native_session_id and native_group_id:
+            if native_session_id and native_group_id and canonical_ready:
                 previous_group_id = session.collision_group_id
                 if (
                     previous_group_id
@@ -3002,11 +3194,13 @@ class SessionTracker:
                         previous_group_id, canonical_session_id
                     )
 
-                desired_native_session_id = self._build_session_id(
-                    event, native_session_id, context_fingerprint
+                desired_native_session_id = self._compose_native_session_key(
+                    native_group_id,
+                    context_fingerprint,
                 )
                 if (
                     desired_native_session_id != canonical_session_id
+                    and str(session.identity_phase or "").strip().lower() != "canonical"
                     and desired_native_session_id not in self._sessions
                 ):
                     rekeyed = self._rekey_session_unlocked(
@@ -3020,18 +3214,27 @@ class SessionTracker:
                 if context_fingerprint:
                     session.context_fingerprint = context_fingerprint
                 session.collision_group_id = native_group_id
+                session.identity_phase = "canonical"
                 session.identity_confidence = IdentityConfidence.NATIVE
                 self._register_native_session_unlocked(
                     native_group_id, canonical_session_id
                 )
+            elif native_session_id and native_group_id:
+                session.native_session_id = native_session_id
+                if not session.collision_group_id:
+                    session.collision_group_id = native_group_id
+                if str(session.identity_phase or "").strip().lower() != "canonical":
+                    session.identity_phase = "provisional"
 
             # Cache PID for this session and native group alias to preserve correlation.
             if client_pid is not None:
                 if session.pid is None or explicit_client_pid is not None:
                     self._session_pids[canonical_session_id] = client_pid
                     session.pid = client_pid
-                if native_group_id and explicit_client_pid is not None:
+                if native_group_id and explicit_client_pid is not None and str(session.identity_phase or "").strip().lower() == "canonical":
                     self._session_pids[native_group_id] = client_pid
+                if str(session.identity_phase or "").strip().lower() != "canonical":
+                    session.context_fingerprint = None
                 if session.identity_confidence != IdentityConfidence.NATIVE:
                     session.identity_confidence = IdentityConfidence.PID
 
@@ -3976,6 +4179,7 @@ class SessionTracker:
                 session_id=s.session_id,
                 native_session_id=s.native_session_id,
                 context_fingerprint=s.context_fingerprint,
+                identity_phase=s.identity_phase,
                 collision_group_id=s.collision_group_id,
                 identity_confidence=s.identity_confidence,
                 tool=s.tool,
@@ -4062,6 +4266,7 @@ class SessionTracker:
                     s.session_id,
                     s.native_session_id,
                     s.context_fingerprint,
+                    s.identity_phase,
                     s.collision_group_id,
                     str(s.tool),
                     str(s.state),
@@ -4132,6 +4337,8 @@ class SessionTracker:
                     str(process_stats["stats_source"]),
                 )
             )
+
+        items = self._collapse_duplicate_tmux_surface_items(items, fingerprint_source)
 
         for diagnostic in sorted(
             self._session_diagnostics.values(),
