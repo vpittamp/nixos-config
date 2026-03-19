@@ -1094,8 +1094,7 @@ async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
     assert result["sessions"][0]["focusability_reason"] == "exact_remote_bridge_bound"
 
 
-@pytest.mark.asyncio
-async def test_session_list_refreshes_current_host_tmux_focus_state(server, monkeypatch):
+def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     local_payload = {
         "schema_version": "10",
@@ -1173,9 +1172,6 @@ async def test_session_list_refreshes_current_host_tmux_focus_state(server, monk
         ]
     }
 
-    async def fake_runtime_snapshot(_params):
-        return runtime_snapshot
-
     def fake_load_json_file(path):
         path_str = str(path)
         if path_str.endswith("otel-ai-sessions.json"):
@@ -1196,28 +1192,46 @@ async def test_session_list_refreshes_current_host_tmux_focus_state(server, monk
             },
         }
 
-    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
     monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
     monkeypatch.setattr(server, "_load_live_tmux_focus_state", fake_tmux_focus)
 
-    result = await server._session_list({})
+    sessions = server._load_session_items(runtime_snapshot)
 
-    assert result["total"] == 2
     sessions_by_pane = {
         session["tmux_pane"]: session
-        for session in result["sessions"]
+        for session in sessions
     }
     assert sessions_by_pane["%0"]["window_active"] is True
     assert sessions_by_pane["%1"]["window_active"] is True
     assert sessions_by_pane["%0"]["pane_active"] is False
     assert sessions_by_pane["%1"]["pane_active"] is True
-    assert sessions_by_pane["%1"]["is_current_window"] is True
-    assert sessions_by_pane["%0"]["is_current_window"] is False
 
 
 @pytest.mark.asyncio
 async def test_dashboard_snapshot_marks_remote_window_focused_from_current_session(server, monkeypatch):
+    sessions = [
+        {
+            "session_key": "session-remote-current",
+            "render_session_key": "session-remote-current",
+            "window_id": 175,
+            "window_active": True,
+            "pane_active": True,
+            "is_current_window": True,
+            "project_name": "PittampalliOrg/stacks:main",
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@ryzen:22",
+            "focus_connection_key": "vpittamp@ryzen:22",
+            "host_name": "ryzen",
+            "tool": "codex",
+            "pane_label": "main",
+            "session_phase": "working",
+            "turn_owner": "llm",
+            "turn_owner_label": "LLM",
+            "activity_substate": "thinking",
+            "activity_substate_label": "Thinking",
+        },
+    ]
     runtime_snapshot = {
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
@@ -1250,36 +1264,14 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
         "launch_stats": {},
         "scratchpad": {},
         "active_terminal": {},
+        "sessions": sessions,
+        "current_ai_session_key": "session-remote-current",
+        "focused_window_id": 175,
     }
-    sessions = [
-        {
-            "session_key": "session-remote-current",
-            "window_id": 175,
-            "window_active": True,
-            "pane_active": True,
-            "is_current_window": True,
-            "project_name": "PittampalliOrg/stacks:main",
-            "execution_mode": "ssh",
-            "connection_key": "vpittamp@ryzen:22",
-            "focus_connection_key": "vpittamp@ryzen:22",
-            "host_name": "ryzen",
-            "tool": "codex",
-            "pane_label": "main",
-            "session_phase": "working",
-            "turn_owner": "llm",
-            "turn_owner_label": "LLM",
-            "activity_substate": "thinking",
-            "activity_substate_label": "Thinking",
-        },
-    ]
 
-    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
     server._display_snapshot = AsyncMock(return_value={"outputs": []})
     server._build_dashboard_worktrees = AsyncMock(return_value=[])
-    server._focus_session_override_key = "session-remote-current"
-    server._focus_window_override = {"window_id": 175, "connection_key": "vpittamp@ryzen:22"}
-    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
     result = await server._dashboard_snapshot({})
 

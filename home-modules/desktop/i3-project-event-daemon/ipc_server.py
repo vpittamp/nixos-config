@@ -7,6 +7,7 @@ Updated: 2025-10-23 - Added unified event logging for all IPC methods
 """
 
 import asyncio
+import copy
 import hashlib
 import json
 import logging
@@ -345,6 +346,8 @@ class IPCServer:
         self._stopped_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_intent_epoch: int = 0
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
+        self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
+        self._session_items_cache_rows: List[Dict[str, Any]] = []
 
     @classmethod
     async def from_systemd_socket(
@@ -6765,6 +6768,72 @@ class IPCServer:
         except (OSError, json.JSONDecodeError):
             return {}
 
+    @staticmethod
+    def _file_signature(path: Path) -> Tuple[bool, int, int]:
+        """Return a cheap change signature for a runtime JSON file."""
+        try:
+            stat = path.stat()
+        except OSError:
+            return (False, 0, 0)
+        return (True, int(stat.st_mtime_ns), int(stat.st_size))
+
+    def _tracked_window_session_signature(
+        self,
+        tracked_windows: List[Dict[str, Any]],
+    ) -> str:
+        """Return a deterministic fingerprint for session-binding window state."""
+        relevant: List[Dict[str, Any]] = []
+        for item in tracked_windows:
+            if not isinstance(item, dict):
+                continue
+            relevant.append({
+                "window_id": int(item.get("window_id") or 0),
+                "project": str(item.get("project") or "").strip(),
+                "execution_mode": str(item.get("execution_mode") or "").strip(),
+                "connection_key": self._normalize_connection_key(str(item.get("connection_key") or "").strip()),
+                "context_key": str(item.get("context_key") or "").strip(),
+                "terminal_anchor_id": str(item.get("terminal_anchor_id") or "").strip(),
+                "binding_state": str(item.get("binding_state") or "").strip(),
+                "remote_session_key": str(item.get("remote_session_key") or "").strip(),
+                "remote_surface_key": str(item.get("remote_surface_key") or "").strip(),
+            })
+
+        relevant.sort(
+            key=lambda item: (
+                int(item.get("window_id") or 0),
+                str(item.get("context_key") or ""),
+                str(item.get("connection_key") or ""),
+                str(item.get("terminal_anchor_id") or ""),
+                str(item.get("remote_surface_key") or ""),
+                str(item.get("remote_session_key") or ""),
+            ),
+        )
+        encoded = json.dumps(relevant, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha1(encoded.encode("utf-8")).hexdigest()
+
+    def _session_items_cache_signature(
+        self,
+        runtime_snapshot: Dict[str, Any],
+    ) -> Tuple[Any, ...]:
+        """Return the normalization cache key for daemon-owned session rows."""
+        active_context = runtime_snapshot.get("active_context", {})
+        if not isinstance(active_context, dict):
+            active_context = {}
+        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
+        local_connection_key = self._normalize_connection_key(
+            str(active_context.get("connection_key") or f"local@{self._local_host_alias()}")
+        )
+        return (
+            self._file_signature(self._runtime_dir() / "otel-ai-sessions.json"),
+            self._file_signature(self._remote_sink_file()),
+            self._tracked_window_session_signature(tracked_windows),
+            local_connection_key,
+            str(active_context.get("context_key") or "").strip(),
+            str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
+            self._local_host_alias(),
+            int(time.time()),
+        )
+
     def _parse_remote_target(self, remote_target: str, connection_key: str = "") -> Tuple[str, str, int]:
         """Parse a user@host:port SSH target into user, host, port."""
         raw = str(remote_target or "").strip() or str(connection_key or "").strip()
@@ -7007,16 +7076,56 @@ class IPCServer:
             "stderr": str(result.stderr or "").strip(),
         }
 
+    @staticmethod
+    def _session_render_identity(session: Dict[str, Any]) -> str:
+        """Return the canonical logical identity for one rendered AI session."""
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+
+        surface_key = str(session.get("surface_key") or "").strip()
+        session_id = str(session.get("session_id") or "").strip()
+        native_id = str(session.get("native_session_id") or "").strip()
+        terminal_anchor_id = str(
+            session.get("binding_anchor_id")
+            or terminal_context.get("binding_anchor_id")
+            or session.get("terminal_anchor_id")
+            or terminal_context.get("terminal_anchor_id")
+            or ""
+        ).strip()
+        context_fingerprint = str(session.get("context_fingerprint") or "").strip()
+        context_key = str(
+            session.get("context_key")
+            or terminal_context.get("context_key")
+            or ""
+        ).strip()
+
+        if surface_key and session_id:
+            return f"{surface_key}::{session_id}"
+        if surface_key and native_id:
+            return f"{surface_key}::native::{native_id}"
+        if session_id:
+            return f"session::{session_id}"
+        if native_id:
+            return f"native::{native_id}"
+        if surface_key:
+            return f"surface::{surface_key}"
+        if terminal_anchor_id and context_key:
+            return f"anchor::{context_key}::{terminal_anchor_id}"
+        if terminal_anchor_id:
+            return f"anchor::{terminal_anchor_id}"
+        if context_fingerprint:
+            return f"context::{context_fingerprint}"
+        return ""
+
     def _build_session_key(self, session: Dict[str, Any], source_connection_key: str) -> str:
         """Create a deterministic key for daemon-owned AI session operations."""
         terminal_context = session.get("terminal_context") or {}
         if not isinstance(terminal_context, dict):
             terminal_context = {}
         tool = str(session.get("tool") or "unknown").strip() or "unknown"
-        native_id = str(session.get("native_session_id") or "").strip()
-        session_id = str(session.get("session_id") or "").strip()
-        surface_key = str(session.get("surface_key") or "").strip()
         context_key = str(terminal_context.get("context_key") or "").strip()
+        render_identity = self._session_render_identity(session)
         project_name = str(
             session.get("focus_project")
             or session.get("window_project")
@@ -7024,7 +7133,7 @@ class IPCServer:
             or session.get("project")
             or ""
         ).strip()
-        identity = surface_key or native_id or session_id or project_name or str(session.get("pid") or "unknown")
+        identity = render_identity or project_name or str(session.get("pid") or "unknown")
         return "|".join([
             tool,
             identity,
@@ -7552,6 +7661,7 @@ class IPCServer:
             )
             normalized.append({
                 "session_key": session_key,
+                "render_session_key": session_key,
                 "focus_target": self._build_session_focus_target(session_key),
                 "tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
                 "display_tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
@@ -7663,14 +7773,19 @@ class IPCServer:
 
     def _session_item_identity_key(self, session: Dict[str, Any]) -> str:
         """Return the logical identity for a rendered AI session item."""
-        surface_key = str(session.get("surface_key") or "").strip()
-        if surface_key:
-            return surface_key
+        render_session_key = str(session.get("render_session_key") or "").strip()
+        if render_session_key:
+            return render_session_key
+
+        logical_identity = self._session_render_identity(session)
+        if logical_identity:
+            return logical_identity
 
         session_key = str(session.get("session_key") or "").strip()
         if session_key:
             return session_key
 
+        session_id = str(session.get("session_id") or "").strip()
         return "|".join([
             str(session.get("tool") or "").strip(),
             str(session.get("connection_key") or "").strip(),
@@ -7679,6 +7794,7 @@ class IPCServer:
             str(session.get("pid") or "").strip(),
             str(session.get("pane_pid") or "").strip(),
             str(session.get("pane_label") or "").strip(),
+            session_id,
         ])
 
     def _session_item_preference_key(self, session: Dict[str, Any]) -> Tuple[Any, ...]:
@@ -7693,6 +7809,26 @@ class IPCServer:
             str(session.get("updated_at") or ""),
             bool(session.get("native_session_id")),
         )
+
+    @staticmethod
+    def _annotate_shared_session_surfaces(sessions: List[Dict[str, Any]]) -> None:
+        """Mark session rows that intentionally share a tmux surface."""
+        surface_counts: Dict[str, int] = {}
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            surface_key = str(session.get("surface_key") or "").strip()
+            if not surface_key:
+                continue
+            surface_counts[surface_key] = surface_counts.get(surface_key, 0) + 1
+
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            surface_key = str(session.get("surface_key") or "").strip()
+            member_count = int(surface_counts.get(surface_key, 1)) if surface_key else 1
+            session["shared_surface"] = member_count > 1
+            session["surface_member_count"] = member_count
 
     @staticmethod
     def _first_session_sort_number(value: Any, default: int = 1_000_000) -> int:
@@ -8070,13 +8206,6 @@ class IPCServer:
     ) -> List[Dict[str, Any]]:
         """Return normalized AI session items for an existing runtime snapshot."""
         tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
-        local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
-        if str(local_payload.get("schema_version") or "").strip() != "10":
-            local_payload = {}
-        local_sessions_raw = [
-            item for item in local_payload.get("sessions", [])
-            if isinstance(item, dict)
-        ]
         local_connection_key = str(
             runtime_snapshot.get("active_context", {}).get("connection_key")
             or f"local@{self._local_host_alias()}"
@@ -8089,40 +8218,55 @@ class IPCServer:
             ),
             0,
         )
-        sessions = self._normalize_session_items(
-            local_sessions_raw,
-            source_connection_key=local_connection_key,
-            source_host_name=self._local_host_alias(),
-            source_received_at=0.0,
-            tracked_windows=tracked_windows,
-        )
+        cache_key = self._session_items_cache_signature(runtime_snapshot)
+        if cache_key == self._session_items_cache_key:
+            sessions = copy.deepcopy(self._session_items_cache_rows)
+        else:
+            local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
+            if str(local_payload.get("schema_version") or "").strip() != "10":
+                local_payload = {}
+            local_sessions_raw = [
+                item for item in local_payload.get("sessions", [])
+                if isinstance(item, dict)
+            ]
+            sessions = self._normalize_session_items(
+                local_sessions_raw,
+                source_connection_key=local_connection_key,
+                source_host_name=self._local_host_alias(),
+                source_received_at=0.0,
+                tracked_windows=tracked_windows,
+            )
 
-        remote_payload = self._load_json_file(self._remote_sink_file())
-        sources = remote_payload.get("sources", {})
-        if isinstance(sources, dict):
-            for source_connection_key, source_data in sources.items():
-                if not isinstance(source_data, dict):
-                    continue
-                if str(source_data.get("session_schema_version") or "").strip() != "10":
-                    continue
-                source_sessions = [
-                    item for item in source_data.get("sessions", [])
-                    if isinstance(item, dict)
-                ]
-                sessions.extend(self._normalize_session_items(
-                    source_sessions,
-                    source_connection_key=str(source_connection_key or ""),
-                    source_host_name=str(source_data.get("host_name") or "").strip(),
-                    source_received_at=float(source_data.get("received_at", 0.0) or 0.0),
-                    tracked_windows=tracked_windows,
-                ))
+            remote_payload = self._load_json_file(self._remote_sink_file())
+            sources = remote_payload.get("sources", {})
+            if isinstance(sources, dict):
+                for source_connection_key, source_data in sources.items():
+                    if not isinstance(source_data, dict):
+                        continue
+                    if str(source_data.get("session_schema_version") or "").strip() != "10":
+                        continue
+                    source_sessions = [
+                        item for item in source_data.get("sessions", [])
+                        if isinstance(item, dict)
+                    ]
+                    sessions.extend(self._normalize_session_items(
+                        source_sessions,
+                        source_connection_key=str(source_connection_key or ""),
+                        source_host_name=str(source_data.get("host_name") or "").strip(),
+                        source_received_at=float(source_data.get("received_at", 0.0) or 0.0),
+                        tracked_windows=tracked_windows,
+                    ))
+
+            sessions = self._dedupe_session_items(sessions)
+            self._annotate_shared_session_surfaces(sessions)
+            sessions.sort(key=self._session_item_sort_key)
+            self._session_items_cache_key = cache_key
+            self._session_items_cache_rows = copy.deepcopy(sessions)
 
         self._refresh_live_session_focus_state(
             sessions,
             focused_window_id=focused_window_id,
         )
-        sessions = self._dedupe_session_items(sessions)
-        sessions.sort(key=self._session_item_sort_key)
         return sessions
 
     async def _load_reconciled_session_runtime(
@@ -8133,7 +8277,10 @@ class IPCServer:
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
         """Load runtime + sessions and reconcile stale remote bridge state."""
         runtime_snapshot = await self._runtime_snapshot(params or {})
-        sessions = self._load_session_items(runtime_snapshot)
+        sessions_raw = runtime_snapshot.get("sessions", [])
+        if not isinstance(sessions_raw, list):
+            raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
+        sessions = [session for session in sessions_raw if isinstance(session, dict)]
         cleanup = await self._reconcile_session_runtime_state(
             runtime_snapshot,
             sessions,
@@ -8141,7 +8288,10 @@ class IPCServer:
         )
         if int(cleanup.get("cleaned_window_count") or 0) > 0:
             runtime_snapshot = await self._runtime_snapshot(params or {})
-            sessions = self._load_session_items(runtime_snapshot)
+            sessions_raw = runtime_snapshot.get("sessions", [])
+            if not isinstance(sessions_raw, list):
+                raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
+            sessions = [session for session in sessions_raw if isinstance(session, dict)]
         return runtime_snapshot, sessions, cleanup
 
     async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -8150,18 +8300,8 @@ class IPCServer:
             params or {},
             close_windows=True,
         )
-        focused_window_id = next(
-            (
-                int(window.get("id") or 0)
-                for window in self._flatten_runtime_windows(runtime_snapshot)
-                if isinstance(window, dict) and bool(window.get("focused", False))
-            ),
-            0,
-        )
-        current_session_key = self._select_current_session_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
+        focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
+        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
         active_session = next(
             (
                 session for session in sessions
@@ -8198,27 +8338,8 @@ class IPCServer:
             params or {},
             close_windows=True,
         )
-        focused_window_id = next(
-            (
-                int(window.get("id") or 0)
-                for window in self._flatten_runtime_windows(runtime_snapshot)
-                if isinstance(window, dict) and bool(window.get("focused", False))
-            ),
-            0,
-        )
-        current_session_key = self._select_current_session_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
-        self._mark_current_session(
-            sessions,
-            current_session_key=current_session_key,
-        )
-        self._apply_session_attention_state(
-            sessions,
-            focused_window_id=focused_window_id,
-            current_session_key=current_session_key,
-        )
+        focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
+        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
         return {
             "sessions": sessions,
             "total": len(sessions),
@@ -9126,28 +9247,7 @@ class IPCServer:
             close_windows=True,
         )
         display_snapshot = await self._display_snapshot({})
-        focused_window_id = next(
-            (
-                int(window.get("id") or 0)
-                for window in self._flatten_runtime_windows(runtime_snapshot)
-                if isinstance(window, dict) and bool(window.get("focused", False))
-            ),
-            0,
-        )
-        current_session_key = self._select_current_session_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
-        self._mark_current_session(
-            sessions,
-            current_session_key=current_session_key,
-        )
-
-        self._apply_session_attention_state(
-            sessions,
-            focused_window_id=focused_window_id,
-            current_session_key=current_session_key,
-        )
+        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
 
         projects = self._build_dashboard_projects(runtime_snapshot, sessions)
         worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
@@ -12330,7 +12430,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 ),
             })
 
-        return {
+        runtime_snapshot = {
             "active_context": active_context,
             "outputs": outputs,
             "active_outputs": active_outputs,
@@ -12346,6 +12446,32 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "active_terminal": active_terminal_summary,
             "launch_stats": await self._get_launch_stats(),
         }
+        sessions = self._load_session_items(runtime_snapshot)
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in self._flatten_runtime_windows(runtime_snapshot)
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = self._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
+        self._mark_current_session(
+            sessions,
+            current_session_key=current_session_key,
+        )
+        self._apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
+        runtime_snapshot["sessions"] = sessions
+        runtime_snapshot["current_ai_session_key"] = current_session_key
+        runtime_snapshot["focused_window_id"] = focused_window_id
+        return runtime_snapshot
 
     async def _session_exit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Exit the current Sway session through the daemon-owned IPC connection."""

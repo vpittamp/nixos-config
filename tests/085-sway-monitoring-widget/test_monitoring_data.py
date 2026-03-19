@@ -430,6 +430,13 @@ class TestQueryMonitoringData:
     async def test_successful_query(self):
         """Successful daemon query returns current panel payload shape."""
         mock_daemon_response = {
+            "active_context": {
+                "qualified_name": "vpittamp/nixos-config:main",
+                "project_name": "vpittamp/nixos-config:main",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
             "outputs": [
                 {
                     "name": "HEADLESS-1",
@@ -460,8 +467,7 @@ class TestQueryMonitoringData:
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient:
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "proj"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -515,8 +521,7 @@ class TestQueryMonitoringData:
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient:
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = None
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -600,8 +605,7 @@ class TestQueryMonitoringData:
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "vpittamp/nixos-config:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -707,8 +711,7 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "vpittamp/nixos-config:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -827,8 +830,7 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "vpittamp/workflow-builder:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -956,8 +958,7 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -1123,8 +1124,7 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -1258,8 +1258,7 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -1652,8 +1651,7 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data._read_window_remote_env", side_effect=AssertionError("fallback should not run")):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "vpittamp/nixos-config:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -2370,6 +2368,90 @@ class TestAiReviewLifecycle:
         current_sessions = [session for session in sessions if session["is_current_window"]]
         assert len(current_sessions) == 1
         assert current_sessions[0]["tmux_pane"] == "%2"
+
+    def test_build_active_ai_sessions_preserves_multiple_sessions_on_same_tmux_pane(self):
+        otel_sessions = [
+            {
+                "state": "working",
+                "tool": "claude-code",
+                "project": "PittampalliOrg/stacks:main",
+                "window_id": 171,
+                "terminal_anchor_id": "anchor-shared-pane",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "native_session_id": "native-shared-pane",
+                "session_id": "claude-shared-pane",
+                "identity_confidence": "native",
+                "surface_key": "PittampalliOrg/stacks:main::local::local@thinkpad::/run/user/1000/tmux-1000/default::stacks/main::2:agent::%12::/dev/pts/12",
+                "terminal_context": {
+                    "terminal_anchor_id": "anchor-shared-pane",
+                    "window_id": 171,
+                    "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "2:agent",
+                    "tmux_pane": "%12",
+                    "pty": "/dev/pts/12",
+                    "connection_key": "local@thinkpad",
+                    "context_key": "PittampalliOrg/stacks:main::local::local@thinkpad",
+                },
+                "updated_at": "2026-03-19T10:00:01+00:00",
+            },
+            {
+                "state": "working",
+                "tool": "codex",
+                "project": "PittampalliOrg/stacks:main",
+                "window_id": 171,
+                "terminal_anchor_id": "anchor-shared-pane",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "session_id": "codex-shared-pane",
+                "identity_confidence": "pid",
+                "surface_key": "PittampalliOrg/stacks:main::local::local@thinkpad::/run/user/1000/tmux-1000/default::stacks/main::2:agent::%12::/dev/pts/12",
+                "terminal_context": {
+                    "terminal_anchor_id": "anchor-shared-pane",
+                    "window_id": 171,
+                    "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                    "tmux_session": "stacks/main",
+                    "tmux_window": "2:agent",
+                    "tmux_pane": "%12",
+                    "pty": "/dev/pts/12",
+                    "connection_key": "local@thinkpad",
+                    "context_key": "PittampalliOrg/stacks:main::local::local@thinkpad",
+                },
+                "updated_at": "2026-03-19T10:00:02+00:00",
+            },
+        ]
+        window_lookup = {
+            171: {
+                "id": 171,
+                "project": "PittampalliOrg/stacks:main",
+                "class": "Ghostty",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "context_key": "PittampalliOrg/stacks:main::local::local@thinkpad",
+            },
+        }
+
+        sessions = monitoring_data._build_active_ai_sessions(
+            otel_sessions,
+            window_lookup=window_lookup,
+            active_project_name="PittampalliOrg/stacks:main",
+            focused_window_id=171,
+        )
+
+        assert len(sessions) == 2
+        keys = {session["session_key"] for session in sessions}
+        assert len(keys) == 2
+        assert {session["render_session_key"] for session in sessions} == keys
+        assert {session["session_id"] for session in sessions} == {
+            "claude-shared-pane",
+            "codex-shared-pane",
+        }
+        assert {session["surface_key"] for session in sessions} == {
+            "PittampalliOrg/stacks:main::local::local@thinkpad::/run/user/1000/tmux-1000/default::stacks/main::2:agent::%12::/dev/pts/12",
+        }
+        assert all(session["shared_surface"] is True for session in sessions)
+        assert all(session["surface_member_count"] == 2 for session in sessions)
 
     def test_build_active_ai_sessions_uses_remote_tmux_focus_for_ssh_window(self, monkeypatch):
         otel_sessions = [
@@ -3166,6 +3248,71 @@ class TestAiReviewLifecycle:
                 }
             ],
             "total_windows": 2,
+            "sessions": [
+                {
+                    "session_key": "daemon-workflow-session",
+                    "render_session_key": "daemon-workflow-session",
+                    "tool": "codex",
+                    "display_tool": "Codex",
+                    "project": "PittampalliOrg/workflow-builder:main",
+                    "project_name": "PittampalliOrg/workflow-builder:main",
+                    "display_project": "PittampalliOrg/workflow-builder:main",
+                    "window_project": "PittampalliOrg/workflow-builder:main",
+                    "focus_project": "PittampalliOrg/workflow-builder:main",
+                    "window_id": 14,
+                    "execution_mode": "local",
+                    "connection_key": "local@ryzen",
+                    "context_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen",
+                    "terminal_anchor_id": "anchor-workflow-builder-14",
+                    "surface_key": "PittampalliOrg/workflow-builder:main::local::local@ryzen::pane-%5",
+                    "tmux_session": "workflow-builder/main",
+                    "tmux_window": "0:codex-raw",
+                    "tmux_pane": "%5",
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+                    "stage": "streaming",
+                    "stage_label": "Streaming",
+                    "stage_class": "stage-streaming",
+                    "stage_visual_state": "working",
+                    "stage_detail": "",
+                    "review_pending": False,
+                    "session_phase": "working",
+                    "session_phase_label": "Working",
+                    "turn_owner": "assistant",
+                    "turn_owner_label": "Assistant",
+                    "activity_substate": "streaming",
+                    "activity_substate_label": "Streaming",
+                    "is_streaming": True,
+                    "pending_tools": 0,
+                    "focusable": True,
+                    "host_name": "ryzen",
+                    "is_current_host": True,
+                    "source_is_current_host": True,
+                    "focus_mode": "local_window",
+                    "focus_target_host": "",
+                    "availability_state": "available",
+                    "focusability_reason": "",
+                    "identity_source": "native",
+                    "native_session_id": "native-codex-1",
+                    "session_id": "codex:session-1",
+                    "trace_id": "trace-1",
+                    "process_running": True,
+                    "last_activity_at": "",
+                    "activity_age_seconds": 0,
+                    "activity_age_label": "now",
+                    "activity_freshness": "fresh",
+                    "status_reason": "",
+                    "remote_source_stale": False,
+                    "remote_source_age_seconds": 0,
+                    "source_connection_key": "local@ryzen",
+                    "focus_execution_mode": "local",
+                    "focus_connection_key": "local@ryzen",
+                    "bridge_window_id": 0,
+                    "bridge_state": "",
+                    "shared_surface": False,
+                    "surface_member_count": 1,
+                }
+            ],
+            "current_ai_session_key": "daemon-workflow-session",
         }
         local_otel_payload = {
             "schema_version": "10",
@@ -3206,8 +3353,7 @@ class TestAiReviewLifecycle:
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
             mock_instance = AsyncMock()
-            mock_instance.get_window_tree.return_value = mock_daemon_response
-            mock_instance.get_active_project.return_value = "PittampalliOrg/workflow-builder:main"
+            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
@@ -3218,6 +3364,119 @@ class TestAiReviewLifecycle:
         assert session["window_id"] == 14
         assert session["window_project"] == "PittampalliOrg/workflow-builder:main"
         assert session["focus_project"] == "PittampalliOrg/workflow-builder:main"
+
+    @pytest.mark.asyncio
+    async def test_query_monitoring_data_prefers_daemon_runtime_sessions_for_active_ai_panel(self):
+        runtime_snapshot = {
+            "active_context": {
+                "qualified_name": "vpittamp/nixos-config:main",
+                "project_name": "vpittamp/nixos-config:main",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
+            "outputs": [],
+            "total_windows": 0,
+            "sessions": [
+                {
+                    "session_key": "daemon-session-key",
+                    "render_session_key": "daemon-session-key",
+                    "focus_target": {
+                        "method": "session.focus",
+                        "params": {"session_key": "daemon-session-key"},
+                    },
+                    "tool": "codex",
+                    "display_tool": "Codex",
+                    "project": "vpittamp/nixos-config:main",
+                    "project_name": "vpittamp/nixos-config:main",
+                    "display_project": "vpittamp/nixos-config:main",
+                    "window_project": "",
+                    "focus_project": "vpittamp/nixos-config:main",
+                    "window_id": 0,
+                    "execution_mode": "local",
+                    "connection_key": "local@ryzen",
+                    "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                    "terminal_anchor_id": "anchor-codex",
+                    "surface_key": "vpittamp/nixos-config:main::local::local@ryzen::pane-%10",
+                    "tmux_session": "nixos-config",
+                    "tmux_window": "0:main",
+                    "tmux_pane": "%10",
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+                    "stage": "streaming",
+                    "stage_label": "Streaming",
+                    "stage_class": "stage-streaming",
+                    "stage_visual_state": "working",
+                    "stage_detail": "",
+                    "review_pending": False,
+                    "session_phase": "working",
+                    "session_phase_label": "Working",
+                    "turn_owner": "assistant",
+                    "turn_owner_label": "Assistant",
+                    "activity_substate": "streaming",
+                    "activity_substate_label": "Streaming",
+                    "is_streaming": True,
+                    "pending_tools": 0,
+                    "focusable": True,
+                    "host_name": "ryzen",
+                    "is_current_host": True,
+                    "source_is_current_host": True,
+                    "focus_mode": "local_window",
+                    "focus_target_host": "",
+                    "availability_state": "available",
+                    "focusability_reason": "",
+                    "identity_source": "native",
+                    "native_session_id": "native-codex-1",
+                    "session_id": "codex:session-1",
+                    "trace_id": "trace-1",
+                    "process_running": True,
+                    "last_activity_at": "",
+                    "activity_age_seconds": 0,
+                    "activity_age_label": "now",
+                    "activity_freshness": "fresh",
+                    "status_reason": "",
+                    "remote_source_stale": False,
+                    "remote_source_age_seconds": 0,
+                    "source_connection_key": "local@ryzen",
+                    "focus_execution_mode": "local",
+                    "focus_connection_key": "local@ryzen",
+                    "bridge_window_id": 0,
+                    "bridge_state": "",
+                    "shared_surface": False,
+                    "surface_member_count": 1,
+                }
+            ],
+            "current_ai_session_key": "daemon-session-key",
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "10", "sessions": []}), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
+            mock_instance = AsyncMock()
+            mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert [session["session_key"] for session in result["active_ai_sessions"]] == ["daemon-session-key"]
+        assert result["current_ai_session_key"] == "daemon-session-key"
+        assert result["active_ai_sessions"][0]["render_session_key"] == "daemon-session-key"
+
+    def test_active_worktree_identity_from_context_uses_runtime_snapshot_context(self):
+        identity = monitoring_data._active_worktree_identity_from_context({
+            "qualified_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@ryzen",
+            "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+        })
+
+        assert identity["qualified_name"] == "vpittamp/nixos-config:main"
+        assert identity["execution_mode"] == "local"
+        assert identity["connection_key"] == "local@ryzen"
+        assert identity["identity_key"] == "local:local@ryzen"
+        assert identity["context_key"] == "vpittamp/nixos-config:main::local::local@ryzen"
 
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{

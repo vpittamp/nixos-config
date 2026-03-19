@@ -2308,10 +2308,8 @@ def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
     """
     Build a stable dedupe key for badge sessions.
 
-    OTEL monitor can emit multiple native session records for the same real
-    terminal pane over time (for example, repeated `codex exec` runs). For the
-    window badge UX we want one indicator per terminal context, not one per
-    historical native session id.
+    Exact duplicate exports of the same logical session should collapse, but
+    distinct sessions that happen to share a pane must remain separate.
     """
     terminal_context = session.get("terminal_context", {}) or {}
     tool = str(session.get("tool", "unknown") or "unknown")
@@ -2331,17 +2329,30 @@ def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
         or ""
     )
 
-    # Highest-priority dedupe scope: tool + concrete terminal context.
-    # This keeps one badge per pane/pty even when many native session ids exist.
+    # Highest-priority dedupe scope: tool + concrete terminal context + session.
+    # Pane siblings remain distinct because each rendered session keeps its own
+    # logical session id when available.
     if pane:
         tmux_server_key = str(terminal_context.get("tmux_server_key") or "")
         tmux_session = str(terminal_context.get("tmux_session") or "")
         tmux_window = str(terminal_context.get("tmux_window") or "")
-        return f"tool={tool}|tmux={tmux_server_key}|session={tmux_session}|window={tmux_window}|pane={pane}"
+        base = f"tool={tool}|tmux={tmux_server_key}|session={tmux_session}|window={tmux_window}|pane={pane}"
+        session_id = str(session.get("session_id") or "")
+        if session_id:
+            return f"{base}|sid={session_id}"
+        return base
     if terminal_anchor_id:
-        return f"tool={tool}|anchor={terminal_anchor_id}"
+        base = f"tool={tool}|anchor={terminal_anchor_id}"
+        session_id = str(session.get("session_id") or "")
+        if session_id:
+            return f"{base}|sid={session_id}"
+        return base
     if pty:
-        return f"tool={tool}|pty={pty}"
+        base = f"tool={tool}|pty={pty}"
+        session_id = str(session.get("session_id") or "")
+        if session_id:
+            return f"{base}|sid={session_id}"
+        return base
     if window_id is not None:
         return f"tool={tool}|window={window_id}"
 
@@ -3416,37 +3427,83 @@ def _window_is_ai_terminal_candidate(window: Dict[str, Any]) -> bool:
     return False
 
 
+def _canonical_session_surface_key(
+    terminal_context: Optional[Dict[str, Any]] = None,
+    *,
+    surface_key: str = "",
+) -> str:
+    """Return the canonical tmux-first surface key for a rendered session."""
+    normalized_surface_key = str(surface_key or "").strip()
+    if normalized_surface_key:
+        return normalized_surface_key
+
+    terminal_context = terminal_context or {}
+    if not isinstance(terminal_context, dict):
+        terminal_context = {}
+
+    tmux_pane = str(terminal_context.get("tmux_pane") or "").strip()
+    if not tmux_pane:
+        return ""
+
+    parts = [
+        str(terminal_context.get("context_key") or "").strip() or "unknown-context",
+        str(terminal_context.get("tmux_server_key") or terminal_context.get("tmux_socket") or "").strip() or "unknown-tmux-server",
+        str(terminal_context.get("tmux_session") or "").strip() or "unknown-session",
+        str(terminal_context.get("tmux_window") or "").strip() or "unknown-window",
+        tmux_pane,
+    ]
+    pane_tty = str(terminal_context.get("pty") or "").strip()
+    if pane_tty:
+        parts.append(pane_tty)
+    return "::".join(parts)
+
+
 def _build_active_session_key(
     *,
     tool: str,
     project: str,
     window_id: int,
-    tmux_pane: str = "",
-    pty: str = "",
-    tmux_window: str = "",
+    terminal_context: Optional[Dict[str, Any]] = None,
+    surface_key: str = "",
+    terminal_anchor_id: str = "",
     native_session_id: str = "",
     session_id: str = "",
     context_fingerprint: str = "",
+    connection_key: str = "",
+    context_key: str = "",
 ) -> str:
     """Build canonical active-session key across badges/rail/review state."""
-    key_parts = [
-        f"tool={tool or 'unknown'}",
-        f"project={project or '-'}",
-        f"window={window_id}",
-    ]
-    if tmux_pane:
-        key_parts.append(f"pane={tmux_pane}")
-    elif pty:
-        key_parts.append(f"pty={pty}")
-    elif tmux_window:
-        key_parts.append(f"tmux_window={tmux_window}")
+    normalized_surface_key = _canonical_session_surface_key(
+        terminal_context,
+        surface_key=surface_key,
+    )
+    normalized_session_id = str(session_id or "").strip()
+    normalized_native_id = str(native_session_id or "").strip()
+    normalized_anchor_id = str(terminal_anchor_id or "").strip()
+    normalized_connection_key = str(connection_key or "").strip()
+    normalized_context_key = str(context_key or "").strip()
+    normalized_context_fingerprint = str(context_fingerprint or "").strip()
+
+    key_parts = [f"tool={tool or 'unknown'}"]
+    if normalized_surface_key:
+        key_parts.append(f"surface={normalized_surface_key}")
+    if normalized_session_id:
+        key_parts.append(f"session={normalized_session_id}")
+    elif normalized_native_id:
+        key_parts.append(f"native={normalized_native_id}")
+    elif normalized_anchor_id:
+        key_parts.append(f"anchor={normalized_anchor_id}")
+    elif normalized_context_fingerprint:
+        key_parts.append(f"context={normalized_context_fingerprint}")
     else:
-        if native_session_id:
-            key_parts.append(f"native={native_session_id}")
-        elif session_id:
-            key_parts.append(f"session={session_id}")
-        if context_fingerprint:
-            key_parts.append(f"context={context_fingerprint}")
+        key_parts.extend([
+            f"project={project or '-'}",
+            f"window={window_id}",
+        ])
+        if normalized_connection_key:
+            key_parts.append(f"connection={normalized_connection_key}")
+        if normalized_context_key:
+            key_parts.append(f"context_key={normalized_context_key}")
     return "|".join(key_parts)
 
 
@@ -3900,12 +3957,39 @@ def _build_otel_badges(
                 tool=tool,
                 project=session_project or display_project,
                 window_id=window_id_int,
-                tmux_pane=tmux_pane,
-                pty=pty,
-                tmux_window=tmux_window,
+                terminal_context=terminal_context,
+                surface_key=str(session.get("surface_key") or ""),
+                terminal_anchor_id=str(
+                    terminal_context.get("binding_anchor_id")
+                    or session.get("binding_anchor_id")
+                    or terminal_context.get("terminal_anchor_id")
+                    or session.get("terminal_anchor_id")
+                    or ""
+                ),
                 native_session_id=native_session_id,
                 session_id=session_id,
                 context_fingerprint=context_fingerprint,
+                connection_key=str(identity.get("connection_key") or ""),
+                context_key=str(identity.get("context_key") or ""),
+            ),
+            "render_session_key": _build_active_session_key(
+                tool=tool,
+                project=session_project or display_project,
+                window_id=window_id_int,
+                terminal_context=terminal_context,
+                surface_key=str(session.get("surface_key") or ""),
+                terminal_anchor_id=str(
+                    terminal_context.get("binding_anchor_id")
+                    or session.get("binding_anchor_id")
+                    or terminal_context.get("terminal_anchor_id")
+                    or session.get("terminal_anchor_id")
+                    or ""
+                ),
+                native_session_id=native_session_id,
+                session_id=session_id,
+                context_fingerprint=context_fingerprint,
+                connection_key=str(identity.get("connection_key") or ""),
+                context_key=str(identity.get("context_key") or ""),
             ),
             "session_id": session_id,
             "native_session_id": native_session_id,
@@ -4097,16 +4181,24 @@ def _build_active_ai_sessions(
         )
         stale = bool(stale or stage_fields.get("activity_freshness") == "stale")
 
+        terminal_anchor_id = str(
+            raw_session.get("terminal_anchor_id")
+            or terminal_context.get("binding_anchor_id")
+            or terminal_context.get("terminal_anchor_id")
+            or ""
+        ).strip()
         session_key = _build_active_session_key(
             tool=tool,
             project=session_project or display_project,
             window_id=window_id_int,
-            tmux_pane=tmux_pane,
-            pty=pty,
-            tmux_window=tmux_window,
+            terminal_context=terminal_context,
+            surface_key=str(raw_session.get("surface_key") or ""),
+            terminal_anchor_id=terminal_anchor_id,
             native_session_id=native_session_id,
             session_id=session_id,
             context_fingerprint=context_fingerprint,
+            connection_key=str(raw_session.get("connection_key") or ""),
+            context_key=str(raw_session.get("context_key") or ""),
         )
 
         display_target = f"win {window_id_int}"
@@ -4129,6 +4221,17 @@ def _build_active_ai_sessions(
 
         session_payload = {
             "session_key": session_key,
+            "render_session_key": session_key,
+            "focus_target": (
+                dict(raw_session.get("focus_target") or {})
+                if isinstance(raw_session.get("focus_target"), dict)
+                else {
+                    "method": "session.focus",
+                    "params": {
+                        "session_key": session_key,
+                    },
+                }
+            ),
             "display_tool": _OTEL_TOOL_LABELS.get(tool, tool if tool else "Unknown"),
             "display_project": display_project,
             "display_target": display_target,
@@ -4197,6 +4300,7 @@ def _build_active_ai_sessions(
             "stale_age_seconds": stale_age_seconds,
             "remote_source_stale": bool(raw_session.get("remote_source_stale", False)),
             "remote_source_age_seconds": int(raw_session.get("remote_source_age_seconds", 0) or 0),
+            "surface_key": str(raw_session.get("surface_key") or _canonical_session_surface_key(terminal_context)),
             "pinned": False,
             "priority_score": int(stage_fields.get("stage_rank") or _OTEL_STATE_PRIORITY.get(state, 0)),
             "tool": tool,
@@ -4217,6 +4321,17 @@ def _build_active_ai_sessions(
             merged_by_key[session_key] = (dict(raw_session), session_payload)
 
     active_sessions = [payload for _, payload in merged_by_key.values()]
+    surface_counts: Dict[str, int] = {}
+    for session in active_sessions:
+        surface_key = str(session.get("surface_key") or "").strip()
+        if not surface_key:
+            continue
+        surface_counts[surface_key] = surface_counts.get(surface_key, 0) + 1
+    for session in active_sessions:
+        surface_key = str(session.get("surface_key") or "").strip()
+        member_count = int(surface_counts.get(surface_key, 1)) if surface_key else 1
+        session["shared_surface"] = member_count > 1
+        session["surface_member_count"] = member_count
     _apply_current_window_marker(active_sessions, focused_window_id)
     _sort_active_ai_sessions_for_display(
         active_sessions,
@@ -5680,6 +5795,88 @@ def _connection_identity(remote_enabled: bool, remote_target: str = "") -> Dict[
     }
 
 
+def _active_worktree_identity_from_context(active_context: Dict[str, Any]) -> Dict[str, Any]:
+    """Return canonical active worktree identity fields from daemon-owned runtime context."""
+    default_identity = {
+        "qualified_name": "",
+        "execution_mode": "global",
+        "host_alias": "global",
+        "connection_key": "global",
+        "identity_key": "global:global",
+        "context_key": "",
+        "remote_enabled": False,
+    }
+
+    if not isinstance(active_context, dict) or not active_context:
+        return default_identity
+
+    qualified_name = str(active_context.get("qualified_name", "")).strip()
+    remote = active_context.get("remote")
+    remote_enabled = isinstance(remote, dict) and bool(remote.get("enabled", False))
+    execution_mode = str(active_context.get("execution_mode", "")).strip()
+    host_alias = str(active_context.get("host_alias", "")).strip()
+    connection_key = str(active_context.get("connection_key", "")).strip()
+    identity_key = str(active_context.get("identity_key", "")).strip()
+    context_key = str(active_context.get("context_key", "")).strip()
+
+    if execution_mode not in {"local", "ssh"}:
+        if qualified_name:
+            execution_mode = "ssh" if remote_enabled else "local"
+        else:
+            execution_mode = "global"
+
+    if not host_alias:
+        if execution_mode == "ssh" and isinstance(remote, dict):
+            host = str(remote.get("host") or "").strip()
+            user = str(remote.get("user") or "").strip()
+            host_alias = f"{user}@{host}" if user and host else host or "unknown"
+        elif execution_mode == "local":
+            host_alias = (
+                str(
+                    os.environ.get("I3PM_LOCAL_HOST_ALIAS")
+                    or os.environ.get("HOSTNAME")
+                    or socket.gethostname()
+                )
+                .strip()
+                .lower()
+                or "localhost"
+            )
+        else:
+            host_alias = "global"
+
+    if not connection_key:
+        if execution_mode == "ssh" and isinstance(remote, dict):
+            host = str(remote.get("host") or "").strip()
+            user = str(remote.get("user") or "").strip()
+            port_raw = remote.get("port", 22)
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError):
+                port = 22
+            raw_connection_key = f"{user}@{host}:{port}" if user else f"{host}:{port}"
+            connection_key = _normalize_connection_key(raw_connection_key)
+        elif execution_mode == "local":
+            connection_key = _local_connection_key()
+        else:
+            connection_key = "global"
+
+    if not identity_key:
+        identity_key = f"{execution_mode}:{connection_key}"
+
+    if not context_key and qualified_name and execution_mode in {"local", "ssh"}:
+        context_key = f"{qualified_name}::{execution_mode}::{connection_key}"
+
+    return {
+        "qualified_name": qualified_name,
+        "execution_mode": execution_mode,
+        "host_alias": host_alias,
+        "connection_key": connection_key,
+        "identity_key": identity_key,
+        "context_key": context_key,
+        "remote_enabled": remote_enabled,
+    }
+
+
 def _project_card_key(project_name: str, remote_enabled: bool, remote_target: str = "") -> str:
     """Build a stable project-card identifier for local/SSH split cards."""
     identity = _connection_identity(remote_enabled, remote_target)
@@ -6053,11 +6250,20 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         # Connect to daemon
         await client.connect()
 
-        # Query window tree (monitors → workspaces → windows hierarchy)
-        tree_data = await client.get_window_tree()
+        # Big-bang cutover: dashboard consumers read one daemon-owned runtime
+        # snapshot and do not mix it with separate tree/status queries.
+        tree_data = await client.get_runtime_snapshot()
 
-        # UX Enhancement: Query active project for highlighting
-        active_project = await client.get_active_project()
+        active_context = (
+            dict(tree_data.get("active_context") or {})
+            if isinstance(tree_data, dict)
+            else {}
+        )
+        active_project = str(
+            active_context.get("qualified_name")
+            or active_context.get("project_name")
+            or ""
+        ).strip()
 
         # Feature 095: Load badge state from filesystem (file-based, no daemon)
         # Badge files are written by claude-hooks scripts in $XDG_RUNTIME_DIR/i3pm-badges/
@@ -6217,7 +6423,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         # Overlay SSH remote metadata so window view can surface remote worktree context.
         remote_profiles = load_worktree_remote_profiles()
         projects = transform_to_project_view(monitors, remote_profiles, resolved_otel_sessions)
-        active_identity = load_active_worktree_identity()
+        active_identity = _active_worktree_identity_from_context(active_context)
 
         # UX Enhancement: Add is_active flag to each project
         active_qualified_name = str(active_identity.get("qualified_name", "")).strip()
@@ -6281,12 +6487,20 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             if bool(window.get("focused", False)):
                 focused_window_id = window_id_int
 
-        active_ai_sessions = _build_active_ai_sessions(
-            resolved_otel_sessions,
-            window_lookup=window_lookup,
-            active_project_name=active_qualified_name,
-            focused_window_id=focused_window_id,
-        )
+        if not isinstance(tree_data, dict):
+            raise RuntimeError("runtime.snapshot contract violation: payload must be an object")
+        sessions_raw = tree_data.get("sessions", [])
+        if not isinstance(sessions_raw, list):
+            raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
+
+        daemon_active_ai_sessions = [
+            dict(session)
+            for session in sessions_raw
+            if isinstance(session, dict)
+        ]
+        daemon_current_ai_session_key = str(tree_data.get("current_ai_session_key") or "").strip()
+
+        active_ai_sessions = daemon_active_ai_sessions
         review_enriched_ai_sessions, _review_sessions = _apply_review_lifecycle(
             active_ai_sessions,
             window_lookup=window_lookup,
@@ -6316,11 +6530,19 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             for session in review_enriched_ai_sessions
             if _session_tracking_contract_ok(session) and _should_render_ai_session(session)
         ]
-        current_ai_session_key = _apply_current_window_marker(
-            active_ai_sessions,
-            focused_window_id,
-            previous_session_key=previous_current_ai_session_key,
-        )
+        current_ai_session_key = ""
+        if daemon_current_ai_session_key and any(
+            str(session.get("session_key") or "").strip() == daemon_current_ai_session_key
+            for session in active_ai_sessions
+        ):
+            current_ai_session_key = daemon_current_ai_session_key
+            _set_current_window_marker(active_ai_sessions, current_ai_session_key)
+        else:
+            current_ai_session_key = _apply_current_window_marker(
+                active_ai_sessions,
+                focused_window_id,
+                previous_session_key=previous_current_ai_session_key,
+            )
         _sort_active_ai_sessions_for_display(
             active_ai_sessions,
             focused_window_id=focused_window_id,
@@ -6724,130 +6946,6 @@ def load_worktree_remote_profiles() -> Dict[str, Dict[str, Any]]:
     except (json.JSONDecodeError, IOError) as e:
         logger.warning(f"Feature 087: Failed to load worktree remote profiles: {e}")
         return {}
-
-
-def _read_active_context_from_daemon(timeout_s: float = 0.15) -> Optional[Dict[str, Any]]:
-    """Read active runtime context directly from the daemon socket."""
-    if not DAEMON_SOCKET_PATH.exists():
-        return None
-
-    request = {
-        "jsonrpc": "2.0",
-        "method": "runtime.snapshot",
-        "params": {},
-        "id": 1,
-    }
-
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout_s)
-            sock.connect(str(DAEMON_SOCKET_PATH))
-            sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
-            response = b""
-            while not response.endswith(b"\n"):
-                chunk = sock.recv(65536)
-                if not chunk:
-                    break
-                response += chunk
-        if not response:
-            return None
-        payload = json.loads(response.decode("utf-8").strip())
-        if isinstance(payload, dict) and isinstance(payload.get("result"), dict):
-            result = payload["result"]
-            if isinstance(result.get("active_context"), dict):
-                return result["active_context"]
-            return result
-    except Exception as e:
-        logger.debug("Failed to read active context from daemon: %s", e)
-    return None
-
-
-def load_active_worktree_identity() -> Dict[str, Any]:
-    """Return canonical active worktree identity fields for card activation."""
-    default_identity = {
-        "qualified_name": "",
-        "execution_mode": "global",
-        "host_alias": "global",
-        "connection_key": "global",
-        "identity_key": "global:global",
-        "context_key": "",
-        "remote_enabled": False,
-    }
-
-    try:
-        data = _read_active_context_from_daemon()
-        if data is None:
-            return default_identity
-
-        qualified_name = str(data.get("qualified_name", "")).strip()
-        remote = data.get("remote")
-        remote_enabled = isinstance(remote, dict) and bool(remote.get("enabled", False))
-        execution_mode = str(data.get("execution_mode", "")).strip()
-        host_alias = str(data.get("host_alias", "")).strip()
-        connection_key = str(data.get("connection_key", "")).strip()
-        identity_key = str(data.get("identity_key", "")).strip()
-        context_key = str(data.get("context_key", "")).strip()
-
-        if execution_mode not in {"local", "ssh"}:
-            if qualified_name:
-                execution_mode = "ssh" if remote_enabled else "local"
-            else:
-                execution_mode = "global"
-
-        if not host_alias:
-            if execution_mode == "ssh" and isinstance(remote, dict):
-                host = str(remote.get("host") or "").strip()
-                user = str(remote.get("user") or "").strip()
-                host_alias = f"{user}@{host}" if user and host else host or "unknown"
-            elif execution_mode == "local":
-                host_alias = (
-                    str(
-                        os.environ.get("I3PM_LOCAL_HOST_ALIAS")
-                        or os.environ.get("HOSTNAME")
-                        or socket.gethostname()
-                    )
-                    .strip()
-                    .lower()
-                    or "localhost"
-                )
-            else:
-                host_alias = "global"
-
-        if not connection_key:
-            if execution_mode == "ssh" and isinstance(remote, dict):
-                host = str(remote.get("host") or "").strip()
-                user = str(remote.get("user") or "").strip()
-                port_raw = remote.get("port", 22)
-                try:
-                    port = int(port_raw)
-                except (TypeError, ValueError):
-                    port = 22
-                raw_connection_key = f"{user}@{host}:{port}" if user else f"{host}:{port}"
-                connection_key = _normalize_connection_key(raw_connection_key)
-            elif execution_mode == "local":
-                connection_key = _local_connection_key()
-            else:
-                connection_key = "global"
-
-        if not identity_key:
-            identity_key = f"{execution_mode}:{connection_key}"
-
-        if not context_key and qualified_name and execution_mode in {"local", "ssh"}:
-            context_key = f"{qualified_name}::{execution_mode}::{connection_key}"
-
-        return {
-            "qualified_name": qualified_name,
-            "execution_mode": execution_mode,
-            "host_alias": host_alias,
-            "connection_key": connection_key,
-            "identity_key": identity_key,
-            "context_key": context_key,
-            "remote_enabled": remote_enabled,
-        }
-    except (json.JSONDecodeError, IOError) as e:
-        logger.debug(f"Feature 087: Failed to read active-worktree identity: {e}")
-
-    return default_identity
 
 
 async def query_projects_data() -> Dict[str, Any]:

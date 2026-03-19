@@ -255,7 +255,7 @@ export class DaemonClient {
   }
 
   async getRuntimeSnapshot<T = unknown>(): Promise<T> {
-    return await this.request<T>("dashboard.snapshot", {});
+    return await this.request<T>("runtime.snapshot", {});
   }
 
   async getDashboardSnapshot<T = unknown>(): Promise<T> {

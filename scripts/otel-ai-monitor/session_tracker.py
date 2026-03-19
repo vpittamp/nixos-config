@@ -1562,72 +1562,6 @@ class SessionTracker:
             "heuristic": 1,
         }.get(normalized, 0)
 
-    @classmethod
-    def _canonical_surface_item_sort_key(cls, item: SessionListItem) -> tuple:
-        """Return the canonical winner sort key for duplicate tmux-surface items."""
-        return (
-            int(bool(item.process_running)),
-            cls._session_list_identity_confidence_rank(item.identity_confidence),
-            int(bool(item.needs_user_action or item.output_unseen)),
-            int(bool(item.output_ready)),
-            int(bool(item.is_streaming)),
-            int(item.pending_tools or 0),
-            int(item.stage_rank or 0),
-            int(item.state_seq or 0),
-            str(item.updated_at or ""),
-            int(item.pid or 0),
-            str(item.session_id or ""),
-        )
-
-    def _collapse_duplicate_tmux_surface_items(
-        self,
-        items: list[SessionListItem],
-        fingerprint_source: list[tuple[object, ...]],
-    ) -> list[SessionListItem]:
-        """Collapse multiple exported sessions for the same tmux pane into one canonical item."""
-        buckets: dict[str, list[SessionListItem]] = {}
-        passthrough: list[SessionListItem] = []
-        for item in items:
-            surface_key = str(item.surface_key or "").strip()
-            if item.surface_kind == "tmux-pane" and surface_key:
-                buckets.setdefault(surface_key, []).append(item)
-                continue
-            passthrough.append(item)
-
-        collapsed: list[SessionListItem] = list(passthrough)
-        for surface_key, bucket in buckets.items():
-            if len(bucket) == 1:
-                collapsed.append(bucket[0])
-                continue
-
-            ordered = sorted(
-                bucket,
-                key=self._canonical_surface_item_sort_key,
-                reverse=True,
-            )
-            winner = ordered[0].model_copy(deep=True)
-            winner.conflict_state = None
-            winner.conflict_detail = None
-            winner.focusable = bool(winner.focusable and not winner.invalid_reason)
-            collapsed.append(winner)
-
-            fingerprint_source.append((
-                "surface_canonicalized",
-                surface_key,
-                winner.session_id,
-                tuple(str(item.session_id or "") for item in ordered),
-            ))
-            logger.info(
-                "Collapsed %d exported sessions onto tmux surface %s; keeping %s",
-                len(bucket),
-                surface_key,
-                winner.session_id,
-            )
-
-        return collapsed
-
-        return "unresolved", None, None
-
     def _register_native_session_unlocked(self, group_id: str, session_id: str) -> None:
         bucket = self._native_session_map.setdefault(group_id, set())
         bucket.add(session_id)
@@ -2807,6 +2741,7 @@ class SessionTracker:
             native_group_id,
             event,
         )
+        event_project, event_project_path = self._extract_project_context(event)
 
         resolved_window_id: Optional[int] = None
         resolved_project: Optional[str] = None
@@ -2838,6 +2773,10 @@ class SessionTracker:
                     and _s.identity_confidence == IdentityConfidence.NATIVE
                     and _s.window_id is not None
                     and _s.project is not None
+                    and (
+                        not event_project
+                        or self._projects_align(_s.project, event_project)
+                    )
                 ):
                     _skip_resolve = True
         if client_pid is not None and not _skip_resolve:
@@ -2847,7 +2786,6 @@ class SessionTracker:
                 resolved_terminal_context,
             ) = await self._resolve_window_context(client_pid)
 
-        event_project, event_project_path = self._extract_project_context(event)
         event_terminal_context = dict(event_terminal_context_raw)
         resolved_context_keys: set[str] = set()
         authoritative_resolved_keys = {
@@ -2873,22 +2811,6 @@ class SessionTracker:
                 continue
             if not event_terminal_context.get(key):
                 event_terminal_context[key] = value
-                resolved_context_keys.add(key)
-
-        resolved_tmux_target = bool(
-            resolved_terminal_context.get("tmux_session")
-            or resolved_terminal_context.get("tmux_window")
-        )
-        if client_pid is not None and not resolved_tmux_target:
-            for key in (
-                "tmux_session",
-                "tmux_window",
-                "tmux_pane",
-                "tmux_socket",
-                "tmux_server_key",
-                "tmux_resolution_source",
-            ):
-                event_terminal_context[key] = None
                 resolved_context_keys.add(key)
 
         explicit_anchor_id = str(
@@ -3182,20 +3104,6 @@ class SessionTracker:
                 "remote_target",
             ):
                 value = event_terminal_context.get(key)
-                if (
-                    key in {
-                        "tmux_session",
-                        "tmux_window",
-                        "tmux_pane",
-                        "tmux_socket",
-                        "tmux_server_key",
-                        "tmux_resolution_source",
-                    }
-                    and key in resolved_context_keys
-                    and not value
-                ):
-                    setattr(session.terminal_context, key, None)
-                    continue
                 if not value:
                     continue
                 has_explicit_key = bool(event_terminal_context_raw.get(key))
@@ -3414,17 +3322,13 @@ class SessionTracker:
                             session.terminal_context.pane_title = resolved_terminal_context.get("pane_title")
                             session.terminal_context.pane_active = resolved_terminal_context.get("pane_active")
                             session.terminal_context.window_active = resolved_terminal_context.get("window_active")
-                        else:
-                            session.terminal_context.tmux_session = None
-                            session.terminal_context.tmux_window = None
-                            session.terminal_context.tmux_pane = None
-                            session.terminal_context.tmux_socket = None
-                            session.terminal_context.tmux_server_key = None
-                            session.terminal_context.tmux_resolution_source = "missing"
-                            session.terminal_context.pane_pid = None
-                            session.terminal_context.pane_title = None
-                            session.terminal_context.pane_active = None
-                            session.terminal_context.window_active = None
+                        session.terminal_context = TerminalContext(
+                            **self._normalize_terminal_binding_context(
+                                session.terminal_context.model_dump(),
+                                window_id=session.window_id,
+                            )
+                        )
+                        self._apply_tracking_contract_unlocked(session)
                         if session.state == SessionState.WORKING and self._heartbeat_should_extend_working(session):
                             session.last_event_at = now
                             self._reset_quiet_timer(session_id)
@@ -4227,8 +4131,6 @@ class SessionTracker:
                     str(process_stats["stats_source"]),
                 )
             )
-
-        items = self._collapse_duplicate_tmux_surface_items(items, fingerprint_source)
 
         for diagnostic in sorted(
             self._session_diagnostics.values(),

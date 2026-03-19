@@ -174,6 +174,10 @@ class DaemonClient:
         """Get the canonical active runtime context from the daemon."""
         return await self.call("context.current")
 
+    async def get_runtime_snapshot(self) -> Dict[str, Any]:
+        """Get the daemon-owned runtime snapshot used by dashboard consumers."""
+        return await self.call("runtime.snapshot")
+
     async def focus_window(
         self,
         window_id: int,

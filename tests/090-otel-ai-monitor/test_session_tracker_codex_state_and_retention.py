@@ -198,6 +198,145 @@ async def test_process_event_repairs_restored_native_session_window_binding(monk
 
 
 @pytest.mark.asyncio
+async def test_process_event_preserves_established_tmux_identity_when_resolution_misses(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:native-sticky-pane",
+        native_session_id="native-sticky-pane",
+        context_fingerprint="pane=%6",
+        collision_group_id="codex:native-sticky-pane",
+        identity_confidence=IdentityConfidence.NATIVE,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="PittampalliOrg/stacks:main",
+        project_path="/home/vpittamp/repos/PittampalliOrg/stacks/main",
+        window_id=18,
+        pid=91112,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="event:codex.api_request",
+    )
+    session.terminal_context.window_id = 18
+    session.terminal_context.terminal_anchor_id = "terminal-PittampalliOrg/stacks:main-8259-1773928355"
+    session.terminal_context.binding_anchor_id = "terminal-PittampalliOrg/stacks:main-8259-1773928355"
+    session.terminal_context.binding_state = "bound_local"
+    session.terminal_context.binding_source = "tmux_metadata"
+    session.terminal_context.tmux_session = "i3pm-pittampalliorg-stacks-ma-bc1d1663"
+    session.terminal_context.tmux_window = "0:main"
+    session.terminal_context.tmux_pane = "%6"
+    session.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.tmux_resolution_source = "discovered"
+    session.terminal_context.pty = "/dev/pts/10"
+    session.terminal_context.execution_mode = "local"
+    session.terminal_context.connection_key = "local@ryzen"
+    session.terminal_context.context_key = "PittampalliOrg/stacks:main::local::local@ryzen"
+
+    async with tracker._lock:
+        tracker._sessions[session.session_id] = session
+        tracker._session_pids[session.session_id] = 91112
+        tracker._session_pids["native-sticky-pane"] = 91112
+        tracker._session_pids["codex:native-sticky-pane"] = 91112
+        tracker._native_session_map["codex:native-sticky-pane"] = {session.session_id}
+
+    monkeypatch.setattr(session_tracker_module, "pid_exists", lambda _pid: True)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    async def _missing_resolve(_pid: int):
+        return (None, None, {})
+
+    monkeypatch.setattr(tracker, "_resolve_window_context", _missing_resolve)
+
+    event = TelemetryEvent(
+        event_name="codex.sse_event",
+        timestamp=now,
+        session_id="native-sticky-pane",
+        tool=AITool.CODEX_CLI,
+        attributes={
+            "process.pid": "91112",
+            "event.kind": "response.output_text.delta",
+            "project": "PittampalliOrg/stacks:main",
+        },
+    )
+
+    await tracker.process_event(event)
+
+    async with tracker._lock:
+        kept = tracker._sessions["codex:native-sticky-pane"]
+        assert kept.window_id == 18
+        assert kept.terminal_context.tmux_session == "i3pm-pittampalliorg-stacks-ma-bc1d1663"
+        assert kept.terminal_context.tmux_window == "0:main"
+        assert kept.terminal_context.tmux_pane == "%6"
+        assert kept.invalid_reason is None
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_preserves_established_tmux_identity_when_resolution_misses(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+
+    session = Session(
+        session_id="codex:pid:91112",
+        native_session_id=None,
+        context_fingerprint=None,
+        collision_group_id=None,
+        identity_confidence=IdentityConfidence.PID,
+        tool=AITool.CODEX_CLI,
+        provider=Provider.OPENAI,
+        state=SessionState.WORKING,
+        project="PittampalliOrg/stacks:main",
+        project_path="/home/vpittamp/repos/PittampalliOrg/stacks/main",
+        window_id=18,
+        pid=91112,
+        trace_id=None,
+        created_at=now,
+        last_event_at=now,
+        state_changed_at=now,
+        state_seq=1,
+        status_reason="process_keepalive",
+    )
+    session.terminal_context.window_id = 18
+    session.terminal_context.terminal_anchor_id = "terminal-PittampalliOrg/stacks:main-8259-1773928355"
+    session.terminal_context.binding_anchor_id = "terminal-PittampalliOrg/stacks:main-8259-1773928355"
+    session.terminal_context.binding_state = "bound_local"
+    session.terminal_context.binding_source = "tmux_metadata"
+    session.terminal_context.tmux_session = "i3pm-pittampalliorg-stacks-ma-bc1d1663"
+    session.terminal_context.tmux_window = "0:main"
+    session.terminal_context.tmux_pane = "%6"
+    session.terminal_context.tmux_socket = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.tmux_server_key = "/run/user/1000/tmux-1000/default"
+    session.terminal_context.tmux_resolution_source = "discovered"
+    session.terminal_context.pty = "/dev/pts/10"
+    session.terminal_context.execution_mode = "local"
+    session.terminal_context.connection_key = "local@ryzen"
+    session.terminal_context.context_key = "PittampalliOrg/stacks:main::local::local@ryzen"
+
+    async with tracker._lock:
+        tracker._sessions[session.session_id] = session
+
+    async def _missing_resolve(_pid: int):
+        return (None, None, {})
+
+    monkeypatch.setattr(tracker, "_resolve_window_context", _missing_resolve)
+
+    await tracker.process_heartbeat_for_tool(AITool.CODEX_CLI, pid=91112)
+
+    async with tracker._lock:
+        kept = tracker._sessions["codex:pid:91112"]
+        assert kept.window_id == 18
+        assert kept.terminal_context.tmux_session == "i3pm-pittampalliorg-stacks-ma-bc1d1663"
+        assert kept.terminal_context.tmux_window == "0:main"
+        assert kept.terminal_context.tmux_pane == "%6"
+        assert kept.invalid_reason is None
+
+
+@pytest.mark.asyncio
 async def test_resolve_window_context_prefers_tmux_anchor_over_stale_process_env(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
 
@@ -421,7 +560,7 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
     assert item.project_source == "anchor"
 
 
-def test_build_session_list_collapses_duplicate_tmux_surface_to_single_canonical_item(monkeypatch):
+def test_build_session_list_preserves_all_sessions_on_same_tmux_surface(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
     monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
@@ -512,14 +651,13 @@ def test_build_session_list_collapses_duplicate_tmux_surface_to_single_canonical
 
     session_list, _ = tracker._build_session_list_unlocked()
 
-    assert len(session_list.sessions) == 1
-    item = session_list.sessions[0]
-    assert item.session_id == "codex:native-pane"
-    assert item.identity_confidence == IdentityConfidence.NATIVE
-    assert item.surface_kind == "tmux-pane"
-    assert item.surface_key.endswith("::%4::/dev/pts/5")
-    assert item.conflict_state is None
-    assert item.focusable is True
+    assert len(session_list.sessions) == 2
+    ids = {s.session_id for s in session_list.sessions}
+    assert ids == {"codex:native-pane", "codex:pid:283369"}
+    for s in session_list.sessions:
+        assert s.surface_kind == "tmux-pane"
+        assert "::%4::" in s.surface_key
+        assert s.focusable is True
 
 
 @pytest.mark.asyncio

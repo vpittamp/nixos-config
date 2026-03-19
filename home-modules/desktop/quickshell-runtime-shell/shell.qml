@@ -103,7 +103,10 @@ ShellRoot {
             load5: 0,
             load15: 0,
             temperature_c: null,
-            system_generation: 0
+            system_generation: 0,
+            disk_percent: 0,
+            disk_used_gb: 0,
+            disk_total_gb: 0
         })
     property bool panelVisible: true
     property string panelSection: "runtime"
@@ -213,6 +216,8 @@ ShellRoot {
             textDim: "#b4c0d1",
             accent: "#d1fae5",
             accentBg: "#123329",
+            green: "#86efac",
+            greenBg: "#10281c",
             blue: "#93c5fd",
             blueBg: "#16243a",
             blueMuted: "#5d7ba2",
@@ -354,19 +359,24 @@ ShellRoot {
     }
 
     function activeSessions() {
-        return uniqueSessions(arrayOrEmpty(dashboard.active_ai_sessions));
+        return arrayOrEmpty(dashboard.active_ai_sessions);
     }
 
     function sessionMru() {
-        const mru = uniqueSessions(arrayOrEmpty(dashboard.active_ai_sessions_mru));
+        const mru = arrayOrEmpty(dashboard.active_ai_sessions_mru);
         return mru.length ? mru : activeSessions();
     }
 
     function panelSessions() {
-        return stableSortedSessions(activeSessions().filter(session => sessionIsPanelDisplayEligible(session)));
+        return activeSessions().filter(session => sessionIsPanelDisplayEligible(session));
     }
 
     function sessionIdentityKey(session) {
+        const renderSessionKey = stringOrEmpty(session && session.render_session_key);
+        if (renderSessionKey) {
+            return renderSessionKey;
+        }
+
         const sessionKey = stringOrEmpty(session && session.session_key);
         if (sessionKey) {
             return sessionKey;
@@ -1664,6 +1674,39 @@ ShellRoot {
             bits.push(String(systemStatsState.temperature_c) + "°C");
         }
         return bits.join(" • ");
+    }
+
+    function systemStatsDiskPercentValue() {
+        return Math.round(Math.max(0, Number(systemStatsState.disk_percent || 0)));
+    }
+
+    function systemStatsDiskLabel() {
+        return "Disk " + String(systemStatsDiskPercentValue()) + "%";
+    }
+
+    function systemStatsDiskTooltip() {
+        return String(Number(systemStatsState.disk_used_gb || 0).toFixed(0)) + " / " + String(Number(systemStatsState.disk_total_gb || 0).toFixed(0)) + " GB";
+    }
+
+    function diskChipFill(hovered) {
+        var pct = systemStatsDiskPercentValue();
+        if (pct >= 90) return hovered ? Qt.lighter(colors.red, 1.15) : Qt.rgba(colors.red.r, colors.red.g, colors.red.b, 0.15);
+        if (pct >= 75) return hovered ? Qt.lighter(colors.amber, 1.15) : Qt.rgba(colors.amber.r, colors.amber.g, colors.amber.b, 0.15);
+        return neutralChipFill(hovered);
+    }
+
+    function diskChipBorder(hovered) {
+        var pct = systemStatsDiskPercentValue();
+        if (pct >= 90) return colors.red;
+        if (pct >= 75) return colors.amber;
+        return neutralChipBorder(hovered);
+    }
+
+    function diskChipText(hovered) {
+        var pct = systemStatsDiskPercentValue();
+        if (pct >= 90) return colors.red;
+        if (pct >= 75) return colors.amber;
+        return neutralChipText(hovered);
     }
 
     function systemGenerationLabel() {
@@ -4731,55 +4774,8 @@ ShellRoot {
         }
 
         for (let i = 0; i < groups.length; i += 1) {
-            groups[i].sessions = stableSortedSessions(groups[i].sessions);
-            const projectGroups = arrayOrEmpty(groups[i].project_groups);
-            for (let j = 0; j < projectGroups.length; j += 1) {
-                projectGroups[j].sessions = stableSortedSessions(projectGroups[j].sessions);
-            }
-            projectGroups.sort((left, right) => {
-                let result = compareAscending(modeSortRank(stringOrEmpty(left && left.execution_mode)), modeSortRank(stringOrEmpty(right && right.execution_mode)));
-                if (result !== 0) {
-                    return result;
-                }
-
-                result = compareAscending(stringOrEmpty(left && left.project_name), stringOrEmpty(right && right.project_name));
-                if (result !== 0) {
-                    return result;
-                }
-
-                result = compareAscending(stringOrEmpty(left && left.execution_mode), stringOrEmpty(right && right.execution_mode));
-                if (result !== 0) {
-                    return result;
-                }
-
-                return compareAscending(stringOrEmpty(left && left.project_key), stringOrEmpty(right && right.project_key));
-            });
             delete groups[i].project_index;
         }
-
-        groups.sort((left, right) => {
-            let result = compareDescending(boolOrFalse(left && left.is_current_host) ? 1 : 0, boolOrFalse(right && right.is_current_host) ? 1 : 0);
-            if (result !== 0) {
-                return result;
-            }
-
-            result = compareAscending(modeSortRank(stringOrEmpty(left && left.execution_mode)), modeSortRank(stringOrEmpty(right && right.execution_mode)));
-            if (result !== 0) {
-                return result;
-            }
-
-            result = compareAscending(stringOrEmpty(left && left.host_label), stringOrEmpty(right && right.host_label));
-            if (result !== 0) {
-                return result;
-            }
-
-            result = compareAscending(stringOrEmpty(left && left.execution_mode), stringOrEmpty(right && right.execution_mode));
-            if (result !== 0) {
-                return result;
-            }
-
-            return compareAscending(stringOrEmpty(left && left.group_key), stringOrEmpty(right && right.group_key));
-        });
 
         return groups;
     }
@@ -5963,8 +5959,32 @@ ShellRoot {
         };
     }
 
+    function dashboardHasUsableData(state) {
+        if (!state || typeof state !== "object") {
+            return false;
+        }
+
+        return arrayOrEmpty(state.active_ai_sessions).length > 0
+            || arrayOrEmpty(state.projects).length > 0
+            || arrayOrEmpty(state.outputs).length > 0
+            || arrayOrEmpty(state.worktrees).length > 0
+            || Number(state.total_windows || 0) > 0;
+    }
+
+    function dashboardStateWithStatus(baseState, status, errorMessage) {
+        const base = (baseState && typeof baseState === "object")
+            ? baseState
+            : root.emptyDashboardState(status, errorMessage);
+        return Object.assign({}, base, {
+            status: stringOrEmpty(status) || "loading",
+            error: stringOrEmpty(errorMessage),
+        });
+    }
+
     function resetDashboard(status, errorMessage) {
-        dashboard = root.emptyDashboardState(status, errorMessage);
+        dashboard = root.dashboardHasUsableData(dashboard)
+            ? root.dashboardStateWithStatus(dashboard, status, errorMessage)
+            : root.emptyDashboardState(status, errorMessage);
         if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
             restartLauncherQuery();
         }
@@ -6083,7 +6103,7 @@ ShellRoot {
 
     function daemonHealthDotColor() {
         const status = stringOrEmpty(daemonHealthState.status);
-        if (status === "healthy") return colors.green;
+        if (status === "healthy") return colors.green || colors.accent;
         if (status === "degraded") return colors.amber;
         if (status === "dead" || status === "unreachable") return colors.red;
         return colors.muted;
