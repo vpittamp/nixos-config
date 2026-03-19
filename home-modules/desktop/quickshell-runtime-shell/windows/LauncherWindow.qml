@@ -589,7 +589,7 @@ PanelWindow {
                                         if (!sessionEntry) {
                                             return;
                                         }
-                                        sessionToolIconWrap.opacity = hasMotion ? 0.96 : 0.92;
+                                        sessionToolIconWrap.opacity = 0.92;
                                         sessionToolIconWrap.scale = 1;
                                     }
 
@@ -660,42 +660,7 @@ PanelWindow {
                                                 width: 18
                                                 height: 18
                                                 scale: 1
-                                                opacity: hasMotion ? 0.96 : 0.92
-
-                                                ParallelAnimation {
-                                                    running: sessionEntry && hasMotion
-                                                    loops: Animation.Infinite
-
-                                                    SequentialAnimation {
-                                                        ScaleAnimator {
-                                                            target: sessionToolIconWrap
-                                                            from: 0.94
-                                                            to: 1.12
-                                                            duration: 800
-                                                        }
-                                                        ScaleAnimator {
-                                                            target: sessionToolIconWrap
-                                                            from: 1.12
-                                                            to: 0.94
-                                                            duration: 800
-                                                        }
-                                                    }
-
-                                                    SequentialAnimation {
-                                                        OpacityAnimator {
-                                                            target: sessionToolIconWrap
-                                                            from: 0.82
-                                                            to: 1
-                                                            duration: 800
-                                                        }
-                                                        OpacityAnimator {
-                                                            target: sessionToolIconWrap
-                                                            from: 1
-                                                            to: 0.82
-                                                            duration: 800
-                                                        }
-                                                    }
-                                                }
+                                                opacity: 0.92
 
                                                 IconImage {
                                                     anchors.centerIn: parent

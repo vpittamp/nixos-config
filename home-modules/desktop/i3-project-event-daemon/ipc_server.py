@@ -11526,9 +11526,14 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             expected_workspace_number = saved_workspace_number
             expected_workspace_name = str(saved_workspace_number)
 
-        expected_floating = bool(
-            saved_state.get("floating", state.get("floating", False))
-        )
+        if in_scratchpad and not saved_original_scratchpad:
+            # Window was tiled before being hidden to scratchpad by the window filter.
+            # The saved floating=True is an artifact of scratchpad state — default to tiled.
+            expected_floating = False
+        else:
+            expected_floating = bool(
+                saved_state.get("floating", state.get("floating", False))
+            )
         expected_fullscreen_mode = int(
             saved_state.get("fullscreen_mode", state.get("fullscreen_mode", 0)) or 0
         )
