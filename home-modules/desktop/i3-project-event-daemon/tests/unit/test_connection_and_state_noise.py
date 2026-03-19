@@ -130,3 +130,26 @@ async def test_ipc_server_stop_does_not_block_on_slow_client_close():
     await asyncio.wait_for(server.stop(), timeout=1.0)
 
     assert slow_writer.closed is True
+
+
+class _SlowServer:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        await asyncio.sleep(10)
+
+
+@pytest.mark.asyncio
+async def test_ipc_server_stop_does_not_block_on_slow_server_close():
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    slow_server = _SlowServer()
+    server.server = slow_server
+
+    await asyncio.wait_for(server.stop(), timeout=2.0)
+
+    assert slow_server.closed is True

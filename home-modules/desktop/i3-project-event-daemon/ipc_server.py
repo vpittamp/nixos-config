@@ -280,6 +280,8 @@ class IPCServer:
     """JSON-RPC IPC server for CLI tool queries."""
 
     _CLIENT_CLOSE_TIMEOUT_SECONDS = 0.25
+    _SERVER_CLOSE_TIMEOUT_SECONDS = 1.0
+    _RECONCILE_TASKS_CLOSE_TIMEOUT_SECONDS = 1.0
 
     def __init__(
         self,
@@ -458,11 +460,23 @@ class IPCServer:
         for task in list(self._launch_reconcile_tasks.values()):
             task.cancel()
         if self._launch_reconcile_tasks:
-            await asyncio.gather(*self._launch_reconcile_tasks.values(), return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._launch_reconcile_tasks.values(), return_exceptions=True),
+                    timeout=self._RECONCILE_TASKS_CLOSE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.debug("Timed out waiting for launch reconcile tasks to stop; continuing shutdown")
             self._launch_reconcile_tasks.clear()
         if self.server:
             self.server.close()
-            await self.server.wait_closed()
+            try:
+                await asyncio.wait_for(
+                    self.server.wait_closed(),
+                    timeout=self._SERVER_CLOSE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.debug("Timed out waiting for IPC server socket to close; continuing shutdown")
 
         # Close all client connections
         if self.clients:
