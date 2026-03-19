@@ -143,6 +143,16 @@ class _SlowServer:
         await asyncio.sleep(10)
 
 
+async def _stubborn_close(stop_event: asyncio.Event):
+    while True:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            if stop_event.is_set():
+                return
+            continue
+
+
 @pytest.mark.asyncio
 async def test_ipc_server_stop_does_not_block_on_slow_server_close():
     state_manager = state_module.StateManager()
@@ -153,3 +163,24 @@ async def test_ipc_server_stop_does_not_block_on_slow_server_close():
     await asyncio.wait_for(server.stop(), timeout=2.0)
 
     assert slow_server.closed is True
+
+
+@pytest.mark.asyncio
+async def test_ipc_server_await_with_timeout_does_not_block_on_stubborn_coro():
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    stop_event = asyncio.Event()
+    stubborn_task = asyncio.create_task(_stubborn_close(stop_event))
+
+    started = asyncio.get_running_loop().time()
+    await server._await_with_timeout(
+        stubborn_task,
+        timeout=0.05,
+        timeout_message="timeout",
+    )
+    elapsed = asyncio.get_running_loop().time() - started
+    stop_event.set()
+    stubborn_task.cancel()
+    await stubborn_task
+
+    assert elapsed < 0.5

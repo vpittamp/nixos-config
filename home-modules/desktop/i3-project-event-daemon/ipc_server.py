@@ -460,23 +460,19 @@ class IPCServer:
         for task in list(self._launch_reconcile_tasks.values()):
             task.cancel()
         if self._launch_reconcile_tasks:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._launch_reconcile_tasks.values(), return_exceptions=True),
-                    timeout=self._RECONCILE_TASKS_CLOSE_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logger.debug("Timed out waiting for launch reconcile tasks to stop; continuing shutdown")
+            await self._await_with_timeout(
+                asyncio.gather(*self._launch_reconcile_tasks.values(), return_exceptions=True),
+                timeout=self._RECONCILE_TASKS_CLOSE_TIMEOUT_SECONDS,
+                timeout_message="Timed out waiting for launch reconcile tasks to stop; continuing shutdown",
+            )
             self._launch_reconcile_tasks.clear()
         if self.server:
             self.server.close()
-            try:
-                await asyncio.wait_for(
-                    self.server.wait_closed(),
-                    timeout=self._SERVER_CLOSE_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logger.debug("Timed out waiting for IPC server socket to close; continuing shutdown")
+            await self._await_with_timeout(
+                self.server.wait_closed(),
+                timeout=self._SERVER_CLOSE_TIMEOUT_SECONDS,
+                timeout_message="Timed out waiting for IPC server socket to close; continuing shutdown",
+            )
 
         # Close all client connections
         if self.clients:
@@ -538,18 +534,44 @@ class IPCServer:
         """Close a client writer without blocking daemon shutdown indefinitely."""
         try:
             writer.close()
-            await asyncio.wait_for(
+            await self._await_with_timeout(
                 writer.wait_closed(),
                 timeout=self._CLIENT_CLOSE_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            addr = self._format_client_peer(writer.get_extra_info("peername"))
-            logger.debug(
-                "Timed out waiting for client %s to close; continuing shutdown",
-                addr,
+                timeout_message=(
+                    "Timed out waiting for client "
+                    f"{self._format_client_peer(writer.get_extra_info('peername'))} "
+                    "to close; continuing shutdown"
+                ),
             )
         except Exception as e:
             logger.debug(f"Error closing client connection during shutdown: {e}")
+
+    async def _await_with_timeout(
+        self,
+        awaitable: Any,
+        *,
+        timeout: float,
+        timeout_message: str,
+    ) -> Any:
+        """Await an operation with a hard timeout that doesn't block on slow cancellation."""
+        task = asyncio.ensure_future(awaitable)
+        done, _pending = await asyncio.wait({task}, timeout=timeout)
+        if task in done:
+            return await task
+
+        task.cancel()
+
+        def _consume_result(fut: asyncio.Future) -> None:
+            try:
+                fut.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug("Background shutdown task failed after timeout", exc_info=True)
+
+        task.add_done_callback(_consume_result)
+        logger.debug(timeout_message)
+        return None
 
     def _format_client_peer(self, addr: Any) -> str:
         """Return a compact stable label for a client peer."""
