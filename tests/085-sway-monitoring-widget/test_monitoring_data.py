@@ -5,6 +5,7 @@ Tests data transformation, JSON output format, and error handling.
 """
 
 import asyncio
+import copy
 import json
 import pytest
 import subprocess
@@ -27,6 +28,86 @@ from i3_project_manager.cli.monitoring_data import (
     query_tailscale_data,
     main,
 )
+
+
+def make_daemon_runtime_session(raw_session: dict, *, session_key: str | None = None, **overrides) -> dict:
+    session = copy.deepcopy(raw_session)
+    terminal_context = dict(session.get("terminal_context") or {})
+    session["terminal_context"] = terminal_context
+    tool = str(session.get("tool") or "unknown")
+    session_id = str(session.get("session_id") or "").strip()
+    surface_key = str(session.get("surface_key") or "").strip()
+    if not surface_key:
+        tmux_server_key = str(terminal_context.get("tmux_server_key") or "unknown-tmux-server")
+        tmux_session = str(terminal_context.get("tmux_session") or "")
+        tmux_window = str(terminal_context.get("tmux_window") or "")
+        tmux_pane = str(terminal_context.get("tmux_pane") or "")
+        context_key = str(session.get("context_key") or terminal_context.get("context_key") or "unknown-context")
+        surface_key = f"{context_key}::{tmux_server_key}::{tmux_session}::{tmux_window}::{tmux_pane}"
+    connection_key = str(
+        overrides.get("connection_key")
+        or session.get("connection_key")
+        or terminal_context.get("connection_key")
+        or ""
+    ).strip()
+    execution_mode = str(
+        overrides.get("execution_mode")
+        or session.get("execution_mode")
+        or terminal_context.get("execution_mode")
+        or "local"
+    ).strip()
+    context_key = str(
+        overrides.get("context_key")
+        or session.get("context_key")
+        or terminal_context.get("context_key")
+        or ""
+    ).strip()
+    window_id = int(
+        overrides.get("window_id")
+        or session.get("window_id")
+        or terminal_context.get("window_id")
+        or 0
+    )
+    project_name = str(
+        overrides.get("project_name")
+        or session.get("project_name")
+        or session.get("project")
+        or ""
+    ).strip()
+    resolved_session_key = session_key or f"tool={tool}|surface={surface_key}|session={session_id or 'unknown'}"
+    session.update({
+        "session_key": resolved_session_key,
+        "render_session_key": resolved_session_key,
+        "surface_key": surface_key,
+        "project_name": project_name,
+        "display_project": str(session.get("display_project") or project_name),
+        "window_project": str(session.get("window_project") or project_name),
+        "focus_project": str(session.get("focus_project") or session.get("window_project") or project_name),
+        "execution_mode": execution_mode,
+        "connection_key": connection_key,
+        "context_key": context_key,
+        "focus_execution_mode": str(overrides.get("focus_execution_mode") or execution_mode),
+        "focus_connection_key": str(overrides.get("focus_connection_key") or connection_key),
+        "window_id": window_id,
+        "host_name": str(overrides.get("host_name") or session.get("host_name") or terminal_context.get("host_name") or ""),
+        "focusable": True,
+        "availability_state": str(overrides.get("availability_state") or "remote_bridge_bound"),
+        "focusability_reason": str(overrides.get("focusability_reason") or "exact_remote_bridge_bound"),
+        "focus_mode": str(overrides.get("focus_mode") or "remote_bridge_bound"),
+        "is_current_host": bool(overrides.get("is_current_host", True)),
+        "is_current_window": bool(overrides.get("is_current_window", False)),
+        "window_active": bool(overrides.get("window_active", False)),
+        "pane_active": bool(overrides.get("pane_active", False)),
+        "focus_target": {
+            "method": "session.focus",
+            "params": {"session_key": resolved_session_key},
+        },
+        "tmux_session": str(session.get("tmux_session") or terminal_context.get("tmux_session") or ""),
+        "tmux_window": str(session.get("tmux_window") or terminal_context.get("tmux_window") or ""),
+        "tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or ""),
+    })
+    session.update(overrides)
+    return session
 
 
 class TestGetWindowStateClasses:
@@ -254,7 +335,9 @@ class TestTransformWindow:
         )
         assert len(window["otel_badges"]) == 1
         badge = window["otel_badges"][0]
-        assert "project=PittampalliOrg/workflow-builder:main" in badge["session_key"]
+        assert "workflow-builder/main" in badge["session_key"]
+        assert "%42" in badge["session_key"]
+        assert "session=claude-code:sid-claude-ssh" in badge["session_key"]
         assert badge["project"] == "PittampalliOrg/workflow-builder:main"
         assert badge["focus_project"] == "PittampalliOrg/workflow-builder:main"
         assert badge["window_project"] == "PittampalliOrg/workflow-builder:main"
@@ -958,6 +1041,15 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
+            remote_session = remote_sink_payload["sources"]["vpittamp@ryzen:22"]["sessions"][0]
+            mock_daemon_response["sessions"] = [
+                make_daemon_runtime_session(
+                    remote_session,
+                    focus_execution_mode="ssh",
+                    focus_connection_key="vpittamp@ryzen:22",
+                )
+            ]
+            mock_daemon_response["current_ai_session_key"] = ""
             mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
@@ -1124,6 +1216,15 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
+            remote_session = remote_sink_payload["sources"]["vpittamp@ryzen:22"]["sessions"][0]
+            mock_daemon_response["sessions"] = [
+                make_daemon_runtime_session(
+                    remote_session,
+                    focus_execution_mode="ssh",
+                    focus_connection_key="vpittamp@ryzen:22",
+                )
+            ]
+            mock_daemon_response["current_ai_session_key"] = ""
             mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
@@ -1258,6 +1359,15 @@ class TestQueryMonitoringData:
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
+            remote_session = remote_sink_payload["sources"]["vpittamp@ryzen:22"]["sessions"][0]
+            mock_daemon_response["sessions"] = [
+                make_daemon_runtime_session(
+                    remote_session,
+                    focus_execution_mode="ssh",
+                    focus_connection_key="vpittamp@ryzen:22",
+                )
+            ]
+            mock_daemon_response["current_ai_session_key"] = ""
             mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
