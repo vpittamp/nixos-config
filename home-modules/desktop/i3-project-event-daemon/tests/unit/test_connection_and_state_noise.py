@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +28,7 @@ if "i3_project_daemon" not in sys.modules:
 
 
 connection_module = importlib.import_module("i3_project_daemon.connection")
+ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
 state_module = importlib.import_module("i3_project_daemon.state")
 models_module = importlib.import_module("i3_project_daemon.models")
 
@@ -65,3 +68,50 @@ async def test_update_window_accepts_title_alias_without_warning():
     updated = await state_manager.get_window(101)
     assert updated is not None
     assert updated.window_title == "New Title"
+
+
+class _DummyWriter:
+    def __init__(self, peername=("local", 0)):
+        self.peername = peername
+        self.buffer = bytearray()
+        self.closed = False
+
+    def get_extra_info(self, name):
+        if name == "peername":
+            return self.peername
+        return None
+
+    def write(self, data):
+        self.buffer.extend(data)
+
+    async def drain(self):
+        return None
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_ipc_server_tracks_malformed_json_in_status():
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    reader = asyncio.StreamReader()
+    writer = _DummyWriter(peername=("tester", 9999))
+
+    reader.feed_data(b"{bad json}\n")
+    reader.feed_eof()
+
+    await server._handle_client(reader, writer)
+
+    response = json.loads(writer.buffer.decode().strip())
+    assert response["error"]["code"] == -32700
+
+    status = await server._get_status()
+    ipc_stats = status["ipc_stats"]
+    assert ipc_stats["malformed_json_count"] == 1
+    assert ipc_stats["last_malformed_json_peer"] == "tester:9999"
+    assert ipc_stats["last_malformed_json_error"] is not None
+    assert ipc_stats["top_malformed_json_peers"] == [{"peer": "tester:9999", "count": 1}]

@@ -348,6 +348,11 @@ class IPCServer:
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
+        self._malformed_json_count: int = 0
+        self._malformed_json_last_at: Optional[str] = None
+        self._malformed_json_last_peer: str = ""
+        self._malformed_json_last_error: str = ""
+        self._malformed_json_by_peer: Dict[str, int] = {}
 
     @classmethod
     async def from_systemd_socket(
@@ -495,6 +500,7 @@ class IPCServer:
                     await writer.drain()
 
                 except json.JSONDecodeError as e:
+                    self._record_malformed_json(addr, e)
                     logger.warning("Ignoring malformed JSON from %s: %s", addr, e)
                     error_response = {
                         "jsonrpc": "2.0",
@@ -513,6 +519,43 @@ class IPCServer:
             self.state_change_subscribers.discard(writer)  # Feature 123: Remove from state change subscriptions
             writer.close()
             await writer.wait_closed()
+
+    def _format_client_peer(self, addr: Any) -> str:
+        """Return a compact stable label for a client peer."""
+        if addr is None:
+            return "<unknown>"
+        if isinstance(addr, tuple):
+            return ":".join(str(part) for part in addr if part not in (None, ""))
+        return str(addr)
+
+    def _record_malformed_json(self, addr: Any, error: Exception) -> None:
+        """Track malformed IPC requests for status/debugging."""
+        peer = self._format_client_peer(addr)
+        self._malformed_json_count += 1
+        self._malformed_json_last_at = datetime.now().isoformat()
+        self._malformed_json_last_peer = peer
+        self._malformed_json_last_error = str(error)
+        self._malformed_json_by_peer[peer] = self._malformed_json_by_peer.get(peer, 0) + 1
+
+    def _get_ipc_stats(self) -> Dict[str, Any]:
+        """Return lightweight IPC health/debug statistics."""
+        top_offenders = sorted(
+            self._malformed_json_by_peer.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:5]
+        return {
+            "client_count": len(self.clients),
+            "subscribed_client_count": len(self.subscribed_clients),
+            "state_change_subscriber_count": len(self.state_change_subscribers),
+            "malformed_json_count": self._malformed_json_count,
+            "last_malformed_json_at": self._malformed_json_last_at,
+            "last_malformed_json_peer": self._malformed_json_last_peer or None,
+            "last_malformed_json_error": self._malformed_json_last_error or None,
+            "top_malformed_json_peers": [
+                {"peer": peer, "count": count}
+                for peer, count in top_offenders
+            ],
+        }
 
     async def _handle_request(self, request: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Handle a JSON-RPC request.
@@ -1178,6 +1221,7 @@ class IPCServer:
                 "error_count": stats.get("error_count", 0),
                 "version": "1.0.0",  # TODO: Get from package metadata
                 "socket_path": str(self.server.sockets[0].getsockname()) if self.server and self.server.sockets else "/run/user/1000/i3-project-daemon/ipc.sock",
+                "ipc_stats": self._get_ipc_stats(),
             }
             return result
         except Exception as e:
