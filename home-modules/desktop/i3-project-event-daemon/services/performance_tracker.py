@@ -61,19 +61,21 @@ class PerformanceTrackerService:
         """
         self._history.append(metrics)
         self._total_switches += 1
+        target_ms = self.check_performance_target(metrics.total_windows_affected)
 
         # Check for performance regression
-        if not metrics.meets_performance_target(self.target_ms):
+        if not metrics.meets_performance_target(target_ms):
             self._regression_warnings += 1
             logger.warning(
                 f"[Feature 091] Performance regression detected: "
-                f"{metrics.total_duration_ms:.1f}ms (target: {self.target_ms}ms) "
+                f"{metrics.total_duration_ms:.1f}ms (target: {target_ms}ms, "
+                f"{metrics.total_windows_affected} windows) "
                 f"for switch {metrics.project_from or 'global'} → {metrics.project_to or 'global'}"
             )
         else:
             logger.info(
                 f"[Feature 091] Switch completed: {metrics.total_duration_ms:.1f}ms "
-                f"({metrics.total_windows_affected} windows) "
+                f"({metrics.total_windows_affected} windows, target: {target_ms}ms) "
                 f"{metrics.project_from or 'global'} → {metrics.project_to or 'global'}"
             )
 
