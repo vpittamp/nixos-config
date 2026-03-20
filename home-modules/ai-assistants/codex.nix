@@ -282,11 +282,6 @@ EOF
       # Web search: "live", "cached", or "disabled" (top-level, replaces deprecated features.web_search_request)
       web_search = "live";
 
-      # rmcp_client is REQUIRED for MCP server support
-      features = {
-        rmcp_client = true;  # Required for MCP servers to work
-      };
-
       # Status line configuration for project context and monitoring
       tui = {
         status_line = [
