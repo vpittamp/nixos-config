@@ -547,7 +547,13 @@ class WindowRulesWatcher:
         self.config_file = config_file
         self.reload_callback = reload_callback
         self.observer = Observer()
-        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms)
+        # Only reload for the actual rules file; the watcher still observes the
+        # parent directory so atomic save/rename flows continue to work.
+        self.handler = DebouncedReloadHandler(
+            reload_callback,
+            debounce_ms,
+            target_filename=config_file.name,
+        )
         self._started = False
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
