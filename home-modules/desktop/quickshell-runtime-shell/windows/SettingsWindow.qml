@@ -210,105 +210,112 @@ PanelWindow {
                     border.color: colors.border
                     border.width: 1
 
-                    ColumnLayout {
+                    StackLayout {
                         anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 12
-                        visible: root.settingsSection === "commands"
+                        currentIndex: root.settingsSection === "devices" ? 1 : 0
 
-                        RowLayout {
+                        Item {
                             Layout.fillWidth: true
-                            spacing: 10
+                            Layout.fillHeight: true
 
                             ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 12
+
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 2
+                                spacing: 10
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        text: "Commands"
+                                        color: colors.text
+                                        font.pixelSize: 15
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        text: "Browse and edit curated commands stored in `~/.config/elephant/snippets.toml`."
+                                        color: colors.subtle
+                                        font.pixelSize: 10
+                                    }
+                                }
+
+                                Button {
+                                    text: "Close"
+                                    onClicked: root.closeSettings()
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
                                 Text {
-                                    text: "Commands"
-                                    color: colors.text
-                                    font.pixelSize: 15
-                                    font.weight: Font.DemiBold
+                                    Layout.fillWidth: true
+                                    text: root.settingsCommandStatusText()
+                                    color: root.settingsCommandError ? colors.red : colors.subtle
+                                    font.pixelSize: 10
                                 }
 
                                 Text {
-                                    text: "Browse and edit curated commands stored in `~/.config/elephant/snippets.toml`."
-                                    color: colors.subtle
+                                    text: root.snippetEditorStatus()
+                                    color: root.snippetEditorError ? colors.red : (root.snippetEditorDirty ? colors.orange : colors.subtle)
                                     font.pixelSize: 10
                                 }
                             }
 
-                            Button {
-                                text: "Close"
-                                onClicked: root.closeSettings()
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequences: [StandardKey.New]
+                                onActivated: root.beginNewSnippetFromQuery()
                             }
-                        }
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequences: [StandardKey.Save]
+                                onActivated: root.saveSnippetEditor()
+                            }
 
-                            Text {
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequences: ["Ctrl+D"]
+                                onActivated: root.removeSnippetEditorEntry()
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequences: ["Alt+Up"]
+                                onActivated: root.moveSnippetEditorEntry("up")
+                            }
+
+                            Shortcut {
+                                enabled: root.settingsVisible && root.settingsSection === "commands"
+                                sequences: ["Alt+Down"]
+                                onActivated: root.moveSnippetEditorEntry("down")
+                            }
+
+                            RowLayout {
                                 Layout.fillWidth: true
-                                text: root.settingsCommandStatusText()
-                                color: root.settingsCommandError ? colors.red : colors.subtle
-                                font.pixelSize: 10
-                            }
-
-                            Text {
-                                text: root.snippetEditorStatus()
-                                color: root.snippetEditorError ? colors.red : (root.snippetEditorDirty ? colors.orange : colors.subtle)
-                                font.pixelSize: 10
-                            }
-                        }
-
-                        Shortcut {
-                            enabled: root.settingsVisible && root.settingsSection === "commands"
-                            sequences: [StandardKey.New]
-                            onActivated: root.beginNewSnippetFromQuery()
-                        }
-
-                        Shortcut {
-                            enabled: root.settingsVisible && root.settingsSection === "commands"
-                            sequences: [StandardKey.Save]
-                            onActivated: root.saveSnippetEditor()
-                        }
-
-                        Shortcut {
-                            enabled: root.settingsVisible && root.settingsSection === "commands"
-                            sequences: ["Ctrl+D"]
-                            onActivated: root.removeSnippetEditorEntry()
-                        }
-
-                        Shortcut {
-                            enabled: root.settingsVisible && root.settingsSection === "commands"
-                            sequences: ["Alt+Up"]
-                            onActivated: root.moveSnippetEditorEntry("up")
-                        }
-
-                        Shortcut {
-                            enabled: root.settingsVisible && root.settingsSection === "commands"
-                            sequences: ["Alt+Down"]
-                            onActivated: root.moveSnippetEditorEntry("down")
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            spacing: 12
-
-                            Rectangle {
                                 Layout.fillHeight: true
-                                Layout.preferredWidth: 330
-                                radius: 8
-                                color: colors.cardAlt
-                                border.color: colors.lineSoft
-                                border.width: 1
+                                spacing: 12
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 12
-                                    spacing: 10
+                                Rectangle {
+                                    Layout.fillHeight: true
+                                    Layout.preferredWidth: 330
+                                    radius: 8
+                                    color: colors.cardAlt
+                                    border.color: colors.lineSoft
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 12
+                                        spacing: 10
 
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -460,21 +467,21 @@ PanelWindow {
                                 }
                             }
 
-                            Rectangle {
-                                Layout.fillHeight: true
-                                Layout.fillWidth: true
-                                radius: 8
-                                color: colors.cardAlt
-                                border.color: colors.lineSoft
-                                border.width: 1
+                                Rectangle {
+                                    Layout.fillHeight: true
+                                    Layout.fillWidth: true
+                                    radius: 8
+                                    color: colors.cardAlt
+                                    border.color: colors.lineSoft
+                                    border.width: 1
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
-                                    anchors.topMargin: 14
-                                    anchors.bottomMargin: 14
-                                    spacing: 10
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 14
+                                        anchors.rightMargin: 14
+                                        anchors.topMargin: 14
+                                        anchors.bottomMargin: 14
+                                        spacing: 10
 
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -653,15 +660,20 @@ PanelWindow {
                                             Layout.fillWidth: true
                                         }
                                     }
+                                    }
                                 }
+                            }
                             }
                         }
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 12
-                            visible: root.settingsSection === "devices"
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 12
 
                             RowLayout {
                                 Layout.fillWidth: true
@@ -679,7 +691,7 @@ PanelWindow {
                                     }
 
                                     Text {
-                                        text: "Native QuickShell controls for audio, Bluetooth, network, and system resources."
+                                        text: "Native QuickShell controls for displays, audio, Bluetooth, network, and system resources."
                                         color: colors.subtle
                                         font.pixelSize: 10
                                         wrapMode: Text.WordWrap
@@ -692,7 +704,7 @@ PanelWindow {
                                 }
                             }
 
-                            ScrollView {
+                                ScrollView {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
@@ -700,6 +712,132 @@ PanelWindow {
                                 ColumnLayout {
                                     width: parent.width
                                     spacing: 12
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: 10
+                                        color: colors.cardAlt
+                                        border.color: colors.lineSoft
+                                        border.width: 1
+                                        implicitHeight: settingsDisplayCardContent.implicitHeight + 24
+
+                                        ColumnLayout {
+                                            id: settingsDisplayCardContent
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: "Displays"
+                                                        color: colors.text
+                                                        font.pixelSize: 12
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Text {
+                                                        text: root.displayApplyStatusText()
+                                                        color: root.displayApplyError ? colors.red : colors.subtle
+                                                        font.pixelSize: 10
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+
+                                                Button {
+                                                    text: "Picker"
+                                                    onClicked: root.openDisplaySelector()
+                                                }
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: "Current: " + root.currentLayoutLabel() + "  •  " + root.activeDisplaySummary()
+                                                color: colors.subtle
+                                                font.pixelSize: 10
+                                                wrapMode: Text.WordWrap
+                                            }
+
+                                            Repeater {
+                                                model: root.displayLayoutOptions()
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property string layoutName: root.displayOptionName(modelData)
+                                                    readonly property bool current: !!(modelData && modelData.current)
+                                                    readonly property bool pending: root.displayApplyPending(layoutName)
+                                                    readonly property var outputNames: root.displayOptionOutputs(modelData)
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: settingsDisplayOptionColumn.implicitHeight + 20
+                                                    radius: 8
+                                                    color: current ? colors.blueBg : colors.panel
+                                                    border.color: current ? colors.blue : colors.border
+                                                    border.width: 1
+
+                                                    ColumnLayout {
+                                                        id: settingsDisplayOptionColumn
+                                                        anchors.fill: parent
+                                                        anchors.margins: 10
+                                                        spacing: 8
+
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 8
+
+                                                            ColumnLayout {
+                                                                Layout.fillWidth: true
+                                                                spacing: 2
+
+                                                                Text {
+                                                                    text: root.displayOptionLabel(modelData)
+                                                                    color: current ? colors.blue : colors.text
+                                                                    font.pixelSize: 10
+                                                                    font.weight: Font.DemiBold
+                                                                }
+
+                                                                Text {
+                                                                    text: root.displayOptionDescription(modelData)
+                                                                    color: colors.subtle
+                                                                    font.pixelSize: 9
+                                                                    wrapMode: Text.WordWrap
+                                                                }
+                                                            }
+
+                                                            Button {
+                                                                text: pending ? "Applying" : (current ? "Active" : "Apply")
+                                                                enabled: !pending && !current && !(root.displayApplyProcess && root.displayApplyProcess.running)
+                                                                onClicked: root.applyDisplayLayout(layoutName)
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            visible: outputNames.length > 0
+                                                            text: outputNames.join("  •  ")
+                                                            color: colors.subtle
+                                                            font.pixelSize: 9
+                                                            wrapMode: Text.WordWrap
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                visible: root.displayLayoutOptions().length === 0
+                                                text: "No daemon-backed display layouts are configured for this host."
+                                                color: colors.subtle
+                                                font.pixelSize: 9
+                                                wrapMode: Text.WordWrap
+                                            }
+                                        }
+                                    }
 
                                     Rectangle {
                                         Layout.fillWidth: true
@@ -981,6 +1119,7 @@ PanelWindow {
                                             }
                                         }
                                     }
+                                }
                                 }
                             }
                         }

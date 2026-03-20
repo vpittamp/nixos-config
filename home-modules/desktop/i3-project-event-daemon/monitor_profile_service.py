@@ -14,17 +14,19 @@ Feature: 083-multi-monitor-window-management, 084-monitor-management-solution
 import asyncio
 import json
 import logging
+import re
 import socket
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional, List, Set
+from typing import Optional, List, Set, Dict
 from datetime import datetime
 
 from .models.monitor_profile import (
     MonitorProfile,
     ProfileEvent,
     ProfileEventType,
+    ProfileOutput,
     HybridMonitorProfile,
     HybridOutputConfig,
     OutputType,
@@ -43,6 +45,7 @@ SWAY_CONFIG_DIR = Path.home() / ".config" / "sway"
 PROFILES_DIR = SWAY_CONFIG_DIR / "monitor-profiles"
 CURRENT_PROFILE_FILE = SWAY_CONFIG_DIR / "monitor-profile.current"
 DEFAULT_PROFILE_FILE = SWAY_CONFIG_DIR / "monitor-profile.default"
+HEADLESS_OUTPUT_PATTERN = re.compile(r"^HEADLESS-\d+$")
 
 
 class MonitorProfileService:
@@ -328,6 +331,103 @@ class MonitorProfileService:
         """List available profile names."""
         return list(self._profiles.keys())
 
+    def _managed_output_names(self) -> List[str]:
+        """Return the union of output names referenced by loaded standard profiles."""
+        names: List[str] = []
+        seen: Set[str] = set()
+        for profile in self._profiles.values():
+            for output in profile.outputs:
+                if not isinstance(output, ProfileOutput):
+                    continue
+                if output.name in seen:
+                    continue
+                names.append(output.name)
+                seen.add(output.name)
+        return names
+
+    def _profile_outputs_by_name(self, profile: MonitorProfile) -> Dict[str, ProfileOutput]:
+        """Map profile outputs by output name."""
+        return {
+            output.name: output
+            for output in profile.outputs
+            if isinstance(output, ProfileOutput)
+        }
+
+    def _desired_output_states(self, profile: MonitorProfile) -> Dict[str, bool]:
+        """Resolve desired enabled/disabled state for every managed output."""
+        desired = {name: False for name in self._managed_output_names()}
+        for output in profile.outputs:
+            if not isinstance(output, ProfileOutput):
+                continue
+            desired[output.name] = bool(output.enabled)
+        return desired
+
+    def _is_headless_output(self, output_name: str) -> bool:
+        """Return whether an output name refers to a headless/virtual display."""
+        return bool(HEADLESS_OUTPUT_PATTERN.match(str(output_name or "").strip()))
+
+    async def _apply_standard_output_configuration(
+        self,
+        conn,
+        profile: MonitorProfile,
+        desired_output_states: Dict[str, bool],
+    ) -> None:
+        """Apply physical output changes for standard profiles."""
+        profile_outputs = self._profile_outputs_by_name(profile)
+        physical_enabled = [
+            name for name, enabled in desired_output_states.items()
+            if enabled and not self._is_headless_output(name)
+        ]
+        physical_disabled = [
+            name for name, enabled in desired_output_states.items()
+            if not enabled and not self._is_headless_output(name)
+        ]
+
+        if not physical_enabled and not physical_disabled:
+            return
+
+        outputs = await conn.get_outputs()
+        current_outputs = {str(output.name): output for output in outputs}
+        fallback_output = physical_enabled[0] if physical_enabled else None
+
+        if fallback_output and physical_disabled:
+            await self.migrate_workspaces_from_disabled_outputs(
+                conn,
+                physical_disabled,
+                fallback_output=fallback_output,
+            )
+
+        for output_name in physical_disabled:
+            current_output = current_outputs.get(output_name)
+            if current_output is None or not bool(getattr(current_output, "active", False)):
+                continue
+            result = await conn.command(f"output {output_name} disable")
+            if not result or not result[0].success:
+                error_msg = result[0].error if result and hasattr(result[0], "error") else str(result)
+                raise RuntimeError(f"Failed to disable output {output_name}: {error_msg}")
+
+        for output_name in physical_enabled:
+            output_config = profile_outputs.get(output_name)
+            current_output = current_outputs.get(output_name)
+            rect = getattr(current_output, "rect", None)
+            position = output_config.position if output_config else None
+            width = int(position.width if position is not None else (getattr(rect, "width", 0) or 0))
+            height = int(position.height if position is not None else (getattr(rect, "height", 0) or 0))
+            x = int(position.x if position is not None else (getattr(rect, "x", 0) or 0))
+            y = int(position.y if position is not None else (getattr(rect, "y", 0) or 0))
+
+            # Explicitly enable the output first; issuing only mode/position is
+            # not sufficient to wake a currently disabled physical monitor.
+            command = f"output {output_name} enable"
+            if width > 0 and height > 0:
+                command += f" mode {width}x{height}"
+            command += f" position {x} {y}"
+
+            result = await conn.command(command)
+            if not result or not result[0].success:
+                error_msg = result[0].error if result and hasattr(result[0], "error") else str(result)
+                raise RuntimeError(f"Failed to configure output {output_name}: {error_msg}")
+
     def get_enabled_outputs(self) -> List[str]:
         """Get list of enabled outputs for current profile."""
         if not self._current_profile:
@@ -407,8 +507,9 @@ class MonitorProfileService:
 
             # Standard headless mode profile switch
             # Emit start event
-            enabled = profile.get_enabled_outputs()
-            disabled = profile.get_disabled_outputs()
+            desired_output_states = self._desired_output_states(profile)
+            enabled = [name for name, is_enabled in desired_output_states.items() if is_enabled]
+            disabled = [name for name, is_enabled in desired_output_states.items() if not is_enabled]
             all_changed = enabled + disabled
 
             self.emit_event(ProfileEvent.start(
@@ -417,10 +518,16 @@ class MonitorProfileService:
                 all_changed
             ))
 
+            await self._apply_standard_output_configuration(
+                conn,
+                profile,
+                desired_output_states,
+            )
+
             # Update output-states.json
             states = load_output_states()
-            for output in profile.outputs:
-                states.set_output_enabled(output.name, output.enabled)
+            for output_name, enabled_state in desired_output_states.items():
+                states.set_output_enabled(output_name, enabled_state)
             save_output_states(states)
 
             logger.info(f"Updated output states for profile {new_profile_name}: "
@@ -428,6 +535,12 @@ class MonitorProfileService:
 
             # Update current profile
             self._current_profile = new_profile_name
+
+            try:
+                from .workspace_manager import assign_workspaces_with_monitor_roles
+                await assign_workspaces_with_monitor_roles(conn)
+            except Exception as exc:
+                logger.warning("Failed to reassign workspaces for profile %s: %s", new_profile_name, exc)
 
             # Publish to Eww
             await self.eww_publisher.publish_from_conn(

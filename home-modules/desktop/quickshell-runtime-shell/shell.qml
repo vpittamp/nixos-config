@@ -46,6 +46,7 @@ ShellRoot {
     readonly property var launcherQueryProcess: runtimeServices ? runtimeServices.launcherQueryProcessRef : null
     readonly property var sessionPreviewProcess: runtimeServices ? runtimeServices.sessionPreviewProcessRef : null
     readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
+    readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
 
     property var dashboard: ({
@@ -115,6 +116,8 @@ ShellRoot {
     property bool powerMenuVisible: false
     property bool audioPopupVisible: false
     property bool bluetoothPopupVisible: false
+    property bool displaySelectorVisible: false
+    property string displaySelectorOutputName: ""
     property bool worktreePickerVisible: false
     property bool launcherVisible: false
     property bool launcherLoading: false
@@ -156,6 +159,10 @@ ShellRoot {
     property string sessionCloseProcessTargetKey: ""
     property string sessionCloseProcessStdout: ""
     property string sessionCloseProcessStderr: ""
+    property string displayApplyTarget: ""
+    property string displayApplyStdout: ""
+    property string displayApplyStderr: ""
+    property string displayApplyError: ""
     property string sessionPreviewTargetKey: ""
     property bool sessionPreviewStopExpected: false
     property bool sessionPreviewAutoFollow: true
@@ -672,6 +679,12 @@ ShellRoot {
         return "";
     }
 
+    function displayLayoutState() {
+        return dashboard && typeof dashboard === "object" && dashboard.display_layout
+            ? dashboard.display_layout
+            : {};
+    }
+
     function resolvePrimaryScreen() {
         const screens = arrayOrEmpty(Quickshell.screens);
         if (!screens.length) {
@@ -762,12 +775,174 @@ ShellRoot {
     }
 
     function currentLayoutLabel() {
-        const displayLayout = dashboard.display_layout || {};
+        const displayLayout = displayLayoutState();
         const layout = stringOrEmpty(displayLayout.current_layout);
         if (layout) {
             return layout;
         }
         return primaryOutputName || "Display";
+    }
+
+    function displayLayoutOptions() {
+        const displayLayout = displayLayoutState();
+        const options = arrayOrEmpty(displayLayout.layout_options);
+        if (options.length > 0) {
+            return options;
+        }
+
+        const names = arrayOrEmpty(displayLayout.layouts);
+        const current = stringOrEmpty(displayLayout.current_layout);
+        const items = [];
+        for (let i = 0; i < names.length; i += 1) {
+            const name = stringOrEmpty(names[i]);
+            if (!name) {
+                continue;
+            }
+            items.push({
+                name: name,
+                label: name.replace(/[-_]+/g, " ").replace(/\b\w/g, function (match) {
+                    return match.toUpperCase();
+                }),
+                description: "",
+                output_names: [],
+                output_count: 0,
+                current: name === current
+            });
+        }
+        return items;
+    }
+
+    function displayOptionName(option) {
+        return stringOrEmpty(option && option.name);
+    }
+
+    function displayOptionLabel(option) {
+        return stringOrEmpty(option && option.label) || displayOptionName(option) || "Layout";
+    }
+
+    function displayOptionDescription(option) {
+        const description = stringOrEmpty(option && option.description);
+        if (description) {
+            return description;
+        }
+        const outputCount = Number(option && option.output_count || 0);
+        if (outputCount > 0) {
+            return String(outputCount) + (outputCount === 1 ? " monitor enabled" : " monitors enabled");
+        }
+        return "Daemon-backed display preset";
+    }
+
+    function displayOptionOutputs(option) {
+        return arrayOrEmpty(option && option.output_names).filter(function (name) {
+            return stringOrEmpty(name) !== "";
+        });
+    }
+
+    function activeDisplayOutputs() {
+        const outputs = arrayOrEmpty(displayLayoutState().outputs);
+        return outputs.filter(function (output) {
+            return !!(output && output.active) && output.enabled !== false;
+        });
+    }
+
+    function activeDisplayOutputNames() {
+        return activeDisplayOutputs().map(function (output) {
+            return stringOrEmpty(output && output.name);
+        }).filter(function (name) {
+            return name !== "";
+        });
+    }
+
+    function activeDisplaySummary() {
+        const names = activeDisplayOutputNames();
+        if (!names.length) {
+            return "No managed outputs reported";
+        }
+        return names.join("  •  ");
+    }
+
+    function displayApplyPending(layoutName) {
+        const target = stringOrEmpty(layoutName);
+        return target !== ""
+            && target === stringOrEmpty(displayApplyTarget)
+            && !!(displayApplyProcess && displayApplyProcess.running);
+    }
+
+    function clearDisplayApplyState() {
+        displayApplyTarget = "";
+        displayApplyStdout = "";
+        displayApplyStderr = "";
+        displayApplyError = "";
+    }
+
+    function syncDisplayApplyStateFromDashboard() {
+        const target = stringOrEmpty(displayApplyTarget);
+        if (!target) {
+            return;
+        }
+
+        if (stringOrEmpty(displayLayoutState().current_layout) === target) {
+            clearDisplayApplyState();
+            displaySelectorVisible = false;
+            displaySelectorOutputName = "";
+        }
+    }
+
+    function displayApplyStatusText() {
+        if (displayApplyError) {
+            return displayApplyError;
+        }
+        if (displayApplyTarget) {
+            return "Applying " + displayApplyTarget + "...";
+        }
+        return "Choose a named display layout.";
+    }
+
+    function openDisplaySelector(outputName) {
+        if (displayLayoutOptions().length === 0) {
+            openSettings("devices");
+            return;
+        }
+        const targetOutput = stringOrEmpty(outputName) || primaryOutputName || focusedOutputName() || "";
+        powerMenuVisible = false;
+        audioPopupVisible = false;
+        bluetoothPopupVisible = false;
+        displaySelectorOutputName = targetOutput;
+        displaySelectorVisible = true;
+    }
+
+    function closeDisplaySelector() {
+        displaySelectorVisible = false;
+        displaySelectorOutputName = "";
+    }
+
+    function toggleDisplaySelector(outputName) {
+        const targetOutput = stringOrEmpty(outputName) || primaryOutputName || focusedOutputName() || "";
+        if (displaySelectorVisible && stringOrEmpty(displaySelectorOutputName) === targetOutput) {
+            closeDisplaySelector();
+            return;
+        }
+        openDisplaySelector(targetOutput);
+    }
+
+    function applyDisplayLayout(layoutName) {
+        const target = stringOrEmpty(layoutName);
+        if (!target) {
+            return;
+        }
+        if (stringOrEmpty(displayLayoutState().current_layout) === target) {
+            closeDisplaySelector();
+            return;
+        }
+        if (!displayApplyProcess || displayApplyProcess.running) {
+            return;
+        }
+        displayApplyTarget = target;
+        displayApplyStdout = "";
+        displayApplyStderr = "";
+        displayApplyError = "";
+        displayApplyProcess.command = [shellConfig.i3pmBin, "display", "apply", target];
+        displayApplyProcess.running = true;
     }
 
     function focusedOutputName() {
@@ -3117,8 +3292,11 @@ ShellRoot {
 
     function openSettings(section) {
         setSettingsSection(section);
+        powerMenuVisible = false;
         audioPopupVisible = false;
         bluetoothPopupVisible = false;
+        displaySelectorVisible = false;
+        displaySelectorOutputName = "";
         settingsVisible = true;
     }
 
@@ -5473,6 +5651,7 @@ ShellRoot {
         worktreePickerVisible = false;
         audioPopupVisible = false;
         bluetoothPopupVisible = false;
+        displaySelectorVisible = false;
         ensureRuntimePanelExpandedSection();
     }
 
@@ -5483,6 +5662,7 @@ ShellRoot {
         notificationCenterVisible = false;
         audioPopupVisible = false;
         bluetoothPopupVisible = false;
+        displaySelectorVisible = false;
     }
 
     function toggleAssistantPanel() {
@@ -6014,6 +6194,7 @@ ShellRoot {
 
         try {
             dashboard = JSON.parse(raw);
+            syncDisplayApplyStateFromDashboard();
             pruneSessionClosePending();
             const current = stringOrEmpty(dashboard.current_ai_session_key);
             if (current) {

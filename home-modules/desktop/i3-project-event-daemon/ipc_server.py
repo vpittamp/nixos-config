@@ -9383,13 +9383,42 @@ class IPCServer:
 
         profile_name = ""
         layouts: List[str] = []
+        layout_options: List[Dict[str, Any]] = []
         if getattr(self, "monitor_profile_service", None):
             try:
                 profile_name = str(self.monitor_profile_service.get_current_profile() or "")
                 layouts = list(self.monitor_profile_service.list_profiles())
+                for layout_name in layouts:
+                    profile = self.monitor_profile_service.get_profile(layout_name)
+                    output_names: List[str] = []
+                    output_count = 0
+                    description = ""
+                    default_layout = False
+                    if profile is not None:
+                        description = str(getattr(profile, "description", "") or "")
+                        default_layout = bool(getattr(profile, "default", False))
+                        output_names = list(profile.get_enabled_outputs())
+                        output_count = len(output_names)
+                    layout_options.append({
+                        "name": layout_name,
+                        "label": layout_name.replace("-", " ").title(),
+                        "description": description,
+                        "output_names": output_names,
+                        "output_count": output_count,
+                        "default": default_layout,
+                        "current": layout_name == profile_name,
+                    })
+                layout_options.sort(
+                    key=lambda item: (
+                        0 if bool(item.get("current", False)) else 1,
+                        0 if bool(item.get("default", False)) else 1,
+                        str(item.get("name") or "").casefold(),
+                    ),
+                )
             except Exception:
                 profile_name = ""
                 layouts = []
+                layout_options = []
 
         active_outputs: List[Dict[str, Any]] = []
         for output in outputs:
@@ -9421,6 +9450,7 @@ class IPCServer:
         return {
             "current_layout": profile_name,
             "layouts": layouts,
+            "layout_options": layout_options,
             "outputs": active_outputs,
             "display_generation": self._display_generation,
             "snapshot_version": self._snapshot_version,

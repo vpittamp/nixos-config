@@ -491,6 +491,78 @@ async def test_session_list_preserves_explicit_stopped_phase(server, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_session_list_preserves_claude_explicit_stopped_phase(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    session = make_runtime_session({
+        "tool": "claude-code",
+        "stage": "output_ready",
+        "stage_rank": 1,
+        "stage_label": "Ready",
+        "stage_class": "stage-output_ready",
+        "stage_visual_state": "completed",
+        "output_ready": True,
+        "llm_stopped": True,
+        "terminal_state": "explicit_complete",
+        "terminal_state_at": "2026-03-20T14:22:10Z",
+        "terminal_state_label": "Stopped",
+        "terminal_state_source": "claude_stop_hook",
+        "provider_stop_signal": "Stop",
+        "session_phase": "stopped",
+        "session_phase_label": "Stopped",
+        "turn_owner": "user",
+        "turn_owner_label": "User",
+        "activity_substate": "output_ready",
+        "activity_substate_label": "Ready",
+        "status_reason": "event:ag_ui.run_finished",
+    })
+
+    async def fake_runtime_snapshot(_params):
+        snapshot = copy.deepcopy(runtime_snapshot)
+        sessions = [copy.deepcopy(session)]
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in snapshot.get("tracked_windows", [])
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = server._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
+        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server._apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
+        snapshot["sessions"] = sessions
+        snapshot["current_ai_session_key"] = current_session_key
+        snapshot["focused_window_id"] = focused_window_id
+        return snapshot
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
+
+    result = await server._session_list({})
+
+    assert result["total"] == 1
+    session = result["sessions"][0]
+    assert session["tool"] == "claude-code"
+    assert session["session_phase"] == "stopped"
+    assert session["session_phase_label"] == "Stopped"
+    assert session["stopped_notification_pending"] is True
+    assert session["llm_stopped"] is True
+    assert session["terminal_state"] == "explicit_complete"
+    assert session["terminal_state_at"] == "2026-03-20T14:22:10Z"
+    assert session["terminal_state_label"] == "Stopped"
+    assert session["terminal_state_source"] == "claude_stop_hook"
+    assert session["provider_stop_signal"] == "Stop"
+
+
+@pytest.mark.asyncio
 async def test_session_list_acknowledges_background_stopped_session_on_focus(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["tracked_windows"] = [

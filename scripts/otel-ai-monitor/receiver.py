@@ -1287,7 +1287,7 @@ class OTLPReceiver:
         body = log_record.get("body", {})
         if "stringValue" in body:
             body_value = body["stringValue"]
-            valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.")
+            valid_prefixes = ("claude_code.", "codex.", "gemini_cli.", "gen_ai.", "ag_ui.")
             if any(body_value.startswith(p) for p in valid_prefixes):
                 event_name = body_value
 

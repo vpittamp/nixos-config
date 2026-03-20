@@ -1015,6 +1015,11 @@ async def test_process_bootstrap_recovers_codex_native_session_from_surface_meta
 
     monkeypatch.setattr(tracker, "_refresh_metadata_cache", lambda: None)
     monkeypatch.setattr(tracker, "_resolve_window_context", _resolve_window_context)
+    monkeypatch.setattr(
+        tracker,
+        "_load_codex_runtime_metadata_for_pid",
+        lambda *_args, **_kwargs: {},
+    )
     tracker._pid_metadata_cache = {}
     tracker._metadata_file_cache = {
         "native-openshell": {
@@ -1158,6 +1163,51 @@ async def test_process_bootstrap_marks_codex_missing_native_session_id_blocker(m
     async with tracker._lock:
         session_list, _ = tracker._build_session_list_unlocked()
     assert session_list.sessions[0].canonicalization_blocker == "missing_native_session_id"
+
+
+@pytest.mark.asyncio
+async def test_process_bootstrap_does_not_recover_claude_native_session_from_project_only_metadata(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    pid = 643054
+
+    async def _resolve_window_context(_pid: int):
+        return (
+            219,
+            "vpittamp/nixos-config:main",
+            {
+                "window_id": 219,
+                "tmux_session": "i3pm-vpittamp-nixos-config-ma-83466f26",
+                "tmux_window": "2:claude-hook-test",
+                "tmux_pane": "%9",
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                "pty": "/dev/pts/5",
+            },
+        )
+
+    monkeypatch.setattr(tracker, "_refresh_metadata_cache", lambda: None)
+    monkeypatch.setattr(tracker, "_resolve_window_context", _resolve_window_context)
+    tracker._pid_metadata_cache = {}
+    tracker._metadata_file_cache = {
+        "f492ff0b-3888-4056-945d-8c68c799af2e": {
+            "session_id": "f492ff0b-3888-4056-945d-8c68c799af2e",
+            "pid": 27887,
+            "tool": "claude-code",
+            "project": "vpittamp/nixos-config:main",
+            "updated_at": "2026-03-20T20:59:20.000Z",
+        }
+    }
+
+    resolved = await tracker._ensure_process_session_for_pid(AITool.CLAUDE_CODE, pid)
+
+    async with tracker._lock:
+        session = tracker._sessions[resolved]
+        assert session.native_session_id is None
+        assert session.identity_phase == "provisional"
+        assert session.canonicalization_blocker == "missing_native_session_id"
 
 
 def test_build_session_list_prefers_live_session_over_retained_output_ready_on_same_tmux_surface(monkeypatch):
@@ -1427,6 +1477,78 @@ async def test_explicit_run_finished_survives_completed_timeout(monkeypatch):
     assert stage_fields["terminal_state_source"] == "codex_notify"
     assert stage_fields["provider_stop_signal"] == "agent-turn-complete"
     assert getattr(stage_fields["turn_owner"], "value", stage_fields["turn_owner"]) == "user"
+
+
+@pytest.mark.asyncio
+async def test_claude_explicit_run_finished_rebinds_stale_process_identity(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="claude_code.api_request",
+            timestamp=now,
+            session_id="claude-stale-native-session",
+            tool=AITool.CLAUDE_CODE,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "process.pid": 1141410,
+                "terminal.tmux.session": "i3pm-vpittamp-nixos-config-ma-83466f26",
+                "terminal.tmux.window": "5:claude-stop-verify-2",
+                "terminal.tmux.pane": "%15",
+                "terminal.tmux.socket": "/run/user/1000/tmux-1000/default",
+                "terminal.tmux.server_key": "/run/user/1000/tmux-1000/default",
+                "terminal.execution_mode": "local",
+                "terminal.connection_key": "local@ryzen",
+                "terminal.context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            },
+        )
+    )
+
+    await tracker.process_event(
+        TelemetryEvent(
+            event_name="ag_ui.run_finished",
+            timestamp=now + timedelta(seconds=1),
+            session_id="claude-fresh-native-session",
+            tool=AITool.CLAUDE_CODE,
+            attributes={
+                "project": "vpittamp/nixos-config:main",
+                "process.pid": 1141410,
+                "terminal.tmux.session": "i3pm-vpittamp-nixos-config-ma-83466f26",
+                "terminal.tmux.window": "5:claude-stop-verify-2",
+                "terminal.tmux.pane": "%15",
+                "terminal.tmux.socket": "/run/user/1000/tmux-1000/default",
+                "terminal.tmux.server_key": "/run/user/1000/tmux-1000/default",
+                "terminal.execution_mode": "local",
+                "terminal.connection_key": "local@ryzen",
+                "terminal.context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+                "terminal_state_source": "claude_stop_hook",
+                "provider_stop_signal": "Stop",
+            },
+        )
+    )
+
+    async with tracker._lock:
+        stale_matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "claude-stale-native-session"
+        ]
+        fresh_matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "claude-fresh-native-session"
+        ]
+        assert len(stale_matches) == 0
+        assert len(fresh_matches) == 1
+        session = fresh_matches[0]
+        stage_fields = _derive_session_stage(session, now=now + timedelta(seconds=2))
+
+    assert session.pid == 1141410
+    assert session.state == SessionState.COMPLETED
+    assert stage_fields["session_phase"] == "stopped"
+    assert stage_fields["terminal_state"] == TerminalState.EXPLICIT_COMPLETE
+    assert stage_fields["terminal_state_source"] == "claude_stop_hook"
+    assert stage_fields["provider_stop_signal"] == "Stop"
 
 
 @pytest.mark.asyncio

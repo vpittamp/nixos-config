@@ -219,15 +219,15 @@ in
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
-      # Capture the center desktop monitor (Sunshine monitor ID 1 = DP-1).
-      output_name = 1;
+      # Capture DP-1 (index 0 in KMS output list, stable across profiles).
+      output_name = 0;
     };
     desktopAppOverrides = {
       auto-detach = "true";
       exclude-global-prep-cmd = "false";
       prep-cmd = [
         {
-          do = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.25";
+          do = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.0";
           undo = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.0";
         }
       ];
@@ -551,6 +551,7 @@ in
     # Remote access
     tailscale
     remmina
+    rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access
 
     # 1Password GUI

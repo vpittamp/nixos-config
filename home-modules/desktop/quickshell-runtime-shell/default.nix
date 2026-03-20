@@ -51,6 +51,7 @@ QtObject {
   readonly property string snippetsListBin: "${snippetsListScript}/bin/quickshell-snippets-list"
   readonly property string snippetsManageBin: "${snippetsManageScript}/bin/quickshell-snippets-manage"
   readonly property string launcherCommandActionBin: "${launcherCommandActionScript}/bin/quickshell-launcher-command-action"
+  readonly property string showRuntimeDisplaysBin: "${showRuntimeDisplaysScript}/bin/show-runtime-displays"
   readonly property string onePasswordListBin: "${onePasswordListScript}/bin/quickshell-onepassword-list"
   readonly property string onePasswordActionBin: "${onePasswordActionScript}/bin/quickshell-onepassword-action"
   readonly property string clipboardListBin: "${clipboardListScript}/bin/quickshell-clipboard-list"
@@ -1339,21 +1340,33 @@ PY
     exec elephant activate "clipboard;''${identifier};''${action};;"
   '';
 
+  runtimeShellIpcScript = pkgs.writeShellScriptBin "quickshell-runtime-shell-ipc" ''
+    set -euo pipefail
+
+    main_pid="$(${pkgs.systemd}/bin/systemctl --user show quickshell-runtime-shell.service -p MainPID --value 2>/dev/null || true)"
+    if [ -z "$main_pid" ] || [ "$main_pid" = "0" ]; then
+      echo "quickshell-runtime-shell.service is not running" >&2
+      exit 1
+    fi
+
+    exec ${quickshellBin} ipc --pid "$main_pid" "$@"
+  '';
+
   mkIpcScript = name: functionName: extraBody:
     pkgs.writeShellScriptBin name ''
       set -euo pipefail
       ${extraBody}
-      exec ${quickshellBin} ipc -c ${cfg.configName} call shell ${functionName} "$@"
+      exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell ${functionName} "$@"
     '';
 
   togglePanelScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     set -euo pipefail
-    exec ${quickshellBin} ipc -c ${cfg.configName} call shell togglePanel
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell togglePanel
   '';
 
   toggleDockScript = pkgs.writeShellScriptBin "toggle-panel-dock-mode" ''
     set -euo pipefail
-    exec ${quickshellBin} ipc -c ${cfg.configName} call shell toggleDockMode
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggleDockMode
   '';
 
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
@@ -1361,7 +1374,11 @@ PY
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
   showRuntimeDevicesScript = pkgs.writeShellScriptBin "show-runtime-devices" ''
     set -euo pipefail
-    exec ${quickshellBin} ipc -c ${cfg.configName} call shell showSettings devices
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showSettings devices
+  '';
+  showRuntimeDisplaysScript = pkgs.writeShellScriptBin "show-runtime-displays" ''
+    set -euo pipefail
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showSettings devices
   '';
   toggleNotificationsScript = mkIpcScript "toggle-runtime-notifications" "toggleNotifications" "";
   toggleNotificationDndScript = mkIpcScript "toggle-runtime-notification-dnd" "toggleNotificationDnd" "";
@@ -1370,36 +1387,36 @@ PY
   monitorPanelTabScript = pkgs.writeShellScriptBin "monitor-panel-tab" ''
     set -euo pipefail
     case "''${1:-0}" in
-      0) exec ${quickshellBin} ipc -c ${cfg.configName} call shell showWindowsTab ;;
-      1) exec ${quickshellBin} ipc -c ${cfg.configName} call shell showSessionsTab ;;
-      *) exec ${quickshellBin} ipc -c ${cfg.configName} call shell showHealthTab ;;
+      0) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showWindowsTab ;;
+      1) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showSessionsTab ;;
+      *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showHealthTab ;;
     esac
   '';
 
   cycleSessionsScript = pkgs.writeShellScriptBin "cycle-active-ai-session-action" ''
     set -euo pipefail
     case "''${1:-next}" in
-      prev) exec ${quickshellBin} ipc -c ${cfg.configName} call shell prevSession ;;
-      *) exec ${quickshellBin} ipc -c ${cfg.configName} call shell nextSession ;;
+      prev) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell prevSession ;;
+      *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell nextSession ;;
     esac
   '';
 
   showAiSwitcherScript = pkgs.writeShellScriptBin "show-ai-mru-switcher-action" ''
     set -euo pipefail
     case "''${1:-next}" in
-      prev) exec ${quickshellBin} ipc -c ${cfg.configName} call shell prevLauncherSession ;;
-      *) exec ${quickshellBin} ipc -c ${cfg.configName} call shell nextLauncherSession ;;
+      prev) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell prevLauncherSession ;;
+      *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell nextLauncherSession ;;
     esac
   '';
 
   commitAiSwitcherScript = pkgs.writeShellScriptBin "commit-ai-session-switch-action" ''
     set -euo pipefail
-    exec ${quickshellBin} ipc -c ${cfg.configName} call shell commitLauncherSession
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell commitLauncherSession
   '';
 
   focusLastSessionScript = pkgs.writeShellScriptBin "toggle-last-ai-session-action" ''
     set -euo pipefail
-    exec ${quickshellBin} ipc -c ${cfg.configName} call shell focusLastSession
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell focusLastSession
   '';
 
   cycleDisplayLayoutScript = pkgs.writeShellScriptBin "cycle-display-layout" ''
@@ -1531,6 +1548,7 @@ in
       toggleLauncherScript
       toggleSettingsScript
       showRuntimeDevicesScript
+      showRuntimeDisplaysScript
       toggleNotificationsScript
       toggleNotificationDndScript
       clearNotificationsScript

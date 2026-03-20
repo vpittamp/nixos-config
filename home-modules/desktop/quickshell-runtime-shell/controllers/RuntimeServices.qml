@@ -33,6 +33,7 @@ Item {
     property alias launcherQueryProcessRef: launcherQueryProcess
     property alias sessionPreviewProcessRef: sessionPreviewProcess
     property alias sessionCloseProcessRef: sessionCloseProcess
+    property alias displayApplyProcessRef: displayApplyProcess
 
     Connections {
         target: shellRoot
@@ -47,6 +48,7 @@ Item {
         function onLauncherVisibleChanged() {
             if (shellRoot.launcherVisible) {
                 shellRoot.settingsVisible = false;
+                shellRoot.displaySelectorVisible = false;
                 const openingSessionSwitcher = shellRoot.launcherSessionSwitcherPendingDelta !== 0;
                 shellRoot.launcherMode = openingSessionSwitcher ? "sessions" : "apps";
                 shellRoot.launcherSessionSwitcherActive = openingSessionSwitcher;
@@ -127,6 +129,7 @@ Item {
 
         function onSettingsVisibleChanged() {
             if (shellRoot.settingsVisible) {
+                shellRoot.displaySelectorVisible = false;
                 shellRoot.launcherVisible = false;
                 shellRoot.settingsCommandQuery = "";
                 shellRoot.settingsCommandNormalizingInput = true;
@@ -618,6 +621,53 @@ Item {
             shellRoot.sessionCloseProcessStdout = "";
             shellRoot.sessionCloseProcessStderr = "";
             shellRoot.pruneSessionClosePending();
+        }
+    }
+
+    Process {
+        id: displayApplyProcess
+        command: [runtimeConfig.i3pmBin, "display", "apply", ""]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.displayApplyStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                shellRoot.displayApplyStderr += message + "\n";
+                console.warn("display.apply:", message);
+            }
+        }
+        onExited: function () {
+            const target = shellRoot.stringOrEmpty(shellRoot.displayApplyTarget);
+            const raw = shellRoot.stringOrEmpty(shellRoot.displayApplyStdout).trim();
+            let success = false;
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    success = !!(parsed && (parsed.applied || shellRoot.stringOrEmpty(parsed.current_layout) === target));
+                } catch (error) {
+                    console.warn("display.apply.parse:", raw, error);
+                }
+            }
+
+            if (success) {
+                shellRoot.clearDisplayApplyState();
+                shellRoot.displaySelectorVisible = false;
+                return;
+            }
+
+            const stderr = shellRoot.stringOrEmpty(shellRoot.displayApplyStderr).trim();
+            shellRoot.displayApplyError = stderr || "Unable to apply display layout.";
+            shellRoot.displayApplyStdout = "";
+            shellRoot.displayApplyStderr = "";
         }
     }
 

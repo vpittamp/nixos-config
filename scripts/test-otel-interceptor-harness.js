@@ -46,6 +46,35 @@ function getSpansFromOtlpJson(payload) {
   return out;
 }
 
+function getLogsFromOtlpJson(payload) {
+  const out = [];
+  for (const rs of payload?.resourceLogs || []) {
+    for (const sl of rs?.scopeLogs || []) {
+      for (const log of sl?.logRecords || []) out.push(log);
+    }
+  }
+  return out;
+}
+
+function getLogBody(logRecord) {
+  const body = logRecord?.body || {};
+  if (typeof body.stringValue === 'string') return body.stringValue;
+  return undefined;
+}
+
+function getLogAttr(logRecord, key) {
+  for (const a of logRecord?.attributes || []) {
+    if (a?.key !== key) continue;
+    const v = a?.value || {};
+    if (typeof v.stringValue === 'string') return v.stringValue;
+    if (typeof v.intValue === 'string') return Number(v.intValue);
+    if (typeof v.doubleValue === 'number') return v.doubleValue;
+    if (typeof v.boolValue === 'boolean') return v.boolValue;
+    return undefined;
+  }
+  return undefined;
+}
+
 function getAttr(span, key) {
   for (const a of span?.attributes || []) {
     if (a?.key !== key) continue;
@@ -88,6 +117,7 @@ class TestHarness {
     this.anthropicServer = null;
     this.anthropicPort = 0;
     this.received = [];
+    this.receivedLogs = [];
     this.requestHandler = null;
     this.sessionId = '00000000-0000-4000-8000-000000000000';
   }
@@ -95,10 +125,11 @@ class TestHarness {
   async setup() {
     this.runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'otel-interceptor-harness-'));
     this.received = [];
+    this.receivedLogs = [];
 
     // OTLP receiver
     this.otlpServer = http.createServer((req, res) => {
-      if (req.method !== 'POST' || req.url !== '/v1/traces') {
+      if (req.method !== 'POST' || (req.url !== '/v1/traces' && req.url !== '/v1/logs')) {
         res.statusCode = 404;
         res.end('not found');
         return;
@@ -107,7 +138,11 @@ class TestHarness {
       req.setEncoding('utf8');
       req.on('data', chunk => { body += chunk; });
       req.on('end', () => {
-        try { this.received.push(JSON.parse(body)); } catch {}
+        try {
+          const parsed = JSON.parse(body);
+          if (req.url === '/v1/traces') this.received.push(parsed);
+          if (req.url === '/v1/logs') this.receivedLogs.push(parsed);
+        } catch {}
         res.statusCode = 200;
         res.end('ok');
       });
@@ -143,6 +178,7 @@ class TestHarness {
     // Configure interceptor environment
     process.env.XDG_RUNTIME_DIR = this.runtimeDir;
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = `http://127.0.0.1:${this.otlpPort}/v1/traces`;
+    process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = `http://127.0.0.1:${this.otlpPort}/v1/logs`;
     process.env.OTEL_SERVICE_NAME = 'claude-code-harness';
 
     // Write session metadata
@@ -164,6 +200,10 @@ class TestHarness {
 
   getSpans() {
     return this.received.flatMap(getSpansFromOtlpJson);
+  }
+
+  getLogs() {
+    return this.receivedLogs.flatMap(getLogsFromOtlpJson);
   }
 
   writePromptHook(prompt) {
@@ -1082,6 +1122,51 @@ async function testCompactionSpans(harness) {
 }
 
 // =============================================================================
+// Test: Stop hook emits completion log even without an active turn
+// =============================================================================
+
+async function testStopHookCompletionLogWithoutActiveTurn(harness) {
+  console.log('\n[Test] Stop hook completion log without active turn');
+
+  harness.writeStopHook();
+  await harness.wait(500);
+
+  const logs = harness.getLogs();
+  const runFinished = logs.find(logRecord => getLogBody(logRecord) === 'ag_ui.run_finished');
+
+  let passed = true;
+  if (!runFinished) {
+    passed = fail('expected ag_ui.run_finished log after stop hook without active turn');
+    return passed;
+  }
+
+  passed = pass('ag_ui.run_finished log emitted') && passed;
+
+  const sessionId = getLogAttr(runFinished, 'session.id');
+  if (sessionId === harness.sessionId) {
+    passed = pass(`session.id=${harness.sessionId}`) && passed;
+  } else {
+    passed = fail(`expected session.id=${harness.sessionId}, got ${sessionId}`);
+  }
+
+  const terminalStateSource = getLogAttr(runFinished, 'terminal_state_source');
+  if (terminalStateSource === 'claude_stop_hook') {
+    passed = pass('terminal_state_source=claude_stop_hook') && passed;
+  } else {
+    passed = fail(`expected terminal_state_source=claude_stop_hook, got ${terminalStateSource}`);
+  }
+
+  const providerStopSignal = getLogAttr(runFinished, 'provider_stop_signal');
+  if (providerStopSignal === 'Stop') {
+    passed = pass('provider_stop_signal=Stop') && passed;
+  } else {
+    passed = fail(`expected provider_stop_signal=Stop, got ${providerStopSignal}`);
+  }
+
+  return passed;
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -1099,7 +1184,8 @@ async function main() {
     posttool: testPostToolUseFlow,
     subagent: testSubagentStop,
     notification: testNotificationSpans,
-    compaction: testCompactionSpans
+    compaction: testCompactionSpans,
+    stoplog: testStopHookCompletionLogWithoutActiveTurn
   };
 
   const selectedTests = testFilter

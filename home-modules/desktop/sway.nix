@@ -181,15 +181,99 @@ let
     };
   };
   headlessProfileDefault = if headlessSingleOutputMode then "single" else "triple";
+  ryzenMonitorProfiles = {
+    default = {
+      name = "default";
+      description = "Full Ryzen desktop layout (DP-1, DP-2, HDMI-A-1)";
+      default = true;
+      outputs = [
+        {
+          name = "HDMI-A-1";
+          enabled = true;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1080;
+          };
+        }
+        {
+          name = "DP-1";
+          enabled = true;
+          position = {
+            x = 1920;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+        {
+          name = "DP-2";
+          enabled = true;
+          position = {
+            x = 3840;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+      ];
+    };
+    single = {
+      name = "single";
+      description = "Moonlight single-monitor mode (DP-1 only)";
+      outputs = [
+        {
+          name = "HDMI-A-1";
+          enabled = false;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1080;
+          };
+        }
+        {
+          name = "DP-1";
+          enabled = true;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+        {
+          name = "DP-2";
+          enabled = false;
+          position = {
+            x = 3840;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+      ];
+    };
+  };
+  managedMonitorProfiles =
+    if isHeadless then headlessMonitorProfiles
+    else if isRyzen then ryzenMonitorProfiles
+    else { };
+  managedProfileDefault =
+    if isHeadless then headlessProfileDefault
+    else if isRyzen then "default"
+    else "";
+  hasManagedMonitorProfiles = (builtins.length (builtins.attrNames managedMonitorProfiles)) > 0;
 
   # Generate profile files for headless mode
   monitorProfileFiles =
     lib.listToAttrs (map (name: {
       name = "sway/monitor-profiles/${name}.json";
       value = {
-        text = builtins.toJSON (headlessMonitorProfiles.${name});
+        text = builtins.toJSON (managedMonitorProfiles.${name});
       };
-    }) (builtins.attrNames headlessMonitorProfiles));
+    }) (builtins.attrNames managedMonitorProfiles));
   mkWayvncWrapper = output: port: socket:
     pkgs.writeShellScript ("wayvnc-" + lib.strings.toLower output + "-wrapper") ''
       set -euo pipefail
@@ -870,10 +954,12 @@ in
   };
 
   xdg.configFile =
-    # Monitor profile files for headless mode
-    (lib.optionalAttrs isHeadless monitorProfileFiles)
+    # Monitor profile files for daemon-backed display layouts
+    (lib.optionalAttrs hasManagedMonitorProfiles monitorProfileFiles)
+    // (lib.optionalAttrs hasManagedMonitorProfiles {
+      "sway/monitor-profile.default".text = "${managedProfileDefault}\n";
+    })
     // (lib.optionalAttrs isHeadless {
-      "sway/monitor-profile.default".text = "${headlessProfileDefault}\n";
       "wayvnc/config" = {
         text = ''
           address=0.0.0.0
@@ -898,7 +984,7 @@ in
     };
 
   # Ensure default monitor profile is recorded for new systems
-  home.activation.ensureMonitorProfileCurrent = lib.mkIf isHeadless (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.ensureMonitorProfileCurrent = lib.mkIf hasManagedMonitorProfiles (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     set -euo pipefail
 
     profile_dir="$HOME/.config/sway"
@@ -911,7 +997,7 @@ in
       if [ -f "$default_file" ]; then
         install -m600 "$default_file" "$current_file"
       else
-        echo "${headlessProfileDefault}" > "$current_file"
+        echo "${managedProfileDefault}" > "$current_file"
         chmod 600 "$current_file"
       fi
     else

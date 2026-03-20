@@ -83,45 +83,6 @@ PanelWindow {
                 }
 
                 Rectangle {
-                    id: layoutChip
-                    radius: 8
-                    color: root.neutralChipFill(layoutMouse.containsMouse)
-                    border.color: root.neutralChipBorder(layoutMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: layoutLabel.implicitWidth + 20
-                    implicitHeight: parent.height
-
-                    Behavior on color {
-                        ColorAnimation {
-                            duration: root.fastColorMs
-                        }
-                    }
-
-                    Behavior on border.color {
-                        ColorAnimation {
-                            duration: root.fastColorMs
-                        }
-                    }
-
-                    Text {
-                        id: layoutLabel
-                        anchors.centerIn: parent
-                        text: "Display " + root.currentLayoutLabel()
-                        color: root.neutralChipText(layoutMouse.containsMouse)
-                        font.pixelSize: 10
-                        font.weight: Font.DemiBold
-                    }
-
-                    MouseArea {
-                        id: layoutMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.cycleDisplayLayout()
-                    }
-                }
-
-                Rectangle {
                     id: panelToggleChip
                     radius: 8
                     color: root.stateChipFill(root.panelVisible, panelToggleMouse.containsMouse, colors.blueBg)
@@ -358,6 +319,52 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: layoutChip
+                    radius: 8
+                    readonly property bool displaySettingsActive: root.settingsVisible && root.stringOrEmpty(root.settingsSection) === "devices"
+                    color: root.stateChipFill(displaySettingsActive, layoutMouse.containsMouse, colors.blueBg)
+                    border.color: root.stateChipBorder(displaySettingsActive, layoutMouse.containsMouse, colors.blue)
+                    border.width: 1
+                    implicitWidth: layoutLabel.implicitWidth + 18
+                    implicitHeight: parent.height
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: layoutLabel
+                        anchors.centerIn: parent
+                        text: "Displays ▾"
+                        color: root.stateChipText(layoutChip.displaySettingsActive, layoutMouse.containsMouse, colors.blue)
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                    }
+
+                    MouseArea {
+                        id: layoutMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openSettings("devices")
+                    }
+
+                    ToolTip {
+                        visible: layoutMouse.containsMouse
+                        text: "Open display controls"
+                        delay: 300
+                    }
+                }
+
+                Rectangle {
                     id: networkChip
                     radius: 8
                     color: root.neutralChipFill(networkMouse.containsMouse)
@@ -498,6 +505,7 @@ PanelWindow {
                                 root.toggleMute();
                                 return;
                             }
+                            root.displaySelectorVisible = false;
                             root.bluetoothPopupVisible = false;
                             root.audioPopupVisible = !root.audioPopupVisible;
                         }
@@ -548,6 +556,7 @@ PanelWindow {
                                 root.toggleBluetoothEnabled();
                                 return;
                             }
+                            root.displaySelectorVisible = false;
                             root.audioPopupVisible = false;
                             root.bluetoothPopupVisible = !root.bluetoothPopupVisible;
                         }
@@ -607,8 +616,12 @@ PanelWindow {
                 }
 
                 RowLayout {
+                    id: systemTrayRow
                     visible: topBarWindow.isPrimaryBar && root.arrayOrEmpty(SystemTray.items ? SystemTray.items.values : []).length > 0
                     spacing: 4
+
+                    // Tray items that should always be visible even when Status.Passive
+                    readonly property var pinnedTrayIds: ["rustdesk"]
 
                     Repeater {
                         model: SystemTray.items
@@ -616,7 +629,7 @@ PanelWindow {
                         delegate: Rectangle {
                             required property var modelData
                             readonly property var trayItem: modelData
-                            visible: trayItem.status !== Status.Passive
+                            visible: trayItem.status !== Status.Passive || systemTrayRow.pinnedTrayIds.indexOf(root.stringOrEmpty(trayItem.id).toLowerCase()) !== -1
                             width: 24
                             height: 22
                             radius: 7
@@ -711,8 +724,199 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.powerMenuVisible = !root.powerMenuVisible
+                        onClicked: {
+                            root.displaySelectorVisible = false;
+                            root.powerMenuVisible = !root.powerMenuVisible;
+                        }
                     }
+                }
+            }
+        }
+    }
+
+    PopupWindow {
+        visible: root.displaySelectorVisible && root.stringOrEmpty(root.displaySelectorOutputName) === topBarWindow.topOutputName
+        color: "transparent"
+        implicitWidth: 320
+        implicitHeight: displaySelectorCard.implicitHeight + 16
+        anchor.window: topBarWindow
+        anchor.item: layoutChip
+        anchor.edges: Edges.Bottom | Edges.Left
+        anchor.gravity: Edges.Bottom | Edges.Left
+        anchor.margins.top: 6
+
+        Rectangle {
+            id: displaySelectorCard
+            implicitWidth: 320
+            implicitHeight: displaySelectorColumn.implicitHeight + 20
+            radius: 12
+            color: colors.panel
+            border.color: colors.borderStrong
+            border.width: 1
+
+            ColumnLayout {
+                id: displaySelectorColumn
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Text {
+                            text: "Displays"
+                            color: colors.text
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            text: root.displayApplyStatusText()
+                            color: root.displayApplyError ? colors.red : colors.subtle
+                            font.pixelSize: 9
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    Button {
+                        text: "Devices"
+                        onClicked: root.openSettings("devices")
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Active outputs: " + root.activeDisplaySummary()
+                    color: colors.subtle
+                    font.pixelSize: 9
+                    wrapMode: Text.WordWrap
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    visible: root.activeDisplayOutputs().length > 0
+
+                    Repeater {
+                        model: root.activeDisplayOutputs()
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property var output: modelData
+                            radius: 7
+                            color: output && output.primary ? colors.blueBg : colors.cardAlt
+                            border.color: output && output.primary ? colors.blue : colors.border
+                            border.width: 1
+                            implicitWidth: outputNameText.implicitWidth + 14
+                            implicitHeight: outputNameText.implicitHeight + 8
+
+                            Text {
+                                id: outputNameText
+                                anchors.centerIn: parent
+                                text: root.stringOrEmpty(output && output.name)
+                                color: output && output.primary ? colors.blue : colors.text
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+                }
+
+                Repeater {
+                    model: root.displayLayoutOptions()
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        readonly property string layoutName: root.displayOptionName(modelData)
+                        readonly property bool current: !!(modelData && modelData.current)
+                        readonly property bool pending: root.displayApplyPending(layoutName)
+                        readonly property var outputNames: root.displayOptionOutputs(modelData)
+                        Layout.fillWidth: true
+                        implicitHeight: layoutOptionColumn.implicitHeight + 20
+                        radius: 10
+                        color: current ? colors.blueBg : colors.cardAlt
+                        border.color: current ? colors.blue : colors.lineSoft
+                        border.width: 1
+
+                        ColumnLayout {
+                            id: layoutOptionColumn
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        text: root.displayOptionLabel(modelData)
+                                        color: current ? colors.blue : colors.text
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        text: root.displayOptionDescription(modelData)
+                                        color: colors.subtle
+                                        font.pixelSize: 9
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: current
+                                    radius: 7
+                                    color: colors.panel
+                                    border.color: colors.blue
+                                    border.width: 1
+                                    implicitWidth: currentBadgeText.implicitWidth + 12
+                                    implicitHeight: currentBadgeText.implicitHeight + 8
+
+                                    Text {
+                                        id: currentBadgeText
+                                        anchors.centerIn: parent
+                                        text: "Current"
+                                        color: colors.blue
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                Button {
+                                    text: pending ? "Applying" : (current ? "Active" : "Apply")
+                                    enabled: !pending && !current && !(root.displayApplyProcess && root.displayApplyProcess.running)
+                                    onClicked: root.applyDisplayLayout(layoutName)
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                visible: outputNames.length > 0
+                                text: outputNames.join("  •  ")
+                                color: colors.subtle
+                                font.pixelSize: 9
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.displayLayoutOptions().length === 0
+                    text: "No daemon-backed display layouts are configured for this host yet."
+                    color: colors.subtle
+                    font.pixelSize: 9
+                    wrapMode: Text.WordWrap
                 }
             }
         }

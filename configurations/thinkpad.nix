@@ -522,6 +522,7 @@ in
     # Remote access
     tailscale
     remmina
+    rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access
 
     # 1Password GUI

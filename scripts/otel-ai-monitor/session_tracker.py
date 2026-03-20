@@ -1116,7 +1116,11 @@ class SessionTracker:
             )
             if not rank[0]:
                 continue
-            if not any(rank[1:6]):
+            # Project-only matches are too weak for cross-turn recovery.
+            # They can incorrectly bind a fresh Claude/Codex process to an older
+            # same-project native session before the current pid's metadata file
+            # is written, which then steals the tmux surface from the real turn.
+            if not any(rank[1:5]):
                 continue
             candidates.append((rank, dict(entry)))
 
@@ -3502,6 +3506,40 @@ class SessionTracker:
                             provisional_match,
                             session_id,
                         )
+
+            if session is None and canonical_ready and native_group_id and client_pid is not None:
+                existing_process_session_id = self._resolve_existing_process_session_unlocked(
+                    tool=tool,
+                    client_pid=client_pid,
+                    terminal_context=event_terminal_context,
+                    window_id=resolved_window_id,
+                    preferred_project=project_for_identity,
+                )
+                if (
+                    existing_process_session_id
+                    and existing_process_session_id != session_id
+                    and session_id not in self._sessions
+                ):
+                    existing_process_session = self._sessions.get(existing_process_session_id)
+                    if (
+                        existing_process_session
+                        and existing_process_session.pid == client_pid
+                        and self._session_matches_canonical_surface(
+                            existing_process_session,
+                            event_terminal_context,
+                        )
+                    ):
+                        rebound = self._rekey_session_unlocked(
+                            existing_process_session_id,
+                            session_id,
+                        )
+                        if rebound:
+                            session = rebound
+                            logger.info(
+                                "Rebound live process session %s -> %s after native identity update",
+                                existing_process_session_id,
+                                session_id,
+                            )
 
             if session is None:
                 if canonical_ready and native_session_id:

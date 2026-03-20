@@ -775,19 +775,13 @@ function parseAnthropicResponseBody(text, contentType) {
  * - Interceptor-generated traces (session.id + gen_ai.conversation.id)
  */
 function maybeHydrateClaudeSessionId() {
-  // Only upgrade from fallback → hook-derived. Never downgrade.
-  if (state.session.sessionIdSource !== 'fallback') return;
-
   try {
     if (!fs.existsSync(SESSION_META_FILE)) return;
     const raw = fs.readFileSync(SESSION_META_FILE, 'utf8');
     const meta = JSON.parse(raw);
     const sessionId = meta.sessionId;
     if (!sessionId || typeof sessionId !== 'string') return;
-
-    state.session.sessionId = sessionId;
-    state.session.sessionIdSource = 'hook';
-    flushSpanBuffer();
+    maybeUpgradeSessionIdFromHook({ sessionId });
   } catch (e) {
     // Silent failure to avoid disrupting Claude Code
   }
@@ -995,7 +989,20 @@ function maybeUpgradeSessionIdFromHook(meta) {
   if (!meta || typeof meta !== 'object') return;
   const sessionId = meta.sessionId;
   if (!sessionId || typeof sessionId !== 'string') return;
-  if (state.session.sessionIdSource !== 'fallback') return;
+  if (
+    state.session.sessionIdSource === 'hook'
+    && state.session.sessionId === sessionId
+  ) {
+    return;
+  }
+  if (
+    state.session.sessionIdSource !== 'fallback'
+    && state.session.sessionIdSource !== 'history'
+    && state.session.sessionIdSource !== 'cli_resume'
+    && state.session.sessionIdSource !== 'hook'
+  ) {
+    return;
+  }
 
   state.session.sessionId = sessionId;
   state.session.sessionIdSource = 'hook';
@@ -1048,13 +1055,13 @@ function endTurnFromHookStop(stopMeta) {
   if (ts <= state.hooks.lastStopTimestampMs) return;
   state.hooks.lastStopTimestampMs = ts;
 
-  if (!state.currentTurn) return;
-  if (ts < state.currentTurn.startTime) return;
   emitAgUiRunFinishedLog({
     timestampMs: ts,
     terminalStateSource: 'claude_stop_hook',
     providerStopSignal: 'Stop',
   });
+  if (!state.currentTurn) return;
+  if (ts < state.currentTurn.startTime) return;
   endCurrentTurn(ts, 'stop_hook');
 }
 

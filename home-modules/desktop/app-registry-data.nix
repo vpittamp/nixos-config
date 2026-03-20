@@ -536,6 +536,22 @@ let
       description = "Moonlight game streaming client";
     })
 
+    # WS25: Remote Desktop (RustDesk)
+    (mkApp {
+      name = "rustdesk";
+      display_name = "RustDesk";
+      command = "rustdesk";
+      parameters = "";
+      scope = "global";
+      expected_class = "rustdesk";
+      preferred_workspace = 25;
+      icon = iconPath "rustdesk.svg";
+      nix_package = "pkgs.rustdesk-flutter";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Open-source remote desktop client and server";
+    })
+
     # WS21: Speech-to-Text (Voxtype)
     (mkApp {
       name = "voxtype";
