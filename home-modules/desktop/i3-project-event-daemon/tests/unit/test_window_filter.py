@@ -23,6 +23,7 @@ if "i3_project_daemon" not in sys.modules:
 
 window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
 format_switch_performance_label = window_filter_module.format_switch_performance_label
+format_switch_phase_breakdown = window_filter_module.format_switch_phase_breakdown
 log_restore_workspace_fallback = window_filter_module.log_restore_workspace_fallback
 log_tracking_workspace_fallback = window_filter_module.log_tracking_workspace_fallback
 read_process_environ = window_filter_module.read_process_environ
@@ -62,3 +63,20 @@ def test_switch_performance_label_uses_dynamic_target():
     label, target_ms = format_switch_performance_label(250.0, 21)
     assert label == "✓ TARGET MET"
     assert target_ms == 300.0
+
+
+def test_switch_phase_breakdown_reports_accounted_and_other_time():
+    breakdown = format_switch_phase_breakdown(
+        total_duration_ms=250.0,
+        classification_duration_ms=100.0,
+        state_tracking_duration_ms=10.0,
+        hide_duration_ms=20.0,
+        restore_duration_ms=30.0,
+        post_restore_tree_refresh_duration_ms=40.0,
+        post_restore_trace_record_duration_ms=5.0,
+    )
+
+    assert breakdown == (
+        "classify=100.0ms, track=10.0ms, hide=20.0ms, restore=30.0ms, "
+        "trace_tree=40.0ms, trace_record=5.0ms, other=45.0ms"
+    )

@@ -65,6 +65,37 @@ def format_switch_performance_label(
     return label, target_ms
 
 
+def format_switch_phase_breakdown(
+    *,
+    total_duration_ms: float,
+    classification_duration_ms: float,
+    state_tracking_duration_ms: float,
+    hide_duration_ms: float,
+    restore_duration_ms: float,
+    post_restore_tree_refresh_duration_ms: float,
+    post_restore_trace_record_duration_ms: float,
+) -> str:
+    """Return a human-readable switch phase timing summary."""
+    accounted_ms = (
+        classification_duration_ms
+        + state_tracking_duration_ms
+        + hide_duration_ms
+        + restore_duration_ms
+        + post_restore_tree_refresh_duration_ms
+        + post_restore_trace_record_duration_ms
+    )
+    unaccounted_ms = max(0.0, total_duration_ms - accounted_ms)
+    return (
+        f"classify={classification_duration_ms:.1f}ms, "
+        f"track={state_tracking_duration_ms:.1f}ms, "
+        f"hide={hide_duration_ms:.1f}ms, "
+        f"restore={restore_duration_ms:.1f}ms, "
+        f"trace_tree={post_restore_tree_refresh_duration_ms:.1f}ms, "
+        f"trace_record={post_restore_trace_record_duration_ms:.1f}ms, "
+        f"other={unaccounted_ms:.1f}ms"
+    )
+
+
 @dataclass
 class WindowEnvironment:
     """Parsed I3PM_* environment variables from process"""
@@ -1122,6 +1153,12 @@ async def filter_windows_by_project(
     )
 
     # Track state for windows being hidden (must happen before hide commands)
+    state_tracking_duration_ms = 0.0
+    hide_duration_ms = 0.0
+    restore_duration_ms = 0.0
+    post_restore_tree_refresh_duration_ms = 0.0
+    post_restore_trace_record_duration_ms = 0.0
+    state_tracking_start = time.perf_counter()
     if workspace_tracker and windows_to_track:
         for window_data in windows_to_track:
             (window_id, workspace_num, is_floating, geometry,
@@ -1137,6 +1174,7 @@ async def filter_windows_by_project(
                 original_scratchpad=is_original_scratchpad,
                 fullscreen_mode=fullscreen_mode,
             )
+    state_tracking_duration_ms = (time.perf_counter() - state_tracking_start) * 1000
 
     # Feature 091: Initialize command batch service
     batch_service = CommandBatchService(conn)
@@ -1207,6 +1245,7 @@ async def filter_windows_by_project(
             tracer = get_tracer()
             if tracer:
                 # Re-fetch the tree to get updated window states
+                tree_refresh_start = time.perf_counter()
                 tree_cache = get_tree_cache()
                 if tree_cache:
                     # Invalidate cache to get fresh state
@@ -1214,10 +1253,14 @@ async def filter_windows_by_project(
                     updated_tree = await tree_cache.get_tree()
                 else:
                     updated_tree = await conn.get_tree()
+                post_restore_tree_refresh_duration_ms = (
+                    time.perf_counter() - tree_refresh_start
+                ) * 1000
 
                 # Build a map of window_id to container for quick lookup
                 window_map = {w.id: w for w in updated_tree.leaves()}
 
+                trace_record_start = time.perf_counter()
                 for window_id, description, context in windows_for_shown_trace:
                     window = window_map.get(window_id)
                     if window:
@@ -1231,6 +1274,9 @@ async def filter_windows_by_project(
                             logger.debug(f"[Feature 101] Recorded post-restore trace for window {window_id}")
                     else:
                         logger.debug(f"[Feature 101] Window {window_id} not found for post-restore trace")
+                post_restore_trace_record_duration_ms = (
+                    time.perf_counter() - trace_record_start
+                ) * 1000
         except Exception as e:
             logger.debug(f"[Feature 101] Error recording post-restore traces: {e}")
 
@@ -1258,11 +1304,25 @@ async def filter_windows_by_project(
         operation_duration_ms,
         switch_metrics.total_windows_affected if hide_metrics or restore_metrics else 0,
     )
+    phase_breakdown = format_switch_phase_breakdown(
+        total_duration_ms=operation_duration_ms,
+        classification_duration_ms=classification_duration_ms,
+        state_tracking_duration_ms=state_tracking_duration_ms,
+        hide_duration_ms=hide_duration_ms,
+        restore_duration_ms=restore_duration_ms,
+        post_restore_tree_refresh_duration_ms=post_restore_tree_refresh_duration_ms,
+        post_restore_trace_record_duration_ms=post_restore_trace_record_duration_ms,
+    )
     logger.info(
         f"[Feature 091] Window filtering complete: {visible_count} visible, {hidden_count} hidden, "
         f"{error_count} errors | Total: {operation_duration_ms:.1f}ms "
-        f"({performance_label}, target: {target_ms:.1f}ms)"
+        f"({performance_label}, target: {target_ms:.1f}ms) | Phases: {phase_breakdown}"
     )
+    if operation_duration_ms > target_ms:
+        logger.warning(
+            f"[Feature 091] Slow switch phase breakdown for '{active_project}': "
+            f"{phase_breakdown}"
+        )
 
     return {
         "visible": visible_count,
