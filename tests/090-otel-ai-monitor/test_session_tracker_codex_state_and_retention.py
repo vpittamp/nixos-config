@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1041,6 +1042,81 @@ async def test_process_bootstrap_recovers_codex_native_session_from_surface_meta
         assert session.identity_phase == "canonical"
         assert session.canonicalization_blocker is None
         assert resolved == f"codex:native-openshell:{session.context_fingerprint}"
+
+
+@pytest.mark.asyncio
+async def test_process_bootstrap_recovers_codex_native_session_from_runtime_logs(monkeypatch, tmp_path):
+    tracker = SessionTracker(output=_DummyOutput())
+    pid = 1932482
+    native_session_id = "019d0705-bd49-7ad1-9621-d192901798e9"
+    logs_dir = tmp_path / ".codex"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    database_path = logs_dir / "logs_1.sqlite"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                ts_nanos INTEGER NOT NULL DEFAULT 0,
+                level TEXT NOT NULL DEFAULT 'INFO',
+                target TEXT NOT NULL DEFAULT '',
+                message TEXT,
+                module_path TEXT,
+                file TEXT,
+                line INTEGER,
+                thread_id TEXT,
+                process_uuid TEXT,
+                estimated_bytes INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO logs (ts, thread_id, process_uuid)
+            VALUES (?, ?, ?)
+            """,
+            (
+                int(datetime(2026, 3, 19, 23, 46, 27, tzinfo=timezone.utc).timestamp()),
+                native_session_id,
+                f"pid:{pid}:759a7564-d7b2-4176-aca6-25c3c074dc66",
+            ),
+        )
+        connection.commit()
+
+    async def _resolve_window_context(_pid: int):
+        return (
+            75,
+            "NVIDIA/OpenShell:main",
+            {
+                "window_id": 75,
+                "terminal_anchor_id": "terminal-NVIDIA/OpenShell:main-1801281-1773939293",
+                "tmux_session": "i3pm-nvidia-openshell-main-5df2ad13",
+                "tmux_window": "0:main",
+                "tmux_pane": "%12",
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_server_key": "/run/user/1000/tmux-1000/default",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+                "context_key": "NVIDIA/OpenShell:main::local::local@ryzen",
+                "pty": "/dev/pts/13",
+            },
+        )
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(tracker, "_refresh_metadata_cache", lambda: None)
+    monkeypatch.setattr(tracker, "_resolve_window_context", _resolve_window_context)
+    tracker._pid_metadata_cache = {}
+    tracker._metadata_file_cache = {}
+
+    resolved = await tracker._ensure_process_session_for_pid(AITool.CODEX_CLI, pid)
+
+    async with tracker._lock:
+        session = tracker._sessions[resolved]
+        assert session.native_session_id == native_session_id
+        assert session.identity_phase == "canonical"
+        assert session.canonicalization_blocker is None
+        assert resolved == f"codex:{native_session_id}:{session.context_fingerprint}"
 
 
 @pytest.mark.asyncio

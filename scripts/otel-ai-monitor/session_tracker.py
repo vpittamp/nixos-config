@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import os
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
@@ -87,6 +88,7 @@ _BOOTSTRAP_RESTOREABLE_STATES = {
     SessionState.COMPLETED,
 }
 _PROCESS_STATS_CACHE_TTL_SEC = 2.0
+_CODEX_RUNTIME_METADATA_CACHE_TTL_SEC = 5.0
 _MIN_VALID_SESSION_TIMESTAMP_YEAR = 2020
 
 # Feature 137: Maximum session count to prevent memory exhaustion
@@ -677,6 +679,7 @@ class SessionTracker:
         self._session_diagnostics: dict[str, dict[str, object]] = {}
         self._process_stats_cache: dict[int, tuple[float, dict[str, object]]] = {}
         self._process_tree_stats_cache: dict[int, tuple[float, dict[str, object]]] = {}
+        self._codex_runtime_pid_cache: dict[int, tuple[float, dict[str, object]]] = {}
 
     def _refresh_metadata_cache(self) -> None:
         """Fully reload the session metadata cache."""
@@ -906,6 +909,91 @@ class SessionTracker:
     def _metadata_updated_at(entry: dict[str, object]) -> str:
         return str(entry.get("updated_at") or "").strip()
 
+    def _load_codex_runtime_metadata_for_pid(
+        self,
+        pid: int,
+        *,
+        terminal_context: dict,
+        preferred_project: Optional[str],
+    ) -> dict[str, object]:
+        if pid <= 1:
+            return {}
+
+        now_ts = time.monotonic()
+        cached = self._codex_runtime_pid_cache.get(pid)
+        if cached and (now_ts - cached[0]) < _CODEX_RUNTIME_METADATA_CACHE_TTL_SEC:
+            return dict(cached[1])
+
+        logs_path = os.path.expanduser("~/.codex/logs_1.sqlite")
+        recovered: dict[str, object] = {}
+        if not os.path.exists(logs_path):
+            self._codex_runtime_pid_cache[pid] = (now_ts, recovered)
+            return {}
+
+        try:
+            connection = sqlite3.connect(f"file:{logs_path}?mode=ro", uri=True)
+            try:
+                cursor = connection.cursor()
+                cursor.execute(
+                    """
+                    SELECT thread_id, ts
+                    FROM logs
+                    WHERE thread_id IS NOT NULL
+                      AND process_uuid LIKE ?
+                    ORDER BY ts DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (f"pid:{pid}:%",),
+                )
+                row = cursor.fetchone()
+            finally:
+                connection.close()
+        except sqlite3.Error as exc:
+            logger.debug("Failed to query Codex runtime logs for pid %s: %s", pid, exc)
+            self._codex_runtime_pid_cache[pid] = (now_ts, recovered)
+            return {}
+
+        if not row:
+            self._codex_runtime_pid_cache[pid] = (now_ts, recovered)
+            return {}
+
+        thread_id = str(row[0] or "").strip()
+        updated_at_ts = int(row[1] or 0)
+        if not thread_id:
+            self._codex_runtime_pid_cache[pid] = (now_ts, recovered)
+            return {}
+
+        recovered = {
+            "session_id": thread_id,
+            "pid": pid,
+            "tool": AITool.CODEX_CLI.value,
+            "project": preferred_project,
+            "terminal_anchor_id": str(
+                terminal_context.get("binding_anchor_id")
+                or terminal_context.get("terminal_anchor_id")
+                or ""
+            ).strip()
+            or None,
+            "tmux_session": str(terminal_context.get("tmux_session") or "").strip() or None,
+            "tmux_window": str(terminal_context.get("tmux_window") or "").strip() or None,
+            "tmux_pane": str(terminal_context.get("tmux_pane") or "").strip() or None,
+            "tmux_server_key": str(
+                terminal_context.get("tmux_server_key") or terminal_context.get("tmux_socket") or ""
+            ).strip()
+            or None,
+            "pty": str(terminal_context.get("pty") or "").strip() or None,
+            "execution_mode": str(terminal_context.get("execution_mode") or "").strip() or None,
+            "connection_key": str(terminal_context.get("connection_key") or "").strip() or None,
+            "context_key": str(terminal_context.get("context_key") or "").strip() or None,
+            "updated_at": (
+                datetime.fromtimestamp(updated_at_ts, timezone.utc).isoformat()
+                if updated_at_ts > 0
+                else None
+            ),
+        }
+        self._codex_runtime_pid_cache[pid] = (now_ts, dict(recovered))
+        return recovered
+
     def _metadata_surface_match_rank(
         self,
         *,
@@ -1005,6 +1093,15 @@ class SessionTracker:
         direct = self._load_pid_metadata(pid)
         if str(direct.get("session_id") or "").strip():
             return direct
+
+        if tool == AITool.CODEX_CLI:
+            runtime_recovered = self._load_codex_runtime_metadata_for_pid(
+                pid,
+                terminal_context=terminal_context,
+                preferred_project=preferred_project,
+            )
+            if str(runtime_recovered.get("session_id") or "").strip():
+                return runtime_recovered
 
         candidates: list[dict[str, object]] = []
         for entry in self._metadata_file_cache.values():
