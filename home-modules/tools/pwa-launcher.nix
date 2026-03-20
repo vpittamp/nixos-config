@@ -1,24 +1,24 @@
-{ config, lib, pkgs, ... }:
+{ pkgs, ... }:
 
 # PWA Launcher - Declarative Google Chrome PWA launcher
 # Resolves declarative PWA entries from pwa-registry.json and launches them
-# with deterministic Chrome profile/class settings for i3pm integration.
+# from the user's main Chrome profile in app mode.
 #
 # This launcher:
 # 1. Resolves PWA display name → app registry name (e.g., "Claude" → "claude-pwa")
-# 2. Uses the declarative ULID as the profile and class identity
-# 3. Launches Chrome directly with WebApp-<ULID> window identity
+# 2. Launches Chrome from the main profile so 1Password uses its supported path
+# 3. Relies on Chrome's native dynamic Wayland/XWayland app identity
 # 4. Feature 113: Optionally accepts a URL argument for deep linking
 #
 # Benefits of current approach:
-# - Deterministic Wayland/XWayland class matching (WebApp-<ULID>)
-# - Stable per-PWA Chrome profile directories
-# - Compatibility with i3pm launch/open and generated desktop entries
+# - Uses the real Chrome profile where the 1Password extension already lives
+# - Avoids unsupported per-PWA profile cloning/bootstrap
+# - Remains compatible with i3pm domain-based PWA matching
 
 let
   launch-pwa-by-name = pkgs.writeShellScriptBin "launch-pwa-by-name" ''
     #!/usr/bin/env bash
-    # PWA Launcher - Resolves declarative PWA metadata and launches Chrome directly
+    # PWA Launcher - Resolves declarative PWA metadata and launches Chrome app mode
     # Usage: launch-pwa-by-name <PWA Name or ULID> [URL]
     # Feature 113: Optional URL argument for deep linking
 
@@ -62,47 +62,106 @@ let
       exit 1
     fi
 
-    PWA_ID=$(echo "$PWA_DATA" | ${pkgs.jq}/bin/jq -r '.ulid')
     PWA_URL=$(echo "$PWA_DATA" | ${pkgs.jq}/bin/jq -r '.url')
-    
+
     # If URL argument is provided, use it instead of base URL
     TARGET_URL="''${URL:-$PWA_URL}"
 
     # ============================================================================
-    # PHASE 2: Setup Google Chrome Profile
+    # PHASE 2: Launch Chrome From Main Profile
     # ============================================================================
-
-    PROFILE_DIR="$HOME/.local/share/webapps/webapp-$PWA_ID"
-    mkdir -p "$PROFILE_DIR/Default"
-
-    # Ensure 1Password native messaging hosts are available in the PWA profile
-    # Chrome with --user-data-dir looks for user-level hosts here
-    NMH_DIR="$PROFILE_DIR/NativeMessagingHosts"
-    mkdir -p "$NMH_DIR"
-    for host_json in /etc/opt/chrome/native-messaging-hosts/com.1password.*.json; do
-      [ -f "$host_json" ] && ln -sf "$host_json" "$NMH_DIR/$(basename "$host_json")"
-    done
 
     # Ensure Wayland variables are available
     export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
 
+    CHROME_CONFIG_DIR="$HOME/.config/google-chrome"
+    SINGLETON_LOCK="$CHROME_CONFIG_DIR/SingletonLock"
+    SINGLETON_COOKIE="$CHROME_CONFIG_DIR/SingletonCookie"
+    SINGLETON_SOCKET="$CHROME_CONFIG_DIR/SingletonSocket"
+
+    cleanup_stale_singleton() {
+      if [[ ! -L "$SINGLETON_LOCK" ]]; then
+        return 0
+      fi
+
+      local lock_target lock_pid=""
+      lock_target=$(readlink "$SINGLETON_LOCK" 2>/dev/null || true)
+      if [[ "$lock_target" =~ -([0-9]+)$ ]]; then
+        lock_pid="''${BASH_REMATCH[1]}"
+      fi
+
+      if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+        return 0
+      fi
+
+      echo "Removing stale Chrome singleton state from $CHROME_CONFIG_DIR" >&2
+
+      local socket_target socket_dir
+      socket_target=$(readlink "$SINGLETON_SOCKET" 2>/dev/null || true)
+      rm -f "$SINGLETON_LOCK" "$SINGLETON_COOKIE" "$SINGLETON_SOCKET"
+
+      if [[ -n "$socket_target" ]]; then
+        rm -f "$socket_target" 2>/dev/null || true
+        socket_dir=$(dirname "$socket_target")
+        rmdir "$socket_dir" 2>/dev/null || true
+      fi
+    }
+
+    cleanup_stale_singleton
+
+    use_legacy_onepassword_forwarding() {
+      if [[ ! -L "$SINGLETON_LOCK" ]]; then
+        return 1
+      fi
+
+      local lock_target lock_pid=""
+      lock_target=$(readlink "$SINGLETON_LOCK" 2>/dev/null || true)
+      if [[ "$lock_target" =~ -([0-9]+)$ ]]; then
+        lock_pid="''${BASH_REMATCH[1]}"
+      fi
+
+      if [[ -z "$lock_pid" ]] || [[ ! -d "/proc/$lock_pid" ]]; then
+        return 1
+      fi
+
+      [[ "$(stat -c %G "/proc/$lock_pid" 2>/dev/null || true)" == "onepassword" ]]
+    }
+
     # ============================================================================
     # PHASE 3: Launch PWA
     # ============================================================================
-    # Chrome uses --class to set the window app_id under native Wayland or WM_CLASS under XWayland
-    
+    # Use the main Chrome profile. This keeps 1Password integration on the
+    # supported browser/profile path instead of trying to recreate extension
+    # state inside synthetic per-PWA profiles.
+    #
+    # Do not launch Chrome via `sg onepassword` by default. On NixOS the native
+    # host wrapper itself is already setgid onepassword, and forcing the browser
+    # process into that group creates a long-lived Chrome process the daemon
+    # cannot safely introspect or correlate.
+    #
+    # Compatibility bridge: if the current Chrome singleton owner is still a
+    # legacy browser session running under the onepassword group, forward this
+    # launch through `sg onepassword` too. Without that, Chrome 145 can TRAP
+    # while trying to hand off `--app=` launches to the existing session.
+
     cmd=(
       ${pkgs.google-chrome}/bin/google-chrome-stable
-      --user-data-dir="$PROFILE_DIR"
-      --class="WebApp-$PWA_ID"
+      --profile-directory=Default
       --app="$TARGET_URL"
+      --new-window
       --no-first-run
       --no-default-browser-check
       --password-store=basic
       --disable-features=DesktopPWAsElidedExtensionsMenu
     )
-    printf -v quoted '%q ' "''${cmd[@]}"
-    exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
+
+    if use_legacy_onepassword_forwarding; then
+      echo "Forwarding PWA launch through legacy onepassword Chrome session" >&2
+      printf -v quoted_cmd '%q ' "''${cmd[@]}"
+      exec sg onepassword -c "$quoted_cmd"
+    fi
+
+    exec "''${cmd[@]}"
   '';
 in
 {

@@ -70,6 +70,78 @@ let
       done
     done
   '';
+  onePasswordChromeStatus = pkgs.writeShellScriptBin "1password-chrome-status" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    JQ="${pkgs.jq}/bin/jq"
+    EXPECTED_HOST_PATH="/run/wrappers/bin/1Password-BrowserSupport"
+    CHROME_SYSTEM_DIR="/etc/opt/chrome/native-messaging-hosts"
+    PROFILE_DIR_ROOT="$HOME/.local/share/webapps"
+
+    check_manifest() {
+      local label="$1"
+      local path="$2"
+      local actual_path=""
+
+      if [[ ! -f "$path" ]]; then
+        echo "[missing] $label -> $path"
+        return
+      fi
+
+      actual_path="$("$JQ" -r '.path // empty' "$path" 2>/dev/null || true)"
+      if [[ "$actual_path" == "$EXPECTED_HOST_PATH" ]]; then
+        echo "[ok] $label -> $path"
+      else
+        echo "[drift] $label -> $path"
+        echo "        path=$actual_path"
+      fi
+    }
+
+    echo "1Password Chrome native host status"
+    echo "expected path: $EXPECTED_HOST_PATH"
+    echo "active Chrome/PWA path: main profile (~/.config/google-chrome)"
+    echo ""
+
+    check_manifest "system chrome host" "$CHROME_SYSTEM_DIR/com.1password.1password.json"
+    check_manifest "system browser-support host" "$CHROME_SYSTEM_DIR/com.1password.browser_support.json"
+    check_manifest "user google-chrome host" "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
+    check_manifest "user google-chrome browser-support host" "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json"
+    check_manifest "user chromium host" "$HOME/.config/chromium/NativeMessagingHosts/com.1password.1password.json"
+    check_manifest "user chromium browser-support host" "$HOME/.config/chromium/NativeMessagingHosts/com.1password.browser_support.json"
+
+    if [[ ! -d "$PROFILE_DIR_ROOT" ]]; then
+      exit 0
+    fi
+
+    echo ""
+    echo "Legacy isolated PWA profile state"
+    for profile_dir in "$PROFILE_DIR_ROOT"/webapp-* "$PROFILE_DIR_ROOT"/WebApp-*; do
+      [[ -d "$profile_dir" ]] || continue
+      profile_name="$(basename "$profile_dir")"
+      extension_dir="$profile_dir/Default/Extensions/aeblfdkhhhdcdjpifhhbdiojplfjncoa"
+      ready_marker="$profile_dir/.1password-initialized"
+      pending_marker="$profile_dir/.1password-bootstrap-pending"
+
+      if [[ -d "$extension_dir" ]]; then
+        extension_state="installed"
+      else
+        extension_state="missing"
+      fi
+
+      if [[ -f "$ready_marker" ]]; then
+        marker_state="ready"
+      elif [[ -f "$pending_marker" ]]; then
+        marker_state="pending"
+      else
+        marker_state="uninitialized"
+      fi
+
+      echo "- $profile_name: extension=$extension_state marker=$marker_state"
+      check_manifest "  profile host" "$profile_dir/NativeMessagingHosts/com.1password.1password.json"
+      check_manifest "  profile browser-support host" "$profile_dir/NativeMessagingHosts/com.1password.browser_support.json"
+    done
+  '';
 
   chromeUrlToolPy = pkgs.writeText "chrome-url-tool.py" ''
     #!${lib.getExe pkgs.python3}
@@ -942,6 +1014,7 @@ in
       chromeStableCommandWrapper
       pkgs.google-chrome
       chromeWrapper
+      onePasswordChromeStatus
       chromeUrlList
       chromeUrlRefresh
       chromeUrlDebug

@@ -88,15 +88,9 @@
       # --silent: Start minimized to system tray (persists in tray)
       # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
       # --ozone-platform-hint=auto: Auto-detect X11/Wayland
-      # 1Password validates SO_PEERCRED on its internal browser-support IPC path
-      # and rejects peers when the desktop app is still on the default `users`
-      # primary group. Launch under the dedicated `onepassword` primary group so
-      # BrowserSupport and the app agree on the credential boundary.
-      ExecStart = let
-        launcher = pkgs.writeShellScript "1password-launch" ''
-          exec /run/wrappers/bin/sg onepassword -c 'exec ${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform'
-        '';
-      in "${launcher}";
+      # Keep the GUI app in the normal desktop session. The privileged boundary
+      # belongs in the setgid BrowserSupport wrapper, not in the app launch.
+      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
       Restart = "on-failure";
       RestartSec = 5;
       # Ensure 1Password stays running

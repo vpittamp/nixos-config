@@ -170,6 +170,74 @@ class LaunchRegistry:
         self._total_matched += 1
         return matched
 
+    async def find_by_app_name(
+        self,
+        app_name: str,
+        *,
+        workspace_number: Optional[int] = None,
+        project_name: Optional[str] = None,
+    ) -> Optional[PendingLaunch]:
+        """Match a pending launch by canonical registry app name.
+
+        Chrome PWAs often open inside an already-running browser PID, which means
+        the new window cannot expose fresh launch environment through /proc.
+        When class/domain matching already resolved the registry app name, use it
+        as a fallback correlation key.
+        """
+        await self._cleanup_expired()
+
+        target_app = str(app_name or "").strip()
+        if not target_app:
+            return None
+
+        target_project = str(project_name or "").strip()
+        candidates = [
+            launch
+            for launch in self._launches.values()
+            if not launch.matched and str(launch.app_name or "").strip() == target_app
+        ]
+        if target_project:
+            candidates = [
+                launch for launch in candidates
+                if str(launch.project_name or "").strip() == target_project
+            ]
+        if not candidates:
+            return None
+
+        if workspace_number is not None:
+            workspace_matches = [
+                launch for launch in candidates
+                if launch.workspace_number == workspace_number
+            ]
+            if len(workspace_matches) == 1:
+                matched = workspace_matches[0]
+                matched.matched = True
+                self._total_matched += 1
+                return matched
+
+        if len(candidates) == 1:
+            matched = candidates[0]
+            matched.matched = True
+            self._total_matched += 1
+            return matched
+
+        logger.error(
+            "Ambiguous pending launch match for app %s (workspace=%s project=%s): %s",
+            target_app,
+            workspace_number,
+            target_project or "any",
+            [
+                {
+                    "app_name": launch.app_name,
+                    "project_name": launch.project_name,
+                    "workspace_number": launch.workspace_number,
+                    "expected_class": launch.expected_class,
+                }
+                for launch in candidates
+            ],
+        )
+        return None
+
     def _launch_matches_window(self, launch: PendingLaunch, window: LaunchWindowInfo) -> bool:
         from .window_identifier import match_pwa_instance, match_window_class
 

@@ -10,6 +10,7 @@ This guide covers the complete integration of 1Password into NixOS, providing ce
 - **SSH Agent Integration**: Use 1Password as your SSH agent
 - **Git Commit Signing**: Sign commits with SSH keys from 1Password
 - **Credential Helper**: Automatic authentication for GitHub/GitLab
+- **Browser Integration**: Chrome/Chromium native-host integration for the desktop app
 - **Cross-Platform Support**: Works on desktop (GUI) and headless (CLI) systems
 - **Declarative Configuration**: Fully managed through NixOS
 
@@ -19,6 +20,11 @@ The 1Password integration consists of two main components:
 
 1. **System Module** (`modules/services/onepassword.nix`): System-level configuration
 2. **Home Module** (`home-modules/tools/onepassword-plugins.nix`): User-level shell plugins
+
+For Chrome browser integration, the supported boundary is:
+- the stock NixOS `programs._1password-gui.enable` wrapper at `/run/wrappers/bin/1Password-BrowserSupport`
+- the normal desktop-session 1Password GUI process
+- Chrome running from the user's main profile
 
 ## Installation
 
@@ -258,6 +264,33 @@ cat ~/.config/git/allowed_signers
 # Launch with manual scaling
 env QT_SCALE_FACTOR=0.75 1password
 ```
+
+#### 4. Chrome extension is detected but unlock/fill does not respond
+
+**Symptoms**:
+- the 1Password browser extension appears in Chrome
+- console logs show `Native host has exited`
+- browser logs may mention `NmRequestAccounts`
+
+**Correct model**:
+- 1Password GUI runs as the normal desktop user
+- `/run/wrappers/bin/1Password-BrowserSupport` remains the stock NixOS `setgid` wrapper
+- Chrome PWAs launch from the main Chrome profile, not isolated per-PWA profiles
+
+**Checks**:
+```bash
+1password-chrome-status
+systemctl --user status onepassword-gui.service --no-pager
+journalctl --user -u onepassword-gui.service -n 100 --no-pager
+ps -eo pid,ppid,group,args | rg '/share/1password/1password|google-chrome'
+```
+
+**Known bad configuration we removed on `ryzen`**:
+- launching the 1Password GUI through `sg onepassword`
+- overriding the stock `1Password-BrowserSupport` wrapper with a custom `setuid+setgid` launcher
+
+That combination caused the browser extension/native-host handshake to die even
+though the host manifests were present and the extension could see the desktop app.
 
 #### 4. Biometric Authentication
 

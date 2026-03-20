@@ -83,17 +83,18 @@ let
   pwaGetIds = pkgs.writeShellScriptBin "pwa-get-ids" ''
     #!/usr/bin/env bash
 
-    echo "PWA Window Classes for Application Registry (WebApp- prefixed)"
-    echo "=========================================================="
+    echo "PWA Logical IDs for Application Registry"
+    echo "========================================"
     echo ""
-    
+
     if [ -f "$HOME/.config/i3/pwa-registry.json" ]; then
-      ${pkgs.jq}/bin/jq -r '.pwas[] | "Name: \(.name)\nULID: \(.ulid)\nClass: WebApp-\(.ulid)\n"' "$HOME/.config/i3/pwa-registry.json"
+      ${pkgs.jq}/bin/jq -r '.pwas[] | "Name: \(.name)\nULID: \(.ulid)\nRegistry ID: WebApp-\(.ulid)\n"' "$HOME/.config/i3/pwa-registry.json"
     else
       echo "Registry not found at $HOME/.config/i3/pwa-registry.json"
     fi
     echo ""
-    echo "Use these IDs in panels.nix or Walker configuration"
+    echo "Runtime Chrome app ids on Wayland may appear as chrome-<domain>...-Default."
+    echo "The registry still uses WebApp-<ULID> as the logical PWA identifier."
   '';
 
   # T081: pwa-install-guide command
@@ -139,6 +140,7 @@ This system uses DECLARATIVE Google Chrome PWAs via NixOS home-manager.
 - PWAs not installing? Check: pwa-validate
 - Missing desktop entries? Check: ~/.local/share/i3pm-applications/applications/*-pwa.desktop
 - Walker not showing PWAs? Restart: systemctl --user restart elephant
+- 1Password + Chrome PWAs: launch-pwa-by-name uses your main Chrome profile on purpose
 EOF
   '';
 

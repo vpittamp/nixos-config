@@ -769,6 +769,42 @@ async def on_window_new(
                     )
                     logger.info(f"[Feature 101] Recorded launch correlation for trace {matched_launch.trace_id}")
         else:
+            if application_registry:
+                from .services.window_identifier import match_with_registry
+
+                app_match = match_with_registry(
+                    actual_class=window_class,
+                    actual_instance=container.window_instance or "",
+                    application_registry=application_registry,
+                )
+                if app_match:
+                    matched_app_name = str(app_match.get("_matched_app_name") or "").strip()
+                    matched_launch = await state_manager.launch_registry.find_by_app_name(
+                        matched_app_name,
+                        workspace_number=workspace_number,
+                        project_name="global",
+                    )
+                    if matched_launch:
+                        correlation_confidence = 0.95
+                        correlation_signals = {
+                            "match_type": "registry_app_name_fallback",
+                            "matched_app_name": matched_app_name,
+                            "window_class": window_class,
+                            "window_instance": container.window_instance or "",
+                            "workspace_match": matched_launch.workspace_number == workspace_number,
+                        }
+                        confidence_level = "REGISTRY"
+                        correlated_project = matched_launch.project_name
+                        logger.info(
+                            "Bound window %s (%s/%s) to managed launch via registry fallback for app '%s' project '%s'",
+                            window_id,
+                            window_class,
+                            container.window_instance or "",
+                            matched_app_name,
+                            correlated_project,
+                        )
+
+        if not matched_launch:
             logger.warning(
                 "Managed window %s (%s) appeared without a matching terminal anchor registration; "
                 "project assignment will rely on explicit window environment only (workspace=%s pid=%s)",

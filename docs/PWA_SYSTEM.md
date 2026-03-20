@@ -1,6 +1,6 @@
 # NixOS PWA System Documentation
 
-Last updated: 2026-03-13
+Last updated: 2026-03-20
 
 ## Overview
 
@@ -70,11 +70,18 @@ PWA launch flows are:
 - Walker launching the generated desktop entry
 
 The browser runtime is Google Chrome, launched with:
-- `--user-data-dir="$HOME/.local/share/webapps/webapp-$ULID"`
-- `--class="WebApp-$ULID"`
+- `--profile-directory=Default`
 - `--app="$URL"`
 
-This gives deterministic Wayland/XWayland window identity that the daemon can match to the declarative registry entry.
+The active launcher intentionally uses the main Chrome profile so browser extensions
+such as 1Password run on Chrome's supported profile path.
+
+Chrome app-mode windows on Wayland expose dynamic app ids such as:
+- `chrome-mail.google.com__-Default`
+- `chrome-github.com__-Default`
+
+The daemon matches those dynamic ids using the declarative registry metadata
+(`expected_class`, `pwa_match_domains`, and app-name fallback correlation).
 
 ### UI integration
 
@@ -155,18 +162,14 @@ The runtime application name is derived from the display name:
 Example:
 - `Google Calendar` -> `google-calendar-pwa`
 
-### Window class
+### Runtime identity
 
-The expected window class for a declarative PWA is:
+The declarative registry still uses stable logical ids such as:
 - `WebApp-<ULID>`
 
-Example:
-- `WebApp-01K666N2V6BQMDSBMX3AY74TY7`
-
-### Profile path
-
-Each PWA gets its own Chrome profile directory:
-- `~/.local/share/webapps/webapp-<ULID>`
+Those ids are for registry correlation and desktop-entry generation. The live
+Chrome window identity is usually a dynamic app id based on the app domain and
+profile, not a literal `WebApp-<ULID>` class.
 
 ## Verification commands
 
@@ -191,7 +194,7 @@ sed -n '1,160p' ~/.local/share/i3pm-applications/applications/your-slug-pwa.desk
 ### Check live window identity
 
 ```bash
-swaymsg -t get_tree | grep -F "WebApp-YOUR_ULID"
+swaymsg -t get_tree | rg 'chrome-.*-Default'
 ```
 
 ## Troubleshooting
@@ -228,15 +231,34 @@ jq -r '.applications[] | select(.name == "your-slug-pwa")' ~/.config/i3/applicat
 
 Check:
 - `ulid` is correct in `shared/pwa-sites.nix`
-- generated app entry has `expected_class = "WebApp-<ULID>"`
-- Chrome launched with the matching `--class`
+- generated app entry has the correct `expected_class` and `pwa_match_domains`
+- the live Sway tree shows a Chrome app-mode window such as `chrome-<domain>__-Default`
 
 Useful checks:
 
 ```bash
-jq -r '.applications[] | select(.name == "your-slug-pwa") | .expected_class' ~/.config/i3/application-registry.json
-swaymsg -t get_tree | grep -F "WebApp-YOUR_ULID"
+jq -r '.applications[] | select(.name == "your-slug-pwa") | {expected_class, pwa_match_domains}' ~/.config/i3/application-registry.json
+swaymsg -t get_tree | rg 'chrome-.*-Default'
 ```
+
+### 1Password is detected but unlock/fill does not respond
+
+The active Chrome PWA path does not use isolated per-PWA Chrome profiles.
+If 1Password is visible in the browser but unlock does not respond, debug the
+desktop-app/native-host boundary first:
+
+```bash
+1password-chrome-status
+systemctl --user status onepassword-gui.service --no-pager
+journalctl --user -u onepassword-gui.service -n 100 --no-pager
+```
+
+The concrete failure we hit on `ryzen` was:
+- the 1Password GUI was incorrectly launched under `sg onepassword`
+- the standard NixOS `1Password-BrowserSupport` wrapper had been overridden with a custom launcher
+
+That caused the browser extension to log "Native host has exited" during
+`NmRequestAccounts`, even though the extension and manifests were present.
 
 ### Icon does not appear
 

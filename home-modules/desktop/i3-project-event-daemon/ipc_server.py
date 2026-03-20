@@ -5818,6 +5818,76 @@ class IPCServer:
         self.invalidate_window_tree_cache()
         return None
 
+    async def _get_reusable_context_app_window(
+        self,
+        *,
+        app: RegistryApp,
+        project_name: str,
+        execution_mode: str,
+    ) -> Optional[Any]:
+        """Return an existing live non-terminal app window for single-instance launches."""
+        from .services.window_identifier import match_pwa_instance, match_window_class
+
+        target_project = str(project_name or "").strip()
+        target_execution_mode = str(execution_mode or "local").strip() or "local"
+
+        candidates = sorted(
+            self.state_manager.state.window_map.values(),
+            key=lambda window: getattr(window, "last_focus", None) or getattr(window, "created", None),
+            reverse=True,
+        )
+        stale_window_ids: list[int] = []
+
+        for candidate in candidates:
+            candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
+            if candidate_window_id <= 0:
+                continue
+
+            candidate_execution_mode = str(getattr(candidate, "execution_mode", "") or "local").strip() or "local"
+            if candidate_execution_mode != target_execution_mode:
+                continue
+
+            candidate_project = str(getattr(candidate, "project", "") or "").strip()
+            if app.scope != "global" and candidate_project != target_project:
+                continue
+
+            actual_class = str(getattr(candidate, "window_class", "") or "")
+            actual_instance = str(getattr(candidate, "window_instance", "") or "")
+            if app.pwa_match_domains and match_pwa_instance(
+                app.expected_class,
+                actual_class,
+                actual_instance,
+                pwa_domains=list(app.pwa_match_domains or []),
+            ):
+                matched = True
+            else:
+                matched, _ = match_window_class(
+                    app.expected_class,
+                    actual_class,
+                    actual_instance,
+                )
+            if not matched:
+                continue
+
+            live_window = await self._find_live_sway_window(candidate_window_id)
+            if live_window is not None:
+                return candidate
+
+            stale_window_ids.append(candidate_window_id)
+
+        for stale_window_id in stale_window_ids:
+            logger.warning(
+                "Discarding stale tracked app window %s for %s",
+                stale_window_id,
+                app.name,
+            )
+            await self.state_manager.remove_window(stale_window_id)
+
+        if stale_window_ids:
+            self.invalidate_window_tree_cache()
+
+        return None
+
     def _managed_tmux_session_probe(self, spec: Dict[str, Any]) -> Dict[str, Any]:
         """Inspect managed tmux session health for a deterministic launch spec."""
         tmux_session_name = str(spec.get("tmux_session_name") or "").strip()
@@ -6085,6 +6155,19 @@ class IPCServer:
         if str(result.get("status") or "").strip() == "running":
             return result
         spec = self._read_launch_spec(launch_id)
+        terminal_launch = (spec or {}).get("terminal_launch") or {}
+        if str(terminal_launch.get("mode") or "").strip() != "managed_project_terminal":
+            return self._write_launch_status(
+                launch_id=launch_id,
+                status="running",
+                spec=spec or None,
+                reason="window_bound",
+                extra={
+                    "window_id": int(window_id or 0),
+                    "anchor_bound": True,
+                    "terminal_anchor_id": str(terminal_anchor_id or result.get("terminal_anchor_id") or "").strip(),
+                },
+            )
         probe = self._managed_tmux_session_probe(spec or {})
         for _attempt in range(5):
             if bool(probe.get("exists", False) and probe.get("healthy", False)):
@@ -6232,6 +6315,21 @@ class IPCServer:
             env["I3PM_REMOTE_USER"] = str(remote_profile.get("user", ""))
             env["I3PM_REMOTE_PORT"] = str(remote_profile.get("port", 22))
             env["I3PM_REMOTE_DIR"] = str(remote_profile.get("remote_dir", ""))
+
+        # GUI launches that are detached through daemon/systemd boundaries still
+        # need the active graphical session variables to bind visible windows.
+        for key in (
+            "DBUS_SESSION_BUS_ADDRESS",
+            "DISPLAY",
+            "SWAYSOCK",
+            "WAYLAND_DISPLAY",
+            "XDG_CURRENT_DESKTOP",
+            "XDG_RUNTIME_DIR",
+            "XDG_SESSION_TYPE",
+        ):
+            value = str(os.environ.get(key, "") or "").strip()
+            if value:
+                env[key] = value
         return env
 
     async def _register_pending_launch(
@@ -9823,6 +9921,57 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if launch_transport == "local_helper" and local_project_dir:
             workdir = Path(local_project_dir)
 
+        resolved_command = shutil.which(command) or command
+        direct_pwa_launch = (
+            execution_mode == "local"
+            and not terminal_mode
+            and Path(resolved_command).name == "launch-pwa-by-name"
+        )
+
+        if direct_pwa_launch:
+            env_prefix = [
+                "env",
+                *[
+                    f"{key}={value}"
+                    for key, value in environment.items()
+                ],
+            ]
+            shell_command = " ".join(
+                shlex.quote(part)
+                for part in [*env_prefix, resolved_command, *args]
+            )
+            result = subprocess.run(
+                ["swaymsg", "--quiet", f"exec {shell_command}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip()
+                if launch_id:
+                    self._write_launch_status(
+                        launch_id=launch_id,
+                        status="failed",
+                        spec=spec,
+                        reason="launch_start_failed",
+                        error_code="launch_start_failed",
+                        error_message=detail or "swaymsg exec error",
+                    )
+                raise RuntimeError(f"Detached PWA launch failed: {detail or 'swaymsg exec error'}")
+            if launch_id:
+                self._write_launch_status(
+                    launch_id=launch_id,
+                    status="waiting_window",
+                    spec=spec,
+                    reason="waiting_window",
+                )
+            return {
+                "success": True,
+                "pid": 0,
+                "launch_id": launch_id,
+                "status": self._read_launch_status(launch_id) if launch_id else {},
+            }
+
         unit_name = f"i3pm-launch-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', app_name or 'app')}-{os.getpid()}-{int(time.time())}"
         systemd_cmd = [
             "systemd-run",
@@ -9894,6 +10043,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         payload.setdefault("launcher_pid", os.getpid())
         payload["register_launch"] = False
         spec = await self._prepare_launch(payload)
+        app = self._require_registry_app(str(spec.get("app_name") or "").strip())
         if int(payload.get("__intent_epoch") or 0) > 0 and str(spec.get("project_name") or "").strip():
             self._clear_focus_overrides()
 
@@ -9995,6 +10145,43 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                             "tmux_session_name": spec.get("tmux_session_name"),
                             "terminal_role": spec.get("terminal_role"),
                             "reused_existing": True,
+                        },
+                    }
+        elif not app.terminal and not app.multi_instance:
+            existing_window = await self._get_reusable_context_app_window(
+                app=app,
+                project_name=str(spec.get("project_name") or "").strip(),
+                execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+            )
+            if existing_window is not None:
+                focus_result = await self._window_focus({
+                    "window_id": int(getattr(existing_window, "window_id", 0) or 0),
+                    "project_name": str(spec.get("project_name") or "").strip(),
+                    "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+                    "connection_key": str(spec.get("connection_key") or "").strip(),
+                })
+                if bool(focus_result.get("success", False)):
+                    reused_existing = True
+                    reused_window_id = int(focus_result.get("window_id") or 0)
+                    return {
+                        "success": True,
+                        "launch": {
+                            "success": True,
+                            "reused_existing": True,
+                            "window_id": reused_window_id,
+                        },
+                        "spec": {
+                            "app_name": spec.get("app_name"),
+                            "execution_mode": spec.get("execution_mode"),
+                            "project_name": spec.get("project_name"),
+                            "context_key": spec.get("context_key"),
+                            "launch_strategy": "focus_existing_window",
+                            "terminal_anchor_id": spec.get("terminal_anchor_id"),
+                            "preferred_workspace": spec.get("preferred_workspace"),
+                            "tmux_session_name": spec.get("tmux_session_name"),
+                            "terminal_role": spec.get("terminal_role"),
+                            "reused_existing": True,
+                            "window_id": reused_window_id,
                         },
                     }
 

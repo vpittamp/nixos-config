@@ -13,57 +13,6 @@ let
 
   chromeExtensionId = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
   chromeExtensionOrigin = "chrome-extension://${chromeExtensionId}/";
-  browserSupportHostLauncher = pkgs.runCommandCC "1password-browser-support-host" { } ''
-    mkdir -p "$out/bin"
-
-    cat > "$out/browser-support-host.c" <<'EOF'
-    #define _GNU_SOURCE
-    #include <grp.h>
-    #include <pwd.h>
-    #include <stdio.h>
-    #include <sys/types.h>
-    #include <unistd.h>
-
-    int main(int argc, char **argv) {
-      const char *target = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
-      uid_t uid = getuid();
-      gid_t gid = getegid();
-      struct passwd *pw = getpwuid(uid);
-
-      if (pw == NULL) {
-        perror("getpwuid");
-        return 110;
-      }
-
-      if (initgroups(pw->pw_name, gid) != 0) {
-        perror("initgroups");
-        return 111;
-      }
-
-      if (setresgid(gid, gid, gid) != 0) {
-        perror("setresgid");
-        return 112;
-      }
-
-      if (setresuid(uid, uid, uid) != 0) {
-        perror("setresuid");
-        return 113;
-      }
-
-      char **child_argv = argv;
-      child_argv[0] = (char *) target;
-      for (int i = 1; i < argc; ++i) {
-        child_argv[i] = argv[i];
-      }
-
-      execv(target, child_argv);
-      perror("execv");
-      return 127;
-    }
-    EOF
-
-    $CC -O2 -Wall -Wextra -o "$out/bin/1password-browser-support-host" "$out/browser-support-host.c"
-  '';
   browserSupportHostPath = "/run/wrappers/bin/1Password-BrowserSupport";
   chromePolicyJson = builtins.toJSON {
     NativeMessagingAllowlist = [
@@ -233,23 +182,6 @@ in
         enable = true;
         polkitPolicyOwners = cfg.gui.polkitPolicyOwners;
       };
-
-      security.wrappers."1password-browser-support-host" = {
-        source = "${browserSupportHostLauncher}/bin/1password-browser-support-host";
-        owner = "root";
-        group = "onepassword";
-        setuid = true;
-        setgid = true;
-      };
-
-      security.wrappers."1Password-BrowserSupport" = {
-        source = lib.mkForce "${browserSupportHostLauncher}/bin/1password-browser-support-host";
-        owner = lib.mkForce "root";
-        group = lib.mkForce "onepassword";
-        setuid = lib.mkForce true;
-        setgid = lib.mkForce true;
-      };
-
 
       # Chromium integration
       environment.etc = {

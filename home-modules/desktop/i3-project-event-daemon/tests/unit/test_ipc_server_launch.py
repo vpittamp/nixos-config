@@ -342,6 +342,32 @@ async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tm
 
 
 @pytest.mark.asyncio
+async def test_mark_launch_window_bound_sets_running_for_non_terminal_launch(server_local, tmp_path):
+    server_local._runtime_dir = lambda: tmp_path
+    spec = await server_local._prepare_launch({"app_name": "code", "register_launch": False})
+    registration = await server_local._register_launch_for_spec(spec)
+    launch_id = registration["launch_id"]
+
+    server_local._write_launch_status(
+        launch_id=launch_id,
+        status="waiting_window",
+        spec=spec,
+        reason="waiting_window",
+    )
+
+    result = await server_local._mark_launch_window_bound(
+        launch_id=launch_id,
+        window_id=183,
+        terminal_anchor_id=spec["terminal_anchor_id"],
+    )
+
+    assert result["status"] == "running"
+    assert result["reason"] == "window_bound"
+    assert result["window_id"] == 183
+    assert result["anchor_bound"] is True
+
+
+@pytest.mark.asyncio
 async def test_launch_open_clears_stale_focus_override_for_explicit_project_intent(server_local):
     server_local._set_focus_overrides(
         session_key="session-stale",
@@ -351,6 +377,11 @@ async def test_launch_open_clears_stale_focus_override_for_explicit_project_inte
     server_local._get_reusable_context_terminal_window = AsyncMock(
         return_value=SimpleNamespace(window_id=7)
     )
+    server_local._managed_tmux_session_probe = MagicMock(return_value={
+        "exists": True,
+        "healthy": True,
+        "reason": "healthy",
+    })
     server_local._dispatch_managed_terminal_command = lambda _spec: None
     server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 7})
 
@@ -770,6 +801,51 @@ def test_execute_launch_spec_ssh_current_host_uses_local_terminal_helper(server_
     assert "i3pm-remote-launch" not in captured["cmd"][-1]
 
 
+def test_execute_launch_spec_dispatches_local_pwa_via_sway(server_local, monkeypatch, tmp_path):
+    server_local._runtime_dir = lambda: tmp_path
+    spec = {
+        "app_name": "gmail-pwa",
+        "command": "launch-pwa-by-name",
+        "args": ["01JCYF9K4Q9V6X8YJ1MNSPT0D7"],
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "local_project_directory": "",
+        "environment": {
+            "WAYLAND_DISPLAY": "wayland-1",
+            "DISPLAY": ":0",
+        },
+        "terminal_launch": {},
+        "launch": {
+            "launch_id": "gmail-pwa-global-test",
+        },
+    }
+    captured = {}
+
+    monkeypatch.setattr(ipc_server_module.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(cmd, capture_output, text, check):
+        captured["cmd"] = cmd
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        captured["check"] = check
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
+
+    result = server_local._execute_launch_spec(spec)
+
+    assert result["success"] is True
+    assert result["pid"] == 0
+    assert captured["cmd"][0] == "swaymsg"
+    assert captured["cmd"][1] == "--quiet"
+    assert captured["cmd"][2].startswith("exec ")
+    assert "WAYLAND_DISPLAY=wayland-1" in captured["cmd"][2]
+    assert "DISPLAY=:0" in captured["cmd"][2]
+    assert "/usr/bin/launch-pwa-by-name" in captured["cmd"][2]
+    assert "01JCYF9K4Q9V6X8YJ1MNSPT0D7" in captured["cmd"][2]
+    assert result["status"]["status"] == "waiting_window"
+
+
 def test_resolve_terminal_helper_prefers_packaged_helper_dir(server_local, monkeypatch, tmp_path):
     helper_name = "project-terminal-launch.sh"
     packaged_dir = tmp_path / "packaged"
@@ -815,6 +891,40 @@ async def test_launch_open_reuses_existing_terminal_for_scoped_terminal_command(
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
     assert result["launch"]["window_id"] == 321
+
+
+@pytest.mark.asyncio
+async def test_launch_open_reuses_existing_single_instance_gui_window(server_local):
+    existing_window = SimpleNamespace(window_id=456)
+    server_local.registry_loader.applications["code"].multi_instance = False
+    spec = {
+        "app_name": "code",
+        "project_name": QUALIFIED_NAME,
+        "context_key": f"{QUALIFIED_NAME}::local::local@thinkpad",
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "terminal_anchor_id": "code-anchor",
+        "preferred_workspace": 2,
+        "tmux_session_name": "",
+        "terminal_role": "",
+        "terminal_launch": {},
+    }
+    server_local._prepare_launch = AsyncMock(return_value=spec)
+    server_local._get_reusable_context_app_window = AsyncMock(return_value=existing_window)
+    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 456})
+    server_local._register_launch_for_spec = AsyncMock()
+    server_local._execute_launch_spec = MagicMock()
+
+    result = await server_local._launch_open({"app_name": "code"})
+
+    server_local._get_reusable_context_app_window.assert_awaited_once()
+    server_local._window_focus.assert_awaited_once()
+    server_local._register_launch_for_spec.assert_not_awaited()
+    server_local._execute_launch_spec.assert_not_called()
+    assert result["success"] is True
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["window_id"] == 456
+    assert result["spec"]["launch_strategy"] == "focus_existing_window"
 
 
 @pytest.mark.asyncio

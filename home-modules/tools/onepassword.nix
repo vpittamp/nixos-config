@@ -161,75 +161,19 @@ let
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Batch initialize 1Password in all PWA profiles
-    # 1. Ensures NativeMessagingHosts symlinks exist in every PWA profile
-    # 2. Opens un-initialized profiles in normal Chrome mode (with toolbar)
-    #    so 1Password can complete its one-time pairing handshake
-    # 3. Creates .1password-initialized marker after setup
+    cat <<'EOF'
+Current Chrome PWA launches use the main Chrome profile.
 
-    WEBAPPS_DIR="$HOME/.local/share/webapps"
-    CHROME="${pkgs.google-chrome}/bin/google-chrome-stable"
+No per-PWA 1Password bootstrap is required anymore.
 
-    if [[ ! -d "$WEBAPPS_DIR" ]]; then
-      echo "No PWA profiles found at $WEBAPPS_DIR"
-      exit 0
-    fi
+If browser unlock/fill is broken, check:
+  1. 1password-chrome-status
+  2. systemctl --user status onepassword-gui.service
+  3. journalctl --user -u onepassword-gui.service -n 100 --no-pager
 
-    initialized=0
-    skipped=0
-
-    for profile_dir in "$WEBAPPS_DIR"/webapp-* "$WEBAPPS_DIR"/WebApp-*; do
-      [[ -d "$profile_dir" ]] || continue
-
-      profile_name="$(basename "$profile_dir")"
-
-      # Step 1: Ensure NativeMessagingHosts symlinks
-      nmh_dir="$profile_dir/NativeMessagingHosts"
-      mkdir -p "$nmh_dir"
-      for host_json in /etc/opt/chrome/native-messaging-hosts/com.1password.*.json; do
-        [ -f "$host_json" ] && ln -sf "$host_json" "$nmh_dir/$(basename "$host_json")"
-      done
-
-      # Step 2: Check if already initialized
-      if [[ -f "$profile_dir/.1password-initialized" ]]; then
-        echo "  skip: $profile_name (already initialized)"
-        ((skipped++)) || true
-        continue
-      fi
-
-      # Step 3: Open in normal Chrome mode (with toolbar) for pairing
-      echo "  init: $profile_name — opening Chrome for 1Password pairing..."
-      echo "        Please unlock 1Password in the browser, then close the window."
-      cmd=(
-        "$CHROME"
-        --user-data-dir="$profile_dir"
-        --no-first-run
-        --no-default-browser-check
-        --password-store=basic
-        "chrome://extensions"
-      )
-      printf -v quoted '%q ' "''${cmd[@]}"
-      if [[ -n "''${SWAYSOCK:-}" ]] && command -v swaymsg >/dev/null 2>&1; then
-        # Launch through the compositor so the window appears reliably from
-        # non-interactive shells and Home Manager activation contexts.
-        swaymsg "exec /run/wrappers/bin/sg onepassword -c ''${quoted% }" >/dev/null
-        read -r -p "        Press Enter after closing the Chrome window for $profile_name... " _
-      else
-        /run/wrappers/bin/sg onepassword -c "''${quoted% }" &
-        CHROME_PID=$!
-
-        # Wait for user to close the window
-        wait "$CHROME_PID" 2>/dev/null || true
-      fi
-
-      # Mark as initialized
-      touch "$profile_dir/.1password-initialized"
-      echo "  done: $profile_name"
-      ((initialized++)) || true
-    done
-
-    echo ""
-    echo "1Password PWA init complete: $initialized initialized, $skipped skipped"
+Legacy isolated profiles may still exist under ~/.local/share/webapps, but they
+are no longer the active 1Password path for launch-pwa-by-name.
+EOF
   '';
 
   onePasswordPwaFix = pkgs.writeShellScriptBin "1password-pwa-fix" ''

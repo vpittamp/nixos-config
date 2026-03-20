@@ -89,3 +89,26 @@ def test_find_by_window_signature_rejects_ambiguous_matches():
 
     matched = asyncio.run(registry.find_by_window_signature(window))
     assert matched is None
+
+
+def test_find_by_app_name_matches_unique_pending_launch():
+    registry = LaunchRegistry()
+    launch = PendingLaunch(
+        app_name="gmail-pwa",
+        project_name="global",
+        project_directory=Path.home(),
+        launcher_pid=1001,
+        workspace_number=56,
+        timestamp=time.time(),
+        expected_class="WebApp-01JCYF9K4Q9V6X8YJ1MNSPT0D7",
+        pwa_match_domains=["mail.google.com"],
+        terminal_anchor_id="gmail-pwa-global-1001-1",
+    )
+    asyncio.run(registry.add(launch))
+
+    matched = asyncio.run(
+        registry.find_by_app_name("gmail-pwa", workspace_number=56, project_name="global")
+    )
+    assert matched is not None
+    assert matched.app_name == "gmail-pwa"
+    assert matched.matched is True
