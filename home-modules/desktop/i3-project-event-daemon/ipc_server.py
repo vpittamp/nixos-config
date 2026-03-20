@@ -2472,13 +2472,14 @@ class IPCServer:
 
         Called by event handlers when window/workspace state changes.
         This forces the next get_window_tree() call to query Sway IPC fresh.
-        Also clears the PID environ cache since window state has changed.
+        PID environ cache is intentionally preserved here because window move/focus
+        events do not imply process environment changes, and clearing it on every
+        tree invalidation defeats the short-TTL classification cache.
         """
         if self._window_tree_cache is not None:
             logger.debug("[Feature 123] Window tree cache invalidated")
         self._window_tree_cache = None
         self._window_tree_cache_time = 0.0
-        clear_pid_environ_cache()
 
     def invalidate_worktree_cache(self) -> None:
         """Invalidate the cached worktree summary used by dashboard snapshots."""

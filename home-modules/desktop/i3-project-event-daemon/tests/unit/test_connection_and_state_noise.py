@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -163,6 +163,21 @@ async def test_ipc_server_stop_does_not_block_on_slow_server_close():
     await asyncio.wait_for(server.stop(), timeout=2.0)
 
     assert slow_server.closed is True
+
+
+def test_invalidate_window_tree_cache_preserves_pid_environ_cache(monkeypatch):
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    server._window_tree_cache = {"cached": True}
+    server._window_tree_cache_time = 123.0
+    clear_pid_cache = Mock()
+    monkeypatch.setattr(ipc_server_module, "clear_pid_environ_cache", clear_pid_cache)
+
+    server.invalidate_window_tree_cache()
+
+    assert server._window_tree_cache is None
+    assert server._window_tree_cache_time == 0.0
+    clear_pid_cache.assert_not_called()
 
 
 @pytest.mark.asyncio
