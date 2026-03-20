@@ -6,7 +6,7 @@ Feature 079: Preview Pane User Experience (branch number, worktree hierarchy)
 Provides data models for fuzzy matching, filter state management, and project list items.
 """
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Optional, List
 from datetime import datetime
 import re
@@ -38,6 +38,44 @@ class ProjectListItem(BaseModel):
     Feature 079: Enhanced with branch number and type for worktree hierarchy.
     Contains project metadata plus fuzzy match scoring information.
     """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "name": "078-eww-preview-improvement",
+                    "display_name": "eww preview improvement",
+                    "icon": "🌿",
+                    "is_worktree": True,
+                    "parent_project_name": "nixos",
+                    "directory_exists": True,
+                    "relative_time": "2h ago",
+                    "git_status": {
+                        "is_clean": True,
+                        "ahead_count": 0,
+                        "behind_count": 0,
+                    },
+                    "match_score": 500,
+                    "match_positions": [{"start": 0, "end": 3}],
+                    "selected": True,
+                },
+                {
+                    "name": "nixos",
+                    "display_name": "NixOS",
+                    "icon": "❄️",
+                    "is_worktree": False,
+                    "parent_project_name": None,
+                    "directory_exists": True,
+                    "relative_time": "3d ago",
+                    "git_status": None,
+                    "match_score": 0,
+                    "match_positions": [],
+                    "selected": False,
+                },
+            ]
+        }
+    )
+
     name: str = Field(..., min_length=1, description="Project identifier (e.g., '078-eww-preview-improvement')")
     display_name: str = Field(..., min_length=1, description="Human-readable project name")
     icon: str = Field(..., min_length=1, description="Emoji icon for the project")
@@ -109,69 +147,33 @@ class ProjectListItem(BaseModel):
             return 1
         return 0
 
-    class Config:
-        """Pydantic config."""
-        json_schema_extra = {
-            "examples": [
-                {
-                    "name": "078-eww-preview-improvement",
-                    "display_name": "eww preview improvement",
-                    "icon": "🌿",
-                    "is_worktree": True,
-                    "parent_project_name": "nixos",
-                    "directory_exists": True,
-                    "relative_time": "2h ago",
-                    "git_status": {
-                        "is_clean": True,
-                        "ahead_count": 0,
-                        "behind_count": 0
-                    },
-                    "match_score": 500,
-                    "match_positions": [{"start": 0, "end": 3}],
-                    "selected": True
-                },
-                {
-                    "name": "nixos",
-                    "display_name": "NixOS",
-                    "icon": "❄️",
-                    "is_worktree": False,
-                    "parent_project_name": None,
-                    "directory_exists": True,
-                    "relative_time": "3d ago",
-                    "git_status": None,
-                    "match_score": 0,
-                    "match_positions": [],
-                    "selected": False
-                }
-            ]
-        }
-
 
 class ScoredMatch(BaseModel):
     """Result of fuzzy matching algorithm.
 
     Feature 078: Intermediate result from fuzzy match scoring before conversion to ProjectListItem.
     """
-    project_name: str = Field(..., description="Project name that was matched")
-    score: int = Field(..., ge=0, le=1100, description="Match score (higher is better)")
-    match_positions: List[MatchPosition] = Field(default_factory=list, description="Character positions where query matched")
 
-    class Config:
-        """Pydantic config."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "project_name": "nixos",
                     "score": 1000,
-                    "match_positions": [{"start": 0, "end": 5}]
+                    "match_positions": [{"start": 0, "end": 5}],
                 },
                 {
                     "project_name": "078-eww-preview-improvement",
                     "score": 500,
-                    "match_positions": [{"start": 0, "end": 3}]
-                }
+                    "match_positions": [{"start": 0, "end": 3}],
+                },
             ]
         }
+    )
+
+    project_name: str = Field(..., description="Project name that was matched")
+    score: int = Field(..., ge=0, le=1100, description="Match score (higher is better)")
+    match_positions: List[MatchPosition] = Field(default_factory=list, description="Character positions where query matched")
 
 
 class FilterState(BaseModel):
@@ -183,6 +185,40 @@ class FilterState(BaseModel):
     - Whether user has manually navigated (affects auto-selection behavior)
     - Filtered project list
     """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "accumulated_chars": "",
+                    "selected_index": 0,
+                    "user_navigated": False,
+                    "projects": [],
+                },
+                {
+                    "accumulated_chars": "nix",
+                    "selected_index": 0,
+                    "user_navigated": False,
+                    "projects": [
+                        {
+                            "name": "nixos",
+                            "display_name": "NixOS",
+                            "icon": "❄️",
+                            "is_worktree": False,
+                            "parent_project_name": None,
+                            "directory_exists": True,
+                            "relative_time": "3d ago",
+                            "git_status": None,
+                            "match_score": 500,
+                            "match_positions": [{"start": 0, "end": 3}],
+                            "selected": True,
+                        }
+                    ],
+                },
+            ]
+        }
+    )
+
     accumulated_chars: str = Field(default="", description="Filter characters typed by user")
     selected_index: int = Field(default=0, ge=0, description="Index of currently selected project")
     user_navigated: bool = Field(default=False, description="True if user has used arrow keys (disables auto-selection)")
@@ -314,36 +350,3 @@ class FilterState(BaseModel):
             })
 
         return groups
-
-    class Config:
-        """Pydantic config."""
-        json_schema_extra = {
-            "examples": [
-                {
-                    "accumulated_chars": "",
-                    "selected_index": 0,
-                    "user_navigated": False,
-                    "projects": []
-                },
-                {
-                    "accumulated_chars": "nix",
-                    "selected_index": 0,
-                    "user_navigated": False,
-                    "projects": [
-                        {
-                            "name": "nixos",
-                            "display_name": "NixOS",
-                            "icon": "❄️",
-                            "is_worktree": False,
-                            "parent_project_name": None,
-                            "directory_exists": True,
-                            "relative_time": "3d ago",
-                            "git_status": None,
-                            "match_score": 500,
-                            "match_positions": [{"start": 0, "end": 3}],
-                            "selected": True
-                        }
-                    ]
-                }
-            ]
-        }

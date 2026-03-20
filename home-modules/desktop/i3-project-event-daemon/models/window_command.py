@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CommandType(str, Enum):
@@ -47,6 +47,8 @@ class WindowCommand(BaseModel):
         >>> print(cmd.to_sway_command())
         "[con_id=12345] move workspace number 3"
     """
+
+    model_config = ConfigDict(frozen=True)
 
     window_id: int = Field(..., description="Sway container/window ID", gt=0)
     command_type: CommandType = Field(..., description="Type of command")
@@ -109,11 +111,6 @@ class WindowCommand(BaseModel):
 
             case CommandType.FOCUS:
                 return f"{selector} focus"
-
-    class Config:
-        """Pydantic model configuration."""
-
-        frozen = True  # Immutable for thread safety
 
 
 class CommandBatch(BaseModel):

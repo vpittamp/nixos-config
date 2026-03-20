@@ -467,7 +467,7 @@ class DaemonState:
 # ~/.config/i3/workspace-monitor-mapping.json
 
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class MonitorRole(str, Enum):
@@ -1132,12 +1132,11 @@ class PendingLaunch(BaseModel):
             f"workspace={self.workspace_number}, age={self.age(time.time()):.2f}s)"
         )
 
-    model_config = {
-        # Allow Path objects in JSON serialization
-        "json_encoders": {
-            Path: str
-        }
-    }
+    model_config = ConfigDict()
+
+    @field_serializer("project_directory", when_used="json")
+    def serialize_project_directory(self, value: Path) -> str:
+        return str(value)
 
 
 class LaunchWindowInfo(BaseModel):

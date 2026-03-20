@@ -4,7 +4,7 @@ Scratchpad Terminal Models
 Pydantic models for project-scoped scratchpad terminal management.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pathlib import Path
 from typing import Optional
 import psutil
@@ -13,6 +13,8 @@ import time
 
 class ScratchpadTerminal(BaseModel):
     """Represents a project-scoped scratchpad terminal."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     project_name: str = Field(
         ...,
@@ -154,7 +156,3 @@ class ScratchpadTerminal(BaseModel):
             "created_at": self.created_at,
             "last_shown_at": self.last_shown_at,
         }
-
-    class Config:
-        """Pydantic configuration."""
-        arbitrary_types_allowed = True

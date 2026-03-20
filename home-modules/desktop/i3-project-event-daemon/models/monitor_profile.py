@@ -13,7 +13,7 @@ Version: 1.1.0 (2025-11-19)
 from enum import Enum
 from datetime import datetime
 from typing import Optional, List, Union, Any, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ProfileEventType(str, Enum):
@@ -37,13 +37,12 @@ class OutputPosition(BaseModel):
     Used in profile JSON files to define output layout.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     x: int = Field(0, description="Horizontal position in pixels")
     y: int = Field(0, description="Vertical position in pixels")
     width: int = Field(1920, gt=0, description="Output width in pixels")
     height: int = Field(1080, gt=0, description="Output height in pixels")
-
-    class Config:
-        frozen = True
 
 
 class ProfileOutput(BaseModel):
@@ -51,6 +50,8 @@ class ProfileOutput(BaseModel):
 
     Defines whether an output is enabled and its screen position.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     name: str = Field(..., pattern=r"^HEADLESS-[1-9]$|^eDP-\d+$|^HDMI-A-\d+$|^DP-\d+$",
                       description="Output identifier (e.g., HEADLESS-1)")
@@ -66,8 +67,6 @@ class ProfileOutput(BaseModel):
             raise ValueError("Output name cannot be empty")
         return v
 
-    class Config:
-        frozen = True
 
 
 class MonitorProfile(BaseModel):
@@ -409,6 +408,8 @@ class M1MonitorState(BaseModel):
 
     Feature 084: Extends MonitorState with hybrid mode.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     profile_name: str = Field(..., description="Current active profile")
     mode: Literal["headless", "hybrid"] = Field(..., description="System mode")

@@ -7,7 +7,7 @@ based on logical monitor roles (primary/secondary/tertiary/quaternary).
 from enum import Enum
 from datetime import datetime
 from typing import Optional, Dict, Literal
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class MonitorRole(str, Enum):
@@ -58,21 +58,21 @@ class OutputInfo(BaseModel):
     Immutable after creation (frozen).
     """
 
+    model_config = ConfigDict(frozen=True)
+
     name: str = Field(..., description="Output identifier (HDMI-A-1, eDP-1, etc.)")
     active: bool = Field(..., description="Whether output is currently active")
     width: int = Field(..., gt=0, description="Output width in pixels")
     height: int = Field(..., gt=0, description="Output height in pixels")
     scale: float = Field(1.0, gt=0.0, description="DPI scale factor")
 
-    @validator("name")
-    def validate_name(cls, v):
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
         """Validate output name is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("Output name cannot be empty")
         return v
-
-    class Config:
-        frozen = True  # Immutable after creation
 
 
 class MonitorRoleConfig(BaseModel):
@@ -93,8 +93,9 @@ class MonitorRoleConfig(BaseModel):
         ..., description="Configuration source (nix for Nix-generated configs)"
     )
 
-    @validator("app_name")
-    def validate_app_name(cls, v):
+    @field_validator("app_name")
+    @classmethod
+    def validate_app_name(cls, v: str) -> str:
         """Validate app name is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("app_name cannot be empty")
@@ -110,6 +111,8 @@ class MonitorRoleAssignment(BaseModel):
     Immutable after creation (frozen).
     """
 
+    model_config = ConfigDict(frozen=True)
+
     role: MonitorRole = Field(..., description="Logical monitor role")
     output: str = Field(..., description="Physical output name")
     fallback_applied: bool = Field(
@@ -119,15 +122,13 @@ class MonitorRoleAssignment(BaseModel):
         None, description="User-configured preferred output (Feature US5)"
     )
 
-    @validator("output")
-    def validate_output(cls, v):
+    @field_validator("output")
+    @classmethod
+    def validate_output(cls, v: str) -> str:
         """Validate output name is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("Output name cannot be empty")
         return v
-
-    class Config:
-        frozen = True
 
 
 class WorkspaceAssignment(BaseModel):
@@ -139,28 +140,29 @@ class WorkspaceAssignment(BaseModel):
     Immutable after creation (frozen).
     """
 
+    model_config = ConfigDict(frozen=True)
+
     workspace_num: int = Field(..., ge=1, description="Workspace number (1+)")
     output: str = Field(..., description="Assigned output name")
     monitor_role: MonitorRole = Field(..., description="Resolved monitor role")
     app_name: Optional[str] = Field(None, description="Application owning workspace")
     source: str = Field(..., description="Assignment source")
 
-    @validator("output")
-    def validate_output(cls, v):
+    @field_validator("output")
+    @classmethod
+    def validate_output(cls, v: str) -> str:
         """Validate output name is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("Output name cannot be empty")
         return v
 
-    @validator("source")
-    def validate_source(cls, v):
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, v: str) -> str:
         """Validate source is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("Source cannot be empty")
         return v
-
-    class Config:
-        frozen = True
 
 
 class MonitorStateV2(BaseModel):
@@ -185,8 +187,11 @@ class MonitorStateV2(BaseModel):
         default_factory=datetime.now, description="ISO 8601 timestamp of last update"
     )
 
-    @validator("workspaces")
-    def validate_workspace_keys(cls, v):
+    @field_validator("workspaces")
+    @classmethod
+    def validate_workspace_keys(
+        cls, v: Dict[int, "WorkspaceAssignment"]
+    ) -> Dict[int, "WorkspaceAssignment"]:
         """Validate workspace dict keys match assignment workspace numbers."""
         for key, assignment in v.items():
             if key != assignment.workspace_num:
@@ -195,8 +200,9 @@ class MonitorStateV2(BaseModel):
                 )
         return v
 
-    @validator("monitor_roles")
-    def validate_monitor_roles(cls, v):
+    @field_validator("monitor_roles")
+    @classmethod
+    def validate_monitor_roles(cls, v: Dict[str, str]) -> Dict[str, str]:
         """Validate monitor role keys are valid role names."""
         valid_roles = {role.value for role in MonitorRole}
         for role_str in v.keys():
@@ -206,8 +212,9 @@ class MonitorStateV2(BaseModel):
                 )
         return v
 
-    class Config:
-        json_encoders = {datetime: lambda dt: dt.isoformat()}
+    @field_serializer("last_updated", when_used="json")
+    def serialize_last_updated(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class OutputState(BaseModel):
@@ -237,8 +244,9 @@ class OutputStatesFile(BaseModel):
         default_factory=datetime.now, description="ISO 8601 timestamp of last update"
     )
 
-    class Config:
-        json_encoders = {datetime: lambda dt: dt.isoformat()}
+    @field_serializer("last_updated", when_used="json")
+    def serialize_last_updated(self, value: datetime) -> str:
+        return value.isoformat()
 
     def get_enabled_outputs(self) -> list[str]:
         """Return list of output names that are enabled."""

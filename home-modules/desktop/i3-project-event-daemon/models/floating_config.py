@@ -6,7 +6,7 @@ window behavior and size presets.
 
 from enum import Enum
 from typing import Optional, Tuple
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class FloatingSize(str, Enum):
@@ -97,15 +97,17 @@ class FloatingWindowConfig(BaseModel):
     )
     scope: Scope = Field(Scope.SCOPED, description="Project filtering scope (default: scoped)")
 
-    @validator("app_name")
-    def validate_app_name(cls, v):
+    @field_validator("app_name")
+    @classmethod
+    def validate_app_name(cls, v: str) -> str:
         """Validate app name is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("app_name cannot be empty")
         return v
 
-    @validator("app_id")
-    def validate_app_id(cls, v):
+    @field_validator("app_id")
+    @classmethod
+    def validate_app_id(cls, v: str) -> str:
         """Validate app_id is non-empty."""
         if not v or v.strip() == "":
             raise ValueError("app_id cannot be empty")

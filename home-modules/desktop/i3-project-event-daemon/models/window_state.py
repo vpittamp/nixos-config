@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 try:
     from i3ipc.aio import Con
@@ -64,33 +64,37 @@ class RunMode(Enum):
 
 class RunRequest(BaseModel):
     """RPC request for app.run method."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "app_name": "firefox",
+                "mode": "summon",
+                "force_launch": False,
+            }
+        }
+    )
+
     app_name: str = Field(..., description="Application name from registry")
     mode: str = Field("summon", description="Run mode: summon|hide|nohide")
     force_launch: bool = Field(False, description="Always launch new instance")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "app_name": "firefox",
-                "mode": "summon",
-                "force_launch": False
-            }
-        }
-
 
 class RunResponse(BaseModel):
     """RPC response for app.run method."""
-    action: str = Field(..., description="Action taken: launched|focused|moved|hidden|shown|none")
-    window_id: Optional[int] = Field(None, description="Sway container ID (if window exists)")
-    focused: bool = Field(..., description="True if window is now focused")
-    message: str = Field(..., description="Human-readable result message")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "action": "focused",
                 "window_id": 123456,
                 "focused": True,
-                "message": "Focused Firefox on workspace 3"
+                "message": "Focused Firefox on workspace 3",
             }
         }
+    )
+
+    action: str = Field(..., description="Action taken: launched|focused|moved|hidden|shown|none")
+    window_id: Optional[int] = Field(None, description="Sway container ID (if window exists)")
+    focused: bool = Field(..., description="True if window is now focused")
+    message: str = Field(..., description="Human-readable result message")

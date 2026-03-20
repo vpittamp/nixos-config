@@ -9,11 +9,23 @@ Provides validation for remote project environments accessed via SSH.
 Supports Tailscale hostnames, custom ports, and absolute remote paths.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class RemoteConfig(BaseModel):
     """Remote environment configuration for SSH-based projects."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "enabled": True,
+                "host": "hetzner-sway.tailnet",
+                "user": "vpittamp",
+                "working_dir": "/home/vpittamp/dev/my-app",
+                "port": 22,
+            }
+        }
+    )
 
     enabled: bool = Field(
         default=False,
@@ -60,14 +72,3 @@ class RemoteConfig(BaseModel):
         if self.port == 22:
             return f"{self.user}@{self.host}"
         return f"{self.user}@{self.host}:{self.port}"
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "enabled": True,
-                "host": "hetzner-sway.tailnet",
-                "user": "vpittamp",
-                "working_dir": "/home/vpittamp/dev/my-app",
-                "port": 22
-            }
-        }
