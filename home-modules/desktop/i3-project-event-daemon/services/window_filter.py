@@ -56,6 +56,15 @@ def log_tracking_workspace_fallback(window_id: int) -> None:
     )
 
 
+def format_switch_performance_label(
+    total_duration_ms: float, total_windows_affected: int
+) -> tuple[str, float]:
+    """Return the human-readable switch performance label and target."""
+    target_ms = PerformanceTrackerService().check_performance_target(total_windows_affected)
+    label = "✓ TARGET MET" if total_duration_ms <= target_ms else "✗ SLOW"
+    return label, target_ms
+
+
 @dataclass
 class WindowEnvironment:
     """Parsed I3PM_* environment variables from process"""
@@ -1245,10 +1254,14 @@ async def filter_windows_by_project(
         if perf_tracker:
             perf_tracker.record_switch(switch_metrics)
 
+    performance_label, target_ms = format_switch_performance_label(
+        operation_duration_ms,
+        switch_metrics.total_windows_affected if hide_metrics or restore_metrics else 0,
+    )
     logger.info(
         f"[Feature 091] Window filtering complete: {visible_count} visible, {hidden_count} hidden, "
         f"{error_count} errors | Total: {operation_duration_ms:.1f}ms "
-        f"({'✓ TARGET MET' if operation_duration_ms < 200 else '✗ SLOW'})"
+        f"({performance_label}, target: {target_ms:.1f}ms)"
     )
 
     return {

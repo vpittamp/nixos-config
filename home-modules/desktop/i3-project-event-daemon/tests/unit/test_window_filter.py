@@ -22,6 +22,7 @@ if "i3_project_daemon" not in sys.modules:
 
 
 window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
+format_switch_performance_label = window_filter_module.format_switch_performance_label
 log_restore_workspace_fallback = window_filter_module.log_restore_workspace_fallback
 log_tracking_workspace_fallback = window_filter_module.log_tracking_workspace_fallback
 read_process_environ = window_filter_module.read_process_environ
@@ -51,3 +52,13 @@ def test_workspace_fallback_logs_stay_out_of_warning_budget(caplog):
     assert "No saved state for window 114" in caplog.text
     assert "Window 24 has no valid workspace" in caplog.text
     assert "WARNING" not in caplog.text
+
+
+def test_switch_performance_label_uses_dynamic_target():
+    label, target_ms = format_switch_performance_label(206.8, 6)
+    assert label == "✗ SLOW"
+    assert target_ms == 180.0
+
+    label, target_ms = format_switch_performance_label(250.0, 21)
+    assert label == "✓ TARGET MET"
+    assert target_ms == 300.0

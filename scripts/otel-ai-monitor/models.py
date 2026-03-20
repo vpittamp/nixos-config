@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SessionState(str, Enum):
@@ -303,11 +303,6 @@ class Session(BaseModel):
         default=0, description="Count of streaming tokens received in current response"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        use_enum_values = True
-
     @model_validator(mode="after")
     def _normalize_identity_phase(self) -> "Session":
         phase = str(self.identity_phase or "").strip().lower()
@@ -354,10 +349,6 @@ class TelemetryEvent(BaseModel):
     trace_id: Optional[str] = Field(default=None, description="OTLP trace ID")
     span_id: Optional[str] = Field(default=None, description="OTLP span ID")
 
-    class Config:
-        """Pydantic configuration."""
-
-        use_enum_values = True
 
 
 class SessionUpdate(BaseModel):
@@ -892,3 +883,6 @@ class LangfuseAttributes:
             "output": round(output_cost, 8),
             "total": round(total_cost if total_cost > 0 else calculated_total, 8),
         }
+    model_config = ConfigDict(use_enum_values=True)
+
+    model_config = ConfigDict(use_enum_values=True)
