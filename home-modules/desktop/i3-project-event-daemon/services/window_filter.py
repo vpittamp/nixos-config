@@ -96,6 +96,14 @@ def format_switch_phase_breakdown(
     )
 
 
+def _get_active_tracer():
+    """Return the global tracer only when at least one trace is active."""
+    tracer = get_tracer()
+    if tracer and tracer.has_active_traces():
+        return tracer
+    return None
+
+
 @dataclass
 class WindowEnvironment:
     """Parsed I3PM_* environment variables from process"""
@@ -428,7 +436,7 @@ async def _record_visibility_trace(
         context: Additional context data
     """
     try:
-        tracer = get_tracer()
+        tracer = _get_active_tracer()
         if tracer:
             affected = await tracer.record_event(window, event_type, description, context)
             if affected:
@@ -456,7 +464,7 @@ async def _record_command_queued(
         batch_size: Number of commands in the batch (for restore batches)
     """
     try:
-        tracer = get_tracer()
+        tracer = _get_active_tracer()
         if tracer:
             context = {
                 "command_type": command.command_type.value,
@@ -503,7 +511,7 @@ async def _record_mark_trace(
         context_type: Context where mark was queried ("filter", "restore", etc.)
     """
     try:
-        tracer = get_tracer()
+        tracer = _get_active_tracer()
         if tracer:
             event_type = TraceEventType.MARK_ADDED if parsed_scope else TraceEventType.MARK_REMOVED
             success = parsed_scope is not None
@@ -559,7 +567,7 @@ async def _record_filter_decision(
         active_project: Currently active project
     """
     try:
-        tracer = get_tracer()
+        tracer = _get_active_tracer()
         if tracer:
             decision = "SHOW" if should_show else "HIDE"
             context = {
@@ -603,7 +611,7 @@ async def _record_filter_skip(
         context_data: Additional context data
     """
     try:
-        tracer = get_tracer()
+        tracer = _get_active_tracer()
         if tracer:
             context = {
                 "skip_reason": skip_reason,
@@ -662,7 +670,7 @@ async def filter_windows_by_project(
 
     # Feature 101: Broadcast project switch event to all active traces
     try:
-        tracer = get_tracer()
+        tracer = _get_active_tracer()
         if tracer:
             await tracer.broadcast_event(
                 TraceEventType.PROJECT_SWITCH,
@@ -1242,7 +1250,7 @@ async def filter_windows_by_project(
     # This captures the actual post-restore state instead of pre-restore state
     if windows_for_shown_trace:
         try:
-            tracer = get_tracer()
+            tracer = _get_active_tracer()
             if tracer:
                 # Re-fetch the tree to get updated window states
                 tree_refresh_start = time.perf_counter()

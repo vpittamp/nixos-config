@@ -768,6 +768,7 @@ class WindowTracer:
         self._traces: Dict[str, WindowTrace] = {}  # trace_id -> WindowTrace
         self._window_traces: Dict[int, Set[str]] = {}  # window_id -> set of trace_ids
         self._matchers: Dict[str, Dict[str, str]] = {}  # trace_id -> matcher config
+        self._active_trace_count = 0
         self._trace_counter = 0
         self._lock = asyncio.Lock()
 
@@ -779,6 +780,10 @@ class WindowTracer:
         """Generate unique trace ID."""
         self._trace_counter += 1
         return f"trace-{int(time.time())}-{self._trace_counter}"
+
+    def has_active_traces(self) -> bool:
+        """Return True when any trace is currently active."""
+        return self._active_trace_count > 0
 
     def _read_process_environ(self, pid: int) -> Dict[str, str]:
         """Read I3PM_* environment variables from process."""
@@ -895,6 +900,7 @@ class WindowTracer:
 
             self._traces[trace_id] = trace
             self._matchers[trace_id] = matcher
+            self._active_trace_count += 1
 
             # Feature 101 fix: Use trace.window_id since it may have been updated
             # from initial_container.id (line 490). The parameter window_id could
@@ -928,14 +934,15 @@ class WindowTracer:
             if not trace:
                 return None
 
-            trace.stopped_at = time.time()
             trace.add_event(TraceEvent(
                 timestamp=time.time(),
                 event_type=TraceEventType.TRACE_STOP,
                 description="Trace stopped",
                 state_before=trace.current_state,
             ))
-
+            if trace.is_active:
+                trace.stopped_at = time.time()
+                self._active_trace_count = max(0, self._active_trace_count - 1)
             # Remove from window mapping
             if trace.window_id in self._window_traces:
                 self._window_traces[trace.window_id].discard(trace_id)
@@ -966,7 +973,7 @@ class WindowTracer:
         Returns:
             List of trace_ids that recorded this event
         """
-        if not container:
+        if not container or not self.has_active_traces():
             return []
 
         affected_traces = []
@@ -1034,6 +1041,8 @@ class WindowTracer:
             List of trace_ids that were auto-stopped
         """
         auto_stopped = []
+        if not self.has_active_traces():
+            return auto_stopped
 
         async with self._lock:
             trace_ids = self._window_traces.get(window_id, set()).copy()
@@ -1054,6 +1063,7 @@ class WindowTracer:
 
                 # Stop the trace
                 trace.stopped_at = time.time()
+                self._active_trace_count = max(0, self._active_trace_count - 1)
                 trace.add_event(TraceEvent(
                     timestamp=time.time(),
                     event_type=TraceEventType.TRACE_STOP,
@@ -1129,6 +1139,8 @@ class WindowTracer:
         Returns:
             List of trace_ids that recorded this event
         """
+        if not self.has_active_traces():
+            return []
         affected_traces = []
 
         async with self._lock:
@@ -1174,6 +1186,8 @@ class WindowTracer:
         Returns:
             List of trace_ids that recorded this event
         """
+        if not self.has_active_traces():
+            return []
         affected_traces = []
 
         async with self._lock:
@@ -1275,6 +1289,7 @@ class WindowTracer:
             self._traces[trace_id] = trace
             self._matchers[trace_id] = {"app_name": app_name}
             self._pending_app_traces[app_name] = trace_id
+            self._active_trace_count += 1
 
             # Schedule timeout cleanup
             asyncio.create_task(
@@ -1310,6 +1325,7 @@ class WindowTracer:
                             context={"timeout": timeout, "reason": "expired"},
                         ))
                         trace.stopped_at = time.time()
+                        self._active_trace_count = max(0, self._active_trace_count - 1)
                         logger.warning(f"[WindowTracer] Trace {trace_id} expired (no launch for '{app_name}')")
 
     async def get_pending_trace_for_app(self, app_name: str) -> Optional[str]:
