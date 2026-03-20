@@ -19,6 +19,24 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  sunshineSetDp1Scale = pkgs.writeShellScriptBin "sunshine-set-dp1-scale" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    target_scale="''${1:?missing scale}"
+    socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
+
+    if [ -z "$socket_path" ]; then
+      socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
+    fi
+
+    if [ -z "$socket_path" ]; then
+      echo "Unable to locate SWAYSOCK for Sunshine prep-cmd" >&2
+      exit 1
+    fi
+
+    exec ${pkgs.sway}/bin/swaymsg -s "$socket_path" output DP-1 scale "$target_scale"
+  '';
 in
 {
   imports = [
@@ -198,6 +216,21 @@ in
       nvenc_tune = "ll";        # Low latency
       # Higher bitrate for local/Tailscale network streaming
       bitrate = 40000;
+      # PipeWire's remembered default devices can drift; pin Sunshine to the
+      # actual Ryzen analog output instead of its transient virtual sink.
+      audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
+      # Capture the center desktop monitor (Sunshine monitor ID 1 = DP-1).
+      output_name = 1;
+    };
+    desktopAppOverrides = {
+      auto-detach = "true";
+      exclude-global-prep-cmd = "false";
+      prep-cmd = [
+        {
+          do = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.25";
+          undo = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.0";
+        }
+      ];
     };
   };
 
@@ -666,6 +699,61 @@ in
 
   # Enable rtkit for real-time audio scheduling
   security.rtkit.enable = true;
+
+  systemd.user.services.ryzen-audio-defaults = {
+    description = "Restore Ryzen PipeWire card profile and default sink";
+    wantedBy = [ "sway-session.target" ];
+    partOf = [ "sway-session.target" ];
+    after = [ "pipewire.service" "wireplumber.service" "sway-session.target" ];
+
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "ryzen-audio-defaults" ''
+        set -euo pipefail
+
+        export XDG_RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u)"
+        export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+
+        attempts=0
+        until ${pkgs.pulseaudio}/bin/pactl info >/dev/null 2>&1; do
+          if [ "$attempts" -ge 40 ]; then
+            echo "pactl not ready, skipping Ryzen audio restore" >&2
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 0.5
+        done
+
+        attempts=0
+        until ${pkgs.pulseaudio}/bin/pactl list short cards 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'alsa_card.pci-0000_11_00.6'; do
+          if [ "$attempts" -ge 40 ]; then
+            echo "Ryzen audio card not ready, skipping profile restore" >&2
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 0.5
+        done
+
+        ${pkgs.pulseaudio}/bin/pactl set-card-profile alsa_card.pci-0000_11_00.6 pro-audio || true
+
+        attempts=0
+        until ${pkgs.pulseaudio}/bin/pactl list short sinks 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'alsa_output.pci-0000_11_00.6.pro-output-0'; do
+          if [ "$attempts" -ge 40 ]; then
+            echo "Ryzen audio sink not ready after profile restore" >&2
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 0.5
+        done
+
+        ${pkgs.pulseaudio}/bin/pactl set-default-sink alsa_output.pci-0000_11_00.6.pro-output-0 || true
+
+        if ${pkgs.pulseaudio}/bin/pactl list short sources 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'alsa_input.pci-0000_11_00.6.pro-input-0'; then
+          ${pkgs.pulseaudio}/bin/pactl set-default-source alsa_input.pci-0000_11_00.6.pro-input-0 || true
+        fi
+      '';
+    };
+  };
 
   # ========== USB AUTOMOUNT ==========
   # Automatic mounting of USB drives

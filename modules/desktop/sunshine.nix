@@ -145,6 +145,15 @@ in {
       };
     };
 
+    desktopAppOverrides = mkOption {
+      type = types.attrs;
+      default = {};
+      description = "Additional attributes to merge into the default Sunshine Desktop app.";
+      example = {
+        auto-detach = "true";
+      };
+    };
+
   };
 
   config = mkIf cfg.enable {
@@ -171,10 +180,10 @@ in {
       # Default applications (desktop streaming)
       applications = {
         apps = [
-          {
+          ({
             name = "Desktop";
             image-path = "";
-          }
+          } // cfg.desktopAppOverrides)
         ];
       };
     };

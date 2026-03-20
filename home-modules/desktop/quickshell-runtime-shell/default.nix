@@ -41,7 +41,7 @@ QtObject {
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
   readonly property string daemonHealthBin: "${daemonHealthScript}/bin/quickshell-daemon-health"
-  readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-elephant-launcher-query"
+  readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-app-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
   readonly property string fileListBin: "${fileListScript}/bin/quickshell-elephant-file-list"
   readonly property string fileActionBin: "${fileActionScript}/bin/quickshell-elephant-file-action"
@@ -361,7 +361,7 @@ PY
     done
   '';
 
-  launcherQueryScript = pkgs.writeShellScriptBin "quickshell-elephant-launcher-query" ''
+  launcherQueryScript = pkgs.writeShellScriptBin "quickshell-app-launcher-query" ''
     set -euo pipefail
 
     query="''${1:-}"
@@ -376,20 +376,182 @@ PY
       min_score=20
     fi
 
-    elephant query "desktopapplications;''${query};''${min_score};false" --json 2>/dev/null \
-      | ${lib.getExe pkgs.jq} -cs --argjson limit "$limit" '
-          map(select(.item? and (.item.identifier? // "") != ""))
-          | map(.item | {
-              identifier: .identifier,
-              text: (.text // ""),
-              subtext: (.subtext // ""),
-              icon: (.icon // ""),
-              score: (.score // 0),
-              state: (.state // []),
-              actions: (.actions // [])
-            })
-          | .[:$limit]
-        '
+    export QUICKSHELL_LAUNCHER_QUERY="$query"
+    export QUICKSHELL_LAUNCHER_LIMIT="$limit"
+    export QUICKSHELL_LAUNCHER_MIN_SCORE="$min_score"
+
+    # Use the declarative application registry as the source of truth for app mode.
+    # Elephant's desktopapplications provider intermittently returns an empty set for
+    # generated PWA desktop entries, which makes PWAs disappear until the launcher is reopened.
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+query = os.environ.get("QUICKSHELL_LAUNCHER_QUERY", "").strip()
+limit = int(os.environ.get("QUICKSHELL_LAUNCHER_LIMIT", "12") or "12")
+min_score = int(os.environ.get("QUICKSHELL_LAUNCHER_MIN_SCORE", "20") or "20")
+
+registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
+desktop_dir = Path.home() / ".local" / "share" / "i3pm-applications" / "applications"
+
+
+def normalize(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def compact(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def safe_int(value: object) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def entry_subtext(app: dict) -> str:
+    parts: list[str] = []
+    description = str(app.get("description") or "").strip()
+    workspace = safe_int(app.get("preferred_workspace"))
+    scope = str(app.get("scope") or "").strip()
+
+    if description:
+        parts.append(description)
+    if workspace is not None:
+        parts.append(f"WS{workspace}")
+    if scope:
+        parts.append(scope)
+
+    return " • ".join(parts)
+
+
+def score_app(app: dict, index: int, query_norm: str, query_compact: str, query_tokens: list[str]) -> int:
+    if not query_norm:
+        return 1000 - min(index, 999)
+
+    name = str(app.get("name") or "")
+    display_name = str(app.get("display_name") or name)
+    description = str(app.get("description") or "")
+    domain = str(app.get("pwa_domain") or "")
+    match_domains = app.get("pwa_match_domains") or []
+    if not isinstance(match_domains, list):
+        match_domains = []
+
+    name_without_suffix = name[:-4] if name.endswith("-pwa") else name
+    fields = [
+        normalize(display_name),
+        normalize(name),
+        normalize(name_without_suffix),
+        normalize(description),
+        normalize(domain),
+    ] + [normalize(item) for item in match_domains]
+    compact_fields = [compact(value) for value in fields if value]
+
+    exact_values = {value for value in fields if value}
+    prefix_values = [value for value in fields if value]
+
+    score = 0
+
+    if query_norm in exact_values:
+        score = max(score, 320)
+
+    if any(value.startswith(query_norm) for value in prefix_values):
+        score = max(score, 260)
+
+    if query_compact and any(query_compact in value for value in compact_fields):
+        score = max(score, 200)
+
+    if any(query_norm in value for value in prefix_values):
+        score = max(score, 140)
+
+    token_hits = 0
+    exact_token_hits = 0
+    for token in query_tokens:
+        matched = False
+        for value in prefix_values:
+            words = value.split()
+            if token in words:
+                exact_token_hits += 1
+                token_hits += 1
+                matched = True
+                break
+            if token in value:
+                token_hits += 1
+                matched = True
+                break
+        if not matched:
+            return 0
+
+    score += exact_token_hits * 24
+    score += (token_hits - exact_token_hits) * 12
+
+    if len(query_tokens) > 1 and token_hits == len(query_tokens):
+        score += 36
+
+    return score
+
+
+try:
+    data = json.loads(registry_path.read_text())
+except (OSError, json.JSONDecodeError):
+    json.dump([], sys.stdout)
+    sys.stdout.write("\n")
+    raise SystemExit(0)
+
+applications = data.get("applications") or []
+if not isinstance(applications, list):
+    json.dump([], sys.stdout)
+    sys.stdout.write("\n")
+    raise SystemExit(0)
+
+query_norm = normalize(query)
+query_compact = compact(query)
+query_tokens = [token for token in query_norm.split() if token]
+
+scored_results: list[tuple[int, int, dict]] = []
+for index, raw_app in enumerate(applications):
+    if not isinstance(raw_app, dict):
+        continue
+
+    score = score_app(raw_app, index, query_norm, query_compact, query_tokens)
+    if score < min_score:
+        continue
+
+    name = str(raw_app.get("name") or "").strip()
+    display_name = str(raw_app.get("display_name") or name).strip()
+    if not name or not display_name:
+        continue
+
+    desktop_path = desktop_dir / f"{name}.desktop"
+    identifier = str(desktop_path if desktop_path.exists() else f"{name}.desktop")
+    scored_results.append(
+        (
+            score,
+            index,
+            {
+                "identifier": identifier,
+                "text": display_name,
+                "subtext": entry_subtext(raw_app),
+                "icon": str(raw_app.get("icon") or ""),
+                "score": score,
+                "state": ["pwa"] if name.endswith("-pwa") else [],
+                "actions": [],
+            },
+        )
+    )
+
+scored_results.sort(key=lambda item: (-item[0], item[1], item[2]["text"].lower()))
+
+result = [entry for _, _, entry in scored_results[:limit]]
+json.dump(result, sys.stdout)
+sys.stdout.write("\n")
+PY
   '';
 
   launcherLaunchScript = pkgs.writeShellScriptBin "quickshell-elephant-launcher-launch" ''
