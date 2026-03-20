@@ -52,14 +52,18 @@ let
     done
 
     # Launch Chromium/Chrome in app mode with custom WM_CLASS for i3wm targeting
-    exec ${browserPkg}/bin/${browserBin} \
-      --user-data-dir="$PROFILE_DIR" \
-      --class="${app.wmClass}" \
-      --app="${app.url}" \
-      --no-first-run \
-      --no-default-browser-check \
-      --password-store=basic \
+    cmd=(
+      ${browserPkg}/bin/${browserBin}
+      --user-data-dir="$PROFILE_DIR"
+      --class="${app.wmClass}"
+      --app="${app.url}"
+      --no-first-run
+      --no-default-browser-check
+      --password-store=basic
       ${concatStringsSep " " (app.extraBrowserArgs or [])}
+    )
+    printf -v quoted '%q ' "''${cmd[@]}"
+    exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
   '';
 
   # Generate i3wm window rules for workspace assignment

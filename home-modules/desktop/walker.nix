@@ -151,8 +151,8 @@ let
     }
     {
       name = "sync kubeconfigs";
-      snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub k8s-api-ryzen-0 k8s-api-dev k8s-api-staging k8s-api-hub-test-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\" || true; done'";
-      description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, dev, staging, hub-test-v2)";
+      snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub ryzen-k8s-api; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\" || true; done'";
+      description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen)";
     }
   ];
   elephantSnippetsTemplate = pkgs.writeText "elephant-snippets.toml" ''
@@ -177,8 +177,8 @@ let
 
     [[snippets]]
     name = "sync kubeconfigs"
-    snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub k8s-api-ryzen-0 k8s-api-dev k8s-api-staging k8s-api-hub-test-v2; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\" || true; done'"
-    description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen, dev, staging, hub-test-v2)"
+    snippet = "snippet-run \"Sync Kubeconfigs\" -- bash -c 'for svc in k8s-api-hub ryzen-k8s-api; do echo \"Configuring $svc...\"; tailscale configure kubeconfig \"$svc\" || true; done'"
+    description = "Configure kubectl contexts for all Tailscale K8s API proxies (hub, ryzen)"
   '';
 
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
@@ -3172,7 +3172,9 @@ PY
         echo "Timeout waiting for SWAYSOCK environment variable" >&2
         exit 1
       '';
-      ExecStart = "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant";
+      ExecStart = pkgs.writeShellScript "elephant-with-onepassword-group" ''
+        exec /run/wrappers/bin/sg onepassword -c ${lib.escapeShellArg "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant"}
+      '';
       Restart = "on-failure";
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)

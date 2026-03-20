@@ -91,14 +91,18 @@ let
     # ============================================================================
     # Chrome uses --class to set the window app_id under native Wayland or WM_CLASS under XWayland
     
-    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
-      --user-data-dir="$PROFILE_DIR" \
-      --class="WebApp-$PWA_ID" \
-      --app="$TARGET_URL" \
-      --no-first-run \
-      --no-default-browser-check \
-      --password-store=basic \
+    cmd=(
+      ${pkgs.google-chrome}/bin/google-chrome-stable
+      --user-data-dir="$PROFILE_DIR"
+      --class="WebApp-$PWA_ID"
+      --app="$TARGET_URL"
+      --no-first-run
+      --no-default-browser-check
+      --password-store=basic
       --disable-features=DesktopPWAsElidedExtensionsMenu
+    )
+    printf -v quoted '%q ' "''${cmd[@]}"
+    exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
   '';
 in
 {

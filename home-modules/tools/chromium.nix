@@ -44,6 +44,32 @@ let
   };
   chromeUrlExtensionKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwPb3yBRBCTWkrOzCu2hgivv/RKEa5eejkBfJhm4IGbs1jdFbJOPQXrPYAlMA6LrcqflQ6/IWvKOc4YXdoQdBNLbMQjzwkFn/tHWXyE/6YM94/trhQh4a44rDDTaYyhEUb8/3S6n8DGPjXw517zz4Edz0Q2Z5q2BbFZ5k3c0UJ3HoA1S23JwcusAkS87wrh+rb6Xo7jEhH0uI7xyDuvppShSvDP3WfXSo4lxLB7hgTyGQ42HSevRzsvjKFl2iBSDkPWKjEMPi4a2/SyfnotZ0yXyvz4iKCBOYKdpII+GeX6YCjjOs2V9kXxEX0OGXtt5lqvSoFUstmfurzCncxJB9wwIDAQAB";
   chromeUrlExtensionId = "ihkjhjanceajnkgdnoapidhndainfcko";
+  onePasswordNativeHostFixScript = pkgs.writeShellScript "fix-1password-native-hosts" ''
+    set -eu
+
+    host_path="/run/wrappers/bin/1Password-BrowserSupport"
+
+    for dir in "$HOME/.config/google-chrome/NativeMessagingHosts" "$HOME/.config/chromium/NativeMessagingHosts"; do
+      [ -d "$dir" ] || continue
+
+      for host_name in com.1password.1password.json com.1password.browser_support.json; do
+        system_host="/etc/opt/chrome/native-messaging-hosts/$host_name"
+        user_host="$dir/$host_name"
+
+        if [ ! -f "$user_host" ] && [ -f "$system_host" ]; then
+          cp "$system_host" "$user_host"
+        fi
+
+        [ -f "$user_host" ] || continue
+
+        tmp="$(mktemp)"
+        if ${pkgs.jq}/bin/jq --arg path "$host_path" '.path = $path' "$user_host" > "$tmp"; then
+          cat "$tmp" > "$user_host"
+        fi
+        rm -f "$tmp"
+      done
+    done
+  '';
 
   chromeUrlToolPy = pkgs.writeText "chrome-url-tool.py" ''
     #!${lib.getExe pkgs.python3}
@@ -834,12 +860,34 @@ let
     EOF
   '';
 
-  chromeWrapper = pkgs.writeShellScriptBin "google-chrome-i3pm" ''
-    set -euo pipefail
-    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
-      --load-extension=${chromeUrlExtension} \
-      "$@"
-  '';
+  mkChromeWrapper =
+    {
+      name,
+      extraArgs ? [ ],
+    }:
+    lib.hiPrio (pkgs.writeShellScriptBin name ''
+      set -euo pipefail
+      cmd=(
+        ${pkgs.google-chrome}/bin/google-chrome-stable
+        ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
+        "$@"
+      )
+      printf -v quoted '%q ' "''${cmd[@]}"
+      exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
+    '');
+
+  chromeCommandWrapper = mkChromeWrapper {
+    name = "google-chrome";
+  };
+
+  chromeStableCommandWrapper = mkChromeWrapper {
+    name = "google-chrome-stable";
+  };
+
+  chromeWrapper = mkChromeWrapper {
+    name = "google-chrome-i3pm";
+    extraArgs = [ "--load-extension=${chromeUrlExtension}" ];
+  };
 
   # Cluster CA certificate for *.cnoe.localtest.me
   # This is the CA certificate (with CA:TRUE) that signs the server certificates
@@ -890,6 +938,8 @@ in
   # Claude in Chrome requires Google Chrome for full functionality
   home.packages =
     [
+      chromeCommandWrapper
+      chromeStableCommandWrapper
       pkgs.google-chrome
       chromeWrapper
       chromeUrlList
@@ -933,6 +983,48 @@ in
   # and 1Password also attempts to install/update the user-level manifest on Linux.
   # Managing ~/.config/google-chrome/NativeMessagingHosts with Home Manager makes
   # that path read-only via Nix store symlinks and breaks 1Password's installer.
+  #
+  # We still patch the writable manifest files on activation so the Chrome-level
+  # host path goes through our system launcher, which fixes the peer GID 1Password
+  # uses to authenticate the native messaging helper on Linux.
+
+  home.activation.fixOnePasswordNativeHosts = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    ${onePasswordNativeHostFixScript}
+  '';
+
+  systemd.user.services.fix-onepassword-native-hosts = {
+    Unit = {
+      Description = "Normalize 1Password Chrome native messaging hosts";
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${onePasswordNativeHostFixScript}";
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  systemd.user.paths.fix-onepassword-native-hosts = {
+    Unit = {
+      Description = "Watch 1Password native messaging hosts for drift";
+    };
+    Path = {
+      PathChanged = [
+        "%h/.config/google-chrome/NativeMessagingHosts"
+        "%h/.config/chromium/NativeMessagingHosts"
+        "%h/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
+        "%h/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json"
+        "%h/.config/chromium/NativeMessagingHosts/com.1password.1password.json"
+        "%h/.config/chromium/NativeMessagingHosts/com.1password.browser_support.json"
+      ];
+      PathModified = [
+        "%h/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
+        "%h/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json"
+        "%h/.config/chromium/NativeMessagingHosts/com.1password.1password.json"
+        "%h/.config/chromium/NativeMessagingHosts/com.1password.browser_support.json"
+      ];
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
 
   # Claude Code manages its own native messaging host file at:
   # ~/.config/google-chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json

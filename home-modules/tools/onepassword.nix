@@ -200,16 +200,27 @@ let
       # Step 3: Open in normal Chrome mode (with toolbar) for pairing
       echo "  init: $profile_name — opening Chrome for 1Password pairing..."
       echo "        Please unlock 1Password in the browser, then close the window."
-      "$CHROME" \
-        --user-data-dir="$profile_dir" \
-        --no-first-run \
-        --no-default-browser-check \
-        --password-store=basic \
-        "chrome://extensions" &
-      CHROME_PID=$!
+      cmd=(
+        "$CHROME"
+        --user-data-dir="$profile_dir"
+        --no-first-run
+        --no-default-browser-check
+        --password-store=basic
+        "chrome://extensions"
+      )
+      printf -v quoted '%q ' "''${cmd[@]}"
+      if [[ -n "''${SWAYSOCK:-}" ]] && command -v swaymsg >/dev/null 2>&1; then
+        # Launch through the compositor so the window appears reliably from
+        # non-interactive shells and Home Manager activation contexts.
+        swaymsg "exec /run/wrappers/bin/sg onepassword -c ''${quoted% }" >/dev/null
+        read -r -p "        Press Enter after closing the Chrome window for $profile_name... " _
+      else
+        /run/wrappers/bin/sg onepassword -c "''${quoted% }" &
+        CHROME_PID=$!
 
-      # Wait for user to close the window
-      wait "$CHROME_PID" 2>/dev/null || true
+        # Wait for user to close the window
+        wait "$CHROME_PID" 2>/dev/null || true
+      fi
 
       # Mark as initialized
       touch "$profile_dir/.1password-initialized"
