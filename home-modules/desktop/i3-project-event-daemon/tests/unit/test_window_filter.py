@@ -22,6 +22,8 @@ if "i3_project_daemon" not in sys.modules:
 
 
 window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
+log_restore_workspace_fallback = window_filter_module.log_restore_workspace_fallback
+log_tracking_workspace_fallback = window_filter_module.log_tracking_workspace_fallback
 read_process_environ = window_filter_module.read_process_environ
 
 
@@ -38,4 +40,14 @@ def test_read_process_environ_logs_permission_denied_at_debug(monkeypatch, caplo
             read_process_environ(2147)
 
     assert "Permission denied reading /proc/2147/environ" in caplog.text
+    assert "WARNING" not in caplog.text
+
+
+def test_workspace_fallback_logs_stay_out_of_warning_budget(caplog):
+    with caplog.at_level("INFO"):
+        log_restore_workspace_fallback(114)
+        log_tracking_workspace_fallback(24)
+
+    assert "No saved state for window 114" in caplog.text
+    assert "Window 24 has no valid workspace" in caplog.text
     assert "WARNING" not in caplog.text

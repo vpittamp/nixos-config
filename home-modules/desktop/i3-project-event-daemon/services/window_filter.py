@@ -42,6 +42,20 @@ def clear_pid_environ_cache() -> None:
     _pid_environ_cache.clear()
 
 
+def log_restore_workspace_fallback(window_id: int) -> None:
+    """Log deterministic restore fallback without treating it as a daemon warning."""
+    logger.info(
+        f"[Feature 101] No saved state for window {window_id}, restoring to workspace 1"
+    )
+
+
+def log_tracking_workspace_fallback(window_id: int) -> None:
+    """Log deterministic tracking fallback without treating it as a daemon warning."""
+    logger.info(
+        f"[Feature 101] Window {window_id} has no valid workspace, using default workspace 1"
+    )
+
+
 @dataclass
 class WindowEnvironment:
     """Parsed I3PM_* environment variables from process"""
@@ -935,7 +949,7 @@ async def filter_windows_by_project(
                             phase = "restore_scratchpad"
                         else:
                             # Fallback: restore to workspace 1
-                            logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
+                            log_restore_workspace_fallback(window_id)
                             batch = CommandBatch.from_window_state(
                                 window_id=window_id,
                                 workspace_num=1,
@@ -1033,9 +1047,7 @@ async def filter_windows_by_project(
                         # No valid workspace available - use workspace 1 as deterministic default
                         # This handles edge cases where windows appear without proper workspace context
                         workspace_num = 1
-                        logger.warning(
-                            f"[Feature 101] Window {window_id} has no valid workspace, using default workspace 1"
-                        )
+                        log_tracking_workspace_fallback(window_id)
 
                     if saved_state and not is_original_scratchpad:
                         is_floating = saved_state.get("floating", False)
