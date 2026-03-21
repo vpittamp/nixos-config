@@ -258,6 +258,10 @@ export class DaemonClient {
     return await this.request<T>("runtime.snapshot", {});
   }
 
+  async getAgentSnapshot<T = unknown>(): Promise<T> {
+    return await this.request<T>("agent.snapshot", {});
+  }
+
   async getDashboardSnapshot<T = unknown>(): Promise<T> {
     return await this.request<T>("dashboard.snapshot", {});
   }

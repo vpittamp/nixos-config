@@ -898,8 +898,7 @@ Item {
 
         function translateText(text: string, targetLang: string) {
             shellRoot.showAssistantPanel();
-            assistantService.activeTab = "translate";
-            assistantService.translate(text, targetLang || assistantService.targetLanguage, assistantService.sourceLanguage);
+            assistantService.sendMessage(text);
         }
     }
 }

@@ -85,7 +85,7 @@ PanelWindow {
                         spacing: 6
 
                         Text {
-                            text: "Assistant"
+                            text: "Agents"
                             color: root.panelSection === "assistant" ? colors.accent : colors.textDim
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
@@ -1140,7 +1140,7 @@ PanelWindow {
 
             }
 
-            RootComponents.AssistantPanel {
+            RootComponents.AgentHarnessPanel {
                 id: assistantPanel
                 Layout.fillWidth: true
                 Layout.fillHeight: true

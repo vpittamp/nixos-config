@@ -39,6 +39,7 @@ GLOBAL OPTIONS:
 
 COMMANDS:
   context          Active runtime context commands
+  agent            Daemon-owned agent harness commands
   worktree         Git worktree project management (Feature 077)
   launch           Daemon-owned application launch commands
   session          AI session inspection and focus commands
@@ -67,6 +68,7 @@ Run 'i3pm <command> --help' for more information on a specific command.
 
 EXAMPLES:
   i3pm context current                 Show active runtime context
+  i3pm agent start                     Start a daemon-owned Codex agent session
   i3pm launch open terminal           Launch an app through the daemon
   i3pm session focus <session_key>    Focus an AI session
   i3pm session preview <session_key> --follow --jsonl
@@ -227,6 +229,17 @@ async function main(): Promise<void> {
       {
         const { worktreeCommand } = await import("./commands/worktree.ts");
         await worktreeCommand(commandArgs);
+      }
+      break;
+
+    case "agent":
+      {
+        const { agentCommand } = await import("./commands/agent.ts");
+        const exitCode = await agentCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
+        Deno.exit(exitCode);
       }
       break;
 

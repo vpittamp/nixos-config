@@ -21,6 +21,8 @@ let
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
     cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
     cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
+    cp ${./AgentHarnessPanel.qml} "$out/AgentHarnessPanel.qml"
+    cp ${./AgentHarnessService.qml} "$out/AgentHarnessService.qml"
     cp ${./AssistantPanel.qml} "$out/AssistantPanel.qml"
     cp ${./AssistantService.qml} "$out/AssistantService.qml"
     cp ${./AssistantProviderLogic.js} "$out/AssistantProviderLogic.js"
