@@ -456,6 +456,24 @@ let
       description = "Terminal file manager";
     })
 
+    # WS25: Fuzzy Finder (television)
+    (mkApp {
+      name = "television";
+      display_name = "Television";
+      command = "ghostty";
+      parameters = "-e tv $PROJECT_DIR";
+      scope = "scoped";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 25;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "television.svg";
+      nix_package = "pkgs.television";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      scoped_terminal_mode = "dedicated_scoped_window";
+      description = "TUI fuzzy finder with built-in channels for files, text, and git";
+    })
+
     # WS9: Kubernetes (Primary: k9s)
     (mkApp {
       name = "k9s";
@@ -601,6 +619,36 @@ let
     })
 
   ]
+  ++ lib.optional (hostName == "thinkpad") (mkApp {
+    name = "ryzen-desktop";
+    display_name = "Ryzen Desktop";
+    command = "moonlight-ryzen-desktop";
+    parameters = "";
+    scope = "global";
+    expected_class = "com.moonlight_stream.Moonlight";
+    preferred_workspace = 12;
+    icon = iconPath "ryzen-desktop.svg";
+    nix_package = "pkgs.moonlight-qt";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "ryzen" "sunshine" "moonlight" "desktop" ];
+    description = "Connect to the Ryzen desktop over Sunshine and Moonlight via Tailscale";
+  })
+  ++ lib.optional (hostName == "thinkpad") (mkApp {
+    name = "rustdesk-ryzen";
+    display_name = "RustDesk Ryzen";
+    command = "rustdesk-connect-ryzen";
+    parameters = "";
+    scope = "global";
+    expected_class = "rustdesk";
+    preferred_workspace = 12;
+    icon = "rustdesk";
+    nix_package = "pkgs.rustdesk";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "rustdesk" "ryzen-rustdesk" "remote-desktop" ];
+    description = "Connect to the Ryzen desktop over RustDesk via Tailscale direct access";
+  })
   # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
   # All PWAs will have correct expected_class with declarative ULIDs
   # This provides workspace assignments and window rules for i3pm

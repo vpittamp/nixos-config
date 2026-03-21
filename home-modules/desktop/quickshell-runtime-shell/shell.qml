@@ -37,6 +37,7 @@ ShellRoot {
     readonly property var launcherFocusTimer: runtimeServices ? runtimeServices.launcherFocusTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
+    readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
     readonly property var sessionPreviewFollowTimer: runtimeServices ? runtimeServices.sessionPreviewFollowTimerRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
@@ -47,6 +48,7 @@ ShellRoot {
     readonly property var sessionPreviewProcess: runtimeServices ? runtimeServices.sessionPreviewProcessRef : null
     readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
     readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
+    readonly property var brightnessActionProcess: runtimeServices ? runtimeServices.brightnessActionProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
 
     property var dashboard: ({
@@ -109,6 +111,24 @@ ShellRoot {
             disk_used_gb: 0,
             disk_total_gb: 0
         })
+    property var brightnessState: ({
+            display: {
+                available: false,
+                label: "Display brightness",
+                device: "",
+                percent: 0,
+                current: 0,
+                max: 0
+            },
+            keyboard: {
+                available: false,
+                label: "Keyboard backlight",
+                device: "",
+                percent: 0,
+                current: 0,
+                max: 0
+            }
+        })
     property bool panelVisible: true
     property string panelSection: "runtime"
     property string runtimePanelExpandedSection: "sessions"
@@ -131,14 +151,19 @@ ShellRoot {
     property int settingsCommandSelectedIndex: 0
     property var settingsCommandEntries: []
     property string launcherMode: "apps"
+    property string launcherAppFilter: "all"
     property bool launcherSessionSwitcherActive: false
     property int launcherSessionSwitcherPendingDelta: 0
+    property bool launcherWindowSwitcherActive: false
+    property int launcherWindowSwitcherPendingDelta: 0
     property string launcherQuery: ""
     property string launcherError: ""
     property int launcherSelectedIndex: 0
     property var launcherEntries: []
     property var launcherSessionEntryOrder: []
     property bool launcherPointerSelectionEnabled: true
+    property string launcherSelectionMode: "initial"
+    property bool launcherViewportPrimed: false
     property bool snippetEditorBusy: false
     property string snippetEditorError: ""
     property string snippetEditorMessage: ""
@@ -163,6 +188,12 @@ ShellRoot {
     property string displayApplyStdout: ""
     property string displayApplyStderr: ""
     property string displayApplyError: ""
+    property string brightnessActionTarget: ""
+    property string brightnessQueuedTarget: ""
+    property int brightnessQueuedPercent: -1
+    property string brightnessActionStdout: ""
+    property string brightnessActionStderr: ""
+    property string brightnessActionError: ""
     property string sessionPreviewTargetKey: ""
     property bool sessionPreviewStopExpected: false
     property bool sessionPreviewAutoFollow: true
@@ -206,6 +237,182 @@ ShellRoot {
         })
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
+    readonly property var settingsSectionsModel: [
+        {
+            id: "commands",
+            label: "Commands",
+            subtitle: "Elephant snippets",
+            title: "Commands",
+            icon: "insert-text",
+            fallbackGlyph: "$",
+            accentColorKey: "teal",
+            accentBgKey: "tealBg"
+        },
+        {
+            id: "apps",
+            label: "Apps",
+            subtitle: "Live registry + declarative sync",
+            title: "Apps",
+            icon: "application-x-executable",
+            fallbackGlyph: "A",
+            accentColorKey: "orange",
+            accentBgKey: "orangeBg"
+        },
+        {
+            id: "devices",
+            label: "Devices",
+            subtitle: "Audio, Bluetooth, network, resources",
+            title: "Devices",
+            icon: "preferences-system",
+            fallbackGlyph: "D",
+            accentColorKey: "blue",
+            accentBgKey: "blueBg"
+        }
+    ]
+    readonly property var launcherModesModel: [
+        {
+            id: "apps",
+            label: "Apps",
+            title: "Launch App",
+            placeholder: "Search apps, aliases, or use scope:scoped, pwa, ws:3, monitor:primary",
+            help: "Tab modes  •  Up/Down results  •  Chips filter  •  Ctrl+2 URLs",
+            icon: "application-x-executable",
+            fallbackGlyph: "A",
+            accentColorKey: "blue",
+            accentBgKey: "blueBg"
+        },
+        {
+            id: "files",
+            label: "Files",
+            title: "Find File",
+            placeholder: "Search files from home or type a path prefix",
+            help: "Enter open  •  Ctrl+Enter location  •  Ctrl+1 Apps",
+            icon: "folder",
+            fallbackGlyph: "F",
+            accentColorKey: "teal",
+            accentBgKey: "tealBg"
+        },
+        {
+            id: "urls",
+            label: "URLs",
+            title: "Open URL",
+            placeholder: "Search Chrome URLs, bookmarks, tabs, or paste a link",
+            help: "Enter open  •  Shift+Enter browser  •  Ctrl+Enter copy  •  Ctrl+3 Projects",
+            icon: "internet-web-browser",
+            fallbackGlyph: "U",
+            accentColorKey: "teal",
+            accentBgKey: "tealBg"
+        },
+        {
+            id: "projects",
+            label: "Projects",
+            title: "Switch Project",
+            placeholder: "Filter projects",
+            help: "Tab modes  •  Up/Down results  •  Ctrl+1 Apps  •  Ctrl+2 URLs",
+            icon: "folder-development",
+            fallbackGlyph: "P",
+            accentColorKey: "teal",
+            accentBgKey: "tealBg"
+        },
+        {
+            id: "runner",
+            label: "Runner",
+            title: "Run Command",
+            placeholder: "Type a shell command",
+            help: "Tab modes  •  Enter run  •  Shift+Enter terminal  •  Ctrl+9 Snippets",
+            icon: "utilities-terminal",
+            fallbackGlyph: ">",
+            accentColorKey: "orange",
+            accentBgKey: "orangeBg"
+        },
+        {
+            id: "snippets",
+            label: "Commands",
+            title: "Curated Commands",
+            placeholder: "Search curated commands",
+            help: "Enter run  •  Shift+Enter scratchpad  •  Manage via toggle-runtime-settings",
+            icon: "insert-text",
+            fallbackGlyph: "$",
+            accentColorKey: "teal",
+            accentBgKey: "tealBg"
+        },
+        {
+            id: "onepassword",
+            label: "1Password",
+            title: "1Password",
+            placeholder: "Search 1Password",
+            help: "Enter password  •  Ctrl+Enter OTP  •  Shift+Enter username",
+            icon: "dialog-password-symbolic",
+            fallbackGlyph: "1P",
+            accentColorKey: "accent",
+            accentBgKey: "accentBg"
+        },
+        {
+            id: "clipboard",
+            label: "Clipboard",
+            title: "Clipboard",
+            placeholder: "Search clipboard history",
+            help: "Tab modes  •  Enter smart paste  •  Ctrl+D remove",
+            icon: "edit-paste",
+            fallbackGlyph: "C",
+            accentColorKey: "amber",
+            accentBgKey: "amberBg"
+        },
+        {
+            id: "sessions",
+            label: "AI Sessions",
+            title: "AI Sessions",
+            placeholder: "Filter AI sessions",
+            help: "Mod+Tab cycle  •  Release Mod to focus  •  Enter focus  •  Ctrl+6 Windows",
+            iconFile: shellConfig.aiFallbackIcon,
+            fallbackGlyph: "AI",
+            accentColorKey: "violet",
+            accentBgKey: "violetBg"
+        },
+        {
+            id: "windows",
+            label: "Windows",
+            title: "Windows",
+            placeholder: "Filter windows",
+            help: "Alt+Tab cycle  •  Release Alt to focus  •  Enter focus  •  Ctrl+W close",
+            icon: "preferences-desktop-window",
+            fallbackGlyph: "W",
+            accentColorKey: "blueMuted",
+            accentBgKey: "blueWash"
+        }
+    ]
+    readonly property var launcherAppFiltersModel: [
+        {
+            id: "all",
+            label: "All",
+            icon: "view-grid",
+            fallbackGlyph: "•"
+        },
+        {
+            id: "scoped",
+            label: "Scoped",
+            icon: "applications-development",
+            fallbackGlyph: "S"
+        },
+        {
+            id: "global",
+            label: "Global",
+            icon: "globe",
+            fallbackGlyph: "G"
+        },
+        {
+            id: "pwa",
+            label: "PWA",
+            icon: "internet-web-browser",
+            fallbackGlyph: "P"
+        },
+        {
+            id: "workspace",
+            label: "Pinned WS",
+            icon: "view-list-details",
+            fallbackGlyph: "WS"
+        }
+    ]
 
 
     readonly property var colors: ({
@@ -242,6 +449,12 @@ ShellRoot {
         })
     readonly property int fastColorMs: 90
 
+    onLauncherAppFilterChanged: {
+        if (launcherVisible && launcherMode === "apps") {
+            launcherQueryDebounce.restart();
+        }
+    }
+
     function arrayOrEmpty(value) {
         if (!value) {
             return [];
@@ -258,6 +471,80 @@ ShellRoot {
 
     function stringOrEmpty(value) {
         return value === undefined || value === null ? "" : String(value);
+    }
+
+    function themeColor(key, fallback) {
+        const value = stringOrEmpty(key);
+        if (value && colors && colors[value] !== undefined) {
+            return colors[value];
+        }
+        return fallback === undefined ? "transparent" : fallback;
+    }
+
+    function iconSource(iconName, iconFile) {
+        const themed = stringOrEmpty(iconName);
+        if (themed) {
+            const resolved = Quickshell.iconPath(themed, true);
+            if (resolved) {
+                return resolved;
+            }
+        }
+
+        const fileValue = stringOrEmpty(iconFile);
+        if (!fileValue) {
+            return "";
+        }
+        if (fileValue.indexOf("file://") === 0) {
+            return fileValue;
+        }
+        if (fileValue.indexOf("/") === 0) {
+            return "file://" + fileValue;
+        }
+        return fileValue;
+    }
+
+    function settingsSectionMeta(section) {
+        const target = stringOrEmpty(section).toLowerCase();
+        const sections = arrayOrEmpty(settingsSectionsModel);
+        for (let index = 0; index < sections.length; index += 1) {
+            if (stringOrEmpty(sections[index] && sections[index].id) === target) {
+                return sections[index];
+            }
+        }
+        return sections.length ? sections[0] : null;
+    }
+
+    function settingsSectionIndex(section) {
+        const target = stringOrEmpty(section).toLowerCase();
+        const sections = arrayOrEmpty(settingsSectionsModel);
+        for (let index = 0; index < sections.length; index += 1) {
+            if (stringOrEmpty(sections[index] && sections[index].id) === target) {
+                return index;
+            }
+        }
+        return 0;
+    }
+
+    function launcherModeMeta(mode) {
+        const target = stringOrEmpty(mode).toLowerCase();
+        const modes = arrayOrEmpty(launcherModesModel);
+        for (let index = 0; index < modes.length; index += 1) {
+            if (stringOrEmpty(modes[index] && modes[index].id) === target) {
+                return modes[index];
+            }
+        }
+        return modes.length ? modes[0] : null;
+    }
+
+    function launcherAppFilterMeta(filterName) {
+        const target = stringOrEmpty(filterName).toLowerCase();
+        const filters = arrayOrEmpty(launcherAppFiltersModel);
+        for (let index = 0; index < filters.length; index += 1) {
+            if (stringOrEmpty(filters[index] && filters[index].id) === target) {
+                return filters[index];
+            }
+        }
+        return filters.length ? filters[0] : null;
     }
 
     function shortProject(name) {
@@ -1518,6 +1805,10 @@ ShellRoot {
         return Pipewire.ready ? Pipewire.defaultAudioSink : null;
     }
 
+    function audioSourceNode() {
+        return Pipewire.ready ? Pipewire.defaultAudioSource : null;
+    }
+
     function audioNodes() {
         const nodes = arrayOrEmpty(Pipewire.nodes ? Pipewire.nodes.values : []);
         const sinks = [];
@@ -1531,7 +1822,24 @@ ShellRoot {
         return sinks;
     }
 
+    function audioSourceNodes() {
+        const nodes = arrayOrEmpty(Pipewire.nodes ? Pipewire.nodes.values : []);
+        const sources = [];
+        for (let i = 0; i < nodes.length; i += 1) {
+            const node = nodes[i];
+            if (!(node && node.ready && !boolOrFalse(node.isSink) && node.audio)) {
+                continue;
+            }
+            sources.push(node);
+        }
+        return sources;
+    }
+
     function audioSinkIdentity(node) {
+        return stringOrEmpty(node && (node.objectSerial || node.id || node.name || node.nickname || node.description));
+    }
+
+    function audioSourceIdentity(node) {
         return stringOrEmpty(node && (node.objectSerial || node.id || node.name || node.nickname || node.description));
     }
 
@@ -1539,8 +1847,16 @@ ShellRoot {
         return stringOrEmpty(node && (node.description || node.nickname || node.name || "Audio output"));
     }
 
+    function audioSourceLabel(node) {
+        return stringOrEmpty(node && (node.description || node.nickname || node.name || "Audio input"));
+    }
+
     function audioSinkIsActive(node) {
         return audioSinkIdentity(node) === audioSinkIdentity(audioNode());
+    }
+
+    function audioSourceIsActive(node) {
+        return audioSourceIdentity(node) === audioSourceIdentity(audioSourceNode());
     }
 
     function audioReady() {
@@ -1548,8 +1864,21 @@ ShellRoot {
         return !!(node && node.ready && node.audio);
     }
 
+    function audioInputReady() {
+        const node = audioSourceNode();
+        return !!(node && node.ready && node.audio);
+    }
+
     function volumePercent() {
         const node = audioNode();
+        if (!(node && node.audio)) {
+            return 0;
+        }
+        return Math.round(Math.max(0, Number(node.audio.volume || 0)) * 100);
+    }
+
+    function inputVolumePercent() {
+        const node = audioSourceNode();
         if (!(node && node.audio)) {
             return 0;
         }
@@ -1575,6 +1904,14 @@ ShellRoot {
         return audioSinkLabel(node);
     }
 
+    function audioInputDetail() {
+        const node = audioSourceNode();
+        if (!(node && node.ready)) {
+            return "Input unavailable";
+        }
+        return audioSourceLabel(node);
+    }
+
     function changeVolume(delta) {
         const node = audioNode();
         if (!(node && node.audio)) {
@@ -1585,8 +1922,24 @@ ShellRoot {
         node.audio.volume = Math.max(0, Math.min(1.5, current + delta));
     }
 
+    function setInputVolumePercent(percent) {
+        const node = audioSourceNode();
+        if (!(node && node.audio)) {
+            return;
+        }
+        node.audio.volume = Math.max(0, Math.min(1.5, Number(percent || 0) / 100));
+    }
+
     function toggleMute() {
         const node = audioNode();
+        if (!(node && node.audio)) {
+            return;
+        }
+        node.audio.muted = !boolOrFalse(node.audio.muted);
+    }
+
+    function toggleInputMute() {
+        const node = audioSourceNode();
         if (!(node && node.audio)) {
             return;
         }
@@ -1598,6 +1951,123 @@ ShellRoot {
             return;
         }
         Pipewire.preferredDefaultAudioSink = node;
+    }
+
+    function setPreferredAudioSource(node) {
+        if (!(Pipewire.ready && node && node.ready)) {
+            return;
+        }
+        Pipewire.preferredDefaultAudioSource = node;
+    }
+
+    function audioInputMuted() {
+        return boolOrFalse(audioSourceNode() && audioSourceNode().audio && audioSourceNode().audio.muted);
+    }
+
+    function brightnessTargetState(target) {
+        const key = stringOrEmpty(target);
+        if (key === "keyboard") {
+            return brightnessState.keyboard || {
+                available: false,
+                label: "Keyboard backlight",
+                device: "",
+                percent: 0,
+                current: 0,
+                max: 0
+            };
+        }
+        return brightnessState.display || {
+            available: false,
+            label: "Display brightness",
+            device: "",
+            percent: 0,
+            current: 0,
+            max: 0
+        };
+    }
+
+    function brightnessAvailable(target) {
+        return boolOrFalse(brightnessTargetState(target).available);
+    }
+
+    function brightnessPercent(target) {
+        return Math.max(0, Math.min(100, Number(brightnessTargetState(target).percent || 0)));
+    }
+
+    function brightnessLabel(target) {
+        return stringOrEmpty(brightnessTargetState(target).label || "Brightness");
+    }
+
+    function brightnessDeviceLabel(target) {
+        const device = stringOrEmpty(brightnessTargetState(target).device);
+        return device ? device : "Unavailable";
+    }
+
+    function brightnessDetail(target) {
+        const state = brightnessTargetState(target);
+        if (!boolOrFalse(state.available)) {
+            return brightnessLabel(target) + " unavailable on this host";
+        }
+        return brightnessDeviceLabel(target) + "  •  " + String(brightnessPercent(target)) + "%";
+    }
+
+    function clearBrightnessActionState() {
+        brightnessActionTarget = "";
+        brightnessQueuedTarget = "";
+        brightnessQueuedPercent = -1;
+        brightnessActionStdout = "";
+        brightnessActionStderr = "";
+        brightnessActionError = "";
+    }
+
+    function beginBrightnessAction(target, percent) {
+        brightnessActionTarget = target;
+        brightnessActionStdout = "";
+        brightnessActionStderr = "";
+        brightnessActionError = "";
+        brightnessActionProcess.command = [shellConfig.brightnessActionBin, "set", target, String(percent)];
+        brightnessActionProcess.running = true;
+    }
+
+    function finishBrightnessAction() {
+        const errorMessage = stringOrEmpty(brightnessActionStderr).trim();
+        if (errorMessage) {
+            brightnessActionError = errorMessage;
+        }
+        brightnessActionTarget = "";
+        brightnessActionStdout = "";
+        brightnessActionStderr = "";
+        const queuedTarget = stringOrEmpty(brightnessQueuedTarget);
+        const queuedPercent = Number(brightnessQueuedPercent);
+        brightnessQueuedTarget = "";
+        brightnessQueuedPercent = -1;
+        if (queuedTarget && queuedPercent >= 0 && brightnessAvailable(queuedTarget) && brightnessActionProcess && !brightnessActionProcess.running) {
+            beginBrightnessAction(queuedTarget, Math.max(0, Math.min(100, Math.round(queuedPercent))));
+        }
+    }
+
+    function brightnessActionPending(target) {
+        return stringOrEmpty(target) !== ""
+            && stringOrEmpty(target) === stringOrEmpty(brightnessActionTarget)
+            && !!(brightnessActionProcess && brightnessActionProcess.running);
+    }
+
+    function setBrightness(target, percent) {
+        const normalizedTarget = stringOrEmpty(target);
+        if (!brightnessAvailable(normalizedTarget)) {
+            return;
+        }
+
+        const nextPercent = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
+        if (!brightnessActionProcess) {
+            return;
+        }
+        if (brightnessActionProcess.running) {
+            brightnessQueuedTarget = normalizedTarget;
+            brightnessQueuedPercent = nextPercent;
+            return;
+        }
+        beginBrightnessAction(normalizedTarget, nextPercent);
     }
 
     function defaultBluetoothAdapter() {
@@ -1735,6 +2205,32 @@ ShellRoot {
         return "";
     }
 
+    function batteryStateText() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+        if (device.state === UPowerDeviceState.Charging) {
+            return "Charging";
+        }
+        if (device.state === UPowerDeviceState.Discharging) {
+            return "Discharging";
+        }
+        if (device.state === UPowerDeviceState.FullyCharged) {
+            return "Fully charged";
+        }
+        if (device.state === UPowerDeviceState.PendingCharge) {
+            return "Pending charge";
+        }
+        if (device.state === UPowerDeviceState.PendingDischarge) {
+            return "Pending discharge";
+        }
+        if (device.state === UPowerDeviceState.Empty) {
+            return "Empty";
+        }
+        return "Battery";
+    }
+
     function batteryPercentNumber() {
         const device = batteryDevice();
         if (!batteryReady()) {
@@ -1800,6 +2296,175 @@ ShellRoot {
         const device = batteryDevice();
         const iconName = stringOrEmpty(device ? device.iconName : "");
         return iconName ? Quickshell.iconPath(iconName, true) : "";
+    }
+
+    function batteryHealthLabel() {
+        const device = batteryDevice();
+        if (!(batteryReady() && boolOrFalse(device.healthSupported))) {
+            return "";
+        }
+        return "Health " + String(Math.round(Math.max(0, Number(device.healthPercentage || 0)))) + "%";
+    }
+
+    function batteryRateLabel() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+        const watts = Math.abs(Number(device.changeRate || 0));
+        if (watts <= 0) {
+            return "";
+        }
+        return Number(watts).toFixed(1) + " W";
+    }
+
+    function batteryEnergyLabel() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+        const energy = Number(device.energy || 0);
+        const capacity = Number(device.energyCapacity || 0);
+        if (capacity <= 0) {
+            return "";
+        }
+        return Number(energy).toFixed(1) + " / " + Number(capacity).toFixed(1) + " Wh";
+    }
+
+    function batteryMetadataLabel() {
+        const device = batteryDevice();
+        if (!batteryReady()) {
+            return "";
+        }
+        const bits = [];
+        const model = stringOrEmpty(device.model);
+        const nativePath = stringOrEmpty(device.nativePath);
+        if (model) {
+            bits.push(model);
+        }
+        if (nativePath) {
+            bits.push(nativePath);
+        }
+        return bits.join("  •  ");
+    }
+
+    function powerProfilesSupported() {
+        return boolOrFalse(shellConfig.supportsPowerProfiles);
+    }
+
+    function powerProfileChoices() {
+        const choices = [{
+                value: PowerProfile.PowerSaver,
+                label: "Power Saver"
+            }, {
+                value: PowerProfile.Balanced,
+                label: "Balanced"
+            }];
+        if (powerProfilesSupported() && boolOrFalse(PowerProfiles.hasPerformanceProfile)) {
+            choices.push({
+                value: PowerProfile.Performance,
+                label: "Performance"
+            });
+        }
+        return choices;
+    }
+
+    function powerProfileLabel(profile) {
+        if (profile === PowerProfile.PowerSaver) {
+            return "Power Saver";
+        }
+        if (profile === PowerProfile.Performance) {
+            return "Performance";
+        }
+        return "Balanced";
+    }
+
+    function currentPowerProfile() {
+        if (!powerProfilesSupported()) {
+            return PowerProfile.Balanced;
+        }
+        return PowerProfiles.profile;
+    }
+
+    function powerProfileIsActive(profile) {
+        return currentPowerProfile() === profile;
+    }
+
+    function setPowerProfile(profile) {
+        if (!powerProfilesSupported()) {
+            return;
+        }
+        if (PowerProfiles.profile === profile) {
+            return;
+        }
+        PowerProfiles.profile = profile;
+    }
+
+    function powerProfileDegradationText() {
+        if (!powerProfilesSupported()) {
+            return "";
+        }
+        if (PowerProfiles.degradationReason === PerformanceDegradationReason.LapDetected) {
+            return "Performance mode limited: lap detected";
+        }
+        if (PowerProfiles.degradationReason === PerformanceDegradationReason.HighTemperature) {
+            return "Performance mode limited: high temperature";
+        }
+        return "";
+    }
+
+    function powerProfileHoldText() {
+        if (!powerProfilesSupported()) {
+            return "";
+        }
+        const holds = arrayOrEmpty(PowerProfiles.holds);
+        if (!holds.length) {
+            return "";
+        }
+        const labels = [];
+        for (let i = 0; i < holds.length; i += 1) {
+            const hold = holds[i];
+            const applicationId = stringOrEmpty(hold && hold.applicationId);
+            const reason = stringOrEmpty(hold && hold.reason);
+            const bits = [];
+            if (applicationId) {
+                bits.push(applicationId);
+            }
+            if (reason) {
+                bits.push(reason);
+            }
+            if (bits.length) {
+                labels.push(bits.join(": "));
+            }
+        }
+        if (!labels.length) {
+            return "";
+        }
+        return "Profile holds: " + labels.join("  •  ");
+    }
+
+    function hasBrightnessOrPowerControls() {
+        return brightnessAvailable("display")
+            || brightnessAvailable("keyboard")
+            || batteryReady()
+            || powerProfilesSupported();
+    }
+
+    function brightnessPowerSummaryText() {
+        const bits = [];
+        if (brightnessAvailable("display")) {
+            bits.push("Display " + String(brightnessPercent("display")) + "%");
+        }
+        if (brightnessAvailable("keyboard")) {
+            bits.push("Keyboard " + String(brightnessPercent("keyboard")) + "%");
+        }
+        if (batteryReady()) {
+            bits.push(batteryStateText() + " " + String(batteryPercentNumber()) + "%");
+        }
+        if (powerProfilesSupported()) {
+            bits.push(powerProfileLabel(currentPowerProfile()));
+        }
+        return bits.join("  •  ");
     }
 
     function networkLabel() {
@@ -2121,38 +2786,22 @@ ShellRoot {
 
     function normalizeLauncherMode(mode) {
         const value = stringOrEmpty(mode).toLowerCase();
-        if (value === "files") {
-            return "files";
+        const modes = arrayOrEmpty(launcherModesModel);
+        for (let index = 0; index < modes.length; index += 1) {
+            const candidate = stringOrEmpty(modes[index] && modes[index].id);
+            if (candidate === value) {
+                return candidate;
+            }
         }
-        if (value === "urls") {
-            return "urls";
-        }
-        if (value === "projects") {
-            return "projects";
-        }
-        if (value === "runner") {
-            return "runner";
-        }
-        if (value === "snippets") {
-            return "snippets";
-        }
-        if (value === "sessions") {
-            return "sessions";
-        }
-        if (value === "windows") {
-            return "windows";
-        }
-        if (value === "onepassword") {
-            return "onepassword";
-        }
-        if (value === "clipboard") {
-            return "clipboard";
-        }
-        return "apps";
+        return modes.length ? stringOrEmpty(modes[0] && modes[0].id) : "apps";
     }
 
     function launcherModeOrder() {
-        return ["apps", "files", "urls", "projects", "runner", "snippets", "onepassword", "clipboard", "sessions", "windows"];
+        return arrayOrEmpty(launcherModesModel).map(function (mode) {
+            return stringOrEmpty(mode && mode.id);
+        }).filter(function (mode) {
+            return mode !== "";
+        });
     }
 
     function setLauncherMode(mode) {
@@ -2194,96 +2843,32 @@ ShellRoot {
     }
 
     function launcherTitle() {
-        if (launcherMode === "files") {
-            return "Find File";
-        }
-        if (launcherMode === "urls") {
-            return "Open URL";
-        }
-        if (launcherMode === "projects") {
-            return "Switch Project";
-        }
-        if (launcherMode === "runner") {
-            return "Run Command";
-        }
-        if (launcherMode === "snippets") {
-            return "Curated Commands";
-        }
-        if (launcherMode === "sessions") {
-            return "AI Sessions";
-        }
-        if (launcherMode === "windows") {
-            return "Windows";
-        }
-        if (launcherMode === "onepassword") {
-            return "1Password";
-        }
-        if (launcherMode === "clipboard") {
-            return "Clipboard";
-        }
-        return "Launch App";
+        const meta = launcherModeMeta(launcherMode);
+        return stringOrEmpty(meta && meta.title) || "Launch App";
     }
 
     function launcherPlaceholderText() {
-        if (launcherMode === "files") {
-            return "Search files from home or type a path prefix";
-        }
-        if (launcherMode === "urls") {
-            return "Search Chrome URLs, bookmarks, tabs, or paste a link";
-        }
-        if (launcherMode === "projects") {
-            return "Filter projects";
-        }
-        if (launcherMode === "runner") {
-            return "Type a shell command";
-        }
-        if (launcherMode === "snippets") {
-            return "Search curated commands";
-        }
-        if (launcherMode === "sessions") {
-            return "Filter AI sessions";
-        }
-        if (launcherMode === "windows") {
-            return "Filter windows";
-        }
-        if (launcherMode === "onepassword") {
-            return "Search 1Password";
-        }
-        if (launcherMode === "clipboard") {
-            return "Search clipboard history";
-        }
-        return "Search apps or type /, ;u, ;p, >, $, ;s, ;w, *, or :";
+        const meta = launcherModeMeta(launcherMode);
+        return stringOrEmpty(meta && meta.placeholder) || "Search apps";
     }
 
     function launcherHelpText() {
-        if (launcherMode === "files") {
-            return "Enter open  •  Ctrl+Enter location  •  Ctrl+1 Apps";
-        }
-        if (launcherMode === "urls") {
-            return "Enter open  •  Shift+Enter browser  •  Ctrl+Enter copy  •  Ctrl+3 Projects";
-        }
-        if (launcherMode === "projects") {
-            return "Tab modes  •  Up/Down results  •  Ctrl+1 Apps  •  Ctrl+2 URLs";
-        }
-        if (launcherMode === "runner") {
-            return "Tab modes  •  Enter run  •  Shift+Enter terminal  •  Ctrl+9 Snippets";
-        }
-        if (launcherMode === "snippets") {
-            return "Enter run  •  Shift+Enter scratchpad  •  Manage via toggle-runtime-settings";
-        }
-        if (launcherMode === "sessions") {
-            return "Mod+Tab cycle  •  Release Mod to focus  •  Enter focus  •  Ctrl+6 Windows";
-        }
-        if (launcherMode === "windows") {
-            return "Tab modes  •  Up/Down windows  •  Enter focus  •  Ctrl+W close";
-        }
-        if (launcherMode === "onepassword") {
-            return "Tab modes  •  Enter password  •  Shift+Enter user  •  Ctrl+Enter OTP";
-        }
-        if (launcherMode === "clipboard") {
-            return "Tab modes  •  Enter smart paste  •  Ctrl+D remove";
-        }
-        return "Tab modes  •  Up/Down results  •  Ctrl+2 URLs";
+        const meta = launcherModeMeta(launcherMode);
+        return stringOrEmpty(meta && meta.help) || "Tab modes  •  Up/Down results";
+    }
+
+    function normalizeLauncherAppFilter(filterName) {
+        const meta = launcherAppFilterMeta(filterName);
+        return stringOrEmpty(meta && meta.id) || "all";
+    }
+
+    function setLauncherAppFilter(filterName) {
+        launcherAppFilter = normalizeLauncherAppFilter(filterName);
+    }
+
+    function launcherActiveAppFilterLabel() {
+        const meta = launcherAppFilterMeta(launcherAppFilter);
+        return stringOrEmpty(meta && meta.label);
     }
 
     function launcherStatusText() {
@@ -2305,6 +2890,9 @@ ShellRoot {
             }
             if (launcherMode === "snippets") {
                 return "Loading curated commands";
+            }
+            if (launcherMode === "apps") {
+                return "Searching apps";
             }
             return "Searching with Elephant";
         }
@@ -2335,7 +2923,13 @@ ShellRoot {
         if (launcherMode === "clipboard") {
             return launcherEntries.length ? launcherEntries.length + " clipboard item" + (launcherEntries.length === 1 ? "" : "s") : "No matching clipboard items";
         }
-        return launcherEntries.length ? launcherEntries.length + " app" + (launcherEntries.length === 1 ? "" : "s") : "No matching apps";
+        const appCountLabel = launcherEntries.length
+            ? launcherEntries.length + " app" + (launcherEntries.length === 1 ? "" : "s")
+            : "No matching apps";
+        if (launcherMode === "apps" && launcherAppFilter !== "all") {
+            return appCountLabel + "  •  " + launcherActiveAppFilterLabel();
+        }
+        return appCountLabel;
     }
 
     function launcherEmptyText() {
@@ -3087,6 +3681,10 @@ ShellRoot {
         return entries;
     }
 
+    function launcherWindowSwitcherEntries() {
+        return launcherWindowEntries("");
+    }
+
     function launcherWindowMatches(windowData, tokens) {
         const sessions = arrayOrEmpty(windowData && windowData.sessions);
         const sessionBits = [];
@@ -3250,6 +3848,7 @@ ShellRoot {
 
         if (!nextEntries.length) {
             launcherSelectedIndex = 0;
+            launcherViewportPrimed = false;
             resetLauncherListViewport();
             if (launcherMode === "sessions") {
                 clearSessionPreview();
@@ -3263,6 +3862,9 @@ ShellRoot {
             });
             if (previousIndex >= 0) {
                 launcherSelectedIndex = previousIndex;
+                if (previousIndex > 0 || launcherSelectionMode !== "initial") {
+                    launcherViewportPrimed = true;
+                }
                 syncLauncherListSelection();
                 if (launcherMode === "sessions") {
                     ensureSessionPreviewForSelection();
@@ -3279,11 +3881,8 @@ ShellRoot {
     }
 
     function normalizeSettingsSection(section) {
-        const normalized = stringOrEmpty(section).toLowerCase();
-        if (normalized === "devices") {
-            return "devices";
-        }
-        return "commands";
+        const meta = settingsSectionMeta(section);
+        return stringOrEmpty(meta && meta.id) || "commands";
     }
 
     function setSettingsSection(section) {
@@ -3519,7 +4118,8 @@ ShellRoot {
     }
 
     function settingsTitle() {
-        return settingsSection === "devices" ? "Devices" : "Settings";
+        const meta = settingsSectionMeta(settingsSection);
+        return stringOrEmpty(meta && meta.title) || "Settings";
     }
 
     function settingsCommandStatusText() {
@@ -5103,6 +5703,15 @@ ShellRoot {
         if (kind === "session" || kind === "window") {
             return hostTokenData && hostTokenData.is_remote ? colors.orange : colors.blue;
         }
+        if (kind === "app") {
+            if (launcherEntryHasState(entry, "pwa")) {
+                return colors.teal;
+            }
+            if (launcherEntryHasState(entry, "scoped")) {
+                return colors.orange;
+            }
+            return colors.blueMuted;
+        }
         if (kind === "url" || kind === "search") {
             return stringOrEmpty(entry && entry.matched_pwa_ulid) ? colors.teal : colors.blue;
         }
@@ -5119,6 +5728,7 @@ ShellRoot {
     }
 
     function launcherIconSource(entry) {
+        const isApp = stringOrEmpty(entry && entry.kind) === "app";
         const isOnePassword = stringOrEmpty(entry && entry.kind) === "onepassword";
         const isClipboard = stringOrEmpty(entry && entry.kind) === "clipboard";
         const isUrl = stringOrEmpty(entry && entry.kind) === "url" || stringOrEmpty(entry && entry.kind) === "search";
@@ -5147,6 +5757,9 @@ ShellRoot {
             }
             if (isSnippet) {
                 return Quickshell.iconPath("insert-text", true) || Quickshell.iconPath("application-x-executable", true) || "";
+            }
+            if (isApp && launcherEntryHasState(entry, "pwa")) {
+                return Quickshell.iconPath("internet-web-browser", true) || Quickshell.iconPath("application-x-executable", true) || "";
             }
             return Quickshell.iconPath("application-x-executable", true) || "";
         }
@@ -5182,8 +5795,45 @@ ShellRoot {
         if (isSnippet) {
             return Quickshell.iconPath("insert-text", true) || Quickshell.iconPath("application-x-executable", true) || "";
         }
+        if (isApp && launcherEntryHasState(entry, "pwa")) {
+            return Quickshell.iconPath("internet-web-browser", true) || Quickshell.iconPath("application-x-executable", true) || "";
+        }
 
         return Quickshell.iconPath("application-x-executable", true) || "";
+    }
+
+    function launcherBadgeColor(tone) {
+        const value = stringOrEmpty(tone);
+        if (value === "orange") {
+            return colors.orange;
+        }
+        if (value === "teal") {
+            return colors.teal;
+        }
+        if (value === "violet") {
+            return colors.violet;
+        }
+        if (value === "accent") {
+            return colors.accent;
+        }
+        return colors.blue;
+    }
+
+    function launcherBadgeBackground(tone) {
+        const value = stringOrEmpty(tone);
+        if (value === "orange") {
+            return colors.orangeBg;
+        }
+        if (value === "teal") {
+            return colors.tealBg;
+        }
+        if (value === "violet") {
+            return colors.violetBg;
+        }
+        if (value === "accent") {
+            return colors.accentBg;
+        }
+        return colors.blueBg;
     }
 
     function restartLauncherQuery() {
@@ -5259,7 +5909,7 @@ ShellRoot {
         }
 
         launcherLoading = true;
-        launcherQueryProcess.command = [shellConfig.launcherQueryBin, launcherQuery, "12", "20"];
+        launcherQueryProcess.command = [shellConfig.launcherQueryBin, launcherQuery, "20", "20", launcherAppFilter];
         launcherQueryProcess.running = true;
     }
 
@@ -5460,6 +6110,8 @@ ShellRoot {
         }
 
         launcherPointerSelectionEnabled = false;
+        launcherSelectionMode = "keyboard";
+        launcherViewportPrimed = true;
         launcherSelectedIndex = (launcherSelectedIndex + delta + entries.length) % entries.length;
     }
 
@@ -5470,6 +6122,8 @@ ShellRoot {
         }
 
         launcherPointerSelectionEnabled = true;
+        launcherSelectionMode = "pointer";
+        launcherViewportPrimed = true;
         if (launcherSelectedIndex !== entryIndex) {
             launcherSelectedIndex = entryIndex;
         }
@@ -5505,7 +6159,14 @@ ShellRoot {
             }
 
             launcherList.currentIndex = nextIndex;
-            launcherList.positionViewAtIndex(nextIndex, ListView.Visible);
+            if (root.launcherSelectionMode === "initial" && root.stringOrEmpty(root.launcherQuery) === "" && nextIndex === 0) {
+                launcherList.positionViewAtBeginning();
+                root.launcherViewportPrimed = true;
+                return;
+            }
+
+            launcherList.positionViewAtIndex(nextIndex, ListView.Contain);
+            root.launcherViewportPrimed = true;
         });
     }
 
@@ -5515,6 +6176,7 @@ ShellRoot {
         }
 
         launcherList.currentIndex = -1;
+        launcherViewportPrimed = false;
         Qt.callLater(function() {
             if (!launcherList) {
                 return;
@@ -5742,6 +6404,8 @@ ShellRoot {
         }
 
         launcherPointerSelectionEnabled = false;
+        launcherSelectionMode = "keyboard";
+        launcherViewportPrimed = true;
         launcherSelectedIndex = (index + delta + entries.length) % entries.length;
     }
 
@@ -5753,6 +6417,57 @@ ShellRoot {
         const entry = activeLauncherSessionEntry();
         launcherSessionSwitcherActive = false;
         launcherSessionSwitcherPendingDelta = 0;
+        if (!entry) {
+            closeLauncher();
+            return;
+        }
+
+        activateLauncherEntry(entry);
+    }
+
+    function cycleLauncherWindows(direction) {
+        const delta = direction === "prev" ? -1 : 1;
+        const shouldOpenSwitcher = !launcherVisible || launcherMode !== "windows" || launcherQuery !== "" || !launcherWindowSwitcherActive;
+        if (shouldOpenSwitcher) {
+            launcherWindowSwitcherActive = true;
+            launcherWindowSwitcherPendingDelta = delta;
+            showLauncher("windows", "");
+            launcherWindowSwitcherOpenTimer.restart();
+            return;
+        }
+
+        launcherWindowSwitcherPendingDelta = 0;
+        moveLauncherSelection(delta);
+        launcherFocusTimer.restart();
+    }
+
+    function finalizeLauncherWindowSwitcherOpen() {
+        if (!launcherVisible || launcherMode !== "windows" || launcherWindowSwitcherPendingDelta === 0) {
+            return;
+        }
+
+        const delta = launcherWindowSwitcherPendingDelta;
+        launcherWindowSwitcherPendingDelta = 0;
+        const entries = launcherWindowSwitcherEntries();
+        setLauncherEntries(entries);
+        if (!entries.length) {
+            return;
+        }
+
+        launcherPointerSelectionEnabled = false;
+        launcherSelectionMode = "keyboard";
+        launcherViewportPrimed = true;
+        launcherSelectedIndex = delta < 0 ? entries.length - 1 : 0;
+    }
+
+    function commitLauncherWindowSwitch() {
+        if (!launcherVisible || launcherMode !== "windows" || !launcherWindowSwitcherActive) {
+            return;
+        }
+
+        const entry = activeLauncherEntry();
+        launcherWindowSwitcherActive = false;
+        launcherWindowSwitcherPendingDelta = 0;
         if (!entry) {
             closeLauncher();
             return;
@@ -6237,6 +6952,23 @@ ShellRoot {
             networkState = JSON.parse(raw);
         } catch (error) {
             console.warn("Failed to parse network payload", error, raw);
+        }
+    }
+
+    function parseBrightness(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            const next = JSON.parse(raw);
+            brightnessState = Object.assign({}, brightnessState, next);
+        } catch (error) {
+            console.warn("Failed to parse brightness payload", error, raw);
         }
     }
 

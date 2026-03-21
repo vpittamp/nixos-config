@@ -2,10 +2,16 @@
 
 let
   cfg = config.programs.quickshell-runtime-shell;
+  appRegistrySyncTool = import ../app-registry-sync-tool.nix { inherit pkgs lib; };
   hostName =
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else "unknown";
+  supportsPowerProfiles =
+    osConfig != null
+    && osConfig ? services
+    && osConfig.services ? "power-profiles-daemon"
+    && osConfig.services."power-profiles-daemon".enable;
 
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
@@ -40,6 +46,8 @@ QtObject {
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
+  readonly property string brightnessStatusBin: "${brightnessStatusScript}/bin/quickshell-brightness-status"
+  readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string daemonHealthBin: "${daemonHealthScript}/bin/quickshell-daemon-health"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-app-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
@@ -50,6 +58,8 @@ QtObject {
   readonly property string runnerListBin: "${runnerListScript}/bin/quickshell-runner-list"
   readonly property string snippetsListBin: "${snippetsListScript}/bin/quickshell-snippets-list"
   readonly property string snippetsManageBin: "${snippetsManageScript}/bin/quickshell-snippets-manage"
+  readonly property string appRegistryListBin: "${appRegistryListScript}/bin/quickshell-app-registry-list"
+  readonly property string appRegistryManageBin: "${appRegistryManageScript}/bin/quickshell-app-registry-manage"
   readonly property string launcherCommandActionBin: "${launcherCommandActionScript}/bin/quickshell-launcher-command-action"
   readonly property string showRuntimeDisplaysBin: "${showRuntimeDisplaysScript}/bin/show-runtime-displays"
   readonly property string onePasswordListBin: "${onePasswordListScript}/bin/quickshell-onepassword-list"
@@ -65,6 +75,7 @@ QtObject {
   readonly property string geminiIcon: "${../../../assets/icons/gemini.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
   readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
+  readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}
 }
 EOF
   '';
@@ -330,6 +341,209 @@ while True:
 PY
   '';
 
+  brightnessStatusScript = pkgs.writeShellScriptBin "quickshell-brightness-status" ''
+    set -euo pipefail
+    exec ${lib.getExe pkgs.python3} -u - <<'PY'
+import json
+import time
+from pathlib import Path
+
+
+DISPLAY_PREFERENCE = [
+    "apple-panel-bl",
+    "intel_backlight",
+]
+
+
+def clamp_percent(value: float) -> int:
+    return max(0, min(100, int(round(value))))
+
+
+def list_dirs(path: str):
+    root = Path(path)
+    if not root.exists():
+        return []
+    return [entry for entry in root.iterdir() if entry.is_dir()]
+
+
+def preferred_display_device():
+    devices = list_dirs("/sys/class/backlight")
+    if not devices:
+        return None
+
+    def score(device: Path):
+        name = device.name
+        if name in DISPLAY_PREFERENCE:
+            return (DISPLAY_PREFERENCE.index(name), name)
+        if name.startswith("amdgpu_bl"):
+            return (len(DISPLAY_PREFERENCE), name)
+        return (len(DISPLAY_PREFERENCE) + 1, name)
+
+    return sorted(devices, key=score)[0]
+
+
+def preferred_keyboard_device():
+    devices = [
+        entry
+        for entry in list_dirs("/sys/class/leds")
+        if "kbd_backlight" in entry.name
+    ]
+    if not devices:
+        return None
+    return sorted(devices, key=lambda entry: entry.name)[0]
+
+
+def device_state(device: Path | None, label: str):
+    if device is None:
+        return {
+            "available": False,
+            "label": label,
+            "device": "",
+            "percent": 0,
+            "current": 0,
+            "max": 0,
+        }
+
+    try:
+        current = int((device / "brightness").read_text().strip())
+        maximum = int((device / "max_brightness").read_text().strip())
+    except Exception:
+        return {
+            "available": False,
+            "label": label,
+            "device": device.name,
+            "percent": 0,
+            "current": 0,
+            "max": 0,
+        }
+
+    percent = clamp_percent((current / maximum) * 100) if maximum > 0 else 0
+    return {
+        "available": True,
+        "label": label,
+        "device": device.name,
+        "percent": percent,
+        "current": current,
+        "max": maximum,
+    }
+
+
+def emit():
+    payload = {
+        "display": device_state(preferred_display_device(), "Display brightness"),
+        "keyboard": device_state(preferred_keyboard_device(), "Keyboard backlight"),
+    }
+    print(json.dumps(payload), flush=True)
+
+
+emit()
+while True:
+    time.sleep(2)
+    emit()
+PY
+  '';
+
+  brightnessActionScript = pkgs.writeShellScriptBin "quickshell-brightness-action" ''
+    set -euo pipefail
+    exec ${lib.getExe pkgs.python3} -u - "$@" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+BRIGHTNESSCTL = "${lib.getExe pkgs.brightnessctl}"
+DISPLAY_PREFERENCE = [
+    "apple-panel-bl",
+    "intel_backlight",
+]
+
+
+def fail(message: str, code: int = 1):
+    print(message, file=sys.stderr, flush=True)
+    raise SystemExit(code)
+
+
+def clamp_percent(value: str) -> int:
+    try:
+        percent = int(round(float(value)))
+    except ValueError:
+        fail(f"invalid brightness percent: {value}")
+    return max(0, min(100, percent))
+
+
+def list_dirs(path: str):
+    root = Path(path)
+    if not root.exists():
+        return []
+    return [entry for entry in root.iterdir() if entry.is_dir()]
+
+
+def preferred_display_device():
+    devices = list_dirs("/sys/class/backlight")
+    if not devices:
+        return None
+
+    def score(device: Path):
+        name = device.name
+        if name in DISPLAY_PREFERENCE:
+            return (DISPLAY_PREFERENCE.index(name), name)
+        if name.startswith("amdgpu_bl"):
+            return (len(DISPLAY_PREFERENCE), name)
+        return (len(DISPLAY_PREFERENCE) + 1, name)
+
+    return sorted(devices, key=score)[0]
+
+
+def preferred_keyboard_device():
+    devices = [
+        entry
+        for entry in list_dirs("/sys/class/leds")
+        if "kbd_backlight" in entry.name
+    ]
+    if not devices:
+        return None
+    return sorted(devices, key=lambda entry: entry.name)[0]
+
+
+action = sys.argv[1] if len(sys.argv) > 1 else ""
+target = sys.argv[2] if len(sys.argv) > 2 else ""
+percent = sys.argv[3] if len(sys.argv) > 3 else ""
+
+if action != "set":
+    fail(f"unsupported brightness action: {action}")
+
+if target == "display":
+    device = preferred_display_device()
+elif target == "keyboard":
+    device = preferred_keyboard_device()
+else:
+    fail(f"unsupported brightness target: {target}")
+
+if device is None:
+    fail(f"brightness target unavailable: {target}")
+
+clamped_percent = clamp_percent(percent)
+
+result = subprocess.run(
+    [BRIGHTNESSCTL, "-d", device.name, "set", f"{clamped_percent}%"],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+
+if result.returncode != 0:
+    fail(result.stderr.strip() or result.stdout.strip() or f"brightnessctl failed for {target}", result.returncode)
+
+print(json.dumps({
+    "success": True,
+    "target": target,
+    "device": device.name,
+    "percent": clamped_percent,
+}), flush=True)
+PY
+  '';
+
   daemonHealthScript = pkgs.writeShellScriptBin "quickshell-daemon-health" ''
     set -euo pipefail
     SOCK="$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock"
@@ -368,6 +582,7 @@ PY
     query="''${1:-}"
     limit="''${2:-12}"
     min_score="''${3:-20}"
+    app_filter="''${4:-all}"
 
     if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
       limit=12
@@ -380,6 +595,7 @@ PY
     export QUICKSHELL_LAUNCHER_QUERY="$query"
     export QUICKSHELL_LAUNCHER_LIMIT="$limit"
     export QUICKSHELL_LAUNCHER_MIN_SCORE="$min_score"
+    export QUICKSHELL_LAUNCHER_APP_FILTER="$app_filter"
 
     # Use the declarative application registry as the source of truth for app mode.
     # Elephant's desktopapplications provider intermittently returns an empty set for
@@ -394,8 +610,10 @@ from pathlib import Path
 query = os.environ.get("QUICKSHELL_LAUNCHER_QUERY", "").strip()
 limit = int(os.environ.get("QUICKSHELL_LAUNCHER_LIMIT", "12") or "12")
 min_score = int(os.environ.get("QUICKSHELL_LAUNCHER_MIN_SCORE", "20") or "20")
+app_filter = str(os.environ.get("QUICKSHELL_LAUNCHER_APP_FILTER", "all") or "all").strip().lower()
 
 registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
+base_registry_path = Path.home() / ".local" / "share" / "i3pm" / "registry" / "base.json"
 desktop_dir = Path.home() / ".local" / "share" / "i3pm-applications" / "applications"
 
 
@@ -432,6 +650,88 @@ def entry_subtext(app: dict) -> str:
     return " • ".join(parts)
 
 
+def extract_query_filters(raw_query: str) -> tuple[str, dict]:
+    filters = {
+        "scope": None,
+        "workspace": None,
+        "monitor": None,
+        "pwa": False,
+    }
+    remaining: list[str] = []
+
+    for token in raw_query.split():
+        lower = token.strip().lower()
+        if lower in ("@scoped", "scope:scoped"):
+            filters["scope"] = "scoped"
+            continue
+        if lower in ("@global", "scope:global"):
+            filters["scope"] = "global"
+            continue
+        if lower in ("@pwa", "pwa", "type:pwa"):
+            filters["pwa"] = True
+            continue
+        if lower.startswith("ws:"):
+            suffix = lower[3:]
+            if suffix.isdigit():
+                filters["workspace"] = int(suffix)
+                continue
+        if lower.startswith("monitor:"):
+            suffix = lower.split(":", 1)[1]
+            if suffix in ("primary", "secondary", "tertiary"):
+                filters["monitor"] = suffix
+                continue
+
+        remaining.append(token)
+
+    return " ".join(remaining).strip(), filters
+
+
+def matches_filters(app: dict, query_filters: dict) -> bool:
+    name = str(app.get("name") or "").strip()
+    scope = str(app.get("scope") or "").strip().lower()
+    workspace = safe_int(app.get("preferred_workspace"))
+    monitor_role = str(app.get("preferred_monitor_role") or "").strip().lower()
+    is_pwa = name.endswith("-pwa")
+
+    if app_filter == "scoped" and scope != "scoped":
+        return False
+    if app_filter == "global" and scope != "global":
+        return False
+    if app_filter == "pwa" and not is_pwa:
+        return False
+    if app_filter == "workspace" and workspace is None:
+        return False
+
+    if query_filters["scope"] and scope != query_filters["scope"]:
+        return False
+    if query_filters["workspace"] is not None and workspace != query_filters["workspace"]:
+        return False
+    if query_filters["monitor"] and monitor_role != query_filters["monitor"]:
+        return False
+    if query_filters["pwa"] and not is_pwa:
+        return False
+
+    return True
+
+
+def app_badges(app: dict) -> list[dict]:
+    badges: list[dict] = []
+    name = str(app.get("name") or "").strip()
+    scope = str(app.get("scope") or "").strip().lower()
+    workspace = safe_int(app.get("preferred_workspace"))
+
+    if name.endswith("-pwa"):
+        badges.append({"label": "PWA", "tone": "teal"})
+    if scope == "scoped":
+        badges.append({"label": "Scoped", "tone": "orange"})
+    elif scope == "global":
+        badges.append({"label": "Global", "tone": "blue"})
+    if workspace is not None:
+        badges.append({"label": f"WS{workspace}", "tone": "violet"})
+
+    return badges
+
+
 def score_app(app: dict, index: int, query_norm: str, query_compact: str, query_tokens: list[str]) -> int:
     if not query_norm:
         return 1000 - min(index, 999)
@@ -440,6 +740,9 @@ def score_app(app: dict, index: int, query_norm: str, query_compact: str, query_
     display_name = str(app.get("display_name") or name)
     description = str(app.get("description") or "")
     domain = str(app.get("pwa_domain") or "")
+    aliases = app.get("aliases") or []
+    if not isinstance(aliases, list):
+        aliases = []
     match_domains = app.get("pwa_match_domains") or []
     if not isinstance(match_domains, list):
         match_domains = []
@@ -451,7 +754,7 @@ def score_app(app: dict, index: int, query_norm: str, query_compact: str, query_
         normalize(name_without_suffix),
         normalize(description),
         normalize(domain),
-    ] + [normalize(item) for item in match_domains]
+    ] + [normalize(item) for item in aliases] + [normalize(item) for item in match_domains]
     compact_fields = [compact(value) for value in fields if value]
 
     exact_values = {value for value in fields if value}
@@ -501,9 +804,12 @@ def score_app(app: dict, index: int, query_norm: str, query_compact: str, query_
 try:
     data = json.loads(registry_path.read_text())
 except (OSError, json.JSONDecodeError):
-    json.dump([], sys.stdout)
-    sys.stdout.write("\n")
-    raise SystemExit(0)
+    try:
+        data = json.loads(base_registry_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        json.dump([], sys.stdout)
+        sys.stdout.write("\n")
+        raise SystemExit(0)
 
 applications = data.get("applications") or []
 if not isinstance(applications, list):
@@ -511,6 +817,7 @@ if not isinstance(applications, list):
     sys.stdout.write("\n")
     raise SystemExit(0)
 
+query, query_filters = extract_query_filters(query)
 query_norm = normalize(query)
 query_compact = compact(query)
 query_tokens = [token for token in query_norm.split() if token]
@@ -518,6 +825,9 @@ query_tokens = [token for token in query_norm.split() if token]
 scored_results: list[tuple[int, int, dict]] = []
 for index, raw_app in enumerate(applications):
     if not isinstance(raw_app, dict):
+        continue
+
+    if not matches_filters(raw_app, query_filters):
         continue
 
     score = score_app(raw_app, index, query_norm, query_compact, query_tokens)
@@ -529,6 +839,20 @@ for index, raw_app in enumerate(applications):
     if not name or not display_name:
         continue
 
+    workspace = safe_int(raw_app.get("preferred_workspace"))
+    monitor_role = str(raw_app.get("preferred_monitor_role") or "").strip()
+    aliases = raw_app.get("aliases") or []
+    if not isinstance(aliases, list):
+        aliases = []
+    state = []
+    if name.endswith("-pwa"):
+        state.append("pwa")
+    scope = str(raw_app.get("scope") or "").strip().lower()
+    if scope:
+        state.append(scope)
+    if workspace is not None:
+        state.append("workspace-pinned")
+
     desktop_path = desktop_dir / f"{name}.desktop"
     identifier = str(desktop_path if desktop_path.exists() else f"{name}.desktop")
     scored_results.append(
@@ -536,12 +860,18 @@ for index, raw_app in enumerate(applications):
             score,
             index,
             {
+                "kind": "app",
                 "identifier": identifier,
                 "text": display_name,
                 "subtext": entry_subtext(raw_app),
                 "icon": str(raw_app.get("icon") or ""),
                 "score": score,
-                "state": ["pwa"] if name.endswith("-pwa") else [],
+                "state": state,
+                "scope": raw_app.get("scope"),
+                "preferred_workspace": workspace,
+                "preferred_monitor_role": monitor_role or None,
+                "aliases": [str(alias).strip() for alias in aliases if str(alias).strip()],
+                "badges": app_badges(raw_app),
                 "actions": [],
             },
         )
@@ -1112,6 +1442,324 @@ fail(f"unsupported snippets action: {action}")
 PY
   '';
 
+  appRegistryListScript = pkgs.writeShellScriptBin "quickshell-app-registry-list" ''
+    set -euo pipefail
+
+    query="''${1:-}"
+    limit="''${2:-200}"
+
+    if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+      limit=200
+    fi
+
+    export QUICKSHELL_APP_REGISTRY_QUERY="$query"
+    export QUICKSHELL_APP_REGISTRY_LIMIT="$limit"
+
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+from pathlib import Path
+
+query = str(os.environ.get("QUICKSHELL_APP_REGISTRY_QUERY", "") or "").strip().lower()
+tokens = [token for token in query.split() if token]
+limit = int(os.environ.get("QUICKSHELL_APP_REGISTRY_LIMIT", "200") or "200")
+effective_path = Path.home() / ".config" / "i3" / "application-registry.json"
+base_path = Path.home() / ".local" / "share" / "i3pm" / "registry" / "base.json"
+working_copy_path = Path.home() / ".config" / "i3" / "app-registry-working-copy.json"
+
+
+def load_json(path: Path, default):
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return default
+
+
+def badge_list(name: str, scope: str, workspace, dirty: bool) -> list[dict]:
+    badges: list[dict] = []
+    if name.endswith("-pwa"):
+        badges.append({"label": "PWA", "tone": "teal"})
+    if scope == "scoped":
+        badges.append({"label": "Scoped", "tone": "orange"})
+    elif scope == "global":
+        badges.append({"label": "Global", "tone": "blue"})
+    if workspace is not None:
+        badges.append({"label": f"WS{workspace}", "tone": "violet"})
+    if dirty:
+        badges.append({"label": "Live", "tone": "accent"})
+    return badges
+
+
+registry = load_json(effective_path, None)
+if not isinstance(registry, dict):
+    registry = load_json(base_path, {})
+working_copy = load_json(working_copy_path, {"applications": {}})
+working_apps = working_copy.get("applications", {}) if isinstance(working_copy, dict) else {}
+if not isinstance(working_apps, dict):
+    working_apps = {}
+
+applications = registry.get("applications", []) if isinstance(registry, dict) else []
+entries = []
+for app in applications:
+    if not isinstance(app, dict):
+        continue
+
+    name = str(app.get("name", "") or "").strip()
+    display_name = str(app.get("display_name", "") or name).strip()
+    description = str(app.get("description", "") or "").strip()
+    aliases = app.get("aliases") or []
+    if not isinstance(aliases, list):
+        aliases = []
+    alias_values = [str(value).strip() for value in aliases if str(value).strip()]
+
+    haystack = " ".join([
+        name,
+        display_name,
+        description,
+        " ".join(alias_values),
+        str(app.get("scope", "") or ""),
+        str(app.get("preferred_monitor_role", "") or ""),
+        str(app.get("icon", "") or ""),
+    ]).lower()
+    if tokens and not all(token in haystack for token in tokens):
+        continue
+
+    workspace = app.get("preferred_workspace")
+    scope = str(app.get("scope", "") or "").strip().lower()
+    is_dirty = name in working_apps
+    workspace_label = f"WS{workspace}" if workspace is not None else "dynamic"
+    subtext_parts = [workspace_label, str(app.get("scope", "") or "")]
+    if description:
+        subtext_parts.insert(0, description)
+
+    entries.append({
+        "kind": "app-registry",
+        "identifier": name,
+        "name": name,
+        "text": display_name,
+        "display_name": display_name,
+        "description": description,
+        "subtext": "  •  ".join([part for part in subtext_parts if part]),
+        "icon": str(app.get("icon", "") or ""),
+        "scope": str(app.get("scope", "") or ""),
+        "command": str(app.get("command", "") or ""),
+        "expected_class": str(app.get("expected_class", "") or ""),
+        "preferred_workspace": workspace,
+        "preferred_monitor_role": app.get("preferred_monitor_role"),
+        "floating": bool(app.get("floating", False)),
+        "floating_size": app.get("floating_size"),
+        "multi_instance": bool(app.get("multi_instance", False)),
+        "fallback_behavior": str(app.get("fallback_behavior", "") or ""),
+        "aliases": alias_values,
+        "dirty": is_dirty,
+        "is_pwa": name.endswith("-pwa"),
+        "state": ([scope] if scope else []) + (["workspace"] if workspace is not None else []) + (["pwa"] if name.endswith("-pwa") else []) + (["dirty"] if is_dirty else []),
+        "badges": badge_list(name, scope, workspace, is_dirty),
+    })
+
+entries.sort(key=lambda item: (str(item.get("text", "")).lower(), str(item.get("name", "")).lower()))
+print(json.dumps(entries[:limit]))
+PY
+  '';
+
+  appRegistryManageScript = pkgs.writeShellScriptBin "quickshell-app-registry-manage" ''
+    set -euo pipefail
+
+    action="''${1:-}"
+    shift || true
+
+    case "$action" in
+      upsert)
+        export QS_APP_NAME="''${1:-}"
+        export QS_APP_DISPLAY_NAME="''${2:-}"
+        export QS_APP_DESCRIPTION="''${3:-}"
+        export QS_APP_WORKSPACE="''${4:-}"
+        export QS_APP_MONITOR_ROLE="''${5:-}"
+        export QS_APP_FLOATING="''${6:-}"
+        export QS_APP_FLOATING_SIZE="''${7:-}"
+        export QS_APP_MULTI_INSTANCE="''${8:-}"
+        export QS_APP_FALLBACK="''${9:-}"
+        export QS_APP_ICON="''${10:-}"
+        export QS_APP_ALIASES="''${11:-[]}"
+        ;;
+      remove|apply|reset|diff)
+        export QS_APP_NAME="''${1:-}"
+        ;;
+      *)
+        echo "unsupported app-registry action: $action" >&2
+        exit 1
+        ;;
+    esac
+
+    export QS_APP_ACTION="$action"
+    export QS_APP_REGISTRY_SYNC_BIN="${appRegistrySyncTool}/bin/i3pm-app-registry-sync"
+
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+WORKING_COPY_PATH = Path.home() / ".config" / "i3" / "app-registry-working-copy.json"
+
+
+def fail(message: str) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def load_data() -> dict:
+    if not WORKING_COPY_PATH.exists():
+        return {"version": "1.0.0", "applications": {}}
+    try:
+        with WORKING_COPY_PATH.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception as exc:
+        fail(f"unable to parse working copy: {exc}")
+    if not isinstance(data, dict):
+        return {"version": "1.0.0", "applications": {}}
+    if not isinstance(data.get("applications"), dict):
+        data["applications"] = {}
+    if "version" not in data:
+        data["version"] = "1.0.0"
+    return data
+
+
+def write_data(data: dict) -> None:
+    WORKING_COPY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with WORKING_COPY_PATH.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+
+
+def render_live() -> None:
+    try:
+        subprocess.run([os.environ["QS_APP_REGISTRY_SYNC_BIN"], "render-live"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as exc:
+        fail(f"unable to refresh live registry: {exc}")
+
+
+def as_bool(raw: str) -> bool | None:
+    value = str(raw or "").strip().lower()
+    if value in ("", "null"):
+        return None
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    fail(f"invalid boolean value: {raw}")
+
+
+def as_optional_int(raw: str) -> int | None:
+    value = str(raw or "").strip().lower()
+    if value in ("", "null"):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        fail(f"invalid workspace value: {raw}")
+
+
+def as_optional_string(raw: str) -> str | None:
+    value = str(raw or "").strip()
+    return value or None
+
+
+action = os.environ.get("QS_APP_ACTION", "").strip()
+if action == "apply":
+    result = subprocess.run([os.environ["QS_APP_REGISTRY_SYNC_BIN"], "apply"], check=True, capture_output=True, text=True)
+    print(result.stdout.strip() or "{}")
+    raise SystemExit(0)
+
+if action == "reset":
+    result = subprocess.run([os.environ["QS_APP_REGISTRY_SYNC_BIN"], "reset-working-copy"], check=True, capture_output=True, text=True)
+    print(result.stdout.strip() or "{}")
+    raise SystemExit(0)
+
+if action == "diff":
+    result = subprocess.run([os.environ["QS_APP_REGISTRY_SYNC_BIN"], "diff"], check=True, capture_output=True, text=True)
+    print(result.stdout.strip() or "[]")
+    raise SystemExit(0)
+
+data = load_data()
+applications = data["applications"]
+name = str(os.environ.get("QS_APP_NAME", "") or "").strip()
+if not name:
+    fail("application name is required")
+
+if action == "remove":
+    applications.pop(name, None)
+    write_data(data)
+    render_live()
+    print(json.dumps({"ok": True, "action": action, "name": name, "message": f"Cleared live override for '{name}'"}))
+    raise SystemExit(0)
+
+if action != "upsert":
+    fail(f"unsupported app-registry action: {action}")
+
+aliases_raw = str(os.environ.get("QS_APP_ALIASES", "[]") or "[]")
+try:
+    aliases = json.loads(aliases_raw)
+except Exception as exc:
+    fail(f"invalid aliases payload: {exc}")
+if not isinstance(aliases, list):
+    fail("aliases payload must be a JSON array")
+aliases = [str(item).strip() for item in aliases if str(item).strip()]
+
+override = {}
+
+display_name = as_optional_string(os.environ.get("QS_APP_DISPLAY_NAME", ""))
+if display_name is not None:
+    override["display_name"] = display_name
+
+description = as_optional_string(os.environ.get("QS_APP_DESCRIPTION", ""))
+if description is not None:
+    override["description"] = description
+
+workspace = as_optional_int(os.environ.get("QS_APP_WORKSPACE", ""))
+if workspace is not None:
+    override["preferred_workspace"] = workspace
+
+monitor_role = as_optional_string(os.environ.get("QS_APP_MONITOR_ROLE", ""))
+if monitor_role is not None:
+    override["preferred_monitor_role"] = monitor_role
+
+floating = as_bool(os.environ.get("QS_APP_FLOATING", ""))
+if floating is not None:
+    override["floating"] = floating
+
+floating_size = as_optional_string(os.environ.get("QS_APP_FLOATING_SIZE", ""))
+if floating_size is not None:
+    override["floating_size"] = floating_size
+
+multi_instance = as_bool(os.environ.get("QS_APP_MULTI_INSTANCE", ""))
+if multi_instance is not None:
+    override["multi_instance"] = multi_instance
+
+fallback = as_optional_string(os.environ.get("QS_APP_FALLBACK", ""))
+if fallback is not None:
+    override["fallback_behavior"] = fallback
+
+icon = as_optional_string(os.environ.get("QS_APP_ICON", ""))
+if icon is not None:
+    override["icon"] = icon
+
+if aliases:
+    override["aliases"] = aliases
+
+if override:
+    applications[name] = override
+else:
+    applications.pop(name, None)
+
+write_data(data)
+render_live()
+print(json.dumps({"ok": True, "action": action, "name": name, "message": f"Saved live override for '{name}'"}))
+PY
+  '';
+
   launcherCommandActionScript = pkgs.writeShellScriptBin "quickshell-launcher-command-action" ''
     set -euo pipefail
 
@@ -1409,6 +2057,14 @@ PY
     esac
   '';
 
+  showWindowSwitcherScript = pkgs.writeShellScriptBin "show-window-switcher-action" ''
+    set -euo pipefail
+    case "''${1:-next}" in
+      prev) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell prevLauncherWindow ;;
+      *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell nextLauncherWindow ;;
+    esac
+  '';
+
   commitAiSwitcherScript = pkgs.writeShellScriptBin "commit-ai-session-switch-action" ''
     set -euo pipefail
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell commitLauncherSession
@@ -1555,12 +2211,15 @@ in
       monitorPanelTabScript
       cycleSessionsScript
       showAiSwitcherScript
+      showWindowSwitcherScript
       commitAiSwitcherScript
       focusLastSessionScript
       cycleDisplayLayoutScript
       notificationMonitorScript
       networkStatusScript
       systemStatsScript
+      brightnessStatusScript
+      brightnessActionScript
       daemonHealthScript
       launcherQueryScript
       launcherLaunchScript

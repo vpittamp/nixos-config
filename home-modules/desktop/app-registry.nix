@@ -5,13 +5,15 @@
 #
 # This module defines all launchable applications with project context support.
 # Applications are defined declaratively and generate:
-# - JSON registry at ~/.config/i3/application-registry.json
+# - Base JSON registry at ~/.local/share/i3pm/registry/base.json
+# - Effective runtime JSON registry at ~/.config/i3/application-registry.json
 # - Desktop files at ~/.local/share/applications/
 # - Window rules at ~/.config/i3/window-rules-generated.json
 
 let
   # Feature 125: Pass hostName for host-specific parameterization
   hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
+  appRegistrySyncTool = import ./app-registry-sync-tool.nix { inherit pkgs lib; };
 
   # Import validated application definitions from shared data file
   # Feature 106: Pass assetsPackage for portable icon paths
@@ -20,6 +22,34 @@ let
   # Import PWA sites configuration
   # Feature 106: Pass assetsPackage for portable icon paths
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage hostName; };
+
+  appRegistryOverlayPath = ../../shared/app-registry-overrides.json;
+  editableOverlayFields = [
+    "aliases"
+    "description"
+    "display_name"
+    "fallback_behavior"
+    "floating"
+    "floating_size"
+    "icon"
+    "multi_instance"
+    "preferred_monitor_role"
+    "preferred_workspace"
+  ];
+  rawAppRegistryOverlay = builtins.fromJSON (builtins.readFile appRegistryOverlayPath);
+  appRegistryOverlayApplications =
+    if rawAppRegistryOverlay ? applications
+    then rawAppRegistryOverlay.applications
+    else { };
+  filteredOverlayFor = app:
+    let
+      rawOverride =
+        if builtins.hasAttr app.name appRegistryOverlayApplications
+        then builtins.getAttr app.name appRegistryOverlayApplications
+        else { };
+    in
+    lib.filterAttrs (name: _value: builtins.elem name editableOverlayFields) rawOverride;
+  declarativeApplications = map (app: app // filteredOverlayFor app) registryData.applications;
 
   # Transform PWA sites to simplified PWA registry format
   # Only include fields needed by sway-test framework and workspace panel
@@ -65,16 +95,20 @@ let
   desktopFileEntries = builtins.listToAttrs (map (app: {
     name = ".local/share/i3pm-applications/applications/${app.name}.desktop";
     value.text = mkDesktopFile app;
-  }) registryData.applications);
+  }) declarativeApplications);
 
 in
 {
+  home.packages = [ appRegistrySyncTool ];
+
   # Generate JSON registry from validated application definitions
   home.file = {
-    ".config/i3/application-registry.json".text = builtins.toJSON {
+    ".local/share/i3pm/registry/base.json".text = builtins.toJSON {
       version = "1.0.0";
       applications = registryData.applications;
     };
+
+    ".local/share/i3pm/registry/declarative-overrides.json".text = builtins.toJSON rawAppRegistryOverlay;
 
     # Generate PWA registry for sway-test framework (Feature 070)
     ".config/i3/pwa-registry.json".text = builtins.toJSON {
@@ -82,4 +116,45 @@ in
       pwas = pwaDefinitions;
     };
   } // desktopFileEntries;  # T040: Generate .desktop files manually
+
+  home.activation.ensureMutableAppRegistry = lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" ] ''
+    set -euo pipefail
+
+    EFFECTIVE_PATH="$HOME/.config/i3/application-registry.json"
+    WORKING_COPY_PATH="$HOME/.config/i3/app-registry-working-copy.json"
+    BASE_PATH="$HOME/.local/share/i3pm/registry/base.json"
+    DECLARATIVE_OVERLAY_PATH="$HOME/.local/share/i3pm/registry/declarative-overrides.json"
+    APP_REGISTRY_SYNC_BIN="${appRegistrySyncTool}/bin/i3pm-app-registry-sync"
+
+    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/i3" "$HOME/.local/share/i3pm/registry"
+
+    for path in "$EFFECTIVE_PATH" "$WORKING_COPY_PATH"; do
+      if [ -L "$path" ]; then
+        target="$(${pkgs.coreutils}/bin/readlink -f "$path" || true)"
+        case "$target" in
+          /nix/store/*)
+            ${pkgs.coreutils}/bin/rm -f "$path"
+            ;;
+        esac
+      fi
+    done
+
+    if [ ! -e "$WORKING_COPY_PATH" ]; then
+      ${pkgs.coreutils}/bin/cp "$DECLARATIVE_OVERLAY_PATH" "$WORKING_COPY_PATH"
+    fi
+
+    "$APP_REGISTRY_SYNC_BIN" render-live >/dev/null 2>&1 || true
+
+    if [ ! -e "$EFFECTIVE_PATH" ]; then
+      ${pkgs.coreutils}/bin/cp "$BASE_PATH" "$EFFECTIVE_PATH"
+    fi
+
+    if [ -e "$WORKING_COPY_PATH" ]; then
+      ${pkgs.coreutils}/bin/chmod u+rw "$WORKING_COPY_PATH"
+    fi
+
+    if [ -e "$EFFECTIVE_PATH" ]; then
+      ${pkgs.coreutils}/bin/chmod u+rw "$EFFECTIVE_PATH"
+    fi
+  '';
 }

@@ -87,6 +87,21 @@ let
       scriptPath = "scripts/clipboard-paste.sh";
       description = "Paste from system clipboard";
     };
+    clipboard-tmux-load = {
+      scriptPath = "scripts/clipboard-tmux-load.sh";
+      extraInputs = [ pkgs.tmux pkgs.findutils ];
+      description = "Load clipboard content into local tmux buffers";
+    };
+    clipboard-import-current = {
+      scriptPath = "scripts/clipboard-import-current.sh";
+      extraInputs = [ pkgs.wl-clipboard pkgs.tmux pkgs.findutils ];
+      description = "Import the current system clipboard into tmux";
+    };
+    clipboard-watch-tmux = {
+      scriptPath = "scripts/clipboard-watch-tmux.sh";
+      extraInputs = [ pkgs.wl-clipboard pkgs.tmux pkgs.findutils ];
+      description = "Watch the system clipboard and mirror it into tmux";
+    };
     view-last-bg-command = {
       scriptPath = "scripts/view-last-bg-command.sh";
       description = "View output of last background command";
@@ -185,6 +200,9 @@ in {
     clipcat-fzf
     clipboard-sync
     clipboard-paste
+    clipboard-tmux-load
+    clipboard-import-current
+    clipboard-watch-tmux
     view-last-bg-command
     fzf-history
     plasma-rc2nix

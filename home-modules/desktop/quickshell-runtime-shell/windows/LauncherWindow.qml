@@ -72,272 +72,67 @@ PanelWindow {
                     font.weight: Font.DemiBold
                 }
 
-                RowLayout {
+                Flow {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: implicitHeight
+                    width: parent.width
                     spacing: 8
 
-                    Rectangle {
-                        Layout.preferredWidth: launcherAppsModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "apps" ? colors.blueBg : (launcherAppsModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "apps" ? colors.blue : (launcherAppsModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
+                    Repeater {
+                        model: root.launcherModesModel
 
-                        Text {
-                            id: launcherAppsModeLabel
-                            anchors.centerIn: parent
-                            text: "Apps"
-                            color: root.launcherMode === "apps" ? colors.blue : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property var meta: modelData
+                            readonly property bool selected: root.launcherMode === root.stringOrEmpty(meta && meta.id)
+                            property bool hovered: false
+                            readonly property string iconSrc: root.iconSource(root.stringOrEmpty(meta && meta.icon), root.stringOrEmpty(meta && meta.iconFile))
+
+                            width: modePillRow.implicitWidth + 18
+                            height: 26
+                            radius: 6
+                            color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentBgKey), colors.cardAlt) : (hovered ? colors.cardAlt : colors.card)
+                            border.color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.borderStrong) : (hovered ? colors.borderStrong : colors.border)
+                            border.width: 1
+
+                            RowLayout {
+                                id: modePillRow
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                IconImage {
+                                    visible: iconSrc !== ""
+                                    implicitSize: 12
+                                    source: iconSrc
+                                    mipmap: true
+                                    opacity: selected ? 1 : 0.92
+                                }
+
+                                Text {
+                                    visible: iconSrc === ""
+                                    text: root.stringOrEmpty(meta && meta.fallbackGlyph)
+                                    color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.text) : colors.textDim
+                                    font.pixelSize: 10
+                                    font.weight: Font.Bold
+                                }
+
+                                Text {
+                                    text: root.stringOrEmpty(meta && meta.label)
+                                    color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.text) : colors.text
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: parent.hovered = true
+                                onExited: parent.hovered = false
+                                onClicked: root.setLauncherMode(root.stringOrEmpty(meta && meta.id))
+                            }
                         }
-
-                        MouseArea {
-                            id: launcherAppsModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("apps")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherFilesModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "files" ? colors.tealBg : (launcherFilesModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "files" ? colors.teal : (launcherFilesModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherFilesModeLabel
-                            anchors.centerIn: parent
-                            text: "Files"
-                            color: root.launcherMode === "files" ? colors.teal : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherFilesModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("files")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherUrlsModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "urls" ? colors.tealBg : (launcherUrlsModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "urls" ? colors.teal : (launcherUrlsModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherUrlsModeLabel
-                            anchors.centerIn: parent
-                            text: "URLs"
-                            color: root.launcherMode === "urls" ? colors.teal : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherUrlsModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("urls")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherProjectsModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "projects" ? colors.tealBg : (launcherProjectsModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "projects" ? colors.teal : (launcherProjectsModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherProjectsModeLabel
-                            anchors.centerIn: parent
-                            text: "Projects"
-                            color: root.launcherMode === "projects" ? colors.teal : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherProjectsModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("projects")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherRunnerModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "runner" ? colors.orangeBg : (launcherRunnerModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "runner" ? colors.orange : (launcherRunnerModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherRunnerModeLabel
-                            anchors.centerIn: parent
-                            text: "Runner"
-                            color: root.launcherMode === "runner" ? colors.orange : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherRunnerModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("runner")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherSnippetsModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "snippets" ? colors.tealBg : (launcherSnippetsModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "snippets" ? colors.teal : (launcherSnippetsModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherSnippetsModeLabel
-                            anchors.centerIn: parent
-                            text: "Commands"
-                            color: root.launcherMode === "snippets" ? colors.teal : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherSnippetsModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("snippets")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherOnePasswordModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "onepassword" ? colors.accentBg : (launcherOnePasswordModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "onepassword" ? colors.accent : (launcherOnePasswordModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherOnePasswordModeLabel
-                            anchors.centerIn: parent
-                            text: "1Password"
-                            color: root.launcherMode === "onepassword" ? colors.accent : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherOnePasswordModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("onepassword")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherClipboardModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "clipboard" ? colors.amberBg : (launcherClipboardModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "clipboard" ? colors.amber : (launcherClipboardModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherClipboardModeLabel
-                            anchors.centerIn: parent
-                            text: "Clipboard"
-                            color: root.launcherMode === "clipboard" ? colors.amber : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherClipboardModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("clipboard")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherSessionsModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "sessions" ? colors.violetBg : (launcherSessionsModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "sessions" ? colors.violet : (launcherSessionsModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherSessionsModeLabel
-                            anchors.centerIn: parent
-                            text: "AI Sessions"
-                            color: root.launcherMode === "sessions" ? colors.violet : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherSessionsModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("sessions")
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: launcherWindowsModeLabel.implicitWidth + 18
-                        height: 26
-                        radius: 6
-                        color: root.launcherMode === "windows" ? colors.blueWash : (launcherWindowsModeMouse.containsMouse ? colors.cardAlt : colors.card)
-                        border.color: root.launcherMode === "windows" ? colors.blueMuted : (launcherWindowsModeMouse.containsMouse ? colors.borderStrong : colors.border)
-                        border.width: 1
-
-                        Text {
-                            id: launcherWindowsModeLabel
-                            anchors.centerIn: parent
-                            text: "Windows"
-                            color: root.launcherMode === "windows" ? colors.blue : colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            id: launcherWindowsModeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setLauncherMode("windows")
-                        }
-                    }
-
-                    Item {
-                        Layout.fillWidth: true
                     }
                 }
 
@@ -500,8 +295,79 @@ PanelWindow {
                                 event.accepted = true;
                             }
                             break;
+                        case Qt.Key_Alt:
+                        case Qt.Key_AltGr:
+                            if (root.launcherMode === "windows" && root.launcherWindowSwitcherActive) {
+                                root.commitLauncherWindowSwitch();
+                                event.accepted = true;
+                            }
+                            break;
                         default:
                             break;
+                        }
+                    }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? implicitHeight : 0
+                    width: parent.width
+                    spacing: 8
+                    visible: root.launcherMode === "apps"
+
+                    Repeater {
+                        model: root.launcherAppFiltersModel
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property var filterMeta: modelData
+                            readonly property bool selected: root.launcherAppFilter === root.stringOrEmpty(filterMeta && filterMeta.id)
+                            property bool hovered: false
+                            readonly property string iconSrc: root.iconSource(root.stringOrEmpty(filterMeta && filterMeta.icon), "")
+
+                            height: 24
+                            radius: 6
+                            color: selected ? colors.blueBg : (hovered ? colors.cardAlt : colors.card)
+                            border.color: selected ? colors.blue : (hovered ? colors.borderStrong : colors.border)
+                            border.width: 1
+                            width: filterChipRow.implicitWidth + 14
+
+                            RowLayout {
+                                id: filterChipRow
+                                anchors.centerIn: parent
+                                spacing: 5
+
+                                IconImage {
+                                    visible: iconSrc !== ""
+                                    implicitSize: 11
+                                    source: iconSrc
+                                    mipmap: true
+                                }
+
+                                Text {
+                                    visible: iconSrc === ""
+                                    text: root.stringOrEmpty(filterMeta && filterMeta.fallbackGlyph)
+                                    color: selected ? colors.blue : colors.textDim
+                                    font.pixelSize: 9
+                                    font.weight: Font.Bold
+                                }
+
+                                Text {
+                                    text: root.stringOrEmpty(filterMeta && filterMeta.label)
+                                    color: selected ? colors.blue : colors.text
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: parent.hovered = true
+                                onExited: parent.hovered = false
+                                onClicked: root.setLauncherAppFilter(root.stringOrEmpty(filterMeta && filterMeta.id))
+                            }
                         }
                     }
                 }
@@ -560,7 +426,7 @@ PanelWindow {
                                 cacheBuffer: 480
                                 preferredHighlightBegin: 6
                                 preferredHighlightEnd: Math.max(6, height - 68)
-                                highlightRangeMode: ListView.StrictlyEnforceRange
+                                highlightRangeMode: root.launcherSelectionMode === "initial" ? ListView.NoHighlightRange : ListView.StrictlyEnforceRange
                                 highlightMoveDuration: 0
                                 model: launcherEntriesModel
 
@@ -578,6 +444,7 @@ PanelWindow {
                                     readonly property bool snippetEntry: root.stringOrEmpty(entry && entry.kind) === "snippet"
                                     readonly property bool onePasswordEntry: root.stringOrEmpty(entry && entry.kind) === "onepassword"
                                     readonly property bool clipboardEntry: root.stringOrEmpty(entry && entry.kind) === "clipboard"
+                                    readonly property bool appEntry: root.stringOrEmpty(entry && entry.kind) === "app"
                                     readonly property bool clipboardImageEntry: root.clipboardEntryHasImagePreview(entry)
                                     readonly property string clipboardThumbnailSource: root.clipboardImageSource(entry)
                                     readonly property string activityLabel: sessionEntry ? root.sessionBadgeLabel(entry) : ""
@@ -599,6 +466,7 @@ PanelWindow {
                                     width: launcherList.width
                                     height: sessionEntry || projectEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry ? 62 : 56
                                     radius: 8
+                                    clip: true
                                     color: sessionEntry ? "transparent" : (selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent"))
                                     border.color: sessionEntry ? "transparent" : (selected ? colors.blue : (entryMouse.containsMouse ? colors.borderStrong : "transparent"))
                                     border.width: sessionEntry ? 0 : 1
@@ -628,8 +496,11 @@ PanelWindow {
                                     }
 
                                     RowLayout {
+                                        id: contentRow
                                         visible: !sessionEntry
-                                        anchors.fill: parent
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
                                         anchors.leftMargin: 16
                                         anchors.rightMargin: 12
                                         spacing: 12
@@ -671,15 +542,13 @@ PanelWindow {
                                                 }
                                             }
 
-                                            Image {
+                                            IconImage {
                                                 visible: !sessionEntry && !projectEntry && !clipboardImageEntry && !windowEntry
                                                 anchors.centerIn: parent
-                                                width: 20
-                                                height: 20
+                                                implicitSize: 20
                                                 source: root.launcherIconSource(entry)
-                                                fillMode: Image.PreserveAspectFit
-                                                smooth: true
-                                                asynchronous: true
+                                                mipmap: true
+                                                opacity: 0.96
                                             }
 
                                             IconImage {

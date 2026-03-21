@@ -7,9 +7,11 @@ let
   # Wrapper paths for tmux config
   i3pmProjectBadgeScript = "${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge";
   clipboardSyncScript = "${scriptWrappers.clipboard-sync}/bin/clipboard-sync";
-  clipboardPasteScript = "${scriptWrappers.clipboard-paste}/bin/clipboard-paste";
+  clipboardImportCurrentScript = "${scriptWrappers.clipboard-import-current}/bin/clipboard-import-current";
+  clipboardWatchTmuxScript = "${scriptWrappers.clipboard-watch-tmux}/bin/clipboard-watch-tmux";
   keybindingsCheatsheetScript = "${scriptWrappers.keybindings-cheatsheet}/bin/keybindings-cheatsheet";
   clipcatFzfScript = "${scriptWrappers.clipcat-fzf}/bin/clipcat-fzf";
+  mirroredClipboardBuffer = "__system_clipboard";
 in
 {
   # Tmux configuration - force rebuild 2025-09-19
@@ -76,8 +78,11 @@ in
       set -q -g utf8 on
       setw -q -g utf8 on
 
-      # Force refresh on attach
-      set-hook -g client-attached 'run-shell "tmux refresh-client -S"'
+      # Import the current desktop clipboard whenever a client/session appears so
+      # long-lived tmux servers inherit the latest global clipboard state.
+      set-hook -g client-attached { run-shell '${clipboardImportCurrentScript}' }
+      set-hook -ag client-attached 'refresh-client -S'
+      set-hook -g session-created "run-shell '${clipboardImportCurrentScript}'"
 
       # Bind key for manual window resize when needed
       bind R run-shell "tmux resize-window -A"
@@ -230,15 +235,15 @@ in
       bind -T copy-mode-vi L send-keys -X end-of-line
 
       # Paste
-      bind p paste-buffer
+      bind p paste-buffer -p -b ${mirroredClipboardBuffer}
       bind B choose-buffer  # Changed from P to B to avoid conflict with popup
 
       # Paste from system clipboard (Wayland wl-paste)
       # Ctrl+Shift+V without prefix (root table binding)
-      bind -n C-S-v run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
+      bind -n C-S-v run-shell "${clipboardImportCurrentScript}" \; paste-buffer -p -b ${mirroredClipboardBuffer}
       # prefix + V or prefix + ] also paste from system clipboard
-      bind V run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
-      bind ] run-shell "${clipboardPasteScript} | tmux load-buffer - && tmux paste-buffer"
+      bind V run-shell "${clipboardImportCurrentScript}" \; paste-buffer -p -b ${mirroredClipboardBuffer}
+      bind ] run-shell "${clipboardImportCurrentScript}" \; paste-buffer -p -b ${mirroredClipboardBuffer}
 
       # Toggles
       bind S run-shell "tmux setw synchronize-panes && tmux display-message 'Synchronize panes: #{?pane_synchronized,ON,OFF}'"
@@ -359,5 +364,31 @@ in
           fi
         fi" | less'
     '';
+  };
+
+  systemd.user.services.tmux-clipboard-sync = lib.mkIf (config.wayland.windowManager.sway.enable or false) {
+    Unit = {
+      Description = "Mirror the Wayland clipboard into local tmux buffers";
+      After = [ "sway-session.target" ];
+      Requires = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = clipboardWatchTmuxScript;
+      Restart = "on-failure";
+      RestartSec = "2";
+      Environment = [
+        "XDG_RUNTIME_DIR=%t"
+      ];
+      PassEnvironment = [ "WAYLAND_DISPLAY" ];
+      NoNewPrivileges = true;
+      PrivateTmp = true;
+    };
+
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
   };
 }

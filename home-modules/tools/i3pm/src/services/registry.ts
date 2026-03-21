@@ -15,6 +15,15 @@ export class RegistryError extends Error {
   }
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await Deno.stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Registry service for loading and querying applications
  */
@@ -22,10 +31,12 @@ export class RegistryService {
   private static instance: RegistryService | null = null;
   private registry: ApplicationRegistry | null = null;
   private registryPath: string;
+  private fallbackRegistryPath: string;
 
   private constructor(registryPath?: string) {
     const home = Deno.env.get("HOME") || "/home/user";
     this.registryPath = registryPath || path.join(home, ".config/i3/application-registry.json");
+    this.fallbackRegistryPath = path.join(home, ".local/share/i3pm/registry/base.json");
   }
 
   /**
@@ -42,8 +53,10 @@ export class RegistryService {
    * Load registry from disk
    */
   async load(): Promise<ApplicationRegistry> {
+    const targetPath = await fileExists(this.registryPath) ? this.registryPath : this.fallbackRegistryPath;
+
     try {
-      const content = await Deno.readTextFile(this.registryPath);
+      const content = await Deno.readTextFile(targetPath);
       const data = JSON.parse(content);
 
       if (!isApplicationRegistry(data)) {
@@ -55,7 +68,7 @@ export class RegistryService {
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
         throw new RegistryError(
-          `Registry not found at ${this.registryPath}. Run 'nixos-rebuild switch' to generate it.`,
+          `Registry not found at ${this.registryPath} or ${this.fallbackRegistryPath}. Run 'nixos-rebuild switch' to generate it.`,
           error,
         );
       }

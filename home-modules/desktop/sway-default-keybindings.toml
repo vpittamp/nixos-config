@@ -8,6 +8,8 @@
 # AI session switcher
 "Mod+Tab" = { command = "exec show-ai-mru-switcher-action next", description = "Cycle AI sessions in launcher" }
 "Mod+Shift+Tab" = { command = "exec show-ai-mru-switcher-action prev", description = "Cycle AI sessions in launcher (reverse)" }
+"Alt+Tab" = { command = "exec show-window-switcher-action next", description = "Cycle windows in launcher" }
+"Alt+Shift+Tab" = { command = "exec show-window-switcher-action prev", description = "Cycle windows in launcher (reverse)" }
 
 # Focus workspace by number (1-10)
 "Mod+1" = { command = "workspace number 1; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 1" }

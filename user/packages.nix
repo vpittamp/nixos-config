@@ -46,6 +46,7 @@ let
     gum
     tailscale # VPN CLI tool
     chafa # Terminal image viewer for fzf previews
+    television # TUI fuzzy finder with built-in channels
     glib # For gio command (desktop file launcher and file operations)
   ];
 

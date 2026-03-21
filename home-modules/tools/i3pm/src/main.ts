@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-net --allow-run=tmux --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER
+#!/usr/bin/env -S deno run --allow-net --allow-run=tmux --allow-read=/run/user,/home,/etc/nixos --allow-write=/home,/etc/nixos --allow-env=XDG_RUNTIME_DIR,HOME,USER,FLAKE_ROOT,NH_FLAKE,NH_OS_FLAKE,I3PM_CONFIG_ROOT
 
 /**
  * i3pm Deno CLI - Main Entry Point
@@ -315,7 +315,8 @@ async function main(): Promise<void> {
     case "apps":
       {
         const { appsCommand } = await import("./commands/apps.ts");
-        await appsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await appsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        Deno.exit(exitCode);
       }
       break;
 

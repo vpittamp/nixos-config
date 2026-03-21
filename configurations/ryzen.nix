@@ -216,6 +216,15 @@ in
       nvenc_tune = "ll";        # Low latency
       # Higher bitrate for local/Tailscale network streaming
       bitrate = 40000;
+      # Include ThinkPad's 1920x1200 (16:10) for native resolution streaming
+      resolutions = ''
+        [
+          1920x1200,
+          1920x1080,
+          2560x1440,
+          3840x2160
+        ]
+      '';
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
@@ -550,6 +559,7 @@ in
 
     # Remote access
     tailscale
+    rustdesk
     remmina
     rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access
@@ -616,7 +626,12 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
-    interfaces."tailscale0".allowedTCPPorts = [ 4320 ];  # Remote OTEL sink ingress from peers
+    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 21116 21118 ];  # OTEL sink and RustDesk direct IP access
+    interfaces."tailscale0".allowedUDPPorts = lib.mkAfter [ 21116 21119 ];  # RustDesk direct access transport
+    extraInputRules = ''
+      iifname "tailscale0" tcp dport { 21116, 21118 } accept comment "RustDesk over Tailscale"
+      iifname "tailscale0" udp dport { 21116, 21119 } accept comment "RustDesk over Tailscale"
+    '';
     checkReversePath = "loose";  # For Tailscale
     # Incus bridge needs DHCP/DNS from host-side dnsmasq.
     trustedInterfaces = [ "incusbr0" ];

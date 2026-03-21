@@ -33,6 +33,8 @@ in
     # AI session switcher in launcher style
     "${modifier}+Tab" = "exec show-ai-mru-switcher-action next";
     "${modifier}+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
+    "Alt+Tab" = "exec show-window-switcher-action next";
+    "Alt+Shift+Tab" = "exec show-window-switcher-action prev";
 
     # Next/previous workspace
     "${modifier}+n" = "workspace next";

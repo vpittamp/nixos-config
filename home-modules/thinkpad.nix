@@ -1,6 +1,6 @@
 # Home-manager configuration for Lenovo ThinkPad
 # Physical laptop display with Sway, i3pm daemon, walker launcher
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -82,6 +82,13 @@
   programs.quickshell-runtime-shell = {
     enable = true;
   };
+
+  wayland.windowManager.sway.config.window.commands = lib.mkAfter [
+    {
+      criteria = { app_id = "com.moonlight_stream.Moonlight"; };
+      command = "border pixel 0, fullscreen enable";
+    }
+  ];
 
   programs.quickshell-worktree-app.enable = true;
 

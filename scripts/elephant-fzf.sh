@@ -14,6 +14,9 @@
 
 set -uo pipefail
 
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+clipboard_sync_script="$script_dir/clipboard-sync.sh"
+
 # Source Wayland environment from tmux global env if not set
 # This handles the case where script runs from tmux without Wayland vars
 if [[ -z "${WAYLAND_DISPLAY:-}" ]] && [[ -n "${TMUX:-}" ]]; then
@@ -96,7 +99,7 @@ case "${1:-}" in
       text=$(elephant query "clipboard;;${MAX_ITEMS};false" --json 2>/dev/null | \
         jq -r --arg id "$clip_id" 'select(.item.identifier == $id) | .item.text // empty')
       if [[ -n "$text" ]]; then
-        printf '%s' "$text" | wl-copy
+        printf '%s' "$text" | "$clipboard_sync_script"
       fi
     fi
     exit 0
@@ -153,8 +156,8 @@ if [ -n "${selected:-}" ]; then
     exit 1
   fi
 
-  # Copy to system clipboard via wl-copy
-  printf '%s' "$text" | wl-copy
+  # Copy via the shared sync helper so tmux buffers stay aligned.
+  printf '%s' "$text" | "$clipboard_sync_script"
 
   # Paste into tmux if we're inside tmux
   # Use load-buffer + paste-buffer instead of send-keys -l because:

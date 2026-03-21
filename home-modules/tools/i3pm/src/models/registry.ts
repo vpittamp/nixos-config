@@ -9,6 +9,8 @@
 export type ApplicationScope = "scoped" | "global";
 export type FallbackBehavior = "skip" | "use_home" | "error";
 export type ScopedTerminalMode = "managed_project_terminal" | "dedicated_scoped_window";
+export type PreferredMonitorRole = "primary" | "secondary" | "tertiary";
+export type FloatingSize = "scratchpad" | "small" | "medium" | "large";
 
 /**
  * Application registry entry
@@ -30,15 +32,22 @@ export interface RegistryApplication {
   expected_class: string; // WM_CLASS for window matching
   expected_title_contains?: string; // Optional title-based fallback matching
   preferred_workspace?: number; // Target workspace (1-9) or null for dynamic
+  preferred_monitor_role?: PreferredMonitorRole;
+  floating?: boolean;
+  floating_size?: FloatingSize;
+  scratchpad?: boolean;
 
   // Scope and behavior
   scope: ApplicationScope; // "scoped" or "global"
   fallback_behavior: FallbackBehavior; // Behavior when no project active
   multi_instance: boolean; // Allow multiple windows per project
+  aliases?: string[];
 
   // Metadata
   nix_package?: string; // Nix package reference for debugging
   description?: string; // Help text
+  pwa_domain?: string;
+  pwa_match_domains?: string[];
 }
 
 /**
@@ -64,6 +73,14 @@ export function isScopedTerminalMode(value: unknown): value is ScopedTerminalMod
   return value === "managed_project_terminal" || value === "dedicated_scoped_window";
 }
 
+export function isPreferredMonitorRole(value: unknown): value is PreferredMonitorRole {
+  return value === "primary" || value === "secondary" || value === "tertiary";
+}
+
+export function isFloatingSize(value: unknown): value is FloatingSize {
+  return value === "scratchpad" || value === "small" || value === "medium" || value === "large";
+}
+
 export function isRegistryApplication(value: unknown): value is RegistryApplication {
   if (typeof value !== "object" || value === null) return false;
   const app = value as Record<string, unknown>;
@@ -78,9 +95,16 @@ export function isRegistryApplication(value: unknown): value is RegistryApplicat
     typeof app.terminal === "boolean" &&
     (app.scoped_terminal_mode === undefined || isScopedTerminalMode(app.scoped_terminal_mode)) &&
     typeof app.expected_class === "string" &&
+    (app.preferred_monitor_role === undefined || isPreferredMonitorRole(app.preferred_monitor_role)) &&
+    (app.floating === undefined || typeof app.floating === "boolean") &&
+    (app.floating_size === undefined || isFloatingSize(app.floating_size)) &&
+    (app.scratchpad === undefined || typeof app.scratchpad === "boolean") &&
     isApplicationScope(app.scope) &&
     isFallbackBehavior(app.fallback_behavior) &&
-    typeof app.multi_instance === "boolean"
+    typeof app.multi_instance === "boolean" &&
+    (app.aliases === undefined || (Array.isArray(app.aliases) && app.aliases.every((alias) => typeof alias === "string"))) &&
+    (app.pwa_match_domains === undefined ||
+      (Array.isArray(app.pwa_match_domains) && app.pwa_match_domains.every((domain) => typeof domain === "string")))
   );
 }
 

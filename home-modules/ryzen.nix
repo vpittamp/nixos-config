@@ -2,6 +2,12 @@
 # 4-monitor bare-metal setup with NVIDIA RTX 5070
 # Desktop with Sway, i3pm daemon, walker launcher
 { pkgs, ... }:
+let
+  rustdeskStop = pkgs.writeShellScript "rustdesk-stop" ''
+    ${pkgs.procps}/bin/pkill -f 'rustdesk --tray' >/dev/null 2>&1 || true
+    ${pkgs.procps}/bin/pkill -f 'rustdesk --server' >/dev/null 2>&1 || true
+  '';
+in
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -157,4 +163,30 @@
     [Service]
     Environment="LD_LIBRARY_PATH=/run/opengl-driver/lib"
   '';
+
+  # RustDesk direct-access host for the logged-in Sway session.
+  systemd.user.services.rustdesk = {
+    Unit = {
+      Description = "RustDesk host session";
+      Documentation = "https://rustdesk.com/docs/";
+      After = [ "sway-session.target" "network.target" ];
+      BindsTo = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.rustdesk}/bin/rustdesk --server";
+      ExecStop = rustdeskStop;
+      Restart = "on-failure";
+      RestartSec = "5s";
+      KillMode = "mixed";
+      Environment = [
+        "PULSE_LATENCY_MSEC=60"
+        "PIPEWIRE_LATENCY=1024/48000"
+      ];
+    };
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
+  };
 }

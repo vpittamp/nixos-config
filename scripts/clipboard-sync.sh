@@ -6,6 +6,8 @@
 
 set -euo pipefail
 
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # Source Wayland environment from tmux global env if not set
 # This handles the case where run-shell is called from a session without Wayland vars
 if [[ -z "${WAYLAND_DISPLAY:-}" ]] && [[ -n "${TMUX:-}" ]]; then
@@ -109,3 +111,4 @@ copy_x11
 copy_pbcopy
 copy_clip_exe
 copy_osc52
+"$script_dir/clipboard-tmux-load.sh" <"$tmp"

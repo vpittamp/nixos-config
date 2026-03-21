@@ -19,6 +19,145 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  rustdeskConnectRyzen = pkgs.writeShellScriptBin "rustdesk-connect-ryzen" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    host_ip="$(${pkgs.tailscale}/bin/tailscale ip -4 ryzen 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)"
+
+    if [ -z "$host_ip" ]; then
+      host_ip="$(getent ahostsv4 ryzen | ${pkgs.gawk}/bin/awk 'NR == 1 { print $1 }')"
+    fi
+
+    if [ -z "$host_ip" ]; then
+      echo "Unable to resolve ryzen to a Tailscale IPv4 address" >&2
+      exit 1
+    fi
+
+    exec ${pkgs.rustdesk}/bin/rustdesk --connect "$host_ip"
+  '';
+  moonlightRyzenDesktop = pkgs.writeShellScriptBin "moonlight-ryzen-desktop" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    socket_path="''${SWAYSOCK:-}"
+    if [ -z "$socket_path" ]; then
+      socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
+    fi
+    if [ -z "$socket_path" ]; then
+      socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
+    fi
+
+    run_moonlight() {
+      export SDL_VIDEODRIVER=wayland
+      exec ${pkgs.moonlight-qt}/bin/moonlight \
+        stream \
+        --resolution 1920x1200 \
+        --fps 60 \
+        --display-mode windowed \
+        --absolute-mouse \
+        --capture-system-keys never \
+        ryzen \
+        Desktop
+    }
+
+    if [ -z "$socket_path" ]; then
+      run_moonlight
+    fi
+
+    target_output="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_outputs -r | ${pkgs.jq}/bin/jq -r '
+      ([.[] | select(.active and .name == "eDP-1")]
+       + [.[] | select(.active and .focused)]
+       + [.[] | select(.active)])
+      | .[0].name // empty
+    ')"
+
+    if [ -z "$target_output" ]; then
+      run_moonlight
+    fi
+
+    original_scale="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_outputs -r | ${pkgs.jq}/bin/jq -r --arg output "$target_output" '
+      .[] | select(.name == $output) | .scale
+    ')"
+    restore_scale_value="$original_scale"
+    if [ "$target_output" = "eDP-1" ]; then
+      restore_scale_value="1.25"
+    fi
+    runtime_shell_was_active=0
+    original_workspace="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_workspaces -r | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')"
+    moonlight_workspace="12: Ryzen Desktop"
+
+    restore_scale() {
+      if [ -n "''${restore_scale_value:-}" ]; then
+        ${pkgs.sway}/bin/swaymsg -s "$socket_path" output "$target_output" scale "$restore_scale_value" >/dev/null 2>&1 || true
+      fi
+    }
+
+    restore_runtime_shell() {
+      if [ "$runtime_shell_was_active" -eq 1 ]; then
+        ${pkgs.systemd}/bin/systemctl --user start quickshell-runtime-shell.service >/dev/null 2>&1 || true
+      fi
+    }
+
+    restore_workspace() {
+      if [ -n "''${original_workspace:-}" ]; then
+        ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$original_workspace" >/dev/null 2>&1 || true
+      fi
+    }
+
+    trap 'restore_workspace; restore_runtime_shell; restore_scale' EXIT INT TERM
+
+    if [ "$original_scale" != "1" ] && [ "$original_scale" != "1.0" ]; then
+      ${pkgs.sway}/bin/swaymsg -s "$socket_path" output "$target_output" scale 1.0 >/dev/null
+      ${pkgs.coreutils}/bin/sleep 1
+    fi
+
+    if ${pkgs.systemd}/bin/systemctl --user is-active --quiet quickshell-runtime-shell.service; then
+      runtime_shell_was_active=1
+      ${pkgs.systemd}/bin/systemctl --user stop quickshell-runtime-shell.service
+      ${pkgs.coreutils}/bin/sleep 1
+    fi
+
+    # Avoid inheriting terminal/project launcher identity into Moonlight itself.
+    while IFS= read -r var_name; do
+      unset "$var_name"
+    done < <(${pkgs.coreutils}/bin/env | ${pkgs.gawk}/bin/awk -F= '/^I3PM_/ { print $1 }')
+
+    export SDL_VIDEODRIVER=wayland
+    ${pkgs.moonlight-qt}/bin/moonlight \
+      stream \
+      --resolution 1920x1200 \
+      --fps 60 \
+      --display-mode windowed \
+      --absolute-mouse \
+      --capture-system-keys never \
+      ryzen \
+      Desktop &
+    moonlight_pid=$!
+
+    attempts=0
+    until ${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_tree -r | ${pkgs.jq}/bin/jq -e '
+      .. | objects | select((.app_id? // "") == "com.moonlight_stream.Moonlight")
+    ' >/dev/null 2>&1; do
+      if ! ${pkgs.coreutils}/bin/kill -0 "$moonlight_pid" >/dev/null 2>&1; then
+        wait "$moonlight_pid"
+        exit $?
+      fi
+      if [ "$attempts" -ge 40 ]; then
+        break
+      fi
+      attempts=$((attempts + 1))
+      ${pkgs.coreutils}/bin/sleep 0.25
+    done
+
+    # Move Moonlight to its workspace and remove borders (no forced fullscreen)
+    ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] border none' >/dev/null 2>&1 || true
+    ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] move container to workspace "'"$moonlight_workspace"'"' >/dev/null 2>&1 || true
+    ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$moonlight_workspace" >/dev/null 2>&1 || true
+    ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] focus' >/dev/null 2>&1 || true
+
+    wait "$moonlight_pid"
+  '';
 in
 {
   imports = [
@@ -521,6 +660,10 @@ in
 
     # Remote access
     tailscale
+    rustdesk
+    rustdeskConnectRyzen
+    moonlight-qt
+    moonlightRyzenDesktop
     remmina
     rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access

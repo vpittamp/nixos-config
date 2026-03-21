@@ -16,9 +16,11 @@ Item {
     property alias notificationRestartTimerRef: notificationRestartTimer
     property alias networkRefreshTimerRef: networkRefreshTimer
     property alias systemStatsRestartTimerRef: systemStatsRestartTimer
+    property alias brightnessRestartTimerRef: brightnessRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
+    property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
     property alias sessionPreviewFollowTimerRef: sessionPreviewFollowTimer
     property alias settingsFocusTimerRef: settingsFocusTimer
@@ -28,6 +30,7 @@ Item {
     property alias notificationWatcherRef: notificationWatcher
     property alias networkWatcherRef: networkWatcher
     property alias systemStatsWatcherRef: systemStatsWatcher
+    property alias brightnessActionProcessRef: brightnessActionProcess
     property alias snippetEditorProcessRef: snippetEditorProcess
     property alias settingsCommandQueryProcessRef: settingsCommandQueryProcess
     property alias launcherQueryProcessRef: launcherQueryProcess
@@ -50,13 +53,18 @@ Item {
                 shellRoot.settingsVisible = false;
                 shellRoot.displaySelectorVisible = false;
                 const openingSessionSwitcher = shellRoot.launcherSessionSwitcherPendingDelta !== 0;
-                shellRoot.launcherMode = openingSessionSwitcher ? "sessions" : "apps";
+                const openingWindowSwitcher = shellRoot.launcherWindowSwitcherPendingDelta !== 0;
+                shellRoot.launcherMode = openingSessionSwitcher ? "sessions" : (openingWindowSwitcher ? "windows" : "apps");
                 shellRoot.launcherSessionSwitcherActive = openingSessionSwitcher;
+                shellRoot.launcherWindowSwitcherActive = openingWindowSwitcher;
                 shellRoot.launcherQuery = "";
                 shellRoot.launcherError = "";
                 shellRoot.launcherEntries = [];
                 shellRoot.launcherSelectedIndex = 0;
+                shellRoot.launcherAppFilter = "all";
                 shellRoot.launcherPointerSelectionEnabled = true;
+                shellRoot.launcherSelectionMode = "initial";
+                shellRoot.launcherViewportPrimed = false;
                 shellRoot.launcherNormalizingInput = true;
                 if (shellRoot.launcherField) {
                     shellRoot.launcherField.text = "";
@@ -74,9 +82,14 @@ Item {
             shellRoot.launcherEntries = [];
             shellRoot.launcherSessionSwitcherActive = false;
             shellRoot.launcherSessionSwitcherPendingDelta = 0;
+            shellRoot.launcherWindowSwitcherActive = false;
+            shellRoot.launcherWindowSwitcherPendingDelta = 0;
+            shellRoot.launcherAppFilter = "all";
             shellRoot.launcherSessionEntryOrder = [];
             shellRoot.launcherSelectedIndex = 0;
             shellRoot.launcherPointerSelectionEnabled = true;
+            shellRoot.launcherSelectionMode = "initial";
+            shellRoot.launcherViewportPrimed = false;
             shellRoot.resetSnippetEditor();
             shellRoot.launcherNormalizingInput = true;
             if (shellRoot.launcherField) {
@@ -100,6 +113,10 @@ Item {
                 shellRoot.launcherSessionEntryOrder = [];
                 shellRoot.clearSessionPreview();
             }
+            if (shellRoot.launcherMode !== "windows") {
+                shellRoot.launcherWindowSwitcherActive = false;
+                shellRoot.launcherWindowSwitcherPendingDelta = 0;
+            }
             shellRoot.resetLauncherListViewport();
             if (shellRoot.launcherVisible) {
                 launcherQueryDebounce.restart();
@@ -114,6 +131,10 @@ Item {
             if (shellRoot.launcherSessionSwitcherActive && shellRoot.launcherQuery !== "") {
                 shellRoot.launcherSessionSwitcherActive = false;
                 shellRoot.launcherSessionSwitcherPendingDelta = 0;
+            }
+            if (shellRoot.launcherWindowSwitcherActive && shellRoot.launcherQuery !== "") {
+                shellRoot.launcherWindowSwitcherActive = false;
+                shellRoot.launcherWindowSwitcherPendingDelta = 0;
             }
             if (shellRoot.launcherVisible) {
                 launcherQueryDebounce.restart();
@@ -242,6 +263,13 @@ Item {
     }
 
     Timer {
+        id: brightnessRestartTimer
+        interval: 2000
+        repeat: false
+        onTriggered: brightnessWatcher.running = true
+    }
+
+    Timer {
         id: launcherFocusTimer
         interval: 40
         repeat: false
@@ -266,6 +294,13 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeLauncherSessionSwitcherOpen()
+    }
+
+    Timer {
+        id: launcherWindowSwitcherOpenTimer
+        interval: 0
+        repeat: false
+        onTriggered: shellRoot.finalizeLauncherWindowSwitcherOpen()
     }
 
     Timer {
@@ -420,6 +455,29 @@ Item {
         }
         onExited: function () {
             systemStatsRestartTimer.restart();
+        }
+    }
+
+    Process {
+        id: brightnessWatcher
+        command: [runtimeConfig.brightnessStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.parseBrightness(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("brightness.watch:", data);
+                }
+            }
+        }
+        onExited: function () {
+            brightnessRestartTimer.restart();
         }
     }
 
@@ -671,6 +729,33 @@ Item {
         }
     }
 
+    Process {
+        id: brightnessActionProcess
+        command: [runtimeConfig.brightnessActionBin, "set", "display", "50"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.brightnessActionStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                shellRoot.brightnessActionStderr += message + "\n";
+                shellRoot.brightnessActionError = message;
+                console.warn("brightness.action:", message);
+            }
+        }
+        onExited: function () {
+            shellRoot.finishBrightnessAction();
+        }
+    }
+
     Timer {
         id: sessionClosePendingPruneTimer
         interval: 1500
@@ -724,6 +809,18 @@ Item {
 
         function commitLauncherSession() {
             shellRoot.commitLauncherSessionSwitch();
+        }
+
+        function nextLauncherWindow() {
+            shellRoot.cycleLauncherWindows("next");
+        }
+
+        function prevLauncherWindow() {
+            shellRoot.cycleLauncherWindows("prev");
+        }
+
+        function commitLauncherWindow() {
+            shellRoot.commitLauncherWindowSwitch();
         }
 
         function focusLastSession() {

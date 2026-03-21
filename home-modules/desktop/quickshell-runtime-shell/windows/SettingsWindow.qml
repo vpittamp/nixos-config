@@ -106,7 +106,16 @@ PanelWindow {
                                 anchors.rightMargin: 12
                                 spacing: 8
 
+                                IconImage {
+                                    readonly property string iconSrc: root.iconSource("insert-text", "")
+                                    visible: iconSrc !== ""
+                                    implicitSize: 12
+                                    source: iconSrc
+                                    mipmap: true
+                                }
+
                                 Text {
+                                    visible: root.iconSource("insert-text", "") === ""
                                     text: "$"
                                     color: root.settingsSection === "commands" ? colors.teal : colors.textDim
                                     font.pixelSize: 12
@@ -144,6 +153,63 @@ PanelWindow {
                             Layout.fillWidth: true
                             height: 42
                             radius: 8
+                            color: root.settingsSection === "apps" ? colors.orangeBg : colors.cardAlt
+                            border.color: root.settingsSection === "apps" ? colors.orange : colors.border
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                spacing: 8
+
+                                IconImage {
+                                    readonly property string iconSrc: root.iconSource("application-x-executable", "")
+                                    visible: iconSrc !== ""
+                                    implicitSize: 12
+                                    source: iconSrc
+                                    mipmap: true
+                                }
+
+                                Text {
+                                    visible: root.iconSource("application-x-executable", "") === ""
+                                    text: "◎"
+                                    color: root.settingsSection === "apps" ? colors.orange : colors.textDim
+                                    font.pixelSize: 12
+                                    font.weight: Font.Bold
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+
+                                    Text {
+                                        text: "Apps"
+                                        color: root.settingsSection === "apps" ? colors.orange : colors.text
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        text: "Live registry + declarative sync"
+                                        color: colors.subtle
+                                        font.pixelSize: 9
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setSettingsSection("apps")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 42
+                            radius: 8
                             color: root.settingsSection === "devices" ? colors.blueBg : colors.cardAlt
                             border.color: root.settingsSection === "devices" ? colors.blue : colors.border
                             border.width: 1
@@ -154,7 +220,16 @@ PanelWindow {
                                 anchors.rightMargin: 12
                                 spacing: 8
 
+                                IconImage {
+                                    readonly property string iconSrc: root.iconSource("preferences-system", "")
+                                    visible: iconSrc !== ""
+                                    implicitSize: 12
+                                    source: iconSrc
+                                    mipmap: true
+                                }
+
                                 Text {
+                                    visible: root.iconSource("preferences-system", "") === ""
                                     text: "◈"
                                     color: root.settingsSection === "devices" ? colors.blue : colors.textDim
                                     font.pixelSize: 12
@@ -212,7 +287,20 @@ PanelWindow {
 
                     StackLayout {
                         anchors.fill: parent
-                        currentIndex: root.settingsSection === "devices" ? 1 : 0
+                        currentIndex: root.settingsSection === "commands" ? 1 : (root.settingsSection === "apps" ? 0 : 2)
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            AppRegistrySettingsPane {
+                                anchors.fill: parent
+                                shellRoot: root
+                                runtimeConfig: settingsWindow.runtimeConfig
+                                colors: settingsWindow.colors
+                                active: root.settingsVisible && root.settingsSection === "apps"
+                            }
+                        }
 
                         Item {
                             Layout.fillWidth: true
@@ -691,7 +779,7 @@ PanelWindow {
                                     }
 
                                     Text {
-                                        text: "Native QuickShell controls for displays, audio, Bluetooth, network, and system resources."
+                                        text: "Native QuickShell controls for displays, brightness, battery, audio, Bluetooth, and host runtime status."
                                         color: colors.subtle
                                         font.pixelSize: 10
                                         wrapMode: Text.WordWrap
@@ -845,6 +933,576 @@ PanelWindow {
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
+                                        implicitHeight: brightnessPowerCardContent.implicitHeight + 24
+
+                                        ColumnLayout {
+                                            id: brightnessPowerCardContent
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            Text {
+                                                text: "Brightness & Power"
+                                                color: colors.text
+                                                font.pixelSize: 12
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: root.brightnessActionError ? root.brightnessActionError : (root.brightnessPowerSummaryText() || "Expose local backlight and battery controls when the host supports them.")
+                                                color: root.brightnessActionError ? colors.red : colors.subtle
+                                                font.pixelSize: 10
+                                                wrapMode: Text.WordWrap
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                visible: root.brightnessAvailable("display")
+                                                spacing: 6
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 2
+
+                                                        Text {
+                                                            text: root.brightnessLabel("display")
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+
+                                                        Text {
+                                                            text: root.brightnessDetail("display")
+                                                            color: colors.subtle
+                                                            font.pixelSize: 9
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        text: "-"
+                                                        onClicked: root.setBrightness("display", root.brightnessPercent("display") - 5)
+                                                    }
+
+                                                    Text {
+                                                        text: String(root.brightnessPercent("display")) + "%"
+                                                        color: colors.text
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Button {
+                                                        text: "+"
+                                                        onClicked: root.setBrightness("display", root.brightnessPercent("display") + 5)
+                                                    }
+                                                }
+
+                                                    Slider {
+                                                        Layout.fillWidth: true
+                                                        from: 0
+                                                        to: 100
+                                                        stepSize: 5
+                                                        value: root.brightnessPercent("display")
+                                                        onMoved: root.setBrightness("display", Math.round(value / 5) * 5)
+                                                    }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                visible: root.brightnessAvailable("keyboard")
+                                                spacing: 6
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 2
+
+                                                        Text {
+                                                            text: root.brightnessLabel("keyboard")
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+
+                                                        Text {
+                                                            text: root.brightnessDetail("keyboard")
+                                                            color: colors.subtle
+                                                            font.pixelSize: 9
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        text: "-"
+                                                        onClicked: root.setBrightness("keyboard", root.brightnessPercent("keyboard") - 10)
+                                                    }
+
+                                                    Text {
+                                                        text: String(root.brightnessPercent("keyboard")) + "%"
+                                                        color: colors.text
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Button {
+                                                        text: "+"
+                                                        onClicked: root.setBrightness("keyboard", root.brightnessPercent("keyboard") + 10)
+                                                    }
+                                                }
+
+                                                    Slider {
+                                                        Layout.fillWidth: true
+                                                        from: 0
+                                                        to: 100
+                                                        stepSize: 10
+                                                        value: root.brightnessPercent("keyboard")
+                                                        onMoved: root.setBrightness("keyboard", Math.round(value / 10) * 10)
+                                                    }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                visible: root.batteryReady()
+                                                radius: 8
+                                                color: colors.panel
+                                                border.color: colors.border
+                                                border.width: 1
+                                                implicitHeight: batteryInfoColumn.implicitHeight + 20
+
+                                                ColumnLayout {
+                                                    id: batteryInfoColumn
+                                                    anchors.fill: parent
+                                                    anchors.margins: 10
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: "Battery"
+                                                        color: colors.text
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: root.batteryLabel()
+                                                        color: colors.text
+                                                        font.pixelSize: 10
+                                                        wrapMode: Text.WordWrap
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: root.batteryStateText() + (root.batteryDurationLabel() ? "  •  " + root.batteryDurationLabel() : "")
+                                                        color: colors.subtle
+                                                        font.pixelSize: 9
+                                                        wrapMode: Text.WordWrap
+                                                    }
+
+                                                    Text {
+                                                        visible: root.batteryHealthLabel() !== "" || root.batteryRateLabel() !== "" || root.batteryEnergyLabel() !== ""
+                                                        Layout.fillWidth: true
+                                                        text: [root.batteryHealthLabel(), root.batteryRateLabel(), root.batteryEnergyLabel()].filter(function(part) { return part !== ""; }).join("  •  ")
+                                                        color: colors.subtle
+                                                        font.pixelSize: 9
+                                                        wrapMode: Text.WordWrap
+                                                    }
+
+                                                    Text {
+                                                        visible: root.batteryMetadataLabel() !== ""
+                                                        Layout.fillWidth: true
+                                                        text: root.batteryMetadataLabel()
+                                                        color: colors.subtle
+                                                        font.pixelSize: 9
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                visible: root.powerProfilesSupported()
+                                                spacing: 6
+
+                                                Text {
+                                                    text: "Power Profile"
+                                                    color: colors.text
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Repeater {
+                                                        model: root.powerProfileChoices()
+
+                                                        delegate: Rectangle {
+                                                            required property var modelData
+                                                            readonly property var choice: modelData
+                                                            readonly property bool activeChoice: root.powerProfileIsActive(choice.value)
+                                                            Layout.fillWidth: true
+                                                            implicitHeight: 34
+                                                            radius: 8
+                                                            color: activeChoice ? colors.amberBg : colors.panel
+                                                            border.color: activeChoice ? colors.amber : colors.border
+                                                            border.width: 1
+
+                                                            Text {
+                                                                anchors.centerIn: parent
+                                                                text: choice.label
+                                                                color: activeChoice ? colors.amber : colors.text
+                                                                font.pixelSize: 9
+                                                                font.weight: Font.DemiBold
+                                                            }
+
+                                                            MouseArea {
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: root.setPowerProfile(choice.value)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    visible: root.powerProfileDegradationText() !== ""
+                                                    Layout.fillWidth: true
+                                                    text: root.powerProfileDegradationText()
+                                                    color: colors.amber
+                                                    font.pixelSize: 9
+                                                    wrapMode: Text.WordWrap
+                                                }
+
+                                                Text {
+                                                    visible: root.powerProfileHoldText() !== ""
+                                                    Layout.fillWidth: true
+                                                    text: root.powerProfileHoldText()
+                                                    color: colors.subtle
+                                                    font.pixelSize: 9
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: !root.hasBrightnessOrPowerControls()
+                                                Layout.fillWidth: true
+                                                text: "No display backlight, keyboard backlight, battery, or native power-profile controls are exposed on this host."
+                                                color: colors.subtle
+                                                font.pixelSize: 9
+                                                wrapMode: Text.WordWrap
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: 10
+                                        color: colors.cardAlt
+                                        border.color: colors.lineSoft
+                                        border.width: 1
+                                        implicitHeight: settingsAudioCardContent.implicitHeight + 24
+
+                                        ColumnLayout {
+                                            id: settingsAudioCardContent
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Audio"
+                                                    color: colors.text
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                Button {
+                                                    text: root.audioMuted() ? "Unmute Out" : "Mute Out"
+                                                    onClicked: root.toggleMute()
+                                                }
+
+                                                Button {
+                                                    text: "Mixer"
+                                                    onClicked: root.runDetached(["pavucontrol"])
+                                                }
+                                            }
+
+                                            Text {
+                                                text: "Output"
+                                                color: colors.text
+                                                font.pixelSize: 10
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            Text {
+                                                text: root.audioDetail()
+                                                color: colors.subtle
+                                                font.pixelSize: 10
+                                            }
+
+                                            Slider {
+                                                Layout.fillWidth: true
+                                                from: 0
+                                                to: 150
+                                                value: root.volumePercent()
+                                                onMoved: {
+                                                    const node = root.audioNode();
+                                                    if (node && node.audio) {
+                                                        node.audio.volume = Math.max(0, Math.min(1.5, value / 100));
+                                                    }
+                                                }
+                                            }
+
+                                            Repeater {
+                                                model: root.audioNodes()
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var sink: modelData
+                                                    readonly property bool activeSink: root.audioSinkIsActive(sink)
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 34
+                                                    radius: 8
+                                                    color: activeSink ? colors.blueBg : colors.panel
+                                                    border.color: activeSink ? colors.blue : colors.border
+                                                    border.width: 1
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 10
+                                                        anchors.rightMargin: 10
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: root.audioSinkLabel(sink)
+                                                            color: activeSink ? colors.blue : colors.text
+                                                            font.pixelSize: 9
+                                                            font.weight: Font.Medium
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: root.setPreferredAudioSink(sink)
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 1
+                                                color: colors.lineSoft
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Input"
+                                                    color: colors.text
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                Button {
+                                                    text: root.audioInputMuted() ? "Unmute In" : "Mute In"
+                                                    enabled: root.audioInputReady()
+                                                    onClicked: root.toggleInputMute()
+                                                }
+                                            }
+
+                                            Text {
+                                                text: root.audioInputDetail()
+                                                color: colors.subtle
+                                                font.pixelSize: 10
+                                            }
+
+                                            Slider {
+                                                Layout.fillWidth: true
+                                                from: 0
+                                                to: 150
+                                                value: root.inputVolumePercent()
+                                                enabled: root.audioInputReady()
+                                                onMoved: root.setInputVolumePercent(value)
+                                            }
+
+                                            Repeater {
+                                                model: root.audioSourceNodes()
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var source: modelData
+                                                    readonly property bool activeSource: root.audioSourceIsActive(source)
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 34
+                                                    radius: 8
+                                                    color: activeSource ? colors.tealBg : colors.panel
+                                                    border.color: activeSource ? colors.teal : colors.border
+                                                    border.width: 1
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 10
+                                                        anchors.rightMargin: 10
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: root.audioSourceLabel(source)
+                                                            color: activeSource ? colors.teal : colors.text
+                                                            font.pixelSize: 9
+                                                            font.weight: Font.Medium
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: root.setPreferredAudioSource(source)
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: root.audioSourceNodes().length === 0
+                                                text: "No input sources reported by PipeWire."
+                                                color: colors.subtle
+                                                font.pixelSize: 9
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: 10
+                                        color: colors.cardAlt
+                                        border.color: colors.lineSoft
+                                        border.width: 1
+                                        implicitHeight: settingsBluetoothCardContent.implicitHeight + 24
+
+                                        ColumnLayout {
+                                            id: settingsBluetoothCardContent
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Bluetooth"
+                                                    color: colors.text
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.DemiBold
+                                                }
+
+                                                Button {
+                                                    text: root.bluetoothEnabled() ? "BT Off" : "BT On"
+                                                    enabled: root.bluetoothAvailable()
+                                                    onClicked: root.toggleBluetoothEnabled()
+                                                }
+
+                                                Button {
+                                                    text: "Manager"
+                                                    onClicked: root.runDetached(["blueman-manager"])
+                                                }
+                                            }
+
+                                            Text {
+                                                text: root.bluetoothDetail()
+                                                color: colors.subtle
+                                                font.pixelSize: 10
+                                            }
+
+                                            Repeater {
+                                                model: root.bluetoothDevices()
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var device: modelData
+                                                    readonly property bool connected: !!(device && device.connected)
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 36
+                                                    radius: 8
+                                                    color: connected ? colors.tealBg : colors.panel
+                                                    border.color: connected ? colors.teal : colors.border
+                                                    border.width: 1
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 10
+                                                        anchors.rightMargin: 10
+                                                        spacing: 8
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: root.stringOrEmpty(device && device.name) || "Bluetooth device"
+                                                            color: connected ? colors.teal : colors.text
+                                                            font.pixelSize: 9
+                                                            font.weight: Font.Medium
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        Text {
+                                                            text: connected ? "Disconnect" : "Connect"
+                                                            color: connected ? colors.teal : colors.subtle
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        enabled: root.bluetoothEnabled()
+                                                        onClicked: root.toggleBluetoothDevice(device)
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: root.bluetoothAvailable() && root.bluetoothDevices().length === 0
+                                                text: "Bluetooth is available, but no paired devices are currently reported."
+                                                color: colors.subtle
+                                                font.pixelSize: 9
+                                            }
+
+                                            Text {
+                                                visible: !root.bluetoothAvailable()
+                                                text: "No Bluetooth adapter detected on this host."
+                                                color: colors.subtle
+                                                font.pixelSize: 9
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: 10
+                                        color: colors.cardAlt
+                                        border.color: colors.lineSoft
+                                        border.width: 1
                                         implicitHeight: devicesSummaryContent.implicitHeight + 24
 
                                         ColumnLayout {
@@ -920,202 +1578,6 @@ PanelWindow {
                                                         font.weight: Font.DemiBold
                                                     }
                                                 }
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        radius: 10
-                                        color: colors.cardAlt
-                                        border.color: colors.lineSoft
-                                        border.width: 1
-                                        implicitHeight: settingsAudioCardContent.implicitHeight + 24
-
-                                        ColumnLayout {
-                                            id: settingsAudioCardContent
-                                            anchors.fill: parent
-                                            anchors.margins: 12
-                                            spacing: 10
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 8
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: "Audio"
-                                                    color: colors.text
-                                                    font.pixelSize: 12
-                                                    font.weight: Font.DemiBold
-                                                }
-
-                                                Button {
-                                                    text: root.audioMuted() ? "Unmute" : "Mute"
-                                                    onClicked: root.toggleMute()
-                                                }
-
-                                                Button {
-                                                    text: "Mixer"
-                                                    onClicked: root.runDetached(["pavucontrol"])
-                                                }
-                                            }
-
-                                            Text {
-                                                text: root.audioDetail()
-                                                color: colors.subtle
-                                                font.pixelSize: 10
-                                            }
-
-                                            Slider {
-                                                Layout.fillWidth: true
-                                                from: 0
-                                                to: 150
-                                                value: root.volumePercent()
-                                                onMoved: {
-                                                    const node = root.audioNode();
-                                                    if (node && node.audio) {
-                                                        node.audio.volume = Math.max(0, Math.min(1.5, value / 100));
-                                                    }
-                                                }
-                                            }
-
-                                            Repeater {
-                                                model: root.audioNodes()
-
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    readonly property var sink: modelData
-                                                    readonly property bool activeSink: root.audioSinkIsActive(sink)
-                                                    Layout.fillWidth: true
-                                                    implicitHeight: 34
-                                                    radius: 8
-                                                    color: activeSink ? colors.blueBg : colors.panel
-                                                    border.color: activeSink ? colors.blue : colors.border
-                                                    border.width: 1
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 10
-                                                        anchors.rightMargin: 10
-
-                                                        Text {
-                                                            Layout.fillWidth: true
-                                                            text: root.audioSinkLabel(sink)
-                                                            color: activeSink ? colors.blue : colors.text
-                                                            font.pixelSize: 9
-                                                            font.weight: Font.Medium
-                                                            elide: Text.ElideRight
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: root.setPreferredAudioSink(sink)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        radius: 10
-                                        color: colors.cardAlt
-                                        border.color: colors.lineSoft
-                                        border.width: 1
-                                        implicitHeight: settingsBluetoothCardContent.implicitHeight + 24
-
-                                        ColumnLayout {
-                                            id: settingsBluetoothCardContent
-                                            anchors.fill: parent
-                                            anchors.margins: 12
-                                            spacing: 10
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 8
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: "Bluetooth & Network"
-                                                    color: colors.text
-                                                    font.pixelSize: 12
-                                                    font.weight: Font.DemiBold
-                                                }
-
-                                                Button {
-                                                    text: root.bluetoothEnabled() ? "BT Off" : "BT On"
-                                                    enabled: root.bluetoothAvailable()
-                                                    onClicked: root.toggleBluetoothEnabled()
-                                                }
-
-                                                Button {
-                                                    text: "Manager"
-                                                    onClicked: root.runDetached(["blueman-manager"])
-                                                }
-                                            }
-
-                                            Text {
-                                                text: root.networkDetail()
-                                                color: colors.subtle
-                                                font.pixelSize: 10
-                                            }
-
-                                            Repeater {
-                                                model: root.bluetoothDevices()
-
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    readonly property var device: modelData
-                                                    readonly property bool connected: !!(device && device.connected)
-                                                    Layout.fillWidth: true
-                                                    implicitHeight: 36
-                                                    radius: 8
-                                                    color: connected ? colors.tealBg : colors.panel
-                                                    border.color: connected ? colors.teal : colors.border
-                                                    border.width: 1
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 10
-                                                        anchors.rightMargin: 10
-                                                        spacing: 8
-
-                                                        Text {
-                                                            Layout.fillWidth: true
-                                                            text: root.stringOrEmpty(device && device.name) || "Bluetooth device"
-                                                            color: connected ? colors.teal : colors.text
-                                                            font.pixelSize: 9
-                                                            font.weight: Font.Medium
-                                                            elide: Text.ElideRight
-                                                        }
-
-                                                        Text {
-                                                            text: connected ? "Disconnect" : "Connect"
-                                                            color: connected ? colors.teal : colors.subtle
-                                                            font.pixelSize: 8
-                                                            font.weight: Font.DemiBold
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        enabled: root.bluetoothEnabled()
-                                                        onClicked: root.toggleBluetoothDevice(device)
-                                                    }
-                                                }
-                                            }
-
-                                            Text {
-                                                visible: !root.bluetoothAvailable()
-                                                text: "No Bluetooth adapter detected on this host."
-                                                color: colors.subtle
-                                                font.pixelSize: 9
                                             }
                                         }
                                     }
