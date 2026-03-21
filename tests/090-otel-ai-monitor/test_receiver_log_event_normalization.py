@@ -168,3 +168,14 @@ def test_parse_log_record_json_keeps_ag_ui_run_finished_event():
     assert event.event_name == "ag_ui.run_finished"
     assert event.tool == AITool.CODEX_CLI
     assert event.attributes.get("process.pid") == 9876
+
+
+def test_span_name_to_event_maps_claude_notification_spans():
+    receiver = _make_receiver()
+
+    event_name = receiver._span_name_to_event(
+        "Notification: elicitation_dialog",
+        service_name="claude-code",
+    )
+
+    assert event_name == "claude_code.notification"

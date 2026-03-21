@@ -47,6 +47,7 @@ from .services.window_filter import (
     read_process_environ_with_fallback,
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
+from .services.agent_harness import CodexHarnessManager
 from .models.window_command import CommandBatch
 
 logger = logging.getLogger(__name__)
@@ -348,6 +349,7 @@ class IPCServer:
             "connection_key": "",
         }
         self._stopped_session_notifications: Dict[str, Dict[str, Any]] = {}
+        self._user_input_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_intent_epoch: int = 0
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
@@ -357,6 +359,7 @@ class IPCServer:
         self._malformed_json_last_peer: str = ""
         self._malformed_json_last_error: str = ""
         self._malformed_json_by_peer: Dict[str, int] = {}
+        self.agent_harness = CodexHarnessManager(on_change=self._notify_agent_harness_change)
 
     @classmethod
     async def from_systemd_socket(
@@ -457,6 +460,7 @@ class IPCServer:
 
     async def stop(self) -> None:
         """Stop IPC server and close all connections."""
+        await self.agent_harness.stop()
         for task in list(self._launch_reconcile_tasks.values()):
             task.cancel()
         if self._launch_reconcile_tasks:
@@ -799,6 +803,16 @@ class IPCServer:
                 result = await self._session_doctor(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
+            elif method == "agent.snapshot":
+                result = await self._agent_snapshot(params)
+            elif method == "agent.session.start":
+                result = await self._agent_session_start(params)
+            elif method == "agent.session.send":
+                result = await self._agent_session_send(params)
+            elif method == "agent.session.cancel":
+                result = await self._agent_session_cancel(params)
+            elif method == "agent.session.respond":
+                result = await self._agent_session_respond(params)
 
             # Feature 058: Project management methods (T030-T033)
             elif method == "project_create":
@@ -1428,6 +1442,82 @@ class IPCServer:
             "requested_project": desired_project,
             "requested_variant": target_variant,
             "context": context,
+        }
+
+    async def _agent_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        _ = params
+        snapshot = await self.agent_harness.snapshot()
+        snapshot["active_context"] = await self._context_get_active({})
+        return snapshot
+
+    async def _agent_session_start(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        params = params or {}
+        active_context = await self._context_get_active({})
+        execution_mode = str(active_context.get("execution_mode") or "global").strip()
+        if execution_mode == "ssh":
+            raise ValueError("Daemon-owned agent harness currently supports local contexts only")
+
+        cwd = str(params.get("cwd") or active_context.get("local_directory") or active_context.get("directory") or Path.home()).strip()
+        if not cwd:
+            cwd = str(Path.home())
+        if not Path(cwd).exists():
+            raise ValueError(f"Working directory does not exist: {cwd}")
+
+        model = str(params.get("model") or "").strip() or None
+        session = await self.agent_harness.start_session(
+            cwd=cwd,
+            context=active_context,
+            model=model,
+        )
+        return {
+            "success": True,
+            "session": session,
+            "snapshot": await self._agent_snapshot({}),
+        }
+
+    async def _agent_session_send(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        params = params or {}
+        session_key = str(params.get("session_key") or "").strip()
+        text = str(params.get("text") or "").strip()
+        if not session_key:
+            raise ValueError("session_key is required")
+        if not text:
+            raise ValueError("text is required")
+        session = await self.agent_harness.send_message(session_key, text)
+        return {
+            "success": True,
+            "session": session,
+            "snapshot": await self._agent_snapshot({}),
+        }
+
+    async def _agent_session_cancel(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        params = params or {}
+        session_key = str(params.get("session_key") or "").strip()
+        if not session_key:
+            raise ValueError("session_key is required")
+        session = await self.agent_harness.cancel(session_key)
+        return {
+            "success": True,
+            "session": session,
+            "snapshot": await self._agent_snapshot({}),
+        }
+
+    async def _agent_session_respond(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        params = params or {}
+        session_key = str(params.get("session_key") or "").strip()
+        request_id = str(params.get("request_id") or "").strip()
+        decision = str(params.get("decision") or "").strip().lower()
+        if not session_key:
+            raise ValueError("session_key is required")
+        if not request_id:
+            raise ValueError("request_id is required")
+        if decision not in {"approve", "deny"}:
+            raise ValueError("decision must be one of: approve, deny")
+        session = await self.agent_harness.respond_to_approval(session_key, request_id, decision)
+        return {
+            "success": True,
+            "session": session,
+            "snapshot": await self._agent_snapshot({}),
         }
 
     async def _get_projects(self) -> Dict[str, Any]:
@@ -2549,6 +2639,9 @@ class IPCServer:
         self.state_change_subscribers -= dead_clients
         if dead_clients:
             logger.debug(f"[Feature 123] Removed {len(dead_clients)} dead state change subscribers")
+
+    async def _notify_agent_harness_change(self) -> None:
+        await self.notify_state_change("agent_session_changed")
 
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).
@@ -7918,6 +8011,10 @@ class IPCServer:
                 "terminal_state_label": str(raw_session.get("terminal_state_label") or "").strip(),
                 "terminal_state_source": str(raw_session.get("terminal_state_source") or "").strip(),
                 "provider_stop_signal": str(raw_session.get("provider_stop_signal") or "").strip(),
+                "notification_boundary_type": str(raw_session.get("notification_boundary_type") or "").strip(),
+                "notification_boundary_reason": str(raw_session.get("notification_boundary_reason") or "").strip(),
+                "notification_boundary_source": str(raw_session.get("notification_boundary_source") or "").strip(),
+                "notification_boundary_at": str(raw_session.get("notification_boundary_at") or "").strip(),
                 "review_pending": bool(raw_session.get("review_pending", raw_session.get("output_unseen", False))),
                 "session_phase": session_phase,
                 "session_phase_label": session_phase_label,
@@ -8370,6 +8467,35 @@ class IPCServer:
             str(session.get("terminal_state") or "").strip().lower() == "explicit_complete"
         )
 
+    @staticmethod
+    def _session_has_user_input_boundary(session: Dict[str, Any]) -> bool:
+        """Return whether a session is on a retained user-input-required boundary."""
+        tool = str(session.get("tool") or "").strip().lower()
+        if tool not in {"codex", "claude-code"}:
+            return False
+        if str(session.get("notification_boundary_type") or "").strip().lower() != "user_input_required":
+            return False
+        reason = str(
+            session.get("notification_boundary_reason")
+            or session.get("user_action_reason")
+            or ""
+        ).strip().lower()
+        return reason in {"elicitation", "permission", "auth", "rate_limit", "max_tokens", "error"}
+
+    @staticmethod
+    def _user_input_boundary_key(session: Dict[str, Any]) -> str:
+        """Return a stable token for the current user-input-required boundary."""
+        boundary_at = str(session.get("notification_boundary_at") or "").strip()
+        if boundary_at:
+            return boundary_at
+        updated_at = str(session.get("updated_at") or "").strip()
+        if updated_at:
+            return updated_at
+        state_seq = int(session.get("state_seq") or 0)
+        if state_seq > 0:
+            return f"state-seq:{state_seq}"
+        return str(session.get("session_phase") or "").strip()
+
     def _acknowledge_stopped_session_notification(
         self,
         session: Dict[str, Any],
@@ -8400,6 +8526,38 @@ class IPCServer:
         session["session_phase_label"] = "Done"
         return True
 
+    def _acknowledge_user_input_session_notification(
+        self,
+        session: Dict[str, Any],
+    ) -> bool:
+        """Persist acknowledgement for the current user-input-required boundary."""
+        session_key = str(session.get("session_key") or "").strip()
+        if not session_key or not self._session_has_user_input_boundary(session):
+            return False
+
+        boundary_key = self._user_input_boundary_key(session)
+        notification_state = self._user_input_session_notifications.get(session_key)
+        if (
+            not isinstance(notification_state, dict)
+            or str(notification_state.get("boundary_key") or "") != boundary_key
+        ):
+            notification_state = {
+                "boundary_key": boundary_key,
+                "acknowledged": True,
+            }
+        else:
+            notification_state["acknowledged"] = True
+
+        self._user_input_session_notifications[session_key] = notification_state
+        session["user_input_notification_pending"] = False
+        if bool(session.get("process_running", False)):
+            session["session_phase"] = "idle"
+            session["session_phase_label"] = "Idle"
+        else:
+            session["session_phase"] = "inactive"
+            session["session_phase_label"] = "Inactive"
+        return True
+
     def _apply_session_attention_state(
         self,
         sessions: List[Dict[str, Any]],
@@ -8410,6 +8568,7 @@ class IPCServer:
         """Promote completed background sessions into a retained needs-attention state."""
         current_key = str(current_session_key or "").strip()
         active_stopped_keys: set[str] = set()
+        active_user_input_keys: set[str] = set()
         for session in sessions:
             if not isinstance(session, dict):
                 continue
@@ -8454,6 +8613,36 @@ class IPCServer:
                     session["session_phase_label"] = "Done"
                 continue
 
+            if self._session_has_user_input_boundary(session) and session_key:
+                active_user_input_keys.add(session_key)
+                boundary_key = self._user_input_boundary_key(session)
+                notification_state = self._user_input_session_notifications.get(session_key)
+                if (
+                    not isinstance(notification_state, dict)
+                    or str(notification_state.get("boundary_key") or "") != boundary_key
+                ):
+                    notification_state = {
+                        "boundary_key": boundary_key,
+                        "acknowledged": is_current,
+                    }
+                elif is_current:
+                    notification_state["acknowledged"] = True
+
+                self._user_input_session_notifications[session_key] = notification_state
+                user_input_notification_pending = not bool(notification_state.get("acknowledged", False))
+                session["user_input_notification_pending"] = user_input_notification_pending
+                if user_input_notification_pending:
+                    session["session_phase"] = "needs_attention"
+                    session["session_phase_label"] = "Needs attention"
+                elif bool(session.get("process_running", False)):
+                    session["session_phase"] = "idle"
+                    session["session_phase_label"] = "Idle"
+                else:
+                    session["session_phase"] = "inactive"
+                    session["session_phase_label"] = "Inactive"
+                continue
+
+            session["user_input_notification_pending"] = False
             session["stopped_notification_pending"] = False
             phase = str(session.get("session_phase") or "").strip().lower()
             if phase != "done":
@@ -8468,6 +8657,9 @@ class IPCServer:
         for session_key in list(self._stopped_session_notifications.keys()):
             if session_key not in active_stopped_keys:
                 self._stopped_session_notifications.pop(session_key, None)
+        for session_key in list(self._user_input_session_notifications.keys()):
+            if session_key not in active_user_input_keys:
+                self._user_input_session_notifications.pop(session_key, None)
 
     def _load_session_items(
         self,
@@ -8805,6 +8997,7 @@ class IPCServer:
 
         self._record_ai_session_seen(session_key)
         self._acknowledge_stopped_session_notification(session)
+        self._acknowledge_user_input_session_notification(session)
 
         window_id = int(session.get("window_id") or 0)
         focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"

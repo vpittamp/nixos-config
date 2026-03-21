@@ -34,6 +34,7 @@ from otel_ai_monitor.models import (  # type: ignore  # noqa: E402
     IdentityConfidence,
     Provider,
     Session,
+    SessionStage,
     SessionState,
     TerminalState,
     TelemetryEvent,
@@ -82,6 +83,79 @@ async def test_codex_api_request_enters_working_state(monkeypatch):
         ]
         assert len(matches) == 1
         assert matches[0].state == SessionState.WORKING
+
+
+@pytest.mark.asyncio
+async def test_claude_notification_elicitation_creates_retained_user_input_boundary(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    event = TelemetryEvent(
+        event_name="claude_code.notification",
+        timestamp=datetime.now(timezone.utc),
+        session_id="claude-native-elicitation-001",
+        tool=AITool.CLAUDE_CODE,
+        attributes={
+            "notification.type": "elicitation_dialog",
+            "project": "PittampalliOrg/workflow-builder:main",
+            "terminal.tmux.pane": "%6",
+        },
+    )
+
+    await tracker.process_event(event)
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "claude-native-elicitation-001"
+        ]
+        assert len(matches) == 1
+        session = matches[0]
+        assert session.state == SessionState.ATTENTION
+        assert session.notification_boundary_type == "user_input_required"
+        assert session.notification_boundary_reason == "elicitation"
+        assert session.notification_boundary_source == "claude_notification"
+        stage = _derive_session_stage(session)
+        assert stage["stage"] == SessionStage.WAITING_INPUT
+        assert stage["session_phase"] == "needs_attention"
+
+
+@pytest.mark.asyncio
+async def test_codex_ask_user_tool_decision_creates_retained_user_input_boundary(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    event = TelemetryEvent(
+        event_name="codex.tool_decision",
+        timestamp=datetime.now(timezone.utc),
+        session_id="codex-native-ask-user-001",
+        tool=AITool.CODEX_CLI,
+        attributes={
+            "conversation.id": "codex-native-ask-user-001",
+            "tool_name": "AskUserQuestion",
+            "call_id": "call_ask_user_1",
+            "decision": "approved",
+            "project": "vpittamp/nixos-config:main",
+            "terminal.tmux.pane": "%777",
+        },
+    )
+
+    await tracker.process_event(event)
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "codex-native-ask-user-001"
+        ]
+        assert len(matches) == 1
+        session = matches[0]
+        assert session.state == SessionState.ATTENTION
+        assert session.notification_boundary_type == "user_input_required"
+        assert session.notification_boundary_reason == "elicitation"
+        assert session.notification_boundary_source == "codex_tool_decision"
+        stage = _derive_session_stage(session)
+        assert stage["stage"] == SessionStage.WAITING_INPUT
+        assert stage["session_phase"] == "needs_attention"
 
 
 @pytest.mark.asyncio

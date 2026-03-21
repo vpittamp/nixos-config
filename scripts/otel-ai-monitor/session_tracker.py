@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -218,12 +219,88 @@ _EXPLICIT_STOP_METADATA: dict[AITool, tuple[str, str]] = {
     AITool.CLAUDE_CODE: ("claude_stop_hook", "Stop"),
     AITool.GEMINI_CLI: ("gemini_after_agent", "AfterAgent"),
 }
+_USER_INPUT_BOUNDARY_TYPE = "user_input_required"
+
+
+def _normalized_boundary_token(value: object) -> str:
+    """Collapse free-form provider tokens into a comparison-friendly key."""
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+
+
+def _codex_tool_name_indicates_user_input(value: object) -> bool:
+    """Return whether a Codex tool name represents an ask-user boundary."""
+    return _normalized_boundary_token(value) in {
+        "askuserquestion",
+        "requestuserinput",
+    }
+
+
+def _event_user_input_boundary(event: TelemetryEvent) -> tuple[UserActionReason, Optional[str]]:
+    """Return a canonical user-input boundary reason/source for an event."""
+    if not event:
+        return UserActionReason.NONE, None
+
+    if event.event_name == EventNames.CLAUDE_NOTIFICATION:
+        notification_type = _normalized_boundary_token(
+            event.attributes.get("notification.type") or event.attributes.get("notification_type")
+        )
+        if notification_type == "elicitationdialog":
+            return UserActionReason.ELICITATION, "claude_notification"
+        if notification_type == "permissionprompt":
+            return UserActionReason.PERMISSION, "claude_notification"
+
+    if event.event_name == EventNames.CODEX_TOOL_DECISION:
+        decision = str(event.attributes.get("decision") or "").strip().lower()
+        if decision in {"denied", "abort", "cancelled", "canceled"}:
+            return UserActionReason.NONE, None
+        tool_name = (
+            event.attributes.get("tool_name")
+            or event.attributes.get("gen_ai.tool.name")
+            or event.attributes.get("tool.name")
+        )
+        if _codex_tool_name_indicates_user_input(tool_name):
+            return UserActionReason.ELICITATION, "codex_tool_decision"
+
+    return UserActionReason.NONE, None
+
+
+def _set_user_input_boundary(
+    session: Session,
+    *,
+    reason: UserActionReason,
+    source: str,
+    timestamp: datetime,
+) -> None:
+    """Persist the current user-input-required notification boundary."""
+    if reason == UserActionReason.NONE:
+        return
+    session.notification_boundary_type = _USER_INPUT_BOUNDARY_TYPE
+    session.notification_boundary_reason = str(reason.value or "").strip() or None
+    session.notification_boundary_source = str(source or "").strip() or None
+    session.notification_boundary_at = timestamp
+
+
+def _clear_user_input_boundary(session: Session) -> None:
+    """Clear the current retained user-input notification boundary."""
+    if session.notification_boundary_type != _USER_INPUT_BOUNDARY_TYPE:
+        return
+    session.notification_boundary_type = None
+    session.notification_boundary_reason = None
+    session.notification_boundary_source = None
+    session.notification_boundary_at = None
 
 
 def _classify_user_action_reason(session: Session) -> UserActionReason:
     """Normalize the session's current blocking reason for the UI."""
     status_reason = str(session.status_reason or "").strip().lower()
     last_error_type = str(session.last_error_type or "").strip().lower()
+    boundary_reason = str(session.notification_boundary_reason or "").strip().lower()
+
+    if boundary_reason:
+        try:
+            return UserActionReason(boundary_reason)
+        except ValueError:
+            pass
 
     if "permission" in status_reason:
         return UserActionReason.PERMISSION
@@ -250,6 +327,8 @@ def _activity_freshness(age_seconds: int) -> ActivityFreshness:
 def _humanize_status_reason(session: Session) -> str:
     """Convert machine reason fields into concise user-facing detail."""
     user_action_reason = _classify_user_action_reason(session)
+    if user_action_reason == UserActionReason.ELICITATION:
+        return "Waiting on input"
     if user_action_reason == UserActionReason.PERMISSION:
         return "Waiting on permission"
     if user_action_reason == UserActionReason.AUTH:
@@ -464,7 +543,7 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
             elif "response.completed" in event_name:
                 terminal_state_source = "sse_response_completed"
 
-    if user_action_reason == UserActionReason.PERMISSION:
+    if user_action_reason in {UserActionReason.ELICITATION, UserActionReason.PERMISSION}:
         stage = SessionStage.WAITING_INPUT
     elif user_action_reason != UserActionReason.NONE or session.state == SessionState.ATTENTION:
         stage = SessionStage.ATTENTION
@@ -572,6 +651,14 @@ def _derive_session_stage(session: Session, now: Optional[datetime] = None) -> d
         "terminal_state_label": _TERMINAL_STATE_LABELS.get(terminal_state, ""),
         "terminal_state_source": terminal_state_source,
         "provider_stop_signal": provider_stop_signal,
+        "notification_boundary_type": str(session.notification_boundary_type or ""),
+        "notification_boundary_reason": str(session.notification_boundary_reason or ""),
+        "notification_boundary_source": str(session.notification_boundary_source or ""),
+        "notification_boundary_at": (
+            session.notification_boundary_at.isoformat()
+            if session.notification_boundary_at
+            else None
+        ),
         "session_phase": session_phase,
         "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
         "turn_owner": turn_owner,
@@ -3809,6 +3896,25 @@ class SessionTracker:
             elif _event_should_clear_explicit_terminal_state(session, event):
                 _clear_terminal_state(session)
 
+            boundary_reason, boundary_source = _event_user_input_boundary(event)
+            if boundary_reason != UserActionReason.NONE:
+                _set_user_input_boundary(
+                    session,
+                    reason=boundary_reason,
+                    source=str(boundary_source or event.event_name),
+                    timestamp=event.timestamp,
+                )
+            elif (
+                session.notification_boundary_type == _USER_INPUT_BOUNDARY_TYPE
+                and session.notification_boundary_at is not None
+                and event.timestamp >= session.notification_boundary_at
+                and (
+                    event.event_name in EventNames.WORKING_TRIGGERS
+                    or event.event_name in EventNames.EXPLICIT_COMPLETION_EVENTS
+                )
+            ):
+                _clear_user_input_boundary(session)
+
             if self._has_full_tmux_identity(event_terminal_context) and session.identity_confidence not in (
                 IdentityConfidence.NATIVE,
                 IdentityConfidence.PID,
@@ -3827,6 +3933,17 @@ class SessionTracker:
                 session.state = new_state
                 session.state_changed_at = now
                 session.state_seq += 1
+                if new_state == SessionState.ATTENTION:
+                    reason = _classify_user_action_reason(session)
+                    if reason != UserActionReason.NONE:
+                        _set_user_input_boundary(
+                            session,
+                            reason=reason,
+                            source=str(boundary_source or event.event_name),
+                            timestamp=event.timestamp,
+                        )
+                elif session.notification_boundary_type == _USER_INPUT_BOUNDARY_TYPE:
+                    _clear_user_input_boundary(session)
                 if not _event_counts_as_activity(event) and event_status_reason:
                     session.status_reason = event_status_reason
                 logger.info(
@@ -4055,6 +4172,16 @@ class SessionTracker:
             and not _is_newer_than_terminal_boundary(session, event)
         ):
             return current
+
+        # Explicit ask-user / elicitation boundaries override generic tool-running state.
+        boundary_reason, _boundary_source = _event_user_input_boundary(event)
+        if boundary_reason != UserActionReason.NONE:
+            logger.debug(
+                "ATTENTION: User-input boundary detected: event=%s reason=%s",
+                event_name,
+                boundary_reason.value,
+            )
+            return SessionState.ATTENTION
 
         # Feature 135: Pending tool tracking
         # If there are active tools, stay WORKING regardless of other signals.
@@ -4706,6 +4833,26 @@ class SessionTracker:
                     if stage_fields["provider_stop_signal"] is not None
                     else None
                 ),
+                notification_boundary_type=(
+                    str(stage_fields["notification_boundary_type"])
+                    if stage_fields["notification_boundary_type"]
+                    else None
+                ),
+                notification_boundary_reason=(
+                    str(stage_fields["notification_boundary_reason"])
+                    if stage_fields["notification_boundary_reason"]
+                    else None
+                ),
+                notification_boundary_source=(
+                    str(stage_fields["notification_boundary_source"])
+                    if stage_fields["notification_boundary_source"]
+                    else None
+                ),
+                notification_boundary_at=(
+                    str(stage_fields["notification_boundary_at"])
+                    if stage_fields["notification_boundary_at"] is not None
+                    else None
+                ),
                 session_phase=str(stage_fields["session_phase"]),
                 session_phase_label=str(stage_fields["session_phase_label"]),
                 turn_owner=stage_fields["turn_owner"],
@@ -4776,6 +4923,10 @@ class SessionTracker:
                     bool(stage_fields["output_ready"]),
                     bool(stage_fields["output_unseen"]),
                     str(stage_fields["terminal_state_at"] or ""),
+                    str(stage_fields["notification_boundary_type"] or ""),
+                    str(stage_fields["notification_boundary_reason"] or ""),
+                    str(stage_fields["notification_boundary_source"] or ""),
+                    str(stage_fields["notification_boundary_at"] or ""),
                     str(stage_fields["session_phase"]),
                     str(stage_fields["session_phase_label"]),
                     str(stage_fields["turn_owner"]),

@@ -56,6 +56,7 @@ class UserActionReason(str, Enum):
     """Normalized reasons for user intervention."""
 
     NONE = ""
+    ELICITATION = "elicitation"
     PERMISSION = "permission"
     AUTH = "auth"
     RATE_LIMIT = "rate_limit"
@@ -294,6 +295,22 @@ class Session(BaseModel):
         default=None,
         description="Provider-native signal that triggered the explicit stop state",
     )
+    notification_boundary_type: Optional[str] = Field(
+        default=None,
+        description="Canonical retained notification boundary type for the current turn",
+    )
+    notification_boundary_reason: Optional[str] = Field(
+        default=None,
+        description="Canonical retained notification boundary reason for the current turn",
+    )
+    notification_boundary_source: Optional[str] = Field(
+        default=None,
+        description="Machine-readable origin for the current retained notification boundary",
+    )
+    notification_boundary_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp when the current retained notification boundary was established",
+    )
 
     # Streaming metrics (Feature 136: fix missing fields referenced by session_tracker.py)
     first_token_time: Optional[datetime] = Field(
@@ -527,6 +544,22 @@ class SessionListItem(BaseModel):
         default=None,
         description="Provider-native signal that triggered the explicit stop state",
     )
+    notification_boundary_type: Optional[str] = Field(
+        default=None,
+        description="Canonical retained notification boundary type for the current turn",
+    )
+    notification_boundary_reason: Optional[str] = Field(
+        default=None,
+        description="Canonical retained notification boundary reason for the current turn",
+    )
+    notification_boundary_source: Optional[str] = Field(
+        default=None,
+        description="Machine-readable origin for the current retained notification boundary",
+    )
+    notification_boundary_at: Optional[str] = Field(
+        default=None,
+        description="RFC3339 timestamp when the current retained notification boundary was established",
+    )
     session_phase: str = Field(
         default="idle",
         description="Collapsed session phase used by downstream UIs (working, needs_attention, stopped, done, idle)",
@@ -626,6 +659,7 @@ class EventNames:
     CLAUDE_API_ERROR = "claude_code.api_error"
     # Interceptor / derived spans (kept distinct from native log events)
     CLAUDE_LLM_CALL = "claude_code.llm_call"
+    CLAUDE_NOTIFICATION = "claude_code.notification"
 
     # Normalized AG-UI aligned lifecycle events
     AG_UI_RUN_FINISHED = "ag_ui.run_finished"

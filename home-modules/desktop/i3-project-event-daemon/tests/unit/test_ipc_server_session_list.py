@@ -835,6 +835,94 @@ async def test_session_list_explicit_focus_acknowledgement_persists_until_new_st
 
 
 @pytest.mark.asyncio
+async def test_session_list_user_input_acknowledgement_persists_until_new_boundary(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            **runtime_snapshot["tracked_windows"][0],
+            "focused": False,
+        },
+        {
+            "id": 202,
+            "window_id": 202,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "terminal_anchor_id": "other-terminal-anchor",
+            "focused": True,
+            "hidden": False,
+        },
+    ]
+    session = make_runtime_session({
+        "tool": "claude-code",
+        "session_phase": "needs_attention",
+        "session_phase_label": "Needs attention",
+        "stage": "waiting_input",
+        "stage_label": "Waiting",
+        "turn_owner": "blocked",
+        "turn_owner_label": "Blocked",
+        "needs_user_action": True,
+        "user_action_reason": "elicitation",
+        "notification_boundary_type": "user_input_required",
+        "notification_boundary_reason": "elicitation",
+        "notification_boundary_source": "claude_notification",
+        "notification_boundary_at": "2026-03-21T19:20:12.000000+00:00",
+        "status_reason": "event:claude_code.notification",
+    })
+
+    async def fake_runtime_snapshot(_params):
+        snapshot = copy.deepcopy(runtime_snapshot)
+        sessions = [copy.deepcopy(session)]
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in snapshot.get("tracked_windows", [])
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = server._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
+        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server._apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
+        snapshot["sessions"] = sessions
+        snapshot["current_ai_session_key"] = current_session_key
+        snapshot["focused_window_id"] = focused_window_id
+        return snapshot
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "thinkpad")
+
+    initial = await server._session_list({})
+    initial_session = initial["sessions"][0]
+    assert initial_session["session_phase"] == "needs_attention"
+    assert initial_session["user_input_notification_pending"] is True
+
+    assert server._acknowledge_user_input_session_notification(initial_session) is True
+
+    acknowledged = await server._session_list({})
+    acknowledged_session = acknowledged["sessions"][0]
+    assert acknowledged_session["session_phase"] == "idle"
+    assert acknowledged_session["session_phase_label"] == "Idle"
+    assert acknowledged_session["user_input_notification_pending"] is False
+
+    session["notification_boundary_at"] = "2026-03-21T19:24:01.000000+00:00"
+    newer_boundary = await server._session_list({})
+    newer_boundary_session = newer_boundary["sessions"][0]
+    assert newer_boundary_session["session_phase"] == "needs_attention"
+    assert newer_boundary_session["session_phase_label"] == "Needs attention"
+    assert newer_boundary_session["user_input_notification_pending"] is True
+
+
+@pytest.mark.asyncio
 async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["active_context"].update({

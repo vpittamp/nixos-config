@@ -146,6 +146,47 @@ async def test_session_focus_acknowledges_current_stopped_boundary_before_remote
 
 
 @pytest.mark.asyncio
+async def test_session_focus_acknowledges_current_user_input_boundary_before_remote_attach(server, monkeypatch):
+    remote_session = {
+        "session_key": "session-remote-waiting",
+        "tool": "claude-code",
+        "window_id": 0,
+        "focus_mode": "remote_bridge_attachable",
+        "focus_connection_key": "vpittamp@ryzen:22",
+        "connection_key": "vpittamp@ryzen:22",
+        "surface_key": "surface-remote-waiting",
+        "conflict_state": "",
+        "process_running": True,
+        "session_phase": "needs_attention",
+        "session_phase_label": "Needs attention",
+        "notification_boundary_type": "user_input_required",
+        "notification_boundary_reason": "elicitation",
+        "notification_boundary_source": "claude_notification",
+        "notification_boundary_at": "2026-03-21T19:20:12.000000+00:00",
+        "is_current_window": False,
+    }
+    server._session_list = AsyncMock(return_value={"sessions": [dict(remote_session)]})
+    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
+    server._focus_remote_session_attach = AsyncMock(return_value={
+        "success": True,
+        "focus_mode": "remote_bridge_bound",
+        "focus_target_host": "ryzen",
+        "verification": {"success": True, "reason": "ok"},
+        "current_ai_session_key_after": "session-remote-waiting",
+        "focused_window_id_after": 198,
+    })
+
+    result = await server._session_focus({"session_key": "session-remote-waiting"})
+
+    assert result["success"] is True
+    assert server._user_input_session_notifications["session-remote-waiting"] == {
+        "boundary_key": "2026-03-21T19:20:12.000000+00:00",
+        "acknowledged": True,
+    }
+    server._focus_remote_session_attach.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_session_focus_remote_session_aborts_when_superseded_by_newer_intent(server, monkeypatch):
     remote_session = {
         "session_key": "session-remote",

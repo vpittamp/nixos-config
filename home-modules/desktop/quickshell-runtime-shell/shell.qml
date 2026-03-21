@@ -22,9 +22,10 @@ ShellRoot {
         id: shellConfig
     }
 
-    AssistantService {
+    AgentHarnessService {
         id: assistantService
         shellConfigName: shellConfig.configName
+        i3pmBin: shellConfig.i3pmBin
         contextLabel: root.worktreePickerSummaryTitle()
         contextDetails: root.activeContextSummaryLabel()
     }
@@ -5032,6 +5033,10 @@ ShellRoot {
         return sessionPhase(session) === "needs_attention";
     }
 
+    function sessionUserInputPending(session) {
+        return boolOrFalse(session && session.user_input_notification_pending);
+    }
+
     function sessionIdleRowOpacity(session) {
         if (!sessionIsIdle(session)) {
             return 1;
@@ -5219,6 +5224,13 @@ ShellRoot {
 
     function sessionTurnOwner(session) {
         const explicitOwner = stringOrEmpty(session && session.turn_owner).toLowerCase();
+        if (
+            explicitOwner === "blocked"
+            && stringOrEmpty(session && session.notification_boundary_type).toLowerCase() === "user_input_required"
+            && !sessionUserInputPending(session)
+        ) {
+            return "user";
+        }
         if (["llm", "user", "blocked", "unknown"].indexOf(explicitOwner) >= 0) {
             return explicitOwner;
         }

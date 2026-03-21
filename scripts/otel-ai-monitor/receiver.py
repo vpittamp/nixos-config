@@ -884,6 +884,10 @@ class OTLPReceiver:
         # Codex/Gemini now emit synthesized OpenInference spans that may also start
         # with `LLM...`; avoid misclassifying those as Claude events.
         span_lower = span_name.lower()
+        if span_lower.startswith("notification:"):
+            if not service_name or "claude" in service_name.lower():
+                return EventNames.CLAUDE_NOTIFICATION
+            return None
         if span_lower.startswith("llm") and service_name:
             svc = service_name.lower()
             if "claude" not in svc:
