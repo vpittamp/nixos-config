@@ -8363,6 +8363,43 @@ class IPCServer:
             return f"state-seq:{state_seq}"
         return str(session.get("session_phase") or "").strip()
 
+    @staticmethod
+    def _session_has_explicit_stop(session: Dict[str, Any]) -> bool:
+        """Return whether a session is on an explicit provider stop boundary."""
+        return bool(session.get("llm_stopped", False)) or (
+            str(session.get("terminal_state") or "").strip().lower() == "explicit_complete"
+        )
+
+    def _acknowledge_stopped_session_notification(
+        self,
+        session: Dict[str, Any],
+    ) -> bool:
+        """Persist acknowledgement for the current explicit-stop boundary."""
+        session_key = str(session.get("session_key") or "").strip()
+        if not session_key or not self._session_has_explicit_stop(session):
+            return False
+
+        boundary_key = self._stopped_boundary_key(session)
+        notification_state = self._stopped_session_notifications.get(session_key)
+        if (
+            not isinstance(notification_state, dict)
+            or str(notification_state.get("boundary_key") or "") != boundary_key
+        ):
+            notification_state = {
+                "boundary_key": boundary_key,
+                "started_current": bool(session.get("is_current_window", False)),
+                "left_since_boundary": True,
+                "acknowledged": True,
+            }
+        else:
+            notification_state["acknowledged"] = True
+
+        self._stopped_session_notifications[session_key] = notification_state
+        session["stopped_notification_pending"] = False
+        session["session_phase"] = "done"
+        session["session_phase_label"] = "Done"
+        return True
+
     def _apply_session_attention_state(
         self,
         sessions: List[Dict[str, Any]],
@@ -8382,14 +8419,15 @@ class IPCServer:
                 current_session_key=current_key,
                 focused_window_id=focused_window_id,
             )
-            explicit_stopped = bool(session.get("llm_stopped", False)) or (
-                str(session.get("terminal_state") or "").strip().lower() == "explicit_complete"
-            )
+            explicit_stopped = self._session_has_explicit_stop(session)
             if explicit_stopped and session_key:
                 active_stopped_keys.add(session_key)
                 boundary_key = self._stopped_boundary_key(session)
                 notification_state = self._stopped_session_notifications.get(session_key)
-                if not isinstance(notification_state, dict) or str(notification_state.get("boundary_key") or "") != boundary_key:
+                if (
+                    not isinstance(notification_state, dict)
+                    or str(notification_state.get("boundary_key") or "") != boundary_key
+                ):
                     notification_state = {
                         "boundary_key": boundary_key,
                         "started_current": is_current,
@@ -8766,6 +8804,7 @@ class IPCServer:
             raise RuntimeError(f"Unknown session_key: {session_key}")
 
         self._record_ai_session_seen(session_key)
+        self._acknowledge_stopped_session_notification(session)
 
         window_id = int(session.get("window_id") or 0)
         focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"

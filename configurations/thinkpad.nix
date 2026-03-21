@@ -818,6 +818,52 @@ in
     };
   };
 
+  systemd.user.services.thinkpad-audio-defaults = {
+    description = "Restore ThinkPad internal speaker when Bluetooth is not active";
+    wantedBy = [ "sway-session.target" ];
+    partOf = [ "sway-session.target" ];
+    after = [ "pipewire.service" "wireplumber.service" "sway-session.target" ];
+
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "thinkpad-audio-defaults" ''
+        set -euo pipefail
+
+        export XDG_RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u)"
+        export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+
+        speaker_sink='alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink'
+
+        attempts=0
+        until ${pkgs.pulseaudio}/bin/pactl info >/dev/null 2>&1; do
+          if [ "$attempts" -ge 40 ]; then
+            echo "pactl not ready, skipping ThinkPad audio restore" >&2
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 0.5
+        done
+
+        attempts=0
+        until ${pkgs.pulseaudio}/bin/pactl list short sinks 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "$speaker_sink"; do
+          if [ "$attempts" -ge 40 ]; then
+            echo "ThinkPad speaker sink not ready, skipping audio restore" >&2
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 0.5
+        done
+
+        if ${pkgs.pulseaudio}/bin/pactl list short sinks 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q '^bluez_output\.'; then
+          exit 0
+        fi
+
+        ${pkgs.pulseaudio}/bin/pactl set-default-sink "$speaker_sink" || true
+        ${pkgs.pulseaudio}/bin/pactl set-sink-mute "$speaker_sink" false || true
+      '';
+    };
+  };
+
   # Enable rtkit for real-time audio scheduling
   security.rtkit.enable = true;
 

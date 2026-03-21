@@ -742,6 +742,99 @@ async def test_session_list_stopped_current_session_requires_leave_and_return_to
 
 
 @pytest.mark.asyncio
+async def test_session_list_explicit_focus_acknowledgement_persists_until_new_stop_boundary(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["tracked_windows"] = [
+        {
+            **runtime_snapshot["tracked_windows"][0],
+            "focused": False,
+        },
+        {
+            "id": 202,
+            "window_id": 202,
+            "project": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "terminal_anchor_id": "other-terminal-anchor",
+            "focused": True,
+            "hidden": False,
+        },
+    ]
+    session = make_runtime_session({
+        "stage": "output_ready",
+        "stage_rank": 1,
+        "stage_label": "Ready",
+        "stage_class": "stage-output_ready",
+        "stage_visual_state": "completed",
+        "output_ready": True,
+        "llm_stopped": True,
+        "terminal_state": "explicit_complete",
+        "terminal_state_at": "2026-03-21T15:52:47.780000+00:00",
+        "terminal_state_label": "Stopped",
+        "terminal_state_source": "claude_stop_hook",
+        "provider_stop_signal": "run-stopped",
+        "session_phase": "stopped",
+        "session_phase_label": "Stopped",
+        "turn_owner": "user",
+        "turn_owner_label": "User",
+        "activity_substate": "output_ready",
+        "activity_substate_label": "Ready",
+        "status_reason": "event:ag_ui.run_finished",
+    })
+
+    async def fake_runtime_snapshot(_params):
+        snapshot = copy.deepcopy(runtime_snapshot)
+        sessions = [copy.deepcopy(session)]
+        focused_window_id = next(
+            (
+                int(window.get("id") or 0)
+                for window in snapshot.get("tracked_windows", [])
+                if isinstance(window, dict) and bool(window.get("focused", False))
+            ),
+            0,
+        )
+        current_session_key = server._select_current_session_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
+        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server._apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
+        snapshot["sessions"] = sessions
+        snapshot["current_ai_session_key"] = current_session_key
+        snapshot["focused_window_id"] = focused_window_id
+        return snapshot
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "thinkpad")
+
+    initial = await server._session_list({})
+    initial_session = initial["sessions"][0]
+    assert initial_session["session_phase"] == "stopped"
+    assert initial_session["stopped_notification_pending"] is True
+
+    assert server._acknowledge_stopped_session_notification(initial_session) is True
+
+    acknowledged = await server._session_list({})
+    acknowledged_session = acknowledged["sessions"][0]
+    assert acknowledged_session["session_phase"] == "done"
+    assert acknowledged_session["session_phase_label"] == "Done"
+    assert acknowledged_session["stopped_notification_pending"] is False
+
+    session["terminal_state_at"] = "2026-03-21T16:04:12.000000+00:00"
+    newer_boundary = await server._session_list({})
+    newer_boundary_session = newer_boundary["sessions"][0]
+    assert newer_boundary_session["session_phase"] == "stopped"
+    assert newer_boundary_session["session_phase_label"] == "Stopped"
+    assert newer_boundary_session["stopped_notification_pending"] is True
+
+
+@pytest.mark.asyncio
 async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["active_context"].update({

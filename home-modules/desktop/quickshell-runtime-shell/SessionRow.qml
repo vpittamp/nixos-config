@@ -52,7 +52,7 @@ Rectangle {
         ? (effectiveHovered ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
         : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
     border.width: 1
-    opacity: closePending ? 0.9 : 1
+    opacity: (closePending ? 0.9 : 1) * rootObject.sessionIdleRowOpacity(session)
 
     Rectangle {
         visible: isCurrent
@@ -65,7 +65,7 @@ Rectangle {
     }
 
     function resetMotionVisuals() {
-        sessionToolIconWrap.opacity = 0.92;
+        sessionToolIconWrap.opacity = rootObject.sessionToolIconOpacity(session);
         sessionToolIconWrap.scale = 1;
     }
 
@@ -81,7 +81,7 @@ Rectangle {
         height: isCurrent ? (compact ? 22 : 28) : railHeight
         radius: 1
         color: isCurrent ? currentAccentColor : accentColor
-        opacity: isCurrent ? 0.28 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))
+        opacity: (isCurrent ? 0.28 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * rootObject.sessionIdleTextOpacity(session)
 
         Rectangle {
             visible: isCurrent
@@ -105,9 +105,7 @@ Rectangle {
             width: iconWrapSize
             height: iconWrapSize
             radius: compact ? 7 : 8
-            color: isCurrent
-                ? Qt.tint(rootObject.sessionTint(session), Qt.rgba(0.42, 0.84, 0.9, 0.06))
-                : (selected ? colorsObject.bg : rootObject.sessionTint(session))
+            color: "transparent"
             border.color: "transparent"
             border.width: 0
 
@@ -117,7 +115,42 @@ Rectangle {
                 width: compact ? 16 : 18
                 height: compact ? 16 : 18
                 scale: 1
-                opacity: 0.92
+                opacity: rootObject.sessionToolIconOpacity(session)
+
+                ParallelAnimation {
+                    running: hasMotion
+                    loops: Animation.Infinite
+
+                    SequentialAnimation {
+                        ScaleAnimator {
+                            target: sessionToolIconWrap
+                            from: 0.94
+                            to: 1.12
+                            duration: 800
+                        }
+                        ScaleAnimator {
+                            target: sessionToolIconWrap
+                            from: 1.12
+                            to: 0.94
+                            duration: 800
+                        }
+                    }
+
+                    SequentialAnimation {
+                        OpacityAnimator {
+                            target: sessionToolIconWrap
+                            from: 0.82
+                            to: 1
+                            duration: 800
+                        }
+                        OpacityAnimator {
+                            target: sessionToolIconWrap
+                            from: 1
+                            to: 0.82
+                            duration: 800
+                        }
+                    }
+                }
 
                 IconImage {
                     anchors.centerIn: parent
@@ -152,6 +185,7 @@ Rectangle {
                 font.pixelSize: compact ? 12 : 13
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
+                opacity: rootObject.sessionIdleTextOpacity(session)
             }
 
             Text {
@@ -160,6 +194,7 @@ Rectangle {
                 color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
                 font.pixelSize: compact ? 9 : 10
                 elide: Text.ElideRight
+                opacity: rootObject.sessionIdleTextOpacity(session)
             }
         }
 
@@ -172,6 +207,7 @@ Rectangle {
             border.width: 1
             Layout.preferredWidth: launcherHostTokenRow.implicitWidth + 16
             Layout.maximumWidth: 132
+            opacity: rootObject.sessionIdleChipOpacity(session)
 
             RowLayout {
                 id: launcherHostTokenRow
@@ -225,6 +261,7 @@ Rectangle {
             border.color: isCurrent ? colorsObject.lineSoft : (selected ? colorsObject.blue : colorsObject.lineSoft)
             border.width: 1
             Layout.preferredWidth: projectText.implicitWidth + 12
+            opacity: rootObject.sessionIdleChipOpacity(session)
 
             Text {
                 id: projectText
@@ -245,6 +282,7 @@ Rectangle {
                 : rootObject.sessionBadgeBackground(session)
             border.color: rootObject.sessionBadgeBorderColor(session)
             border.width: border.color === "transparent" ? 0 : 1
+            opacity: rootObject.sessionIdleChipOpacity(session)
             Layout.preferredWidth: stoppedNotification
                 ? (compact ? 20 : 22)
                 : (activityLabel.length > 0

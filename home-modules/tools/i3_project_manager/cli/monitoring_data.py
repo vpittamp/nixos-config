@@ -104,6 +104,8 @@ AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.
 AI_MONITOR_METRICS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-monitor-metrics.json"
 AI_SESSION_REVIEW_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-review.json"
 AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-seen-events.jsonl"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+AI_FINISHED_NOTIFICATION_SCRIPT = REPO_ROOT / "scripts" / "ai-finished-notification.sh"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
@@ -653,11 +655,17 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
         sessions_cache = cache.get("sessions", {})
         if not isinstance(sessions_cache, dict):
             sessions_cache = {}
+        stopped_sessions_cache = cache.get("stopped_sessions", {})
+        if not isinstance(stopped_sessions_cache, dict):
+            stopped_sessions_cache = {}
         last_global_notification = float(cache.get("last_global_notification", 0.0) or 0.0)
 
         current_keys = {str(s.get("session_key") or "") for s in active_sessions if str(s.get("session_key") or "")}
         # Drop stale cache entries to keep file bounded.
         sessions_cache = {k: v for k, v in sessions_cache.items() if k in current_keys}
+        stopped_sessions_cache = {
+            k: v for k, v in stopped_sessions_cache.items() if k in current_keys
+        }
 
         debounce_seconds = 12.0
         for session in active_sessions:
@@ -669,7 +677,44 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
             previous_state = str(previous_entry.get("state") or "")
             last_notified = float(previous_entry.get("last_notified", 0.0) or 0.0)
 
+            if _should_emit_explicit_stop_notification(session):
+                stop_entry = (
+                    stopped_sessions_cache.get(key, {})
+                    if isinstance(stopped_sessions_cache.get(key), dict)
+                    else {}
+                )
+                stop_marker = _session_stop_marker(session)
+                previous_stop_marker = str(stop_entry.get("marker") or "")
+                if stop_marker and stop_marker != previous_stop_marker:
+                    _spawn_explicit_stop_notification(session)
+                    stop_entry = {
+                        "marker": stop_marker,
+                        "last_notified": now_ts,
+                    }
+                else:
+                    stop_entry = {
+                        "marker": previous_stop_marker or stop_marker,
+                        "last_notified": float(stop_entry.get("last_notified", 0.0) or 0.0),
+                    }
+                stop_entry["last_seen"] = now_ts
+                stopped_sessions_cache[key] = stop_entry
+            else:
+                stopped_sessions_cache[key] = {
+                    "marker": "",
+                    "last_seen": now_ts,
+                    "last_notified": float(
+                        (
+                            stopped_sessions_cache.get(key, {})
+                            if isinstance(stopped_sessions_cache.get(key), dict)
+                            else {}
+                        ).get("last_notified", 0.0)
+                        or 0.0
+                    ),
+                }
+
             should_notify = (
+                str(session.get("tool") or "").strip().lower() not in {"codex", "claude-code"}
+                and
                 previous_state in {"starting", "thinking", "tool_running", "streaming"}
                 and current_state in {"waiting_input", "attention", "output_ready"}
                 and (now_ts - max(last_notified, last_global_notification)) >= debounce_seconds
@@ -702,6 +747,7 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
 
         cache = {
             "sessions": sessions_cache,
+            "stopped_sessions": stopped_sessions_cache,
             "last_global_notification": last_global_notification,
             "updated_at": now_ts,
         }
@@ -1973,10 +2019,18 @@ def _format_activity_age(seconds: int) -> str:
 _SESSION_PHASE_LABELS = {
     "working": "Working",
     "needs_attention": "Needs attention",
+    "stopped": "Stopped",
     "done": "Done",
     "idle": "Idle",
     "stale": "Stale",
+    "quiet_alive": "Quiet",
+    "tmux_missing": "Tmux missing",
     "inactive": "Inactive",
+}
+_TERMINAL_STATE_LABELS = {
+    "": "",
+    "explicit_complete": "Stopped",
+    "inferred_complete": "Completed",
 }
 _TURN_OWNER_LABELS = {
     "llm": "LLM",
@@ -2005,6 +2059,7 @@ def _derive_session_phase(
     review_pending: bool,
     needs_user_action: bool,
     output_ready: bool,
+    terminal_state: str,
     pulse_working: bool,
     is_streaming: bool,
     pending_tools: int,
@@ -2016,6 +2071,8 @@ def _derive_session_phase(
 ) -> str:
     if review_pending or needs_user_action:
         return "needs_attention"
+    if terminal_state == "explicit_complete":
+        return "stopped"
     if output_ready:
         return "done"
     if remote_source_stale or activity_freshness == "stale":
@@ -2058,6 +2115,11 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     if bool(session.get("live", False)) and not remote_source_stale:
         activity_age_seconds = min(activity_age_seconds, 15)
     user_action_reason = _normalize_user_action_reason(session.get("user_action_reason"))
+    terminal_state = str(session.get("terminal_state") or "").strip().lower()
+    terminal_state_at = str(session.get("terminal_state_at") or "").strip()
+    terminal_state_source = str(session.get("terminal_state_source") or "").strip()
+    provider_stop_signal = str(session.get("provider_stop_signal") or "").strip()
+    llm_stopped = bool(session.get("llm_stopped", False) or terminal_state == "explicit_complete")
     stage = str(session.get("stage") or "").strip().lower()
 
     if not user_action_reason:
@@ -2092,7 +2154,12 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
 
     stage_label = str(session.get("stage_label") or _AI_STAGE_LABELS.get(stage, "Idle"))
     detail = _session_status_detail(session)
-    output_ready = bool(session.get("output_ready", stage == "output_ready" or state == "completed" or review_pending))
+    output_ready = bool(
+        session.get(
+            "output_ready",
+            stage == "output_ready" or state == "completed" or review_pending or llm_stopped,
+        )
+    )
     output_unseen = bool(session.get("output_unseen", review_pending))
     needs_user_action = bool(
         session.get("needs_user_action", stage in {"waiting_input", "attention"})
@@ -2151,6 +2218,7 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
             review_pending=review_pending,
             needs_user_action=needs_user_action,
             output_ready=output_ready,
+            terminal_state=terminal_state,
             pulse_working=pulse_working,
             is_streaming=is_streaming,
             pending_tools=pending_tools,
@@ -2237,6 +2305,12 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
         "user_action_reason": user_action_reason,
         "output_ready": output_ready,
         "output_unseen": output_unseen,
+        "llm_stopped": llm_stopped,
+        "terminal_state": terminal_state,
+        "terminal_state_at": terminal_state_at or None,
+        "terminal_state_label": _TERMINAL_STATE_LABELS.get(terminal_state, ""),
+        "terminal_state_source": terminal_state_source or None,
+        "provider_stop_signal": provider_stop_signal or None,
         "session_phase": session_phase,
         "session_phase_label": _SESSION_PHASE_LABELS.get(session_phase, "Idle"),
         "turn_owner": turn_owner,
@@ -2250,6 +2324,80 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
         "identity_source": identity_source,
         "lifecycle_source": lifecycle_source,
     }
+
+
+def _should_emit_explicit_stop_notification(session: Dict[str, Any]) -> bool:
+    """Return True when the session entered the explicit stopped phase we surface in QuickShell."""
+    tool = str(session.get("tool") or "").strip().lower()
+    if tool not in {"codex", "claude-code"}:
+        return False
+    if str(session.get("session_phase") or "").strip().lower() != "stopped":
+        return False
+    if not bool(session.get("llm_stopped", False)):
+        return False
+    if str(session.get("terminal_state") or "").strip().lower() != "explicit_complete":
+        return False
+    source = str(session.get("terminal_state_source") or "").strip().lower()
+    return source in {"codex_notify", "claude_stop_hook"}
+
+
+def _session_stop_marker(session: Dict[str, Any]) -> str:
+    """Return a stable per-session explicit-stop marker."""
+    marker = str(session.get("terminal_state_at") or "").strip()
+    if marker:
+        return marker
+    sequence = int(session.get("state_seq", 0) or 0)
+    if sequence > 0:
+        return f"seq:{sequence}"
+    stage = str(session.get("stage") or "").strip().lower()
+    if stage:
+        return f"stage:{stage}"
+    return ""
+
+
+def _spawn_explicit_stop_notification(session: Dict[str, Any]) -> None:
+    """Spawn the shared notification helper for an explicit stopped AI session."""
+    if not AI_FINISHED_NOTIFICATION_SCRIPT.exists():
+        return
+
+    tool = str(session.get("tool") or "").strip().lower()
+    cli_name = "Claude Code" if tool == "claude-code" else "Codex"
+    project = str(session.get("display_project") or session.get("project") or "").strip()
+    message = project or "Task complete - awaiting your input"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "I3PM_NOTIFY_WINDOW_ID": str(session.get("window_id") or ""),
+            "I3PM_NOTIFY_PROJECT_NAME": str(
+                session.get("focus_project")
+                or session.get("display_project")
+                or session.get("project")
+                or ""
+            ),
+            "I3PM_NOTIFY_TARGET_VARIANT": str(
+                session.get("focus_execution_mode")
+                or session.get("execution_mode")
+                or ""
+            ),
+            "I3PM_NOTIFY_TMUX_SESSION": str(
+                session.get("focus_tmux_session")
+                or session.get("tmux_session")
+                or ""
+            ),
+            "I3PM_NOTIFY_TMUX_WINDOW": str(session.get("tmux_window") or ""),
+            "I3PM_NOTIFY_TMUX_PANE": str(session.get("tmux_pane") or ""),
+            "I3PM_NOTIFY_SOUND": "1",
+        }
+    )
+
+    subprocess.Popen(
+        [str(AI_FINISHED_NOTIFICATION_SCRIPT), cli_name, message],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+        start_new_session=True,
+    )
 
 
 def _session_terminal_anchor(session: Dict[str, Any]) -> str:
@@ -4025,6 +4173,12 @@ def _build_otel_badges(
             "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
             "output_ready": bool(stage_fields.get("output_ready", False)),
             "output_unseen": bool(stage_fields.get("output_unseen", False)),
+            "llm_stopped": bool(stage_fields.get("llm_stopped", False)),
+            "terminal_state": str(stage_fields.get("terminal_state") or ""),
+            "terminal_state_at": str(stage_fields.get("terminal_state_at") or ""),
+            "terminal_state_label": str(stage_fields.get("terminal_state_label") or ""),
+            "terminal_state_source": str(stage_fields.get("terminal_state_source") or ""),
+            "provider_stop_signal": str(stage_fields.get("provider_stop_signal") or ""),
             "session_phase": str(stage_fields.get("session_phase") or "idle"),
             "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
             "turn_owner": str(stage_fields.get("turn_owner") or "unknown"),
@@ -4284,6 +4438,12 @@ def _build_active_ai_sessions(
             "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
             "output_ready": bool(stage_fields.get("output_ready", False)),
             "output_unseen": bool(stage_fields.get("output_unseen", False)),
+            "llm_stopped": bool(stage_fields.get("llm_stopped", False)),
+            "terminal_state": str(stage_fields.get("terminal_state") or ""),
+            "terminal_state_at": str(stage_fields.get("terminal_state_at") or ""),
+            "terminal_state_label": str(stage_fields.get("terminal_state_label") or ""),
+            "terminal_state_source": str(stage_fields.get("terminal_state_source") or ""),
+            "provider_stop_signal": str(stage_fields.get("provider_stop_signal") or ""),
             "session_phase": str(stage_fields.get("session_phase") or "idle"),
             "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
             "turn_owner": str(stage_fields.get("turn_owner") or "unknown"),

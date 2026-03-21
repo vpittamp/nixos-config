@@ -282,6 +282,17 @@ ShellRoot {
             accentBgKey: "blueBg"
         },
         {
+            id: "snippets",
+            label: "Commands",
+            title: "Curated Commands",
+            placeholder: "Search curated commands",
+            help: "Enter run  •  Shift+Enter scratchpad  •  Manage via toggle-runtime-settings",
+            icon: "insert-text",
+            fallbackGlyph: "$",
+            accentColorKey: "teal",
+            accentBgKey: "tealBg"
+        },
+        {
             id: "files",
             label: "Files",
             title: "Find File",
@@ -324,17 +335,6 @@ ShellRoot {
             fallbackGlyph: ">",
             accentColorKey: "orange",
             accentBgKey: "orangeBg"
-        },
-        {
-            id: "snippets",
-            label: "Commands",
-            title: "Curated Commands",
-            placeholder: "Search curated commands",
-            help: "Enter run  •  Shift+Enter scratchpad  •  Manage via toggle-runtime-settings",
-            icon: "insert-text",
-            fallbackGlyph: "$",
-            accentColorKey: "teal",
-            accentBgKey: "tealBg"
         },
         {
             id: "onepassword",
@@ -4939,6 +4939,9 @@ ShellRoot {
         if (phase === "working") {
             return stageColor(session);
         }
+        if (phase === "idle") {
+            return colors.subtle;
+        }
         if (phase === "tmux_missing") {
             return colors.orange;
         }
@@ -4990,6 +4993,10 @@ ShellRoot {
         return sessionPhase(session) === "needs_attention";
     }
 
+    function sessionIsIdle(session) {
+        return sessionPhase(session) === "idle";
+    }
+
     function sessionIsActivelyProcessing(session) {
         if (sessionPhase(session) === "working") {
             return true;
@@ -5025,6 +5032,57 @@ ShellRoot {
         return sessionPhase(session) === "needs_attention";
     }
 
+    function sessionIdleRowOpacity(session) {
+        if (!sessionIsIdle(session)) {
+            return 1;
+        }
+        return sessionIsCurrent(session) ? 0.9 : 0.76;
+    }
+
+    function sessionIdleTextOpacity(session) {
+        if (!sessionIsIdle(session)) {
+            return 1;
+        }
+        return sessionIsCurrent(session) ? 0.86 : 0.72;
+    }
+
+    function sessionIdleChipOpacity(session) {
+        if (!sessionIsIdle(session)) {
+            return 1;
+        }
+        return sessionIsCurrent(session) ? 0.9 : 0.76;
+    }
+
+    function sessionToolIconOpacity(session) {
+        if (sessionHasMotion(session)) {
+            return 0.96;
+        }
+        if (sessionIsIdle(session)) {
+            return sessionIsCurrent(session) ? 0.64 : 0.5;
+        }
+        return 0.92;
+    }
+
+    function sessionCompactIconOpacity(session) {
+        if (sessionHasMotion(session)) {
+            return sessionIsCurrent(session) ? 1 : 0.94;
+        }
+        if (sessionIsIdle(session)) {
+            return sessionIsCurrent(session) ? 0.68 : 0.54;
+        }
+        return sessionIsCurrent(session) ? 1 : 0.94;
+    }
+
+    function sessionCompactBadgeOpacity(session) {
+        if (sessionHasMotion(session)) {
+            return 1;
+        }
+        if (sessionIsIdle(session)) {
+            return sessionIsCurrent(session) ? 0.58 : 0.46;
+        }
+        return 0.85;
+    }
+
     function sessionBadgeState(session) {
         return sessionPhase(session);
     }
@@ -5042,6 +5100,9 @@ ShellRoot {
         }
         if (state === "working") {
             return root.sessionAccentColor(session);
+        }
+        if (state === "idle") {
+            return colors.subtle;
         }
         if (state === "tmux_missing") {
             return colors.orange;
@@ -5066,6 +5127,9 @@ ShellRoot {
         if (state === "working") {
             return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
         }
+        if (state === "idle") {
+            return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
+        }
         if (state === "tmux_missing") {
             return colors.orangeBg;
         }
@@ -5079,6 +5143,9 @@ ShellRoot {
         const state = sessionBadgeState(session);
         if (state === "stopped") {
             return Qt.tint(colors.violet, Qt.rgba(1, 1, 1, 0.16));
+        }
+        if (state === "idle") {
+            return colors.lineSoft;
         }
         return "transparent";
     }

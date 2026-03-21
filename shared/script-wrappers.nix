@@ -26,21 +26,32 @@ let
   # The flake root discovery logic (embedded in each wrapper)
   flakeRootFunction = ''
     get_flake_root() {
+      local script_path_rel="''${SCRIPT_PATH_REL:-}"
+
       # Priority 1: Environment variable (for CI/CD and manual override)
       if [[ -n "''${FLAKE_ROOT:-}" ]]; then
-        echo "$FLAKE_ROOT"
-        return 0
+        if [[ -z "$script_path_rel" || -e "$FLAKE_ROOT/$script_path_rel" ]]; then
+          echo "$FLAKE_ROOT"
+          return 0
+        fi
       fi
 
       # Priority 2: Git repository detection (works for worktrees!)
       local git_root
       git_root=$(git rev-parse --show-toplevel 2>/dev/null) || true
       if [[ -n "$git_root" ]]; then
-        echo "$git_root"
-        return 0
+        if [[ -z "$script_path_rel" || -e "$git_root/$script_path_rel" ]]; then
+          echo "$git_root"
+          return 0
+        fi
       fi
 
       # Priority 3: Default fallback (for deployed systems without git)
+      if [[ -z "$script_path_rel" || -e "/etc/nixos/$script_path_rel" ]]; then
+        echo "/etc/nixos"
+        return 0
+      fi
+
       echo "/etc/nixos"
     }
   '';
@@ -52,6 +63,7 @@ let
       runtimeInputs = commonInputs ++ extraInputs;
       meta = lib.optionalAttrs (description != "") { inherit description; };
       text = ''
+        export SCRIPT_PATH_REL=${lib.escapeShellArg scriptPath}
         ${flakeRootFunction}
         FLAKE_ROOT="$(get_flake_root)"
         export FLAKE_ROOT

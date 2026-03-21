@@ -509,7 +509,7 @@ PanelWindow {
                                             width: 34
                                             height: 34
                                             radius: 8
-                                            color: sessionEntry ? (selected ? colors.bg : root.sessionTint(entry)) : (selected ? colors.bg : colors.panelAlt)
+                                            color: sessionEntry ? "transparent" : (selected ? colors.bg : colors.panelAlt)
                                             border.color: (sessionEntry || windowEntry) ? (selected ? colors.blueMuted : "transparent") : (selected ? colors.blueMuted : colors.lineSoft)
                                             border.width: 1
 
@@ -916,7 +916,7 @@ PanelWindow {
                                                     width: 20
                                                     height: 20
                                                     radius: 6
-                                                    color: root.sessionTint(session)
+                                                    color: "transparent"
                                                     border.color: "transparent"
                                                     border.width: 0
 
@@ -931,7 +931,7 @@ PanelWindow {
                                                         color: root.sessionAccentColor(session)
                                                         border.color: "transparent"
                                                         border.width: 0
-                                                        opacity: root.sessionHasMotion(session) ? 1 : 0.85
+                                                        opacity: root.sessionCompactBadgeOpacity(session)
                                                     }
 
                                                     IconImage {
@@ -939,7 +939,7 @@ PanelWindow {
                                                         implicitSize: 13
                                                         source: root.toolIconSource(session)
                                                         mipmap: true
-                                                        opacity: root.sessionIsCurrent(session) ? 1 : 0.94
+                                                        opacity: root.sessionCompactIconOpacity(session)
                                                     }
 
                                                     MouseArea {

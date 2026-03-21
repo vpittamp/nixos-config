@@ -4075,7 +4075,8 @@ class TestAiNotificationState:
 
         monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
 
-        with patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run:
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run, \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
             monitoring_data.emit_ai_state_transition_notifications([
                 {
                     "session_key": "tool=codex|project=proj|window=1|pane=%1",
@@ -4088,11 +4089,94 @@ class TestAiNotificationState:
                 }
             ])
             mock_run.assert_not_called()
+            mock_popen.assert_not_called()
 
         payload = json.loads(notify_file.read_text())
         assert isinstance(payload, dict)
         assert "sessions" in payload
         assert payload["sessions"]["tool=codex|project=proj|window=1|pane=%1"]["state"] == "idle"
+        assert "stopped_sessions" in payload
+
+    def test_emit_explicit_stop_notification_once_for_codex(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notification_script = tmp_path / "notify.sh"
+        notification_script.write_text("#!/usr/bin/env bash\nexit 0\n")
+        notification_script.chmod(0o755)
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+        monkeypatch.setattr(monitoring_data, "AI_FINISHED_NOTIFICATION_SCRIPT", notification_script)
+
+        session = {
+            "session_key": "tool=codex|project=proj|window=1|pane=%1",
+            "tool": "codex",
+            "display_project": "proj",
+            "project": "proj",
+            "window_id": 101,
+            "focus_project": "proj",
+            "focus_execution_mode": "local",
+            "focus_tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%1",
+            "session_phase": "stopped",
+            "llm_stopped": True,
+            "terminal_state": "explicit_complete",
+            "terminal_state_at": "2026-03-21T12:00:00+00:00",
+            "terminal_state_source": "codex_notify",
+            "provider_stop_signal": "agent-turn-complete",
+            "stage": "output_ready",
+            "otel_state": "completed",
+            "state_seq": 9,
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_called_once()
+
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_called_once()
+
+        payload = json.loads(notify_file.read_text())
+        assert payload["stopped_sessions"][session["session_key"]]["marker"] == session["terminal_state_at"]
+
+    def test_emit_notifications_skips_legacy_path_for_explicit_claude_stop(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notification_script = tmp_path / "notify.sh"
+        notification_script.write_text("#!/usr/bin/env bash\nexit 0\n")
+        notification_script.chmod(0o755)
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+        monkeypatch.setattr(monitoring_data, "AI_FINISHED_NOTIFICATION_SCRIPT", notification_script)
+
+        session = {
+            "session_key": "tool=claude|project=proj|window=2|pane=%9",
+            "tool": "claude-code",
+            "display_project": "proj",
+            "project": "proj",
+            "display_tool": "Claude Code",
+            "display_target": "pane %9",
+            "window_id": 202,
+            "focus_project": "proj",
+            "focus_execution_mode": "local",
+            "focus_tmux_session": "proj",
+            "tmux_window": "1:main",
+            "tmux_pane": "%9",
+            "session_phase": "stopped",
+            "llm_stopped": True,
+            "terminal_state": "explicit_complete",
+            "terminal_state_at": "2026-03-21T12:01:00+00:00",
+            "terminal_state_source": "claude_stop_hook",
+            "provider_stop_signal": "Stop",
+            "stage": "output_ready",
+            "otel_state": "completed",
+            "state_seq": 10,
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen, \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_called_once()
+            mock_run.assert_not_called()
 
     def test_atomic_write_json_leaves_no_temp_files(self, tmp_path):
         state_file = tmp_path / "state.json"

@@ -106,6 +106,46 @@ async def test_session_focus_remote_session_uses_exact_remote_bridge_path(server
 
 
 @pytest.mark.asyncio
+async def test_session_focus_acknowledges_current_stopped_boundary_before_remote_attach(server, monkeypatch):
+    remote_session = {
+        "session_key": "session-remote-stopped",
+        "window_id": 0,
+        "focus_mode": "remote_bridge_attachable",
+        "focus_connection_key": "vpittamp@ryzen:22",
+        "connection_key": "vpittamp@ryzen:22",
+        "surface_key": "surface-remote-stopped",
+        "conflict_state": "",
+        "llm_stopped": True,
+        "terminal_state": "explicit_complete",
+        "terminal_state_at": "2026-03-21T15:52:47.780000+00:00",
+        "session_phase": "stopped",
+        "session_phase_label": "Stopped",
+        "is_current_window": False,
+    }
+    server._session_list = AsyncMock(return_value={"sessions": [dict(remote_session)]})
+    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
+    server._focus_remote_session_attach = AsyncMock(return_value={
+        "success": True,
+        "focus_mode": "remote_bridge_bound",
+        "focus_target_host": "ryzen",
+        "verification": {"success": True, "reason": "ok"},
+        "current_ai_session_key_after": "session-remote-stopped",
+        "focused_window_id_after": 198,
+    })
+
+    result = await server._session_focus({"session_key": "session-remote-stopped"})
+
+    assert result["success"] is True
+    assert server._stopped_session_notifications["session-remote-stopped"] == {
+        "boundary_key": "2026-03-21T15:52:47.780000+00:00",
+        "started_current": False,
+        "left_since_boundary": True,
+        "acknowledged": True,
+    }
+    server._focus_remote_session_attach.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_session_focus_remote_session_aborts_when_superseded_by_newer_intent(server, monkeypatch):
     remote_session = {
         "session_key": "session-remote",

@@ -74,6 +74,14 @@ async def send_completion_notification(session: "Session") -> None:
     Args:
         session: Completed session to notify about
     """
+    tool_key = getattr(session.tool, "value", session.tool)
+    if str(tool_key or "").strip().lower() in {"codex", "claude-code"}:
+        logger.debug(
+            "Skipping otel-ai-monitor desktop notification for %s; dashboard notifier owns stopped-stage alerts",
+            tool_key,
+        )
+        return
+
     notify_send = shutil.which("notify-send")
     if not notify_send:
         logger.warning("notify-send not found, skipping notification")
