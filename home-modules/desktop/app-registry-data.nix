@@ -417,7 +417,7 @@ let
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 7;
-      icon = "btop";
+      icon = iconPath "btop.svg";
       nix_package = "pkgs.btop";
       multi_instance = false;
       fallback_behavior = "skip";

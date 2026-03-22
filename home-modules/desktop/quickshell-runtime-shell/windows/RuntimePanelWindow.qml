@@ -17,12 +17,11 @@ PanelWindow {
     screen: root.primaryScreen
     visible: root.panelVisible && root.primaryScreen !== null
     color: "transparent"
-    width: runtimeConfig.panelWidth
     implicitWidth: runtimeConfig.panelWidth
     anchors.top: true
     anchors.bottom: true
     anchors.right: true
-    exclusiveZone: root.dockedMode ? width : 0
+    exclusiveZone: root.dockedMode ? implicitWidth : 0
     focusable: true
     aboveWindows: root.dockedMode
     WlrLayershell.namespace: "i3pm-runtime-panel"
