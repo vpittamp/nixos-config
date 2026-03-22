@@ -32,6 +32,26 @@ Item {
     })
     property string contextLabel: ""
     property string contextDetails: ""
+    readonly property bool showStatusBanner: service.errorMessage !== ""
+        || service.hasError
+        || service.hasPendingApproval
+        || service.isGenerating
+        || service.actionRunning
+    readonly property string statusBannerTone: service.errorMessage !== "" || service.hasError
+        ? "error"
+        : (service.hasPendingApproval ? "approval" : ((service.isGenerating || service.actionRunning) ? "running" : ""))
+    readonly property string statusBannerLabel: statusBannerTone === "error"
+        ? "Issue"
+        : (statusBannerTone === "approval" ? "Approval Required" : "In Progress")
+    readonly property string statusBannerText: service.errorMessage !== ""
+        ? service.errorMessage
+        : (service.hasError
+            ? service.stringValue(service.currentSession && service.currentSession.last_error, "The current session failed.")
+            : (service.hasPendingApproval
+                ? "This session needs approval before it can continue."
+                : (service.isGenerating
+                    ? "The current session is still running. New messages stay disabled until this turn finishes."
+                    : (service.actionRunning ? "Syncing with the daemon…" : ""))))
 
     function blockText(value) {
         if (value === undefined || value === null)
@@ -43,7 +63,7 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: 8
 
         Rectangle {
             Layout.fillWidth: true
@@ -51,16 +71,16 @@ Item {
             color: root.palette.panel
             border.color: root.palette.border
             border.width: 1
-            implicitHeight: compactHeaderLayout.implicitHeight + 18
+            implicitHeight: compactHeaderLayout.implicitHeight + 14
 
             ColumnLayout {
                 id: compactHeaderLayout
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                anchors.topMargin: 9
-                anchors.bottomMargin: 9
-                spacing: 8
+                anchors.topMargin: 7
+                anchors.bottomMargin: 7
+                spacing: 6
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -71,15 +91,18 @@ Item {
                         spacing: 1
 
                         Text {
-                            text: "Agent Chat"
+                            text: service.currentSession ? service.currentSessionTitle : "Agent Chat"
                             color: root.palette.text
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             font.weight: Font.DemiBold
+                            elide: Text.ElideRight
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: contextLabel !== "" ? contextLabel + "  •  " + contextDetails : "Daemon-owned Codex harness"
+                            text: service.currentSession
+                                ? service.currentSessionSubtitle
+                                : (contextLabel !== "" ? contextLabel + "  •  " + contextDetails : "Daemon-owned Codex harness")
                             color: root.palette.subtle
                             font.pixelSize: 8
                             elide: Text.ElideRight
@@ -88,7 +111,7 @@ Item {
 
                     Rectangle {
                         visible: service.isGenerating || service.hasPendingApproval || service.actionRunning || service.hasError
-                        height: 18
+                        height: 20
                         radius: 6
                         color: service.hasError
                             ? root.palette.redBg
@@ -122,15 +145,15 @@ Item {
                         color: root.palette.cardAlt
                         border.color: showSessionPicker ? root.palette.blue : root.palette.border
                         border.width: 1
-                        implicitHeight: sessionSwitcherLayout.implicitHeight + 14
+                        implicitHeight: sessionSwitcherLayout.implicitHeight + 12
 
                         RowLayout {
                             id: sessionSwitcherLayout
                             anchors.fill: parent
                             anchors.leftMargin: 10
                             anchors.rightMargin: 10
-                            anchors.topMargin: 7
-                            anchors.bottomMargin: 7
+                            anchors.topMargin: 6
+                            anchors.bottomMargin: 6
                             spacing: 8
 
                             Rectangle {
@@ -159,7 +182,12 @@ Item {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: service.currentSessionSubtitle
+                                    text: service.currentSession
+                                        ? ((service.currentSession.state_label || "Idle")
+                                            + ((service.currentSession.context && service.currentSession.context.qualified_name)
+                                                ? "  •  " + service.currentSession.context.qualified_name
+                                                : ""))
+                                        : service.currentSessionSubtitle
                                     color: root.palette.subtle
                                     font.pixelSize: 7
                                     elide: Text.ElideRight
@@ -183,7 +211,7 @@ Item {
                             }
 
                             Text {
-                                text: showSessionPicker ? "Hide" : "Show"
+                                text: showSessionPicker ? "Hide" : "Threads"
                                 color: root.palette.blue
                                 font.pixelSize: 8
                                 font.weight: Font.DemiBold
@@ -211,7 +239,7 @@ Item {
                     }
 
                     ActionChip {
-                        text: service.startTargetQualifiedName === service.activeQualifiedName ? "Scope: Active" : "Scope"
+                        text: service.startTargetQualifiedName === service.activeQualifiedName ? "Active scope" : "Scope"
                         enabled: !service.actionRunning
                         onClicked: {
                             root.showTargetPicker = !root.showTargetPicker;
@@ -251,25 +279,52 @@ Item {
                 spacing: 10
 
                 Rectangle {
-                    visible: service.errorMessage !== ""
+                    visible: root.showStatusBanner
                     Layout.fillWidth: true
                     radius: 8
-                    color: root.palette.redBg
-                    border.color: root.palette.red
+                    color: root.statusBannerTone === "error"
+                        ? root.palette.redBg
+                        : (root.statusBannerTone === "approval" ? root.palette.orangeBg : root.palette.blueBg)
+                    border.color: root.statusBannerTone === "error"
+                        ? root.palette.red
+                        : (root.statusBannerTone === "approval" ? root.palette.orange : root.palette.blue)
                     border.width: 1
-                    implicitHeight: errorText.implicitHeight + 12
+                    implicitHeight: statusBannerLayout.implicitHeight + 12
 
-                    Text {
-                        id: errorText
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        text: service.errorMessage
-                        color: root.palette.red
-                        font.pixelSize: 8
-                        wrapMode: Text.Wrap
+                    RowLayout {
+                        id: statusBannerLayout
+                        anchors.fill: parent
+                        anchors.leftMargin: 9
+                        anchors.rightMargin: 9
+                        anchors.topMargin: 6
+                        anchors.bottomMargin: 6
+                        spacing: 8
+
+                        Rectangle {
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: root.statusBannerTone === "error"
+                                ? root.palette.red
+                                : (root.statusBannerTone === "approval" ? root.palette.orange : root.palette.blue)
+                        }
+
+                        Text {
+                            text: root.statusBannerLabel
+                            color: root.statusBannerTone === "error"
+                                ? root.palette.red
+                                : (root.statusBannerTone === "approval" ? root.palette.orange : root.palette.blue)
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.statusBannerText
+                            color: root.palette.textDim
+                            font.pixelSize: 8
+                            wrapMode: Text.Wrap
+                        }
                     }
                 }
 
@@ -279,17 +334,17 @@ Item {
                     color: root.palette.bg
                     border.color: root.palette.lineSoft
                     border.width: 1
-                    implicitHeight: desktopContextScroller.implicitHeight + 12
+                    implicitHeight: desktopContextScroller.implicitHeight + 10
 
                     ListView {
                         id: desktopContextScroller
                         anchors.fill: parent
                         anchors.leftMargin: 8
                         anchors.rightMargin: 8
-                        anchors.topMargin: 6
-                        anchors.bottomMargin: 6
+                        anchors.topMargin: 5
+                        anchors.bottomMargin: 5
                         orientation: ListView.Horizontal
-                        spacing: 8
+                        spacing: 6
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
                         model: [
@@ -328,7 +383,7 @@ Item {
                         ]
 
                         delegate: DesktopContextCard {
-                            width: Math.max(108, Math.min(196, desktopContextScroller.width * 0.42))
+                            width: Math.max(96, Math.min(176, desktopContextScroller.width * 0.4))
                             title: modelData.title
                             primaryText: modelData.primary
                             secondaryText: modelData.secondary
@@ -347,39 +402,32 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 8
-                        spacing: 6
+                        spacing: 5
 
                         RowLayout {
                             id: transcriptSummaryRow
                             Layout.fillWidth: true
                             spacing: 8
 
-                            ColumnLayout {
+                            Text {
                                 Layout.fillWidth: true
-                                spacing: 1
+                                text: "Transcript"
+                                color: root.palette.text
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
 
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: service.currentSessionTitle
-                                    color: root.palette.text
-                                    font.pixelSize: 9
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: service.currentSessionSubtitle
-                                    color: root.palette.subtle
-                                    font.pixelSize: 7
-                                    elide: Text.ElideRight
-                                    visible: text !== ""
-                                }
+                            Text {
+                                text: service.currentSession ? (service.currentSession.state_label || "Idle") : "Idle"
+                                color: root.palette.subtle
+                                font.pixelSize: 7
+                                font.weight: Font.DemiBold
                             }
 
                             Text {
                                 text: service.transcriptCount > 0 ? service.transcriptCount + " items" : "Empty"
-                                color: root.palette.subtle
+                                color: root.palette.muted
                                 font.pixelSize: 7
                             }
 
@@ -399,7 +447,7 @@ Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
-                            spacing: 8
+                            spacing: 6
                             boundsBehavior: Flickable.StopAtBounds
                             model: service.transcriptModel
 
@@ -571,12 +619,12 @@ Item {
                         anchors.rightMargin: 10
                         anchors.topMargin: 9
                         anchors.bottomMargin: 9
-                        spacing: 8
+                        spacing: 7
 
                         TextArea {
                             id: composeField
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.max(72, Math.min(156, contentHeight + 18))
+                            Layout.preferredHeight: Math.max(84, Math.min(168, contentHeight + 18))
                             placeholderText: service.currentSession ? "Send a follow-up..." : "Start a new Codex session..."
                             placeholderTextColor: root.palette.muted
                             wrapMode: TextArea.Wrap
@@ -641,6 +689,7 @@ Item {
                                 text: service.currentSession ? "Send" : "Start"
                                 enabled: !service.actionRunning && composeField.text.trim() !== "" && service.canSend
                                 accent: true
+                                prominent: true
                                 onClicked: service.sendMessage(composeField.text)
                             }
                         }
@@ -957,7 +1006,7 @@ Item {
         property color accentColor: "white"
         property color accentFill: "transparent"
 
-        implicitHeight: 24
+        implicitHeight: 22
         implicitWidth: badgeText.implicitWidth + 16
         radius: 8
         color: accentFill
@@ -980,10 +1029,11 @@ Item {
         property bool enabled: true
         property bool accent: false
         property bool destructive: false
+        property bool prominent: false
         signal clicked
 
-        implicitHeight: 28
-        implicitWidth: actionChipText.implicitWidth + 18
+        implicitHeight: prominent ? 30 : 28
+        implicitWidth: actionChipText.implicitWidth + (prominent ? 22 : 18)
         radius: 8
         color: !enabled ? root.palette.cardAlt : (destructive ? root.palette.redBg : (accent ? root.palette.blueBg : root.palette.cardAlt))
         border.color: !enabled ? root.palette.border : (destructive ? root.palette.red : (accent ? root.palette.blue : root.palette.border))
@@ -995,7 +1045,7 @@ Item {
             anchors.centerIn: parent
             text: actionChip.text
             color: !enabled ? root.palette.subtle : (destructive ? root.palette.red : (accent ? root.palette.blue : root.palette.text))
-            font.pixelSize: 9
+            font.pixelSize: prominent ? 10 : 9
             font.weight: Font.DemiBold
         }
 
@@ -1014,8 +1064,8 @@ Item {
         property string primaryText: ""
         property string secondaryText: ""
 
-        implicitHeight: desktopCardLayout.implicitHeight + 14
-        radius: 9
+        implicitHeight: desktopCardLayout.implicitHeight + 10
+        radius: 8
         color: root.palette.cardAlt
         border.color: root.palette.border
         border.width: 1
@@ -1025,15 +1075,15 @@ Item {
             anchors.fill: parent
             anchors.leftMargin: 10
             anchors.rightMargin: 10
-            anchors.topMargin: 7
-            anchors.bottomMargin: 7
-            spacing: 2
+            anchors.topMargin: 5
+            anchors.bottomMargin: 5
+            spacing: 1
 
             Text {
                 Layout.fillWidth: true
                 text: desktopCard.title
                 color: root.palette.subtle
-                font.pixelSize: 7
+                font.pixelSize: 6
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
             }
@@ -1051,7 +1101,7 @@ Item {
                 Layout.fillWidth: true
                 text: desktopCard.secondaryText
                 color: root.palette.muted
-                font.pixelSize: 7
+                font.pixelSize: 6
                 elide: Text.ElideMiddle
             }
         }
@@ -1144,7 +1194,7 @@ Item {
                 return value;
             return JSON.stringify(value, null, 2);
         }
-        implicitHeight: toolLayout.implicitHeight + 16
+        implicitHeight: toolLayout.implicitHeight + 14
         height: implicitHeight
         radius: 12
         color: root.palette.panelAlt
@@ -1156,17 +1206,17 @@ Item {
             anchors.fill: parent
             anchors.leftMargin: 10
             anchors.rightMargin: 10
-            anchors.topMargin: 8
-            anchors.bottomMargin: 8
-            spacing: 6
+            anchors.topMargin: 7
+            anchors.bottomMargin: 7
+            spacing: 5
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
 
                 Text {
-                    text: "Tool"
-                    color: root.palette.accent
+                    text: modelData.label || "Tool"
+                    color: modelData.status === "failed" ? root.palette.red : root.palette.accent
                     font.pixelSize: 8
                     font.weight: Font.DemiBold
                 }
@@ -1179,27 +1229,47 @@ Item {
                     elide: Text.ElideRight
                 }
 
-                Text {
-                    text: modelData.duration_ms ? (Math.round(Number(modelData.duration_ms)) + "ms") : (modelData.status || "")
-                    color: root.palette.subtle
-                    font.pixelSize: 8
+                Rectangle {
+                    radius: 7
+                    color: modelData.status === "failed"
+                        ? root.palette.redBg
+                        : (modelData.status === "completed" ? root.palette.accentBg : root.palette.cardAlt)
+                    border.color: modelData.status === "failed"
+                        ? root.palette.red
+                        : (modelData.status === "completed" ? root.palette.accent : root.palette.border)
+                    border.width: 1
+                    implicitHeight: 18
+                    implicitWidth: toolStatusText.implicitWidth + 12
+
+                    Text {
+                        id: toolStatusText
+                        anchors.centerIn: parent
+                        text: modelData.duration_ms ? (Math.round(Number(modelData.duration_ms)) + "ms") : (modelData.status || "")
+                        color: modelData.status === "failed"
+                            ? root.palette.red
+                            : (modelData.status === "completed" ? root.palette.accent : root.palette.subtle)
+                        font.pixelSize: 7
+                        font.weight: Font.DemiBold
+                    }
                 }
             }
 
-                Text {
-                    visible: !!(modelData.preview || modelData.cwd)
-                    text: modelData.preview || modelData.cwd || ""
-                    color: root.palette.muted
-                    font.pixelSize: 8
-                    wrapMode: Text.Wrap
-                }
+            Text {
+                visible: !!modelData.preview
+                text: modelData.preview || ""
+                color: root.palette.muted
+                font.pixelSize: 8
+                wrapMode: Text.Wrap
+                maximumLineCount: toolCard.expanded ? 12 : 2
+                elide: Text.ElideRight
+            }
 
-                GridLayout {
-                    visible: toolCard.expanded
-                    Layout.fillWidth: true
-                    columns: 2
-                    columnSpacing: 8
-                    rowSpacing: 4
+            GridLayout {
+                visible: toolCard.expanded
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 8
+                rowSpacing: 4
 
                     Text {
                         visible: !!modelData.status
@@ -1231,92 +1301,92 @@ Item {
                         color: root.palette.textDim
                         font.pixelSize: 7
                     }
-                }
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.arguments)
-                    text: "Arguments"
-                    color: root.palette.subtle
-                    font.pixelSize: 7
-                    font.weight: Font.DemiBold
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.arguments)
+                text: "Arguments"
+                color: root.palette.subtle
+                font.pixelSize: 7
+                font.weight: Font.DemiBold
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.arguments)
-                    Layout.fillWidth: true
-                    text: root.blockText(modelData.arguments)
-                    wrapMode: Text.WrapAnywhere
-                    color: root.palette.textDim
-                    font.pixelSize: 8
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.arguments)
+                Layout.fillWidth: true
+                text: root.blockText(modelData.arguments)
+                wrapMode: Text.WrapAnywhere
+                color: root.palette.textDim
+                font.pixelSize: 8
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.result)
-                    text: "Result"
-                    color: root.palette.subtle
-                    font.pixelSize: 7
-                    font.weight: Font.DemiBold
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.result)
+                text: "Result"
+                color: root.palette.subtle
+                font.pixelSize: 7
+                font.weight: Font.DemiBold
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.result)
-                    Layout.fillWidth: true
-                    text: root.blockText(modelData.result)
-                    wrapMode: Text.WrapAnywhere
-                    color: root.palette.textDim
-                    font.pixelSize: 8
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.result)
+                Layout.fillWidth: true
+                text: root.blockText(modelData.result)
+                wrapMode: Text.WrapAnywhere
+                color: root.palette.textDim
+                font.pixelSize: 8
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.output)
-                    text: "Output"
-                    color: root.palette.subtle
-                    font.pixelSize: 7
-                    font.weight: Font.DemiBold
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.output)
+                text: "Output"
+                color: root.palette.subtle
+                font.pixelSize: 7
+                font.weight: Font.DemiBold
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.output)
-                    Layout.fillWidth: true
-                    text: root.blockText(modelData.output)
-                    wrapMode: Text.WrapAnywhere
-                    color: root.palette.textDim
-                    font.pixelSize: 8
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.output)
+                Layout.fillWidth: true
+                text: root.blockText(modelData.output)
+                wrapMode: Text.WrapAnywhere
+                color: root.palette.textDim
+                font.pixelSize: 8
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.error)
-                    text: "Error"
-                    color: root.palette.red
-                    font.pixelSize: 7
-                    font.weight: Font.DemiBold
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.error)
+                text: "Error"
+                color: root.palette.red
+                font.pixelSize: 7
+                font.weight: Font.DemiBold
+            }
 
-                Text {
-                    visible: toolCard.expanded && !!(modelData.error)
-                    Layout.fillWidth: true
-                    text: root.blockText(modelData.error)
-                    wrapMode: Text.WrapAnywhere
-                    color: root.palette.red
-                    font.pixelSize: 8
-                }
+            Text {
+                visible: toolCard.expanded && !!(modelData.error)
+                Layout.fillWidth: true
+                text: root.blockText(modelData.error)
+                wrapMode: Text.WrapAnywhere
+                color: root.palette.red
+                font.pixelSize: 8
+            }
 
-                Text {
-                    visible: toolCard.expanded && Array.isArray(modelData.changes) && modelData.changes.length > 0
-                    text: "Changes"
-                    color: root.palette.subtle
-                    font.pixelSize: 7
-                    font.weight: Font.DemiBold
-                }
+            Text {
+                visible: toolCard.expanded && Array.isArray(modelData.changes) && modelData.changes.length > 0
+                text: "Changes"
+                color: root.palette.subtle
+                font.pixelSize: 7
+                font.weight: Font.DemiBold
+            }
 
-                Text {
-                    visible: toolCard.expanded && Array.isArray(modelData.changes) && modelData.changes.length > 0
-                    Layout.fillWidth: true
-                    text: root.blockText(modelData.changes)
-                    wrapMode: Text.WrapAnywhere
-                    color: root.palette.textDim
-                    font.pixelSize: 8
-                }
+            Text {
+                visible: toolCard.expanded && Array.isArray(modelData.changes) && modelData.changes.length > 0
+                Layout.fillWidth: true
+                text: root.blockText(modelData.changes)
+                wrapMode: Text.WrapAnywhere
+                color: root.palette.textDim
+                font.pixelSize: 8
+            }
 
             RowLayout {
                 visible: !!modelData.cwd
@@ -1331,7 +1401,7 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: modelData.cwd || ""
-                    visible: !!modelData.cwd
+                    visible: toolCard.expanded && !!modelData.cwd
                     color: root.palette.subtle
                     font.pixelSize: 7
                     elide: Text.ElideMiddle
@@ -1347,7 +1417,7 @@ Item {
 
     component ApprovalCard: Rectangle {
         property var modelData: ({})
-        implicitHeight: approvalLayout.implicitHeight + 16
+        implicitHeight: approvalLayout.implicitHeight + 14
         height: implicitHeight
         radius: 12
         color: root.palette.orangeBg
@@ -1359,14 +1429,14 @@ Item {
             anchors.fill: parent
             anchors.leftMargin: 10
             anchors.rightMargin: 10
-            anchors.topMargin: 8
-            anchors.bottomMargin: 8
-            spacing: 6
+            anchors.topMargin: 7
+            anchors.bottomMargin: 7
+            spacing: 5
 
             Text {
                 text: modelData.title || "Approval required"
                 color: root.palette.orange
-                font.pixelSize: 10
+                font.pixelSize: 9
                 font.weight: Font.DemiBold
             }
 
@@ -1385,6 +1455,7 @@ Item {
                 ActionChip {
                     text: "Approve"
                     accent: true
+                    prominent: true
                     enabled: !!modelData.can_approve && !service.actionRunning
                     onClicked: service.approveRequest(modelData.request_id)
                 }
@@ -1392,6 +1463,7 @@ Item {
                 ActionChip {
                     text: "Deny"
                     destructive: true
+                    prominent: true
                     enabled: !!modelData.can_deny && !service.actionRunning
                     onClicked: service.denyRequest(modelData.request_id)
                 }

@@ -14,6 +14,17 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 HarnessSessionChangeCallback = Callable[[Any, Dict[str, Any]], Awaitable[None]]
+REQUEST_TIMEOUT_SECONDS = 30.0
+STALL_CHECK_INTERVAL_SECONDS = 5.0
+STALL_TIMEOUT_SECONDS = 45.0
+FATAL_STDERR_PATTERNS = (
+    "panicked at ",
+    "ThreadPoolBuildError",
+    "creating threadpool failed",
+    "failed to spawn thread",
+    "inner future panicked during poll",
+    "Resource temporarily unavailable",
+)
 
 
 def _utc_now_iso() -> str:
@@ -53,11 +64,15 @@ class CodexHarnessSession:
         self._stdout_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
         self._wait_task: Optional[asyncio.Task] = None
+        self._stall_watchdog_task: Optional[asyncio.Task] = None
         self._request_id = 0
         self._pending_responses: Dict[int, asyncio.Future] = {}
         self._pending_approvals: Dict[str, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._closing = False
+        self._terminal_error_reported = False
+        self._last_progress_monotonic = 0.0
+        self._last_progress_reason = "session_created"
 
         self.thread_id = ""
         self.session_key = ""
@@ -76,6 +91,9 @@ class CodexHarnessSession:
     async def start(self) -> None:
         env = os.environ.copy()
         self._closing = False
+        env.setdefault("RAYON_NUM_THREADS", "4")
+        env.setdefault("TOKIO_WORKER_THREADS", "4")
+        self._record_progress("start")
         self.process = await asyncio.create_subprocess_exec(
             "codex",
             "app-server",
@@ -88,6 +106,7 @@ class CodexHarnessSession:
         self._stdout_task = asyncio.create_task(self._stdout_loop())
         self._stderr_task = asyncio.create_task(self._stderr_loop())
         self._wait_task = asyncio.create_task(self._wait_for_exit())
+        self._stall_watchdog_task = asyncio.create_task(self._stall_watchdog_loop())
 
         await self._request(
             "initialize",
@@ -132,9 +151,14 @@ class CodexHarnessSession:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+        if self._stall_watchdog_task:
+            self._stall_watchdog_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._stall_watchdog_task
         self._stdout_task = None
         self._stderr_task = None
         self._wait_task = None
+        self._stall_watchdog_task = None
         self.process = None
 
     async def send_user_message(self, text: str) -> Dict[str, Any]:
@@ -160,6 +184,7 @@ class CodexHarnessSession:
         turn = dict(response.get("turn") or {})
         self.current_turn_id = str(turn.get("id") or self.current_turn_id or "").strip()
         self.thread_status = "active"
+        self._record_progress("turn_started")
         self._recompute_phase()
         await self._notify_change({"type": "turn_started", "reason": "user_message"})
         return self.snapshot()
@@ -279,6 +304,12 @@ class CodexHarnessSession:
             raw = line.decode(errors="replace").strip()
             if raw:
                 logger.warning("codex app-server stderr: %s", raw)
+                if self._is_fatal_stderr(raw):
+                    await self._handle_terminal_error(
+                        f"Codex app-server failed: {raw}",
+                        reason="fatal_stderr",
+                        terminate_process=True,
+                    )
 
     async def _wait_for_exit(self) -> None:
         assert self.process is not None
@@ -289,25 +320,7 @@ class CodexHarnessSession:
 
     async def _handle_process_exit(self, returncode: int) -> None:
         message = f"Codex app-server exited with code {returncode}"
-        logger.error(message)
-        self.last_error = message
-        self.current_turn_id = ""
-        self.thread_status = "error"
-        self._upsert_entry(
-            {
-                "id": f"error:process-exit:{returncode}:{self.updated_at}",
-                "kind": "error",
-                "display_kind": "error",
-                "label": "Error",
-                "content": message,
-                "preview": _preview_text(message),
-                "status": "completed",
-                "timestamp": _utc_now_iso(),
-            }
-        )
-        self._fail_pending_responses(RuntimeError(message))
-        self._recompute_phase()
-        await self._notify_change({"type": "session_error", "reason": "process_exit"})
+        await self._handle_terminal_error(message, reason="process_exit")
 
     async def _handle_message(self, message: Dict[str, Any]) -> None:
         if "id" in message and ("result" in message or "error" in message) and "method" not in message:
@@ -326,6 +339,7 @@ class CodexHarnessSession:
             return
 
         if "id" in message:
+            self._record_progress(f"server_request:{method}")
             await self._handle_server_request(method, params, message.get("id"))
             self._recompute_phase()
             await self._notify_change({"type": "approval_requested", "reason": method})
@@ -376,6 +390,7 @@ class CodexHarnessSession:
                 self._mark_approval_resolved(request_id, "resolved")
                 self._pending_approvals.pop(request_id, None)
 
+        self._record_progress(method)
         self._recompute_phase()
         await self._notify_change({"type": "session_updated", "reason": method})
 
@@ -426,7 +441,16 @@ class CodexHarnessSession:
                     "params": params,
                 }
             )
-        return await future
+        try:
+            return await asyncio.wait_for(future, timeout=REQUEST_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError as error:
+            self._pending_responses.pop(request_id, None)
+            await self._handle_terminal_error(
+                f"Codex app-server timed out while handling {method}",
+                reason="request_timeout",
+                terminate_process=True,
+            )
+            raise RuntimeError(f"Codex app-server timed out while handling {method}") from error
 
     async def _send(self, payload: Dict[str, Any]) -> None:
         if not self.process or not self.process.stdin or self.process.returncode is not None:
@@ -760,6 +784,92 @@ class CodexHarnessSession:
         for future in pending:
             if not future.done():
                 future.set_exception(error)
+
+    def _record_progress(self, reason: str) -> None:
+        self._last_progress_monotonic = asyncio.get_running_loop().time()
+        self._last_progress_reason = str(reason or "session_updated")
+
+    def _has_in_progress_tool_call(self) -> bool:
+        for item in self.transcript:
+            if item.get("kind") != "tool_call":
+                continue
+            status = str(item.get("status") or "").strip().lower()
+            if status in {"inprogress", "streaming", "running"}:
+                return True
+        return False
+
+    def _should_fail_stalled_turn(self, now_monotonic: float) -> bool:
+        if self._closing or self._terminal_error_reported:
+            return False
+        if self.thread_status != "active" and not self.current_turn_id:
+            return False
+        if self._last_progress_monotonic <= 0:
+            return False
+        elapsed = now_monotonic - self._last_progress_monotonic
+        if elapsed < STALL_TIMEOUT_SECONDS:
+            return False
+        if not self._has_in_progress_tool_call() and not self.current_turn_id:
+            return False
+        return True
+
+    async def _stall_watchdog_loop(self) -> None:
+        while True:
+            await asyncio.sleep(STALL_CHECK_INTERVAL_SECONDS)
+            if not self._should_fail_stalled_turn(asyncio.get_running_loop().time()):
+                continue
+            await self._handle_terminal_error(
+                "Codex turn stalled with no progress for %ds while waiting on tool execution."
+                % int(STALL_TIMEOUT_SECONDS),
+                reason="stalled_turn",
+                terminate_process=True,
+            )
+            return
+
+    def _is_fatal_stderr(self, raw: str) -> bool:
+        lowered = raw.lower()
+        return any(pattern.lower() in lowered for pattern in FATAL_STDERR_PATTERNS)
+
+    async def _handle_terminal_error(
+        self,
+        message: str,
+        *,
+        reason: str,
+        terminate_process: bool = False,
+    ) -> None:
+        if self._terminal_error_reported:
+            return
+        self._terminal_error_reported = True
+        logger.error(message)
+        self.last_error = message
+        self.current_turn_id = ""
+        self.thread_status = "error"
+        for entry in self.transcript:
+            if entry.get("kind") != "tool_call":
+                continue
+            status = str(entry.get("status") or "").strip().lower()
+            if status in {"inprogress", "streaming", "running"}:
+                entry["status"] = "failed"
+                if not entry.get("output"):
+                    entry["output"] = message
+                entry["preview"] = _preview_text(entry.get("output") or message)
+        self._upsert_entry(
+            {
+                "id": f"error:{reason}:{self.updated_at}",
+                "kind": "error",
+                "display_kind": "error",
+                "label": "Error",
+                "content": message,
+                "preview": _preview_text(message),
+                "status": "completed",
+                "timestamp": _utc_now_iso(),
+            }
+        )
+        self._fail_pending_responses(RuntimeError(message))
+        self._recompute_phase()
+        await self._notify_change({"type": "session_error", "reason": reason})
+        if terminate_process and self.process and self.process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                self.process.terminate()
 
     async def _notify_change(self, event: Optional[Dict[str, Any]] = None) -> None:
         self.session_revision += 1

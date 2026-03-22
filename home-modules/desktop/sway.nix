@@ -1076,6 +1076,17 @@ PY
     fi
   '');
 
+  # Native QuickShell notifications should be the only owner of org.freedesktop.Notifications.
+  # Older generations may leave swaync enabled/running, so clean it up during activation.
+  home.activation.disableLegacySwayncForNativeNotifications =
+    lib.mkIf nativeQuickshellNotifications (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      if ${pkgs.systemd}/bin/systemctl --user --quiet is-enabled swaync.service >/dev/null 2>&1; then
+        ${pkgs.systemd}/bin/systemctl --user disable --now swaync.service >/dev/null 2>&1 || true
+      else
+        ${pkgs.systemd}/bin/systemctl --user stop swaync.service >/dev/null 2>&1 || true
+      fi
+    '');
+
   # wayvnc systemd services for headless mode (Feature 048)
   # Three independent VNC instances (auto-started)
 

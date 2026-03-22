@@ -187,10 +187,10 @@ in
         #
         # The daemon now hosts Codex app-server subprocesses for the agent harness,
         # so the original lightweight watcher limits are too restrictive.
-        MemoryMax = "256M";
-        MemoryHigh = "192M";
+        MemoryMax = "512M";
+        MemoryHigh = "384M";
         CPUQuota = "50%";
-        TasksMax = 256;
+        TasksMax = 1024;
 
         # Security hardening (minimal since we need /proc access)
         NoNewPrivileges = true;

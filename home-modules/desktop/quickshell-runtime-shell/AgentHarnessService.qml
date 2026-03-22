@@ -630,6 +630,25 @@ Item {
         return list.length > 0 ? list[0] : null;
     }
 
+    function resolvedCurrentSessionObject() {
+        var selected = sessionByKey(selectedSessionKey);
+        if (selected)
+            return selected;
+        var currentKey = stringValue(currentSessionData && currentSessionData.session_key, "");
+        if (currentKey !== "") {
+            var current = sessionByKey(currentKey);
+            if (current)
+                return current;
+        }
+        var activeKey = stringValue(snapshot && snapshot.active_session_key, "");
+        if (activeKey !== "") {
+            var activeSession = sessionByKey(activeKey);
+            if (activeSession)
+                return activeSession;
+        }
+        return null;
+    }
+
     function choosePreferredSessionKey(snapshotValue) {
         var nextSessions = arrayValue(snapshotValue && snapshotValue.sessions);
         var activeKey = stringValue(snapshotValue && snapshotValue.active_session_key, "");
@@ -875,10 +894,7 @@ Item {
             return;
         var deferred = deferredMessageUntilSnapshot;
         deferredMessageUntilSnapshot = "";
-        if (currentSession && currentSession.session_key)
-            sendMessage(deferred);
-        else
-            startSession(deferred);
+        sendMessageInternal(deferred, false);
     }
 
     function applyActionResult(result) {
@@ -949,11 +965,12 @@ Item {
         runAction(args);
     }
 
-    function sendMessage(text) {
+    function sendMessageInternal(text, allowSnapshotRecovery) {
         var trimmed = normalizedText(text);
         if (trimmed === "")
             return;
-        if (!currentSession || !currentSession.session_key) {
+        var resolvedSession = resolvedCurrentSessionObject();
+        if (!resolvedSession || !resolvedSession.session_key) {
             if (!snapshotLoaded) {
                 deferredMessageUntilSnapshot = trimmed;
                 requestSnapshot();
@@ -968,14 +985,38 @@ Item {
             startSession(trimmed);
             return;
         }
-        if (!canSend) {
-            errorMessage = hasPendingApproval
-                ? "Resolve the pending approval in this session before sending another message."
-                : "Wait for the current session to finish before sending another message.";
+
+        if (!!resolvedSession.can_send) {
+            if (stringValue(selectedSessionKey, "") !== stringValue(resolvedSession.session_key, ""))
+                selectSession(resolvedSession.session_key);
+            runAction(["agent", "send", resolvedSession.session_key, "--text", trimmed]);
+            draftText = "";
             return;
         }
-        runAction(["agent", "send", currentSession.session_key, "--text", trimmed]);
-        draftText = "";
+
+        if (allowSnapshotRecovery && snapshotLoaded && !snapshotProcess.running) {
+            deferredMessageUntilSnapshot = trimmed;
+            requestSnapshot();
+            return;
+        }
+
+        var blockingSession = resolvedSession;
+        var blockingError = stringValue(blockingSession && blockingSession.last_error, "");
+        if (blockingError !== "") {
+            errorMessage = blockingError;
+            return;
+        }
+
+        if (!!(blockingSession && blockingSession.pending_approval)) {
+            errorMessage = "Resolve the pending approval in this session before sending another message.";
+            return;
+        }
+
+        errorMessage = "Wait for the current session to finish before sending another message.";
+    }
+
+    function sendMessage(text) {
+        sendMessageInternal(text, true);
     }
 
     function cancelCurrentTurn() {

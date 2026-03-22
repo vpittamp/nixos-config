@@ -14,6 +14,7 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     property alias launcherFieldRef: launcherField
     property alias launcherListRef: launcherList
+    property alias sessionPreviewFlickRef: sessionPreviewFlick
     id: launcherWindow
     screen: root.primaryScreen
     visible: root.launcherVisible && root.primaryScreen !== null

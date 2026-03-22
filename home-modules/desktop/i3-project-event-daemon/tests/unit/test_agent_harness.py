@@ -58,6 +58,98 @@ async def test_process_exit_marks_session_error_and_fails_pending_requests():
 
 
 @pytest.mark.asyncio
+async def test_fatal_stderr_marks_session_error_without_waiting_for_exit():
+    on_change = AsyncMock()
+    session = CodexHarnessSession(cwd="/tmp", context={}, on_change=on_change)
+    session.thread_id = "thread-1"
+    session.session_key = "codex:thread-1"
+    session.thread_status = "active"
+    session.current_turn_id = "turn-1"
+
+    await session._handle_terminal_error(
+        "Codex app-server failed: creating threadpool failed",
+        reason="fatal_stderr",
+    )
+
+    snapshot = session.snapshot()
+    assert snapshot["session_phase"] == "error"
+    assert snapshot["can_send"] is False
+    assert snapshot["last_error"] == "Codex app-server failed: creating threadpool failed"
+    assert snapshot["transcript"][-1]["kind"] == "error"
+    on_change.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_terminal_error_marks_in_progress_tool_calls_failed():
+    session = CodexHarnessSession(cwd="/tmp", context={}, on_change=AsyncMock())
+    session.thread_id = "thread-1"
+    session.session_key = "codex:thread-1"
+    session.thread_status = "active"
+    session.current_turn_id = "turn-1"
+    session._upsert_entry({
+        "id": "tool-1",
+        "kind": "tool_call",
+        "display_kind": "tool",
+        "label": "Tool",
+        "tool_type": "commandExecution",
+        "status": "inProgress",
+        "title": "strace ...",
+        "output": "",
+        "preview": "strace ...",
+        "timestamp": "2026-03-22T16:27:54+00:00",
+    })
+
+    await session._handle_terminal_error("Codex turn stalled", reason="stalled_turn")
+
+    tool = session.snapshot()["transcript"][0]
+    assert tool["status"] == "failed"
+    assert tool["output"] == "Codex turn stalled"
+    assert "Codex turn stalled" in tool["preview"]
+
+
+@pytest.mark.asyncio
+async def test_stalled_turn_detection_triggers_for_stale_active_turn_state():
+    session = CodexHarnessSession(cwd="/tmp", context={}, on_change=AsyncMock())
+    session.thread_id = "thread-1"
+    session.session_key = "codex:thread-1"
+    session.thread_status = "active"
+    session.current_turn_id = "turn-1"
+    session._last_progress_monotonic = 10.0
+    session._upsert_entry({
+        "id": "tool-1",
+        "kind": "tool_call",
+        "display_kind": "tool",
+        "label": "Tool",
+        "tool_type": "commandExecution",
+        "status": "inProgress",
+        "title": "strace ...",
+        "preview": "strace ...",
+        "timestamp": "2026-03-22T16:27:54+00:00",
+    })
+
+    assert session._should_fail_stalled_turn(10.0 + 46.0) is True
+
+    session.transcript[0]["status"] = "completed"
+    assert session._should_fail_stalled_turn(10.0 + 46.0) is True
+
+    session.current_turn_id = ""
+    session.thread_status = "idle"
+    assert session._should_fail_stalled_turn(10.0 + 46.0) is False
+
+
+@pytest.mark.asyncio
+async def test_fatal_stderr_patterns_match_resource_exhaustion_panics():
+    session = CodexHarnessSession(cwd="/tmp", context={}, on_change=AsyncMock())
+
+    assert session._is_fatal_stderr("creating threadpool failed: ThreadPoolBuildError")
+    assert session._is_fatal_stderr("failed to spawn thread: Resource temporarily unavailable")
+    assert session._is_fatal_stderr("thread 'tokio-runtime-worker' panicked at foo")
+    assert session._is_fatal_stderr("inner future panicked during poll")
+    assert session._is_fatal_stderr("Resource temporarily unavailable")
+    assert session._is_fatal_stderr("ordinary warning") is False
+
+
+@pytest.mark.asyncio
 async def test_thread_item_normalization_sets_display_kind_preview_and_state_labels():
     session = CodexHarnessSession(cwd="/tmp/project-root", context={}, on_change=AsyncMock())
     session.thread_id = "thread-1"
