@@ -327,6 +327,16 @@ EOF
       # Servers are either defined (always active) or not defined (unavailable)
       # Only Linux is supported due to Chromium dependency
       mcp_servers = {
+        i3pm-desktop = {
+          command = "${pkgs.python3}/bin/python3";
+          args = [
+            "${repoRoot}/scripts/i3pm-desktop-mcp.py"
+          ];
+          enabled = true;
+          startup_timeout_sec = 10;
+          tool_timeout_sec = 30;
+        };
+
         # Mastra Docs MCP server - access Mastra's full documentation
         # Provides tools for querying Mastra framework docs, examples, and API reference
         # Enable via `codex mcp enable mastra-docs` when working on Mastra projects

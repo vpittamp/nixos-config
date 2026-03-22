@@ -183,11 +183,14 @@ in
         Restart = "always";
         RestartSec = 2;
 
-        # Resource limits (same as system service)
-        MemoryMax = "100M";
-        MemoryHigh = "80M";
+        # Resource limits.
+        #
+        # The daemon now hosts Codex app-server subprocesses for the agent harness,
+        # so the original lightweight watcher limits are too restrictive.
+        MemoryMax = "256M";
+        MemoryHigh = "192M";
         CPUQuota = "50%";
-        TasksMax = 50;
+        TasksMax = 256;
 
         # Security hardening (minimal since we need /proc access)
         NoNewPrivileges = true;

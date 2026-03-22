@@ -13,6 +13,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+HarnessSessionChangeCallback = Callable[[Any, Dict[str, Any]], Awaitable[None]]
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -24,6 +26,13 @@ def _stringify_request_id(value: Any) -> str:
     return json.dumps(value, sort_keys=True)
 
 
+def _preview_text(value: Any, limit: int = 120) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
 class CodexHarnessSession:
     """Owns a single Codex app-server thread and normalized transcript."""
 
@@ -33,7 +42,7 @@ class CodexHarnessSession:
         cwd: str,
         context: Dict[str, Any],
         model: Optional[str] = None,
-        on_change: Optional[Callable[[], Awaitable[None]]] = None,
+        on_change: Optional[HarnessSessionChangeCallback] = None,
     ) -> None:
         self.cwd = cwd
         self.context = dict(context or {})
@@ -43,10 +52,12 @@ class CodexHarnessSession:
         self.process: Optional[asyncio.subprocess.Process] = None
         self._stdout_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
+        self._wait_task: Optional[asyncio.Task] = None
         self._request_id = 0
         self._pending_responses: Dict[int, asyncio.Future] = {}
         self._pending_approvals: Dict[str, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
+        self._closing = False
 
         self.thread_id = ""
         self.session_key = ""
@@ -58,11 +69,13 @@ class CodexHarnessSession:
         self.last_error = ""
         self.started_at = _utc_now_iso()
         self.updated_at = self.started_at
+        self.session_revision = 0
         self.transcript: List[Dict[str, Any]] = []
         self._transcript_index: Dict[str, int] = {}
 
     async def start(self) -> None:
         env = os.environ.copy()
+        self._closing = False
         self.process = await asyncio.create_subprocess_exec(
             "codex",
             "app-server",
@@ -74,6 +87,7 @@ class CodexHarnessSession:
         )
         self._stdout_task = asyncio.create_task(self._stdout_loop())
         self._stderr_task = asyncio.create_task(self._stderr_loop())
+        self._wait_task = asyncio.create_task(self._wait_for_exit())
 
         await self._request(
             "initialize",
@@ -104,20 +118,23 @@ class CodexHarnessSession:
         self.session_key = f"codex:{self.thread_id}"
         self.thread_status = self._normalize_thread_status(thread.get("status"))
         self._recompute_phase()
-        await self._notify_change()
+        await self._notify_change({"type": "session_started", "reason": "thread_started"})
 
     async def close(self) -> None:
+        self._closing = True
         if self.process and self.process.returncode is None:
             self.process.terminate()
-            with contextlib.suppress(ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError, asyncio.TimeoutError):
                 await asyncio.wait_for(self.process.wait(), timeout=2.0)
-        for task in [self._stdout_task, self._stderr_task]:
+        self._fail_pending_responses(RuntimeError("Codex app-server closed"))
+        for task in [self._stdout_task, self._stderr_task, self._wait_task]:
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
         self._stdout_task = None
         self._stderr_task = None
+        self._wait_task = None
         self.process = None
 
     async def send_user_message(self, text: str) -> Dict[str, Any]:
@@ -144,7 +161,7 @@ class CodexHarnessSession:
         self.current_turn_id = str(turn.get("id") or self.current_turn_id or "").strip()
         self.thread_status = "active"
         self._recompute_phase()
-        await self._notify_change()
+        await self._notify_change({"type": "turn_started", "reason": "user_message"})
         return self.snapshot()
 
     async def interrupt(self) -> Dict[str, Any]:
@@ -201,7 +218,7 @@ class CodexHarnessSession:
         self._mark_approval_resolved(normalized_request_id, decision)
         self._pending_approvals.pop(normalized_request_id, None)
         self._recompute_phase()
-        await self._notify_change()
+        await self._notify_change({"type": "approval_resolved", "reason": decision})
         return self.snapshot()
 
     def snapshot(self) -> Dict[str, Any]:
@@ -213,16 +230,21 @@ class CodexHarnessSession:
             "session_key": self.session_key,
             "tool": "codex",
             "provider": "openai",
+            "provider_label": "Codex",
             "thread_id": self.thread_id,
             "cwd": self.cwd,
             "context": dict(self.context),
+            "title": self._session_title(),
             "thread_status": self.thread_status,
             "session_phase": self.session_phase,
+            "state_label": self.session_phase.replace("_", " ").title(),
             "turn_owner": self.turn_owner,
             "activity_substate": self.activity_substate,
             "updated_at": self.updated_at,
             "started_at": self.started_at,
+            "session_revision": self.session_revision,
             "last_error": self.last_error,
+            "preview": self._session_preview(),
             "pending_approval": pending_approval,
             "can_send": self.session_phase in {"idle", "done"},
             "can_cancel": self.session_phase == "working",
@@ -243,7 +265,10 @@ class CodexHarnessSession:
             except json.JSONDecodeError:
                 logger.warning("codex app-server emitted malformed JSON: %s", raw)
                 continue
-            await self._handle_message(message)
+            try:
+                await self._handle_message(message)
+            except Exception:
+                logger.exception("Failed to handle codex app-server message: %s", raw)
 
     async def _stderr_loop(self) -> None:
         assert self.process and self.process.stderr
@@ -254,6 +279,35 @@ class CodexHarnessSession:
             raw = line.decode(errors="replace").strip()
             if raw:
                 logger.warning("codex app-server stderr: %s", raw)
+
+    async def _wait_for_exit(self) -> None:
+        assert self.process is not None
+        returncode = await self.process.wait()
+        if self._closing:
+            return
+        await self._handle_process_exit(returncode)
+
+    async def _handle_process_exit(self, returncode: int) -> None:
+        message = f"Codex app-server exited with code {returncode}"
+        logger.error(message)
+        self.last_error = message
+        self.current_turn_id = ""
+        self.thread_status = "error"
+        self._upsert_entry(
+            {
+                "id": f"error:process-exit:{returncode}:{self.updated_at}",
+                "kind": "error",
+                "display_kind": "error",
+                "label": "Error",
+                "content": message,
+                "preview": _preview_text(message),
+                "status": "completed",
+                "timestamp": _utc_now_iso(),
+            }
+        )
+        self._fail_pending_responses(RuntimeError(message))
+        self._recompute_phase()
+        await self._notify_change({"type": "session_error", "reason": "process_exit"})
 
     async def _handle_message(self, message: Dict[str, Any]) -> None:
         if "id" in message and ("result" in message or "error" in message) and "method" not in message:
@@ -273,6 +327,8 @@ class CodexHarnessSession:
 
         if "id" in message:
             await self._handle_server_request(method, params, message.get("id"))
+            self._recompute_phase()
+            await self._notify_change({"type": "approval_requested", "reason": method})
             return
 
         if method == "thread/started":
@@ -302,6 +358,18 @@ class CodexHarnessSession:
             self._append_agent_delta(params)
         elif method == "error":
             self.last_error = str(params.get("message") or "Agent error")
+            self._upsert_entry(
+                {
+                    "id": f"error:server:{self.updated_at}",
+                    "kind": "error",
+                    "display_kind": "error",
+                    "label": "Error",
+                    "content": self.last_error,
+                    "preview": _preview_text(self.last_error),
+                    "status": "completed",
+                    "timestamp": _utc_now_iso(),
+                }
+            )
         elif method == "serverRequest/resolved":
             request_id = _stringify_request_id(params.get("requestId"))
             if request_id in self._pending_approvals:
@@ -309,7 +377,7 @@ class CodexHarnessSession:
                 self._pending_approvals.pop(request_id, None)
 
         self._recompute_phase()
-        await self._notify_change()
+        await self._notify_change({"type": "session_updated", "reason": method})
 
     async def _handle_server_request(self, method: str, params: Dict[str, Any], request_id: Any) -> None:
         normalized_request_id = _stringify_request_id(request_id)
@@ -318,10 +386,13 @@ class CodexHarnessSession:
         entry = {
             "id": f"approval:{normalized_request_id}",
             "kind": "approval_request",
+            "display_kind": "approval",
+            "label": "Approval",
             "request_id": normalized_request_id,
             "status": "pending",
             "title": title,
             "details": details,
+            "preview": _preview_text(details or title),
             "approval_method": method,
             "can_approve": method != "item/tool/requestUserInput",
             "can_deny": method in {
@@ -331,6 +402,7 @@ class CodexHarnessSession:
                 "execCommandApproval",
                 "applyPatchApproval",
             },
+            "is_pending": True,
             "timestamp": _utc_now_iso(),
         }
         self._pending_approvals[normalized_request_id] = {
@@ -357,11 +429,14 @@ class CodexHarnessSession:
         return await future
 
     async def _send(self, payload: Dict[str, Any]) -> None:
-        if not self.process or not self.process.stdin:
+        if not self.process or not self.process.stdin or self.process.returncode is not None:
             raise RuntimeError("Codex app-server is not running")
         encoded = (json.dumps(payload, separators=(",", ":")) + "\n").encode()
-        self.process.stdin.write(encoded)
-        await self.process.stdin.drain()
+        try:
+            self.process.stdin.write(encoded)
+            await self.process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError) as error:
+            raise RuntimeError("Codex app-server is not running") from error
 
     def _normalize_thread_status(self, status: Any) -> str:
         if isinstance(status, dict):
@@ -384,25 +459,39 @@ class CodexHarnessSession:
             normalized = {
                 "id": str(item.get("id") or ""),
                 "kind": "user_message",
+                "display_kind": "user",
+                "label": "You",
                 "content": "".join(parts).strip(),
+                "preview": _preview_text("".join(parts).strip()),
                 "status": "completed",
                 "timestamp": _utc_now_iso(),
             }
         elif item_type == "agentMessage":
+            phase = str(item.get("phase") or "")
             normalized = {
                 "id": str(item.get("id") or ""),
                 "kind": "assistant_message",
+                "display_kind": "assistant_commentary" if phase == "commentary" else "assistant_final",
+                "label": "Commentary" if phase == "commentary" else "Agent",
                 "content": str(item.get("text") or ""),
                 "status": "completed" if str(item.get("text") or "") else "streaming",
-                "phase": str(item.get("phase") or ""),
+                "phase": phase,
+                "preview": _preview_text(item.get("text") or ""),
                 "timestamp": _utc_now_iso(),
             }
         elif item_type == "reasoning":
+            summary = list(item.get("summary") or [])
+            content_items = list(item.get("content") or [])
+            preview = "\n".join([str(part) for part in summary or content_items])
             normalized = {
                 "id": str(item.get("id") or ""),
                 "kind": "reasoning",
-                "summary": list(item.get("summary") or []),
-                "content_items": list(item.get("content") or []),
+                "display_kind": "reasoning",
+                "label": "Reasoning",
+                "summary": summary,
+                "content_items": content_items,
+                "is_empty_reasoning": len(summary) == 0 and len(content_items) == 0,
+                "preview": _preview_text(preview),
                 "status": "completed",
                 "timestamp": _utc_now_iso(),
             }
@@ -410,7 +499,10 @@ class CodexHarnessSession:
             normalized = {
                 "id": str(item.get("id") or ""),
                 "kind": "plan",
+                "display_kind": "plan",
+                "label": "Plan",
                 "content": str(item.get("text") or ""),
+                "preview": _preview_text(item.get("text") or ""),
                 "status": "completed",
                 "timestamp": _utc_now_iso(),
             }
@@ -427,8 +519,11 @@ class CodexHarnessSession:
             normalized = {
                 "id": str(item.get("id") or ""),
                 "kind": "status_changed",
+                "display_kind": "status",
+                "label": item_type,
                 "title": item_type,
                 "content": json.dumps(item, sort_keys=True),
+                "preview": _preview_text(json.dumps(item, sort_keys=True)),
                 "status": "completed",
                 "timestamp": _utc_now_iso(),
             }
@@ -439,6 +534,8 @@ class CodexHarnessSession:
         base = {
             "id": str(item.get("id") or ""),
             "kind": "tool_call",
+            "display_kind": "tool",
+            "label": "Tool",
             "tool_type": item_type,
             "status": "completed",
             "timestamp": _utc_now_iso(),
@@ -452,6 +549,7 @@ class CodexHarnessSession:
                     "output": str(item.get("aggregatedOutput") or ""),
                     "exit_code": item.get("exitCode"),
                     "duration_ms": item.get("durationMs"),
+                    "preview": _preview_text(item.get("aggregatedOutput") or item.get("command") or ""),
                 }
             )
         elif item_type == "fileChange":
@@ -460,17 +558,32 @@ class CodexHarnessSession:
                     "title": "File changes",
                     "status": str(item.get("status") or "completed"),
                     "changes": list(item.get("changes") or []),
+                    "preview": _preview_text(json.dumps(item.get("changes") or [], sort_keys=True)),
                 }
             )
         elif item_type == "mcpToolCall":
+            server_name = str(item.get("server") or "").strip()
+            tool_name = str(item.get("tool") or "").strip()
+            result_value = item.get("result")
+            preview_source = result_value or item.get("error") or item.get("arguments") or ""
+            label = "Desktop" if server_name == "i3pm-desktop" else "Tool"
+            title = tool_name if server_name == "i3pm-desktop" else f"{server_name}:{tool_name}".strip(":")
+            if isinstance(result_value, dict):
+                preview_source = (
+                    result_value.get("result_summary")
+                    or result_value.get("structuredContent")
+                    or preview_source
+                )
             base.update(
                 {
-                    "title": f"{item.get('server') or ''}:{item.get('tool') or ''}".strip(":"),
+                    "label": label,
+                    "title": title,
                     "status": str(item.get("status") or "completed"),
                     "arguments": item.get("arguments"),
                     "result": item.get("result"),
                     "error": item.get("error"),
                     "duration_ms": item.get("durationMs"),
+                    "preview": _preview_text(preview_source),
                 }
             )
         elif item_type == "dynamicToolCall":
@@ -482,6 +595,7 @@ class CodexHarnessSession:
                     "result": item.get("contentItems"),
                     "success": item.get("success"),
                     "duration_ms": item.get("durationMs"),
+                    "preview": _preview_text(item.get("contentItems") or item.get("tool") or ""),
                 }
             )
         elif item_type == "webSearch":
@@ -489,6 +603,7 @@ class CodexHarnessSession:
                 {
                     "title": str(item.get("query") or "Web search"),
                     "status": "completed",
+                    "preview": _preview_text(item.get("query") or ""),
                 }
             )
         else:
@@ -497,6 +612,7 @@ class CodexHarnessSession:
                     "title": item_type,
                     "status": str(item.get("status") or "completed"),
                     "payload": item,
+                    "preview": _preview_text(json.dumps(item, sort_keys=True)),
                 }
             )
         return base
@@ -511,9 +627,12 @@ class CodexHarnessSession:
             existing = {
                 "id": item_id,
                 "kind": "assistant_message",
+                "display_kind": "assistant_final",
+                "label": "Agent",
                 "content": "",
                 "status": "streaming",
                 "phase": "",
+                "preview": "",
                 "timestamp": _utc_now_iso(),
             }
             self._upsert_entry(existing)
@@ -522,6 +641,7 @@ class CodexHarnessSession:
             return
         existing["content"] = str(existing.get("content") or "") + delta
         existing["status"] = "streaming"
+        existing["preview"] = _preview_text(existing["content"])
         self.updated_at = _utc_now_iso()
 
     def _get_entry(self, entry_id: str) -> Optional[Dict[str, Any]]:
@@ -550,7 +670,27 @@ class CodexHarnessSession:
             return
         entry["status"] = "resolved"
         entry["resolution"] = decision
+        entry["is_pending"] = False
         self.updated_at = _utc_now_iso()
+
+    def _session_preview(self) -> str:
+        for entry in reversed(self.transcript):
+            preview = str(entry.get("preview") or entry.get("content") or "").strip()
+            if preview:
+                return _preview_text(preview, limit=96)
+        return Path(self.cwd).name
+
+    def _session_title(self) -> str:
+        for entry in self.transcript:
+            if str(entry.get("kind") or "") != "user_message":
+                continue
+            content = str(entry.get("content") or entry.get("preview") or "").strip()
+            if content:
+                return _preview_text(content, limit=56)
+        qualified_name = str(self.context.get("qualified_name") or "").strip()
+        if qualified_name:
+            return qualified_name
+        return Path(self.cwd).name
 
     def _approval_title(self, method: str) -> str:
         if method in {"item/commandExecution/requestApproval", "execCommandApproval"}:
@@ -588,6 +728,11 @@ class CodexHarnessSession:
             item.get("kind") == "approval_request" and item.get("status") == "pending"
             for item in self.transcript
         )
+        if self.thread_status in {"error", "failed"}:
+            self.session_phase = "error"
+            self.turn_owner = "user"
+            self.activity_substate = "error"
+            return
         if pending_approval:
             self.session_phase = "needs_attention"
             self.turn_owner = "blocked"
@@ -609,9 +754,18 @@ class CodexHarnessSession:
         self.turn_owner = "user"
         self.activity_substate = "idle"
 
-    async def _notify_change(self) -> None:
+    def _fail_pending_responses(self, error: Exception) -> None:
+        pending = list(self._pending_responses.values())
+        self._pending_responses.clear()
+        for future in pending:
+            if not future.done():
+                future.set_exception(error)
+
+    async def _notify_change(self, event: Optional[Dict[str, Any]] = None) -> None:
+        self.session_revision += 1
+        self.updated_at = _utc_now_iso()
         if self._on_change is not None:
-            await self._on_change()
+            await self._on_change(self, dict(event or {"type": "session_updated"}))
 
 
 class CodexHarnessManager:
@@ -620,11 +774,12 @@ class CodexHarnessManager:
     def __init__(
         self,
         *,
-        on_change: Optional[Callable[[], Awaitable[None]]] = None,
+        on_change: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
     ) -> None:
         self._on_change = on_change
         self._sessions: Dict[str, CodexHarnessSession] = {}
         self._active_session_key = ""
+        self._event_sequence = 0
 
     async def stop(self) -> None:
         for session in list(self._sessions.values()):
@@ -657,7 +812,6 @@ class CodexHarnessManager:
         await session.start()
         self._sessions[session.session_key] = session
         self._active_session_key = session.session_key
-        await self._emit_change()
         return session.snapshot()
 
     async def send_message(self, session_key: str, text: str) -> Dict[str, Any]:
@@ -681,6 +835,14 @@ class CodexHarnessManager:
             raise ValueError(f"Unknown agent session: {normalized}")
         return session
 
-    async def _emit_change(self) -> None:
+    async def _emit_change(self, session: CodexHarnessSession, event: Dict[str, Any]) -> None:
         if self._on_change is not None:
-            await self._on_change()
+            self._event_sequence += 1
+            await self._on_change({
+                "sequence": self._event_sequence,
+                "timestamp": _utc_now_iso(),
+                "type": str(event.get("type") or "session_updated"),
+                "reason": str(event.get("reason") or ""),
+                "active_session_key": self._active_session_key or session.session_key,
+                "session": session.snapshot(),
+            })
