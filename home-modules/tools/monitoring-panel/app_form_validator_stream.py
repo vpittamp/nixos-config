@@ -103,16 +103,6 @@ class AppFormValidationStream:
         workspace = form_state.get("preferred_workspace", 0)
         if workspace < 1:
             errors["workspace"] = "Workspace must be at least 1"
-        elif workspace > 100:
-            warnings["workspace"] = "Workspaces above 100 may not be displayed correctly"
-
-        # Workspace type guidance
-        if 1 <= workspace <= 50:
-            # Regular app workspace
-            pass
-        elif workspace > 50:
-            # PWA workspace range
-            warnings["workspace"] = "Workspaces 50+ are typically reserved for PWAs"
 
         # Validate icon (optional but should be a single character or emoji)
         icon = form_state.get("icon", "")

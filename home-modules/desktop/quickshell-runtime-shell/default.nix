@@ -1643,6 +1643,19 @@ def render_live() -> None:
         fail(f"unable to refresh live registry: {exc}")
 
 
+def commit_working_copy(previous_data: dict, next_data: dict) -> None:
+    write_data(next_data)
+    try:
+        render_live()
+    except SystemExit:
+        write_data(previous_data)
+        try:
+            render_live()
+        except SystemExit:
+            pass
+        raise
+
+
 def as_bool(raw: str) -> bool | None:
     value = str(raw or "").strip().lower()
     if value in ("", "null"):
@@ -1686,6 +1699,7 @@ if action == "diff":
     raise SystemExit(0)
 
 data = load_data()
+previous_data = json.loads(json.dumps(data))
 applications = data["applications"]
 name = str(os.environ.get("QS_APP_NAME", "") or "").strip()
 if not name:
@@ -1693,8 +1707,7 @@ if not name:
 
 if action == "remove":
     applications.pop(name, None)
-    write_data(data)
-    render_live()
+    commit_working_copy(previous_data, data)
     print(json.dumps({"ok": True, "action": action, "name": name, "message": f"Cleared live override for '{name}'"}))
     raise SystemExit(0)
 
@@ -1756,8 +1769,7 @@ if override:
 else:
     applications.pop(name, None)
 
-write_data(data)
-render_live()
+commit_working_copy(previous_data, data)
 print(json.dumps({"ok": True, "action": action, "name": name, "message": f"Saved live override for '{name}'"}))
 PY
   '';

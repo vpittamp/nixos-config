@@ -99,18 +99,21 @@ All your development directories are pre-configured as trusted.
 
 ## MCP Server Integration
 
-Codex is configured with MCP servers for browser automation:
+Codex is configured with MCP servers for documentation, desktop control, and browser automation.
 
-### Playwright
-- Full browser automation (navigation, interaction, screenshots)
-- Uses system Chromium package
-- Isolated mode for security
+### Always Available
+- `openaiDeveloperDocs`: Official OpenAI developer documentation via remote MCP
 
-### Chrome DevTools
-- Browser debugging and performance analysis
-- Network/CPU throttling
-- Performance tracing
-- Headless mode
+### Desktop-Only (Sway Sessions)
+- `i3pm-desktop`: Project-scoped window and desktop control for the local Sway session
+- `playwright`: Full browser automation using a persistent dedicated browser profile
+- `chrome-devtools`: Browser debugging and performance analysis by attaching to a debuggable Chrome instance
+
+### Browser MCP Behavior
+- Browser MCP servers are enabled only on Linux Sway hosts, not container/headless profiles
+- Playwright stores durable auth state under `~/.local/share/codex/browser-profiles/`
+- Chrome DevTools no longer owns its own profile; launch `google-chrome-codex-devtools` to provide the attachable browser on `127.0.0.1:9222`
+- This avoids the prior single-profile lock conflict between persistent DevTools sessions
 
 **Note:** MCP servers run with full permissions since `approval_policy = "never"`.
 

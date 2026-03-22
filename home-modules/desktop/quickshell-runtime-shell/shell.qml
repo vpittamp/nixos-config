@@ -2762,6 +2762,9 @@ ShellRoot {
                 scoped_window_count: 0,
                 is_clean: true,
                 dirty_count: 0,
+                git_state: "clean",
+                git_freshness: "",
+                git_status_compact: "",
                 last_used_at: 0,
                 use_count: 0
             }
@@ -2785,6 +2788,9 @@ ShellRoot {
                 ahead: Number(worktree.ahead || 0),
                 behind: Number(worktree.behind || 0),
                 dirty_count: Number(worktree.dirty_count || 0),
+                git_state: stringOrEmpty(worktree.git_state),
+                git_freshness: stringOrEmpty(worktree.git_freshness),
+                git_status_compact: stringOrEmpty(worktree.git_status_compact),
                 is_active: boolOrFalse(worktree.is_active),
                 active_execution_mode: stringOrEmpty(worktree.active_execution_mode),
                 remote_available: boolOrFalse(worktree.remote_available),
@@ -4237,6 +4243,9 @@ ShellRoot {
                 ahead: 0,
                 behind: 0,
                 dirty_count: 0,
+                git_state: "clean",
+                git_freshness: "",
+                git_status_compact: "",
                 visible_window_count: 0,
                 scoped_window_count: 0,
                 last_used_at: 0,
@@ -4265,6 +4274,9 @@ ShellRoot {
                 ahead: Number(worktree.ahead || 0),
                 behind: Number(worktree.behind || 0),
                 dirty_count: Number(worktree.dirty_count || 0),
+                git_state: stringOrEmpty(worktree.git_state),
+                git_freshness: stringOrEmpty(worktree.git_freshness),
+                git_status_compact: stringOrEmpty(worktree.git_status_compact),
                 active_execution_mode: stringOrEmpty(worktree.active_execution_mode),
                 remote_available: boolOrFalse(worktree.remote_available),
                 visible_window_count: Number(worktree.visible_window_count || 0),
@@ -4612,6 +4624,9 @@ ShellRoot {
         }
         if (Number(item.behind || 0) > 0) {
             bits.push("↓" + String(Number(item.behind || 0)));
+        }
+        if (stringOrEmpty(item.git_freshness) === "stale") {
+            bits.push("status old");
         }
         if (Number(item.visible_window_count || 0) > 0) {
             bits.push(String(Number(item.visible_window_count || 0)) + " visible");
@@ -5572,6 +5587,55 @@ ShellRoot {
         }
 
         return bits.join(" • ");
+    }
+
+    function sessionGitState(session) {
+        return stringOrEmpty(session && session.git_state).toLowerCase() || "unknown";
+    }
+
+    function sessionGitFreshness(session) {
+        return stringOrEmpty(session && session.git_freshness).toLowerCase();
+    }
+
+    function sessionGitChipText(session) {
+        const compact = stringOrEmpty(session && session.git_compact);
+        const freshness = sessionGitFreshness(session);
+        if (!compact && freshness !== "stale") {
+            return "";
+        }
+        if (!compact) {
+            return "~";
+        }
+        return freshness === "stale" ? (compact + " ~") : compact;
+    }
+
+    function sessionGitChipVisible(session) {
+        return sessionGitChipText(session).length > 0;
+    }
+
+    function sessionGitChipForeground(session) {
+        const state = sessionGitState(session);
+        if (state === "conflicted") {
+            return colors.textDim;
+        }
+        if (state === "dirty") {
+            return colors.textDim;
+        }
+        if (Number(session && session.git_snapshot && session.git_snapshot.behind || 0) > 0) {
+            return colors.textDim;
+        }
+        return colors.muted;
+    }
+
+    function sessionGitChipBackground(session) {
+        const state = sessionGitState(session);
+        if (state === "conflicted" || state === "dirty") {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.08));
+        }
+        if (Number(session && session.git_snapshot && session.git_snapshot.behind || 0) > 0) {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.97, 0.83, 0.55, 0.08));
+        }
+        return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.06));
     }
 
     function findWindowById(windowId) {

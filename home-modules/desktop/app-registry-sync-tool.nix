@@ -233,6 +233,51 @@ def apply_override(app: dict, override: dict | None) -> dict:
     return merged
 
 
+def validate_workspace_assignments(applications: list[dict]) -> None:
+    assignments: dict[int, list[str]] = {}
+    invalid: list[str] = []
+
+    for app in applications:
+        if not isinstance(app, dict):
+            continue
+
+        name = str(app.get("name") or "<unnamed>").strip()
+        display_name = str(app.get("display_name") or name).strip() or name
+        scratchpad = bool(app.get("scratchpad", False))
+        workspace = app.get("preferred_workspace")
+
+        if scratchpad:
+            if workspace != 0:
+                invalid.append(f"{display_name} ({name}) must use workspace 0 while scratchpad=true")
+            continue
+
+        if workspace is None:
+            continue
+        if isinstance(workspace, bool) or not isinstance(workspace, int):
+            invalid.append(f"{display_name} ({name}) has invalid preferred_workspace={workspace!r}")
+            continue
+        if workspace < 1:
+            invalid.append(f"{display_name} ({name}) must use a workspace >= 1")
+            continue
+
+        assignments.setdefault(workspace, []).append(display_name)
+
+    if invalid:
+        fail("invalid preferred_workspace values:\n  " + "\n  ".join(invalid))
+
+    duplicates = {
+        workspace: names
+        for workspace, names in assignments.items()
+        if len(names) > 1
+    }
+    if duplicates:
+        lines = [
+            f"WS {workspace}: {', '.join(sorted(names))}"
+            for workspace, names in sorted(duplicates.items())
+        ]
+        fail("duplicate preferred_workspace assignments:\n  " + "\n  ".join(lines))
+
+
 def merge_registry(base_registry: dict, declarative: dict, working_copy: dict) -> dict:
     merged_apps = []
     for app in base_registry.get("applications", []):
@@ -242,6 +287,7 @@ def merge_registry(base_registry: dict, declarative: dict, working_copy: dict) -
         merged = apply_override(app, declarative["applications"].get(name))
         merged = apply_override(merged, working_copy["applications"].get(name))
         merged_apps.append(merged)
+    validate_workspace_assignments(merged_apps)
     return {
         "version": str(base_registry.get("version") or VERSION),
         "applications": merged_apps,

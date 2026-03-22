@@ -1369,7 +1369,7 @@ class EventEnrichment(BaseModel):
     output_name: Optional[str] = None
 
     # PWA detection
-    is_pwa: bool = False  # True if workspace >= 50
+    is_pwa: bool = False  # True if the window maps to a PWA-style runtime identity
 
     # Enrichment metadata
     daemon_available: bool = True  # False if i3pm daemon unreachable
@@ -5435,15 +5435,15 @@ def transform_window(
     is_scoped_window = any(str(m).startswith("scoped:") for m in marks)
     scope = "scoped" if is_scoped_window else "global"
 
-    # PWA detection - workspaces 50+ are PWAs per CLAUDE.md specification
-    # Note: workspace field may be string (including "scratchpad") or int from daemon
-    workspace_raw = window.get("workspace", 1)
-    try:
-        workspace_num = int(workspace_raw) if workspace_raw else 1
-    except (ValueError, TypeError):
-        # Handle "scratchpad" or other non-numeric workspace values
-        workspace_num = 0
-    is_pwa = workspace_num >= 50
+    # PWA detection should follow app identity, not workspace-number bands.
+    registry_name = str(window.get("app_name") or "").strip().lower()
+    app_id_normalized = str(app_id or "").strip().lower()
+    class_normalized = str(window_class or "").strip()
+    is_pwa = (
+        registry_name.endswith("-pwa")
+        or class_normalized.startswith("WebApp-")
+        or app_id_normalized.startswith("chrome-")
+    )
 
     # Generate composite state classes (floating, hidden, focused)
     state_classes = get_window_state_classes(window)

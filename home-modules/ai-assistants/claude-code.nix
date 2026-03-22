@@ -45,14 +45,16 @@ let
   # Only enable on Linux where Chromium is available
   enableClaudeCode = pkgs.stdenv.isLinux;
 
-  # Check if we can enable MCP servers that require Chromium
-  # Chromium package is only available on Linux
-  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+  # Browser MCP servers only make sense in a real desktop session.
+  hasSwaySession = pkgs.stdenv.isLinux && lib.attrByPath [ "wayland" "windowManager" "sway" "enable" ] false config;
+  enableBrowserMcpServers = hasSwaySession;
+  nodeNpx = "${pkgs.nodejs}/bin/npx";
+  chromeDevtoolsBrowserUrl = "http://127.0.0.1:9222";
 
   # Chromium configuration - only define when needed to avoid evaluation on Darwin
   # On Linux: use Nix-managed Chromium
   # On Darwin: MCP servers that need Chromium are disabled
-  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+  chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
 
@@ -596,20 +598,18 @@ lib.mkIf enableClaudeCode {
         ];
         disabled = true;
       };
-    } // lib.optionalAttrs enableChromiumMcpServers {
-      # Chrome DevTools MCP server for debugging and performance (~17k tokens)
-      # Only available on Linux where Chromium is available via Nix
+    } // lib.optionalAttrs enableBrowserMcpServers {
+      # Chrome DevTools MCP server for debugging and performance.
+      # Attach to the dedicated debug Chrome instance launched via
+      # `google-chrome-codex-devtools` instead of spawning an isolated browser.
       # Provides: take_snapshot, click, fill, navigate_page, evaluate_script, etc.
       chrome-devtools = {
-        # Use full path to npx so it works in devenv/nix-shell environments
-        command = "${pkgs.nodejs}/bin/npx";
+        command = nodeNpx;
         args = [
           "-y"
           "chrome-devtools-mcp@latest"
-          "--isolated"
-          "--headless"
-          "--executablePath"
-          chromiumConfig.chromiumBin
+          "--browserUrl"
+          chromeDevtoolsBrowserUrl
         ];
         disabled = true;
       };

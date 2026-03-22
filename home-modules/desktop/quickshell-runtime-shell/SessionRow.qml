@@ -28,6 +28,7 @@ Rectangle {
     readonly property string activityLabel: rootObject.sessionActivityChipLabel(session)
     readonly property string activitySymbol: rootObject.sessionBadgeSymbol(session)
     readonly property string activityState: rootObject.sessionBadgeState(session)
+    readonly property string gitChipText: rootObject.sessionGitChipText(session)
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
     readonly property color currentAccentColor: colorsObject.textDim
@@ -270,6 +271,26 @@ Rectangle {
                 color: isCurrent ? currentAccentColor : (selected ? colorsObject.blue : colorsObject.textDim)
                 font.pixelSize: compact ? 7 : 8
                 font.weight: Font.DemiBold
+            }
+        }
+
+        Rectangle {
+            visible: rootObject.sessionGitChipVisible(session)
+            height: chipHeight
+            radius: 6
+            color: rootObject.sessionGitChipBackground(session)
+            border.color: "transparent"
+            border.width: 0
+            opacity: rootObject.sessionIdleChipOpacity(session) * 0.84
+            Layout.preferredWidth: gitText.implicitWidth + 12
+
+            Text {
+                id: gitText
+                anchors.centerIn: parent
+                text: gitChipText
+                color: rootObject.sessionGitChipForeground(session)
+                font.pixelSize: compact ? 7 : 8
+                font.weight: Font.Medium
             }
         }
 

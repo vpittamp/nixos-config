@@ -242,15 +242,8 @@ class FormValidator:
                 errors["floating_size"] = "floating_size can only be set when floating=True"
 
             # PWA-specific warnings
-            if isinstance(config, PWAConfig):
-                # Warn about ULID immutability
-                if existing_name:
-                    warnings["ulid"] = "ULID cannot be changed after creation"
-
-                # Validate workspace 50+
-                workspace = form_data.get("preferred_workspace", 0)
-                if workspace < 50:
-                    errors["preferred_workspace"] = f"PWAs must use workspaces 50 or higher, got: {workspace}"
+            if isinstance(config, PWAConfig) and existing_name:
+                warnings["ulid"] = "ULID cannot be changed after creation"
 
         except ValueError as e:
             error_msg = str(e)

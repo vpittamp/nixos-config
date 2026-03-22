@@ -31,6 +31,7 @@ agent_harness_module = importlib.import_module("i3_project_daemon.services.agent
 
 CodexHarnessSession = agent_harness_module.CodexHarnessSession
 CodexHarnessManager = agent_harness_module.CodexHarnessManager
+RecoverableResumeError = agent_harness_module.RecoverableResumeError
 
 
 @pytest.mark.asyncio
@@ -105,6 +106,32 @@ async def test_terminal_error_marks_in_progress_tool_calls_failed():
     assert tool["status"] == "failed"
     assert tool["output"] == "Codex turn stalled"
     assert "Codex turn stalled" in tool["preview"]
+
+
+@pytest.mark.asyncio
+async def test_live_session_preview_ignores_resumable_process_exit_error():
+    session = CodexHarnessSession(cwd="/tmp/project-root", context={}, on_change=AsyncMock())
+    session.thread_id = "thread-1"
+    session.session_key = "codex:thread-1"
+    session.persistence_state = "live"
+    session._upsert_thread_item({
+        "type": "agentMessage",
+        "id": "agent-1",
+        "text": "Most recent assistant output",
+        "phase": "final",
+    })
+    session._upsert_entry({
+        "id": "error:process_exit:1",
+        "kind": "error",
+        "display_kind": "error",
+        "label": "Error",
+        "content": "Codex app-server exited with code -15",
+        "preview": "Codex app-server exited with code -15",
+        "status": "completed",
+        "timestamp": "2026-03-22T20:34:00+00:00",
+    })
+
+    assert session.snapshot()["preview"] == "Most recent assistant output"
 
 
 @pytest.mark.asyncio
@@ -282,3 +309,176 @@ async def test_session_revision_increments_per_notified_change():
     assert first_snapshot["session_revision"] == 1
     assert second_snapshot["session_revision"] == 2
     assert second_snapshot["session_revision"] > first_snapshot["session_revision"]
+
+
+@pytest.mark.asyncio
+async def test_archive_for_history_marks_session_read_only_and_clears_pending_state():
+    session = CodexHarnessSession(cwd="/tmp/project-root", context={}, on_change=AsyncMock())
+    session.thread_id = "thread-1"
+    session.session_key = "codex:thread-1"
+    session.current_turn_id = "turn-1"
+    session.thread_status = "active"
+    await session._handle_server_request(
+        "item/commandExecution/requestApproval",
+        {
+            "command": "rm -rf /tmp/example",
+            "cwd": "/tmp",
+            "reason": "Need cleanup",
+        },
+        7,
+    )
+    session._upsert_entry({
+        "id": "tool-1",
+        "kind": "tool_call",
+        "display_kind": "tool",
+        "label": "Tool",
+        "tool_type": "commandExecution",
+        "status": "inProgress",
+        "title": "strace ...",
+        "output": "",
+        "preview": "strace ...",
+        "timestamp": "2026-03-22T16:27:54+00:00",
+    })
+
+    session.archive_for_history("Restored from previous daemon session")
+
+    snapshot = session.snapshot()
+    assert snapshot["persistence_state"] == "archived"
+    assert snapshot["session_phase"] == "archived"
+    assert snapshot["can_send"] is False
+    assert snapshot["pending_approval"] is False
+    assert snapshot["archive_reason"] == "Restored from previous daemon session"
+    assert snapshot["transcript"][0]["status"] == "expired"
+    assert snapshot["transcript"][1]["status"] == "stopped"
+
+
+def _make_persisted_session(manager: CodexHarnessManager, *, phase: str = "done") -> CodexHarnessSession:
+    session = CodexHarnessSession(
+        cwd="/tmp/project-root",
+        context={"qualified_name": "vpittamp/nixos-config:main"},
+        on_change=manager._emit_change,
+    )
+    session.thread_id = "thread-1"
+    session.session_key = "codex:thread-1"
+    session._resume_thread_id = "thread-1"
+    session.thread_status = "idle"
+    session._upsert_thread_item({
+        "type": "userMessage",
+        "id": "user-1",
+        "content": [{"type": "text", "text": "Inspect the repo", "text_elements": []}],
+    })
+    session._upsert_thread_item({
+        "type": "agentMessage",
+        "id": "agent-1",
+        "text": "Working through the files.",
+        "phase": "final",
+    })
+    session.session_phase = phase
+    session.activity_substate = "output_ready"
+    session.turn_owner = "user"
+    return session
+
+
+@pytest.mark.asyncio
+async def test_manager_restores_non_active_sessions_as_archived_history(tmp_path):
+    persistence_dir = tmp_path / "agent-harness"
+    manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    session = _make_persisted_session(manager)
+    manager._sessions[session.session_key] = session
+    manager._active_session_key = ""
+
+    await manager._persist_now()
+
+    restored_manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    snapshot = await restored_manager.snapshot()
+
+    assert snapshot["sessions"][0]["session_key"] == "codex:thread-1"
+    assert snapshot["sessions"][0]["persistence_state"] == "archived"
+    assert snapshot["sessions"][0]["archive_reason"] == "Restored from previous daemon session"
+    assert snapshot["sessions"][0]["can_send"] is False
+
+
+@pytest.mark.asyncio
+async def test_manager_restores_active_session_via_resume(tmp_path, monkeypatch):
+    persistence_dir = tmp_path / "agent-harness"
+    manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    session = _make_persisted_session(manager)
+    manager._sessions[session.session_key] = session
+    manager._active_session_key = session.session_key
+
+    await manager._persist_now()
+
+    resumed = []
+
+    async def fake_start(self):
+        resumed.append(self.session_key)
+        self.persistence_state = "live"
+        self.archive_reason = ""
+        self._resume_thread_id = self.thread_id
+        self._recompute_phase()
+
+    monkeypatch.setattr(agent_harness_module.CodexHarnessSession, "start", fake_start)
+
+    restored_manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    snapshot = await restored_manager.snapshot()
+
+    assert resumed == ["codex:thread-1"]
+    assert snapshot["active_session_key"] == "codex:thread-1"
+    assert snapshot["sessions"][0]["persistence_state"] == "live"
+    assert snapshot["sessions"][0]["archive_reason"] == ""
+
+
+@pytest.mark.asyncio
+async def test_manager_restores_active_session_after_sigterm_process_exit(tmp_path, monkeypatch):
+    persistence_dir = tmp_path / "agent-harness"
+    manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    session = _make_persisted_session(manager, phase="error")
+    session.last_error = "Codex app-server exited with code -15"
+    session.thread_status = "error"
+    manager._sessions[session.session_key] = session
+    manager._active_session_key = session.session_key
+
+    await manager._persist_now()
+
+    resumed = []
+
+    async def fake_start(self):
+        resumed.append(self.session_key)
+        self.persistence_state = "live"
+        self.archive_reason = ""
+        self.thread_status = "idle"
+        self.session_phase = "done"
+        self._resume_thread_id = self.thread_id
+        self._recompute_phase()
+
+    monkeypatch.setattr(agent_harness_module.CodexHarnessSession, "start", fake_start)
+
+    restored_manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    snapshot = await restored_manager.snapshot()
+
+    assert resumed == ["codex:thread-1"]
+    assert snapshot["sessions"][0]["persistence_state"] == "live"
+    assert snapshot["sessions"][0]["archive_reason"] == ""
+
+
+@pytest.mark.asyncio
+async def test_manager_archives_active_session_when_resume_fails(tmp_path, monkeypatch):
+    persistence_dir = tmp_path / "agent-harness"
+    manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    session = _make_persisted_session(manager)
+    manager._sessions[session.session_key] = session
+    manager._active_session_key = session.session_key
+
+    await manager._persist_now()
+
+    async def fake_start(self):
+        raise RecoverableResumeError("thread/resume failed: thread not found")
+
+    monkeypatch.setattr(agent_harness_module.CodexHarnessSession, "start", fake_start)
+
+    restored_manager = CodexHarnessManager(persistence_dir=persistence_dir)
+    snapshot = await restored_manager.snapshot()
+
+    assert snapshot["sessions"][0]["persistence_state"] == "archived"
+    assert "Resume failed" in snapshot["sessions"][0]["archive_reason"]
+    assert snapshot["sessions"][0]["can_send"] is False

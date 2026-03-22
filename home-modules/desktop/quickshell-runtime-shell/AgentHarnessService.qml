@@ -74,10 +74,13 @@ Item {
     readonly property bool isGenerating: !!(currentSession && currentSession.session_phase === "working")
     readonly property bool hasPendingApproval: !!(currentSession && currentSession.pending_approval)
     readonly property bool hasError: !!(currentSession && stringValue(currentSession.last_error, "") !== "")
-    readonly property bool canSend: !!(currentSession ? currentSession.can_send : !actionRunning)
+    readonly property bool currentSessionArchived: isArchivedSession(currentSession)
+    readonly property bool canSend: !!(currentSession ? (currentSession.can_send || currentSessionArchived) : !actionRunning)
     readonly property bool canCancel: !!(currentSession && currentSession.can_cancel)
     readonly property string currentSessionTitle: sessionTitle(currentSession)
     readonly property string currentSessionSubtitle: sessionSubtitle(currentSession)
+    readonly property string currentSessionCompactMeta: sessionBrowserMeta(currentSession)
+    readonly property string startTargetSummary: startTargetLabel()
 
     ListModel {
         id: sessionListModel
@@ -272,6 +275,10 @@ Item {
         return normalized !== "" ? (transcriptRecords[normalized] || null) : null;
     }
 
+    function isArchivedSession(session) {
+        return stringValue(session && session.persistence_state, "") === "archived";
+    }
+
     function sessionTitle(session) {
         if (!session || typeof session !== "object")
             return "New session";
@@ -294,12 +301,59 @@ Item {
         var stateLabel = stringValue(session.state_label, stringValue(session.session_phase, ""));
         if (stateLabel !== "")
             parts.push(stateLabel);
+        var archiveReason = stringValue(session.archive_reason, "");
+        if (archiveReason !== "")
+            parts.push(archiveReason);
         var preview = stringValue(session.preview, "");
         if (preview !== "")
             parts.push(preview);
         else if (stringValue(session.cwd, "") !== "")
             parts.push(session.cwd);
         return parts.join("  •  ");
+    }
+
+    function sessionContextLabel(session) {
+        var qualifiedName = stringValue(session && session.context && session.context.qualified_name, "");
+        if (qualifiedName === "")
+            return "";
+        var parts = qualifiedName.split("/");
+        if (parts.length > 1)
+            return parts.slice(1).join("/");
+        return qualifiedName;
+    }
+
+    function sessionBrowserMeta(session) {
+        if (!session || typeof session !== "object")
+            return "Choose a worktree and start a session";
+        var parts = [];
+        var stateLabel = stringValue(session.state_label, stringValue(session.session_phase, "Idle"));
+        if (stateLabel !== "")
+            parts.push(stateLabel);
+        var contextText = sessionContextLabel(session);
+        if (contextText !== "")
+            parts.push(contextText);
+        if (isArchivedSession(session)) {
+            var archiveReason = stringValue(session.archive_reason, "");
+            if (archiveReason !== "")
+                parts.push(archiveReason);
+        }
+        return parts.join("  •  ");
+    }
+
+    function browserSessions(filterName) {
+        var normalized = stringValue(filterName, "all").toLowerCase();
+        var list = copyArray(sessions);
+        if (normalized === "running")
+            return list.filter(function(session) { return stringValue(session && session.session_phase, "") === "working"; });
+        if (normalized === "unread")
+            return list.filter(function(session) { return sessionHasUnread(stringValue(session && session.session_key, "")); });
+        if (normalized === "history")
+            return list.filter(function(session) { return isArchivedSession(session); });
+        return list;
+    }
+
+    function browserFilterCount(filterName) {
+        return browserSessions(filterName).length;
     }
 
     function countUnreadSessions() {
@@ -578,6 +632,15 @@ Item {
         return qualifiedName;
     }
 
+    function startTargetLabel() {
+        var worktree = worktreeByQualifiedName(startTargetQualifiedName, worktrees);
+        if (!worktree)
+            worktree = worktreeByQualifiedName(activeQualifiedName, worktrees);
+        if (worktree)
+            return worktreeLabel(worktree);
+        return stringValue(startTargetQualifiedName, stringValue(activeQualifiedName, ""));
+    }
+
     function curatedStartTargets(worktreeList, activeQualifiedNameValue, selectedQualifiedNameValue) {
         var list = Array.isArray(worktreeList) ? worktreeList : [];
         var activeQualified = stringValue(activeQualifiedNameValue, "");
@@ -720,6 +783,33 @@ Item {
     function sessionHasUnread(sessionKey) {
         var normalized = stringValue(sessionKey, "");
         return normalized !== "" && !!sessionUnreadState[normalized];
+    }
+
+    function startSessionInContext(qualifiedName, optionalText) {
+        var normalized = stringValue(qualifiedName, "");
+        if (normalized !== "" && worktreeExists(normalized))
+            startTargetQualifiedName = normalized;
+        startSession(optionalText || "");
+    }
+
+    function startSessionFromSession(sessionKey, optionalText) {
+        var session = sessionByKey(sessionKey);
+        var qualifiedName = stringValue(session && session.context && session.context.qualified_name, "");
+        startSessionInContext(qualifiedName, optionalText || "");
+    }
+
+    function useSessionContextAsStartTarget(sessionKey) {
+        var session = sessionByKey(sessionKey);
+        var qualifiedName = stringValue(session && session.context && session.context.qualified_name, "");
+        if (qualifiedName !== "")
+            setStartTarget(qualifiedName);
+    }
+
+    function cancelSession(sessionKey) {
+        var session = sessionByKey(sessionKey);
+        if (!session || !session.session_key || !session.can_cancel)
+            return;
+        runAction(["agent", "cancel", session.session_key]);
     }
 
     function applySnapshot(next) {
@@ -983,6 +1073,15 @@ Item {
                 return;
             }
             startSession(trimmed);
+            return;
+        }
+
+        if (isArchivedSession(resolvedSession)) {
+            var archivedQualifiedName = stringValue(resolvedSession && resolvedSession.context && resolvedSession.context.qualified_name, "");
+            if (archivedQualifiedName !== "" && worktreeExists(archivedQualifiedName))
+                startTargetQualifiedName = archivedQualifiedName;
+            startSession(trimmed);
+            draftText = "";
             return;
         }
 

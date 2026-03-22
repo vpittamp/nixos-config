@@ -305,6 +305,24 @@ let
       description = "Google Chrome browser with Claude in Chrome support";
     })
 
+    # WS26: Dedicated debug Chrome for Codex DevTools attachment
+    (mkApp {
+      name = "google-chrome-codex-devtools";
+      display_name = "Chrome DevTools Debug";
+      command = "google-chrome-codex-devtools";
+      parameters = "";
+      scope = "global";
+      expected_class = "Google-chrome";
+      preferred_workspace = 26;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "google-chrome-codex-devtools.svg";
+      nix_package = "pkgs.google-chrome";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      aliases = [ "chrome-devtools" "codex-browser" "debug-chrome" ];
+      description = "Dedicated debuggable Chrome instance for Codex DevTools MCP attachment";
+    })
+
     # WS5: Git Tools (Primary: lazygit)
     (mkApp {
       name = "lazygit";
@@ -456,7 +474,7 @@ let
       description = "Terminal file manager";
     })
 
-    # WS25: Fuzzy Finder (television)
+    # WS27: Fuzzy Finder (television)
     (mkApp {
       name = "television";
       display_name = "Television";
@@ -464,7 +482,7 @@ let
       parameters = "-e tv $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
-      preferred_workspace = 25;
+      preferred_workspace = 27;
       preferred_monitor_role = "tertiary";
       icon = iconPath "television.svg";
       nix_package = "pkgs.television";
@@ -626,7 +644,7 @@ let
     parameters = "";
     scope = "global";
     expected_class = "com.moonlight_stream.Moonlight";
-    preferred_workspace = 12;
+    preferred_workspace = 28;
     icon = iconPath "ryzen-desktop.svg";
     nix_package = "pkgs.moonlight-qt";
     multi_instance = false;
@@ -641,13 +659,29 @@ let
     parameters = "";
     scope = "global";
     expected_class = "rustdesk";
-    preferred_workspace = 12;
+    preferred_workspace = 29;
     icon = "rustdesk";
     nix_package = "pkgs.rustdesk";
     multi_instance = false;
     fallback_behavior = "skip";
     aliases = [ "rustdesk" "ryzen-rustdesk" "remote-desktop" ];
     description = "Connect to the Ryzen desktop over RustDesk via Tailscale direct access";
+  })
+  ++ lib.optional (hostName == "ryzen") (mkApp {
+    name = "sunshine-web-ui";
+    display_name = "Sunshine Web UI";
+    command = "sunshine-web-ui";
+    parameters = "";
+    scope = "global";
+    expected_class = "SunshineWebUI";
+    preferred_workspace = 30;
+    preferred_monitor_role = "tertiary";
+    icon = iconPath "sunshine.svg";
+    nix_package = "pkgs.google-chrome";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "sunshine" "sunshine-ui" "moonlight-host" "stream-host" ];
+    description = "Dedicated browser app for the local Sunshine host web UI on ryzen";
   })
   # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
   # All PWAs will have correct expected_class with declarative ULIDs
@@ -744,23 +778,36 @@ let
     (lib.length (lib.filter (n: n == name) appNames)) > 1
   ) (lib.unique appNames);
 
-  # Additional validation: check workspace range
+  workspaceAssignments = builtins.foldl'
+    (acc: app:
+      if app ? preferred_workspace && (! (app ? scratchpad && app.scratchpad)) then
+        acc // {
+          "${toString app.preferred_workspace}" =
+            (acc."${toString app.preferred_workspace}" or []) ++ [ app.name ];
+        }
+      else
+        acc
+    )
+    {}
+    workspaceOwningApplications;
+
+  duplicateWorkspaces = lib.filter (workspace:
+    lib.length (workspaceAssignments.${workspace}) > 1
+  ) (builtins.attrNames workspaceAssignments);
+
+  # Additional validation: check workspace validity
   # Scratchpad apps: 0 (special marker for scratchpad home)
-  # Regular apps (non-PWA): 1-50
-  # PWA apps (name ends with -pwa): 50+ (no upper bound)
+  # All other apps with preferred_workspace must use a positive workspace number.
   invalidWorkspaces = lib.filter (app:
     if app ? preferred_workspace then
       let
-        isPWA = lib.hasSuffix "-pwa" app.name;
         isScratchpad = if app ? scratchpad then app.scratchpad else false;
         ws = app.preferred_workspace;
       in
         if isScratchpad then
           ws != 0  # Scratchpad apps must use workspace 0
-        else if isPWA then
-          ws < 50  # PWAs must be >= 50, no upper limit
         else
-          ws < 1 || ws > 50  # Regular apps must be 1-50
+          ws < 1
     else
       false
   ) applications;
@@ -779,18 +826,23 @@ let
       let
         invalidList = map (app:
           let
-            isPWA = lib.hasSuffix "-pwa" app.name;
             isScratchpad = if app ? scratchpad then app.scratchpad else false;
             ws = if app ? preferred_workspace then app.preferred_workspace else 0;
             reason =
               if isScratchpad then "scratchpad app must be 0"
-              else if isPWA then "PWA must be >=50"
-              else "regular app must be 1-50";
+              else "workspace must be >=1";
           in
             "${app.name} (WS ${toString ws}, ${reason})"
         ) invalidWorkspaces;
       in
         throw "Invalid workspace numbers:\n  ${builtins.concatStringsSep "\n  " invalidList}"
+    else if duplicateWorkspaces != [] then
+      let
+        duplicateList = map (workspace:
+          "WS ${workspace}: ${builtins.concatStringsSep ", " workspaceAssignments.${workspace}}"
+        ) duplicateWorkspaces;
+      in
+        throw "Duplicate preferred_workspace assignments found:\n  ${builtins.concatStringsSep "\n  " duplicateList}"
     else if invalidNames != [] then
       throw "Invalid application names (must be kebab-case or reverse-domain): ${builtins.concatStringsSep ", " (map (app: app.name) invalidNames)}"
     else

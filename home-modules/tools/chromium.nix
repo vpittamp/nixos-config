@@ -961,6 +961,17 @@ let
     extraArgs = [ "--load-extension=${chromeUrlExtension}" ];
   };
 
+  # Dedicated debuggable Chrome instance for Codex/DevTools attachment.
+  # Keep this separate from the main browser so remote debugging is deterministic.
+  chromeCodexDevtoolsWrapper = mkChromeWrapper {
+    name = "google-chrome-codex-devtools";
+    extraArgs = [
+      "--remote-debugging-port=9222"
+      "--user-data-dir=${config.xdg.dataHome}/codex/browser-profiles/chrome-devtools"
+      "--no-first-run"
+    ];
+  };
+
   # Cluster CA certificate for *.cnoe.localtest.me
   # This is the CA certificate (with CA:TRUE) that signs the server certificates
   # Chrome requires separate NSS database configuration
@@ -1014,6 +1025,7 @@ in
       chromeStableCommandWrapper
       pkgs.google-chrome
       chromeWrapper
+      chromeCodexDevtoolsWrapper
       onePasswordChromeStatus
       chromeUrlList
       chromeUrlRefresh

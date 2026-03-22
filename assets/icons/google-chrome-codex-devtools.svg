@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="title">
+  <title>Chrome DevTools Debug</title>
+  <path fill="#DB4437" d="M12 12 2.632 4.5A11.98 11.98 0 0 1 12 0c4.674 0 8.725 2.668 10.691 6.545H12z"/>
+  <path fill="#F4B400" d="M12 12h10.691A12 12 0 0 1 12.62 24l-1.88-3.257A5.447 5.447 0 0 0 12 12z"/>
+  <path fill="#0F9D58" d="M12 12 6.584 2.65A11.98 11.98 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864L12 20.727A5.455 5.455 0 0 1 12 12z"/>
+  <circle cx="12" cy="12" r="4.25" fill="#1A73E8"/>
+  <path fill="#E6F4EA" d="M12 8.9 15.1 10.7v2.6L12 15.1l-3.1-1.8v-2.6L12 8.9Zm0-1.4-4.3 2.5v4.9l4.3 2.5 4.3-2.5V10l-4.3-2.5Z"/>
+  <path fill="#E6F4EA" d="M12.7 10.6h-1.4v2.1H9.2v1.3h2.1v2.1h1.4V14h2.1v-1.3h-2.1v-2.1Z"/>
+</svg>

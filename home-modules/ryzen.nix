@@ -7,6 +7,22 @@ let
     ${pkgs.procps}/bin/pkill -f 'rustdesk --tray' >/dev/null 2>&1 || true
     ${pkgs.procps}/bin/pkill -f 'rustdesk --server' >/dev/null 2>&1 || true
   '';
+  sunshineWebUi = pkgs.writeShellScriptBin "sunshine-web-ui" ''
+    set -euo pipefail
+
+    profile_dir="$HOME/.local/share/webapps/SunshineWebUI"
+    mkdir -p "$profile_dir"
+
+    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
+      --user-data-dir="$profile_dir" \
+      --class=SunshineWebUI \
+      --app=https://localhost:47990 \
+      --new-window \
+      --no-first-run \
+      --no-default-browser-check \
+      --password-store=basic \
+      --allow-insecure-localhost
+  '';
 in
 {
   imports = [
@@ -50,6 +66,8 @@ in
     source = "${pkgs.sway}/bin/swaymsg";
     executable = true;
   };
+
+  home.packages = [ sunshineWebUi ];
 
   # Feature 117: i3 project event listener daemon (user service)
   programs.i3-project-daemon = {

@@ -16,12 +16,51 @@ let
   # Alias for backward compatibility with patterns using 'self'
   # All AI assistants now use repoRoot consistently
 
-  # Chromium is only available on Linux
-  # On Darwin, MCP servers requiring Chromium will be disabled
-  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+  # Browser MCP servers only make sense in a real desktop session.
+  hasSwaySession = pkgs.stdenv.isLinux && lib.attrByPath [ "wayland" "windowManager" "sway" "enable" ] false config;
+  enableBrowserMcpServers = hasSwaySession;
+  nodeNpx = "${pkgs.nodejs}/bin/npx";
+  geminiMcpStateRoot = "${config.xdg.stateHome}/gemini/mcp";
+  geminiBrowserProfilesRoot = "${config.xdg.dataHome}/gemini/browser-profiles";
+  geminiPlaywrightProfileDir = "${geminiBrowserProfilesRoot}/playwright";
+  geminiPlaywrightOutputDir = "${geminiMcpStateRoot}/playwright";
+  chromeDevtoolsBrowserUrl = "http://127.0.0.1:9222";
 
-  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+  chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
+  };
+
+  geminiMcpServers = lib.optionalAttrs enableBrowserMcpServers {
+    chrome-devtools = {
+      command = nodeNpx;
+      args = [
+        "-y"
+        "chrome-devtools-mcp@latest"
+        "--browserUrl"
+        chromeDevtoolsBrowserUrl
+      ];
+    };
+    playwright = {
+      command = nodeNpx;
+      args = [
+        "-y"
+        "@playwright/mcp@latest"
+        "--browser"
+        "chromium"
+        "--executable-path"
+        chromiumConfig.chromiumBin
+        "--user-data-dir"
+        geminiPlaywrightProfileDir
+        "--output-dir"
+        geminiPlaywrightOutputDir
+        "--viewport-size"
+        "1440x900"
+      ];
+      env = {
+        PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+      };
+    };
   };
 
   # Base gemini-cli package
@@ -293,38 +332,22 @@ let
         }];
       }];
     };
-    mcpServers = lib.optionalAttrs enableChromiumMcpServers {
-      chrome-devtools = {
-        command = "npx";
-        args = [
-          "-y"
-          "chrome-devtools-mcp@latest"
-          "--isolated"
-          "--headless"
-          "--executablePath"
-          chromiumConfig.chromiumBin
-        ];
-      };
-      playwright = {
-        command = "npx";
-        args = [
-          "-y"
-          "@playwright/mcp@latest"
-          "--isolated"
-          "--browser"
-          "chromium"
-          "--executable-path"
-          chromiumConfig.chromiumBin
-        ];
-        env = {
-          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
-          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-        };
-      };
-    };
+    mcpServers = geminiMcpServers;
   };
 in
 {
+  home.activation.setupGeminiMcpRuntimeDirs = lib.mkIf enableBrowserMcpServers (lib.hm.dag.entryAfter ["writeBoundary"] ''
+    set -euo pipefail
+
+    for dir in \
+      "${geminiPlaywrightProfileDir}" \
+      "${geminiPlaywrightOutputDir}"
+    do
+      $DRY_RUN_CMD mkdir -p "$dir"
+      $DRY_RUN_CMD chmod 700 "$dir"
+    done
+  '');
+
   # Create writable .gemini directory with settings
   # Using activation script instead of home.file to allow gemini-cli to write credentials
   # Pattern from docker.nix, codex.nix, copilot-auth.nix
@@ -356,7 +379,7 @@ EOF
       WANT_ENDPOINT="http://127.0.0.1:4322"
       WANT_MODEL="gemini-3.1-pro-preview"
 
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" --arg model "$WANT_MODEL" '
+      $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" --arg model "$WANT_MODEL" --argjson mcp '${builtins.toJSON geminiMcpServers}' '
         # Migrate legacy top-level keys to the current schema.
         (if (has("autoAccept") and (.tools.autoAccept? == null))
          then (.tools = (.tools // {}) | .tools.autoAccept = .autoAccept)
@@ -405,6 +428,9 @@ EOF
         .ui.statusline = (.ui.statusline // {}) |
         .ui.statusline.enabled = true |
         .ui.statusline.items = ["project", "tmux_pane", "model", "tokens", "context", "mode"] |
+
+        # Keep browser MCP servers aligned with the declarative config.
+        .mcpServers = $mcp |
 
         # Enforce AfterAgent hook for unified "finished" notification and remove any other hooks.
         .hooks = {"AfterAgent": [{"hooks": [{"type": "command", "command": "${repoRoot}/scripts/gemini-hooks/finished.sh", "timeout": 10000, "name": "finished-notification"}]}]}

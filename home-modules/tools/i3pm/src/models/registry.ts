@@ -95,9 +95,13 @@ export function isRegistryApplication(value: unknown): value is RegistryApplicat
     typeof app.terminal === "boolean" &&
     (app.scoped_terminal_mode === undefined || isScopedTerminalMode(app.scoped_terminal_mode)) &&
     typeof app.expected_class === "string" &&
-    (app.preferred_monitor_role === undefined || isPreferredMonitorRole(app.preferred_monitor_role)) &&
+    (app.preferred_monitor_role === undefined ||
+      app.preferred_monitor_role === null ||
+      isPreferredMonitorRole(app.preferred_monitor_role)) &&
     (app.floating === undefined || typeof app.floating === "boolean") &&
-    (app.floating_size === undefined || isFloatingSize(app.floating_size)) &&
+    (app.floating_size === undefined ||
+      app.floating_size === null ||
+      isFloatingSize(app.floating_size)) &&
     (app.scratchpad === undefined || typeof app.scratchpad === "boolean") &&
     isApplicationScope(app.scope) &&
     isFallbackBehavior(app.fallback_behavior) &&

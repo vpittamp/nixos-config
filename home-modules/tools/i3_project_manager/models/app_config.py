@@ -22,7 +22,7 @@ class ApplicationConfig(BaseModel):
     parameters: List[str] = Field(default_factory=list, description="Command-line arguments")
     scope: Literal["scoped", "global"] = Field(default="scoped", description="Window visibility scope")
     expected_class: str = Field(..., min_length=1, description="Expected window class for validation")
-    preferred_workspace: int = Field(..., ge=1, le=70, description="Workspace number assignment")
+    preferred_workspace: int = Field(..., ge=1, description="Workspace number assignment")
     preferred_monitor_role: Optional[Literal["primary", "secondary", "tertiary"]] = Field(
         default=None, description="Monitor role preference"
     )
@@ -58,13 +58,10 @@ class ApplicationConfig(BaseModel):
 
     @field_validator("preferred_workspace")
     @classmethod
-    def validate_workspace_range(cls, v: int) -> int:
-        """Per spec.md FR-A-007: Enforce workspace range 1-50 for regular apps"""
-        # Skip validation for PWAConfig (will be validated by PWAConfig.validate_pwa_workspace_range)
-        if cls.__name__ == "PWAConfig":
-            return v
-        if not (1 <= v <= 50):
-            raise ValueError(f"Regular applications must use workspaces 1-50, got: {v}")
+    def validate_workspace_number(cls, v: int) -> int:
+        """Workspace numbers must be positive integers."""
+        if v < 1:
+            raise ValueError(f"Applications must use workspaces 1 or higher, got: {v}")
         return v
 
     @model_validator(mode='after')
@@ -141,7 +138,7 @@ class PWAConfig(ApplicationConfig):
     """
     Progressive Web App configuration (extends ApplicationConfig)
 
-    Per spec.md: PWAs have special requirements - ULID, start_url, workspace 50+
+    Per spec.md: PWAs have special requirements - ULID and start_url/scope_url.
     """
     name: str = Field(..., pattern=r'^[a-z0-9.-]+-pwa$', description="Must end with '-pwa'")
     ulid: str = Field(..., min_length=26, max_length=26, description="26-character ULID identifier")
@@ -169,14 +166,6 @@ class PWAConfig(ApplicationConfig):
         """Per spec.md FR-A-015: Validate URL is valid HTTP/HTTPS"""
         if not re.match(r'^https?://.+', v):
             raise ValueError(f"URL must start with http:// or https://, got: {v}")
-        return v
-
-    @field_validator("preferred_workspace")
-    @classmethod
-    def validate_pwa_workspace_range(cls, v: int) -> int:
-        """Per spec.md FR-A-007: PWAs must use workspace 50+"""
-        if v < 50:
-            raise ValueError(f"PWAs must use workspaces 50 or higher, got: {v}")
         return v
 
     model_config = {

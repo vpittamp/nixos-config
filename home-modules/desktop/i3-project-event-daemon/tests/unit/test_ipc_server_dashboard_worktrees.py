@@ -166,3 +166,65 @@ async def test_build_dashboard_worktrees_exposes_remote_availability_and_active_
     assert result[0]["remote_available"] is True
     assert result[1]["qualified_name"] == "vpittamp/nixos-config:feature-local"
     assert result[1]["remote_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_hydrate_runtime_git_state_reuses_single_live_snapshot_for_shared_worktree(server):
+    runtime_snapshot = {
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+        },
+        "current_ai_session_key": "session-1",
+    }
+    sessions = [
+        {
+            "session_key": "session-1",
+            "project_name": "vpittamp/nixos-config:main",
+            "project": "vpittamp/nixos-config:main",
+        },
+        {
+            "session_key": "session-2",
+            "project_name": "vpittamp/nixos-config:main",
+            "project": "vpittamp/nixos-config:main",
+        },
+    ]
+    server._build_dashboard_worktrees = AsyncMock(return_value=[{
+        "qualified_name": "vpittamp/nixos-config:main",
+        "path": "/tmp/vpittamp/nixos-config/main",
+        "branch": "main",
+        "is_active": True,
+        "visible_window_count": 1,
+        "scoped_window_count": 2,
+        "is_clean": True,
+        "has_conflicts": False,
+        "ahead": 0,
+        "behind": 0,
+        "staged_count": 0,
+        "modified_count": 0,
+        "untracked_count": 0,
+        "dirty_count": 0,
+    }])
+    server._get_or_schedule_git_snapshot = AsyncMock(return_value={
+        "state": "dirty",
+        "has_conflicts": False,
+        "ahead": 2,
+        "behind": 1,
+        "staged_count": 1,
+        "modified_count": 2,
+        "untracked_count": 0,
+        "dirty_count": 3,
+        "freshness": "fresh",
+        "status_compact": "● 3 ↑2 ↓1",
+        "status_tooltip": "Status: 1 staged, 2 modified",
+        "attribution": "exact_worktree",
+    })
+
+    await server._hydrate_runtime_git_state(runtime_snapshot, sessions)
+
+    server._get_or_schedule_git_snapshot.assert_awaited_once()
+    assert sessions[0]["git_state"] == "dirty"
+    assert sessions[1]["git_compact"] == "● 3 ↑2 ↓1"
+    assert runtime_snapshot["dashboard_worktrees"][0]["dirty_count"] == 3
+    assert runtime_snapshot["dashboard_worktrees"][0]["ahead"] == 2
+    assert runtime_snapshot["dashboard_worktrees"][0]["git_freshness"] == "fresh"

@@ -211,6 +211,9 @@ in
     captureMethod = "kms";      # Direct KMS capture for lowest latency
     tailscaleOnly = true;       # Only allow via Tailscale for security
     extraSettings = {
+      # Allow Moonlight pairing PIN submission from Tailscale peers.
+      # Sunshine treats 100.64.0.0/10 CGNAT addresses as LAN.
+      origin_pin_allowed = "lan";
       # NVENC quality settings for RTX 5070
       nvenc_preset = "p4";      # Balanced
       nvenc_tune = "ll";        # Low latency

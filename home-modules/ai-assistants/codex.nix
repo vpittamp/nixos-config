@@ -34,11 +34,21 @@ let
   hasInstructions = builtins.pathExists instructionsFile;
   customInstructions = if hasInstructions then builtins.readFile instructionsFile else null;
 
-  # Chromium is only available on Linux
-  # On Darwin, MCP servers requiring Chromium will be disabled
-  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+  # Browser and desktop MCP servers only make sense in a real Sway session.
+  # The Codex module is also imported by container profiles, so keep docs
+  # servers available there while omitting local desktop/browser integrations.
+  hasSwaySession = pkgs.stdenv.isLinux && lib.attrByPath [ "wayland" "windowManager" "sway" "enable" ] false config;
+  enableDesktopMcpServers = hasSwaySession;
+  enableBrowserMcpServers = hasSwaySession;
 
-  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+  nodeNpx = "${pkgs.nodejs}/bin/npx";
+  codexMcpStateRoot = "${config.xdg.stateHome}/codex/mcp";
+  codexBrowserProfilesRoot = "${config.xdg.dataHome}/codex/browser-profiles";
+  playwrightProfileDir = "${codexBrowserProfilesRoot}/playwright";
+  playwrightOutputDir = "${codexMcpStateRoot}/playwright";
+  chromeDevtoolsBrowserUrl = "http://127.0.0.1:9222";
+
+  chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
 
@@ -218,6 +228,18 @@ EOF
     fi
   '';
 
+  home.activation.setupCodexMcpRuntimeDirs = lib.mkIf enableBrowserMcpServers (lib.hm.dag.entryAfter ["writeBoundary"] ''
+    set -euo pipefail
+
+    for dir in \
+      "${playwrightProfileDir}" \
+      "${playwrightOutputDir}"
+    do
+      ${pkgs.coreutils}/bin/mkdir -p "$dir"
+      ${pkgs.coreutils}/bin/chmod 700 "$dir"
+    done
+  '');
+
   # Codex - Lightweight coding agent (using native home-manager module with unstable package)
   programs.codex = {
     enable = true;
@@ -327,6 +349,14 @@ EOF
       # Servers are either defined (always active) or not defined (unavailable)
       # Only Linux is supported due to Chromium dependency
       mcp_servers = {
+        openaiDeveloperDocs = {
+          url = "https://developers.openai.com/mcp";
+          enabled = true;
+          startup_timeout_sec = 30;
+          tool_timeout_sec = 60;
+        };
+
+      } // lib.optionalAttrs enableDesktopMcpServers {
         i3pm-desktop = {
           command = "${pkgs.python3}/bin/python3";
           args = [
@@ -336,33 +366,23 @@ EOF
           startup_timeout_sec = 10;
           tool_timeout_sec = 30;
         };
-
-        # Mastra Docs MCP server - access Mastra's full documentation
-        # Provides tools for querying Mastra framework docs, examples, and API reference
-        # Enable via `codex mcp enable mastra-docs` when working on Mastra projects
-        # See: https://mastra.ai/docs/getting-started/mcp-docs-server
-        mastra-docs = {
-          command = "npx";
-          args = [
-            "-y"
-            "@mastra/mcp-docs-server@latest"
-          ];
-          enabled = true;
-          startup_timeout_sec = 30;
-          tool_timeout_sec = 60;
-        };
-      } // lib.optionalAttrs enableChromiumMcpServers {
-        # Playwright MCP server for browser automation
+      } // lib.optionalAttrs enableBrowserMcpServers {
+        # Playwright MCP server for browser automation with a persistent profile
         playwright = {
-          command = "npx";
+          command = nodeNpx;
           args = [
             "-y"
             "@playwright/mcp@latest"
-            "--isolated"
             "--browser"
             "chromium"
             "--executable-path"
             chromiumConfig.chromiumBin
+            "--user-data-dir"
+            playwrightProfileDir
+            "--output-dir"
+            playwrightOutputDir
+            "--viewport-size"
+            "1440x900"
           ];
           env = {
             # Skip downloading Chromium since we use system package
@@ -370,24 +390,22 @@ EOF
             PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           };
           enabled = true;
-          startup_timeout_sec = 30;
-          tool_timeout_sec = 60;
+          startup_timeout_sec = 60;
+          tool_timeout_sec = 120;
         };
 
-        # Chrome DevTools MCP server for browser debugging and performance analysis
+        # Chrome DevTools MCP server for browser debugging with a persistent profile
         chrome-devtools = {
-          command = "npx";
+          command = nodeNpx;
           args = [
             "-y"
             "chrome-devtools-mcp@latest"
-            "--isolated"
-            "--headless"
-            "--executablePath"
-            chromiumConfig.chromiumBin
+            "--browserUrl"
+            chromeDevtoolsBrowserUrl
           ];
           enabled = true;
-          startup_timeout_sec = 30;  # 30 seconds for browser startup
-          tool_timeout_sec = 60;     # 60 seconds for tool operations
+          startup_timeout_sec = 30;  # Attachs to an already-running debug browser
+          tool_timeout_sec = 120;    # Browser debugging flows are often multi-step
         };
       };
     };
