@@ -1074,6 +1074,95 @@ PanelWindow {
                         }
                     }
                 }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: colors.lineSoft
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Text {
+                            text: "Input"
+                            color: colors.text
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            text: root.audioInputDetail()
+                            color: colors.subtle
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Button {
+                        text: root.audioInputMuted() ? "Unmute" : "Mute"
+                        onClicked: root.toggleInputMute()
+                    }
+                }
+
+                Slider {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 150
+                    value: root.inputVolumePercent()
+                    onMoved: root.setInputVolumePercent(value)
+                }
+
+                Repeater {
+                    model: root.audioSourceNodes()
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        readonly property var source: modelData
+                        readonly property bool activeSource: root.audioSourceIsActive(source)
+                        Layout.fillWidth: true
+                        implicitHeight: 34
+                        radius: 8
+                        color: activeSource ? colors.blueBg : colors.cardAlt
+                        border.color: activeSource ? colors.blue : colors.border
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.audioSourceLabel(source)
+                                color: activeSource ? colors.blue : colors.text
+                                font.pixelSize: 9
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                visible: activeSource
+                                text: "Live"
+                                color: colors.blue
+                                font.pixelSize: 8
+                                font.weight: Font.DemiBold
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.setPreferredAudioSource(source)
+                        }
+                    }
+                }
             }
         }
     }

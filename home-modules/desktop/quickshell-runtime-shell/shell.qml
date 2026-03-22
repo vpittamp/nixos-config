@@ -32,6 +32,7 @@ ShellRoot {
 
     readonly property var launcherField: launcherWindow ? launcherWindow.launcherFieldRef : null
     readonly property var launcherList: launcherWindow ? launcherWindow.launcherListRef : null
+    readonly property var sessionPreviewFlick: launcherWindow ? launcherWindow.sessionPreviewFlickRef : null
     readonly property var settingsCommandQueryField: settingsWindow ? settingsWindow.settingsCommandQueryFieldRef : null
     readonly property var settingsCommandsList: settingsWindow ? settingsWindow.settingsCommandsListRef : null
     readonly property var clock: runtimeServices ? runtimeServices.clockRef : null
@@ -136,6 +137,19 @@ ShellRoot {
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool audioPopupVisible: false
+
+    // PipeWire: bind default sink/source so their properties (ready, audio) become available
+    readonly property PwNode pipewireSink: Pipewire.defaultAudioSink
+    readonly property PwNode pipewireSource: Pipewire.defaultAudioSource
+
+    PwObjectTracker {
+        objects: [root.pipewireSink, root.pipewireSource]
+    }
+
+    // Track all PipeWire nodes so sink list in audio popup can access .ready/.audio
+    PwObjectTracker {
+        objects: Pipewire.nodes ? Pipewire.nodes.values : []
+    }
     property bool bluetoothPopupVisible: false
     property bool displaySelectorVisible: false
     property string displaySelectorOutputName: ""
