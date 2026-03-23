@@ -1,8 +1,6 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.programs.unified-bar-theme;
-
   # Catppuccin Mocha color palette
   # Reference: https://github.com/catppuccin/catppuccin
   mocha = {
@@ -26,7 +24,7 @@ let
     version = "1.0";
     theme = "catppuccin-mocha";
 
-    colors = mocha // { accent = cfg.accentColor; };
+    colors = mocha;
 
     fonts = {
       bar = "FiraCode Nerd Font";
@@ -63,14 +61,6 @@ let
   };
 
 in {
-  options.programs.unified-bar-theme = {
-    accentColor = lib.mkOption {
-      type = lib.types.str;
-      default = mocha.blue;
-      description = "Primary accent color for focused window borders and theme highlights.";
-    };
-  };
-
   # Unified Bar Theme Configuration
   # Centralized appearance config for all bar components (Swaybar, Eww, SwayNC)
   # Based on Feature 057: Unified Bar System with Enhanced Workspace Mode
@@ -89,48 +79,5 @@ in {
       $DRY_RUN_CMD echo "  eww reload                  # Reload workspace bar"
       $DRY_RUN_CMD echo "  swaync-client --reload-css  # Reload notification center CSS"
     '';
-
-    # Export theme colors for use by other modules
-    # Other bar modules can access these via config.wayland.windowManager.sway.config.colors
-    wayland.windowManager.sway.config = lib.mkIf config.wayland.windowManager.sway.enable {
-      colors = {
-        background = mocha.base;
-        focused = {
-          background = mocha.surface0;
-          border = cfg.accentColor;
-          childBorder = cfg.accentColor;
-          indicator = mocha.mauve;
-          text = mocha.text;
-        };
-        focusedInactive = {
-          background = mocha.base;
-          border = mocha.surface0;
-          childBorder = mocha.surface0;
-          indicator = mocha.overlay0;
-          text = mocha.subtext0;
-        };
-        unfocused = {
-          background = mocha.base;
-          border = mocha.surface0;
-          childBorder = mocha.surface0;
-          indicator = mocha.overlay0;
-          text = mocha.subtext0;
-        };
-        urgent = {
-          background = mocha.base;
-          border = mocha.red;
-          childBorder = mocha.red;
-          indicator = mocha.red;
-          text = mocha.text;
-        };
-        placeholder = {
-          background = mocha.base;
-          border = mocha.surface0;
-          childBorder = mocha.surface0;
-          indicator = mocha.overlay0;
-          text = mocha.subtext0;
-        };
-      };
-    };
   };
 }

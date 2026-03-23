@@ -56,25 +56,28 @@ PanelWindow {
                     color: colors.card
                     border.color: topBarWindow.isFocusedBar ? colors.blueMuted : colors.border
                     border.width: 1
-                    implicitWidth: outputLabel.implicitWidth + 16
+                    implicitWidth: hostChipRow.implicitWidth + 16
                     implicitHeight: parent.height
 
                     RowLayout {
+                        id: hostChipRow
                         anchors.fill: parent
                         anchors.leftMargin: 8
                         anchors.rightMargin: 8
-                        spacing: 6
+                        spacing: 5
 
-                        Rectangle {
-                            width: 6
-                            height: 6
-                            radius: 3
+                        Text {
+                            text: runtimeConfig.hostName === "ryzen" ? "\uf4bc"    // nf-md-desktop_tower
+                                : runtimeConfig.hostName === "thinkpad" ? "\uf489" // nf-md-laptop
+                                : "\uf108"                                         // nf-fa-desktop
                             color: topBarWindow.isFocusedBar ? colors.blue : colors.muted
+                            font.family: "FiraCode Nerd Font"
+                            font.pixelSize: 12
                         }
 
                         Text {
                             id: outputLabel
-                            text: topBarWindow.topOutputName || runtimeConfig.hostName
+                            text: runtimeConfig.hostName + (topBarWindow.topOutputName ? " · " + topBarWindow.topOutputName : "")
                             color: colors.text
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
