@@ -337,3 +337,77 @@ async def test_handle_profile_change_uses_hybrid_profiles_without_hostname_gate(
     assert publisher.calls[-1]["is_hybrid_mode"] is True
     assert "output eDP-1 mode 1920x1200 position 0 0 scale 1.25" in commands
     assert "output HEADLESS-1 mode 1920x1200 position 1536 0 scale 1.0" in commands
+
+
+@pytest.mark.asyncio
+async def test_hybrid_reassign_preserves_workspaces_on_enabled_outputs():
+    service = MonitorProfileService(eww_publisher=DummyPublisher())
+    profile = HybridMonitorProfile(**{
+        "name": "local+1vnc",
+        "description": "ThinkPad panel plus one virtual display",
+        "outputs": [
+            {
+                "name": "eDP-1",
+                "type": "physical",
+                "enabled": True,
+                "position": {"x": 0, "y": 0, "width": 1920, "height": 1200},
+                "scale": 1.25,
+            },
+            {
+                "name": "HEADLESS-1",
+                "type": "virtual",
+                "enabled": True,
+                "position": {"x": 1536, "y": 0, "width": 1920, "height": 1200},
+                "scale": 1.0,
+                "vnc_port": 5900,
+            },
+            {
+                "name": "HEADLESS-2",
+                "type": "virtual",
+                "enabled": False,
+                "position": {"x": 3456, "y": 0, "width": 1920, "height": 1200},
+                "scale": 1.0,
+                "vnc_port": 5901,
+            },
+        ],
+        "workspace_assignments": [
+            {"output": "eDP-1", "workspaces": [1, 2, 6, 7, 8, 9]},
+            {"output": "HEADLESS-1", "workspaces": [3, 4, 5]},
+        ],
+    })
+
+    move_mock = AsyncMock(return_value=True)
+    service._move_workspace_to_output = move_mock
+
+    conn = SimpleNamespace(
+        get_workspaces=AsyncMock(return_value=[
+            SimpleNamespace(name="1", output="HEADLESS-1"),
+            SimpleNamespace(name="3", output="eDP-1"),
+            SimpleNamespace(name="50", output="HEADLESS-2"),
+        ]),
+    )
+
+    changed = await service.reassign_workspaces(conn, profile)
+
+    assert changed is True
+    move_mock.assert_awaited_once_with(conn, "50", "HEADLESS-1")
+
+
+@pytest.mark.asyncio
+async def test_workspace_move_to_output_uses_runtime_move_semantics():
+    server = IPCServer(DummyStateManager())
+
+    commands = []
+
+    async def command(cmd: str):
+        commands.append(cmd)
+        return [SimpleNamespace(success=True, error="")]
+
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace(command=command))
+    server._send_tick_barrier = AsyncMock(return_value=None)
+
+    result = await server._workspace_move_to_output({"workspace": "7", "output_name": "DP-1"})
+
+    assert result == {"success": True, "workspace": "7", "output_name": "DP-1"}
+    assert commands == ["workspace 7", "move workspace to output DP-1"]
+    server._send_tick_barrier.assert_awaited_once_with("i3pm:workspace-output:7:DP-1")

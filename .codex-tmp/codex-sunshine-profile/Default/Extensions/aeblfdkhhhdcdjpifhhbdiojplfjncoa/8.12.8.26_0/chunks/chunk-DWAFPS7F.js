@@ -1,0 +1,5 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof self?self:{},n=(new Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="b7986b1e-a403-5092-b78e-97ee6a0ee078")}catch(e){}}();
+import{c as o}from"/chunks/chunk-ZLJA5U43.js";import{a as s,b as p}from"/chunks/chunk-EXMDW5FT.js";import{G as u}from"/chunks/chunk-YHCK2IXU.js";import{c}from"/chunks/chunk-54UHBIHR.js";var a=c(s());var d=c(p()),f=({children:g})=>{let[r,n]=(0,a.useState)();return(0,a.useEffect)(()=>{u("get-app-configuration",void 0).then(t=>{t.ok?n(t.data):console.error("Failed to fetch get app configuration.")})},[]),o("lock-state-changed",t=>{n(e=>e&&{...e,locked:t.locked})},[]),o("app-theme-changed",t=>{n(e=>e&&{...e,appTheme:t.appTheme})},[]),o("update-connectivity-status",t=>{n(e=>e&&{...e,connectivityStatus:t})},[]),o("language-changed",t=>{let e=t;e&&n(i=>i&&{...i,locale:e})},[]),o("can-request-unlock-changed",t=>{n(e=>e&&{...e,canRequestUnlock:t})},[]),r?(0,d.jsx)(h.Provider,{value:r,children:g}):null},h=(0,a.createContext)({});export{f as a,h as b};
+
+//# debugId=b7986b1e-a403-5092-b78e-97ee6a0ee078

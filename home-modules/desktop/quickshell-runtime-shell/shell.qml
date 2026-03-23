@@ -137,49 +137,6 @@ ShellRoot {
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool audioPopupVisible: false
-    property bool moonlightFullscreen: false
-
-    // Poll for Moonlight fullscreen state (lightweight swaymsg check)
-    Process {
-        id: moonlightCheckProc
-        command: ["swaymsg", "-t", "get_tree", "-r"]
-        property string stdoutBuf: ""
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                try {
-                    // Find the Moonlight node block and check fullscreen_mode within it
-                    const re = /\{[^{}]*"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^{}]*\}/;
-                    const block = stdoutBuf.match(re);
-                    if (block) {
-                        const fm = block[0].match(/"fullscreen_mode"\s*:\s*(\d+)/);
-                        root.moonlightFullscreen = fm ? parseInt(fm[1]) > 0 : false;
-                    } else {
-                        // Try reverse order (fullscreen_mode before app_id)
-                        const re2 = /\{[^{}]*"fullscreen_mode"\s*:\s*(\d+)[^{}]*"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^{}]*\}/;
-                        const match2 = stdoutBuf.match(re2);
-                        root.moonlightFullscreen = match2 ? parseInt(match2[1]) > 0 : false;
-                    }
-                } catch(e) {
-                    root.moonlightFullscreen = false;
-                }
-            }
-            stdoutBuf = "";
-        }
-        stdout: SplitParser {
-            onRead: data => moonlightCheckProc.stdoutBuf += data
-        }
-    }
-
-    Timer {
-        interval: 2000
-        running: true
-        repeat: true
-        onTriggered: {
-            if (!moonlightCheckProc.running)
-                moonlightCheckProc.running = true;
-        }
-    }
-
     // PipeWire: bind default sink/source so their properties (ready, audio) become available
     readonly property PwNode pipewireSink: Pipewire.defaultAudioSink
     readonly property PwNode pipewireSource: Pipewire.defaultAudioSource
@@ -7338,9 +7295,4 @@ ShellRoot {
         assistantService: assistantService
     }
 
-    Windows.MoonlightOverlay {
-        shellRoot: shellRootRef
-        runtimeConfig: shellConfig
-        colors: shellRootRef.colors
-    }
 }

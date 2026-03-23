@@ -1,0 +1,23 @@
+2026/03/22-18:48:04.222 e07a8 Creating DB /home/vpittamp/repos/vpittamp/nixos-config/main/.codex-tmp/codex-sunshine-profile/Default/IndexedDB/chrome-extension_aeblfdkhhhdcdjpifhhbdiojplfjncoa_0.indexeddb.leveldb since it was missing.
+2026/03/22-18:48:04.295 e07a8 Reusing MANIFEST /home/vpittamp/repos/vpittamp/nixos-config/main/.codex-tmp/codex-sunshine-profile/Default/IndexedDB/chrome-extension_aeblfdkhhhdcdjpifhhbdiojplfjncoa_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/22-20:13:42.094 e07a9 Level-0 table #5: started
+2026/03/22-20:13:42.236 e07a9 Level-0 table #5: 1644425 bytes OK
+2026/03/22-20:13:42.248 e07a9 Delete type=0 #3
+2026/03/23-01:24:57.352 e07a8 Level-0 table #7: started
+2026/03/23-01:24:57.424 e07a8 Level-0 table #7: 808627 bytes OK
+2026/03/23-01:24:57.441 e07a8 Delete type=0 #4
+2026/03/23-01:28:12.342 e07a9 Compacting 1@1 + 1@2 files
+2026/03/23-01:28:12.432 e07a9 Generated table #8@1: 18186 keys, 1497667 bytes
+2026/03/23-01:28:12.432 e07a9 Compacted 1@1 + 1@2 files => 1497667 bytes
+2026/03/23-01:28:12.467 e07a9 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/23-01:28:12.471 e07a9 Delete type=2 #5
+2026/03/23-01:28:12.471 e07a9 Delete type=2 #7
+2026/03/23-06:35:42.356 e07b0 Level-0 table #10: started
+2026/03/23-06:35:42.404 e07b0 Level-0 table #10: 805299 bytes OK
+2026/03/23-06:35:42.420 e07b0 Delete type=0 #6
+2026/03/23-06:38:57.344 e07a9 Compacting 1@1 + 1@2 files
+2026/03/23-06:38:57.371 e07a9 Generated table #11@1: 27502 keys, 1806671 bytes
+2026/03/23-06:38:57.371 e07a9 Compacted 1@1 + 1@2 files => 1806671 bytes
+2026/03/23-06:38:57.377 e07a9 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/23-06:38:57.382 e07a9 Delete type=2 #8
+2026/03/23-06:38:57.382 e07a9 Delete type=2 #10

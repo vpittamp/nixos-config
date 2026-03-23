@@ -60,17 +60,29 @@
 "Mod+slash" = { command = "exec sway-easyfocus", description = "Focus window with keyboard hints" }
 "Mod+Shift+slash" = { command = "exec sway-easyfocus swap", description = "Swap windows with keyboard hints" }
 
-# Move windows
-"Mod+Shift+h" = { command = "move left", description = "Move window left" }
-"Mod+Shift+j" = { command = "move down", description = "Move window down" }
-"Mod+Shift+k" = { command = "move up", description = "Move window up" }
-"Mod+Shift+l" = { command = "move right", description = "Move window right" }
+# Move workspaces across outputs
+"Mod+Shift+h" = { command = "move workspace to output left", description = "Move workspace to left output" }
+"Mod+Shift+j" = { command = "move workspace to output down", description = "Move workspace to lower output" }
+"Mod+Shift+k" = { command = "move workspace to output up", description = "Move workspace to upper output" }
+"Mod+Shift+l" = { command = "move workspace to output right", description = "Move workspace to right output" }
 
-# Arrow key movement
-"Mod+Shift+Left" = { command = "move left", description = "Move window left" }
-"Mod+Shift+Down" = { command = "move down", description = "Move window down" }
-"Mod+Shift+Up" = { command = "move up", description = "Move window up" }
-"Mod+Shift+Right" = { command = "move right", description = "Move window right" }
+# Arrow key workspace movement
+"Mod+Shift+Left" = { command = "move workspace to output left", description = "Move workspace to left output" }
+"Mod+Shift+Down" = { command = "move workspace to output down", description = "Move workspace to lower output" }
+"Mod+Shift+Up" = { command = "move workspace to output up", description = "Move workspace to upper output" }
+"Mod+Shift+Right" = { command = "move workspace to output right", description = "Move workspace to right output" }
+
+# Move windows
+"Mod+Ctrl+Shift+h" = { command = "move left", description = "Move window left" }
+"Mod+Ctrl+Shift+j" = { command = "move down", description = "Move window down" }
+"Mod+Ctrl+Shift+k" = { command = "move up", description = "Move window up" }
+"Mod+Ctrl+Shift+l" = { command = "move right", description = "Move window right" }
+
+# Arrow key window movement
+"Mod+Ctrl+Shift+Left" = { command = "move left", description = "Move window left" }
+"Mod+Ctrl+Shift+Down" = { command = "move down", description = "Move window down" }
+"Mod+Ctrl+Shift+Up" = { command = "move up", description = "Move window up" }
+"Mod+Ctrl+Shift+Right" = { command = "move right", description = "Move window right" }
 
 # Window actions
 "Mod+q" = { command = "kill", description = "Close focused window" }

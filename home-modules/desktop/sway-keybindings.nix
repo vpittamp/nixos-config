@@ -85,17 +85,29 @@ in
     "${modifier}+slash" = "exec sway-easyfocus";
     "${modifier}+Shift+slash" = "exec sway-easyfocus swap";
 
-    # Move windows (vim-style)
-    "${modifier}+Shift+h" = "move left";
-    "${modifier}+Shift+j" = "move down";
-    "${modifier}+Shift+k" = "move up";
-    "${modifier}+Shift+l" = "move right";
+    # Move workspaces across outputs while preserving their layout/state
+    "${modifier}+Shift+h" = "move workspace to output left";
+    "${modifier}+Shift+j" = "move workspace to output down";
+    "${modifier}+Shift+k" = "move workspace to output up";
+    "${modifier}+Shift+l" = "move workspace to output right";
 
-    # Move windows (arrow keys)
-    "${modifier}+Shift+Left" = "move left";
-    "${modifier}+Shift+Down" = "move down";
-    "${modifier}+Shift+Up" = "move up";
-    "${modifier}+Shift+Right" = "move right";
+    # Move workspaces across outputs while preserving their layout/state
+    "${modifier}+Shift+Left" = "move workspace to output left";
+    "${modifier}+Shift+Down" = "move workspace to output down";
+    "${modifier}+Shift+Up" = "move workspace to output up";
+    "${modifier}+Shift+Right" = "move workspace to output right";
+
+    # Move individual windows/containers
+    "${modifier}+Ctrl+Shift+h" = "move left";
+    "${modifier}+Ctrl+Shift+j" = "move down";
+    "${modifier}+Ctrl+Shift+k" = "move up";
+    "${modifier}+Ctrl+Shift+l" = "move right";
+
+    # Move individual windows/containers
+    "${modifier}+Ctrl+Shift+Left" = "move left";
+    "${modifier}+Ctrl+Shift+Down" = "move down";
+    "${modifier}+Ctrl+Shift+Up" = "move up";
+    "${modifier}+Ctrl+Shift+Right" = "move right";
 
     # Window actions
     "${modifier}+x" = "kill";

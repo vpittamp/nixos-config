@@ -103,3 +103,66 @@ async def test_window_move_into_scratchpad_marks_hidden_binding():
         workspace="scratchpad",
         is_floating=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_workspace_move_notifies_dashboard_consumers():
+    state_manager = SimpleNamespace(
+        add_workspace=AsyncMock(),
+        increment_error_count=AsyncMock(),
+    )
+    ipc_server = SimpleNamespace(
+        invalidate_window_tree_cache=Mock(),
+        notify_state_change=AsyncMock(),
+    )
+
+    current = SimpleNamespace(
+        name="158",
+        num=158,
+        ipc_data={"output": "HDMI-A-1", "visible": True, "focused": False},
+    )
+    old = SimpleNamespace(ipc_data={"output": "DP-2"})
+    event = SimpleNamespace(current=current, old=old)
+
+    await handlers_module.on_workspace_move(
+        conn=None,
+        event=event,
+        state_manager=state_manager,
+        ipc_server=ipc_server,
+    )
+
+    state_manager.add_workspace.assert_awaited_once()
+    ipc_server.invalidate_window_tree_cache.assert_called_once()
+    ipc_server.notify_state_change.assert_awaited_once_with("workspace::move")
+
+
+@pytest.mark.asyncio
+async def test_workspace_focus_notifies_dashboard_consumers():
+    focus_tracker = SimpleNamespace(track_workspace_focus=AsyncMock())
+    state_manager = SimpleNamespace(
+        get_active_project=AsyncMock(return_value="vpittamp/nixos-config:main"),
+        focus_tracker=focus_tracker,
+        increment_error_count=AsyncMock(),
+    )
+    ipc_server = SimpleNamespace(
+        invalidate_window_tree_cache=Mock(),
+        notify_state_change=AsyncMock(),
+    )
+
+    current = SimpleNamespace(
+        name="158",
+        num=158,
+        ipc_data={"output": "DP-2", "visible": True, "focused": True},
+    )
+    event = SimpleNamespace(current=current)
+
+    await handlers_module.on_workspace_focus(
+        conn=None,
+        event=event,
+        state_manager=state_manager,
+        ipc_server=ipc_server,
+    )
+
+    focus_tracker.track_workspace_focus.assert_awaited_once_with("vpittamp/nixos-config:main", 158)
+    ipc_server.invalidate_window_tree_cache.assert_called_once()
+    ipc_server.notify_state_change.assert_awaited_once_with("workspace::focus")

@@ -5425,9 +5425,11 @@ class IPCServer:
             )
 
     async def _reassign_workspaces(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Reassign all workspaces to monitors based on configuration.
+        """Migrate workspaces away from unavailable outputs.
 
-        Feature 033: T020
+        Preserve current workspace placement whenever the workspace is already
+        on an enabled output. This keeps runtime organization Sway-native while
+        still rescuing workspaces from outputs that are no longer usable.
 
         Args:
             params: Optional params dict with:
@@ -5440,42 +5442,49 @@ class IPCServer:
         error_msg = None
 
         try:
-            from .monitor_config_manager import MonitorConfigManager
-            from .workspace_manager import get_monitor_configs, assign_workspaces_to_monitors
-
             dry_run = params.get("dry_run", False)
 
-            # Get i3 connection
             if not self.i3_connection or not self.i3_connection.conn:
                 raise RuntimeError("i3 connection not available")
 
-            i3 = self.i3_connection.conn  # Get the underlying i3ipc connection
+            outputs = await self.i3_connection.conn.get_outputs()
+            from .output_state_manager import load_output_states
+            states = load_output_states()
+            enabled_outputs = [
+                output.name for output in outputs
+                if output.active and states.is_output_enabled(output.name)
+            ]
+            disabled_outputs = [
+                output.name for output in outputs
+                if output.active and not states.is_output_enabled(output.name)
+            ]
 
-            # Get monitor configurations with roles
-            config_manager = MonitorConfigManager()
-            monitors = await get_monitor_configs(i3, config_manager)
-
-            if not monitors:
+            if not enabled_outputs:
                 return {
                     "success": False,
                     "assignments_made": 0,
-                    "errors": ["No active monitors detected"],
+                    "errors": ["No enabled outputs detected"],
                 }
 
-            # Count workspaces to be assigned
-            distribution = config_manager.get_workspace_distribution(len(monitors))
-            total_workspaces = sum(len(ws_list) for ws_list in distribution.values())
-
-            # Apply workspace assignments (unless dry-run)
-            if not dry_run:
-                await assign_workspaces_to_monitors(i3, monitors, config_manager=config_manager)
-                logger.info(f"Reassigned {total_workspaces} workspaces to {len(monitors)} monitors")
-            else:
-                logger.info(f"Dry-run: Would reassign {total_workspaces} workspaces to {len(monitors)} monitors")
+            assignments_made = 0
+            if not dry_run and disabled_outputs and self.monitor_profile_service:
+                before = await self.i3_connection.conn.get_workspaces()
+                before_by_name = {workspace.name: workspace.output for workspace in before}
+                await self.monitor_profile_service.migrate_workspaces_from_disabled_outputs(
+                    self.i3_connection.conn,
+                    disabled_outputs,
+                    fallback_output=enabled_outputs[0],
+                )
+                after = await self.i3_connection.conn.get_workspaces()
+                assignments_made = sum(
+                    1
+                    for workspace in after
+                    if before_by_name.get(workspace.name) not in (None, workspace.output)
+                )
 
             return {
                 "success": True,
-                "assignments_made": total_workspaces if not dry_run else 0,
+                "assignments_made": assignments_made,
                 "errors": [],
             }
 
@@ -14742,13 +14751,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             )
 
     async def _monitors_reassign(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Force workspace reassignment to monitors based on declared preferences.
+        """Migrate workspaces away from unavailable outputs.
 
         Feature 001: T067 (monitors.reassign RPC handler)
-
-        This now uses force_move_existing_workspaces to actually move workspaces
-        that are on the wrong output to their correct output based on
-        workspace-assignments.json and output_preferences.
 
         Returns:
             {
@@ -14762,20 +14767,41 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 "moved_details": list  # Details of each move
             }
         """
-        from .workspace_manager import (
-            assign_workspaces_with_monitor_roles,
-            force_move_existing_workspaces,
-        )
-
         start_time = time.perf_counter()
         error_msg = None
 
         try:
-            # First, re-apply workspace preferences from config
-            await assign_workspaces_with_monitor_roles(self.i3_connection.conn)
+            outputs = await self.i3_connection.conn.get_outputs()
+            from .output_state_manager import load_output_states
+            states = load_output_states()
+            enabled_outputs = [
+                output.name for output in outputs
+                if output.active and states.is_output_enabled(output.name)
+            ]
+            disabled_outputs = [
+                output.name for output in outputs
+                if output.active and not states.is_output_enabled(output.name)
+            ]
 
-            # Then force-move any existing workspaces that are on the wrong output
-            move_result = await force_move_existing_workspaces(self.i3_connection.conn)
+            move_result = {"moved": [], "errors": 0}
+            if disabled_outputs and enabled_outputs and self.monitor_profile_service:
+                before = await self.i3_connection.conn.get_workspaces()
+                before_by_name = {workspace.name: workspace.output for workspace in before}
+                await self.monitor_profile_service.migrate_workspaces_from_disabled_outputs(
+                    self.i3_connection.conn,
+                    disabled_outputs,
+                    fallback_output=enabled_outputs[0],
+                )
+                after = await self.i3_connection.conn.get_workspaces()
+                after_by_name = {workspace.name: workspace.output for workspace in after}
+                for workspace_name, previous_output in before_by_name.items():
+                    current_output = after_by_name.get(workspace_name, previous_output)
+                    if previous_output != current_output:
+                        move_result["moved"].append({
+                            "workspace": workspace_name,
+                            "from": previous_output,
+                            "to": current_output,
+                        })
 
             # Load output_preferences for monitor_assignments in response
             from pathlib import Path
@@ -18158,14 +18184,24 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not workspace_ref:
             raise ValueError("workspace must not be empty")
 
-        command = f"workspace number {workspace_ref} output {output_name}"
-        result = await self.i3_connection.conn.command(command)
+        focus_command = f"workspace {workspace_ref}"
+        result = await self.i3_connection.conn.command(focus_command)
         if not self._sway_command_succeeded(result):
             return {
                 "success": False,
                 "workspace": workspace_ref,
                 "output_name": output_name,
-                "error": f"command_failed:{command}",
+                "error": f"command_failed:{focus_command}",
+            }
+
+        move_command = f"move workspace to output {output_name}"
+        result = await self.i3_connection.conn.command(move_command)
+        if not self._sway_command_succeeded(result):
+            return {
+                "success": False,
+                "workspace": workspace_ref,
+                "output_name": output_name,
+                "error": f"command_failed:{move_command}",
             }
         await self._send_tick_barrier(f"i3pm:workspace-output:{workspace_ref}:{output_name}")
         return {"success": True, "workspace": workspace_ref, "output_name": output_name}
@@ -18188,4 +18224,45 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not self._sway_command_succeeded(result):
             return {"success": False, "workspace": workspace_ref, "error": f"command_failed:{command}"}
         await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
+
+        focused_workspace = await self._get_focused_workspace_name()
+        if focused_workspace != workspace_ref:
+            matched = await self._wait_for_workspace_focus(workspace_ref, timeout_s=0.5)
+            if not matched:
+                return {
+                    "success": False,
+                    "workspace": workspace_ref,
+                    "focused_workspace": focused_workspace,
+                    "error": f"focus_verification_failed:{workspace_ref}",
+                }
+
         return {"success": True, "workspace": workspace_ref}
+
+    async def _get_focused_workspace_name(self) -> str:
+        """Return the currently focused workspace name, if available."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            return ""
+        try:
+            workspaces = await self.i3_connection.conn.get_workspaces()
+        except Exception:
+            return ""
+
+        for workspace in workspaces:
+            if bool(getattr(workspace, "focused", False)):
+                return str(getattr(workspace, "name", "") or "").strip()
+        return ""
+
+    async def _wait_for_workspace_focus(self, workspace_ref: str, *, timeout_s: float) -> bool:
+        """Wait briefly for Sway to report the requested focused workspace."""
+        deadline = time.monotonic() + max(timeout_s, 0.0)
+        target = str(workspace_ref or "").strip()
+        if not target:
+            return False
+
+        while time.monotonic() < deadline:
+            focused = await self._get_focused_workspace_name()
+            if focused == target:
+                return True
+            await asyncio.sleep(0.02)
+
+        return await self._get_focused_workspace_name() == target

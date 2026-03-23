@@ -73,6 +73,37 @@ def server():
 
 
 @pytest.mark.asyncio
+async def test_workspace_focus_waits_for_requested_workspace(server):
+    command_mock = AsyncMock(return_value=[SimpleNamespace(success=True, error="")])
+    get_workspaces = AsyncMock(side_effect=[
+        [SimpleNamespace(name="3", focused=True), SimpleNamespace(name="1", focused=False)],
+        [SimpleNamespace(name="1", focused=True), SimpleNamespace(name="3", focused=False)],
+    ])
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace(command=command_mock, get_workspaces=get_workspaces))
+    server._send_tick_barrier = AsyncMock(return_value=None)
+
+    result = await server._workspace_focus({"workspace": "1"})
+
+    assert result == {"success": True, "workspace": "1"}
+    command_mock.assert_awaited_once_with("workspace number 1")
+    server._send_tick_barrier.assert_awaited_once_with("i3pm:workspace-focus:1")
+
+
+@pytest.mark.asyncio
+async def test_workspace_focus_returns_failure_when_focus_never_changes(server):
+    command_mock = AsyncMock(return_value=[SimpleNamespace(success=True, error="")])
+    get_workspaces = AsyncMock(return_value=[SimpleNamespace(name="3", focused=True), SimpleNamespace(name="1", focused=False)])
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace(command=command_mock, get_workspaces=get_workspaces))
+    server._send_tick_barrier = AsyncMock(return_value=None)
+
+    result = await server._workspace_focus({"workspace": "1"})
+
+    assert result["success"] is False
+    assert result["workspace"] == "1"
+    assert result["error"] == "focus_verification_failed:1"
+
+
+@pytest.mark.asyncio
 async def test_session_focus_remote_session_uses_exact_remote_bridge_path(server, monkeypatch):
     remote_session = {
         "session_key": "session-remote",

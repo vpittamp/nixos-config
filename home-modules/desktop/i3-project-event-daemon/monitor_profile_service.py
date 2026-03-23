@@ -533,12 +533,6 @@ class MonitorProfileService:
             # Update current profile
             self._current_profile = new_profile_name
 
-            try:
-                from .workspace_manager import assign_workspaces_with_monitor_roles
-                await assign_workspaces_with_monitor_roles(conn)
-            except Exception as exc:
-                logger.warning("Failed to reassign workspaces for profile %s: %s", new_profile_name, exc)
-
             # Publish to Eww
             await self.eww_publisher.publish_from_conn(
                 conn,
@@ -805,10 +799,16 @@ class MonitorProfileService:
                         # Non-numeric workspace name, skip
                         pass
 
-            # Move workspaces to their target outputs
+            enabled_outputs = {
+                out.name for out in hybrid_profile.outputs
+                if out.enabled
+            }
+
+            # Preserve user placement across still-enabled outputs. Only move a
+            # workspace when its current output is unavailable in the new profile.
             for ws_name, target_output in target_assignments.items():
                 current_output = current_ws_outputs.get(ws_name)
-                if current_output and current_output != target_output:
+                if current_output and current_output not in enabled_outputs:
                     await self._move_workspace_to_output(conn, ws_name, target_output)
 
             logger.info(f"Feature 084: Reassigned workspaces for profile {hybrid_profile.name}")

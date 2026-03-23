@@ -93,6 +93,11 @@
     }
   ];
 
+  # Mod+Escape exits Moonlight fullscreen even with capture-system-keys
+  wayland.windowManager.sway.extraConfig = ''
+    bindsym --inhibited Mod4+Escape [app_id="com.moonlight_stream.Moonlight"] fullscreen disable
+  '';
+
   programs.quickshell-worktree-app.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints

@@ -564,8 +564,6 @@ class I3ProjectDaemon:
 
         Feature 083: Also publishes to Eww for real-time top bar updates.
         """
-        from .workspace_manager import assign_workspaces_with_monitor_roles
-
         if not self.connection or not self.connection.conn:
             logger.warning("Cannot trigger output state change: not connected")
             return
@@ -589,9 +587,23 @@ class I3ProjectDaemon:
                 f"Output state change detected: {enabled_count}/{total_count} outputs enabled"
             )
 
-            # Use Feature 001's monitor role-based workspace assignment
-            # This uses workspace-assignments.json instead of legacy workspace-monitor-mapping.json
-            await assign_workspaces_with_monitor_roles(self.connection.conn)
+            disabled_names = [
+                o.name for o in outputs
+                if o.active and not states.is_output_enabled(o.name)
+            ]
+
+            # Preserve current workspace placement. Only move workspaces when an
+            # output has been explicitly disabled and a fallback output exists.
+            if (
+                disabled_names
+                and enabled_names
+                and self.monitor_profile_service
+            ):
+                await self.monitor_profile_service.migrate_workspaces_from_disabled_outputs(
+                    self.connection.conn,
+                    disabled_names,
+                    fallback_output=enabled_names[0],
+                )
 
             # Feature 083: Publish to Eww for real-time top bar updates
             if self.eww_publisher:
@@ -804,20 +816,20 @@ class I3ProjectDaemon:
         # USER STORY 3: Workspace monitoring
         self.connection.subscribe(
             "workspace::init",
-            partial(on_workspace_init, state_manager=self.state_manager)
+            partial(on_workspace_init, state_manager=self.state_manager, ipc_server=self.ipc_server)
         )
         self.connection.subscribe(
             "workspace::empty",
-            partial(on_workspace_empty, state_manager=self.state_manager)
+            partial(on_workspace_empty, state_manager=self.state_manager, ipc_server=self.ipc_server)
         )
         self.connection.subscribe(
             "workspace::move",
-            partial(on_workspace_move, state_manager=self.state_manager)
+            partial(on_workspace_move, state_manager=self.state_manager, ipc_server=self.ipc_server)
         )
         # Feature 074: Session Management - Workspace focus tracking (T026, US1)
         self.connection.subscribe(
             "workspace::focus",
-            partial(on_workspace_focus, state_manager=self.state_manager)
+            partial(on_workspace_focus, state_manager=self.state_manager, ipc_server=self.ipc_server)
         )
 
         # Feature 091: Tree cache invalidation on state-changing events

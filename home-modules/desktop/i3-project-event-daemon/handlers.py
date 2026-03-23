@@ -1260,77 +1260,6 @@ async def on_window_new(
                                 f'[con_id="{container.id}"] move to workspace number {preferred_ws}; [con_id="{container.id}"] focus'
                             )
 
-                            # Feature 001: Also move workspace to correct output based on output_preferences
-                            # The "workspace N output OUTPUT" command only sets preferred output for FUTURE switches,
-                            # it doesn't move existing/newly-created workspaces. We need to explicitly move
-                            # the workspace to the correct output after creating it.
-                            try:
-                                from pathlib import Path
-                                import json as json_module
-                                config_path = Path.home() / ".config" / "sway" / "workspace-assignments.json"
-                                if config_path.exists():
-                                    with open(config_path) as f:
-                                        ws_config = json_module.load(f)
-                                    output_prefs = ws_config.get("output_preferences", {})
-
-                                    # Determine target output based on workspace number rules
-                                    if preferred_ws <= 2:
-                                        role = "primary"
-                                    elif preferred_ws <= 5:
-                                        role = "secondary"
-                                    else:
-                                        role = "tertiary"
-
-                                    # Check for explicit role override from app assignment
-                                    for assignment in ws_config.get("assignments", []):
-                                        if assignment.get("workspace_number") == preferred_ws:
-                                            explicit_role = assignment.get("monitor_role")
-                                            if explicit_role:
-                                                role = explicit_role
-                                            break
-
-                                    # Get active outputs to avoid moving to non-existent monitors
-                                    active_outputs = set()
-                                    try:
-                                        outputs = await conn.get_outputs()
-                                        active_outputs = {o.name for o in outputs if o.active}
-                                    except Exception:
-                                        pass
-
-                                    # Build candidate list: preferred output, then fallback outputs
-                                    candidates = []
-                                    pref_output = output_prefs.get(role, [None])[0] if output_prefs.get(role) else None
-                                    if pref_output:
-                                        candidates.append(pref_output)
-                                    # Add fallback outputs from the assignment
-                                    for assignment in ws_config.get("assignments", []):
-                                        if assignment.get("workspace_number") == preferred_ws:
-                                            for fb in assignment.get("fallback_outputs", []):
-                                                if fb not in candidates:
-                                                    candidates.append(fb)
-                                            break
-
-                                    target_output = None
-                                    for candidate in candidates:
-                                        if candidate in active_outputs:
-                                            target_output = candidate
-                                            break
-
-                                    if target_output:
-                                        # Move the workspace to the correct output
-                                        await conn.command(f'move workspace to output {target_output}')
-                                        logger.debug(
-                                            f"Feature 001: Moved workspace {preferred_ws} to output {target_output} "
-                                            f"(role: {role})"
-                                        )
-                                    elif candidates:
-                                        logger.debug(
-                                            f"Feature 001: Skipping output move for workspace {preferred_ws} — "
-                                            f"no active output among candidates {candidates}"
-                                        )
-                            except Exception as e:
-                                logger.warning(f"Feature 001: Failed to move workspace to correct output: {e}")
-
                             # Feature 056: Validate workspace assignment with retry (PWA race condition fix)
                             # PWAs may not be on any workspace yet (workspace_num=?) during window::new
                             # Wait for Sway to process the move, then verify it succeeded
@@ -2266,7 +2195,10 @@ async def on_window_move(
 
 
 async def on_workspace_init(
-    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WorkspaceEvent,
+    state_manager: StateManager,
+    ipc_server=None,
 ) -> None:
     """Handle workspace::init events - track new workspaces (T023).
 
@@ -2304,10 +2236,15 @@ async def on_workspace_init(
     except Exception as e:
         logger.error(f"Error handling workspace::init event: {e}")
         await state_manager.increment_error_count()
+    finally:
+        await _invalidate_cache_and_notify(ipc_server, "workspace::init")
 
 
 async def on_workspace_empty(
-    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WorkspaceEvent,
+    state_manager: StateManager,
+    ipc_server=None,
 ) -> None:
     """Handle workspace::empty events - remove empty workspaces (T024).
 
@@ -2336,10 +2273,15 @@ async def on_workspace_empty(
     except Exception as e:
         logger.error(f"Error handling workspace::empty event: {e}")
         await state_manager.increment_error_count()
+    finally:
+        await _invalidate_cache_and_notify(ipc_server, "workspace::empty")
 
 
 async def on_workspace_move(
-    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WorkspaceEvent,
+    state_manager: StateManager,
+    ipc_server=None,
 ) -> None:
     """Handle workspace::move events - update workspace output (T025).
 
@@ -2382,10 +2324,15 @@ async def on_workspace_move(
     except Exception as e:
         logger.error(f"Error handling workspace::move event: {e}")
         await state_manager.increment_error_count()
+    finally:
+        await _invalidate_cache_and_notify(ipc_server, "workspace::move")
 
 
 async def on_workspace_focus(
-    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WorkspaceEvent,
+    state_manager: StateManager,
+    ipc_server=None,
 ) -> None:
     """Handle workspace::focus events - track focused workspace per project (T026, US1, Feature 074).
 
@@ -2430,6 +2377,8 @@ async def on_workspace_focus(
     except Exception as e:
         logger.error(f"Error handling workspace::focus event: {e}")
         await state_manager.increment_error_count()
+    finally:
+        await _invalidate_cache_and_notify(ipc_server, "workspace::focus")
 
 
 # ============================================================================
@@ -2536,10 +2485,10 @@ async def _debounced_workspace_reassignment(
     conn: aio.Connection,
     active_outputs: List,
 ) -> None:
-    """Execute workspace reassignment after debounce delay (Feature 001: T033, T034).
+    """Stabilize output changes after debounce delay (Feature 001: T033, T034).
 
     This function is called after the debounce timer expires. It triggers
-    Feature 001's workspace-to-monitor assignment with automatic fallback logic.
+    output-change follow-up work without re-homing live workspaces.
 
     Args:
         conn: i3 async connection
@@ -2552,15 +2501,10 @@ async def _debounced_workspace_reassignment(
         await asyncio.sleep(_output_debounce_timer)
 
         logger.info(
-            f"[Feature 001] Debounce complete - Reassigning workspaces with {len(active_outputs)} active output(s)"
+            f"[Feature 001] Debounce complete - preserving workspace placement across "
+            f"{len(active_outputs)} active output(s)"
         )
-
-        # Feature 001: Use monitor role-based workspace assignment
-        from .workspace_manager import assign_workspaces_with_monitor_roles
-
-        await assign_workspaces_with_monitor_roles(conn)
-
-        logger.info("[Feature 001] Workspace reassignment complete")
+        logger.debug("[Feature 001] Automatic workspace reassignment skipped")
 
     except Exception as e:
         logger.error(f"[Feature 001] Error in debounced workspace reassignment: {e}")
