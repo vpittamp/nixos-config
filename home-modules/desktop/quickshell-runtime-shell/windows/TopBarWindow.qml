@@ -843,6 +843,8 @@ PanelWindow {
                         border.color: current ? colors.blue : colors.lineSoft
                         border.width: 1
 
+                        // Keep pointer handling on the MouseArea. A direct Rectangle cursor
+                        // property can make the entire TopBarWindow fail to load on some hosts.
                         ColumnLayout {
                             id: layoutOptionColumn
                             anchors.fill: parent
