@@ -137,6 +137,45 @@ ShellRoot {
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool audioPopupVisible: false
+    property bool moonlightFullscreen: false
+
+    // Poll for Moonlight fullscreen state (lightweight swaymsg check)
+    Process {
+        id: moonlightCheckProc
+        command: ["swaymsg", "-t", "get_tree", "-r"]
+        property string stdout: ""
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0) {
+                try {
+                    const found = stdout.includes("com.moonlight_stream.Moonlight");
+                    if (found) {
+                        // Check if it's fullscreen via fullscreen_mode > 0
+                        const re = /"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^}]*?"fullscreen_mode"\s*:\s*(\d+)/;
+                        const match = stdout.match(re);
+                        root.moonlightFullscreen = match ? parseInt(match[1]) > 0 : false;
+                    } else {
+                        root.moonlightFullscreen = false;
+                    }
+                } catch(e) {
+                    root.moonlightFullscreen = false;
+                }
+            }
+            stdout = "";
+        }
+        stdout: SplitParser {
+            onRead: data => moonlightCheckProc.stdout += data
+        }
+    }
+
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+        onTriggered: {
+            if (!moonlightCheckProc.running)
+                moonlightCheckProc.running = true;
+        }
+    }
 
     // PipeWire: bind default sink/source so their properties (ready, audio) become available
     readonly property PwNode pipewireSink: Pipewire.defaultAudioSink
@@ -5775,7 +5814,27 @@ ShellRoot {
 
     function workspaceIconSources(workspaceName) {
         const workspace = workspaceSnapshot(workspaceName);
-        const windows = arrayOrEmpty(workspace ? workspace.windows : []);
+        const windows = arrayOrEmpty(workspace ? workspace.windows : []).slice().sort(function (left, right) {
+            const leftFocused = boolOrFalse(left && left.focused);
+            const rightFocused = boolOrFalse(right && right.focused);
+            if (leftFocused !== rightFocused) {
+                return leftFocused ? -1 : 1;
+            }
+
+            const leftVisible = boolOrFalse(left && left.visible);
+            const rightVisible = boolOrFalse(right && right.visible);
+            if (leftVisible !== rightVisible) {
+                return leftVisible ? -1 : 1;
+            }
+
+            const leftFloating = boolOrFalse(left && left.floating);
+            const rightFloating = boolOrFalse(right && right.floating);
+            if (leftFloating !== rightFloating) {
+                return leftFloating ? 1 : -1;
+            }
+
+            return 0;
+        });
         const icons = [];
 
         for (let i = 0; i < windows.length; i += 1) {
@@ -7274,5 +7333,11 @@ ShellRoot {
         runtimeConfig: shellConfig
         colors: shellRootRef.colors
         assistantService: assistantService
+    }
+
+    Windows.MoonlightOverlay {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
     }
 }

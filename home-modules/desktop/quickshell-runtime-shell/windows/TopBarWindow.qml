@@ -471,7 +471,7 @@ PanelWindow {
                     color: root.neutralChipFill(audioMouse.containsMouse)
                     border.color: root.audioChipBorder(audioMouse.containsMouse)
                     border.width: 1
-                    implicitWidth: audioLabel.implicitWidth + 18
+                    implicitWidth: audioRow.implicitWidth + 18
                     implicitHeight: parent.height
 
                     Behavior on color {
@@ -486,13 +486,27 @@ PanelWindow {
                         }
                     }
 
-                    Text {
-                        id: audioLabel
+                    RowLayout {
+                        id: audioRow
                         anchors.centerIn: parent
-                        text: root.audioLabel() + " ▾"
-                        color: root.audioChipText(audioMouse.containsMouse)
-                        font.pixelSize: 10
-                        font.weight: Font.Medium
+                        spacing: 4
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: "\uf028"
+                            color: root.audioChipText(audioMouse.containsMouse)
+                            font.family: "FiraCode Nerd Font"
+                            font.pixelSize: 11
+                        }
+
+                        Text {
+                            id: audioLabel
+                            Layout.alignment: Qt.AlignVCenter
+                            text: root.audioLabel() + " ▾"
+                            color: root.audioChipText(audioMouse.containsMouse)
+                            font.pixelSize: 10
+                            font.weight: Font.Medium
+                        }
                     }
 
                     MouseArea {
@@ -522,7 +536,7 @@ PanelWindow {
                     color: root.neutralChipFill(bluetoothMouse.containsMouse)
                     border.color: root.neutralChipBorder(bluetoothMouse.containsMouse)
                     border.width: 1
-                    implicitWidth: bluetoothLabel.implicitWidth + 18
+                    implicitWidth: bluetoothRow.implicitWidth + 18
                     implicitHeight: parent.height
 
                     Behavior on color {
@@ -537,13 +551,27 @@ PanelWindow {
                         }
                     }
 
-                    Text {
-                        id: bluetoothLabel
+                    RowLayout {
+                        id: bluetoothRow
                         anchors.centerIn: parent
-                        text: root.bluetoothLabel() + " ▾"
-                        color: root.neutralChipText(bluetoothMouse.containsMouse)
-                        font.pixelSize: 10
-                        font.weight: Font.Medium
+                        spacing: 4
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: "\uf294"
+                            color: root.neutralChipText(bluetoothMouse.containsMouse)
+                            font.family: "FiraCode Nerd Font"
+                            font.pixelSize: 11
+                        }
+
+                        Text {
+                            id: bluetoothLabel
+                            Layout.alignment: Qt.AlignVCenter
+                            text: root.bluetoothLabel() + " ▾"
+                            color: root.neutralChipText(bluetoothMouse.containsMouse)
+                            font.pixelSize: 10
+                            font.weight: Font.Medium
+                        }
                     }
 
                     MouseArea {

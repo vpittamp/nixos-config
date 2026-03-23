@@ -83,7 +83,6 @@ let
     if [ "$target_output" = "eDP-1" ]; then
       restore_scale_value="1.25"
     fi
-    runtime_shell_was_active=0
     original_workspace="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_workspaces -r | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')"
     moonlight_workspace="12: Ryzen Desktop"
 
@@ -93,28 +92,16 @@ let
       fi
     }
 
-    restore_runtime_shell() {
-      if [ "$runtime_shell_was_active" -eq 1 ]; then
-        ${pkgs.systemd}/bin/systemctl --user start quickshell-runtime-shell.service >/dev/null 2>&1 || true
-      fi
-    }
-
     restore_workspace() {
       if [ -n "''${original_workspace:-}" ]; then
         ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$original_workspace" >/dev/null 2>&1 || true
       fi
     }
 
-    trap 'restore_workspace; restore_runtime_shell; restore_scale' EXIT INT TERM
+    trap 'restore_workspace; restore_scale' EXIT INT TERM
 
     if [ "$original_scale" != "1" ] && [ "$original_scale" != "1.0" ]; then
       ${pkgs.sway}/bin/swaymsg -s "$socket_path" output "$target_output" scale 1.0 >/dev/null
-      ${pkgs.coreutils}/bin/sleep 1
-    fi
-
-    if ${pkgs.systemd}/bin/systemctl --user is-active --quiet quickshell-runtime-shell.service; then
-      runtime_shell_was_active=1
-      ${pkgs.systemd}/bin/systemctl --user stop quickshell-runtime-shell.service
       ${pkgs.coreutils}/bin/sleep 1
     fi
 
