@@ -37,6 +37,7 @@ output_state_manager_module = importlib.import_module("i3_project_daemon.output_
 IPCServer = ipc_server_module.IPCServer
 MonitorProfileService = monitor_profile_service_module.MonitorProfileService
 MonitorProfile = monitor_profile_module.MonitorProfile
+HybridMonitorProfile = monitor_profile_module.HybridMonitorProfile
 OutputStatesFile = monitor_config_module.OutputStatesFile
 
 
@@ -231,6 +232,108 @@ async def test_handle_profile_change_disables_outputs_omitted_from_profile(monke
     assert commands.count("move workspace to output DP-1") == 2
     assert "output HDMI-A-1 disable" in commands
     assert "output DP-2 disable" in commands
-    assert "output DP-1 mode 1920x1200 position 0 0" in commands
+    assert "output DP-1 enable mode 1920x1200 position 0 0" in commands
     assert publisher.calls[-1]["profile_name"] == "single"
     assert publisher.calls[-1]["enabled_outputs"] == ["DP-1"]
+
+
+@pytest.mark.asyncio
+async def test_handle_profile_change_uses_hybrid_profiles_without_hostname_gate(monkeypatch):
+    publisher = DummyPublisher()
+    service = MonitorProfileService(eww_publisher=publisher)
+    service._profiles = {
+        "local+1vnc": MonitorProfile(**{
+            "name": "local+1vnc",
+            "description": "ThinkPad panel plus one virtual display",
+            "outputs": [
+                {"name": "eDP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 1920, "height": 1200}},
+                {"name": "HEADLESS-1", "enabled": True, "position": {"x": 1536, "y": 0, "width": 1920, "height": 1200}},
+                {"name": "HEADLESS-2", "enabled": False, "position": {"x": 3456, "y": 0, "width": 1920, "height": 1200}},
+            ],
+        }),
+    }
+    service._hybrid_profiles = {
+        "local+1vnc": HybridMonitorProfile(**{
+            "name": "local+1vnc",
+            "description": "ThinkPad panel plus one virtual display",
+            "outputs": [
+                {
+                    "name": "eDP-1",
+                    "type": "physical",
+                    "enabled": True,
+                    "position": {"x": 0, "y": 0, "width": 1920, "height": 1200},
+                    "scale": 1.25,
+                },
+                {
+                    "name": "HEADLESS-1",
+                    "type": "virtual",
+                    "enabled": True,
+                    "position": {"x": 1536, "y": 0, "width": 1920, "height": 1200},
+                    "scale": 1.0,
+                    "vnc_port": 5900,
+                },
+                {
+                    "name": "HEADLESS-2",
+                    "type": "virtual",
+                    "enabled": False,
+                    "position": {"x": 3456, "y": 0, "width": 1920, "height": 1200},
+                    "scale": 1.0,
+                    "vnc_port": 5901,
+                },
+            ],
+            "workspace_assignments": [
+                {"output": "eDP-1", "workspaces": [1, 2, 6, 7, 8, 9]},
+                {"output": "HEADLESS-1", "workspaces": [3, 4, 5]},
+            ],
+        }),
+    }
+    service._current_profile = "local-only"
+    service._send_notification = AsyncMock(return_value=None)
+    service.create_virtual_output = AsyncMock(return_value="HEADLESS-1")
+    service.manage_wayvnc_service = AsyncMock(return_value=True)
+    service.reassign_workspaces = AsyncMock(return_value=True)
+    service.migrate_workspaces_from_disabled_outputs = AsyncMock(return_value=True)
+
+    saved_states = OutputStatesFile()
+
+    monkeypatch.setattr(
+        monitor_profile_service_module,
+        "load_output_states",
+        lambda: saved_states,
+    )
+    monkeypatch.setattr(
+        monitor_profile_service_module,
+        "save_output_states",
+        lambda states: True,
+    )
+
+    commands = []
+
+    async def command(cmd: str):
+        commands.append(cmd)
+        return [SimpleNamespace(success=True, error="")]
+
+    conn = SimpleNamespace(
+        get_outputs=AsyncMock(side_effect=[
+            [make_output("eDP-1", focused=True, x=0, width=1920, height=1200)],
+            [
+                make_output("eDP-1", focused=True, x=0, width=1920, height=1200),
+                make_output("HEADLESS-1", x=1536, width=1920, height=1200),
+            ],
+        ]),
+        command=command,
+    )
+
+    changed = await service.handle_profile_change(conn, "local+1vnc")
+
+    assert changed is True
+    assert service.create_virtual_output.await_count == 1
+    assert service.manage_wayvnc_service.await_args_list[0].args == ("HEADLESS-1", "start")
+    assert saved_states.is_output_enabled("eDP-1") is True
+    assert saved_states.is_output_enabled("HEADLESS-1") is True
+    assert saved_states.is_output_enabled("HEADLESS-2") is False
+    assert publisher.calls[-1]["profile_name"] == "local+1vnc"
+    assert publisher.calls[-1]["enabled_outputs"] == ["eDP-1", "HEADLESS-1"]
+    assert publisher.calls[-1]["is_hybrid_mode"] is True
+    assert "output eDP-1 mode 1920x1200 position 0 0 scale 1.25" in commands
+    assert "output HEADLESS-1 mode 1920x1200 position 1536 0 scale 1.0" in commands

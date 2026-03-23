@@ -15,7 +15,6 @@ import asyncio
 import json
 import logging
 import re
-import socket
 import subprocess
 import time
 from pathlib import Path
@@ -67,23 +66,21 @@ class MonitorProfileService:
         self._hybrid_profiles: dict[str, HybridMonitorProfile] = {}
         self._profile_switch_in_progress: bool = False
 
-        # Feature 084: Detect hybrid mode based on hostname
-        self._is_hybrid_mode = socket.gethostname() == "nixos-m1"
         self._active_virtual_outputs: Set[str] = set()
 
         # Load initial state
         self._load_profiles()
-        if self._is_hybrid_mode:
-            self._load_hybrid_profiles()
+        self._load_hybrid_profiles()
         self._current_profile = self._read_current_profile()
+        self._is_hybrid_mode = bool(self._hybrid_profiles)
 
         if self._is_hybrid_mode:
-            logger.info("Feature 084: Hybrid mode enabled (M1 with physical + virtual displays)")
+            logger.info("Feature 084: Hybrid display profiles enabled")
 
     @property
     def is_hybrid_mode(self) -> bool:
         """Check if running in hybrid mode (M1)."""
-        return self._is_hybrid_mode
+        return bool(self._hybrid_profiles)
 
     def _load_profiles(self) -> None:
         """Load all profile definitions from profiles directory."""
@@ -112,7 +109,7 @@ class MonitorProfileService:
         logger.info(f"Loaded {len(self._profiles)} monitor profiles")
 
     def _load_hybrid_profiles(self) -> None:
-        """Load M1 hybrid profile definitions from profiles directory."""
+        """Load hybrid profile definitions from profiles directory."""
         self._hybrid_profiles = {}
 
         if not PROFILES_DIR.exists():
@@ -479,7 +476,7 @@ class MonitorProfileService:
         previous_profile = self._current_profile
 
         # Feature 084: Check for hybrid profile first
-        hybrid_profile = self._hybrid_profiles.get(new_profile_name) if self._is_hybrid_mode else None
+        hybrid_profile = self._hybrid_profiles.get(new_profile_name)
 
         # Validate profile exists (hybrid or standard)
         profile = self._profiles.get(new_profile_name)
@@ -500,7 +497,7 @@ class MonitorProfileService:
 
         try:
             # Feature 084: Handle hybrid mode profile switch
-            if hybrid_profile and self._is_hybrid_mode:
+            if hybrid_profile:
                 return await self._handle_hybrid_profile_change(
                     conn, hybrid_profile, previous_profile, start_time
                 )
@@ -759,7 +756,9 @@ class MonitorProfileService:
     def reload_profiles(self) -> None:
         """Reload profiles from disk."""
         self._load_profiles()
+        self._load_hybrid_profiles()
         self._current_profile = self._read_current_profile()
+        self._is_hybrid_mode = bool(self._hybrid_profiles)
         logger.info(f"Reloaded profiles, current: {self._current_profile}")
 
     async def reassign_workspaces(self, conn, hybrid_profile: HybridMonitorProfile) -> bool:

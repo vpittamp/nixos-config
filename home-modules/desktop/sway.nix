@@ -117,10 +117,12 @@ let
 
   # Detect headless Sway configuration (Feature 046)
   isHeadless = swayProfileMode == "headless";
+  # Detect physical + virtual hybrid display configuration
+  isHybrid = swayProfileMode == "hybrid";
   # Detect Ryzen multi-monitor desktop (Feature 001 extension for 4-tier system)
   isRyzen = swayProfileMode == "desktop4";
-  # Check if virtual outputs are supported (headless mode only)
-  hasVirtualOutputs = isHeadless;
+  # Virtual outputs are supported in both fully headless and hybrid modes.
+  hasVirtualOutputs = isHeadless || isHybrid;
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
@@ -181,6 +183,171 @@ let
     };
   };
   headlessProfileDefault = if headlessSingleOutputMode then "single" else "triple";
+  hybridMonitorProfiles = {
+    "local-only" = {
+      name = "local-only";
+      description = "ThinkPad panel only";
+      default = true;
+      outputs = [
+        {
+          name = "eDP-1";
+          type = "physical";
+          enabled = true;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.25;
+        }
+        {
+          name = "HEADLESS-1";
+          type = "virtual";
+          enabled = false;
+          position = {
+            x = 1536;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5900;
+        }
+        {
+          name = "HEADLESS-2";
+          type = "virtual";
+          enabled = false;
+          position = {
+            x = 3456;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5901;
+        }
+      ];
+      workspace_assignments = [
+        {
+          output = "eDP-1";
+          workspaces = [ 1 2 3 4 5 6 7 8 9 ];
+        }
+      ];
+    };
+    "local+1vnc" = {
+      name = "local+1vnc";
+      description = "ThinkPad panel plus one virtual display";
+      outputs = [
+        {
+          name = "eDP-1";
+          type = "physical";
+          enabled = true;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.25;
+        }
+        {
+          name = "HEADLESS-1";
+          type = "virtual";
+          enabled = true;
+          position = {
+            x = 1536;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5900;
+        }
+        {
+          name = "HEADLESS-2";
+          type = "virtual";
+          enabled = false;
+          position = {
+            x = 3456;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5901;
+        }
+      ];
+      workspace_assignments = [
+        {
+          output = "eDP-1";
+          workspaces = [ 1 2 6 7 8 9 ];
+        }
+        {
+          output = "HEADLESS-1";
+          workspaces = [ 3 4 5 ];
+        }
+      ];
+    };
+    "local+2vnc" = {
+      name = "local+2vnc";
+      description = "ThinkPad panel plus two virtual displays";
+      outputs = [
+        {
+          name = "eDP-1";
+          type = "physical";
+          enabled = true;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.25;
+        }
+        {
+          name = "HEADLESS-1";
+          type = "virtual";
+          enabled = true;
+          position = {
+            x = 1536;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5900;
+        }
+        {
+          name = "HEADLESS-2";
+          type = "virtual";
+          enabled = true;
+          position = {
+            x = 3456;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5901;
+        }
+      ];
+      workspace_assignments = [
+        {
+          output = "eDP-1";
+          workspaces = [ 1 2 ];
+        }
+        {
+          output = "HEADLESS-1";
+          workspaces = [ 3 4 5 ];
+        }
+        {
+          output = "HEADLESS-2";
+          workspaces = [ 6 7 8 9 ];
+        }
+      ];
+    };
+  };
   ryzenMonitorProfiles = {
     default = {
       name = "default";
@@ -258,10 +425,12 @@ let
   };
   managedMonitorProfiles =
     if isHeadless then headlessMonitorProfiles
+    else if isHybrid then hybridMonitorProfiles
     else if isRyzen then ryzenMonitorProfiles
     else { };
   managedProfileDefault =
     if isHeadless then headlessProfileDefault
+    else if isHybrid then "local-only"
     else if isRyzen then "default"
     else "";
   hasManagedMonitorProfiles = (builtins.length (builtins.attrNames managedMonitorProfiles)) > 0;
@@ -319,6 +488,10 @@ let
     # Map monitor roles → concrete outputs
     monitorRoleToOutput = role:
       if isHeadless then headlessRoleToOutput role
+      else if isHybrid then
+        if role == "secondary" then "HEADLESS-1"
+        else if role == "tertiary" then "HEADLESS-2"
+        else "eDP-1"
       else
         # Laptop default mapping: keep everything on eDP-1; allow HDMI for secondary
         if role == "secondary" then "HDMI-A-1" else "eDP-1";
@@ -327,6 +500,8 @@ let
     fallbackOutputs = primary:
       if isHeadless then
         headlessFallbackOutputs primary
+      else if isHybrid then
+        builtins.filter (o: o != primary) [ "eDP-1" "HEADLESS-1" "HEADLESS-2" ]
       else
         builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
 
@@ -366,6 +541,11 @@ let
         secondary = [ headlessSecondaryOutput ]; # HEADLESS-2
         tertiary = [ headlessTertiaryOutput ];   # HEADLESS-3
       }
+      else if isHybrid then {
+        primary = [ "eDP-1" ];
+        secondary = [ "HEADLESS-1" "eDP-1" ];
+        tertiary = [ "HEADLESS-2" "HEADLESS-1" "eDP-1" ];
+      }
       else {
         # Standard laptop with optional external monitor
         primary = [ "eDP-1" ];
@@ -382,12 +562,13 @@ in
   imports = [
     ({ lib, ... }: {
       options.programs.sway-profile.mode = lib.mkOption {
-        type = lib.types.enum [ "auto" "headless" "laptop" "desktop4" ];
+        type = lib.types.enum [ "auto" "headless" "hybrid" "laptop" "desktop4" ];
         default = "auto";
         description = ''
           Select Sway layout/runtime profile.
           `auto` preserves existing hostname-based behavior.
           `headless` forces virtual outputs and WayVNC services.
+          `hybrid` keeps the physical panel and adds declarative virtual outputs.
           `laptop` forces single-display defaults.
           `desktop4` forces the 4-monitor desktop layout.
         '';
@@ -507,6 +688,21 @@ in
           position = "1920,1200";  # Centered below DP-1
           scale = "1.0";
         };
+      } else if isHybrid then {
+        "eDP-1" = {
+          scale = "1.25";
+          position = "0,0";
+        };
+        "HEADLESS-1" = {
+          mode = "1920x1200@60Hz";
+          position = "1536,0";
+          scale = "1.0";
+        };
+        "HEADLESS-2" = {
+          mode = "1920x1200@60Hz";
+          position = "3456,0";
+          scale = "1.0";
+        };
       } else {
         # Standard laptop display (1920x1200 @ ~162 PPI on 14" panel)
         # 1.25 scale provides comfortable UI size without sacrificing too much screen real estate
@@ -546,7 +742,7 @@ in
           repeat_rate = "50";
         };
       }
-      // lib.optionalAttrs isHeadless {
+      // lib.optionalAttrs hasVirtualOutputs {
         # Slow down virtual pointer events injected via WayVNC for finer control
         "type:pointer" = {
           accel_profile = "adaptive";
@@ -588,6 +784,19 @@ in
           };
         in
           # Convert all workspace assignments to Sway output assignments
+          map assignmentToOutput workspaceAssignments.assignments
+      else if isHybrid then
+        let
+          hybridRoleToOutput = role:
+            if role == "primary" then "eDP-1"
+            else if role == "secondary" then "HEADLESS-1"
+            else "HEADLESS-2";
+
+          assignmentToOutput = assignment: {
+            workspace = toString assignment.workspace_number;
+            output = hybridRoleToOutput assignment.monitor_role;
+          };
+        in
           map assignmentToOutput workspaceAssignments.assignments
       else
         let
@@ -802,7 +1011,7 @@ in
         { command = "${pkgs.tmux}/bin/tmux set-environment -g SWAYSOCK \"$SWAYSOCK\" 2>/dev/null || true"; }
 
         # Apply desired active outputs (reads ~/.config/sway/active-outputs)
-      ] ++ lib.optionals isHeadless [
+      ] ++ lib.optionals hasVirtualOutputs [
         { command = "~/.local/bin/active-monitors-auto"; }
       ] ++ [
         # sov workspace overview daemon
@@ -916,9 +1125,10 @@ in
     sov              # Workspace overview
     lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
-  ] ++ lib.optionals isHeadless [
-    # wayvnc for headless mode (Feature 046)
+  ] ++ lib.optionals hasVirtualOutputs [
+    # wayvnc for declarative virtual displays
     pkgs.wayvnc
+  ] ++ lib.optionals isHeadless [
     pkgs.wireplumber  # Provides wpctl for default sink adjustments
   ];
 
@@ -959,7 +1169,7 @@ in
     // (lib.optionalAttrs hasManagedMonitorProfiles {
       "sway/monitor-profile.default".text = "${managedProfileDefault}\n";
     })
-    // (lib.optionalAttrs isHeadless {
+    // (lib.optionalAttrs hasVirtualOutputs {
       "wayvnc/config" = {
         text = ''
           address=0.0.0.0
@@ -977,6 +1187,9 @@ in
             HEADLESS-2
             HEADLESS-3
           ''
+        else if isHybrid then ''
+          eDP-1
+        ''
         else ''
           eDP-1
         '';
@@ -1005,8 +1218,8 @@ in
     fi
   '');
 
-  # Ensure output-states.json defaults keep only HEADLESS-1 active unless user opts out
-  home.activation.manageHeadlessOutputStates = lib.mkIf isHeadless (lib.hm.dag.entryAfter [ "ensureMonitorProfileCurrent" ] ''
+  # Ensure output-states.json carries declarative defaults for virtual outputs.
+  home.activation.manageVirtualOutputStates = lib.mkIf hasVirtualOutputs (lib.hm.dag.entryAfter [ "ensureMonitorProfileCurrent" ] ''
     set -euo pipefail
 
     state_dir="$HOME/.config/sway"
@@ -1016,7 +1229,12 @@ in
       echo "[sway] Skipping managed output-states.json (opt-out file present at $opt_out_file)" >&2
     else
       mkdir -p "$state_dir"
-      export OUTPUT_STATE_DEFAULTS='${builtins.toJSON headlessOutputStateDefaults}'
+      export OUTPUT_STATE_DEFAULTS='${builtins.toJSON (
+        if isHeadless then headlessOutputStateDefaults else {
+          "HEADLESS-1" = false;
+          "HEADLESS-2" = false;
+        }
+      )}'
       update_result=$(${pkgs.python3}/bin/python - <<'PY'
 import json
 import os
@@ -1055,7 +1273,7 @@ if data.get("version") != "1.0":
     data["version"] = "1.0"
     changed = True
 
-managed_by = "nixos-headless-defaults"
+managed_by = "nixos-virtual-output-defaults"
 if data.get("managed_by") != managed_by:
     data["managed_by"] = managed_by
     changed = True
@@ -1091,7 +1309,7 @@ PY
   # Three independent VNC instances (auto-started)
 
   # HEADLESS-1 (Port 5900)
-  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf isHeadless {
+  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf hasVirtualOutputs {
     Unit = {
       Description = "wayvnc VNC server for HEADLESS-1";
       Documentation = "https://github.com/any1/wayvnc";
@@ -1113,7 +1331,7 @@ PY
   };
 
   # HEADLESS-2 (Port 5901)
-  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf isHeadless {
+  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf hasVirtualOutputs {
     Unit = {
       Description = "wayvnc VNC server for HEADLESS-2";
       Documentation = "https://github.com/any1/wayvnc";

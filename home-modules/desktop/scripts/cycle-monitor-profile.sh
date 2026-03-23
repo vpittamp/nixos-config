@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cycle-monitor-profile - Cycle through monitor profiles with Mod+Shift+M
-# Feature 084: M1 hybrid mode support
+# Feature 084: Hybrid mode support
 
 set -euo pipefail
 
@@ -21,13 +21,18 @@ fi
 CURRENT_FILE="${HOME}/.config/sway/monitor-profile.current"
 PROFILE_DIR="${HOME}/.config/sway/monitor-profiles"
 
-# Detect mode based on hostname
-if [[ "$(hostname)" == "nixos-m1" ]]; then
-  # M1 hybrid mode profiles
+# Detect profile family from installed declarative profiles.
+if [[ -f "$PROFILE_DIR/local-only.json" ]]; then
   PROFILES=("local-only" "local+1vnc" "local+2vnc")
-else
-  # Hetzner headless mode profiles
+elif [[ -f "$PROFILE_DIR/single.json" ]]; then
   PROFILES=("single" "dual" "triple")
+else
+  mapfile -t PROFILES < <(find "$PROFILE_DIR" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sed 's/\.json$//' | sort)
+fi
+
+if [[ ${#PROFILES[@]} -eq 0 ]]; then
+  echo "cycle-monitor-profile: no monitor profiles found in $PROFILE_DIR" >&2
+  exit 1
 fi
 
 # Get current profile

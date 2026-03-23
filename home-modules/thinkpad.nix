@@ -50,6 +50,9 @@
     logLevel = "DEBUG";  # Temporary for testing
   };
 
+  # Use the shared hybrid display path so the ThinkPad can expose a virtual second monitor.
+  programs.sway-profile.mode = "hybrid";
+
   programs.disk-guardrails.enable = true;
 
   # Feature 123: OTEL AI assistant monitor service
@@ -123,30 +126,4 @@
     };
   };
 
-  # WayVNC configuration for remote access over Tailscale
-  xdg.configFile."wayvnc/config".text = ''
-    # WayVNC configuration for ThinkPad
-    # Access via: vnc://<tailscale-ip>:5900 (Tailscale IP)
-    address=0.0.0.0
-    enable_auth=false
-  '';
-
-  # WayVNC systemd user service
-  systemd.user.services.wayvnc = {
-    Unit = {
-      Description = "WayVNC - VNC server for Wayland (ThinkPad eDP-1)";
-      Documentation = "man:wayvnc(1)";
-      After = [ "sway-session.target" ];
-      BindsTo = [ "sway-session.target" ];
-    };
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o eDP-1 0.0.0.0 5900";
-      Restart = "on-failure";
-      RestartSec = "3s";
-    };
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
 }

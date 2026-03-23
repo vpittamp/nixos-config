@@ -102,11 +102,7 @@ if (( list_profiles )); then
   exit 0
 fi
 
-# Feature 084: Detect hybrid mode (M1 with physical + virtual displays)
 is_hybrid_mode=0
-if [[ "$(hostname)" == "nixos-m1" ]]; then
-  is_hybrid_mode=1
-fi
 
 if [[ -n "$profile_name" ]]; then
   profile_path="$profile_dir/${profile_name%.json}.json"
@@ -120,6 +116,7 @@ if [[ -n "$profile_name" ]]; then
   # Hybrid format: outputs: [{name: "eDP-1", type: "physical", ...}, ...]
   first_output=$(jq -r '.outputs[0]' "$profile_path" 2>/dev/null)
   if [[ "$first_output" == "{"* ]] || jq -e '.outputs[0].name' "$profile_path" >/dev/null 2>&1; then
+    is_hybrid_mode=1
     # Hybrid mode profile - extract output names from nested objects
     mapfile -t want < <(jq -r '.outputs[] | .name' "$profile_path" 2>/dev/null)
     # Also extract virtual outputs for create_output
