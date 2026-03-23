@@ -2290,14 +2290,10 @@ in
     '';
 
     # Link individual files so the config directory stays writable for qmlls.
-    xdg.configFile."quickshell/${cfg.configName}/shell.qml".source = shellConfigDir + "/shell.qml";
-    xdg.configFile."quickshell/${cfg.configName}/ShellConfig.qml".source = shellConfigDir + "/ShellConfig.qml";
-    xdg.configFile."quickshell/${cfg.configName}/SessionRow.qml".source = shellConfigDir + "/SessionRow.qml";
-    xdg.configFile."quickshell/${cfg.configName}/NotificationToast.qml".source = shellConfigDir + "/NotificationToast.qml";
-    xdg.configFile."quickshell/${cfg.configName}/NotificationRailCard.qml".source = shellConfigDir + "/NotificationRailCard.qml";
-    xdg.configFile."quickshell/${cfg.configName}/AssistantPanel.qml".source = shellConfigDir + "/AssistantPanel.qml";
-    xdg.configFile."quickshell/${cfg.configName}/AssistantService.qml".source = shellConfigDir + "/AssistantService.qml";
-    xdg.configFile."quickshell/${cfg.configName}/AssistantProviderLogic.js".source = shellConfigDir + "/AssistantProviderLogic.js";
+    xdg.configFile."quickshell/${cfg.configName}" = {
+      source = shellConfigDir;
+      recursive = true;
+    };
 
     home.activation.ensureQuickshellQmllsConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
       set -euo pipefail

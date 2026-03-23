@@ -147,13 +147,17 @@ ShellRoot {
         onExited: (exitCode, exitStatus) => {
             if (exitCode === 0) {
                 try {
-                    const found = stdoutBuf.includes("com.moonlight_stream.Moonlight");
-                    if (found) {
-                        const re = /"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^}]*?"fullscreen_mode"\s*:\s*(\d+)/;
-                        const match = stdoutBuf.match(re);
-                        root.moonlightFullscreen = match ? parseInt(match[1]) > 0 : false;
+                    // Find the Moonlight node block and check fullscreen_mode within it
+                    const re = /\{[^{}]*"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^{}]*\}/;
+                    const block = stdoutBuf.match(re);
+                    if (block) {
+                        const fm = block[0].match(/"fullscreen_mode"\s*:\s*(\d+)/);
+                        root.moonlightFullscreen = fm ? parseInt(fm[1]) > 0 : false;
                     } else {
-                        root.moonlightFullscreen = false;
+                        // Try reverse order (fullscreen_mode before app_id)
+                        const re2 = /\{[^{}]*"fullscreen_mode"\s*:\s*(\d+)[^{}]*"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^{}]*\}/;
+                        const match2 = stdoutBuf.match(re2);
+                        root.moonlightFullscreen = match2 ? parseInt(match2[1]) > 0 : false;
                     }
                 } catch(e) {
                     root.moonlightFullscreen = false;
