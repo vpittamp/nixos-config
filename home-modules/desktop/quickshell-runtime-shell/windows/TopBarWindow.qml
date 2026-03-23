@@ -52,40 +52,6 @@ PanelWindow {
                 spacing: 6
 
                 Rectangle {
-                    radius: 8
-                    color: colors.card
-                    border.color: topBarWindow.isFocusedBar ? colors.blueMuted : colors.border
-                    border.width: 1
-                    implicitWidth: hostChipRow.implicitWidth + 16
-                    implicitHeight: parent.height
-
-                    RowLayout {
-                        id: hostChipRow
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 5
-
-                        Text {
-                            text: runtimeConfig.hostName === "ryzen" ? "\uf4bc"    // nf-md-desktop_tower
-                                : runtimeConfig.hostName === "thinkpad" ? "\uf489" // nf-md-laptop
-                                : "\uf108"                                         // nf-fa-desktop
-                            color: topBarWindow.isFocusedBar ? colors.blue : colors.muted
-                            font.family: "FiraCode Nerd Font"
-                            font.pixelSize: 12
-                        }
-
-                        Text {
-                            id: outputLabel
-                            text: runtimeConfig.hostName + (topBarWindow.topOutputName ? " · " + topBarWindow.topOutputName : "")
-                            color: colors.text
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-                    }
-                }
-
-                Rectangle {
                     id: panelToggleChip
                     radius: 8
                     color: root.stateChipFill(root.panelVisible, panelToggleMouse.containsMouse, colors.blueBg)
@@ -131,16 +97,48 @@ PanelWindow {
                 color: colors.card
                 border.color: colors.border
                 border.width: 1
-                implicitWidth: clockLabel.implicitWidth + 26
+                implicitWidth: centerRow.implicitWidth + 20
                 implicitHeight: parent.height
 
-                Text {
-                    id: clockLabel
+                RowLayout {
+                    id: centerRow
                     anchors.centerIn: parent
-                    text: root.topBarTimeText()
-                    color: colors.text
-                    font.pixelSize: 10
-                    font.weight: Font.DemiBold
+                    spacing: 6
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: runtimeConfig.hostName === "ryzen" ? "\uf4bc"
+                            : runtimeConfig.hostName === "thinkpad" ? "\uf489"
+                            : "\uf108"
+                        color: topBarWindow.isFocusedBar ? colors.blue : colors.muted
+                        font.family: "FiraCode Nerd Font"
+                        font.pixelSize: 12
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        id: outputLabel
+                        text: runtimeConfig.hostName + (topBarWindow.topOutputName ? " · " + topBarWindow.topOutputName : "")
+                        color: colors.text
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: "│"
+                        color: colors.subtle
+                        font.pixelSize: 10
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        id: clockLabel
+                        text: root.topBarTimeText()
+                        color: colors.text
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                    }
                 }
             }
 

@@ -239,7 +239,7 @@ in
       exclude-global-prep-cmd = "false";
       prep-cmd = [
         {
-          do = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.25";
+          do = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.5";
           undo = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.0";
         }
       ];
