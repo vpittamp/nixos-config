@@ -387,9 +387,15 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
-                            onClicked: function(mouse) {
+                            onPressed: function(mouse) {
                                 if (mouse.button === Qt.RightButton && service.currentSession) {
+                                    mouse.accepted = true;
                                     root.openSessionActionMenu(service.currentSession.session_key, sessionSwitcherLayout, sessionSwitcherLayout.width - 18, sessionSwitcherLayout.height);
+                                }
+                            }
+                            onClicked: function(mouse) {
+                                if (mouse.button === Qt.RightButton) {
+                                    mouse.accepted = true;
                                     return;
                                 }
                                 root.toggleSessionBrowser();
@@ -1037,9 +1043,15 @@ Item {
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            onPressed: function(mouse) {
+                                if (mouse.button === Qt.RightButton) {
+                                    mouse.accepted = true;
+                                    root.openSessionActionMenu(sessionKey, rowMouse, mouse.x, mouse.y);
+                                }
+                            }
                             onClicked: function(mouse) {
                                 if (mouse.button === Qt.RightButton) {
-                                    root.openSessionActionMenu(sessionKey, rowMouse, mouse.x, mouse.y);
+                                    mouse.accepted = true;
                                     return;
                                 }
                                 service.selectSession(sessionKey);
@@ -1495,9 +1507,15 @@ Item {
             hoverEnabled: enabled
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: function(mouse) {
+                if (mouse.button === Qt.RightButton) {
+                    mouse.accepted = true;
+                    actionChip.secondaryClicked();
+                }
+            }
             onClicked: function(mouse) {
                 if (mouse.button === Qt.RightButton) {
-                    actionChip.secondaryClicked();
+                    mouse.accepted = true;
                     return;
                 }
                 actionChip.clicked();
