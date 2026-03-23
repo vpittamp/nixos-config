@@ -56,7 +56,7 @@ PanelWindow {
 
             Text {
                 Layout.alignment: Qt.AlignVCenter
-                text: "\ufavn"
+                text: "\uf066"
                 color: pillMouse.containsMouse ? colors.blue : colors.muted
                 font.family: "FiraCode Nerd Font"
                 font.pixelSize: 12
