@@ -13,9 +13,19 @@ let
     && osConfig.services ? "power-profiles-daemon"
     && osConfig.services."power-profiles-daemon".enable;
 
+  # Build shell.qml with accent color substitution
+  accentShellQml = pkgs.runCommandLocal "quickshell-accent-shell-qml" { } ''
+    ${pkgs.gnused}/bin/sed \
+      -e 's|blue: "#93c5fd"|blue: "${cfg.accentColor}"|' \
+      -e 's|blueBg: "#16243a"|blueBg: "${cfg.accentBg}"|' \
+      -e 's|blueMuted: "#5d7ba2"|blueMuted: "${cfg.accentMuted}"|' \
+      -e 's|blueWash: "#152231"|blueWash: "${cfg.accentWash}"|' \
+      ${./shell.qml} > "$out"
+  '';
+
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
-    cp ${./shell.qml} "$out/shell.qml"
+    cp ${accentShellQml} "$out/shell.qml"
     cp -r ${./controllers} "$out/controllers"
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
@@ -2153,6 +2163,30 @@ in
       type = lib.types.enum [ "primary" ];
       default = "primary";
       description = "Policy for choosing the monitor that hosts the AI detail panel.";
+    };
+
+    accentColor = lib.mkOption {
+      type = lib.types.str;
+      default = "#93c5fd";
+      description = "Primary accent color (replaces blue family in shell.qml).";
+    };
+
+    accentBg = lib.mkOption {
+      type = lib.types.str;
+      default = "#16243a";
+      description = "Accent background color.";
+    };
+
+    accentMuted = lib.mkOption {
+      type = lib.types.str;
+      default = "#5d7ba2";
+      description = "Muted accent color.";
+    };
+
+    accentWash = lib.mkOption {
+      type = lib.types.str;
+      default = "#152231";
+      description = "Accent wash/tint color.";
     };
 
     toggleKey = lib.mkOption {

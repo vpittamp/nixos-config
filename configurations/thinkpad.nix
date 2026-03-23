@@ -56,7 +56,7 @@ let
         --fps 60 \
         --display-mode windowed \
         --absolute-mouse \
-        --capture-system-keys never \
+        --capture-system-keys fullscreen \
         ryzen \
         Desktop
     }
@@ -130,7 +130,7 @@ let
       --fps 60 \
       --display-mode windowed \
       --absolute-mouse \
-      --capture-system-keys never \
+      --capture-system-keys fullscreen \
       ryzen \
       Desktop &
     moonlight_pid=$!

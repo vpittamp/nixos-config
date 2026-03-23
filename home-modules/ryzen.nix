@@ -103,8 +103,15 @@ in
   # Declarative PWA Installation
 
 
+  # Mauve/violet accent for visual distinction from ThinkPad (blue)
+  programs.unified-bar-theme.accentColor = "#cba6f7";
+
   programs.quickshell-runtime-shell = {
     enable = true;
+    accentColor = "#c4b5fd";
+    accentBg = "#241b43";
+    accentMuted = "#8b7bb5";
+    accentWash = "#1e1639";
   };
 
   programs.quickshell-worktree-app.enable = true;

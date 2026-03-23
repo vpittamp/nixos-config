@@ -1,6 +1,8 @@
 { config, pkgs, lib, ... }:
 
 let
+  cfg = config.programs.unified-bar-theme;
+
   # Catppuccin Mocha color palette
   # Reference: https://github.com/catppuccin/catppuccin
   mocha = {
@@ -24,7 +26,7 @@ let
     version = "1.0";
     theme = "catppuccin-mocha";
 
-    colors = mocha;
+    colors = mocha // { accent = cfg.accentColor; };
 
     fonts = {
       bar = "FiraCode Nerd Font";
@@ -61,6 +63,14 @@ let
   };
 
 in {
+  options.programs.unified-bar-theme = {
+    accentColor = lib.mkOption {
+      type = lib.types.str;
+      default = mocha.blue;
+      description = "Primary accent color for focused window borders and theme highlights.";
+    };
+  };
+
   # Unified Bar Theme Configuration
   # Centralized appearance config for all bar components (Swaybar, Eww, SwayNC)
   # Based on Feature 057: Unified Bar System with Enhanced Workspace Mode
@@ -87,8 +97,8 @@ in {
         background = mocha.base;
         focused = {
           background = mocha.surface0;
-          border = mocha.blue;
-          childBorder = mocha.blue;
+          border = cfg.accentColor;
+          childBorder = cfg.accentColor;
           indicator = mocha.mauve;
           text = mocha.text;
         };
