@@ -143,15 +143,14 @@ ShellRoot {
     Process {
         id: moonlightCheckProc
         command: ["swaymsg", "-t", "get_tree", "-r"]
-        property string stdout: ""
+        property string stdoutBuf: ""
         onExited: (exitCode, exitStatus) => {
             if (exitCode === 0) {
                 try {
-                    const found = stdout.includes("com.moonlight_stream.Moonlight");
+                    const found = stdoutBuf.includes("com.moonlight_stream.Moonlight");
                     if (found) {
-                        // Check if it's fullscreen via fullscreen_mode > 0
                         const re = /"app_id"\s*:\s*"com\.moonlight_stream\.Moonlight"[^}]*?"fullscreen_mode"\s*:\s*(\d+)/;
-                        const match = stdout.match(re);
+                        const match = stdoutBuf.match(re);
                         root.moonlightFullscreen = match ? parseInt(match[1]) > 0 : false;
                     } else {
                         root.moonlightFullscreen = false;
@@ -160,10 +159,10 @@ ShellRoot {
                     root.moonlightFullscreen = false;
                 }
             }
-            stdout = "";
+            stdoutBuf = "";
         }
         stdout: SplitParser {
-            onRead: data => moonlightCheckProc.stdout += data
+            onRead: data => moonlightCheckProc.stdoutBuf += data
         }
     }
 
