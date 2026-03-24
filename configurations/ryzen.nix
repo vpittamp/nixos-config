@@ -23,11 +23,11 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
-  sunshineSetDp1Scale = pkgs.writeShellScriptBin "sunshine-set-dp1-scale" ''
+  sunshinePrepMonitor = pkgs.writeShellScriptBin "sunshine-prep-monitor" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
 
-    target_scale="''${1:?missing scale}"
+    action="''${1:?Usage: sunshine-prep-monitor connect|disconnect}"
     socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
 
     if [ -z "$socket_path" ]; then
@@ -35,11 +35,30 @@ let
     fi
 
     if [ -z "$socket_path" ]; then
-      echo "Unable to locate SWAYSOCK for Sunshine prep-cmd" >&2
+      echo "sunshine-prep-monitor: unable to locate SWAYSOCK" >&2
       exit 1
     fi
 
-    exec ${pkgs.sway}/bin/swaymsg -s "$socket_path" output DP-1 scale "$target_scale"
+    SWAYMSG="${pkgs.sway}/bin/swaymsg -s $socket_path"
+
+    case "$action" in
+      connect)
+        # Collapse to single monitor for Moonlight streaming
+        $SWAYMSG output HDMI-A-1 disable
+        $SWAYMSG output DP-2 disable
+        $SWAYMSG output DP-1 scale 1.0
+        ;;
+      disconnect)
+        # Restore full three-monitor layout (matches sway.nix default profile)
+        $SWAYMSG output HDMI-A-1 enable mode 1920x1080 position 0 0 scale 1.0
+        $SWAYMSG output DP-1 enable mode 1920x1200 position 1920 0 scale 1.25
+        $SWAYMSG output DP-2 enable mode 1920x1200 position 3840 0 scale 1.0
+        ;;
+      *)
+        echo "sunshine-prep-monitor: unknown action '$action' (expected connect|disconnect)" >&2
+        exit 1
+        ;;
+    esac
   '';
 in
 {
@@ -247,8 +266,8 @@ in
       exclude-global-prep-cmd = "false";
       prep-cmd = [
         {
-          do = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.25";
-          undo = "${sunshineSetDp1Scale}/bin/sunshine-set-dp1-scale 1.0";
+          do = "${sunshinePrepMonitor}/bin/sunshine-prep-monitor connect";
+          undo = "${sunshinePrepMonitor}/bin/sunshine-prep-monitor disconnect";
         }
       ];
     };
