@@ -10914,17 +10914,30 @@ class IPCServer:
                     output_count = 0
                     description = ""
                     default_layout = False
+                    outputs_detail: List[Dict[str, Any]] = []
                     if profile is not None:
                         description = str(getattr(profile, "description", "") or "")
                         default_layout = bool(getattr(profile, "default", False))
                         output_names = list(profile.get_enabled_outputs())
                         output_count = len(output_names)
+                        for po in getattr(profile, "outputs", []):
+                            pos = getattr(po, "position", None)
+                            outputs_detail.append({
+                                "name": str(getattr(po, "name", "")),
+                                "enabled": bool(getattr(po, "enabled", True)),
+                                "scale": float(getattr(po, "scale", None) or 1.0),
+                                "x": int(getattr(pos, "x", 0) if pos else 0),
+                                "y": int(getattr(pos, "y", 0) if pos else 0),
+                                "width": int(getattr(pos, "width", 0) if pos else 0),
+                                "height": int(getattr(pos, "height", 0) if pos else 0),
+                            })
                     layout_options.append({
                         "name": layout_name,
                         "label": layout_name.replace("-", " ").title(),
                         "description": description,
                         "output_names": output_names,
                         "output_count": output_count,
+                        "outputs": outputs_detail,
                         "default": default_layout,
                         "current": layout_name == profile_name,
                     })

@@ -947,6 +947,7 @@ PanelWindow {
                                                     readonly property bool current: !!(modelData && modelData.current)
                                                     readonly property bool pending: root.displayApplyPending(layoutName)
                                                     readonly property var outputNames: root.displayOptionOutputs(modelData)
+                                                    readonly property var profileOutputs: root.arrayOrEmpty(modelData && modelData.outputs)
                                                     Layout.fillWidth: true
                                                     implicitHeight: settingsDisplayOptionColumn.implicitHeight + 20
                                                     radius: 8
@@ -1006,13 +1007,71 @@ PanelWindow {
                                                             }
                                                         }
 
-                                                        Text {
+                                                        Item {
                                                             Layout.fillWidth: true
-                                                            visible: outputNames.length > 0
-                                                            text: outputNames.join("  •  ")
-                                                            color: colors.subtle
-                                                            font.pixelSize: 9
-                                                            wrapMode: Text.WordWrap
+                                                            visible: profileOutputs.length > 0
+                                                            implicitHeight: 56
+
+                                                            Repeater {
+                                                                model: {
+                                                                    const outs = profileOutputs;
+                                                                    if (!outs || outs.length === 0) return [];
+                                                                    let maxX = 0;
+                                                                    let maxY = 0;
+                                                                    for (let i = 0; i < outs.length; i++) {
+                                                                        const o = outs[i];
+                                                                        if (!o || !o.enabled) continue;
+                                                                        const right = (o.x || 0) + (o.width || 0);
+                                                                        const bottom = (o.y || 0) + (o.height || 0);
+                                                                        if (right > maxX) maxX = right;
+                                                                        if (bottom > maxY) maxY = bottom;
+                                                                    }
+                                                                    if (maxX <= 0) maxX = 1920;
+                                                                    if (maxY <= 0) maxY = 1200;
+                                                                    const containerW = parent.width - 8;
+                                                                    const containerH = 48;
+                                                                    const scaleF = Math.min(containerW / maxX, containerH / maxY);
+                                                                    const totalW = maxX * scaleF;
+                                                                    const offsetX = (containerW - totalW) / 2 + 4;
+                                                                    const items = [];
+                                                                    for (let j = 0; j < outs.length; j++) {
+                                                                        const o2 = outs[j];
+                                                                        if (!o2) continue;
+                                                                        items.push({
+                                                                            name: o2.name || "",
+                                                                            enabled: !!o2.enabled,
+                                                                            rx: offsetX + (o2.x || 0) * scaleF,
+                                                                            ry: 4 + (o2.y || 0) * scaleF,
+                                                                            rw: Math.max(8, (o2.width || 0) * scaleF - 2),
+                                                                            rh: Math.max(6, (o2.height || 0) * scaleF - 2),
+                                                                            scaleVal: o2.scale || 1.0
+                                                                        });
+                                                                    }
+                                                                    return items;
+                                                                }
+
+                                                                delegate: Rectangle {
+                                                                    required property var modelData
+                                                                    x: modelData.rx
+                                                                    y: modelData.ry
+                                                                    width: modelData.rw
+                                                                    height: modelData.rh
+                                                                    radius: 3
+                                                                    color: modelData.enabled ? (current ? colors.blue : colors.teal) : colors.cardAlt
+                                                                    opacity: modelData.enabled ? 0.25 : 0.15
+                                                                    border.color: modelData.enabled ? (current ? colors.blue : colors.teal) : colors.border
+                                                                    border.width: 1
+
+                                                                    Text {
+                                                                        anchors.centerIn: parent
+                                                                        text: modelData.name
+                                                                        color: modelData.enabled ? (current ? colors.blue : colors.text) : colors.subtle
+                                                                        font.pixelSize: Math.min(8, parent.height * 0.45)
+                                                                        font.weight: modelData.enabled ? Font.DemiBold : Font.Normal
+                                                                        opacity: modelData.enabled ? 1.0 : 0.5
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
