@@ -46,7 +46,7 @@ let
         # Collapse to single monitor for Moonlight streaming
         $SWAYMSG output HDMI-A-1 disable
         $SWAYMSG output DP-2 disable
-        $SWAYMSG output DP-1 scale 1.0
+        $SWAYMSG output DP-1 position 0 0 scale 1.0
         ;;
       disconnect)
         # Restore full three-monitor layout (matches sway.nix default profile)
