@@ -358,11 +358,6 @@ PanelWindow {
                         onClicked: root.openSettings("devices")
                     }
 
-                    ToolTip {
-                        visible: layoutMouse.containsMouse
-                        text: "Open display controls"
-                        delay: 300
-                    }
                 }
 
                 Rectangle {
