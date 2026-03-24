@@ -820,7 +820,7 @@ PanelWindow {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Active outputs: " + root.activeDisplaySummary()
+                    text: "Outputs: " + root.activeDisplaySummary()
                     color: colors.subtle
                     font.pixelSize: 9
                     wrapMode: Text.WordWrap
@@ -829,28 +829,51 @@ PanelWindow {
                 Flow {
                     Layout.fillWidth: true
                     spacing: 6
-                    visible: root.activeDisplayOutputs().length > 0
+                    visible: root.allDisplayOutputs().length > 0
 
                     Repeater {
-                        model: root.activeDisplayOutputs()
+                        model: root.allDisplayOutputs()
 
                         delegate: Rectangle {
                             required property var modelData
                             readonly property var output: modelData
+                            readonly property bool outputEnabled: !!(output && output.enabled !== false)
+                            readonly property bool pending: root.displayTogglePending(root.stringOrEmpty(output && output.name))
                             radius: 7
-                            color: output && output.primary ? colors.blueBg : colors.cardAlt
-                            border.color: output && output.primary ? colors.blue : colors.border
+                            color: output && output.primary ? colors.blueBg : (outputEnabled ? colors.cardAlt : colors.panel)
+                            border.color: output && output.primary ? colors.blue : (outputEnabled ? colors.border : colors.lineSoft)
                             border.width: 1
-                            implicitWidth: outputNameText.implicitWidth + 14
-                            implicitHeight: outputNameText.implicitHeight + 8
+                            opacity: outputEnabled ? 1.0 : 0.5
+                            implicitWidth: outputToggleRow.implicitWidth + 14
+                            implicitHeight: outputToggleRow.implicitHeight + 8
 
-                            Text {
-                                id: outputNameText
+                            Row {
+                                id: outputToggleRow
                                 anchors.centerIn: parent
-                                text: root.stringOrEmpty(output && output.name)
-                                color: output && output.primary ? colors.blue : colors.text
-                                font.pixelSize: 9
-                                font.weight: Font.DemiBold
+                                spacing: 4
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: root.stringOrEmpty(output && output.name)
+                                    color: output && output.primary ? colors.blue : colors.text
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                    font.strikeout: !outputEnabled
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: pending ? "..." : (outputEnabled ? "ON" : "OFF")
+                                    color: pending ? colors.subtle : (outputEnabled ? colors.teal : colors.red)
+                                    font.pixelSize: 8
+                                    font.weight: Font.Bold
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.toggleDisplayOutput(root.stringOrEmpty(output && output.name))
                             }
                         }
                     }

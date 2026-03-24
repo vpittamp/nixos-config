@@ -50,6 +50,7 @@ ShellRoot {
     readonly property var sessionPreviewProcess: runtimeServices ? runtimeServices.sessionPreviewProcessRef : null
     readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
     readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
+    readonly property var displayToggleOutputProcess: runtimeServices ? runtimeServices.displayToggleOutputProcessRef : null
     readonly property var brightnessActionProcess: runtimeServices ? runtimeServices.brightnessActionProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
 
@@ -202,6 +203,9 @@ ShellRoot {
     property string displayApplyStdout: ""
     property string displayApplyStderr: ""
     property string displayApplyError: ""
+    property string displayToggleTarget: ""
+    property string displayToggleStdout: ""
+    property string displayToggleStderr: ""
     property string brightnessActionTarget: ""
     property string brightnessQueuedTarget: ""
     property int brightnessQueuedPercent: -1
@@ -1144,6 +1148,46 @@ ShellRoot {
         return outputs.filter(function (output) {
             return !!(output && output.active) && output.enabled !== false;
         });
+    }
+
+    function allDisplayOutputs() {
+        const outputs = arrayOrEmpty(displayLayoutState().outputs);
+        return outputs.filter(function (output) {
+            return !!(output && output.active);
+        });
+    }
+
+    function toggleDisplayOutput(outputName) {
+        if (!displayToggleOutputProcess || displayToggleOutputProcess.running) {
+            return;
+        }
+        displayToggleTarget = outputName;
+        displayToggleStdout = "";
+        displayToggleStderr = "";
+        displayToggleOutputProcess.command = [shellConfig.i3pmBin, "display", "toggle-output", outputName];
+        displayToggleOutputProcess.running = true;
+    }
+
+    function displayTogglePending(outputName) {
+        return displayToggleTarget !== "" && displayToggleTarget === stringOrEmpty(outputName);
+    }
+
+    function updateDisplayLayoutFromSnapshot(snapshot) {
+        if (!snapshot || !snapshot.outputs) {
+            return;
+        }
+        var state = displayLayoutState();
+        state.outputs = snapshot.outputs;
+        if (snapshot.current_layout !== undefined) {
+            state.current_layout = snapshot.current_layout;
+        }
+        if (snapshot.layouts !== undefined) {
+            state.layouts = snapshot.layouts;
+        }
+        if (snapshot.layout_options !== undefined) {
+            state.layout_options = snapshot.layout_options;
+        }
+        displayLayoutStateChanged();
     }
 
     function activeDisplayOutputNames() {

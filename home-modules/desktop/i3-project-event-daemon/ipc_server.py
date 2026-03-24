@@ -678,6 +678,8 @@ class IPCServer:
                 result = await self._display_apply(params)
             elif method == "display.cycle":
                 result = await self._display_cycle(params)
+            elif method == "display.toggle_output":
+                result = await self._display_toggle_output(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -11016,6 +11018,28 @@ class IPCServer:
         else:
             next_index = 0
         return await self._display_apply({"layout": layouts[next_index]})
+
+    async def _display_toggle_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Toggle an individual output on or off."""
+        output_name = str(params.get("output") or "").strip()
+        if not output_name:
+            raise ValueError("output is required")
+
+        from .output_state_manager import load_output_states, toggle_output_state, get_enabled_outputs
+
+        enabled_outputs = get_enabled_outputs()
+        current_states = load_output_states()
+        is_currently_enabled = current_states.is_output_enabled(output_name)
+
+        if is_currently_enabled and len(enabled_outputs) <= 1:
+            raise RuntimeError(f"Cannot disable {output_name}: it is the only enabled output")
+
+        new_state = toggle_output_state(output_name)
+
+        snapshot = await self._display_snapshot({})
+        snapshot["toggled_output"] = output_name
+        snapshot["toggled_enabled"] = new_state
+        return snapshot
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by EWW/Walker."""

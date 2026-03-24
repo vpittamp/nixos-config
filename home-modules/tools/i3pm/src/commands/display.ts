@@ -7,7 +7,7 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm display <snapshot|apply|cycle> [layout] [--json]`);
+  console.log(`i3pm display <snapshot|apply|cycle|toggle-output> [layout|output] [--json]`);
 }
 
 export async function displayCommand(args: string[], _flags: CommandOptions): Promise<number> {
@@ -43,6 +43,17 @@ export async function displayCommand(args: string[], _flags: CommandOptions): Pr
         return 1;
       }
       const snapshot = await client.request("display.apply", { layout });
+      console.log(JSON.stringify(snapshot, null, 2));
+      return 0;
+    }
+
+    if (subcommand === "toggle-output") {
+      const output = String(parsed._[1] || "");
+      if (!output) {
+        console.error("display toggle-output requires an output name");
+        return 1;
+      }
+      const snapshot = await client.request("display.toggle_output", { output });
       console.log(JSON.stringify(snapshot, null, 2));
       return 0;
     }

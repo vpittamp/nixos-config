@@ -338,6 +338,8 @@ in {
         interfaces."tailscale0".allowedTCPPorts = [ 47984 47989 47990 48010 ];
         interfaces."tailscale0".allowedUDPPortRanges = [
           { from = 47998; to = 48000; }
+          { from = 48002; to = 48002; }
+          { from = 48010; to = 48010; }
           { from = 8000; to = 8010; }
         ];
       } else {
@@ -345,6 +347,8 @@ in {
         allowedTCPPorts = [ 47984 47989 47990 48010 ];
         allowedUDPPortRanges = [
           { from = 47998; to = 48000; }
+          { from = 48002; to = 48002; }
+          { from = 48010; to = 48010; }
           { from = 8000; to = 8010; }
         ];
       }

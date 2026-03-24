@@ -2328,6 +2328,9 @@ in
         Environment = [
           "QT_QUICK_CONTROLS_STYLE=Fusion"
           "QT_QPA_PLATFORM=wayland"
+          # NVIDIA/Qt6 Wayland buffer import is unstable on ryzen; software
+          # Quick rendering keeps the shell alive until the EGL path is fixed.
+          "QT_QUICK_BACKEND=software"
         ];
       };
       Install = {

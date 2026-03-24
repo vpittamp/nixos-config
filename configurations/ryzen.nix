@@ -213,12 +213,15 @@ in
     enable = true;
     hostUniqueId = ryzenSunshineHost.uniqueId;
     hardwareType = "nvidia";    # Using NVIDIA NVENC hardware encoding
-    captureMethod = "kms";      # Direct KMS capture for lowest latency
+    captureMethod = "kms";      # Restore the previous direct KMS capture path
     tailscaleOnly = true;       # Only allow via Tailscale for security
     extraSettings = {
       # Allow Moonlight pairing PIN submission from Tailscale peers.
       # Sunshine treats 100.64.0.0/10 CGNAT addresses as LAN.
       origin_pin_allowed = "lan";
+      # Avoid Sunshine's tray/X11 path on this Sway session; the inherited
+      # DISPLAY socket can block startup and the tray path is not needed here.
+      system_tray = "disabled";
       # NVENC quality settings for RTX 5070
       nvenc_preset = "p4";      # Balanced
       nvenc_tune = "ll";        # Low latency
@@ -236,7 +239,7 @@ in
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
-      # Capture DP-1 (index 0 in KMS output list, stable across profiles).
+      # Capture DP-1 (index 0 in the KMS output list, stable across profiles).
       output_name = 0;
     };
     desktopAppOverrides = {
@@ -257,6 +260,8 @@ in
       }
     ];
   };
+
+  systemd.user.services.sunshine.serviceConfig.UnsetEnvironment = [ "DISPLAY" ];
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)

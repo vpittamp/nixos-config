@@ -37,6 +37,7 @@ Item {
     property alias sessionPreviewProcessRef: sessionPreviewProcess
     property alias sessionCloseProcessRef: sessionCloseProcess
     property alias displayApplyProcessRef: displayApplyProcess
+    property alias displayToggleOutputProcessRef: displayToggleOutputProcess
 
     Connections {
         target: shellRoot
@@ -726,6 +727,55 @@ Item {
             shellRoot.displayApplyError = stderr || "Unable to apply display layout.";
             shellRoot.displayApplyStdout = "";
             shellRoot.displayApplyStderr = "";
+        }
+    }
+
+    Process {
+        id: displayToggleOutputProcess
+        command: [runtimeConfig.i3pmBin, "display", "toggle-output", ""]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.displayToggleStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                shellRoot.displayToggleStderr += message + "\n";
+                console.warn("display.toggle_output:", message);
+            }
+        }
+        onExited: function () {
+            const target = shellRoot.stringOrEmpty(shellRoot.displayToggleTarget);
+            const raw = shellRoot.stringOrEmpty(shellRoot.displayToggleStdout).trim();
+            let success = false;
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    success = !!(parsed && parsed.toggled_output === target);
+                    if (success) {
+                        shellRoot.updateDisplayLayoutFromSnapshot(parsed);
+                    }
+                } catch (error) {
+                    console.warn("display.toggle_output.parse:", raw, error);
+                }
+            }
+
+            if (!success) {
+                const stderr = shellRoot.stringOrEmpty(shellRoot.displayToggleStderr).trim();
+                if (stderr) {
+                    console.warn("display.toggle_output failed:", stderr);
+                }
+            }
+            shellRoot.displayToggleTarget = "";
+            shellRoot.displayToggleStdout = "";
+            shellRoot.displayToggleStderr = "";
         }
     }
 

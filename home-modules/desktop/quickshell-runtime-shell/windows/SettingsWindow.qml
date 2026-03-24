@@ -933,6 +933,98 @@ PanelWindow {
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
+                                        visible: root.allDisplayOutputs().length > 0
+                                        implicitHeight: perOutputColumn.implicitHeight + 24
+
+                                        ColumnLayout {
+                                            id: perOutputColumn
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            Text {
+                                                text: "Per-Output Controls"
+                                                color: colors.text
+                                                font.pixelSize: 12
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            Repeater {
+                                                model: root.allDisplayOutputs()
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var output: modelData
+                                                    readonly property string outputName: root.stringOrEmpty(output && output.name)
+                                                    readonly property bool outputEnabled: !!(output && output.enabled !== false)
+                                                    readonly property bool pending: root.displayTogglePending(outputName)
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: perOutputRow.implicitHeight + 16
+                                                    radius: 8
+                                                    color: outputEnabled ? colors.panel : colors.cardAlt
+                                                    border.color: outputEnabled ? colors.border : colors.lineSoft
+                                                    border.width: 1
+                                                    opacity: outputEnabled ? 1.0 : 0.6
+
+                                                    RowLayout {
+                                                        id: perOutputRow
+                                                        anchors.fill: parent
+                                                        anchors.margins: 8
+                                                        spacing: 8
+
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 2
+
+                                                            RowLayout {
+                                                                spacing: 6
+
+                                                                Text {
+                                                                    text: outputName
+                                                                    color: colors.text
+                                                                    font.pixelSize: 11
+                                                                    font.weight: Font.DemiBold
+                                                                    font.strikeout: !outputEnabled
+                                                                }
+
+                                                                Text {
+                                                                    visible: !!(output && output.primary)
+                                                                    text: "primary"
+                                                                    color: colors.blue
+                                                                    font.pixelSize: 9
+                                                                    font.weight: Font.Bold
+                                                                }
+                                                            }
+
+                                                            Text {
+                                                                visible: !!(output && output.rect)
+                                                                text: {
+                                                                    const r = output && output.rect;
+                                                                    if (!r) return "";
+                                                                    return (r.width || 0) + "x" + (r.height || 0);
+                                                                }
+                                                                color: colors.subtle
+                                                                font.pixelSize: 9
+                                                            }
+                                                        }
+
+                                                        Button {
+                                                            text: pending ? "..." : (outputEnabled ? "Disable" : "Enable")
+                                                            enabled: !pending && !(root.displayToggleOutputProcess && root.displayToggleOutputProcess.running)
+                                                            onClicked: root.toggleDisplayOutput(outputName)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: 10
+                                        color: colors.cardAlt
+                                        border.color: colors.lineSoft
+                                        border.width: 1
                                         implicitHeight: brightnessPowerCardContent.implicitHeight + 24
 
                                         ColumnLayout {
