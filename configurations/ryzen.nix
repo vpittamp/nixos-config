@@ -239,8 +239,8 @@ in
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
-      # Capture DP-1 (index 0 in the KMS output list, stable across profiles).
-      output_name = 0;
+      # Capture DP-1 (index 1 in the KMS output list: 0=HDMI-A-1, 1=DP-1, 2=DP-2).
+      output_name = 1;
     };
     desktopAppOverrides = {
       auto-detach = "true";
