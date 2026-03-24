@@ -281,14 +281,24 @@ ShellRoot {
             accentBgKey: "orangeBg"
         },
         {
-            id: "devices",
-            label: "Devices",
-            subtitle: "Audio, Bluetooth, network, resources",
-            title: "Devices",
-            icon: "preferences-system",
-            fallbackGlyph: "D",
+            id: "displays",
+            label: "Displays",
+            subtitle: "Layouts, outputs, scale",
+            title: "Displays",
+            icon: "video-display",
+            fallbackGlyph: "▣",
             accentColorKey: "blue",
             accentBgKey: "blueBg"
+        },
+        {
+            id: "devices",
+            label: "Devices",
+            subtitle: "Audio, brightness, power",
+            title: "Devices",
+            icon: "preferences-system",
+            fallbackGlyph: "◈",
+            accentColorKey: "violet",
+            accentBgKey: "violetBg"
         }
     ]
     readonly property var launcherModesModel: [

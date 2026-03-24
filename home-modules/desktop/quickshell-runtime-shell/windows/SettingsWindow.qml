@@ -210,8 +210,65 @@ PanelWindow {
                             Layout.fillWidth: true
                             height: 42
                             radius: 8
-                            color: root.settingsSection === "devices" ? colors.blueBg : colors.cardAlt
-                            border.color: root.settingsSection === "devices" ? colors.blue : colors.border
+                            color: root.settingsSection === "displays" ? colors.blueBg : colors.cardAlt
+                            border.color: root.settingsSection === "displays" ? colors.blue : colors.border
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                spacing: 8
+
+                                IconImage {
+                                    readonly property string iconSrc: root.iconSource("video-display", "")
+                                    visible: iconSrc !== ""
+                                    implicitSize: 12
+                                    source: iconSrc
+                                    mipmap: true
+                                }
+
+                                Text {
+                                    visible: root.iconSource("video-display", "") === ""
+                                    text: "▣"
+                                    color: root.settingsSection === "displays" ? colors.blue : colors.textDim
+                                    font.pixelSize: 12
+                                    font.weight: Font.Bold
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+
+                                    Text {
+                                        text: "Displays"
+                                        color: root.settingsSection === "displays" ? colors.blue : colors.text
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        text: "Layouts, outputs, scale"
+                                        color: colors.subtle
+                                        font.pixelSize: 9
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.setSettingsSection("displays")
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 42
+                            radius: 8
+                            color: root.settingsSection === "devices" ? colors.violetBg : colors.cardAlt
+                            border.color: root.settingsSection === "devices" ? colors.violet : colors.border
                             border.width: 1
 
                             RowLayout {
@@ -231,7 +288,7 @@ PanelWindow {
                                 Text {
                                     visible: root.iconSource("preferences-system", "") === ""
                                     text: "◈"
-                                    color: root.settingsSection === "devices" ? colors.blue : colors.textDim
+                                    color: root.settingsSection === "devices" ? colors.violet : colors.textDim
                                     font.pixelSize: 12
                                     font.weight: Font.Bold
                                 }
@@ -242,13 +299,13 @@ PanelWindow {
 
                                     Text {
                                         text: "Devices"
-                                        color: root.settingsSection === "devices" ? colors.blue : colors.text
+                                        color: root.settingsSection === "devices" ? colors.violet : colors.text
                                         font.pixelSize: 11
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
-                                        text: "Audio, Bluetooth, network, resources"
+                                        text: "Audio, brightness, power"
                                         color: colors.subtle
                                         font.pixelSize: 9
                                     }
@@ -287,7 +344,7 @@ PanelWindow {
 
                     StackLayout {
                         anchors.fill: parent
-                        currentIndex: root.settingsSection === "commands" ? 1 : (root.settingsSection === "apps" ? 0 : 2)
+                        currentIndex: root.settingsSection === "commands" ? 1 : (root.settingsSection === "apps" ? 0 : (root.settingsSection === "displays" ? 2 : 3))
 
                         Item {
                             Layout.fillWidth: true
@@ -772,14 +829,14 @@ PanelWindow {
                                     spacing: 2
 
                                     Text {
-                                        text: "Devices"
+                                        text: "Displays"
                                         color: colors.text
                                         font.pixelSize: 15
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
-                                        text: "Native QuickShell controls for displays, brightness, battery, audio, Bluetooth, and host runtime status."
+                                        text: "Monitor layouts, per-output controls, and scale settings."
                                         color: colors.subtle
                                         font.pixelSize: 10
                                         wrapMode: Text.WordWrap
@@ -787,8 +844,22 @@ PanelWindow {
                                 }
 
                                 Button {
-                                    text: "Close"
                                     onClicked: root.closeSettings()
+                                    contentItem: Text {
+                                        text: "Close"
+                                        color: colors.text
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: colors.cardAlt
+                                        border.color: colors.border
+                                        border.width: 1
+                                        implicitHeight: 22
+                                    }
                                 }
                             }
 
@@ -839,8 +910,23 @@ PanelWindow {
                                                 }
 
                                                 Button {
-                                                    text: "Picker"
                                                     onClicked: root.openDisplaySelector()
+                                                    contentItem: Text {
+                                                        text: "Picker"
+                                                        color: colors.blue
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: colors.blueBg
+                                                        border.color: colors.blue
+                                                        border.width: 1
+                                                        implicitWidth: 48
+                                                        implicitHeight: 22
+                                                    }
                                                 }
                                             }
 
@@ -898,9 +984,25 @@ PanelWindow {
                                                             }
 
                                                             Button {
-                                                                text: pending ? "Applying" : (current ? "Active" : "Apply")
                                                                 enabled: !pending && !current && !(root.displayApplyProcess && root.displayApplyProcess.running)
                                                                 onClicked: root.applyDisplayLayout(layoutName)
+                                                                contentItem: Text {
+                                                                    text: pending ? "Applying" : (current ? "Active" : "Apply")
+                                                                    color: !enabled ? colors.subtle : current ? colors.teal : colors.blue
+                                                                    font.pixelSize: 9
+                                                                    font.weight: current ? Font.Bold : Font.Medium
+                                                                    horizontalAlignment: Text.AlignHCenter
+                                                                    verticalAlignment: Text.AlignVCenter
+                                                                }
+                                                                background: Rectangle {
+                                                                    radius: 6
+                                                                    color: current ? colors.tealBg : colors.blueBg
+                                                                    border.color: current ? colors.teal : colors.blue
+                                                                    border.width: 1
+                                                                    opacity: enabled ? 1.0 : 0.5
+                                                                    implicitWidth: 52
+                                                                    implicitHeight: 22
+                                                                }
                                                             }
                                                         }
 
@@ -1023,27 +1125,120 @@ PanelWindow {
                                                                     delegate: Button {
                                                                         readonly property real scaleValue: modelData
                                                                         readonly property bool isActive: Math.abs(parent.currentScale - scaleValue) < 0.01
-                                                                        text: scaleValue + "x"
                                                                         enabled: !parent.scalePending && !isActive && !(root.displayScaleProcess && root.displayScaleProcess.running)
-                                                                        font.pixelSize: 9
-                                                                        font.weight: isActive ? Font.Bold : Font.Normal
-                                                                        palette.buttonText: isActive ? colors.teal : colors.text
                                                                         onClicked: root.setDisplayScale(outputName, scaleValue)
+                                                                        contentItem: Text {
+                                                                            text: scaleValue + "x"
+                                                                            color: !enabled ? colors.subtle : isActive ? colors.teal : colors.text
+                                                                            font.pixelSize: 9
+                                                                            font.weight: isActive ? Font.Bold : Font.Normal
+                                                                            horizontalAlignment: Text.AlignHCenter
+                                                                            verticalAlignment: Text.AlignVCenter
+                                                                        }
+                                                                        background: Rectangle {
+                                                                            radius: 4
+                                                                            color: isActive ? colors.tealBg : (enabled && parent.parent.hovered ? colors.panelAlt : colors.cardAlt)
+                                                                            border.color: isActive ? colors.teal : colors.border
+                                                                            border.width: 1
+                                                                            implicitWidth: 36
+                                                                            implicitHeight: 20
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
 
                                                         Button {
-                                                            text: pending ? "..." : (outputEnabled ? "Disable" : "Enable")
                                                             enabled: !pending && !(root.displayToggleOutputProcess && root.displayToggleOutputProcess.running)
                                                             onClicked: root.toggleDisplayOutput(outputName)
+                                                            contentItem: Text {
+                                                                text: pending ? "..." : (outputEnabled ? "Disable" : "Enable")
+                                                                color: !enabled ? colors.subtle : outputEnabled ? colors.red : colors.green
+                                                                font.pixelSize: 9
+                                                                font.weight: Font.Medium
+                                                                horizontalAlignment: Text.AlignHCenter
+                                                                verticalAlignment: Text.AlignVCenter
+                                                            }
+                                                            background: Rectangle {
+                                                                radius: 6
+                                                                color: outputEnabled ? colors.redBg : colors.greenBg
+                                                                border.color: outputEnabled ? colors.red : colors.green
+                                                                border.width: 1
+                                                                opacity: enabled ? 1.0 : 0.5
+                                                                implicitWidth: 52
+                                                                implicitHeight: 22
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
+                                }
+                                }
+                            }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 12
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        text: "Devices"
+                                        color: colors.text
+                                        font.pixelSize: 15
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        text: "Brightness, power, audio, Bluetooth, and system resources."
+                                        color: colors.subtle
+                                        font.pixelSize: 10
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                Button {
+                                    onClicked: root.closeSettings()
+                                    contentItem: Text {
+                                        text: "Close"
+                                        color: colors.text
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: colors.cardAlt
+                                        border.color: colors.border
+                                        border.width: 1
+                                        implicitHeight: 22
+                                    }
+                                }
+                            }
+
+                                ScrollView {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                clip: true
+
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: 12
 
                                     Rectangle {
                                         Layout.fillWidth: true
@@ -1102,8 +1297,23 @@ PanelWindow {
                                                     }
 
                                                     Button {
-                                                        text: "-"
                                                         onClicked: root.setBrightness("display", root.brightnessPercent("display") - 5)
+                                                        contentItem: Text {
+                                                            text: "-"
+                                                            color: colors.text
+                                                            font.pixelSize: 11
+                                                            font.weight: Font.Bold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 4
+                                                            color: colors.cardAlt
+                                                            border.color: colors.border
+                                                            border.width: 1
+                                                            implicitWidth: 24
+                                                            implicitHeight: 22
+                                                        }
                                                     }
 
                                                     Text {
@@ -1114,8 +1324,23 @@ PanelWindow {
                                                     }
 
                                                     Button {
-                                                        text: "+"
                                                         onClicked: root.setBrightness("display", root.brightnessPercent("display") + 5)
+                                                        contentItem: Text {
+                                                            text: "+"
+                                                            color: colors.text
+                                                            font.pixelSize: 11
+                                                            font.weight: Font.Bold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 4
+                                                            color: colors.cardAlt
+                                                            border.color: colors.border
+                                                            border.width: 1
+                                                            implicitWidth: 24
+                                                            implicitHeight: 22
+                                                        }
                                                     }
                                                 }
 
@@ -1157,8 +1382,23 @@ PanelWindow {
                                                     }
 
                                                     Button {
-                                                        text: "-"
                                                         onClicked: root.setBrightness("keyboard", root.brightnessPercent("keyboard") - 10)
+                                                        contentItem: Text {
+                                                            text: "-"
+                                                            color: colors.text
+                                                            font.pixelSize: 11
+                                                            font.weight: Font.Bold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 4
+                                                            color: colors.cardAlt
+                                                            border.color: colors.border
+                                                            border.width: 1
+                                                            implicitWidth: 24
+                                                            implicitHeight: 22
+                                                        }
                                                     }
 
                                                     Text {
@@ -1169,8 +1409,23 @@ PanelWindow {
                                                     }
 
                                                     Button {
-                                                        text: "+"
                                                         onClicked: root.setBrightness("keyboard", root.brightnessPercent("keyboard") + 10)
+                                                        contentItem: Text {
+                                                            text: "+"
+                                                            color: colors.text
+                                                            font.pixelSize: 11
+                                                            font.weight: Font.Bold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 4
+                                                            color: colors.cardAlt
+                                                            border.color: colors.border
+                                                            border.width: 1
+                                                            implicitWidth: 24
+                                                            implicitHeight: 22
+                                                        }
                                                     }
                                                 }
 
@@ -1347,13 +1602,41 @@ PanelWindow {
                                                 }
 
                                                 Button {
-                                                    text: root.audioMuted() ? "Unmute Out" : "Mute Out"
                                                     onClicked: root.toggleMute()
+                                                    contentItem: Text {
+                                                        text: root.audioMuted() ? "Unmute Out" : "Mute Out"
+                                                        color: root.audioMuted() ? colors.amber : colors.text
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: root.audioMuted() ? colors.amberBg : colors.cardAlt
+                                                        border.color: root.audioMuted() ? colors.amber : colors.border
+                                                        border.width: 1
+                                                        implicitHeight: 22
+                                                    }
                                                 }
 
                                                 Button {
-                                                    text: "Mixer"
                                                     onClicked: root.runDetached(["pavucontrol"])
+                                                    contentItem: Text {
+                                                        text: "Mixer"
+                                                        color: colors.text
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: colors.cardAlt
+                                                        border.color: colors.border
+                                                        border.width: 1
+                                                        implicitHeight: 22
+                                                    }
                                                 }
                                             }
 
@@ -1440,9 +1723,24 @@ PanelWindow {
                                                 }
 
                                                 Button {
-                                                    text: root.audioInputMuted() ? "Unmute In" : "Mute In"
                                                     enabled: root.audioInputReady()
                                                     onClicked: root.toggleInputMute()
+                                                    contentItem: Text {
+                                                        text: root.audioInputMuted() ? "Unmute In" : "Mute In"
+                                                        color: !enabled ? colors.subtle : root.audioInputMuted() ? colors.amber : colors.text
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: root.audioInputMuted() ? colors.amberBg : colors.cardAlt
+                                                        border.color: root.audioInputMuted() ? colors.amber : colors.border
+                                                        border.width: 1
+                                                        opacity: enabled ? 1.0 : 0.5
+                                                        implicitHeight: 22
+                                                    }
                                                 }
                                             }
 
@@ -1535,14 +1833,43 @@ PanelWindow {
                                                 }
 
                                                 Button {
-                                                    text: root.bluetoothEnabled() ? "BT Off" : "BT On"
                                                     enabled: root.bluetoothAvailable()
                                                     onClicked: root.toggleBluetoothEnabled()
+                                                    contentItem: Text {
+                                                        text: root.bluetoothEnabled() ? "BT Off" : "BT On"
+                                                        color: !enabled ? colors.subtle : root.bluetoothEnabled() ? colors.amber : colors.teal
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: root.bluetoothEnabled() ? colors.amberBg : colors.tealBg
+                                                        border.color: root.bluetoothEnabled() ? colors.amber : colors.teal
+                                                        border.width: 1
+                                                        opacity: enabled ? 1.0 : 0.5
+                                                        implicitHeight: 22
+                                                    }
                                                 }
 
                                                 Button {
-                                                    text: "Manager"
                                                     onClicked: root.runDetached(["blueman-manager"])
+                                                    contentItem: Text {
+                                                        text: "Manager"
+                                                        color: colors.text
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: colors.cardAlt
+                                                        border.color: colors.border
+                                                        border.width: 1
+                                                        implicitHeight: 22
+                                                    }
                                                 }
                                             }
 

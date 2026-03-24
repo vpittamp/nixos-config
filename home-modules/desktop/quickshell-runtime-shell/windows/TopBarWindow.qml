@@ -322,7 +322,7 @@ PanelWindow {
                 Rectangle {
                     id: layoutChip
                     radius: 8
-                    readonly property bool displaySettingsActive: root.settingsVisible && root.stringOrEmpty(root.settingsSection) === "devices"
+                    readonly property bool displaySettingsActive: root.settingsVisible && root.stringOrEmpty(root.settingsSection) === "displays"
                     color: root.stateChipFill(displaySettingsActive, layoutMouse.containsMouse, colors.blueBg)
                     border.color: root.stateChipBorder(displaySettingsActive, layoutMouse.containsMouse, colors.blue)
                     border.width: 1
@@ -355,7 +355,7 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.openSettings("devices")
+                        onClicked: root.openSettings("displays")
                     }
 
                 }
@@ -808,8 +808,8 @@ PanelWindow {
                     }
 
                     Button {
-                        text: "Devices"
-                        onClicked: root.openSettings("devices")
+                        text: "Displays"
+                        onClicked: root.openSettings("displays")
                     }
                 }
 
