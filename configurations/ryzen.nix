@@ -24,35 +24,17 @@ let
     config.allowUnfree = true;
   };
   sunshinePrepMonitor = pkgs.writeShellScriptBin "sunshine-prep-monitor" ''
-    #!${pkgs.bash}/bin/bash
     set -euo pipefail
+    export PATH="$HOME/.nix-profile/bin:$PATH"
 
     action="''${1:?Usage: sunshine-prep-monitor connect|disconnect}"
-    socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
-
-    if [ -z "$socket_path" ]; then
-      socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
-    fi
-
-    if [ -z "$socket_path" ]; then
-      echo "sunshine-prep-monitor: unable to locate SWAYSOCK" >&2
-      exit 1
-    fi
-
-    SWAYMSG="${pkgs.sway}/bin/swaymsg -s $socket_path"
 
     case "$action" in
       connect)
-        # Collapse to single monitor for Moonlight streaming
-        $SWAYMSG output HDMI-A-1 disable
-        $SWAYMSG output DP-2 disable
-        $SWAYMSG output DP-1 position 0 0 scale 1.0
+        i3pm display apply single
         ;;
       disconnect)
-        # Restore full three-monitor layout (matches sway.nix default profile)
-        $SWAYMSG output HDMI-A-1 enable mode 1920x1080 position 0 0 scale 1.0
-        $SWAYMSG output DP-1 enable mode 1920x1200 position 1920 0 scale 1.25
-        $SWAYMSG output DP-2 enable mode 1920x1200 position 3840 0 scale 1.0
+        i3pm display apply default
         ;;
       *)
         echo "sunshine-prep-monitor: unknown action '$action' (expected connect|disconnect)" >&2

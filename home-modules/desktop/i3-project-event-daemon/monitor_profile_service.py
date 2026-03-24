@@ -409,6 +409,8 @@ class MonitorProfileService:
             if width > 0 and height > 0:
                 command += f" mode {width}x{height}"
             command += f" position {x} {y}"
+            if output_config and output_config.scale is not None:
+                command += f" scale {output_config.scale}"
 
             result = await conn.command(command)
             if not result or not result[0].success:

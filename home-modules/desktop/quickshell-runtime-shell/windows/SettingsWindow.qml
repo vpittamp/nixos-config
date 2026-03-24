@@ -1006,6 +1006,32 @@ PanelWindow {
                                                                 color: colors.subtle
                                                                 font.pixelSize: 9
                                                             }
+
+                                                            RowLayout {
+                                                                spacing: 4
+                                                                readonly property real currentScale: (output && output.scale) ? output.scale : 1.0
+                                                                readonly property bool scalePending: root.displayScalePending(outputName)
+
+                                                                Text {
+                                                                    text: "Scale:"
+                                                                    color: colors.subtle
+                                                                    font.pixelSize: 9
+                                                                }
+
+                                                                Repeater {
+                                                                    model: [1.0, 1.25]
+                                                                    delegate: Button {
+                                                                        readonly property real scaleValue: modelData
+                                                                        readonly property bool isActive: Math.abs(parent.currentScale - scaleValue) < 0.01
+                                                                        text: scaleValue + "x"
+                                                                        enabled: !parent.scalePending && !isActive && !(root.displayScaleProcess && root.displayScaleProcess.running)
+                                                                        font.pixelSize: 9
+                                                                        font.weight: isActive ? Font.Bold : Font.Normal
+                                                                        palette.buttonText: isActive ? colors.teal : colors.text
+                                                                        onClicked: root.setDisplayScale(outputName, scaleValue)
+                                                                    }
+                                                                }
+                                                            }
                                                         }
 
                                                         Button {

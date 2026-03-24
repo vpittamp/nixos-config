@@ -680,6 +680,8 @@ class IPCServer:
                 result = await self._display_cycle(params)
             elif method == "display.toggle_output":
                 result = await self._display_toggle_output(params)
+            elif method == "display.set_scale":
+                result = await self._display_set_scale(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -10957,6 +10959,7 @@ class IPCServer:
                 "enabled": enabled,
                 "focused": focused,
                 "primary": focused,
+                "scale": float(getattr(output, "scale", 1.0) or 1.0),
                 "rect": {
                     "x": int(getattr(getattr(output, "rect", None), "x", 0) or 0),
                     "y": int(getattr(getattr(output, "rect", None), "y", 0) or 0),
@@ -11039,6 +11042,27 @@ class IPCServer:
         snapshot = await self._display_snapshot({})
         snapshot["toggled_output"] = output_name
         snapshot["toggled_enabled"] = new_state
+        return snapshot
+
+    async def _display_set_scale(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set the scale factor for an individual output."""
+        output_name = str(params.get("output") or "").strip()
+        if not output_name:
+            raise ValueError("output is required")
+        scale = params.get("scale")
+        if scale is None:
+            raise ValueError("scale is required")
+        scale = float(scale)
+        if scale <= 0:
+            raise ValueError("scale must be positive")
+
+        result = await self._output_configure({"output_name": output_name, "scale": scale})
+        if not result.get("success"):
+            raise RuntimeError(f"Failed to set scale for {output_name}: {result.get('error', 'unknown')}")
+
+        snapshot = await self._display_snapshot({})
+        snapshot["scaled_output"] = output_name
+        snapshot["scaled_value"] = scale
         return snapshot
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

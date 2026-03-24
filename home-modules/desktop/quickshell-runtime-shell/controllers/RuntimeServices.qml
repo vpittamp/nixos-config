@@ -38,6 +38,7 @@ Item {
     property alias sessionCloseProcessRef: sessionCloseProcess
     property alias displayApplyProcessRef: displayApplyProcess
     property alias displayToggleOutputProcessRef: displayToggleOutputProcess
+    property alias displayScaleProcessRef: displayScaleProcess
 
     Connections {
         target: shellRoot
@@ -776,6 +777,55 @@ Item {
             shellRoot.displayToggleTarget = "";
             shellRoot.displayToggleStdout = "";
             shellRoot.displayToggleStderr = "";
+        }
+    }
+
+    Process {
+        id: displayScaleProcess
+        command: [runtimeConfig.i3pmBin, "display", "set-scale", "", "1.0"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.displayScaleStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                shellRoot.displayScaleStderr += message + "\n";
+                console.warn("display.set_scale:", message);
+            }
+        }
+        onExited: function () {
+            const target = shellRoot.stringOrEmpty(shellRoot.displayScaleTarget);
+            const raw = shellRoot.stringOrEmpty(shellRoot.displayScaleStdout).trim();
+            let success = false;
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    success = !!(parsed && parsed.scaled_output === target);
+                    if (success) {
+                        shellRoot.updateDisplayLayoutFromSnapshot(parsed);
+                    }
+                } catch (error) {
+                    console.warn("display.set_scale.parse:", raw, error);
+                }
+            }
+
+            if (!success) {
+                const stderr = shellRoot.stringOrEmpty(shellRoot.displayScaleStderr).trim();
+                if (stderr) {
+                    console.warn("display.set_scale failed:", stderr);
+                }
+            }
+            shellRoot.displayScaleTarget = "";
+            shellRoot.displayScaleStdout = "";
+            shellRoot.displayScaleStderr = "";
         }
     }
 

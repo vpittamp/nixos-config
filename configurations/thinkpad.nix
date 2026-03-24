@@ -101,13 +101,8 @@ let
     restore_ryzen_monitors() {
       # Sunshine undo is unreliable (fires on service restart, not client disconnect),
       # so restore Ryzen's multi-monitor layout from the ThinkPad side via SSH.
-      ${pkgs.openssh}/bin/ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ryzen '
-        SOCK="$(find /run/user/$(id -u) -maxdepth 1 -name "sway-ipc.*.sock" 2>/dev/null | head -1)"
-        [ -n "$SOCK" ] || exit 0
-        swaymsg -s "$SOCK" output HDMI-A-1 enable mode 1920x1080 position 0 0 scale 1.0
-        swaymsg -s "$SOCK" output DP-1 enable mode 1920x1200 position 1920 0 scale 1.25
-        swaymsg -s "$SOCK" output DP-2 enable mode 1920x1200 position 3840 0 scale 1.0
-      ' >/dev/null 2>&1 || true
+      ${pkgs.openssh}/bin/ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ryzen \
+        'PATH="$HOME/.nix-profile/bin:$PATH" i3pm display apply default' >/dev/null 2>&1 || true
     }
 
     trap 'restore_ryzen_monitors; restore_workspace; restore_scale' EXIT INT TERM

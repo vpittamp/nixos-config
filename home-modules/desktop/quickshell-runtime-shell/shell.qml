@@ -51,6 +51,7 @@ ShellRoot {
     readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
     readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
     readonly property var displayToggleOutputProcess: runtimeServices ? runtimeServices.displayToggleOutputProcessRef : null
+    readonly property var displayScaleProcess: runtimeServices ? runtimeServices.displayScaleProcessRef : null
     readonly property var brightnessActionProcess: runtimeServices ? runtimeServices.brightnessActionProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
 
@@ -206,6 +207,9 @@ ShellRoot {
     property string displayToggleTarget: ""
     property string displayToggleStdout: ""
     property string displayToggleStderr: ""
+    property string displayScaleTarget: ""
+    property string displayScaleStdout: ""
+    property string displayScaleStderr: ""
     property string brightnessActionTarget: ""
     property string brightnessQueuedTarget: ""
     property int brightnessQueuedPercent: -1
@@ -1170,6 +1174,21 @@ ShellRoot {
 
     function displayTogglePending(outputName) {
         return displayToggleTarget !== "" && displayToggleTarget === stringOrEmpty(outputName);
+    }
+
+    function setDisplayScale(outputName, scale) {
+        if (!displayScaleProcess || displayScaleProcess.running) {
+            return;
+        }
+        displayScaleTarget = outputName;
+        displayScaleStdout = "";
+        displayScaleStderr = "";
+        displayScaleProcess.command = [shellConfig.i3pmBin, "display", "set-scale", outputName, String(scale)];
+        displayScaleProcess.running = true;
+    }
+
+    function displayScalePending(outputName) {
+        return displayScaleTarget !== "" && displayScaleTarget === stringOrEmpty(outputName);
     }
 
     function updateDisplayLayoutFromSnapshot(snapshot) {

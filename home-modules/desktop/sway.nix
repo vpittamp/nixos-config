@@ -357,6 +357,7 @@ let
         {
           name = "HDMI-A-1";
           enabled = true;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
@@ -367,6 +368,7 @@ let
         {
           name = "DP-1";
           enabled = true;
+          scale = 1.25;
           position = {
             x = 1920;
             y = 0;
@@ -377,8 +379,48 @@ let
         {
           name = "DP-2";
           enabled = true;
+          scale = 1.0;
           position = {
             x = 3840;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+      ];
+    };
+    dual = {
+      name = "dual";
+      description = "Dual monitor mode (DP-1 + DP-2, HDMI-A-1 disabled)";
+      outputs = [
+        {
+          name = "HDMI-A-1";
+          enabled = false;
+          scale = 1.0;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1080;
+          };
+        }
+        {
+          name = "DP-1";
+          enabled = true;
+          scale = 1.25;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+        {
+          name = "DP-2";
+          enabled = true;
+          scale = 1.0;
+          position = {
+            x = 1920;
             y = 0;
             width = 1920;
             height = 1200;
@@ -393,6 +435,7 @@ let
         {
           name = "HDMI-A-1";
           enabled = false;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
@@ -403,6 +446,7 @@ let
         {
           name = "DP-1";
           enabled = true;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
@@ -413,6 +457,7 @@ let
         {
           name = "DP-2";
           enabled = false;
+          scale = 1.0;
           position = {
             x = 3840;
             y = 0;

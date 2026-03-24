@@ -56,6 +56,7 @@ class ProfileOutput(BaseModel):
     name: str = Field(..., pattern=r"^HEADLESS-[1-9]$|^eDP-\d+$|^HDMI-A-\d+$|^DP-\d+$",
                       description="Output identifier (e.g., HEADLESS-1)")
     enabled: bool = Field(True, description="Whether output is active in this profile")
+    scale: Optional[float] = Field(None, gt=0, description="Scale factor (e.g. 1.25)")
     position: OutputPosition = Field(default_factory=OutputPosition,
                                      description="Screen position for alignment")
 
