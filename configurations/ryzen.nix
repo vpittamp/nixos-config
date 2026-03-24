@@ -14,6 +14,10 @@
 { config, lib, pkgs, inputs, ... }:
 
 let
+  gameStreaming = import ../shared/game-streaming.nix;
+  thinkpadMoonlightClient = gameStreaming.moonlightClients.thinkpad;
+  ryzenSunshineHost = gameStreaming.sunshineHosts.ryzen;
+
   # Firefox 146+ overlay for native Wayland fractional scaling support
   pkgs-unstable = import inputs.nixpkgs-bleeding {
     system = pkgs.stdenv.hostPlatform.system;
@@ -207,6 +211,7 @@ in
   # Access: moonlight://<tailscale-ip>
   services.sunshine-streaming = {
     enable = true;
+    hostUniqueId = ryzenSunshineHost.uniqueId;
     hardwareType = "nvidia";    # Using NVIDIA NVENC hardware encoding
     captureMethod = "kms";      # Direct KMS capture for lowest latency
     tailscaleOnly = true;       # Only allow via Tailscale for security
@@ -244,6 +249,13 @@ in
         }
       ];
     };
+    pairedClients = [
+      {
+        name = "thinkpad";
+        uuid = thinkpadMoonlightClient.uuid;
+        certificate = thinkpadMoonlightClient.certificate;
+      }
+    ];
   };
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service

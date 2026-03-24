@@ -1,6 +1,13 @@
 # Home-manager configuration for Lenovo ThinkPad
 # Physical laptop display with Sway, i3pm daemon, walker launcher
 { lib, pkgs, ... }:
+let
+  gameStreaming = import ../shared/game-streaming.nix;
+  ryzenSunshineHost = gameStreaming.sunshineHosts.ryzen;
+  qSettingsByteArray = value:
+    "\"@ByteArray(${lib.replaceStrings [ "\\" "\n" "\"" ] [ "\\\\" "\\n" "\\\"" ] value})\"";
+  ryzenMoonlightServerCert = qSettingsByteArray ryzenSunshineHost.certificate;
+in
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -43,6 +50,52 @@
     source = "${pkgs.sway}/bin/swaymsg";
     executable = true;
   };
+
+  home.activation.ensureMoonlightRyzenHost = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    config_dir="$HOME/.config/Moonlight Game Streaming Project"
+    config_file="$config_dir/Moonlight.conf"
+    tmp_file="$(mktemp)"
+
+    mkdir -p "$config_dir"
+
+    if [ -f "$config_file" ]; then
+      ${pkgs.gawk}/bin/awk '
+        /^\[hosts\]$/ { exit }
+        { print }
+      ' "$config_file" > "$tmp_file"
+    else
+      cat > "$tmp_file" <<'EOF'
+[General]
+EOF
+    fi
+
+    cat >> "$tmp_file" <<'EOF'
+
+[hosts]
+1\customname=false
+1\hostname=ryzen
+1\ipv6address=
+1\ipv6port=0
+1\localaddress=ryzen
+1\localport=47989
+1\mac=@ByteArray()
+1\manualaddress=ryzen
+1\manualport=47989
+1\nvidiasw=false
+1\remoteaddress=
+1\remoteport=0
+1\srvcert=${ryzenMoonlightServerCert}
+1\uuid=${ryzenSunshineHost.uniqueId}
+size=1
+EOF
+
+    if [ ! -f "$config_file" ] || ! ${pkgs.diffutils}/bin/cmp -s "$tmp_file" "$config_file"; then
+      mv "$tmp_file" "$config_file"
+      chmod 600 "$config_file"
+    else
+      rm -f "$tmp_file"
+    fi
+  '';
 
   # Feature 117: i3 project event listener daemon (user service)
   programs.i3-project-daemon = {
