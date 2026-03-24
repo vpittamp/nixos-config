@@ -13661,7 +13661,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         return None
 
-    def _remote_daemon_request(
+    async def _remote_daemon_request(
         self,
         *,
         connection_key: str,
@@ -13688,21 +13688,18 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             f"--params-json {shlex.quote(payload)} --json"
         )
         remote_command = f"bash -lc {shlex.quote(remote_script)}"
-        result = subprocess.run(
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=3",
-                "-p",
-                str(remote_port),
-                f"{resolved_user}@{remote_host}" if resolved_user else remote_host,
-                remote_command,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
+        from .subprocess_utils import run_command
+        result = await run_command(
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=3",
+            "-p",
+            str(remote_port),
+            f"{resolved_user}@{remote_host}" if resolved_user else remote_host,
+            remote_command,
+            timeout=15.0,
         )
 
         parsed = self._extract_json_payload(str(result.stdout or ""))
@@ -13866,7 +13863,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             and not local_window_target
         )
         if should_remote_handoff:
-            remote_handoff = self._remote_daemon_request(
+            remote_handoff = await self._remote_daemon_request(
                 connection_key=str(connection_key or "").strip(),
                 method="window.focus",
                 params={
@@ -15447,10 +15444,15 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         """Discover all bare repositories and worktrees.
 
         Feature 100: Structured Git Repository Management (T031)
+        Runs in a thread to avoid blocking the asyncio event loop.
 
         Returns:
             {"success": bool, "repos": int, "worktrees": int, "duration_ms": int}
         """
+        return await asyncio.to_thread(self._discover_bare_repos_sync, params)
+
+    def _discover_bare_repos_sync(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Synchronous implementation of bare repo discovery (runs in thread)."""
         import json
         import subprocess
         from pathlib import Path
@@ -17314,13 +17316,12 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         remote_check = f"test -d {shlex.quote(profile['remote_dir'])}"
         ssh_cmd.append(remote_check)
 
+        from .subprocess_utils import run_command
         start = time.perf_counter()
         try:
-            proc = subprocess.run(
-                ssh_cmd,
-                capture_output=True,
-                text=True,
-                timeout=10,
+            proc = await run_command(
+                *ssh_cmd,
+                timeout=10.0,
             )
             duration_ms = int((time.perf_counter() - start) * 1000)
             ok = proc.returncode == 0

@@ -62,20 +62,6 @@ class DummyStateManager:
         return None
 
 
-class DummyPublisher:
-    def __init__(self):
-        self.calls = []
-
-    async def publish_from_conn(self, conn, profile_name, enabled_outputs, is_hybrid_mode=False):
-        self.calls.append({
-            "conn": conn,
-            "profile_name": profile_name,
-            "enabled_outputs": list(enabled_outputs),
-            "is_hybrid_mode": is_hybrid_mode,
-        })
-        return True
-
-
 def make_output(name: str, *, active: bool = True, focused: bool = False, x: int = 0, y: int = 0, width: int = 1920, height: int = 1080):
     return SimpleNamespace(
         name=name,
@@ -158,8 +144,7 @@ async def test_display_snapshot_exposes_layout_options(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handle_profile_change_disables_outputs_omitted_from_profile(monkeypatch):
-    publisher = DummyPublisher()
-    service = MonitorProfileService(eww_publisher=publisher)
+    service = MonitorProfileService()
     service._profiles = {
         "default": MonitorProfile(**{
             "name": "default",
@@ -233,14 +218,11 @@ async def test_handle_profile_change_disables_outputs_omitted_from_profile(monke
     assert "output HDMI-A-1 disable" in commands
     assert "output DP-2 disable" in commands
     assert "output DP-1 enable mode 1920x1200 position 0 0" in commands
-    assert publisher.calls[-1]["profile_name"] == "single"
-    assert publisher.calls[-1]["enabled_outputs"] == ["DP-1"]
 
 
 @pytest.mark.asyncio
 async def test_handle_profile_change_uses_hybrid_profiles_without_hostname_gate(monkeypatch):
-    publisher = DummyPublisher()
-    service = MonitorProfileService(eww_publisher=publisher)
+    service = MonitorProfileService()
     service._profiles = {
         "local+1vnc": MonitorProfile(**{
             "name": "local+1vnc",
@@ -332,16 +314,13 @@ async def test_handle_profile_change_uses_hybrid_profiles_without_hostname_gate(
     assert saved_states.is_output_enabled("eDP-1") is True
     assert saved_states.is_output_enabled("HEADLESS-1") is True
     assert saved_states.is_output_enabled("HEADLESS-2") is False
-    assert publisher.calls[-1]["profile_name"] == "local+1vnc"
-    assert publisher.calls[-1]["enabled_outputs"] == ["eDP-1", "HEADLESS-1"]
-    assert publisher.calls[-1]["is_hybrid_mode"] is True
     assert "output eDP-1 mode 1920x1200 position 0 0 scale 1.25" in commands
     assert "output HEADLESS-1 mode 1920x1200 position 1536 0 scale 1.0" in commands
 
 
 @pytest.mark.asyncio
 async def test_hybrid_reassign_preserves_workspaces_on_enabled_outputs():
-    service = MonitorProfileService(eww_publisher=DummyPublisher())
+    service = MonitorProfileService()
     profile = HybridMonitorProfile(**{
         "name": "local+1vnc",
         "description": "ThinkPad panel plus one virtual display",

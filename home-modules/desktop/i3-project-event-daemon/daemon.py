@@ -10,6 +10,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -66,7 +67,6 @@ from .services.mark_manager import MarkManager  # Feature 076: Mark-based app id
 from .services.tree_cache import initialize_tree_cache  # Feature 091: Tree caching
 from .services.performance_tracker import initialize_performance_tracker  # Feature 091: Performance tracking
 from .monitor_profile_service import MonitorProfileService  # Feature 083: Monitor profile management
-from .eww_publisher import EwwPublisher  # Feature 083: Eww real-time updates
 from .badge_service import BadgeState  # Feature 095: Visual notification badges
 from .constants import ConfigPaths  # Feature 101: Centralized paths
 from datetime import datetime
@@ -106,8 +106,9 @@ class DaemonHealthMonitor:
 
     def __init__(self) -> None:
         """Initialize health monitor."""
-        self.watchdog_task: Optional[asyncio.Task] = None
         self.watchdog_interval: Optional[float] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
+        self._watchdog_stop = threading.Event()
         self._setup_watchdog()
 
     def _setup_watchdog(self) -> None:
@@ -119,7 +120,6 @@ class DaemonHealthMonitor:
         watchdog_usec = os.environ.get("WATCHDOG_USEC")
         if watchdog_usec:
             # Convert microseconds to seconds, ping at 1/3 interval for safety
-            # CRITICAL FIX: Changed from 1/2 to 1/3 for better safety margin
             # If systemd expects ping every 20s, we ping every ~6.7s (3x buffer)
             self.watchdog_interval = int(watchdog_usec) / 3_000_000
             logger.info(f"Systemd watchdog enabled: {self.watchdog_interval:.1f}s interval (1/3 of timeout)")
@@ -151,17 +151,32 @@ class DaemonHealthMonitor:
                 sd_daemon.notify("STOPPING=1")
             logger.info("Sent STOPPING=1 to systemd")
 
-    async def watchdog_loop(self) -> None:
-        """Background task that sends watchdog pings."""
-        if not self.watchdog_interval:
-            logger.debug("Watchdog not enabled, skipping watchdog loop")
-            return
-
-        logger.info(f"Starting watchdog loop (interval: {self.watchdog_interval}s)")
-
-        while True:
-            await asyncio.sleep(self.watchdog_interval)
+    def _watchdog_thread_fn(self) -> None:
+        """Thread function that sends watchdog pings independent of the event loop."""
+        logger.info(f"Starting watchdog thread (interval: {self.watchdog_interval}s)")
+        while not self._watchdog_stop.wait(self.watchdog_interval):
             self.notify_watchdog()
+        logger.info("Watchdog thread stopped")
+
+    def start_watchdog(self) -> None:
+        """Start the watchdog thread."""
+        if not self.watchdog_interval:
+            logger.debug("Watchdog not enabled, skipping watchdog thread")
+            return
+        self._watchdog_stop.clear()
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_thread_fn,
+            name="sd-watchdog",
+            daemon=True,
+        )
+        self._watchdog_thread.start()
+
+    def stop_watchdog(self) -> None:
+        """Stop the watchdog thread."""
+        if self._watchdog_thread is not None:
+            self._watchdog_stop.set()
+            self._watchdog_thread.join(timeout=5)
+            self._watchdog_thread = None
 
 
 class I3ProjectDaemon:
@@ -184,7 +199,6 @@ class I3ProjectDaemon:
         self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
         self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
-        self.eww_publisher: Optional[EwwPublisher] = None  # Feature 083: Eww real-time updates
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
         self.otel_sessions_watcher: Optional[OutputStatesWatcher] = None
         self.remote_otel_sink_watcher: Optional[OutputStatesWatcher] = None
@@ -402,9 +416,8 @@ class I3ProjectDaemon:
         set_event_callback(_publish_command_event)
         logger.info("[Feature 102] Command event callback set for EventBuffer publishing")
 
-        # Feature 083/084: Initialize EwwPublisher and MonitorProfileService
-        self.eww_publisher = EwwPublisher()
-        self.monitor_profile_service = MonitorProfileService(self.eww_publisher)
+        # Feature 083/084: Initialize MonitorProfileService
+        self.monitor_profile_service = MonitorProfileService()
         self.ipc_server.monitor_profile_service = self.monitor_profile_service
         profile_count = len(self.monitor_profile_service.list_profiles())
         if self.monitor_profile_service.is_hybrid_mode:
@@ -604,17 +617,6 @@ class I3ProjectDaemon:
                     disabled_names,
                     fallback_output=enabled_names[0],
                 )
-
-            # Feature 083: Publish to Eww for real-time top bar updates
-            if self.eww_publisher:
-                profile_name = self.monitor_profile_service.get_current_profile() if self.monitor_profile_service else "unknown"
-                published = await self.eww_publisher.publish_from_conn(
-                    self.connection.conn,
-                    profile_name or "unknown",
-                    enabled_names
-                )
-                if published:
-                    logger.info(f"[Feature 083] Published monitor state to Eww: profile={profile_name}, outputs={enabled_names}")
 
             # Log event
             if self.event_buffer:
@@ -896,34 +898,13 @@ class I3ProjectDaemon:
             except Exception as e:
                 logger.warning(f"[Feature 083] Failed to sync output states on startup: {e}")
 
-        # Feature 083: Publish initial monitor state to Eww
-        if self.eww_publisher and self.connection and self.connection.conn:
-            try:
-                outputs = await self.connection.conn.get_outputs()
-                states = load_output_states()
-                enabled_outputs = [
-                    o.name for o in outputs
-                    if o.active and states.is_output_enabled(o.name)
-                ]
-                profile_name = self.monitor_profile_service.get_current_profile() if self.monitor_profile_service else "unknown"
-                published = await self.eww_publisher.publish_from_conn(
-                    self.connection.conn,
-                    profile_name or "unknown",
-                    enabled_outputs
-                )
-                if published:
-                    logger.info(f"[Feature 083] Published initial monitor state to Eww: profile={profile_name}, outputs={enabled_outputs}")
-            except Exception as e:
-                logger.warning(f"[Feature 083] Failed to publish initial monitor state: {e}")
-
         # Signal READY to systemd (after full initialization completes)
         if self.health_monitor:
             self.health_monitor.notify_ready()
 
-        # Start watchdog loop in background
-        watchdog_task = None
+        # Start watchdog thread (independent of event loop to avoid blocking kills)
         if self.health_monitor:
-            watchdog_task = asyncio.create_task(self.health_monitor.watchdog_loop())
+            self.health_monitor.start_watchdog()
 
         # Socket validation task - detect stale sockets after Sway restart
         socket_validation_task = None
@@ -968,13 +949,9 @@ class I3ProjectDaemon:
                     pass
                 logger.info("Socket validation stopped")
 
-            # Cancel watchdog task
-            if watchdog_task:
-                watchdog_task.cancel()
-                try:
-                    await watchdog_task
-                except asyncio.CancelledError:
-                    pass
+            # Stop watchdog thread
+            if self.health_monitor:
+                self.health_monitor.stop_watchdog()
 
     async def shutdown(self) -> None:
         """Graceful shutdown with timeouts to prevent hanging.

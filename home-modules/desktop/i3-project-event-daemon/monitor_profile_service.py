@@ -4,7 +4,6 @@ This module manages monitor profiles and coordinates profile switching:
 - Loading profiles from ~/.config/sway/monitor-profiles/
 - Reading current profile from monitor-profile.current
 - Emitting ProfileEvents for observability
-- Coordinating with EwwPublisher for real-time updates
 - Feature 084: Hybrid mode support (physical + virtual displays on M1)
 
 Version: 1.1.0 (2025-11-19)
@@ -35,8 +34,6 @@ from .output_state_manager import (
     save_output_states,
     OUTPUT_STATES_PATH,
 )
-from .eww_publisher import EwwPublisher
-
 logger = logging.getLogger(__name__)
 
 # Profile configuration paths
@@ -50,17 +47,11 @@ HEADLESS_OUTPUT_PATTERN = re.compile(r"^HEADLESS-\d+$")
 class MonitorProfileService:
     """Service for managing monitor profiles and coordinating switches.
 
-    Owns the output-states.json file and coordinates with EwwPublisher
-    for real-time top bar updates.
+    Owns the output-states.json file and coordinates profile switching.
     """
 
-    def __init__(self, eww_publisher: Optional[EwwPublisher] = None):
-        """Initialize profile service.
-
-        Args:
-            eww_publisher: Optional EwwPublisher for real-time updates
-        """
-        self.eww_publisher = eww_publisher or EwwPublisher()
+    def __init__(self):
+        """Initialize profile service."""
         self._current_profile: Optional[str] = None
         self._profiles: dict[str, MonitorProfile] = {}
         self._hybrid_profiles: dict[str, HybridMonitorProfile] = {}
@@ -239,13 +230,12 @@ class MonitorProfileService:
         Returns:
             True if service action succeeded
         """
+        from .subprocess_utils import run_command
         try:
             service_name = f"wayvnc@{output_name}.service"
-            result = subprocess.run(
-                ["systemctl", "--user", action, service_name],
-                capture_output=True,
-                text=True,
-                timeout=10.0
+            result = await run_command(
+                "systemctl", "--user", action, service_name,
+                timeout=10.0,
             )
 
             if result.returncode == 0:
@@ -533,13 +523,6 @@ class MonitorProfileService:
             # Update current profile
             self._current_profile = new_profile_name
 
-            # Publish to Eww
-            await self.eww_publisher.publish_from_conn(
-                conn,
-                new_profile_name,
-                enabled
-            )
-
             # Emit complete event
             duration_ms = (time.time() - start_time) * 1000
             self.emit_event(ProfileEvent.complete(
@@ -709,14 +692,6 @@ class MonitorProfileService:
 
         # Update current profile
         self._current_profile = new_profile_name
-
-        # Publish to Eww with hybrid mode flag
-        await self.eww_publisher.publish_from_conn(
-            conn,
-            new_profile_name,
-            enabled_outputs,
-            is_hybrid_mode=True
-        )
 
         # Emit complete event
         duration_ms = (time.time() - start_time) * 1000
