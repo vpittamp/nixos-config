@@ -430,7 +430,7 @@ let
     };
     single = {
       name = "single";
-      description = "Moonlight single-monitor mode (DP-1 only)";
+      description = "Moonlight single-monitor mode (DP-2 only)";
       outputs = [
         {
           name = "HDMI-A-1";
@@ -445,7 +445,7 @@ let
         }
         {
           name = "DP-1";
-          enabled = true;
+          enabled = false;
           scale = 1.0;
           position = {
             x = 0;
@@ -456,7 +456,7 @@ let
         }
         {
           name = "DP-2";
-          enabled = false;
+          enabled = true;
           scale = 1.0;
           position = {
             x = 3840;
