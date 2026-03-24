@@ -457,9 +457,9 @@ let
         {
           name = "DP-2";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
-            x = 3840;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
