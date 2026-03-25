@@ -102,7 +102,7 @@ async def test_display_snapshot_exposes_layout_options(monkeypatch):
     })
     single_profile = MonitorProfile(**{
         "name": "single",
-        "description": "Moonlight single-monitor mode",
+        "description": "Manual single-monitor mode",
         "outputs": [
             {"name": "DP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 1920, "height": 1200}},
             {"name": "DP-2", "enabled": False, "position": {"x": 3840, "y": 0, "width": 1920, "height": 1200}},
@@ -127,15 +127,25 @@ async def test_display_snapshot_exposes_layout_options(monkeypatch):
             "description": "Full Ryzen desktop layout",
             "output_names": ["DP-1", "DP-2", "HDMI-A-1"],
             "output_count": 3,
+            "outputs": [
+                {"name": "DP-1", "enabled": True, "scale": 1.0, "x": 1920, "y": 0, "width": 1920, "height": 1200},
+                {"name": "DP-2", "enabled": True, "scale": 1.0, "x": 3840, "y": 0, "width": 1920, "height": 1200},
+                {"name": "HDMI-A-1", "enabled": True, "scale": 1.0, "x": 0, "y": 0, "width": 1920, "height": 1080},
+            ],
             "default": True,
             "current": True,
         },
         {
             "name": "single",
             "label": "Single",
-            "description": "Moonlight single-monitor mode",
+            "description": "Manual single-monitor mode",
             "output_names": ["DP-1"],
             "output_count": 1,
+            "outputs": [
+                {"name": "DP-1", "enabled": True, "scale": 1.0, "x": 0, "y": 0, "width": 1920, "height": 1200},
+                {"name": "DP-2", "enabled": False, "scale": 1.0, "x": 3840, "y": 0, "width": 1920, "height": 1200},
+                {"name": "HDMI-A-1", "enabled": False, "scale": 1.0, "x": 0, "y": 0, "width": 1920, "height": 1080},
+            ],
             "default": False,
             "current": False,
         },
@@ -158,7 +168,7 @@ async def test_handle_profile_change_disables_outputs_omitted_from_profile(monke
         }),
         "single": MonitorProfile(**{
             "name": "single",
-            "description": "Moonlight single-monitor mode",
+            "description": "Manual single-monitor mode",
             "outputs": [
                 {"name": "DP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 1920, "height": 1200}},
             ],

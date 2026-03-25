@@ -23,25 +23,6 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
-  sunshinePrepMonitor = pkgs.writeShellScriptBin "sunshine-prep-monitor" ''
-    set -euo pipefail
-    export PATH="$HOME/.nix-profile/bin:$PATH"
-
-    action="''${1:?Usage: sunshine-prep-monitor connect|disconnect}"
-
-    case "$action" in
-      connect)
-        i3pm display apply single
-        ;;
-      disconnect)
-        i3pm display apply default
-        ;;
-      *)
-        echo "sunshine-prep-monitor: unknown action '$action' (expected connect|disconnect)" >&2
-        exit 1
-        ;;
-    esac
-  '';
 in
 {
   imports = [
@@ -240,19 +221,11 @@ in
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
-      # Capture first active KMS output (DP-2 in single mode, adjusts dynamically).
-      output_name = 0;
+      # Stream the practical main display directly without mutating the
+      # desktop layout on connect/disconnect.
+      output_name = "DP-1";
     };
-    desktopAppOverrides = {
-      auto-detach = "true";
-      exclude-global-prep-cmd = "false";
-      prep-cmd = [
-        {
-          do = "${sunshinePrepMonitor}/bin/sunshine-prep-monitor connect";
-          undo = "${sunshinePrepMonitor}/bin/sunshine-prep-monitor disconnect";
-        }
-      ];
-    };
+    desktopAppOverrides.auto-detach = "true";
     pairedClients = [
       {
         name = "thinkpad";

@@ -290,7 +290,7 @@ Current host configuration:
 - `thinkpad`
   - `primaryOutputs = [ "eDP-1" "HDMI-A-1" "DP-1" "DP-2" ]`
 - `ryzen`
-  - `primaryOutputs = [ "DP-2" "DP-1" "HDMI-A-1" "DP-3" ]`
+  - `primaryOutputs = [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]`
 
 ## Issues Encountered
 
