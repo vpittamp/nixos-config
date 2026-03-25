@@ -55,7 +55,7 @@ let
         --resolution 1920x1200 \
         --fps 60 \
         --display-mode windowed \
-        --absolute-mouse \
+        --no-absolute-mouse \
         --capture-system-keys fullscreen \
         ryzen \
         Desktop
@@ -65,32 +65,8 @@ let
       run_moonlight
     fi
 
-    target_output="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_outputs -r | ${pkgs.jq}/bin/jq -r '
-      ([.[] | select(.active and .name == "eDP-1")]
-       + [.[] | select(.active and .focused)]
-       + [.[] | select(.active)])
-      | .[0].name // empty
-    ')"
-
-    if [ -z "$target_output" ]; then
-      run_moonlight
-    fi
-
-    original_scale="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_outputs -r | ${pkgs.jq}/bin/jq -r --arg output "$target_output" '
-      .[] | select(.name == $output) | .scale
-    ')"
-    restore_scale_value="$original_scale"
-    if [ "$target_output" = "eDP-1" ]; then
-      restore_scale_value="1.25"
-    fi
     original_workspace="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_workspaces -r | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')"
     moonlight_workspace="12: Ryzen Desktop"
-
-    restore_scale() {
-      if [ -n "''${restore_scale_value:-}" ]; then
-        ${pkgs.sway}/bin/swaymsg -s "$socket_path" output "$target_output" scale "$restore_scale_value" >/dev/null 2>&1 || true
-      fi
-    }
 
     restore_workspace() {
       if [ -n "''${original_workspace:-}" ]; then
@@ -98,19 +74,7 @@ let
       fi
     }
 
-    restore_ryzen_monitors() {
-      # Sunshine undo is unreliable (fires on service restart, not client disconnect),
-      # so restore Ryzen's multi-monitor layout from the ThinkPad side via SSH.
-      ${pkgs.openssh}/bin/ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ryzen \
-        'PATH="$HOME/.nix-profile/bin:$PATH" i3pm display apply default' >/dev/null 2>&1 || true
-    }
-
-    trap 'restore_ryzen_monitors; restore_workspace; restore_scale' EXIT INT TERM
-
-    if [ "$original_scale" != "1" ] && [ "$original_scale" != "1.0" ]; then
-      ${pkgs.sway}/bin/swaymsg -s "$socket_path" output "$target_output" scale 1.0 >/dev/null
-      ${pkgs.coreutils}/bin/sleep 1
-    fi
+    trap 'restore_workspace' EXIT INT TERM
 
     # Avoid inheriting terminal/project launcher identity into Moonlight itself.
     while IFS= read -r var_name; do
@@ -123,7 +87,7 @@ let
       --resolution 1920x1200 \
       --fps 60 \
       --display-mode windowed \
-      --absolute-mouse \
+      --no-absolute-mouse \
       --capture-system-keys fullscreen \
       ryzen \
       Desktop &

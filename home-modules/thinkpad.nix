@@ -60,12 +60,31 @@ in
 
     if [ -f "$config_file" ]; then
       ${pkgs.gawk}/bin/awk '
-        /^\[hosts\]$/ { exit }
+        BEGIN {
+          general_seen = 0
+        }
+        /^\[hosts\]$/ {
+          if (!general_seen) {
+            print "[General]"
+            print "abstouchmode=false"
+          }
+          exit
+        }
+        /^\[General\]$/ {
+          general_seen = 1
+          print
+          print "abstouchmode=false"
+          next
+        }
+        /^abstouchmode=/ {
+          next
+        }
         { print }
       ' "$config_file" > "$tmp_file"
     else
       cat > "$tmp_file" <<'EOF'
 [General]
+abstouchmode=false
 EOF
     fi
 
