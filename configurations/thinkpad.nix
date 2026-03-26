@@ -58,6 +58,10 @@ let
       ${pkgs.coreutils}/bin/sleep 1
     fi
 
+    # Ensure HEADLESS-1 is at correct iPad resolution and position
+    ${pkgs.sway}/bin/swaymsg 'output HEADLESS-1 enable resolution 2048x1536 position 0 0 scale 1.5' >/dev/null 2>&1 || true
+    ${pkgs.sway}/bin/swaymsg 'output eDP-1 position 1365 0' >/dev/null 2>&1 || true
+
     cleanup() {
       echo "Stopping Ryzen dual stream..."
       [ -n "''${vnc_pid:-}" ] && ${pkgs.coreutils}/bin/kill "$vnc_pid" 2>/dev/null || true
@@ -80,8 +84,8 @@ let
     echo "Ryzen dual stream active (Moonlight PID=$moonlight_pid, VNC PID=$vnc_pid)"
     echo "Press Ctrl+C to stop"
 
-    # Wait for either process to exit
-    wait -n "$vnc_pid" "$moonlight_pid" 2>/dev/null || true
+    # Wait for both processes — they run independently
+    wait "$vnc_pid" "$moonlight_pid" 2>/dev/null || true
   '';
   moonlightRyzenDesktop = pkgs.writeShellScriptBin "moonlight-ryzen-desktop" ''
     #!${pkgs.bash}/bin/bash
