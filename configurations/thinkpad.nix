@@ -117,6 +117,16 @@ let
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
 
+    current_profile="$(${pkgs.coreutils}/bin/cat "$HOME/.config/sway/monitor-profile.current" 2>/dev/null || true)"
+    mouse_args=()
+    case "$current_profile" in
+      local+ipad|local+1vnc|local+2vnc)
+        ;;
+      *)
+        mouse_args+=(--absolute-mouse)
+        ;;
+    esac
+
     socket_path="''${SWAYSOCK:-}"
     if [ -z "$socket_path" ]; then
       socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
@@ -133,7 +143,7 @@ let
         --fps 60 \
         --bitrate 20000 \
         --display-mode windowed \
-        --absolute-mouse \
+        "''${mouse_args[@]}" \
         --no-game-optimization \
         --video-codec HEVC \
         --capture-system-keys fullscreen \
@@ -168,7 +178,7 @@ let
       --fps 60 \
       --bitrate 20000 \
       --display-mode windowed \
-      --absolute-mouse \
+      "''${mouse_args[@]}" \
       --no-game-optimization \
       --video-codec HEVC \
       --capture-system-keys fullscreen \
