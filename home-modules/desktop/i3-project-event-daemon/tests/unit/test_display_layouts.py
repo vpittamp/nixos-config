@@ -71,6 +71,20 @@ def make_output(name: str, *, active: bool = True, focused: bool = False, x: int
     )
 
 
+def test_monitor_profile_accepts_hdmi_output_alias():
+    profile = MonitorProfile(**{
+        "name": "dual",
+        "description": "Dual monitor mode",
+        "outputs": [
+            {"name": "HDMI-1", "enabled": True},
+            {"name": "DP-1", "enabled": True},
+            {"name": "DP-2", "enabled": False},
+        ],
+    })
+
+    assert profile.get_enabled_outputs() == ["HDMI-1", "DP-1"]
+
+
 @pytest.mark.asyncio
 async def test_display_snapshot_exposes_layout_options(monkeypatch):
     server = IPCServer(DummyStateManager())

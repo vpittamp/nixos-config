@@ -206,7 +206,7 @@ let
           type = "virtual";
           enabled = false;
           position = {
-            x = 1536;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
@@ -244,7 +244,7 @@ let
           type = "physical";
           enabled = true;
           position = {
-            x = 0;
+            x = 1920;
             y = 0;
             width = 1920;
             height = 1200;
@@ -256,7 +256,7 @@ let
           type = "virtual";
           enabled = true;
           position = {
-            x = 1536;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
@@ -298,7 +298,7 @@ let
           type = "physical";
           enabled = true;
           position = {
-            x = 0;
+            x = 1920;
             y = 0;
             width = 1920;
             height = 1200;
@@ -310,7 +310,7 @@ let
           type = "virtual";
           enabled = true;
           position = {
-            x = 1536;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
@@ -391,11 +391,11 @@ let
     };
     dual = {
       name = "dual";
-      description = "Dual monitor mode (DP-1 + DP-2, HDMI-A-1 disabled)";
+      description = "Dual monitor mode (HDMI-1 + DP-1, DP-2 disabled)";
       outputs = [
         {
-          name = "HDMI-A-1";
-          enabled = false;
+          name = "HDMI-1";
+          enabled = true;
           scale = 1.0;
           position = {
             x = 0;
@@ -409,7 +409,7 @@ let
           enabled = true;
           scale = 1.0;
           position = {
-            x = 0;
+            x = 1920;
             y = 0;
             width = 1920;
             height = 1200;
@@ -417,10 +417,10 @@ let
         }
         {
           name = "DP-2";
-          enabled = true;
+          enabled = false;
           scale = 1.0;
           position = {
-            x = 1920;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
@@ -736,11 +736,11 @@ in
       } else if isHybrid then {
         "eDP-1" = {
           scale = "1.25";
-          position = "0,0";
+          position = "1920,0";
         };
         "HEADLESS-1" = {
           mode = "1920x1200@60Hz";
-          position = "1536,0";
+          position = "0,0";
           scale = "1.0";
         };
         "HEADLESS-2" = {

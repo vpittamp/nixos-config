@@ -34,6 +34,7 @@ from .config import (
     OutputStatesWatcher,
     ApplicationRegistryWatcher,  # Auto-reload registry after NixOS rebuild
     MonitorProfileWatcher,  # Feature 083: Profile file watcher
+    MonitorProfilesDirectoryWatcher,
     load_discovery_config,  # Feature 097: Git-based discovery
 )
 from .output_state_manager import (
@@ -201,6 +202,7 @@ class I3ProjectDaemon:
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
         self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
+        self.monitor_profiles_directory_watcher: Optional[MonitorProfilesDirectoryWatcher] = None
         self.otel_sessions_watcher: Optional[OutputStatesWatcher] = None
         self.remote_otel_sink_watcher: Optional[OutputStatesWatcher] = None
         self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
@@ -447,7 +449,7 @@ class I3ProjectDaemon:
 
         # Feature 083: Setup monitor profile file watcher (T024)
         # Watches monitor-profile.current and triggers Eww updates on profile change
-        from .monitor_profile_service import CURRENT_PROFILE_FILE
+        from .monitor_profile_service import CURRENT_PROFILE_FILE, PROFILES_DIR
 
         def on_profile_change():
             """Callback for monitor-profile.current file changes."""
@@ -480,6 +482,22 @@ class I3ProjectDaemon:
         )
         self.monitor_profile_watcher.set_event_loop(asyncio.get_event_loop())
         self.monitor_profile_watcher.start()
+
+        def on_profile_definitions_change():
+            """Callback for monitor profile JSON definition changes."""
+            logger.info("[Feature 083] Monitor profile definitions changed, reloading profile inventory")
+            self.monitor_profile_service.reload_profiles()
+            loop = asyncio.get_event_loop()
+            if self.ipc_server:
+                loop.create_task(self.ipc_server.notify_state_change("display_layout_changed"))
+
+        self.monitor_profiles_directory_watcher = MonitorProfilesDirectoryWatcher(
+            config_dir=PROFILES_DIR,
+            reload_callback=on_profile_definitions_change,
+            debounce_ms=200,
+        )
+        self.monitor_profiles_directory_watcher.set_event_loop(asyncio.get_event_loop())
+        self.monitor_profiles_directory_watcher.start()
 
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
@@ -1008,6 +1026,13 @@ class I3ProjectDaemon:
                     logger.info("Monitor profile watcher stopped")
                 except Exception as e:
                     logger.error(f"Error stopping monitor profile watcher: {e}")
+
+            if self.monitor_profiles_directory_watcher:
+                try:
+                    self.monitor_profiles_directory_watcher.stop()
+                    logger.info("Monitor profiles directory watcher stopped")
+                except Exception as e:
+                    logger.error(f"Error stopping monitor profiles directory watcher: {e}")
 
             if self.output_states_watcher:
                 try:

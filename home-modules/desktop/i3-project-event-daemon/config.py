@@ -786,3 +786,56 @@ class MonitorProfileWatcher:
         self._started = False
 
         logger.info(f"[Feature 083] Stopped watching {self.config_file}")
+
+
+class MonitorProfilesDirectoryWatcher:
+    """File system watcher for monitor profile definition JSON files.
+
+    Watches ~/.config/sway/monitor-profiles/ so profile additions/edits from
+    rebuilds become visible to the daemon without requiring a restart.
+    """
+
+    def __init__(self,
+                 config_dir: Path,
+                 reload_callback: Callable[[], None],
+                 debounce_ms: int = 200):
+        """Initialize monitor profile definitions watcher.
+
+        Args:
+            config_dir: Path to ~/.config/sway/monitor-profiles
+            reload_callback: Function to call on JSON file changes
+            debounce_ms: Debounce timeout in milliseconds
+        """
+        self.config_dir = config_dir
+        self.reload_callback = reload_callback
+        self.observer = Observer()
+        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms)
+        self._started = False
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Set the asyncio event loop for debounced callbacks."""
+        self.handler.set_event_loop(loop)
+
+    def start(self) -> None:
+        """Start watching the monitor-profiles directory for JSON changes."""
+        if self._started:
+            logger.warning("Monitor profiles directory watcher already started")
+            return
+
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.observer.schedule(self.handler, str(self.config_dir), recursive=False)
+        self.observer.start()
+        self._started = True
+
+        logger.info(f"[Feature 083] Started watching {self.config_dir} for profile definition changes")
+
+    def stop(self) -> None:
+        """Stop watching the monitor-profiles directory."""
+        if not self._started:
+            return
+
+        self.observer.stop()
+        self.observer.join(timeout=5.0)
+        self._started = False
+
+        logger.info(f"[Feature 083] Stopped watching {self.config_dir}")
