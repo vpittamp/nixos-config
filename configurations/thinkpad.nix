@@ -70,6 +70,10 @@ let
     }
     trap cleanup EXIT INT TERM
 
+    # Launch Moonlight for Ryzen DP-1 → eDP-1 (launch first so it claims eDP-1)
+    moonlight-ryzen-desktop &
+    moonlight_pid=$!
+
     # Launch wlvncc for Ryzen HDMI-A-1 → HEADLESS-1 (iPad sees this via thinkpad:5900)
     ${pkgs.wlvncc}/bin/wlvncc \
       --app-id ryzen-hdmi-viewer \
@@ -77,9 +81,31 @@ let
       "$ryzen_ip" 5901 &
     vnc_pid=$!
 
-    # Launch Moonlight for Ryzen DP-1 → eDP-1
-    moonlight-ryzen-desktop &
-    moonlight_pid=$!
+    # Enforce correct output placement in a retry loop.
+    # The i3pm daemon moves windows to preferred workspaces which may land on the
+    # wrong output. We re-place both windows every second until they stick.
+    (
+      # Wait for Moonlight to appear
+      attempts=0
+      while [ "$attempts" -lt 40 ]; do
+        if ${pkgs.sway}/bin/swaymsg -t get_tree -r | ${pkgs.jq}/bin/jq -e '.. | objects | select(.app_id? == "com.moonlight_stream.Moonlight")' >/dev/null 2>&1; then
+          break
+        fi
+        attempts=$((attempts + 1))
+        ${pkgs.coreutils}/bin/sleep 0.25
+      done
+
+      # Retry placement every second for 10 seconds to outlast the daemon
+      for _ in $(seq 1 10); do
+        ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] move container to output eDP-1' >/dev/null 2>&1
+        ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] fullscreen enable' >/dev/null 2>&1
+        ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] border pixel 0' >/dev/null 2>&1
+        ${pkgs.sway}/bin/swaymsg '[app_id="ryzen-hdmi-viewer"] move container to output HEADLESS-1' >/dev/null 2>&1
+        ${pkgs.sway}/bin/swaymsg '[app_id="ryzen-hdmi-viewer"] fullscreen enable' >/dev/null 2>&1
+        ${pkgs.sway}/bin/swaymsg '[app_id="ryzen-hdmi-viewer"] border pixel 0' >/dev/null 2>&1
+        ${pkgs.coreutils}/bin/sleep 1
+      done
+    ) &
 
     echo "Ryzen dual stream active (Moonlight PID=$moonlight_pid, VNC PID=$vnc_pid)"
     echo "Press Ctrl+C to stop"

@@ -177,7 +177,15 @@ EOF
     }
     {
       criteria = { app_id = "ryzen-hdmi-viewer"; };
-      command = "move container to output HEADLESS-1, fullscreen enable, border pixel 0";
+      command = "move container to output HEADLESS-1";
+    }
+    {
+      criteria = { app_id = "ryzen-hdmi-viewer"; };
+      command = "fullscreen enable";
+    }
+    {
+      criteria = { app_id = "ryzen-hdmi-viewer"; };
+      command = "border pixel 0";
     }
   ];
 
