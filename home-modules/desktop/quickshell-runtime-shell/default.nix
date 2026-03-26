@@ -12,6 +12,8 @@ let
     && osConfig ? services
     && osConfig.services ? "power-profiles-daemon"
     && osConfig.services."power-profiles-daemon".enable;
+  supportsLidPolicyControls = hostName == "thinkpad";
+  lidPolicyFragmentPath = "/etc/nixos/configurations/thinkpad-lid-policy.nix";
 
   # Build shell.qml with accent color substitution
   accentShellQml = pkgs.runCommandLocal "quickshell-accent-shell-qml" { } ''
@@ -60,6 +62,10 @@ QtObject {
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
   readonly property string brightnessStatusBin: "${brightnessStatusScript}/bin/quickshell-brightness-status"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
+  readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
+  readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"
+  readonly property string lidInhibitBin: "${lidInhibitScript}/bin/quickshell-lid-inhibit"
+  readonly property string pkexecBin: "${pkgs.polkit}/bin/pkexec"
   readonly property string daemonHealthBin: "${daemonHealthScript}/bin/quickshell-daemon-health"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-app-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
@@ -88,6 +94,8 @@ QtObject {
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
   readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
   readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}
+  readonly property bool supportsLidPolicyControls: ${if supportsLidPolicyControls then "true" else "false"}
+  readonly property string lidPolicyFragmentPath: "${lidPolicyFragmentPath}"
 }
 EOF
   '';
@@ -552,6 +560,306 @@ print(json.dumps({
     "target": target,
     "device": device.name,
     "percent": clamped_percent,
+}), flush=True)
+PY
+  '';
+
+  lidPolicyStatusScript = pkgs.writeShellScriptBin "quickshell-lid-policy-status" ''
+    set -euo pipefail
+    exec ${lib.getExe pkgs.python3} -u - <<'PY'
+import json
+import os
+import re
+import time
+from pathlib import Path
+
+
+HOST_NAME = "${hostName}"
+FRAGMENT_PATH = Path("${lidPolicyFragmentPath}")
+ALLOWED = {"ignore", "lock", "suspend", "hibernate", "poweroff"}
+DEFAULTS = {
+    "battery": "suspend",
+    "externalPower": "lock",
+    "docked": "ignore",
+}
+
+
+def runtime_dir() -> Path:
+    value = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if value:
+        return Path(value)
+    return Path(f"/run/user/{os.getuid()}")
+
+
+def pidfile() -> Path:
+    return runtime_dir() / "quickshell-lid-inhibit.pid"
+
+
+def extract(text: str, key: str, fallback: str) -> str:
+    match = re.search(rf'{key}\\s*=\\s*"([^"]+)";', text)
+    if not match:
+        return fallback
+    value = match.group(1)
+    return value if value in ALLOWED else fallback
+
+
+def read_policy() -> dict:
+    if not FRAGMENT_PATH.exists():
+        return dict(DEFAULTS)
+    text = FRAGMENT_PATH.read_text()
+    return {
+        "battery": extract(text, "battery", DEFAULTS["battery"]),
+        "externalPower": extract(text, "externalPower", DEFAULTS["externalPower"]),
+        "docked": extract(text, "docked", DEFAULTS["docked"]),
+    }
+
+
+def active_inhibit_pid() -> int | None:
+    path = pidfile()
+    if not path.exists():
+        return None
+    try:
+        pid = int(path.read_text().strip())
+    except ValueError:
+        path.unlink(missing_ok=True)
+        return None
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        path.unlink(missing_ok=True)
+        return None
+    return pid
+
+
+def payload() -> dict:
+    policy = read_policy()
+    inhibit_pid = active_inhibit_pid()
+    return {
+        "supported": HOST_NAME == "thinkpad",
+        "host": HOST_NAME,
+        "fragment_path": str(FRAGMENT_PATH),
+        "battery": policy["battery"],
+        "externalPower": policy["externalPower"],
+        "docked": policy["docked"],
+        "inhibitActive": inhibit_pid is not None,
+        "inhibitPid": inhibit_pid or 0,
+    }
+
+
+print(json.dumps(payload()), flush=True)
+while True:
+    time.sleep(5)
+    print(json.dumps(payload()), flush=True)
+PY
+  '';
+
+  lidInhibitScript = pkgs.writeShellScriptBin "quickshell-lid-inhibit" ''
+    set -euo pipefail
+    exec ${lib.getExe pkgs.python3} -u - "$@" <<'PY'
+import json
+import os
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+
+HOST_NAME = "${hostName}"
+SYSTEMD_INHIBIT = "${pkgs.systemd}/bin/systemd-inhibit"
+
+
+def fail(message: str, code: int = 1):
+    print(message, file=sys.stderr, flush=True)
+    raise SystemExit(code)
+
+
+def runtime_dir() -> Path:
+    value = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if value:
+        return Path(value)
+    return Path(f"/run/user/{os.getuid()}")
+
+
+def pidfile() -> Path:
+    return runtime_dir() / "quickshell-lid-inhibit.pid"
+
+
+def active_pid() -> int | None:
+    path = pidfile()
+    if not path.exists():
+        return None
+    try:
+        pid = int(path.read_text().strip())
+    except ValueError:
+        path.unlink(missing_ok=True)
+        return None
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        path.unlink(missing_ok=True)
+        return None
+    return pid
+
+
+def emit() -> None:
+    pid = active_pid()
+    print(json.dumps({
+        "supported": HOST_NAME == "thinkpad",
+        "inhibitActive": pid is not None,
+        "inhibitPid": pid or 0,
+    }), flush=True)
+
+
+def enable() -> None:
+    pid = active_pid()
+    if pid is not None:
+        emit()
+        return
+    proc = subprocess.Popen(
+        [
+            SYSTEMD_INHIBIT,
+            "--what=handle-lid-switch:sleep",
+            "--who=QuickShell Runtime Shell",
+            "--why=Temporary lid-close keep-awake override",
+            "sleep",
+            "infinity",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    pidfile().write_text(f"{proc.pid}\n")
+    emit()
+
+
+def disable() -> None:
+    pid = active_pid()
+    if pid is not None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    pidfile().unlink(missing_ok=True)
+    emit()
+
+
+action = sys.argv[1] if len(sys.argv) > 1 else "status"
+if action == "enable":
+    enable()
+elif action == "disable":
+    disable()
+elif action == "status":
+    emit()
+else:
+    fail(f"unsupported lid inhibit action: {action}")
+PY
+  '';
+
+  lidPolicyApplyScript = pkgs.writeShellScriptBin "quickshell-lid-policy-apply" ''
+    set -euo pipefail
+    exec ${lib.getExe pkgs.python3} -u - "$@" <<'PY'
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+HOST_NAME = subprocess.run(
+    ["/run/current-system/sw/bin/hostname", "--short"],
+    check=False,
+    capture_output=True,
+    text=True,
+).stdout.strip().lower()
+FRAGMENT_PATH = Path("${lidPolicyFragmentPath}")
+ALLOWED = {"ignore", "lock", "suspend", "hibernate", "poweroff"}
+
+
+def fail(message: str, code: int = 1):
+    print(message, file=sys.stderr, flush=True)
+    raise SystemExit(code)
+
+
+def runtime_dir() -> Path:
+    uid = os.environ.get("PKEXEC_UID", "").strip() or os.environ.get("SUDO_UID", "").strip()
+    if uid:
+        return Path(f"/run/user/{uid}")
+    return Path(f"/run/user/{os.getuid()}")
+
+
+def pidfile() -> Path:
+    return runtime_dir() / "quickshell-lid-inhibit.pid"
+
+
+def active_pid() -> int | None:
+    path = pidfile()
+    if not path.exists():
+        return None
+    try:
+        pid = int(path.read_text().strip())
+    except ValueError:
+        path.unlink(missing_ok=True)
+        return None
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        path.unlink(missing_ok=True)
+        return None
+    return pid
+
+
+def validate(value: str, field: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED:
+        fail(f"unsupported {field} lid action: {value}")
+    return normalized
+
+
+action = sys.argv[1] if len(sys.argv) > 1 else ""
+if action != "apply":
+    fail(f"unsupported lid policy action: {action}")
+
+if HOST_NAME != "thinkpad":
+    fail(f"lid policy apply is only supported on thinkpad, current host is {HOST_NAME or 'unknown'}")
+
+battery = validate(sys.argv[2] if len(sys.argv) > 2 else "", "battery")
+external_power = validate(sys.argv[3] if len(sys.argv) > 3 else "", "external-power")
+docked = validate(sys.argv[4] if len(sys.argv) > 4 else "", "docked")
+
+FRAGMENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+tmp_path = FRAGMENT_PATH.with_suffix(".tmp")
+tmp_path.write_text(
+    "{\n"
+    "  services.bare-metal.lidPolicy = {\n"
+    f'    battery = "{battery}";\n'
+    f'    externalPower = "{external_power}";\n'
+    f'    docked = "{docked}";\n'
+    "  };\n"
+    "}\n"
+)
+os.replace(tmp_path, FRAGMENT_PATH)
+
+result = subprocess.run(
+    ["/run/current-system/sw/bin/nixos-rebuild", "switch", "--flake", "/etc/nixos#thinkpad"],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+
+if result.returncode != 0:
+    fail(result.stderr.strip() or result.stdout.strip() or "nixos-rebuild switch failed", result.returncode)
+
+inhibit_pid = active_pid()
+print(json.dumps({
+    "supported": True,
+    "host": HOST_NAME,
+    "fragment_path": str(FRAGMENT_PATH),
+    "battery": battery,
+    "externalPower": external_power,
+    "docked": docked,
+    "inhibitActive": inhibit_pid is not None,
+    "inhibitPid": inhibit_pid or 0,
+    "rebuild": "ok",
 }), flush=True)
 PY
   '';
@@ -2268,6 +2576,9 @@ in
       systemStatsScript
       brightnessStatusScript
       brightnessActionScript
+      lidPolicyStatusScript
+      lidPolicyApplyScript
+      lidInhibitScript
       daemonHealthScript
       launcherQueryScript
       launcherLaunchScript

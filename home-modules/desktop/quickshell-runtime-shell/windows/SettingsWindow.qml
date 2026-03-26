@@ -1867,6 +1867,291 @@ PanelWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
+                                        visible: root.lidPolicySupported()
+                                        radius: 10
+                                        color: colors.cardAlt
+                                        border.color: colors.lineSoft
+                                        border.width: 1
+                                        implicitHeight: lidPolicyCardContent.implicitHeight + 24
+
+                                        ColumnLayout {
+                                            id: lidPolicyCardContent
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 10
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: "Lid & Sleep"
+                                                        color: colors.text
+                                                        font.pixelSize: 12
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: root.lidPolicyStatusText()
+                                                        color: (root.lidPolicyApplyError || root.lidInhibitActionError) ? colors.red : colors.subtle
+                                                        font.pixelSize: 10
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    radius: 7
+                                                    color: root.lidInhibitActive() ? colors.greenBg : colors.panel
+                                                    border.color: root.lidInhibitActive() ? colors.green : colors.border
+                                                    border.width: 1
+                                                    implicitWidth: lidOverrideBadge.implicitWidth + 16
+                                                    implicitHeight: 26
+
+                                                    Text {
+                                                        id: lidOverrideBadge
+                                                        anchors.centerIn: parent
+                                                        text: root.lidInhibitActive() ? "Temporary Override On" : root.lidPolicyEnvironmentText()
+                                                        color: root.lidInhibitActive() ? colors.green : colors.text
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                radius: 8
+                                                color: root.lidPolicyPresetKeepAwakeActive() ? colors.greenBg : colors.panel
+                                                border.color: root.lidPolicyPresetKeepAwakeActive() ? colors.green : colors.border
+                                                border.width: 1
+                                                implicitHeight: keepAwakePresetContent.implicitHeight + 20
+
+                                                RowLayout {
+                                                    id: keepAwakePresetContent
+                                                    anchors.fill: parent
+                                                    anchors.margins: 10
+                                                    spacing: 10
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 2
+
+                                                        Text {
+                                                            text: "Keep Awake On Lid Close"
+                                                            color: root.lidPolicyPresetKeepAwakeActive() ? colors.green : colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: "Sets battery, AC, and docked lid-close actions to Ignore so the ThinkPad stays active when the lid closes."
+                                                            color: colors.subtle
+                                                            font.pixelSize: 9
+                                                            wrapMode: Text.WordWrap
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        enabled: !root.lidPolicyControlsBusy()
+                                                        onClicked: root.applyKeepAwakePreset()
+                                                        contentItem: Text {
+                                                            text: root.lidPolicyPresetKeepAwakeActive() ? "Preset Active" : "Use Preset"
+                                                            color: parent.enabled ? colors.text : colors.textDim
+                                                            font.pixelSize: 9
+                                                            font.weight: Font.DemiBold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 6
+                                                            color: root.lidPolicyPresetKeepAwakeActive() ? colors.greenBg : colors.cardAlt
+                                                            border.color: root.lidPolicyPresetKeepAwakeActive() ? colors.green : colors.border
+                                                            border.width: 1
+                                                            implicitHeight: 26
+                                                            implicitWidth: 96
+                                                            opacity: parent.enabled ? 1 : 0.55
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Repeater {
+                                                model: [
+                                                    {
+                                                        key: "battery",
+                                                        label: "On Battery",
+                                                        detail: "What to do when the lid closes while running on battery."
+                                                    },
+                                                    {
+                                                        key: "externalPower",
+                                                        label: "On External Power",
+                                                        detail: "What to do when the lid closes while plugged in."
+                                                    },
+                                                    {
+                                                        key: "docked",
+                                                        label: "When Docked / External Display",
+                                                        detail: "Used when the ThinkPad is docked or driving an external display."
+                                                    }
+                                                ]
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    readonly property var row: modelData
+                                                    Layout.fillWidth: true
+                                                    radius: 8
+                                                    color: colors.panel
+                                                    border.color: colors.border
+                                                    border.width: 1
+                                                    implicitHeight: lidRowContent.implicitHeight + 18
+
+                                                    ColumnLayout {
+                                                        id: lidRowContent
+                                                        anchors.fill: parent
+                                                        anchors.margins: 10
+                                                        spacing: 8
+
+                                                        Text {
+                                                            text: row.label
+                                                            color: colors.text
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                        }
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: row.detail
+                                                            color: colors.subtle
+                                                            font.pixelSize: 9
+                                                            wrapMode: Text.WordWrap
+                                                        }
+
+                                                        Flow {
+                                                            width: parent.width
+                                                            spacing: 8
+
+                                                            Repeater {
+                                                                model: root.lidPolicyChoices()
+
+                                                                delegate: Rectangle {
+                                                                    required property var modelData
+                                                                    readonly property var choice: modelData
+                                                                    readonly property bool activeChoice: root.lidPolicyDraftValue(row.key) === choice.value
+                                                                    radius: 8
+                                                                    color: activeChoice ? colors.greenBg : colors.cardAlt
+                                                                    border.color: activeChoice ? colors.green : colors.border
+                                                                    border.width: 1
+                                                                    implicitWidth: lidChoiceLabel.implicitWidth + 22
+                                                                    implicitHeight: 32
+                                                                    opacity: root.lidPolicyControlsBusy() ? 0.6 : 1
+
+                                                                    Text {
+                                                                        id: lidChoiceLabel
+                                                                        anchors.centerIn: parent
+                                                                        text: choice.label
+                                                                        color: activeChoice ? colors.green : colors.text
+                                                                        font.pixelSize: 9
+                                                                        font.weight: Font.DemiBold
+                                                                    }
+
+                                                                    MouseArea {
+                                                                        anchors.fill: parent
+                                                                        enabled: !root.lidPolicyControlsBusy()
+                                                                        hoverEnabled: enabled
+                                                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                                        onClicked: root.setLidPolicyDraft(row.key, choice.value)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Button {
+                                                    enabled: !root.lidPolicyControlsBusy()
+                                                    onClicked: root.toggleTemporaryLidInhibit()
+                                                    contentItem: Text {
+                                                        text: root.lidInhibitActive() ? "Disable Temporary Keep Awake" : "Enable Temporary Keep Awake"
+                                                        color: parent.enabled ? colors.text : colors.textDim
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: root.lidInhibitActive() ? colors.greenBg : colors.cardAlt
+                                                        border.color: root.lidInhibitActive() ? colors.green : colors.border
+                                                        border.width: 1
+                                                        implicitHeight: 28
+                                                        implicitWidth: 178
+                                                        opacity: parent.enabled ? 1 : 0.55
+                                                    }
+                                                }
+
+                                                Item {
+                                                    Layout.fillWidth: true
+                                                }
+
+                                                Button {
+                                                    enabled: root.lidPolicyDraftDirty && !root.lidPolicyControlsBusy()
+                                                    onClicked: root.resetLidPolicyDraft()
+                                                    contentItem: Text {
+                                                        text: "Reset"
+                                                        color: parent.enabled ? colors.text : colors.textDim
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: colors.cardAlt
+                                                        border.color: colors.border
+                                                        border.width: 1
+                                                        implicitHeight: 28
+                                                        implicitWidth: 72
+                                                        opacity: parent.enabled ? 1 : 0.55
+                                                    }
+                                                }
+
+                                                Button {
+                                                    enabled: root.lidPolicyDraftDirty && !root.lidPolicyControlsBusy()
+                                                    onClicked: root.applyLidPolicyDraft()
+                                                    contentItem: Text {
+                                                        text: root.lidPolicyApplyPending() ? "Applying..." : "Apply"
+                                                        color: parent.enabled ? colors.text : colors.textDim
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                    background: Rectangle {
+                                                        radius: 6
+                                                        color: colors.greenBg
+                                                        border.color: colors.green
+                                                        border.width: 1
+                                                        implicitHeight: 28
+                                                        implicitWidth: 76
+                                                        opacity: parent.enabled ? 1 : 0.55
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
                                         radius: 10
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft

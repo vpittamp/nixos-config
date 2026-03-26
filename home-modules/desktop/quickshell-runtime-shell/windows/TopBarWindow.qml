@@ -361,6 +361,50 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: moonlightChip
+                    radius: 8
+                    color: root.moonlightChipFill(moonlightMouse.containsMouse)
+                    border.color: root.moonlightChipBorder(moonlightMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: moonlightLabel.implicitWidth + 18
+                    implicitHeight: parent.height
+                    visible: root.boolOrFalse(root.moonlightStatusState && root.moonlightStatusState.present)
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: moonlightLabel
+                        anchors.centerIn: parent
+                        text: root.moonlightChipLabel()
+                        color: root.moonlightChipText(moonlightMouse.containsMouse)
+                        font.pixelSize: 10
+                        font.weight: Font.Medium
+                    }
+
+                    MouseArea {
+                        id: moonlightMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+
+                    ToolTip {
+                        visible: moonlightMouse.containsMouse
+                        text: root.moonlightChipTooltip()
+                        delay: 400
+                    }
+                }
+
+                Rectangle {
                     id: networkChip
                     radius: 8
                     color: root.neutralChipFill(networkMouse.containsMouse)

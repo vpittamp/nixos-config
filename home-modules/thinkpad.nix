@@ -67,6 +67,7 @@ in
           if (!general_seen) {
             print "[General]"
             print "abstouchmode=false"
+            print "bitrate=20000"
           }
           exit
         }
@@ -74,9 +75,13 @@ in
           general_seen = 1
           print
           print "abstouchmode=false"
+          print "bitrate=20000"
           next
         }
         /^abstouchmode=/ {
+          next
+        }
+        /^bitrate=/ {
           next
         }
         { print }
@@ -85,6 +90,7 @@ in
       cat > "$tmp_file" <<'EOF'
 [General]
 abstouchmode=false
+bitrate=20000
 EOF
     fi
 

@@ -17,6 +17,7 @@ Item {
     property alias networkRefreshTimerRef: networkRefreshTimer
     property alias systemStatsRestartTimerRef: systemStatsRestartTimer
     property alias brightnessRestartTimerRef: brightnessRestartTimer
+    property alias lidPolicyRestartTimerRef: lidPolicyRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
@@ -30,7 +31,10 @@ Item {
     property alias notificationWatcherRef: notificationWatcher
     property alias networkWatcherRef: networkWatcher
     property alias systemStatsWatcherRef: systemStatsWatcher
+    property alias lidPolicyWatcherRef: lidPolicyWatcher
     property alias brightnessActionProcessRef: brightnessActionProcess
+    property alias lidPolicyApplyProcessRef: lidPolicyApplyProcess
+    property alias lidInhibitActionProcessRef: lidInhibitActionProcess
     property alias snippetEditorProcessRef: snippetEditorProcess
     property alias settingsCommandQueryProcessRef: settingsCommandQueryProcess
     property alias launcherQueryProcessRef: launcherQueryProcess
@@ -484,6 +488,29 @@ Item {
     }
 
     Process {
+        id: lidPolicyWatcher
+        command: [runtimeConfig.lidPolicyStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.parseLidPolicy(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("lid.policy.watch:", data);
+                }
+            }
+        }
+        onExited: function () {
+            lidPolicyRestartTimer.restart();
+        }
+    }
+
+    Process {
         id: snippetEditorProcess
         command: [runtimeConfig.snippetsManageBin, "upsert", "-1", "", "", ""]
         running: false
@@ -856,12 +883,71 @@ Item {
         }
     }
 
+    Process {
+        id: lidPolicyApplyProcess
+        command: [runtimeConfig.pkexecBin, runtimeConfig.lidPolicyApplyBin, "apply", "suspend", "lock", "ignore"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.lidPolicyApplyStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                shellRoot.lidPolicyApplyStderr += message + "\n";
+                console.warn("lid.policy.apply:", message);
+            }
+        }
+        onExited: function () {
+            shellRoot.finishLidPolicyApply();
+        }
+    }
+
+    Process {
+        id: lidInhibitActionProcess
+        command: [runtimeConfig.lidInhibitBin, "status"]
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.lidInhibitActionStdout += data + "\n";
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (!message) {
+                    return;
+                }
+                shellRoot.lidInhibitActionStderr += message + "\n";
+                console.warn("lid.inhibit:", message);
+            }
+        }
+        onExited: function () {
+            shellRoot.finishLidInhibitAction();
+        }
+    }
+
     Timer {
         id: sessionClosePendingPruneTimer
         interval: 1500
         repeat: true
         running: true
         onTriggered: shellRoot.pruneSessionClosePending()
+    }
+
+    Timer {
+        id: lidPolicyRestartTimer
+        interval: 5000
+        repeat: false
+        onTriggered: lidPolicyWatcher.running = true
     }
 
     IpcHandler {

@@ -13,6 +13,13 @@ with lib;
 
 let
   cfg = config.services.bare-metal;
+  lidActionType = types.enum [
+    "ignore"
+    "lock"
+    "suspend"
+    "hibernate"
+    "poweroff"
+  ];
 in
 {
   options.services.bare-metal = {
@@ -58,6 +65,26 @@ in
       type = types.bool;
       default = false;
       description = "Enable Secure Boot tooling (sbctl)";
+    };
+
+    lidPolicy = {
+      battery = mkOption {
+        type = lidActionType;
+        default = "suspend";
+        description = "Action to take when the laptop lid closes on battery power.";
+      };
+
+      externalPower = mkOption {
+        type = lidActionType;
+        default = "lock";
+        description = "Action to take when the laptop lid closes while external power is connected.";
+      };
+
+      docked = mkOption {
+        type = lidActionType;
+        default = "ignore";
+        description = "Action to take when the laptop lid closes while docked or using an external display.";
+      };
     };
   };
 
@@ -178,8 +205,9 @@ in
     # Full power management (not useful on: Hetzner server, WSL2)
     # Note: Using new settings.Login format (NixOS 24.11+)
     services.logind.settings.Login = {
-      HandleLidSwitch = "suspend";
-      HandleLidSwitchExternalPower = "lock";
+      HandleLidSwitch = cfg.lidPolicy.battery;
+      HandleLidSwitchExternalPower = cfg.lidPolicy.externalPower;
+      HandleLidSwitchDocked = cfg.lidPolicy.docked;
       HandlePowerKey = "suspend";
       IdleAction = "suspend";
       IdleActionSec = "30min";

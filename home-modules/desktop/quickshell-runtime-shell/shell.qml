@@ -53,6 +53,8 @@ ShellRoot {
     readonly property var displayToggleOutputProcess: runtimeServices ? runtimeServices.displayToggleOutputProcessRef : null
     readonly property var displayScaleProcess: runtimeServices ? runtimeServices.displayScaleProcessRef : null
     readonly property var brightnessActionProcess: runtimeServices ? runtimeServices.brightnessActionProcessRef : null
+    readonly property var lidPolicyApplyProcess: runtimeServices ? runtimeServices.lidPolicyApplyProcessRef : null
+    readonly property var lidInhibitActionProcess: runtimeServices ? runtimeServices.lidInhibitActionProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
 
     property var dashboard: ({
@@ -133,6 +135,17 @@ ShellRoot {
                 max: 0
             }
         })
+    property var lidPolicyState: ({
+            supported: false,
+            host: "",
+            fragment_path: "",
+            battery: "suspend",
+            externalPower: "lock",
+            docked: "ignore",
+            inhibitActive: false,
+            inhibitPid: 0
+        })
+    readonly property var moonlightStatusState: moonlightStatus()
     property bool panelVisible: true
     property string panelSection: "runtime"
     property string runtimePanelExpandedSection: "sessions"
@@ -216,6 +229,17 @@ ShellRoot {
     property string brightnessActionStdout: ""
     property string brightnessActionStderr: ""
     property string brightnessActionError: ""
+    property string lidPolicyDraftBattery: "suspend"
+    property string lidPolicyDraftExternalPower: "lock"
+    property string lidPolicyDraftDocked: "ignore"
+    property bool lidPolicyDraftDirty: false
+    property string lidPolicyApplyStdout: ""
+    property string lidPolicyApplyStderr: ""
+    property string lidPolicyApplyError: ""
+    property string lidInhibitActionStdout: ""
+    property string lidInhibitActionStderr: ""
+    property string lidInhibitActionError: ""
+    property string lidInhibitActionMode: ""
     property string sessionPreviewTargetKey: ""
     property bool sessionPreviewStopExpected: false
     property bool sessionPreviewAutoFollow: true
@@ -1808,6 +1832,94 @@ ShellRoot {
         return Qt.formatDateTime(clock.date, shellConfig.topBarShowSeconds ? "ddd MMM d  h:mm:ss AP" : "ddd MMM d  h:mm AP");
     }
 
+    function dashboardWindows() {
+        const windows = [];
+        const projects = arrayOrEmpty(dashboard.projects);
+        for (let i = 0; i < projects.length; i += 1) {
+            const projectWindows = arrayOrEmpty(projects[i] && projects[i].windows);
+            for (let j = 0; j < projectWindows.length; j += 1) {
+                windows.push(projectWindows[j]);
+            }
+        }
+        return windows;
+    }
+
+    function moonlightWindowMatch(windowData) {
+        if (!windowData || typeof windowData !== "object") {
+            return false;
+        }
+
+        const compositorClass = stringOrEmpty(windowData.class);
+        if (compositorClass === "com.moonlight_stream.moonlight") {
+            return true;
+        }
+
+        const appKey = stringOrEmpty(windowData.app_key).toLowerCase();
+        const appName = stringOrEmpty(windowData.app_name).toLowerCase();
+        if (appKey === "moonlight" || appName === "moonlight") {
+            return true;
+        }
+
+        if (compositorClass) {
+            return false;
+        }
+
+        const title = stringOrEmpty(windowData.title).toLowerCase();
+        return title === "moonlight"
+            || title.indexOf("moonlight ") === 0
+            || title.indexOf("moonlight - ") === 0;
+    }
+
+    function preferredMoonlightWindow(left, right) {
+        if (!left) {
+            return right || null;
+        }
+        if (!right) {
+            return left;
+        }
+
+        const leftFocused = boolOrFalse(left.focused);
+        const rightFocused = boolOrFalse(right.focused);
+        if (leftFocused !== rightFocused) {
+            return leftFocused ? left : right;
+        }
+
+        const leftFullscreen = boolOrFalse(left.fullscreen);
+        const rightFullscreen = boolOrFalse(right.fullscreen);
+        if (leftFullscreen !== rightFullscreen) {
+            return leftFullscreen ? left : right;
+        }
+
+        const leftHidden = boolOrFalse(left.hidden);
+        const rightHidden = boolOrFalse(right.hidden);
+        if (leftHidden !== rightHidden) {
+            return leftHidden ? right : left;
+        }
+
+        return left;
+    }
+
+    function moonlightStatus() {
+        const windows = dashboardWindows().filter(windowData => moonlightWindowMatch(windowData));
+        let activeWindow = null;
+        for (let i = 0; i < windows.length; i += 1) {
+            activeWindow = preferredMoonlightWindow(activeWindow, windows[i]);
+        }
+
+        const focused = boolOrFalse(activeWindow && activeWindow.focused);
+        const fullscreen = boolOrFalse(activeWindow && activeWindow.fullscreen);
+        return {
+            present: windows.length > 0,
+            focused: focused,
+            fullscreen: fullscreen,
+            captureInferred: focused && fullscreen,
+            workspace: stringOrEmpty(activeWindow && activeWindow.workspace),
+            output: stringOrEmpty(activeWindow && activeWindow.output),
+            title: stringOrEmpty(activeWindow && activeWindow.title),
+            windowCount: windows.length
+        };
+    }
+
     function neutralChipFill(hovered) {
         return colors.cardAlt;
     }
@@ -2552,6 +2664,227 @@ ShellRoot {
             bits.push(powerProfileLabel(currentPowerProfile()));
         }
         return bits.join("  •  ");
+    }
+
+    function lidPolicySupported() {
+        return boolOrFalse(shellConfig.supportsLidPolicyControls)
+            && boolOrFalse(lidPolicyState.supported || shellConfig.supportsLidPolicyControls);
+    }
+
+    function lidPolicyChoices() {
+        return [{
+                value: "ignore",
+                label: "Ignore"
+            }, {
+                value: "lock",
+                label: "Lock"
+            }, {
+                value: "suspend",
+                label: "Suspend"
+            }, {
+                value: "hibernate",
+                label: "Hibernate"
+            }, {
+                value: "poweroff",
+                label: "Power Off"
+            }];
+    }
+
+    function lidPolicyLabel(action) {
+        const value = stringOrEmpty(action).toLowerCase();
+        if (value === "ignore") {
+            return "Keep Awake";
+        }
+        if (value === "poweroff") {
+            return "Power Off";
+        }
+        if (value === "lock") {
+            return "Lock";
+        }
+        if (value === "hibernate") {
+            return "Hibernate";
+        }
+        return "Suspend";
+    }
+
+    function syncLidPolicyDraft(force) {
+        if (!lidPolicySupported()) {
+            return;
+        }
+        if (lidPolicyDraftDirty && !force) {
+            return;
+        }
+        lidPolicyDraftBattery = stringOrEmpty(lidPolicyState.battery || "suspend") || "suspend";
+        lidPolicyDraftExternalPower = stringOrEmpty(lidPolicyState.externalPower || "lock") || "lock";
+        lidPolicyDraftDocked = stringOrEmpty(lidPolicyState.docked || "ignore") || "ignore";
+        lidPolicyDraftDirty = false;
+    }
+
+    function resetLidPolicyDraft() {
+        lidPolicyApplyError = "";
+        syncLidPolicyDraft(true);
+    }
+
+    function lidPolicyDraftValue(kind) {
+        const normalized = stringOrEmpty(kind);
+        if (normalized === "externalPower") {
+            return stringOrEmpty(lidPolicyDraftExternalPower || "lock") || "lock";
+        }
+        if (normalized === "docked") {
+            return stringOrEmpty(lidPolicyDraftDocked || "ignore") || "ignore";
+        }
+        return stringOrEmpty(lidPolicyDraftBattery || "suspend") || "suspend";
+    }
+
+    function setLidPolicyDraft(kind, value) {
+        const normalizedKind = stringOrEmpty(kind);
+        const normalizedValue = stringOrEmpty(value).toLowerCase();
+        if (!normalizedKind || !normalizedValue) {
+            return;
+        }
+        if (normalizedKind === "externalPower") {
+            lidPolicyDraftExternalPower = normalizedValue;
+        } else if (normalizedKind === "docked") {
+            lidPolicyDraftDocked = normalizedValue;
+        } else {
+            lidPolicyDraftBattery = normalizedValue;
+        }
+        lidPolicyDraftDirty = lidPolicyDraftBattery !== stringOrEmpty(lidPolicyState.battery || "suspend")
+            || lidPolicyDraftExternalPower !== stringOrEmpty(lidPolicyState.externalPower || "lock")
+            || lidPolicyDraftDocked !== stringOrEmpty(lidPolicyState.docked || "ignore");
+        lidPolicyApplyError = "";
+    }
+
+    function lidPolicyPresetKeepAwakeActive() {
+        return lidPolicyDraftValue("battery") === "ignore"
+            && lidPolicyDraftValue("externalPower") === "ignore"
+            && lidPolicyDraftValue("docked") === "ignore";
+    }
+
+    function applyKeepAwakePreset() {
+        setLidPolicyDraft("battery", "ignore");
+        setLidPolicyDraft("externalPower", "ignore");
+        setLidPolicyDraft("docked", "ignore");
+    }
+
+    function lidPolicyApplyPending() {
+        return !!(lidPolicyApplyProcess && lidPolicyApplyProcess.running);
+    }
+
+    function lidInhibitPending() {
+        return !!(lidInhibitActionProcess && lidInhibitActionProcess.running);
+    }
+
+    function lidInhibitActive() {
+        return boolOrFalse(lidPolicyState.inhibitActive);
+    }
+
+    function lidPolicyControlsBusy() {
+        return lidPolicyApplyPending() || lidInhibitPending();
+    }
+
+    function lidPolicyExternalDisplayActive() {
+        const outputs = activeDisplayOutputNames();
+        for (let index = 0; index < outputs.length; index += 1) {
+            if (stringOrEmpty(outputs[index]) !== "eDP-1") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function lidPolicyEnvironmentText() {
+        return lidPolicyExternalDisplayActive() ? "External display active" : "Laptop only";
+    }
+
+    function lidPolicyStatusText() {
+        if (!lidPolicySupported()) {
+            return "Lid-close controls are only exposed on the ThinkPad host.";
+        }
+        if (lidPolicyApplyPending()) {
+            return "Updating ThinkPad lid policy and rebuilding the active system...";
+        }
+        if (lidInhibitPending()) {
+            return lidInhibitActionMode === "disable"
+                ? "Disabling temporary keep-awake override..."
+                : "Enabling temporary keep-awake override...";
+        }
+        if (lidPolicyApplyError) {
+            return lidPolicyApplyError;
+        }
+        if (lidInhibitActionError) {
+            return lidInhibitActionError;
+        }
+        const bits = [
+            "Battery " + lidPolicyLabel(lidPolicyState.battery),
+            "AC " + lidPolicyLabel(lidPolicyState.externalPower),
+            "Docked " + lidPolicyLabel(lidPolicyState.docked),
+        ];
+        if (lidInhibitActive()) {
+            bits.push("Temporary override active");
+        }
+        bits.push(lidPolicyEnvironmentText());
+        return bits.join("  •  ");
+    }
+
+    function applyLidPolicyDraft() {
+        if (!lidPolicySupported() || !lidPolicyApplyProcess || lidPolicyApplyProcess.running) {
+            return;
+        }
+        lidPolicyApplyStdout = "";
+        lidPolicyApplyStderr = "";
+        lidPolicyApplyError = "";
+        lidInhibitActionError = "";
+        lidPolicyApplyProcess.command = [
+            shellConfig.pkexecBin,
+            shellConfig.lidPolicyApplyBin,
+            "apply",
+            lidPolicyDraftValue("battery"),
+            lidPolicyDraftValue("externalPower"),
+            lidPolicyDraftValue("docked")
+        ];
+        lidPolicyApplyProcess.running = true;
+    }
+
+    function finishLidPolicyApply() {
+        const raw = stringOrEmpty(lidPolicyApplyStdout).trim();
+        const error = stringOrEmpty(lidPolicyApplyStderr).trim();
+        let parsed = false;
+        if (raw) {
+            parseLidPolicy(raw);
+            parsed = raw.indexOf("{") === 0;
+        }
+        lidPolicyApplyStdout = "";
+        lidPolicyApplyStderr = "";
+        lidPolicyApplyError = parsed ? "" : error;
+        if (parsed) {
+            syncLidPolicyDraft(true);
+        }
+    }
+
+    function toggleTemporaryLidInhibit() {
+        if (!lidPolicySupported() || !lidInhibitActionProcess || lidInhibitActionProcess.running) {
+            return;
+        }
+        lidInhibitActionMode = lidInhibitActive() ? "disable" : "enable";
+        lidInhibitActionStdout = "";
+        lidInhibitActionStderr = "";
+        lidInhibitActionError = "";
+        lidInhibitActionProcess.command = [shellConfig.lidInhibitBin, lidInhibitActionMode];
+        lidInhibitActionProcess.running = true;
+    }
+
+    function finishLidInhibitAction() {
+        const raw = stringOrEmpty(lidInhibitActionStdout).trim();
+        const error = stringOrEmpty(lidInhibitActionStderr).trim();
+        const parsed = raw && raw.indexOf("{") === 0;
+        if (raw) {
+            parseLidPolicy(raw);
+        }
+        lidInhibitActionStdout = "";
+        lidInhibitActionStderr = "";
+        lidInhibitActionError = parsed ? "" : error;
+        lidInhibitActionMode = "";
     }
 
     function networkLabel() {
@@ -3980,6 +4313,9 @@ ShellRoot {
 
     function setSettingsSection(section) {
         settingsSection = normalizeSettingsSection(section);
+        if (settingsSection === "devices") {
+            resetLidPolicyDraft();
+        }
     }
 
     function openSettings(section) {
@@ -3989,6 +4325,9 @@ ShellRoot {
         bluetoothPopupVisible = false;
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
+        if (settingsSection === "devices") {
+            resetLidPolicyDraft();
+        }
         settingsVisible = true;
     }
 
@@ -7221,6 +7560,24 @@ ShellRoot {
         }
     }
 
+    function parseLidPolicy(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            const next = JSON.parse(raw);
+            lidPolicyState = Object.assign({}, lidPolicyState, next);
+            syncLidPolicyDraft(false);
+        } catch (error) {
+            console.warn("Failed to parse lid policy payload", error, raw);
+        }
+    }
+
     function parseDaemonHealth(payload) {
         const raw = stringOrEmpty(payload).trim();
         if (!raw || raw.indexOf("{") !== 0) {
@@ -7287,6 +7644,81 @@ ShellRoot {
         if (s.issues) {
             bits.push("Issues: " + String(s.issues));
         }
+        return bits.join("\n");
+    }
+
+    function moonlightChipLabel() {
+        const status = moonlightStatusState;
+        if (!boolOrFalse(status && status.present)) {
+            return "";
+        }
+        if (boolOrFalse(status.captureInferred)) {
+            return "Moonlight Captured";
+        }
+        if (boolOrFalse(status.fullscreen)) {
+            return "Moonlight FS";
+        }
+        return "Moonlight";
+    }
+
+    function moonlightChipFill(hovered) {
+        const status = moonlightStatusState;
+        if (boolOrFalse(status.captureInferred)) {
+            return hovered ? Qt.lighter(colors.blueBg, 1.12) : colors.blueBg;
+        }
+        if (boolOrFalse(status.focused)) {
+            return hovered ? Qt.lighter(colors.blueWash, 1.08) : colors.blueWash;
+        }
+        return neutralChipFill(hovered);
+    }
+
+    function moonlightChipBorder(hovered) {
+        const status = moonlightStatusState;
+        if (boolOrFalse(status.captureInferred)) {
+            return colors.blue;
+        }
+        if (boolOrFalse(status.focused)) {
+            return colors.blueMuted;
+        }
+        return neutralChipBorder(hovered);
+    }
+
+    function moonlightChipText(hovered) {
+        const status = moonlightStatusState;
+        if (boolOrFalse(status.captureInferred)) {
+            return colors.blue;
+        }
+        if (boolOrFalse(status.focused)) {
+            return colors.text;
+        }
+        return neutralChipText(hovered);
+    }
+
+    function moonlightChipTooltip() {
+        const status = moonlightStatusState;
+        const bits = [
+            "Running: " + (boolOrFalse(status && status.present) ? "yes" : "no")
+        ];
+        if (!boolOrFalse(status && status.present)) {
+            return bits.join("\n");
+        }
+
+        bits.push("Focused: " + (boolOrFalse(status.focused) ? "yes" : "no"));
+        bits.push("Fullscreen: " + (boolOrFalse(status.fullscreen) ? "yes" : "no"));
+        if (stringOrEmpty(status.workspace)) {
+            bits.push("Workspace: " + status.workspace);
+        }
+        if (stringOrEmpty(status.output)) {
+            bits.push("Output: " + status.output);
+        }
+        if (stringOrEmpty(status.title)) {
+            bits.push("Title: " + status.title);
+        }
+        if (Number(status.windowCount || 0) > 1) {
+            bits.push("Windows: " + String(Number(status.windowCount || 0)));
+        }
+        bits.push("Capture: inferred from Moonlight focus + fullscreen on Sway");
+        bits.push("Exact shortcut/input capture is not exposed as a stable external signal.");
         return bits.join("\n");
     }
 

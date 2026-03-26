@@ -54,6 +54,7 @@ let
         stream \
         --resolution 1920x1200 \
         --fps 60 \
+        --bitrate 20000 \
         --display-mode windowed \
         --no-absolute-mouse \
         --capture-system-keys fullscreen \
@@ -86,6 +87,7 @@ let
       stream \
       --resolution 1920x1200 \
       --fps 60 \
+      --bitrate 20000 \
       --display-mode windowed \
       --no-absolute-mouse \
       --capture-system-keys fullscreen \
@@ -153,6 +155,7 @@ in
 
     # Bare metal optimizations (KVM, Podman, printing, TPM, etc.)
     ../modules/services/bare-metal.nix
+    ./thinkpad-lid-policy.nix
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
@@ -829,22 +832,6 @@ in
   # Automatic mounting of USB drives
   services.udisks2.enable = true;
   services.gvfs.enable = true;  # For GUI file managers
-
-  # ========== ACPI EVENTS ==========
-  # Handle lid close, power button, etc.
-  services.acpid = {
-    enable = true;
-    handlers = {
-      lid-close = {
-        event = "button/lid.*";
-        action = ''
-          case "$3" in
-            close) systemctl suspend ;;
-          esac
-        '';
-      };
-    };
-  };
 
   # ========== LIBRECHAT AI CHAT PLATFORM ==========
   # Open-source AI chat UI with MongoDB backend
