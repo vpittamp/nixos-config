@@ -289,6 +289,60 @@ let
         }
       ];
     };
+    "local+ipad" = {
+      name = "local+ipad";
+      description = "ThinkPad panel plus iPad Pro 12.9 (2048x1536 @1.5x)";
+      outputs = [
+        {
+          name = "eDP-1";
+          type = "physical";
+          enabled = true;
+          position = {
+            x = 1365;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.25;
+        }
+        {
+          name = "HEADLESS-1";
+          type = "virtual";
+          enabled = true;
+          position = {
+            x = 0;
+            y = 0;
+            width = 2048;
+            height = 1536;
+          };
+          scale = 1.5;
+          vnc_port = 5900;
+        }
+        {
+          name = "HEADLESS-2";
+          type = "virtual";
+          enabled = false;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+          scale = 1.0;
+          vnc_port = 5901;
+        }
+      ];
+      workspace_assignments = [
+        {
+          output = "eDP-1";
+          workspaces = [ 1 2 6 7 8 9 ];
+        }
+        {
+          output = "HEADLESS-1";
+          workspaces = [ 3 4 5 ];
+        }
+      ];
+    };
     "local+2vnc" = {
       name = "local+2vnc";
       description = "ThinkPad panel plus two virtual displays";

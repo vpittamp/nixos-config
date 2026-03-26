@@ -36,6 +36,53 @@ let
 
     exec ${pkgs.rustdesk}/bin/rustdesk --connect "$host_ip"
   '';
+  ryzenDualStream = pkgs.writeShellScriptBin "ryzen-dual-stream" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    # Resolve Ryzen Tailscale IP
+    ryzen_ip="$(${pkgs.tailscale}/bin/tailscale ip -4 ryzen 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)"
+    if [ -z "$ryzen_ip" ]; then
+      ryzen_ip="$(getent ahostsv4 ryzen | ${pkgs.gawk}/bin/awk 'NR == 1 { print $1 }')"
+    fi
+    if [ -z "$ryzen_ip" ]; then
+      echo "Unable to resolve ryzen to a Tailscale IPv4 address" >&2
+      exit 1
+    fi
+
+    # Ensure local+ipad profile is active (HEADLESS-1 enabled for iPad)
+    current_profile="$(${pkgs.coreutils}/bin/cat "$HOME/.config/sway/monitor-profile.current" 2>/dev/null || true)"
+    if [ "$current_profile" != "local+ipad" ]; then
+      echo "Activating local+ipad monitor profile..."
+      set-monitor-profile local+ipad
+      ${pkgs.coreutils}/bin/sleep 1
+    fi
+
+    cleanup() {
+      echo "Stopping Ryzen dual stream..."
+      [ -n "''${vnc_pid:-}" ] && ${pkgs.coreutils}/bin/kill "$vnc_pid" 2>/dev/null || true
+      [ -n "''${moonlight_pid:-}" ] && ${pkgs.coreutils}/bin/kill "$moonlight_pid" 2>/dev/null || true
+      wait 2>/dev/null || true
+    }
+    trap cleanup EXIT INT TERM
+
+    # Launch wlvncc for Ryzen HDMI-A-1 → HEADLESS-1 (iPad sees this via thinkpad:5900)
+    ${pkgs.wlvncc}/bin/wlvncc \
+      --app-id ryzen-hdmi-viewer \
+      --no-decorations \
+      "$ryzen_ip" 5901 &
+    vnc_pid=$!
+
+    # Launch Moonlight for Ryzen DP-1 → eDP-1
+    moonlight-ryzen-desktop &
+    moonlight_pid=$!
+
+    echo "Ryzen dual stream active (Moonlight PID=$moonlight_pid, VNC PID=$vnc_pid)"
+    echo "Press Ctrl+C to stop"
+
+    # Wait for either process to exit
+    wait -n "$vnc_pid" "$moonlight_pid" 2>/dev/null || true
+  '';
   moonlightRyzenDesktop = pkgs.writeShellScriptBin "moonlight-ryzen-desktop" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
@@ -56,7 +103,9 @@ let
         --fps 60 \
         --bitrate 20000 \
         --display-mode windowed \
-        --no-absolute-mouse \
+        --absolute-mouse \
+        --no-game-optimization \
+        --video-codec h265 \
         --capture-system-keys fullscreen \
         ryzen \
         Desktop
@@ -89,7 +138,9 @@ let
       --fps 60 \
       --bitrate 20000 \
       --display-mode windowed \
-      --no-absolute-mouse \
+      --absolute-mouse \
+      --no-game-optimization \
+      --video-codec h265 \
       --capture-system-keys fullscreen \
       ryzen \
       Desktop &
@@ -628,6 +679,8 @@ in
     remmina
     rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access
+    wlvncc  # Wayland-native VNC client (for Ryzen HDMI-A-1 → HEADLESS-1 proxy)
+    ryzenDualStream
 
     # 1Password GUI
     _1password-gui

@@ -68,6 +68,7 @@ in
             print "[General]"
             print "abstouchmode=false"
             print "bitrate=20000"
+            print "gameoptimize=false"
           }
           exit
         }
@@ -76,12 +77,16 @@ in
           print
           print "abstouchmode=false"
           print "bitrate=20000"
+          print "gameoptimize=false"
           next
         }
         /^abstouchmode=/ {
           next
         }
         /^bitrate=/ {
+          next
+        }
+        /^gameoptimize=/ {
           next
         }
         { print }
@@ -91,6 +96,7 @@ in
 [General]
 abstouchmode=false
 bitrate=20000
+gameoptimize=false
 EOF
     fi
 
@@ -168,6 +174,10 @@ EOF
     {
       criteria = { app_id = "com.moonlight_stream.Moonlight"; };
       command = "border pixel 0, fullscreen enable";
+    }
+    {
+      criteria = { app_id = "ryzen-hdmi-viewer"; };
+      command = "move container to output HEADLESS-1, fullscreen enable, border pixel 0";
     }
   ];
 

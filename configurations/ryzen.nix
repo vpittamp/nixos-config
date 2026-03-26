@@ -204,9 +204,10 @@ in
       # Avoid Sunshine's tray/X11 path on this Sway session; the inherited
       # DISPLAY socket can block startup and the tray path is not needed here.
       system_tray = "disabled";
-      # NVENC quality settings for RTX 5070
-      nvenc_preset = "p4";      # Balanced
-      nvenc_tune = "ll";        # Low latency
+      # NVENC quality settings for RTX 5070 (desktop-optimized)
+      nvenc_preset = lib.mkForce "p5";  # Higher quality for sharp text
+      nvenc_tune = lib.mkForce "hq";    # High quality (enables B-frames, better for static desktop content)
+      nvenc_rc = lib.mkForce "vbr";       # Variable bitrate — efficient for mostly-static desktop
       # Higher bitrate for local/Tailscale network streaming
       bitrate = 40000;
       # Include ThinkPad's 1920x1200 (16:10) for native resolution streaming
@@ -621,7 +622,7 @@ in
   # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
+    allowedTCPPorts = [ 22 5900 5901 ];  # SSH, VNC DP-1, VNC HDMI-A-1
     interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 21116 21118 ];  # OTEL sink and RustDesk direct IP access
     interfaces."tailscale0".allowedUDPPorts = lib.mkAfter [ 21116 21119 ];  # RustDesk direct access transport
     extraInputRules = ''

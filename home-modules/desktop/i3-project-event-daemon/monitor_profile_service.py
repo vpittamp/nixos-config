@@ -189,13 +189,9 @@ class MonitorProfileService:
 
             if output_config.enabled:
                 # Enable and configure the output
-                # Format: output NAME mode WIDTHxHEIGHT position X Y scale SCALE
-                if output_config.type == OutputType.PHYSICAL:
-                    # Physical display (eDP-1) - use Retina resolution
-                    cmd = f"output {name} mode {pos.width}x{pos.height} position {pos.x} {pos.y} scale {output_config.scale}"
-                else:
-                    # Virtual display - VNC resolution
-                    cmd = f"output {name} mode {pos.width}x{pos.height} position {pos.x} {pos.y} scale {output_config.scale}"
+                # Sway requires an explicit 'enable' for outputs that start disabled;
+                # setting mode/position alone is not sufficient to activate them.
+                cmd = f"output {name} enable mode {pos.width}x{pos.height} position {pos.x} {pos.y} scale {output_config.scale}"
 
                 result = await conn.command(cmd)
                 if not result or not result[0].success:

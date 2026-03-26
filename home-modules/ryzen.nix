@@ -153,24 +153,36 @@ in
     enable_auth=false
   '';
 
-  # WayVNC systemd user service
-  # Note: Adjust output (-o flag) based on your monitor setup
-  # Common NVIDIA outputs: DP-1, HDMI-A-1, DP-2
-  # Run 'swaymsg -t get_outputs' to see available outputs
-  systemd.user.services.wayvnc = {
+  # WayVNC systemd user services - one per physical output for remote access
+  # DP-1 (primary, center) on port 5900, HDMI-A-1 (secondary, left) on port 5901
+  # Access via: vnc://<ryzen-tailscale-ip>:5900 (DP-1) or :5901 (HDMI-A-1)
+  systemd.user.services.wayvnc-dp1 = {
     Unit = {
-      Description = "WayVNC - VNC server for Wayland (Ryzen Desktop)";
+      Description = "WayVNC - VNC server for DP-1 (Ryzen Desktop)";
       Documentation = "man:wayvnc(1)";
       After = [ "sway-session.target" ];
       BindsTo = [ "sway-session.target" ];
     };
     Service = {
       Type = "simple";
-      # Dynamically detect primary output (DP-1 preferred, fallback to first available)
-      ExecStart = "${pkgs.writeShellScript "wayvnc-start" ''
-        OUTPUT=$(${pkgs.sway}/bin/swaymsg -t get_outputs -r | ${pkgs.jq}/bin/jq -r '.[0].name // "DP-1"')
-        exec ${pkgs.wayvnc}/bin/wayvnc -o "$OUTPUT" 0.0.0.0 5900
-      ''}";
+      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o DP-1 0.0.0.0 5900";
+      Restart = "on-failure";
+      RestartSec = "5s";
+    };
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
+  };
+  systemd.user.services.wayvnc-hdmi = {
+    Unit = {
+      Description = "WayVNC - VNC server for HDMI-A-1 (Ryzen Desktop)";
+      Documentation = "man:wayvnc(1)";
+      After = [ "sway-session.target" ];
+      BindsTo = [ "sway-session.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HDMI-A-1 0.0.0.0 5901";
       Restart = "on-failure";
       RestartSec = "5s";
     };
