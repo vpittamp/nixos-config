@@ -961,6 +961,18 @@ let
     extraArgs = [ "--load-extension=${chromeUrlExtension}" ];
   };
 
+  # Private (incognito) Chrome instance with separate profile and user data dir
+  # Separate user-data-dir ensures this runs as a distinct Chrome process
+  chromePrivateWrapper = mkChromeWrapper {
+    name = "google-chrome-private";
+    extraArgs = [
+      "--incognito"
+      "--user-data-dir=${config.xdg.dataHome}/google-chrome-private"
+      "--no-first-run"
+      "--class=Google-chrome-private"
+    ];
+  };
+
   # Dedicated debuggable Chrome instance for Codex/DevTools attachment.
   # Keep this separate from the main browser so remote debugging is deterministic.
   chromeCodexDevtoolsWrapper = mkChromeWrapper {
@@ -1025,6 +1037,7 @@ in
       chromeStableCommandWrapper
       pkgs.google-chrome
       chromeWrapper
+      chromePrivateWrapper
       chromeCodexDevtoolsWrapper
       onePasswordChromeStatus
       chromeUrlList

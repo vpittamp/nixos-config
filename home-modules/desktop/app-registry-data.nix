@@ -323,6 +323,23 @@ let
       description = "Dedicated debuggable Chrome instance for Codex DevTools MCP attachment";
     })
 
+    # WS31: Google Chrome Private (Incognito)
+    (mkApp {
+      name = "google-chrome-private";
+      display_name = "Chrome Private";
+      command = "google-chrome-private";
+      parameters = "";
+      scope = "global";
+      expected_class = "Google-chrome-private";
+      preferred_workspace = 31;
+      icon = iconPath "google-chrome-private.svg";
+      nix_package = "pkgs.google-chrome";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      aliases = [ "incognito" "private" "chrome-private" ];
+      description = "Google Chrome in incognito mode for private browsing";
+    })
+
     # WS5: Git Tools (Primary: lazygit)
     (mkApp {
       name = "lazygit";

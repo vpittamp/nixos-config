@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="title">
+  <title>Chrome Incognito</title>
+  <!-- Hat brim -->
+  <ellipse cx="12" cy="10.5" rx="10.5" ry="2.8" fill="#606368"/>
+  <!-- Hat crown -->
+  <path d="M7.5 10.5 C7.5 10.5 8 4 12 4 C16 4 16.5 10.5 16.5 10.5" fill="#474A4D"/>
+  <!-- Hat band -->
+  <rect x="7.2" y="9.5" width="9.6" height="1.2" rx="0.3" fill="#3C4043"/>
+  <!-- Face shadow -->
+  <ellipse cx="12" cy="16" rx="5" ry="4.5" fill="#3C4043"/>
+  <!-- Left lens -->
+  <circle cx="9" cy="15.5" r="3" fill="#202124" stroke="#9AA0A6" stroke-width="0.8"/>
+  <!-- Right lens -->
+  <circle cx="15" cy="15.5" r="3" fill="#202124" stroke="#9AA0A6" stroke-width="0.8"/>
+  <!-- Bridge between lenses -->
+  <path d="M12 15.5 C12 14.2 11.2 14 10.8 14.5" fill="none" stroke="#9AA0A6" stroke-width="0.8" stroke-linecap="round"/>
+  <path d="M12 15.5 C12 14.2 12.8 14 13.2 14.5" fill="none" stroke="#9AA0A6" stroke-width="0.8" stroke-linecap="round"/>
+  <!-- Lens glare -->
+  <circle cx="8" cy="14.5" r="0.6" fill="#4A4D51" opacity="0.6"/>
+  <circle cx="14" cy="14.5" r="0.6" fill="#4A4D51" opacity="0.6"/>
+</svg>
