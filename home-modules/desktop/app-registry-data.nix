@@ -657,7 +657,7 @@ let
   ++ lib.optional (hostName == "thinkpad") (mkApp {
     name = "ryzen-desktop";
     display_name = "Ryzen Desktop";
-    command = "moonlight-ryzen-desktop";
+    command = "ryzen-dual-stream";
     parameters = "";
     scope = "global";
     expected_class = "com.moonlight_stream.Moonlight";
@@ -667,7 +667,7 @@ let
     multi_instance = false;
     fallback_behavior = "skip";
     aliases = [ "ryzen" "sunshine" "moonlight" "desktop" ];
-    description = "Connect to the Ryzen desktop over Sunshine and Moonlight via Tailscale";
+    description = "Stream Ryzen DP-1 to ThinkPad and HDMI-A-1 to iPad via dual Moonlight+VNC";
   })
   ++ lib.optional (hostName == "thinkpad") (mkApp {
     name = "rustdesk-ryzen";
