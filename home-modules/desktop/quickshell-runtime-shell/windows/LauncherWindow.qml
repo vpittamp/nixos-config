@@ -565,7 +565,7 @@ PanelWindow {
                                                 visible: projectEntry || (windowEntry && root.iconSourceFor(entry) === "")
                                                 anchors.centerIn: parent
                                                 text: projectEntry ? (root.stringOrEmpty(entry && entry.kind) === "global" ? "G" : root.stringOrEmpty(entry && entry.text).slice(0, 1).toUpperCase()) : root.appLabel(entry).slice(0, 1).toUpperCase()
-                                                color: selected ? colors.blue : (projectEntry && root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orange : colors.textDim)
+                                                color: selected ? colors.blue : (projectEntry ? root.projectTargetHostText(entry) : colors.textDim)
                                                 font.pixelSize: 11
                                                 font.weight: Font.DemiBold
                                             }
@@ -763,16 +763,16 @@ PanelWindow {
                                             visible: projectEntry && root.stringOrEmpty(entry && entry.kind) !== "global"
                                             height: 20
                                             radius: 6
-                                            color: root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orangeBg : colors.blueWash
-                                            border.color: root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orange : colors.blueMuted
+                                            color: root.projectTargetHostFill(entry)
+                                            border.color: root.projectTargetHostBorder(entry)
                                             border.width: 1
                                             Layout.preferredWidth: launcherVariantText.implicitWidth + 12
 
                                             Text {
                                                 id: launcherVariantText
                                                 anchors.centerIn: parent
-                                                text: root.modeChipLabel(root.stringOrEmpty(entry && entry.variant)).toUpperCase()
-                                                color: root.stringOrEmpty(entry && entry.variant) === "ssh" ? colors.orange : colors.blue
+                                                text: root.projectTargetHostLabel(entry)
+                                                color: root.projectTargetHostText(entry)
                                                 font.pixelSize: 8
                                                 font.weight: Font.DemiBold
                                             }

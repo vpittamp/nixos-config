@@ -365,6 +365,7 @@ PY
     set -euo pipefail
 
     I3PM="${config.home.profileDirectory}/bin/i3pm"
+    CURRENT_HOST="$(hostname -s)"
     MODE="dmenu"
     if [[ "''${1:-}" == "--walker" ]]; then
       MODE="walker"
@@ -381,6 +382,7 @@ PY
 
     printf '%s\n' "$SNAPSHOT_JSON" | ${pkgs.jq}/bin/jq -r \
       --arg home "$HOME" \
+      --arg current_host "$CURRENT_HOST" \
       --arg mode "$MODE" '
       def homeify:
         if ($home | length) > 0 and (. | startswith($home)) then
@@ -396,14 +398,13 @@ PY
           (if .scoped_window_count > .visible_window_count then "scoped:\(.scoped_window_count)" else empty end)
         ] | join(" • ");
 
-      def title($variant):
+      def title($target_host):
         (
-          (if .is_active and .active_execution_mode == $variant then "🟢 " else "" end)
+          (if .is_active and (.active_target_host // "") == $target_host then "🟢 " else "" end)
           + (if .is_main then "📦 " else "🌿 " end)
           + .qualified_name
-          + " ["
-          + ($variant | ascii_upcase)
-          + "]"
+          + " • "
+          + $target_host
         );
 
       def subtext:
@@ -416,7 +417,7 @@ PY
       | (
           if (($active.is_global // false) | not) and (($active.qualified_name // "") != "") then
             if $mode == "walker" then
-              ["∅ Clear Project (Global Mode)", "Return to global context", "__CLEAR__", "clear"] | @tsv
+              ["∅ Clear Project (Global Mode)", "Return to global context", "__CLEAR__", ""] | @tsv
             else
               "∅ Clear Project (Global Mode)"
             end
@@ -425,22 +426,19 @@ PY
           end
         ),
         (
-          .worktrees[]?
+          .worktrees[]? as $worktree
           | (
-              if .remote_available then
-                if .is_active and .active_execution_mode == "ssh" then
-                  ["ssh", "local"]
-                else
-                  ["local", "ssh"]
-                end
-              else
-                ["local"]
-              end
-            )[] as $variant
+              [$current_host]
+              + (if ($worktree.host_profile_available and ($worktree.host_profile_host // "") != "" and ($worktree.host_profile_host // "") != $current_host)
+                  then [$worktree.host_profile_host]
+                  else []
+                end)
+            )[] as $target_host
+          | $worktree
           | if $mode == "walker" then
-              [title($variant), subtext, .qualified_name, $variant] | @tsv
+              [title($target_host), subtext, .qualified_name, $target_host] | @tsv
             else
-              title($variant)
+              title($target_host)
             end
         )
       '
@@ -460,22 +458,20 @@ PY
     SELECTED="$1"
 
     QUALIFIED_NAME=""
-    VARIANT=""
+    TARGET_HOST=""
 
     if printf '%s' "$SELECTED" | ${pkgs.gnugrep}/bin/grep -q $'\t'; then
       QUALIFIED_NAME=$(printf '%s\n' "$SELECTED" | ${pkgs.coreutils}/bin/cut -f3)
-      VARIANT=$(printf '%s\n' "$SELECTED" | ${pkgs.coreutils}/bin/cut -f4)
+      TARGET_HOST=$(printf '%s\n' "$SELECTED" | ${pkgs.coreutils}/bin/cut -f4)
     elif [[ "$SELECTED" == "∅ Clear Project (Global Mode)"* ]]; then
       QUALIFIED_NAME="__CLEAR__"
-      VARIANT="clear"
     else
       NORMALIZED="$SELECTED"
       NORMALIZED="''${NORMALIZED#🟢 }"
       NORMALIZED="''${NORMALIZED#📦 }"
       NORMALIZED="''${NORMALIZED#🌿 }"
-      VARIANT=$(printf '%s' "$NORMALIZED" | ${pkgs.gnused}/bin/sed -nE 's/.*\[([A-Z]+)\]$/\1/p')
-      QUALIFIED_NAME="''${NORMALIZED% \[*}"
-      VARIANT="''${VARIANT,,}"
+      TARGET_HOST=$(printf '%s' "$NORMALIZED" | ${pkgs.gnused}/bin/sed -nE 's/^.* • ([^ ]+)$/\1/p')
+      QUALIFIED_NAME="''${NORMALIZED% • *}"
     fi
 
     if [ "$QUALIFIED_NAME" = "__CLEAR__" ]; then
@@ -487,11 +483,11 @@ PY
       exit 1
     fi
 
-    if [ "$VARIANT" != "ssh" ]; then
-      VARIANT="local"
+    if [ -z "$TARGET_HOST" ]; then
+      exit 1
     fi
 
-    $I3PM context ensure "$QUALIFIED_NAME" --variant "$VARIANT" >/dev/null 2>&1
+    $I3PM context ensure "$QUALIFIED_NAME" --host "$TARGET_HOST" >/dev/null 2>&1
   '';
 
   # Walker SSH worktree list script - discovers remote worktrees via Tailscale SSH
@@ -2621,7 +2617,7 @@ in
 
   # Feature 101: Project switcher menu (Elephant Lua menu)
   # Access: Win+P or Meta+D → ;p → select project
-  # Uses daemon-backed dashboard worktrees and explicit local/SSH variants.
+  # Uses daemon-backed dashboard worktrees and explicit host-target entries.
   xdg.configFile."elephant/menus/projects.lua".text = ''
     Name = "projects"
     NamePretty = "Projects"
@@ -2629,7 +2625,7 @@ in
     Cache = false  -- Always refresh project list
     Action = "walker-project-switch '%VALUE%'"
     HideFromProviderlist = false
-    Description = "Switch between local and SSH project contexts"
+    Description = "Switch between host-targeted project contexts"
     SearchName = true
     GlobalSearch = false  -- Keep local to ;p prefix
 
@@ -2640,15 +2636,13 @@ in
         local handle = io.popen("walker-project-list --walker 2>/dev/null")
         if handle then
             for line in handle:lines() do
-                -- Parse tab-separated format: "title\tsubtext\tqualified_name\tvariant"
-                local title, subtext, qualified_name, variant = line:match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)$")
-                if title and qualified_name and variant then
+                -- Parse tab-separated format: "title\tsubtext\tqualified_name\ttarget_host"
+                local title, subtext, qualified_name, target_host = line:match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]*)$")
+                if title and qualified_name then
                     -- Determine icon based on content
                     local icon = "folder"
                     if qualified_name == "__CLEAR__" or title:match("^∅") then
                         icon = "edit-clear"  -- Clear project option
-                    elseif variant == "ssh" then
-                        icon = title:match("^🟢") and "network-server" or "network-workgroup"
                     elseif title:match("^🟢") then
                         icon = "folder-open"
                     elseif title:match("📦") then
@@ -2657,10 +2651,12 @@ in
                         icon = "folder-new"  -- Feature branch
                     end
 
-                    -- Build keywords from display text, path metadata, and explicit variant.
+                    -- Build keywords from display text, path metadata, and explicit host target.
                     local keywords = {"project", "worktree", "switch"}
                     table.insert(keywords, qualified_name:lower())
-                    table.insert(keywords, variant:lower())
+                    if target_host and #target_host > 0 then
+                        table.insert(keywords, target_host:lower())
+                    end
                     for token in qualified_name:gmatch("[^/:%s]+") do
                         table.insert(keywords, token:lower())
                     end

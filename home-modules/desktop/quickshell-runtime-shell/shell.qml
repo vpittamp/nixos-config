@@ -614,6 +614,14 @@ ShellRoot {
         return repo;
     }
 
+    function normalizeHostAlias(host) {
+        return stringOrEmpty(host).trim().toLowerCase();
+    }
+
+    function currentHostAlias() {
+        return normalizeHostAlias(shellConfig.hostName);
+    }
+
     function modeLabel(mode) {
         const value = stringOrEmpty(mode).toLowerCase();
         if (value === "ssh") {
@@ -638,7 +646,19 @@ ShellRoot {
 
     function activeContextExecutionMode() {
         const context = dashboard.active_context || {};
+        const transportKind = stringOrEmpty(context.transport_kind).toLowerCase();
+        if (transportKind === "ssh_helper") {
+            return "ssh";
+        }
+        if (transportKind === "local_process") {
+            return "local";
+        }
         return stringOrEmpty(context.execution_mode || "local") || "local";
+    }
+
+    function activeContextTargetHost() {
+        const context = dashboard.active_context || {};
+        return normalizeHostAlias(context.target_host || context.host_alias || shellConfig.hostName);
     }
 
     function isGlobalContext() {
@@ -649,13 +669,7 @@ ShellRoot {
     function activeContextHostName() {
         const context = dashboard.active_context || {};
         const remote = context.remote || {};
-        const executionMode = stringOrEmpty(context.execution_mode || "local");
-
-        if (executionMode === "ssh") {
-            return stringOrEmpty(remote.host_alias || remote.host || context.host_alias || context.connection_key);
-        }
-
-        return stringOrEmpty(context.host_alias || shellConfig.hostName);
+        return stringOrEmpty(context.target_host || context.host_alias || remote.host_alias || remote.host || context.connection_key || shellConfig.hostName);
     }
 
     function activeContextSummaryLabel() {
@@ -663,8 +677,8 @@ ShellRoot {
             return "Shared  " + currentLayoutLabel();
         }
 
-        const hostName = activeContextHostName();
-        const parts = [modeLabel(activeContextExecutionMode())];
+        const hostName = stringOrEmpty(activeContextHostName());
+        const parts = [];
         if (hostName) {
             parts.push(hostName);
         }
@@ -902,16 +916,16 @@ ShellRoot {
         return false;
     }
 
-    function projectGroupFor(projectName, executionMode) {
+    function projectGroupFor(projectName, targetHost) {
         const projects = arrayOrEmpty(dashboard.projects);
         const project = stringOrEmpty(projectName);
-        const mode = stringOrEmpty(executionMode || "local") || "local";
+        const host = normalizeHostAlias(targetHost || currentHostAlias());
 
-        return projects.find(projectGroup => stringOrEmpty(projectGroup.project) === project && stringOrEmpty(projectGroup.execution_mode || "local") === mode) || null;
+        return projects.find(projectGroup => stringOrEmpty(projectGroup.project) === project && normalizeHostAlias(projectGroup.target_host || shellConfig.hostName) === host) || null;
     }
 
-    function focusPreferredWindowForContext(projectName, executionMode) {
-        const projectGroup = projectGroupFor(projectName, executionMode);
+    function focusPreferredWindowForContext(projectName, targetHost) {
+        const projectGroup = projectGroupFor(projectName, targetHost);
         if (!projectGroup) {
             return false;
         }
@@ -3161,8 +3175,9 @@ ShellRoot {
                 kind: "global",
                 qualified_name: "global",
                 is_active: root.isGlobalContext(),
-                active_execution_mode: root.activeContextExecutionMode(),
-                remote_available: false,
+                active_target_host: root.activeContextTargetHost(),
+                host_profile_available: false,
+                host_profile_host: "",
                 visible_window_count: 0,
                 scoped_window_count: 0,
                 is_clean: true,
@@ -3197,8 +3212,9 @@ ShellRoot {
                 git_freshness: stringOrEmpty(worktree.git_freshness),
                 git_status_compact: stringOrEmpty(worktree.git_status_compact),
                 is_active: boolOrFalse(worktree.is_active),
-                active_execution_mode: stringOrEmpty(worktree.active_execution_mode),
-                remote_available: boolOrFalse(worktree.remote_available),
+                active_target_host: normalizeHostAlias(worktree.active_target_host),
+                host_profile_available: boolOrFalse(worktree.host_profile_available),
+                host_profile_host: normalizeHostAlias(worktree.host_profile_host),
                 visible_window_count: Number(worktree.visible_window_count || 0),
                 scoped_window_count: Number(worktree.scoped_window_count || 0),
                 last_used_at: Number(worktree.last_used_at || 0),
@@ -3502,7 +3518,7 @@ ShellRoot {
         const tokens = trimmed.split(/\s+/).filter(function (token) {
             return !!token;
         });
-        const haystack = [stringOrEmpty(entry.qualified_name), stringOrEmpty(entry.repo_display), stringOrEmpty(entry.repo_name), stringOrEmpty(entry.account), stringOrEmpty(entry.branch), stringOrEmpty(entry.path), stringOrEmpty(entry.variant), stringOrEmpty(entry.text), stringOrEmpty(entry.subtext)].join(" ").toLowerCase();
+        const haystack = [stringOrEmpty(entry.qualified_name), stringOrEmpty(entry.repo_display), stringOrEmpty(entry.repo_name), stringOrEmpty(entry.account), stringOrEmpty(entry.branch), stringOrEmpty(entry.path), stringOrEmpty(entry.target_host), stringOrEmpty(entry.text), stringOrEmpty(entry.subtext)].join(" ").toLowerCase();
 
         for (let i = 0; i < tokens.length; i += 1) {
             if (haystack.indexOf(tokens[i]) === -1) {
@@ -4630,6 +4646,7 @@ ShellRoot {
     function projectLauncherEntries(query) {
         const entries = [];
         const worktrees = dashboardWorktrees();
+        const currentHost = currentHostAlias();
 
         if (!isGlobalContext()) {
             entries.push({
@@ -4638,10 +4655,8 @@ ShellRoot {
                 text: "Clear Project Context",
                 subtext: "Return to global context",
                 qualified_name: "global",
-                variant: "clear",
+                target_host: "",
                 is_active: false,
-                active_execution_mode: "",
-                remote_available: false,
                 repo_display: "",
                 repo_name: "",
                 account: "",
@@ -4688,8 +4703,9 @@ ShellRoot {
                 git_state: stringOrEmpty(worktree.git_state),
                 git_freshness: stringOrEmpty(worktree.git_freshness),
                 git_status_compact: stringOrEmpty(worktree.git_status_compact),
-                active_execution_mode: stringOrEmpty(worktree.active_execution_mode),
-                remote_available: boolOrFalse(worktree.remote_available),
+                active_target_host: normalizeHostAlias(worktree.active_target_host),
+                host_profile_available: boolOrFalse(worktree.host_profile_available),
+                host_profile_host: normalizeHostAlias(worktree.host_profile_host),
                 visible_window_count: Number(worktree.visible_window_count || 0),
                 scoped_window_count: Number(worktree.scoped_window_count || 0),
                 last_used_at: Number(worktree.last_used_at || 0),
@@ -4697,17 +4713,23 @@ ShellRoot {
                 last_commit_message: stringOrEmpty(worktree.last_commit_message)
             };
 
-            const variants = baseItem.remote_available ? ((boolOrFalse(worktree.is_active) && baseItem.active_execution_mode === "ssh") ? ["ssh", "local"] : ["local", "ssh"]) : ["local"];
+            const targetHosts = [];
+            if (currentHost) {
+                targetHosts.push(currentHost);
+            }
+            if (baseItem.host_profile_available && baseItem.host_profile_host && baseItem.host_profile_host !== currentHost) {
+                targetHosts.push(baseItem.host_profile_host);
+            }
 
-            for (let j = 0; j < variants.length; j += 1) {
-                const variant = variants[j];
+            for (let j = 0; j < targetHosts.length; j += 1) {
+                const targetHost = targetHosts[j];
                 const entry = {
                     kind: "project",
-                    identifier: baseItem.qualified_name + "::" + variant,
-                    text: shortProject(baseItem.qualified_name),
+                    identifier: baseItem.qualified_name + "::host::" + targetHost,
+                    text: shortProject(baseItem.qualified_name) + " • " + targetHost,
                     subtext: "",
-                    variant: variant,
-                    is_active: boolOrFalse(worktree.is_active) && baseItem.active_execution_mode === variant
+                    target_host: targetHost,
+                    is_active: boolOrFalse(worktree.is_active) && baseItem.active_target_host === targetHost
                 };
                 Object.assign(entry, baseItem);
                 entry.subtext = launcherProjectSubtitle(entry);
@@ -5044,8 +5066,8 @@ ShellRoot {
         } else if (Number(item.scoped_window_count || 0) > 0) {
             bits.push(String(Number(item.scoped_window_count || 0)) + " scoped");
         }
-        if (boolOrFalse(item.remote_available)) {
-            bits.push("SSH ready");
+        if (boolOrFalse(item.host_profile_available)) {
+            bits.push("peer:" + stringOrEmpty(item.host_profile_host));
         }
         return bits.join("  •  ");
     }
@@ -5124,30 +5146,26 @@ ShellRoot {
         return "file://" + shellConfig.aiFallbackIcon;
     }
 
-    function modeAccentColor(mode) {
-        return stringOrEmpty(mode).toLowerCase() === "ssh" ? colors.teal : colors.blueMuted;
+    function projectTargetHostIsCurrentHost(entry) {
+        const targetHost = normalizeHostAlias(entry && entry.target_host);
+        const currentHost = currentHostAlias();
+        return !targetHost || !currentHost || targetHost === currentHost;
     }
 
-    function modeChipLabel(mode) {
-        const value = stringOrEmpty(mode).toLowerCase();
-        if (value === "ssh") {
-            return "SSH";
-        }
-        if (value === "local") {
-            return "Local";
-        }
-        return value ? value.toUpperCase() : "";
+    function projectTargetHostFill(entry) {
+        return projectTargetHostIsCurrentHost(entry) ? colors.blueWash : colors.orangeBg;
     }
 
-    function modeSortRank(mode) {
-        const value = stringOrEmpty(mode).toLowerCase();
-        if (value === "local") {
-            return 0;
-        }
-        if (value === "ssh") {
-            return 1;
-        }
-        return 2;
+    function projectTargetHostBorder(entry) {
+        return projectTargetHostIsCurrentHost(entry) ? colors.blueMuted : colors.orange;
+    }
+
+    function projectTargetHostText(entry) {
+        return projectTargetHostIsCurrentHost(entry) ? colors.blue : colors.orange;
+    }
+
+    function projectTargetHostLabel(entry) {
+        return stringOrEmpty(entry && entry.target_host);
     }
 
     function sessionProjectBadgeFill(projectGroup) {
@@ -6786,7 +6804,7 @@ ShellRoot {
         }
         if (kind === "project") {
             closeLauncher();
-            activateWorktree(entry, stringOrEmpty(entry && entry.variant) || "local");
+            activateWorktree(entry, stringOrEmpty(entry && entry.target_host));
             return;
         }
         if (kind === "session") {
@@ -7372,9 +7390,9 @@ ShellRoot {
         runDetached([shellConfig.i3pmBin, "context", "clear"]);
     }
 
-    function switchContext(projectName, variant) {
+    function switchContext(projectName, targetHost) {
         const name = stringOrEmpty(projectName);
-        const mode = stringOrEmpty(variant);
+        const host = normalizeHostAlias(targetHost || currentHostAlias());
         if (!name || name === "global") {
             clearContext();
             return;
@@ -7382,13 +7400,13 @@ ShellRoot {
 
         root.worktreePickerVisible = false;
         const command = [shellConfig.i3pmBin, "context", "ensure", name];
-        if (mode) {
-            command.push("--variant", mode);
+        if (host) {
+            command.push("--host", host);
         }
         runDetached(command);
     }
 
-    function activateWorktree(item, variant) {
+    function activateWorktree(item, targetHost) {
         if (!item) {
             return;
         }
@@ -7402,16 +7420,16 @@ ShellRoot {
         }
 
         const projectName = stringOrEmpty(item.qualified_name);
-        const requestedMode = stringOrEmpty(variant || "local") || "local";
+        const requestedHost = normalizeHostAlias(targetHost || currentHostAlias());
         const activeProject = activeContextProjectName();
-        const activeMode = activeContextExecutionMode();
+        const activeHost = activeContextTargetHost();
 
-        if (projectName === activeProject && requestedMode === activeMode) {
-            focusPreferredWindowForContext(projectName, requestedMode);
+        if (projectName === activeProject && requestedHost === activeHost) {
+            focusPreferredWindowForContext(projectName, requestedHost);
             return;
         }
 
-        switchContext(projectName, requestedMode);
+        switchContext(projectName, requestedHost);
     }
 
     function cycleDisplayLayout() {
