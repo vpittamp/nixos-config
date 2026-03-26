@@ -105,7 +105,7 @@ let
         --display-mode windowed \
         --absolute-mouse \
         --no-game-optimization \
-        --video-codec h265 \
+        --video-codec HEVC \
         --capture-system-keys fullscreen \
         ryzen \
         Desktop
@@ -140,7 +140,7 @@ let
       --display-mode windowed \
       --absolute-mouse \
       --no-game-optimization \
-      --video-codec h265 \
+      --video-codec HEVC \
       --capture-system-keys fullscreen \
       ryzen \
       Desktop &

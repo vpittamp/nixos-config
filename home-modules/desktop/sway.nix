@@ -445,10 +445,10 @@ let
     };
     dual = {
       name = "dual";
-      description = "Dual monitor mode (HDMI-1 + DP-1, DP-2 disabled)";
+      description = "Dual monitor mode (HDMI-A-1 + DP-1, DP-2 disabled)";
       outputs = [
         {
-          name = "HDMI-1";
+          name = "HDMI-A-1";
           enabled = true;
           scale = 1.0;
           position = {
