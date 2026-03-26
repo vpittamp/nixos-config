@@ -7,13 +7,13 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm window <focus|action> <window_id> [action] [--project <name>] [--variant <local|ssh>] [--connection-key <key>] [--json]`);
+  console.log(`i3pm window <focus|action> <window_id> [action] [--project <name>] [--host <name>] [--connection-key <key>] [--json]`);
 }
 
 export async function windowCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json"],
-    string: ["project", "variant", "connection-key"],
+    string: ["project", "host", "connection-key"],
     alias: { h: "help" },
   });
   const subcommand = String(parsed._[0] || "");
@@ -34,7 +34,7 @@ export async function windowCommand(args: string[], _flags: CommandOptions): Pro
       result = await client.request("window.focus", {
         window_id: windowId,
         project_name: parsed.project || "",
-        target_variant: parsed.variant || "",
+        target_host: parsed.host || "",
         connection_key: parsed["connection-key"] || "",
       });
     } else if (subcommand === "action") {
@@ -48,7 +48,7 @@ export async function windowCommand(args: string[], _flags: CommandOptions): Pro
         window_id: windowId,
         action,
         project_name: parsed.project || "",
-        target_variant: parsed.variant || "",
+        target_host: parsed.host || "",
         connection_key: parsed["connection-key"] || "",
       });
     } else {

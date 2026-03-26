@@ -18,7 +18,7 @@ import {
 } from "./helpers.ts";
 
 const HOME = Deno.env.get("HOME") || "";
-const REMOTE_PROFILES_FILE = `${HOME}/.config/i3/worktree-remote-profiles.json`;
+const REMOTE_PROFILES_FILE = `${HOME}/.config/i3/worktree-host-profiles.json`;
 
 async function removeRemoteProfile(qualifiedName: string): Promise<boolean> {
   try {
@@ -238,7 +238,7 @@ export async function worktreeRemove(args: string[]): Promise<number> {
     return 1;
   }
 
-  const remoteProfileRemoved = await removeRemoteProfile(target.qualifiedName);
+  const hostProfileRemoved = await removeRemoteProfile(target.qualifiedName);
   const contextCleared = await clearActiveContextIfRemoved(target.qualifiedName);
 
   if (parsed.json) {
@@ -247,7 +247,7 @@ export async function worktreeRemove(args: string[]): Promise<number> {
         repo: target.repoQualified,
         branch,
         force: request.force,
-        remoteProfileRemoved,
+        hostProfileRemoved,
         contextCleared,
         usedGtr: useGtr,
       }),

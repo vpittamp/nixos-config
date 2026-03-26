@@ -3,33 +3,32 @@ import { DaemonClient } from "../../services/daemon-client.ts";
 
 function showHelp(): void {
   console.log(`
-i3pm worktree remote - Manage SSH profiles for worktrees
+i3pm worktree host - Manage non-local host profiles for worktrees
 
 USAGE:
-  i3pm worktree remote <subcommand> [options]
+  i3pm worktree host <subcommand> [options]
 
 SUBCOMMANDS:
-  set <qualified_name>   Configure/update SSH profile
-  get <qualified_name>   Show SSH profile for worktree
-  unset <qualified_name> Remove SSH profile
-  test <qualified_name>  Test SSH connectivity and remote directory
-  list                   List all configured SSH profiles
+  set <qualified_name>   Configure/update host profile
+  get <qualified_name>   Show host profile for worktree
+  unset <qualified_name> Remove host profile
+  test <qualified_name>  Test host connectivity and directory
+  list                   List all configured host profiles
 
 OPTIONS:
   --json                 Output JSON
   -h, --help             Show help
 
 SET OPTIONS:
-  --host <host>          SSH host (default: ryzen)
+  --host <host>          Target host alias (default: ryzen)
   --user <user>          SSH user (default: current user)
-  --dir <path>           Remote working directory (absolute path)
+  --dir <path>           Host working directory (absolute path)
   --port <port>          SSH port (default: 22)
 
 EXAMPLES:
-  i3pm worktree remote set vpittamp/nixos-config:main --dir /home/vpittamp/repos/vpittamp/nixos-config/main
-  i3pm worktree remote set vpittamp/nixos-config:main --host ryzen --user vpittamp --dir /home/vpittamp/repos/vpittamp/nixos-config/main --port 22
-  i3pm worktree remote test vpittamp/nixos-config:main
-  i3pm worktree remote list
+  i3pm worktree host set vpittamp/nixos-config:main --host thinkpad --dir /home/vpittamp/repos/vpittamp/nixos-config/main
+  i3pm worktree host test vpittamp/nixos-config:main
+  i3pm worktree host list
 `);
 }
 
@@ -41,7 +40,7 @@ function getRequiredQualifiedName(parsed: ReturnType<typeof parseArgs>): string 
   return qualifiedName;
 }
 
-export async function worktreeRemote(args: string[]): Promise<number> {
+export async function worktreeHost(args: string[]): Promise<number> {
   if (args.length === 0) {
     showHelp();
     return 0;
@@ -79,13 +78,13 @@ export async function worktreeRemote(args: string[]): Promise<number> {
         if (!qualifiedName) {
           console.error("Error: qualified_name is required");
           console.error(
-            "Usage: i3pm worktree remote set <qualified_name> --dir <remote_dir> [--host ryzen] [--user <user>] [--port <port>]",
+            "Usage: i3pm worktree host set <qualified_name> --dir <directory> [--host thinkpad] [--user <user>] [--port <port>]",
           );
           return 1;
         }
 
-        const remoteDir = parsed.dir?.toString();
-        if (!remoteDir) {
+        const directory = parsed.dir?.toString();
+        if (!directory) {
           console.error("Error: --dir is required");
           return 1;
         }
@@ -99,7 +98,7 @@ export async function worktreeRemote(args: string[]): Promise<number> {
         const result = await client.request<{
           success: boolean;
           qualified_name: string;
-          remote: {
+          host_profile: {
             enabled: boolean;
             host: string;
             user: string;
@@ -107,21 +106,22 @@ export async function worktreeRemote(args: string[]): Promise<number> {
             remote_dir: string;
           };
           active_context_updated: boolean;
-        }>("worktree.remote.set", {
+        }>("worktree.host.set", {
           qualified_name: qualifiedName,
           host: parsed.host,
           user: parsed.user,
           port,
-          remote_dir: remoteDir,
+          remote_dir: directory,
           enabled: true,
         });
 
         if (parsed.json) {
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log(`✓ Remote profile set for ${result.qualified_name}`);
-          console.log(`  Host: ${result.remote.user}@${result.remote.host}:${result.remote.port}`);
-          console.log(`  Remote dir: ${result.remote.remote_dir}`);
+          console.log(`✓ Host profile set for ${result.qualified_name}`);
+          console.log(`  Target host: ${result.host_profile.host}`);
+          console.log(`  Connection: ${result.host_profile.user}@${result.host_profile.host}:${result.host_profile.port}`);
+          console.log(`  Host dir: ${result.host_profile.remote_dir}`);
           if (result.active_context_updated) {
             console.log("  Active context updated");
           }
@@ -148,23 +148,24 @@ export async function worktreeRemote(args: string[]): Promise<number> {
           success: boolean;
           qualified_name: string;
           configured: boolean;
-          remote: {
+          host_profile: {
             enabled: boolean;
             host: string;
             user: string;
             port: number;
             remote_dir: string;
           } | null;
-        }>("worktree.remote.get", { qualified_name: qualifiedName });
+        }>("worktree.host.get", { qualified_name: qualifiedName });
 
         if (parsed.json) {
           console.log(JSON.stringify(result, null, 2));
-        } else if (!result.configured || !result.remote) {
-          console.log(`No remote profile configured for ${result.qualified_name}`);
+        } else if (!result.configured || !result.host_profile) {
+          console.log(`No host profile configured for ${result.qualified_name}`);
         } else {
-          console.log(`Remote profile for ${result.qualified_name}`);
-          console.log(`  Host: ${result.remote.user}@${result.remote.host}:${result.remote.port}`);
-          console.log(`  Remote dir: ${result.remote.remote_dir}`);
+          console.log(`Host profile for ${result.qualified_name}`);
+          console.log(`  Target host: ${result.host_profile.host}`);
+          console.log(`  Connection: ${result.host_profile.user}@${result.host_profile.host}:${result.host_profile.port}`);
+          console.log(`  Host dir: ${result.host_profile.remote_dir}`);
         }
         return 0;
       }
@@ -189,14 +190,14 @@ export async function worktreeRemote(args: string[]): Promise<number> {
           qualified_name: string;
           removed: boolean;
           active_context_updated: boolean;
-        }>("worktree.remote.unset", { qualified_name: qualifiedName });
+        }>("worktree.host.unset", { qualified_name: qualifiedName });
 
         if (parsed.json) {
           console.log(JSON.stringify(result, null, 2));
         } else if (result.removed) {
-          console.log(`✓ Remote profile removed for ${result.qualified_name}`);
+          console.log(`✓ Host profile removed for ${result.qualified_name}`);
         } else {
-          console.log(`No remote profile existed for ${result.qualified_name}`);
+          console.log(`No host profile existed for ${result.qualified_name}`);
         }
         return 0;
       }
@@ -217,7 +218,7 @@ export async function worktreeRemote(args: string[]): Promise<number> {
           profiles: Array<{
             qualified_name: string;
             is_active: boolean;
-            remote: {
+            host_profile: {
               enabled: boolean;
               host: string;
               user: string;
@@ -225,19 +226,20 @@ export async function worktreeRemote(args: string[]): Promise<number> {
               remote_dir: string;
             };
           }>;
-        }>("worktree.remote.list", {});
+        }>("worktree.host.list", {});
 
         if (parsed.json) {
           console.log(JSON.stringify(result, null, 2));
         } else if (result.count === 0) {
-          console.log("No remote profiles configured");
+          console.log("No host profiles configured");
         } else {
-          console.log(`Remote profiles (${result.count})`);
+          console.log(`Host profiles (${result.count})`);
           for (const item of result.profiles) {
             const active = item.is_active ? " (active)" : "";
             console.log(`  ${item.qualified_name}${active}`);
-            console.log(`    ${item.remote.user}@${item.remote.host}:${item.remote.port}`);
-            console.log(`    ${item.remote.remote_dir}`);
+            console.log(`    ${item.host_profile.host}`);
+            console.log(`    ${item.host_profile.user}@${item.host_profile.host}:${item.host_profile.port}`);
+            console.log(`    ${item.host_profile.remote_dir}`);
           }
         }
         return 0;
@@ -278,23 +280,22 @@ export async function worktreeRemote(args: string[]): Promise<number> {
           duration_ms: number;
           message: string;
           stderr: string;
-          remote: {
+          host_profile: {
             host: string;
             user: string;
             port: number;
             remote_dir: string;
           };
-        }>("worktree.remote.test", params);
+        }>("worktree.host.test", params);
 
         if (parsed.json) {
           console.log(JSON.stringify(result, null, 2));
         } else {
           const status = result.success ? "✓" : "✗";
           console.log(`${status} ${result.message}`);
-          console.log(
-            `  Target: ${result.remote.user}@${result.remote.host}:${result.remote.port}`,
-          );
-          console.log(`  Remote dir: ${result.remote.remote_dir}`);
+          console.log(`  Target host: ${result.host_profile.host}`);
+          console.log(`  Connection: ${result.host_profile.user}@${result.host_profile.host}:${result.host_profile.port}`);
+          console.log(`  Host dir: ${result.host_profile.remote_dir}`);
           console.log(`  Duration: ${result.duration_ms}ms`);
           if (result.stderr) {
             console.log(`  Error: ${result.stderr}`);
@@ -315,3 +316,5 @@ export async function worktreeRemote(args: string[]): Promise<number> {
     client.disconnect();
   }
 }
+
+export const worktreeRemote = worktreeHost;

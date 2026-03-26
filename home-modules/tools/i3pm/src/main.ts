@@ -79,7 +79,7 @@ EXAMPLES:
   i3pm worktree list                   List all worktrees
   i3pm worktree suggest-name "improve launcher refresh"  Suggest a new branch name
   i3pm worktree switch account/repo:branch   Switch to worktree
-  i3pm worktree remote set account/repo:branch --dir /remote/path
+  i3pm worktree host set account/repo:branch --host thinkpad --dir /remote/path
   i3pm run firefox                     Toggle Firefox (launch/focus/summon)
   i3pm run alacritty --hide            Toggle terminal visibility
   i3pm scratchpad toggle               Toggle project terminal

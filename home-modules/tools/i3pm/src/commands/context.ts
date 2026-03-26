@@ -12,8 +12,8 @@ function showHelp(): void {
 
 export async function contextCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
-    boolean: ["help", "json", "local", "clear"],
-    string: ["variant"],
+    boolean: ["help", "json", "clear"],
+    string: ["host"],
     alias: { h: "help" },
   });
   const subcommand = String(parsed._[0] || "");
@@ -37,7 +37,7 @@ export async function contextCommand(args: string[], _flags: CommandOptions): Pr
       }
       const result = await client.request("context.ensure", {
         qualified_name: qualifiedName,
-        target_variant: parsed.variant || (parsed.local ? "local" : ""),
+        target_host: parsed.host || "",
       });
       console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
       return 0;

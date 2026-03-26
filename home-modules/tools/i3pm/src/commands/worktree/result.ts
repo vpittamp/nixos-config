@@ -18,7 +18,7 @@ export type WorktreeCreateResult = WorktreeMutationResultBase & {
 export type WorktreeRemoveResult = WorktreeMutationResultBase & {
   action: "remove";
   force: boolean;
-  remote_profile_removed: boolean;
+  host_profile_removed: boolean;
   context_cleared: boolean;
   used_gtr: boolean;
 };
@@ -28,7 +28,7 @@ export type WorktreeRenameResult = WorktreeMutationResultBase & {
   previous_branch: string;
   previous_qualified_name: string;
   force: boolean;
-  remote_profile_migrated: boolean;
+  host_profile_migrated: boolean;
   context_updated: boolean;
   used_gtr: boolean;
 };
@@ -62,7 +62,7 @@ export function buildWorktreeRemoveResult(params: {
   repo: string;
   branch: string;
   force: boolean;
-  remoteProfileRemoved: boolean;
+  hostProfileRemoved: boolean;
   contextCleared: boolean;
   usedGtr: boolean;
 }): WorktreeRemoveResult {
@@ -73,7 +73,7 @@ export function buildWorktreeRemoveResult(params: {
     branch: params.branch,
     qualified_name: `${params.repo}:${params.branch}`,
     force: params.force,
-    remote_profile_removed: params.remoteProfileRemoved,
+    host_profile_removed: params.hostProfileRemoved,
     context_cleared: params.contextCleared,
     used_gtr: params.usedGtr,
   };
@@ -84,7 +84,7 @@ export function buildWorktreeRenameResult(params: {
   previousBranch: string;
   newBranch: string;
   force: boolean;
-  remoteProfileMigrated: boolean;
+  hostProfileMigrated: boolean;
   contextUpdated: boolean;
   usedGtr: boolean;
 }): WorktreeRenameResult {
@@ -97,7 +97,7 @@ export function buildWorktreeRenameResult(params: {
     previous_branch: params.previousBranch,
     previous_qualified_name: `${params.repo}:${params.previousBranch}`,
     force: params.force,
-    remote_profile_migrated: params.remoteProfileMigrated,
+    host_profile_migrated: params.hostProfileMigrated,
     context_updated: params.contextUpdated,
     used_gtr: params.usedGtr,
   };

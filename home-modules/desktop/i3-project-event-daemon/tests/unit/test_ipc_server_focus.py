@@ -1285,7 +1285,7 @@ async def test_switch_runtime_context_requires_connection_key_match(server):
     assert result["switched"] is True
     server._worktree_switch.assert_awaited_once_with({
         "qualified_name": "PittampalliOrg/stacks:main",
-        "prefer_local": False,
+        "target_host": "ryzen",
     })
     assert result["context"]["connection_key"] == "vpittamp@ryzen:22"
 

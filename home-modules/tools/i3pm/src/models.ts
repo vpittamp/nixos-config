@@ -652,8 +652,11 @@ export interface ScratchpadTerminal {
   /** Canonical worktree execution context key */
   context_key: string;
 
-  /** Execution mode for this terminal */
-  execution_mode: "local" | "ssh";
+  /** Canonical target host for this terminal */
+  target_host: string;
+
+  /** Derived transport kind for this terminal */
+  transport_kind: "local_process" | "ssh_helper";
 
   /** Normalized connection identity key */
   connection_key?: string | null;
@@ -704,8 +707,11 @@ export interface ScratchpadToggleResult {
   /** Context identity key */
   context_key: string;
 
-  /** Execution mode */
-  execution_mode: "local" | "ssh";
+  /** Canonical target host */
+  target_host: string;
+
+  /** Derived transport kind */
+  transport_kind: "local_process" | "ssh_helper";
 
   /** Connection identity key */
   connection_key: string;
@@ -733,8 +739,11 @@ export interface ScratchpadLaunchResult {
   /** Context identity key */
   context_key: string;
 
-  /** Execution mode */
-  execution_mode: "local" | "ssh";
+  /** Canonical target host */
+  target_host: string;
+
+  /** Derived transport kind */
+  transport_kind: "local_process" | "ssh_helper";
 
   /** Connection identity key */
   connection_key?: string | null;

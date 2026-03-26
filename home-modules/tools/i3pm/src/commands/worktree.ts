@@ -12,7 +12,7 @@ import { worktreeCreate } from "./worktree/create.ts";
 import { worktreeRemove } from "./worktree/remove.ts";
 import { worktreeList } from "./worktree/list.ts";
 import { worktreeSwitch } from "./worktree/switch.ts";
-import { worktreeRemote } from "./worktree/remote.ts";
+import { worktreeHost } from "./worktree/remote.ts";
 import { worktreeRename } from "./worktree/rename.ts";
 import { worktreeSuggestName } from "./worktree/suggest-name.ts";
 import { DaemonClient } from "../services/daemon-client.ts";
@@ -38,7 +38,7 @@ SUBCOMMANDS:
   ensure <name>         Ensure daemon runtime context
   diagnose [name]       Diagnose SSH/runtime readiness for a worktree
   switch <name>         Switch to a worktree by qualified name (Feature 101)
-  remote <subcommand>   Manage SSH remote profiles for worktrees (Feature 087)
+  host <subcommand>     Manage non-local host profiles for worktrees (Feature 087)
 
 OPTIONS:
   -h, --help            Show this help message
@@ -61,7 +61,7 @@ EXAMPLES:
   i3pm worktree clear
   i3pm worktree ensure vpittamp/nixos-config:main
   i3pm worktree diagnose vpittamp/nixos-config:main
-  i3pm worktree remote set vpittamp/nixos-config:main --dir /home/vpittamp/repos/vpittamp/nixos-config/main
+  i3pm worktree host set vpittamp/nixos-config:main --dir /home/vpittamp/repos/vpittamp/nixos-config/main --host thinkpad
 
 For detailed help on a specific subcommand:
   i3pm worktree <subcommand> --help
@@ -97,15 +97,16 @@ OPTIONS:
       qualified_name: string;
       directory: string;
       local_directory: string;
-      execution_mode: string;
+      target_host: string;
+      transport_kind: string;
       connection_key: string;
       context_key: string;
-      remote_enabled: boolean;
-      remote?: {
+      host_profile_configured: boolean;
+      host_profile?: {
         host?: string;
         user?: string;
         port?: number;
-        remote_dir?: string;
+        directory?: string;
       } | null;
       is_global: boolean;
     }>("worktree.current", {});
@@ -121,7 +122,8 @@ OPTIONS:
     }
 
     console.log(`Active Worktree: ${cyan(context.qualified_name)}`);
-    console.log(`  Mode: ${magenta(context.execution_mode || "local")}`);
+    console.log(`  Target host: ${magenta(context.target_host || "global")}`);
+    console.log(`  Transport: ${magenta(context.transport_kind || "global")}`);
     console.log(`  Directory: ${context.directory || context.local_directory || ""}`);
     console.log(`  Local directory: ${context.local_directory || context.directory || ""}`);
     if (context.connection_key) {
@@ -130,13 +132,13 @@ OPTIONS:
     if (context.context_key) {
       console.log(`  Context key: ${dim(context.context_key)}`);
     }
-    if (context.remote_enabled && context.remote) {
-      const user = context.remote.user || "unknown";
-      const host = context.remote.host || "unknown";
-      const port = context.remote.port ?? 22;
-      console.log(`  Remote: ${user}@${host}:${port}`);
-      if (context.remote.remote_dir) {
-        console.log(`  Remote dir: ${context.remote.remote_dir}`);
+    if (context.host_profile_configured && context.host_profile) {
+      const user = context.host_profile.user || "unknown";
+      const host = context.host_profile.host || "unknown";
+      const port = context.host_profile.port ?? 22;
+      console.log(`  Host profile: ${user}@${host}:${port}`);
+      if (context.host_profile.directory) {
+        console.log(`  Host dir: ${context.host_profile.directory}`);
       }
     }
 
@@ -177,8 +179,8 @@ OPTIONS:
     const result = await client.request<{
       success: boolean;
       qualified_name: string;
-      remote_profile_configured: boolean;
-      remote_profile?: {
+      host_profile_configured: boolean;
+      host_profile?: {
         enabled: boolean;
         host: string;
         user: string;
@@ -187,17 +189,19 @@ OPTIONS:
       } | null;
       active_context: {
         qualified_name: string;
-        execution_mode: string;
+        target_host: string;
+        transport_kind: string;
         connection_key: string;
         context_key: string;
         is_global: boolean;
       };
       target_context: {
-        execution_mode: string;
+        target_host: string;
+        transport_kind: string;
         connection_key: string;
         context_key: string;
       };
-      remote_test?: {
+      host_test?: {
         success: boolean;
         duration_ms: number;
         message: string;
@@ -215,9 +219,9 @@ OPTIONS:
         } | null;
       };
       launch_support: {
-        ssh_terminal_supported: boolean;
-        ssh_scoped_gui_supported: boolean;
-        ssh_policy: string;
+        host_terminal_supported: boolean;
+        host_scoped_gui_supported: boolean;
+        host_policy: string;
       };
       launch_stats: {
         total_pending: number;
@@ -234,7 +238,7 @@ OPTIONS:
         age: number;
       }>;
       readiness: {
-        ssh_ready: boolean;
+        host_ready: boolean;
         reasons: string[];
       };
       recommended_commands: string[];
@@ -242,34 +246,34 @@ OPTIONS:
 
     if (parsed.json) {
       console.log(JSON.stringify(result, null, 2));
-      return result.readiness.ssh_ready ? 0 : 1;
+      return result.readiness.host_ready ? 0 : 1;
     }
 
     console.log(`Worktree Diagnosis: ${cyan(result.qualified_name)}`);
     console.log(
       `  Active context: ${
         result.active_context.qualified_name || "global"
-      } (${result.active_context.execution_mode})`,
+      } (${result.active_context.target_host || "global"})`,
     );
-    console.log(`  Target SSH context: ${result.target_context.context_key}`);
+    console.log(`  Target context: ${result.target_context.context_key}`);
 
-    if (result.remote_profile_configured && result.remote_profile) {
+    if (result.host_profile_configured && result.host_profile) {
       console.log(
-        `  Remote profile: ${result.remote_profile.user}@${result.remote_profile.host}:${result.remote_profile.port}`,
+        `  Host profile: ${result.host_profile.user}@${result.host_profile.host}:${result.host_profile.port}`,
       );
-      console.log(`  Remote dir: ${result.remote_profile.remote_dir}`);
+      console.log(`  Host dir: ${result.host_profile.remote_dir}`);
     } else {
-      console.log(`  Remote profile: ${red("not configured")}`);
+      console.log(`  Host profile: ${red("not configured")}`);
     }
 
-    if (result.remote_test) {
-      const status = result.remote_test.success ? green("passed") : red("failed");
-      console.log(`  Remote test: ${status} (${result.remote_test.duration_ms}ms)`);
-      if (result.remote_test.stderr) {
-        console.log(`  Remote error: ${result.remote_test.stderr}`);
+    if (result.host_test) {
+      const status = result.host_test.success ? green("passed") : red("failed");
+      console.log(`  Host test: ${status} (${result.host_test.duration_ms}ms)`);
+      if (result.host_test.stderr) {
+        console.log(`  Host error: ${result.host_test.stderr}`);
       }
     } else {
-      console.log(`  Remote test: ${dim("skipped")}`);
+      console.log(`  Host test: ${dim("skipped")}`);
     }
 
     if (result.scratchpad.available && result.scratchpad.terminal) {
@@ -283,7 +287,7 @@ OPTIONS:
       console.log(`  Scratchpad: ${yellow("not running")} for ${result.scratchpad.context_key}`);
     }
 
-    console.log(`  SSH launch policy: ${result.launch_support.ssh_policy}`);
+    console.log(`  Host launch policy: ${result.launch_support.host_policy}`);
     console.log(
       `  Launch correlation: match ${result.launch_stats.match_rate.toFixed(1)}% / expire ${
         result.launch_stats.expiration_rate.toFixed(1)
@@ -293,7 +297,7 @@ OPTIONS:
       console.log(`  Pending launches: ${result.project_pending_launches.length}`);
     }
 
-    if (result.readiness.ssh_ready) {
+    if (result.readiness.host_ready) {
       console.log(`  Ready: ${green("yes")}`);
     } else {
       console.log(`  Ready: ${red("no")}`);
@@ -309,7 +313,7 @@ OPTIONS:
       }
     }
 
-    return result.readiness.ssh_ready ? 0 : 1;
+    return result.readiness.host_ready ? 0 : 1;
   } finally {
     client.disconnect();
   }
@@ -317,8 +321,8 @@ OPTIONS:
 
 async function worktreeEnsure(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    boolean: ["help", "json", "local"],
-    string: ["variant"],
+    boolean: ["help", "json"],
+    string: ["host"],
     alias: { h: "help" },
     stopEarly: false,
   });
@@ -333,8 +337,7 @@ USAGE:
 OPTIONS:
   -h, --help        Show this help message
   --json            Output the raw result as JSON
-  --local           Force local context
-  --variant <name>  Explicit variant (local|ssh)
+  --host <name>     Explicit target host alias
 `);
     return 0;
   }
@@ -345,14 +348,7 @@ OPTIONS:
     return 1;
   }
 
-  let targetVariant = String(parsed.variant || "").trim().toLowerCase();
-  if (parsed.local) {
-    targetVariant = "local";
-  }
-  if (targetVariant && !["local", "ssh"].includes(targetVariant)) {
-    console.error("Error: --variant must be 'local' or 'ssh'");
-    return 1;
-  }
+  const targetHost = String(parsed.host || "").trim().toLowerCase();
 
   const client = new DaemonClient();
   try {
@@ -360,13 +356,14 @@ OPTIONS:
       switched: boolean;
       context: {
         qualified_name: string;
-        execution_mode: string;
+        target_host: string;
+        transport_kind: string;
         connection_key: string;
         context_key: string;
       };
     }>("context.ensure", {
       qualified_name: qualifiedName,
-      target_variant: targetVariant,
+      target_host: targetHost,
     });
 
     if (parsed.json) {
@@ -378,7 +375,8 @@ OPTIONS:
       `Context ensure: ${result.switched ? green("switched") : yellow("already aligned")}`,
     );
     console.log(`  Worktree: ${cyan(result.context.qualified_name || qualifiedName)}`);
-    console.log(`  Mode: ${magenta(result.context.execution_mode || "local")}`);
+    console.log(`  Target host: ${magenta(result.context.target_host || "unknown")}`);
+    console.log(`  Transport: ${magenta(result.context.transport_kind || "unknown")}`);
     if (result.context.connection_key) {
       console.log(`  Connection: ${result.context.connection_key}`);
     }
@@ -498,15 +496,15 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       exitCode = await worktreeSwitch(subcommandArgs);
       break;
 
-    case "remote":
-      exitCode = await worktreeRemote(subcommandArgs);
+    case "host":
+      exitCode = await worktreeHost(subcommandArgs);
       break;
 
     default:
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
       console.error(
-        "Available subcommands: create, remove, rename, suggest-name, list, current, clear, ensure, diagnose, switch, remote",
+        "Available subcommands: create, remove, rename, suggest-name, list, current, clear, ensure, diagnose, switch, host",
       );
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);

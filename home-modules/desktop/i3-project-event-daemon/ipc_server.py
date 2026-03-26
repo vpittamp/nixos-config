@@ -93,14 +93,21 @@ def normalize_project_path(value: Optional[str]) -> Optional[str]:
 
 
 def parse_context_key_project(value: Optional[str]) -> str:
-    """Extract the qualified worktree name from `<qualified>::<mode>::<connection>`."""
+    """Extract the qualified worktree name from `<qualified>::host::<target_host>`."""
     raw = str(value or "").strip()
     if not raw:
         return ""
-    parts = raw.split("::")
-    if len(parts) < 3:
+    if "::host::" not in raw:
         return ""
-    return "::".join(parts[:-2]).strip()
+    return raw.split("::host::", 1)[0].strip()
+
+
+def parse_context_key_target_host(value: Optional[str]) -> str:
+    """Extract the canonical target host from `<qualified>::host::<target_host>`."""
+    raw = str(value or "").strip()
+    if "::host::" not in raw:
+        return ""
+    return raw.split("::host::", 1)[1].strip().lower()
 
 
 def project_names_match(
@@ -1091,6 +1098,16 @@ class IPCServer:
             elif method == "worktree.clear":
                 # Feature 101: Clear active project (return to global mode)
                 result = await self._worktree_clear(params)
+            elif method == "worktree.host.set":
+                result = await self._worktree_remote_set(params)
+            elif method == "worktree.host.get":
+                result = await self._worktree_remote_get(params)
+            elif method == "worktree.host.unset":
+                result = await self._worktree_remote_unset(params)
+            elif method == "worktree.host.list":
+                result = await self._worktree_remote_list(params)
+            elif method == "worktree.host.test":
+                result = await self._worktree_remote_test(params)
             elif method == "worktree.remote.set":
                 result = await self._worktree_remote_set(params)
             elif method == "worktree.remote.get":
@@ -1606,18 +1623,15 @@ class IPCServer:
             or params.get("project_name")
             or ""
         ).strip()
-        target_variant = str(
-            params.get("target_variant")
+        requested_target_host = self._resolve_requested_target_host(
+            params.get("target_host")
+            or params.get("host")
+            or params.get("target_variant")
             or params.get("execution_mode")
-            or ""
-        ).strip().lower()
+            or "",
+            project_name=desired_project,
+        )
         desired_connection_key = self._normalize_connection_key(str(params.get("connection_key") or "").strip())
-
-        if bool(params.get("prefer_local")) and not target_variant:
-            target_variant = "local"
-
-        if target_variant not in {"", "local", "ssh"}:
-            raise ValueError("target_variant must be one of: local, ssh")
 
         if int(params.get("__intent_epoch") or 0) > 0:
             self._clear_focus_overrides()
@@ -1629,7 +1643,7 @@ class IPCServer:
                 "switched": True,
                 "cleared": True,
                 "requested_project": "global",
-                "requested_variant": target_variant,
+                "requested_target_host": requested_target_host,
                 "context": await self._context_get_active({}),
                 "previous_project": clear_result.get("previous_project"),
             }
@@ -1640,13 +1654,13 @@ class IPCServer:
                 "switched": False,
                 "cleared": False,
                 "requested_project": "",
-                "requested_variant": target_variant,
+                "requested_target_host": requested_target_host,
                 "context": await self._context_get_active({}),
             }
 
         switch_result = await self._switch_runtime_context_if_needed(
             desired_project,
-            target_variant,
+            requested_target_host,
             desired_connection_key,
         )
         context = switch_result.get("context") if isinstance(switch_result, dict) else None
@@ -1658,7 +1672,7 @@ class IPCServer:
             "switched": bool(switch_result.get("switched", False)) if isinstance(switch_result, dict) else False,
             "cleared": False,
             "requested_project": desired_project,
-            "requested_variant": target_variant,
+            "requested_target_host": requested_target_host,
             "context": context,
         }
 
@@ -2301,7 +2315,7 @@ class IPCServer:
                 resolved["repo_name"],
                 resolved["repo"],
                 resolved["worktree"],
-                prefer_local=True,
+                target_host=self._local_host_alias(),
             )
             cwd = str(
                 params.get("cwd")
@@ -3617,7 +3631,10 @@ class IPCServer:
         active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
         return {
             "active_qualified": str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
-            "active_mode": str(active_context.get("execution_mode") or "local").strip() or "local",
+            "active_target_host": self._target_host_from_context_payload(
+                active_context,
+                project_name=str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
+            ),
             "repos": self._stat_fingerprint(ConfigPaths.REPOS_FILE),
             "usage": self._stat_fingerprint(ConfigPaths.PROJECT_USAGE_FILE),
         }
@@ -8001,6 +8018,8 @@ class IPCServer:
         local_project_dir: str,
         project_display_name: str,
         execution_mode: str,
+        target_host: str,
+        transport_kind: str,
         connection_key: str,
         context_key: str,
         remote_profile: Optional[Dict[str, Any]],
@@ -8031,6 +8050,8 @@ class IPCServer:
             "I3PM_LAUNCHER_PID": str(launcher_pid),
             "I3PM_TARGET_WORKSPACE": str(preferred_workspace or ""),
             "I3PM_EXPECTED_CLASS": expected_class,
+            "I3PM_TARGET_HOST": target_host,
+            "I3PM_TRANSPORT_KIND": transport_kind,
             "I3PM_EXECUTION_MODE": execution_mode,
             "I3PM_CONTEXT_VARIANT": execution_mode,
             "I3PM_CONNECTION_KEY": connection_key,
@@ -8175,6 +8196,23 @@ class IPCServer:
             or params.get("execution_mode")
             or ""
         ).strip().lower()
+        raw_target_host_override = str(
+            params.get("target_host")
+            or params.get("host")
+            or ""
+        ).strip()
+        target_host_override = (
+            self._resolve_requested_target_host(
+                raw_target_host_override or variant_override,
+                project_name=str(
+                    params.get("qualified_name")
+                    or params.get("project_name")
+                    or ""
+                ).strip(),
+            )
+            if raw_target_host_override
+            else ""
+        )
         if variant_override and variant_override not in {"local", "ssh"}:
             raise RuntimeError(json.dumps({
                 "code": -32602,
@@ -8201,7 +8239,11 @@ class IPCServer:
                 resolved["repo_name"],
                 resolved["repo"],
                 resolved["worktree"],
-                prefer_local=variant_override == "local",
+                target_host=(
+                    target_host_override
+                    if target_host_override
+                    else self._resolve_requested_target_host(variant_override, project_name=active_project)
+                ),
             )
         else:
             active_context = self._get_active_runtime_context(active_project=active_project) or {}
@@ -8221,9 +8263,18 @@ class IPCServer:
             else ""
         )
         remote_profile = (
-            dict(active_context.get("remote") or {})
-            if scoped_launch and isinstance(active_context.get("remote"), dict)
+            dict(active_context.get("host_profile") or {})
+            if scoped_launch and isinstance(active_context.get("host_profile"), dict)
             else None
+        )
+        target_host = self._normalize_target_host(
+            target_host_override
+            or self._target_host_from_context_payload(active_context, project_name=qualified_name)
+            or (
+                remote_profile.get("host")
+                if isinstance(remote_profile, dict) and remote_profile.get("host")
+                else self._local_host_alias()
+            )
         )
 
         if app.scope == "scoped" and not qualified_name:
@@ -8247,32 +8298,41 @@ class IPCServer:
                 }
             }))
 
-        if not scoped_launch and variant_override == "ssh":
+        if not scoped_launch and target_host != self._local_host_alias():
             raise RuntimeError(json.dumps({
                 "code": -32004,
                 "message": (
-                    f"Global application '{app_name}' cannot be launched in SSH mode; "
+                    f"Global application '{app_name}' cannot be launched on a non-local host target; "
                     "global apps always run locally"
                 ),
                 "data": {
                     "app_name": app_name,
                     "scope": app.scope,
-                    "context_variant_override": variant_override,
+                    "target_host": target_host,
                 }
             }))
 
-        if variant_override == "local":
-            remote_profile = None
-        elif variant_override == "ssh":
+        if qualified_name and target_host != self._local_host_alias():
             remote_profile = self._get_project_remote_profile(qualified_name) if qualified_name else None
             if not remote_profile:
                 raise RuntimeError(json.dumps({
                     "code": -32004,
-                    "message": f"Project '{qualified_name}' has no configured SSH profile",
-                    "data": {"project_name": qualified_name}
+                    "message": f"Project '{qualified_name}' has no configured host profile for '{target_host}'",
+                    "data": {"project_name": qualified_name, "target_host": target_host}
                 }))
+            if self._normalize_target_host(remote_profile.get("host")) != target_host:
+                raise RuntimeError(json.dumps({
+                    "code": -32004,
+                    "message": (
+                        f"Project '{qualified_name}' is configured for host "
+                        f"'{self._normalize_target_host(remote_profile.get('host'))}', not '{target_host}'"
+                    ),
+                    "data": {"project_name": qualified_name, "target_host": target_host}
+                }))
+        else:
+            remote_profile = None
 
-        execution_mode = "ssh" if remote_profile else "local"
+        execution_mode = self._execution_mode_for_target_host(target_host)
         if execution_mode == "ssh" and not app.terminal:
             raise RuntimeError(json.dumps({
                 "code": -32004,
@@ -8289,7 +8349,11 @@ class IPCServer:
             }))
 
         if qualified_name:
-            identity = self._build_worktree_context_identity(qualified_name, remote_profile)
+            identity = self._build_worktree_context_identity(
+                qualified_name,
+                remote_profile,
+                target_host=target_host,
+            )
             connection_key = identity["connection_key"]
             context_key = identity["context_key"]
             parsed = parse_qualified_name(qualified_name)
@@ -8365,6 +8429,8 @@ class IPCServer:
             local_project_dir=local_project_dir if project_name else "",
             project_display_name=project_display_name,
             execution_mode=execution_mode,
+            target_host=target_host if project_name else self._local_host_alias(),
+            transport_kind=self._transport_kind_for_target_host(target_host if project_name else self._local_host_alias()),
             connection_key=connection_key,
             context_key=context_key,
             remote_profile=remote_profile,
@@ -8477,13 +8543,14 @@ class IPCServer:
             "project_directory": project_dir if project_name else "",
             "local_project_directory": local_project_dir if project_name else "",
             "project_display_name": project_display_name,
-            "execution_mode": execution_mode,
+            "target_host": target_host,
+            "transport_kind": self._transport_kind_for_target_host(target_host),
             "connection_key": connection_key,
             "context_key": context_key,
             "launch_strategy": launch_strategy,
             "launch_transport": launch_transport,
-            "ssh_policy": "terminal_only" if execution_mode == "ssh" else "not_applicable",
-            "remote_profile": remote_profile,
+            "host_launch_policy": "terminal_only" if execution_mode == "ssh" else "not_applicable",
+            "host_profile": remote_profile,
             "terminal_launch": terminal_launch,
             "terminal_role": terminal_role,
             "tmux_session_name": tmux_session_name,
@@ -8568,7 +8635,19 @@ class IPCServer:
         if isinstance(spec, dict):
             payload.update({
                 "project_name": str(spec.get("project_name") or "").strip(),
-                "execution_mode": str(spec.get("execution_mode") or "").strip(),
+                "target_host": self._normalize_target_host(
+                    spec.get("target_host")
+                    or parse_context_key_target_host(spec.get("context_key"))
+                    or ""
+                ),
+                "transport_kind": str(
+                    spec.get("transport_kind")
+                    or self._transport_kind_for_target_host(
+                        spec.get("target_host")
+                        or parse_context_key_target_host(spec.get("context_key"))
+                        or self._local_host_alias()
+                    )
+                ).strip(),
                 "connection_key": str(spec.get("connection_key") or "").strip(),
                 "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
                 "launch_kind": str(spec.get("launch_kind") or "").strip(),
@@ -8620,7 +8699,10 @@ class IPCServer:
             "launch_id": launch_id,
             "launch_kind": str(launch_kind or "").strip(),
             "project_name": str(spec.get("project_name") or "").strip(),
-            "execution_mode": str(spec.get("execution_mode") or "").strip(),
+            "target_host": self._normalize_target_host(
+                spec.get("target_host") or parse_context_key_target_host(spec.get("context_key"))
+            ),
+            "transport_kind": str(spec.get("transport_kind") or "").strip(),
             "connection_key": str(spec.get("connection_key") or "").strip(),
             "project_directory": str(spec.get("project_directory") or "").strip(),
             "local_project_directory": str(spec.get("local_project_directory") or "").strip(),
@@ -8654,7 +8736,10 @@ class IPCServer:
             "launch_id": launch_id,
             "launch_kind": str(launch_kind or "").strip(),
             "project_name": str(spec.get("project_name") or "").strip(),
-            "execution_mode": str(spec.get("execution_mode") or "").strip(),
+            "target_host": self._normalize_target_host(
+                spec.get("target_host") or parse_context_key_target_host(spec.get("context_key"))
+            ),
+            "transport_kind": str(spec.get("transport_kind") or "").strip(),
             "connection_key": str(spec.get("connection_key") or "").strip(),
             "project_directory": str(spec.get("project_directory") or "").strip(),
             "local_project_directory": str(spec.get("local_project_directory") or "").strip(),
@@ -11187,7 +11272,10 @@ class IPCServer:
             or active_context.get("project_name")
             or ""
         ).strip()
-        active_execution_mode = str(active_context.get("execution_mode") or "local").strip() or "local"
+        active_target_host = self._target_host_from_context_payload(
+            active_context,
+            project_name=active_project_name,
+        )
         grouped: Dict[str, Dict[str, Any]] = {}
         for window in list(runtime_snapshot.get("tracked_windows", []) or []):
             if not isinstance(window, dict):
@@ -11200,8 +11288,13 @@ class IPCServer:
                 raw_project_name,
                 project_path=window.get("project_path"),
             ) or "global"
-            execution_mode = str(window.get("execution_mode") or "local").strip() or "local"
-            group_key = project_name if project_name == "global" else f"{project_name}::{execution_mode}"
+            target_host = self._normalize_target_host(
+                window.get("target_host")
+                or parse_context_key_target_host(window.get("context_key"))
+                or self._local_host_alias()
+            )
+            execution_mode = str(window.get("execution_mode") or self._execution_mode_for_target_host(target_host)).strip() or "local"
+            group_key = project_name if project_name == "global" else self._build_target_context_key(project_name, target_host)
             hidden = bool(window.get("hidden", False))
             session_items: List[Dict[str, Any]] = []
             for session in sessions_by_window.get(window_id, []):
@@ -11234,7 +11327,19 @@ class IPCServer:
                     "window_active": bool(session.get("window_active", False)),
                     "pid": session.get("pid"),
                     "pulse_working": bool(session.get("pulse_working", False)),
-                    "execution_mode": str(session.get("execution_mode") or execution_mode).strip() or execution_mode,
+                    "target_host": self._normalize_target_host(
+                        session.get("target_host")
+                        or session.get("host_name")
+                        or target_host
+                    ),
+                    "transport_kind": str(
+                        session.get("transport_kind")
+                        or self._transport_kind_for_target_host(
+                            session.get("target_host")
+                            or session.get("host_name")
+                            or target_host
+                        )
+                    ).strip(),
                 })
 
             session_items.sort(
@@ -11263,7 +11368,8 @@ class IPCServer:
             entry = grouped.setdefault(group_key, {
                 "project": project_name,
                 "display_project": project_name,
-                "execution_mode": execution_mode,
+                "target_host": target_host,
+                "transport_kind": self._transport_kind_for_target_host(target_host),
                 "focused": False,
                 "windows": [],
                 "visible_window_count": 0,
@@ -11271,7 +11377,7 @@ class IPCServer:
                 "ai_session_count": 0,
                 "is_active": (
                     project_name == active_project_name
-                    and execution_mode == active_execution_mode
+                    and target_host == active_target_host
                 ),
             })
             entry["focused"] = bool(entry["focused"]) or derived_focused
@@ -11287,7 +11393,8 @@ class IPCServer:
                 "app_name": str(window.get("app_name") or window.get("class") or "window"),
                 "icon_path": str(window.get("icon_path") or "").strip(),
                 "project": project_name,
-                "execution_mode": execution_mode,
+                "target_host": target_host,
+                "transport_kind": self._transport_kind_for_target_host(target_host),
                 "connection_key": str(window.get("connection_key") or "").strip(),
                 "workspace": str(window.get("workspace") or "").strip(),
                 "output": str(window.get("output") or "").strip(),
@@ -11323,7 +11430,7 @@ class IPCServer:
             key=lambda item: (
                 str(item.get("project") or "global").strip().lower() == "global",
                 str(item.get("project") or "").casefold(),
-                str(item.get("execution_mode") or "").casefold(),
+                str(item.get("target_host") or "").casefold(),
             ),
         )
         return projects
@@ -11336,7 +11443,7 @@ class IPCServer:
         now = time.time()
         active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
         active_qualified = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
-        active_mode = str(active_context.get("execution_mode") or "local").strip() or "local"
+        active_target_host = self._normalize_target_host(active_context.get("target_host") or self._local_host_alias())
         cache_fingerprint = self._dashboard_worktree_cache_fingerprint(runtime_snapshot)
         if (
             self._worktree_cache is not None
@@ -11396,7 +11503,8 @@ class IPCServer:
                 dirty_count = staged + modified + untracked
                 usage_entry = usage_map.get(qualified_name, {}) if isinstance(usage_map, dict) else {}
                 counts = window_counts.get(qualified_name, {})
-                remote_available = bool(self._get_project_remote_profile(qualified_name))
+                host_profile = self._get_worktree_host_profile(qualified_name)
+                host_profile_available = bool(host_profile)
                 worktrees.append({
                     "qualified_name": qualified_name,
                     "repo_display": display_name,
@@ -11415,8 +11523,9 @@ class IPCServer:
                     "untracked_count": untracked,
                     "dirty_count": dirty_count,
                     "is_active": qualified_name == active_qualified,
-                    "active_execution_mode": active_mode if qualified_name == active_qualified else "",
-                    "remote_available": remote_available,
+                    "active_target_host": active_target_host if qualified_name == active_qualified else "",
+                    "host_profile_available": host_profile_available,
+                    "host_profile_host": str(host_profile.get("host") or "").strip() if isinstance(host_profile, dict) else "",
                     "visible_window_count": int(counts.get("visible_window_count", 0) or 0),
                     "scoped_window_count": int(counts.get("scoped_window_count", 0) or 0),
                     "last_used_at": int(usage_entry.get("last_used_at", 0) or 0),
@@ -12261,7 +12370,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                         },
                         "spec": {
                             "app_name": spec.get("app_name"),
-                            "execution_mode": spec.get("execution_mode"),
+                            "target_host": spec.get("target_host"),
+                            "transport_kind": spec.get("transport_kind"),
                             "project_name": spec.get("project_name"),
                             "context_key": spec.get("context_key"),
                             "launch_strategy": "focus_existing_terminal",
@@ -12299,7 +12409,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                         },
                         "spec": {
                             "app_name": spec.get("app_name"),
-                            "execution_mode": spec.get("execution_mode"),
+                            "target_host": spec.get("target_host"),
+                            "transport_kind": spec.get("transport_kind"),
                             "project_name": spec.get("project_name"),
                             "context_key": spec.get("context_key"),
                             "launch_strategy": "focus_existing_dedicated_terminal_window",
@@ -12335,7 +12446,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                         },
                         "spec": {
                             "app_name": spec.get("app_name"),
-                            "execution_mode": spec.get("execution_mode"),
+                            "target_host": spec.get("target_host"),
+                            "transport_kind": spec.get("transport_kind"),
                             "project_name": spec.get("project_name"),
                             "context_key": spec.get("context_key"),
                             "launch_strategy": "focus_existing_window",
@@ -12355,7 +12467,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "launch": launch_result,
             "spec": {
                 "app_name": spec.get("app_name"),
-                "execution_mode": spec.get("execution_mode"),
+                "target_host": spec.get("target_host"),
+                "transport_kind": spec.get("transport_kind"),
                 "project_name": spec.get("project_name"),
                 "context_key": spec.get("context_key"),
                 "launch_strategy": spec.get("launch_strategy"),
@@ -13909,19 +14022,20 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         active_project: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Build a canonical context payload for runtime consumers."""
-        local_connection_key = self._normalize_connection_key(f"local@{self._local_host_alias()}")
+        local_host = self._local_host_alias()
+        local_connection_key = self._normalize_connection_key(f"local@{local_host}")
         base = {
             "qualified_name": "",
             "project_name": "",
             "directory": "",
             "local_directory": "",
-            "execution_mode": "global",
-            "host_alias": "global",
+            "target_host": "global",
+            "transport_kind": "global",
             "connection_key": "global",
-            "identity_key": "global:global",
+            "identity_key": "global",
             "context_key": "",
-            "remote_enabled": False,
-            "remote": None,
+            "host_profile_configured": False,
+            "host_profile": None,
             "is_global": True,
             "active_project": str(active_project or "").strip(),
         }
@@ -13937,47 +14051,56 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     or active_context.get("directory")
                     or ""
                 ).strip(),
-                "execution_mode": str(active_context.get("execution_mode") or "").strip() or "local",
-                "host_alias": str(active_context.get("host_alias") or "").strip(),
+                "target_host": self._target_host_from_context_payload(
+                    active_context,
+                    project_name=str(active_context.get("qualified_name") or ""),
+                ),
+                "transport_kind": str(active_context.get("transport_kind") or "").strip(),
                 "connection_key": str(active_context.get("connection_key") or "").strip(),
                 "identity_key": str(active_context.get("identity_key") or "").strip(),
                 "context_key": str(active_context.get("context_key") or "").strip(),
-                "remote": active_context.get("remote"),
-                "remote_enabled": bool(
-                    isinstance(active_context.get("remote"), dict)
-                    and active_context["remote"].get("enabled", False)
+                "host_profile": active_context.get("host_profile"),
+                "host_profile_configured": bool(
+                    isinstance(active_context.get("host_profile"), dict)
+                    and active_context["host_profile"].get("enabled", False)
                 ),
                 "is_global": False,
             })
-            if payload["execution_mode"] not in {"local", "ssh"}:
-                payload["execution_mode"] = "local"
-            if not payload["host_alias"]:
-                payload["host_alias"] = (
-                    self._local_host_alias() if payload["execution_mode"] == "local" else "unknown"
-                )
+            if payload["target_host"] == "global":
+                payload["target_host"] = local_host
+            if payload["transport_kind"] not in {"local_process", "ssh_helper"}:
+                payload["transport_kind"] = self._transport_kind_for_target_host(payload["target_host"])
             if not payload["connection_key"]:
                 payload["connection_key"] = (
-                    local_connection_key if payload["execution_mode"] == "local" else "unknown"
+                    self._connection_key_for_target_host(
+                        target_host=payload["target_host"],
+                        host_profile=payload["host_profile"] if isinstance(payload["host_profile"], dict) else None,
+                    )
+                    if payload["target_host"] != "global"
+                    else local_connection_key
                 )
             if not payload["identity_key"]:
-                payload["identity_key"] = (
-                    f'{payload["execution_mode"]}:{payload["connection_key"]}'
-                )
+                payload["identity_key"] = f'host:{payload["target_host"]}'
             if not payload["context_key"] and payload["qualified_name"]:
-                payload["context_key"] = (
-                    f'{payload["qualified_name"]}::{payload["execution_mode"]}::{payload["connection_key"]}'
+                payload["context_key"] = self._build_target_context_key(
+                    payload["qualified_name"],
+                    payload["target_host"],
                 )
             payload["active_project"] = payload["qualified_name"]
             return payload
 
         if active_project:
-            identity = self._build_worktree_context_identity(str(active_project), None)
+            identity = self._build_worktree_context_identity(
+                str(active_project),
+                None,
+                target_host=local_host,
+            )
             return {
                 **base,
                 "qualified_name": str(active_project),
                 "project_name": str(active_project),
-                "execution_mode": identity["execution_mode"],
-                "host_alias": identity["host_alias"],
+                "target_host": identity["target_host"],
+                "transport_kind": identity["transport_kind"],
                 "connection_key": identity["connection_key"],
                 "identity_key": identity["identity_key"],
                 "context_key": identity["context_key"],
@@ -14415,24 +14538,22 @@ rm -f -- "$0" >/dev/null 2>&1 || true
     async def _switch_runtime_context_if_needed(
         self,
         project_name: str,
-        target_variant: str,
+        target_host: str,
         connection_key: str = "",
     ) -> Dict[str, Any]:
         """Align daemon runtime context before a focus/action request."""
         active = await self._context_get_active({})
         current_project = str(active.get("qualified_name") or "global").strip() or "global"
-        current_variant = str(active.get("execution_mode") or "global").strip() or "global"
+        current_target_host = self._target_host_from_context_payload(active, project_name=current_project)
         current_connection_key = self._normalize_connection_key(str(active.get("connection_key") or "").strip())
         desired_project = str(project_name or "").strip()
-        desired_variant = str(target_variant or "").strip().lower()
+        desired_target_host = self._resolve_requested_target_host(target_host, project_name=desired_project)
         desired_connection_key = self._normalize_connection_key(str(connection_key or "").strip())
-        if desired_variant not in {"local", "ssh"}:
-            desired_variant = ""
         if not desired_project:
             desired_project = current_project
 
         needs_switch = desired_project != current_project
-        if desired_variant and desired_variant != current_variant:
+        if desired_project != "global" and desired_target_host != current_target_host:
             needs_switch = True
         if desired_connection_key and desired_connection_key != current_connection_key:
             needs_switch = True
@@ -14444,9 +14565,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         else:
             await self._worktree_switch({
                 "qualified_name": desired_project,
-                "prefer_local": desired_variant == "local",
+                "target_host": desired_target_host,
             })
-        await self._send_tick_barrier(f"i3pm:context-switch:{desired_project}:{desired_variant or 'auto'}")
+        await self._send_tick_barrier(
+            f"i3pm:context-switch:{desired_project}:{desired_target_host or 'auto'}"
+        )
         return {"switched": True, "context": await self._context_get_active({})}
 
     async def _focus_window_impl(
@@ -14811,10 +14934,22 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     "app_name": str(visible_window.get("app_name") or app_key or window_class or "window"),
                     "icon_path": icon_path,
                     "marks": list(getattr(window_info, "marks", []) or []),
-                    "execution_mode": str(
-                        visible_window.get("execution_mode")
-                        or getattr(window_info, "execution_mode", "")
-                        or ""
+                    "target_host": self._normalize_target_host(
+                        visible_window.get("target_host")
+                        or parse_context_key_target_host(
+                            visible_window.get("context_key") or getattr(window_info, "context_key", "")
+                        )
+                        or self._local_host_alias()
+                    ),
+                    "transport_kind": str(
+                        visible_window.get("transport_kind")
+                        or self._transport_kind_for_target_host(
+                            visible_window.get("target_host")
+                            or parse_context_key_target_host(
+                                visible_window.get("context_key") or getattr(window_info, "context_key", "")
+                            )
+                            or self._local_host_alias()
+                        )
                     ),
                     "connection_key": str(
                         visible_window.get("connection_key")
@@ -14882,14 +15017,19 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         active_context_key = str(active_context.get("context_key") or "").strip()
         active_project_name = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
-        active_execution_mode = str(active_context.get("execution_mode") or "local").strip() or "local"
+        active_target_host = self._target_host_from_context_payload(
+            active_context,
+            project_name=active_project_name,
+        )
+        active_execution_mode = self._execution_mode_for_target_host(active_target_host)
         active_terminal_summary: Dict[str, Any] = {
             "available": False,
             "reusable": False,
             "window_id": 0,
             "project_name": active_project_name,
             "context_key": active_context_key,
-            "execution_mode": active_execution_mode,
+            "target_host": active_target_host,
+            "transport_kind": self._transport_kind_for_target_host(active_target_host),
             "terminal_role": "project-main",
             "tmux_session_name": "",
             "project_directory": str(active_context.get("directory") or active_context.get("local_directory") or "").strip(),
@@ -14981,19 +15121,17 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         return {"success": True}
 
     def _parse_context_key(self, context_key: str) -> Dict[str, str]:
-        """Parse context key into project/variant/connection tuple."""
+        """Parse context key into project/target-host tuple."""
         raw = str(context_key or "").strip()
-        parts = raw.split("::", 2)
-        if len(parts) == 3:
+        if "::host::" in raw:
+            project_name, target_host = raw.split("::host::", 1)
             return {
-                "project_name": parts[0],
-                "execution_mode": parts[1],
-                "connection_key": parts[2],
+                "project_name": project_name,
+                "target_host": self._normalize_target_host(target_host),
             }
         return {
             "project_name": "",
-            "execution_mode": "local",
-            "connection_key": "",
+            "target_host": self._local_host_alias(),
         }
 
     async def _resolve_scratchpad_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -15005,8 +15143,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         working_dir_override = params.get("working_dir")
         parsed_context = self._parse_context_key(context_key) if context_key else {
             "project_name": "",
-            "execution_mode": "local",
-            "connection_key": "",
+            "target_host": self._local_host_alias(),
         }
 
         active_project = await self.state_manager.get_active_project()
@@ -15024,56 +15161,58 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         if project_name == "global":
             if not context_key:
-                host_alias = self._local_host_alias()
-                connection_key = self._normalize_connection_key(f"local@{host_alias}")
-                context_key = f"global::local::{connection_key}"
+                target_host = self._local_host_alias()
+                connection_key = self._normalize_connection_key(f"local@{target_host}")
+                context_key = self._build_target_context_key("global", target_host)
                 parsed_context = self._parse_context_key(context_key)
-            execution_mode = str(parsed_context.get("execution_mode") or "local").strip().lower()
-            if execution_mode not in {"local", "ssh"}:
-                execution_mode = "local"
-            connection_key = parsed_context.get("connection_key") or self._normalize_connection_key(
-                f"local@{self._local_host_alias()}"
-            )
-            connection_key = self._normalize_connection_key(connection_key)
-            context_key = f"global::{execution_mode}::{connection_key}"
+            target_host = self._normalize_target_host(parsed_context.get("target_host"))
+            execution_mode = self._execution_mode_for_target_host(target_host)
+            connection_key = self._connection_key_for_target_host(target_host=target_host, host_profile=None)
+            context_key = self._build_target_context_key("global", target_host)
             working_dir = Path(str(working_dir_override)) if working_dir_override else Path.home()
             return {
                 "project_name": "global",
                 "context_key": context_key,
+                "target_host": target_host,
+                "transport_kind": self._transport_kind_for_target_host(target_host),
                 "execution_mode": execution_mode,
                 "connection_key": connection_key,
                 "remote_profile": None,
                 "working_dir": working_dir,
             }
 
+        target_host = self._local_host_alias()
+        connection_key = ""
         if context_key:
             parsed_project = parsed_context.get("project_name")
             if parsed_project and parsed_project != project_name:
                 raise ValueError(
                     f"context_key project '{parsed_project}' does not match requested project '{project_name}'"
                 )
-            execution_mode = str(parsed_context.get("execution_mode") or "local").strip().lower()
-            if execution_mode not in {"local", "ssh"}:
-                execution_mode = "local"
-            connection_key = parsed_context.get("connection_key") or ""
+            target_host = self._normalize_target_host(parsed_context.get("target_host"))
         elif (
             isinstance(active_context, dict)
             and active_context.get("qualified_name") == project_name
             and active_context.get("context_key")
         ):
             context_key = str(active_context.get("context_key"))
-            execution_mode = str(active_context.get("execution_mode") or "local")
+            target_host = self._normalize_target_host(active_context.get("target_host"))
             connection_key = str(active_context.get("connection_key") or "")
         else:
-            remote_profile_hint = self._get_project_remote_profile(project_name)
-            identity = self._build_worktree_context_identity(project_name, remote_profile_hint)
+            target_host = self._local_host_alias()
+            identity = self._build_worktree_context_identity(project_name, None, target_host=target_host)
             context_key = identity["context_key"]
-            execution_mode = identity["execution_mode"]
             connection_key = identity["connection_key"]
 
-        connection_key = self._normalize_connection_key(connection_key)
-        context_key = f"{project_name}::{execution_mode}::{connection_key}"
-        remote_profile = self._get_project_remote_profile(project_name) if execution_mode == "ssh" else None
+        target_host = self._normalize_target_host(target_host)
+        remote_profile = self._get_project_remote_profile(project_name) if target_host != self._local_host_alias() else None
+        connection_key = (
+            self._normalize_connection_key(connection_key)
+            if connection_key
+            else self._connection_key_for_target_host(target_host=target_host, host_profile=remote_profile)
+        )
+        execution_mode = self._execution_mode_for_target_host(target_host)
+        context_key = self._build_target_context_key(project_name, target_host)
 
         if working_dir_override:
             working_dir = Path(str(working_dir_override))
@@ -15085,6 +15224,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         return {
             "project_name": project_name,
             "context_key": context_key,
+            "target_host": target_host,
+            "transport_kind": self._transport_kind_for_target_host(target_host),
             "execution_mode": execution_mode,
             "connection_key": connection_key,
             "remote_profile": remote_profile,
@@ -16463,15 +16604,41 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             logger.error(f"[Feature 100] worktree.remove error: {e}")
             raise
 
-    def _load_worktree_remote_profiles(self) -> Dict[str, Any]:
-        """Load worktree remote profile mapping from disk."""
+    def _load_worktree_host_profiles(self) -> Dict[str, Any]:
+        """Load worktree host profile mapping from disk."""
         default_data: Dict[str, Any] = {
             "version": 1,
             "updated_at": int(time.time()),
             "profiles": {},
         }
 
-        profiles_file = ConfigPaths.WORKTREE_REMOTE_PROFILES_FILE
+        profiles_file = ConfigPaths.WORKTREE_HOST_PROFILES_FILE
+        if (
+            not profiles_file.exists()
+            and ConfigPaths.LEGACY_WORKTREE_REMOTE_PROFILES_FILE.exists()
+        ):
+            legacy = ConfigPaths.LEGACY_WORKTREE_REMOTE_PROFILES_FILE
+            try:
+                data = json.loads(legacy.read_text())
+                profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
+                normalized_profiles = {}
+                if isinstance(profiles, dict):
+                    for qualified_name, raw_profile in profiles.items():
+                        if not isinstance(raw_profile, dict):
+                            continue
+                        profile = self._normalize_host_profile(raw_profile)
+                        if profile.get("host"):
+                            normalized_profiles[str(qualified_name)] = profile
+                migrated = {
+                    "version": 1,
+                    "updated_at": int(time.time()),
+                    "profiles": normalized_profiles,
+                }
+                profiles_file.parent.mkdir(parents=True, exist_ok=True)
+                atomic_write_json(profiles_file, migrated)
+                legacy.unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning(f"[Feature 087] Failed to migrate legacy remote profiles: {e}")
         if not profiles_file.exists():
             return default_data
 
@@ -16490,11 +16657,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 "profiles": profiles,
             }
         except Exception as e:
-            logger.warning(f"[Feature 087] Failed to read remote profiles (using empty map): {e}")
+            logger.warning(f"[Feature 087] Failed to read host profiles (using empty map): {e}")
             return default_data
 
-    def _save_worktree_remote_profiles(self, data: Dict[str, Any]) -> None:
-        """Persist worktree remote profile mapping to disk."""
+    def _save_worktree_host_profiles(self, data: Dict[str, Any]) -> None:
+        """Persist worktree host profile mapping to disk."""
         profiles = data.get("profiles", {})
         if not isinstance(profiles, dict):
             profiles = {}
@@ -16503,12 +16670,17 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "updated_at": int(time.time()),
             "profiles": profiles,
         }
-        ConfigPaths.WORKTREE_REMOTE_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(ConfigPaths.WORKTREE_REMOTE_PROFILES_FILE, to_save)
+        ConfigPaths.WORKTREE_HOST_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(ConfigPaths.WORKTREE_HOST_PROFILES_FILE, to_save)
 
-    def _normalize_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize profile payload and support legacy aliases."""
-        remote_dir = str(profile.get("remote_dir") or profile.get("working_dir") or "").strip()
+    def _normalize_host_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize host profile payload and support legacy aliases."""
+        directory = str(
+            profile.get("directory")
+            or profile.get("remote_dir")
+            or profile.get("working_dir")
+            or ""
+        ).strip()
         host = str(profile.get("host") or "ryzen").strip()
         user = str(profile.get("user") or os.environ.get("USER", "vpittamp")).strip()
 
@@ -16528,21 +16700,21 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "host": host,
             "user": user,
             "port": port,
-            "remote_dir": remote_dir,
+            "directory": directory,
         }
 
-    def _validate_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate normalized remote profile."""
-        normalized = self._normalize_remote_profile(profile)
+    def _validate_host_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate normalized host profile."""
+        normalized = self._normalize_host_profile(profile)
 
         if not normalized["host"]:
             raise ValueError("host is required")
         if not normalized["user"]:
             raise ValueError("user is required")
-        if not normalized["remote_dir"]:
-            raise ValueError("remote_dir is required")
-        if not normalized["remote_dir"].startswith("/"):
-            raise ValueError("remote_dir must be an absolute path")
+        if not normalized["directory"]:
+            raise ValueError("directory is required")
+        if not normalized["directory"].startswith("/"):
+            raise ValueError("directory must be an absolute path")
         if not (1 <= normalized["port"] <= 65535):
             raise ValueError("port must be between 1 and 65535")
 
@@ -16593,16 +16765,137 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "full_qualified_name": full_qualified_name,
         }
 
-    def _get_worktree_remote_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
-        """Get normalized remote profile for a specific worktree."""
-        data = self._load_worktree_remote_profiles()
+    def _get_worktree_host_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
+        """Get normalized host profile for a specific worktree."""
+        data = self._load_worktree_host_profiles()
         raw_profile = data.get("profiles", {}).get(qualified_name)
         if not isinstance(raw_profile, dict):
             return None
-        normalized = self._normalize_remote_profile(raw_profile)
+        normalized = self._normalize_host_profile(raw_profile)
         if not normalized.get("enabled"):
             return None
         return normalized
+
+    def _normalize_target_host(self, value: Optional[str]) -> str:
+        """Normalize target host aliases for host-targeted worktree contexts."""
+        normalized = str(value or "").strip().lower()
+        return normalized or self._local_host_alias()
+
+    def _resolve_requested_target_host(
+        self,
+        value: Optional[str],
+        *,
+        project_name: str = "",
+    ) -> str:
+        """Resolve a requested target host, including legacy local/ssh tokens."""
+        raw = str(value or "").strip().lower()
+        if not raw or raw == "local":
+            return self._local_host_alias()
+        if raw == "ssh":
+            profile = self._get_worktree_host_profile(project_name) if project_name else None
+            if isinstance(profile, dict) and profile.get("host"):
+                return self._normalize_target_host(profile.get("host"))
+            return self._local_host_alias()
+        return self._normalize_target_host(raw)
+
+    def _target_host_from_context_payload(
+        self,
+        context: Optional[Dict[str, Any]],
+        *,
+        project_name: str = "",
+    ) -> str:
+        """Derive canonical target_host from a context payload."""
+        if not isinstance(context, dict):
+            return self._local_host_alias()
+        explicit = str(context.get("target_host") or "").strip()
+        if explicit:
+            return self._normalize_target_host(explicit)
+        host_profile = context.get("host_profile") or context.get("remote")
+        if isinstance(host_profile, dict) and host_profile.get("host"):
+            return self._normalize_target_host(host_profile.get("host"))
+        connection_key = str(context.get("connection_key") or "").strip()
+        execution_mode = str(context.get("execution_mode") or "").strip().lower()
+        if execution_mode == "ssh" and connection_key:
+            _user, remote_host, _port = self._parse_remote_target("", connection_key)
+            if remote_host:
+                return self._normalize_target_host(remote_host)
+        if project_name:
+            profile = self._get_worktree_host_profile(project_name)
+            if isinstance(profile, dict) and profile.get("host") and execution_mode == "ssh":
+                return self._normalize_target_host(profile.get("host"))
+        return self._local_host_alias()
+
+    def _build_target_context_key(self, project_name: str, target_host: str) -> str:
+        """Build the canonical host-targeted context key."""
+        return f"{str(project_name or '').strip()}::host::{self._normalize_target_host(target_host)}"
+
+    def _transport_kind_for_target_host(self, target_host: str) -> str:
+        """Resolve the runtime transport used to reach a host-targeted context."""
+        return "local_process" if self._normalize_target_host(target_host) == self._local_host_alias() else "ssh_helper"
+
+    def _execution_mode_for_target_host(self, target_host: str) -> str:
+        """Resolve legacy internal execution mode from the canonical target host."""
+        return "local" if self._transport_kind_for_target_host(target_host) == "local_process" else "ssh"
+
+    def _connection_key_for_target_host(
+        self,
+        *,
+        target_host: str,
+        host_profile: Optional[Dict[str, Any]],
+    ) -> str:
+        """Build the runtime connection key for a host-targeted context."""
+        normalized_target = self._normalize_target_host(target_host)
+        if normalized_target == self._local_host_alias():
+            return self._normalize_connection_key(f"local@{normalized_target}")
+        if not isinstance(host_profile, dict):
+            raise ValueError(f"No host profile configured for target host '{normalized_target}'")
+        profile_host = self._normalize_target_host(host_profile.get("host"))
+        if profile_host != normalized_target:
+            raise ValueError(
+                f"Configured host profile '{profile_host}' does not match requested target host '{normalized_target}'"
+            )
+        user = str(host_profile.get("user") or "").strip()
+        port = int(host_profile.get("port", 22) or 22)
+        raw_connection_key = f"{user}@{profile_host}:{port}" if user else f"{profile_host}:{port}"
+        return self._normalize_connection_key(raw_connection_key)
+
+    def _load_worktree_remote_profiles(self) -> Dict[str, Any]:
+        return self._load_worktree_host_profiles()
+
+    def _save_worktree_remote_profiles(self, data: Dict[str, Any]) -> None:
+        self._save_worktree_host_profiles(data)
+
+    def _normalize_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = self._normalize_host_profile(profile)
+        return {
+            "enabled": normalized["enabled"],
+            "host": normalized["host"],
+            "user": normalized["user"],
+            "port": normalized["port"],
+            "remote_dir": normalized["directory"],
+        }
+
+    def _validate_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = self._validate_host_profile(profile)
+        return {
+            "enabled": normalized["enabled"],
+            "host": normalized["host"],
+            "user": normalized["user"],
+            "port": normalized["port"],
+            "remote_dir": normalized["directory"],
+        }
+
+    def _get_worktree_remote_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
+        profile = self._get_worktree_host_profile(qualified_name)
+        if not isinstance(profile, dict):
+            return None
+        return {
+            "enabled": bool(profile.get("enabled", False)),
+            "host": str(profile.get("host") or "").strip(),
+            "user": str(profile.get("user") or "").strip(),
+            "port": int(profile.get("port", 22) or 22),
+            "remote_dir": str(profile.get("directory") or "").strip(),
+        }
 
     def _normalize_connection_key(self, value: str) -> str:
         """Normalize connection identity for stable context keys."""
@@ -17209,6 +17502,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             local_project_dir=local_project_directory,
             project_display_name=parsed.branch,
             execution_mode="ssh",
+            target_host=str(remote_context.get("target_host") or remote_profile.get("host") or "").strip(),
+            transport_kind="ssh_helper",
             connection_key=str(remote_context.get("connection_key") or "").strip(),
             context_key=str(remote_context.get("context_key") or "").strip(),
             remote_profile=remote_profile,
@@ -17224,7 +17519,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         environment.update({
             "I3PM_CONTEXT_VARIANT": "ssh",
             "I3PM_CONNECTION_KEY": str(attach_profile.get("connection_key") or "").strip(),
-            "I3PM_CONTEXT_KEY": str(attach_profile.get("context_key") or "").strip(),
+            "I3PM_CONTEXT_KEY": str(remote_context.get("context_key") or "").strip(),
             "I3PM_REMOTE_ENABLED": "true",
             "I3PM_REMOTE_HOST": str(attach_profile.get("remote_host") or "").strip(),
             "I3PM_REMOTE_USER": str(attach_profile.get("remote_user") or "").strip(),
@@ -17459,36 +17754,28 @@ rm -f -- "$0" >/dev/null 2>&1 || true
     def _build_worktree_context_identity(
         self,
         full_qualified_name: str,
-        remote_profile: Optional[Dict[str, Any]],
+        host_profile: Optional[Dict[str, Any]],
+        *,
+        target_host: Optional[str] = None,
     ) -> Dict[str, str]:
         """Build canonical context identity for active-worktree consumers."""
-        if isinstance(remote_profile, dict):
-            host = str(remote_profile.get("host") or "").strip()
-            user = str(remote_profile.get("user") or "").strip()
-            port_raw = remote_profile.get("port", 22)
-            try:
-                port = int(port_raw)
-            except (TypeError, ValueError):
-                port = 22
-
-            execution_mode = "ssh"
-            host_alias = f"{user}@{host}" if user and host else host or "unknown"
-            if host:
-                raw_connection_key = f"{user}@{host}:{port}" if user else f"{host}:{port}"
-            else:
-                raw_connection_key = host_alias
-        else:
-            execution_mode = "local"
-            host_alias = self._local_host_alias()
-            raw_connection_key = f"local@{host_alias}"
-
-        connection_key = self._normalize_connection_key(raw_connection_key)
-        identity_key = f"{execution_mode}:{connection_key}"
-        context_key = f"{full_qualified_name}::{execution_mode}::{connection_key}"
+        normalized_target_host = self._normalize_target_host(
+            target_host or (host_profile.get("host") if isinstance(host_profile, dict) else "")
+        )
+        transport_kind = self._transport_kind_for_target_host(normalized_target_host)
+        execution_mode = self._execution_mode_for_target_host(normalized_target_host)
+        connection_key = self._connection_key_for_target_host(
+            target_host=normalized_target_host,
+            host_profile=host_profile,
+        )
+        identity_key = f"host:{normalized_target_host}"
+        context_key = self._build_target_context_key(full_qualified_name, normalized_target_host)
 
         return {
+            "target_host": normalized_target_host,
+            "transport_kind": transport_kind,
             "execution_mode": execution_mode,
-            "host_alias": host_alias,
+            "host_alias": normalized_target_host,
             "connection_key": connection_key,
             "identity_key": identity_key,
             "context_key": context_key,
@@ -17500,13 +17787,27 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         repo_name: str,
         repo: Dict[str, Any],
         worktree: Dict[str, Any],
-        prefer_local: bool = False,
+        *,
+        target_host: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Build active-worktree.json payload with optional remote profile."""
+        """Build active-worktree.json payload with canonical host-targeted identity."""
         local_directory = worktree.get("path", "")
-        remote_profile = None if prefer_local else self._get_worktree_remote_profile(full_qualified_name)
-        effective_directory = remote_profile["remote_dir"] if remote_profile else local_directory
-        identity = self._build_worktree_context_identity(full_qualified_name, remote_profile)
+        normalized_target_host = self._normalize_target_host(target_host)
+        host_profile = (
+            self._get_worktree_host_profile(full_qualified_name)
+            if normalized_target_host != self._local_host_alias()
+            else None
+        )
+        identity = self._build_worktree_context_identity(
+            full_qualified_name,
+            host_profile,
+            target_host=normalized_target_host,
+        )
+        effective_directory = (
+            str(host_profile.get("directory") or "").strip()
+            if isinstance(host_profile, dict) and identity["transport_kind"] == "ssh_helper"
+            else local_directory
+        )
 
         context: Dict[str, Any] = {
             "qualified_name": full_qualified_name,
@@ -17516,7 +17817,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "local_directory": local_directory,
             "account": repo.get("account", ""),
             "repo_name": repo.get("name", ""),
-            "remote": remote_profile if remote_profile else None,
+            "host_profile": host_profile if host_profile else None,
         }
         context.update(identity)
         return context
@@ -17585,7 +17886,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         Args:
             params: {
                 "qualified_name": str,  # e.g., "vpittamp/nixos-config:main" or "vpittamp/nixos-config"
-                "prefer_local": bool    # optional: ignore SSH profile for this switch
+                "target_host": str      # optional: canonical host target for this switch
             }
 
         Returns:
@@ -17605,7 +17906,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             qualified_name = params.get("qualified_name")
             if not qualified_name:
                 raise ValueError("qualified_name parameter is required")
-            prefer_local = bool(params.get("prefer_local"))
+            target_host = self._resolve_requested_target_host(
+                params.get("target_host") or params.get("host") or "",
+                project_name=str(qualified_name),
+            )
             if int(params.get("__intent_epoch") or 0) > 0:
                 self._clear_focus_overrides()
 
@@ -17641,10 +17945,14 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             save_active_project(active_state, config_file)
 
             # Also save the active worktree context for launcher/scratchpad.
-            # directory is remote_dir when remote profile is enabled.
+            # directory is the target host directory when a non-local host profile is enabled.
             worktree_context_file = config_dir / "active-worktree.json"
             worktree_context = self._build_active_worktree_context(
-                full_qualified_name, repo_name, repo, worktree, prefer_local=prefer_local
+                full_qualified_name,
+                repo_name,
+                repo,
+                worktree,
+                target_host=target_host,
             )
             atomic_write_json(worktree_context_file, worktree_context)
             self._set_active_runtime_context(worktree_context)
@@ -17697,7 +18005,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 "qualified_name": full_qualified_name,
                 "directory": worktree_context.get("directory", worktree_path),
                 "local_directory": worktree_path,
-                "remote": worktree_context.get("remote"),
+                "host_profile": worktree_context.get("host_profile"),
+                "target_host": worktree_context.get("target_host"),
+                "transport_kind": worktree_context.get("transport_kind"),
                 "branch": worktree.get("branch", ""),
                 "previous_project": previous_project,
                 "duration_ms": duration_ms
@@ -17847,7 +18157,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         return {
             "success": True,
             "qualified_name": full_qualified_name,
-            "remote": profile,
+            "host_profile": profile,
             "active_context_updated": active_updated,
         }
 
@@ -17871,7 +18181,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "success": True,
             "qualified_name": full_qualified_name,
             "configured": profile is not None,
-            "remote": profile,
+            "host_profile": profile,
         }
 
     async def _worktree_remote_unset(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -17925,7 +18235,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 continue
             items.append({
                 "qualified_name": qualified_name,
-                "remote": self._normalize_remote_profile(profile),
+                "host_profile": self._normalize_remote_profile(profile),
                 "is_active": self.state_manager.state.active_project == qualified_name,
             })
 
@@ -17985,15 +18295,15 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             return {
                 "success": ok,
                 "qualified_name": full_qualified_name,
-                "remote": profile,
+                "host_profile": profile,
                 "duration_ms": duration_ms,
                 "returncode": proc.returncode,
                 "stderr": proc.stderr.strip(),
                 "stdout": proc.stdout.strip(),
                 "message": (
-                    "SSH connectivity and remote directory check passed"
+                    "Host connectivity and host directory check passed"
                     if ok else
-                    "SSH connectivity or remote directory check failed"
+                    "Host connectivity or host directory check failed"
                 ),
             }
         except subprocess.TimeoutExpired:
@@ -18001,16 +18311,16 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             return {
                 "success": False,
                 "qualified_name": full_qualified_name,
-                "remote": profile,
+                "host_profile": profile,
                 "duration_ms": duration_ms,
                 "returncode": None,
-                "stderr": "SSH test timed out after 10s",
+                "stderr": "Host test timed out after 10s",
                 "stdout": "",
-                "message": "SSH connectivity test timed out",
+                "message": "Host connectivity test timed out",
             }
 
     async def _worktree_diagnose(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Diagnose SSH/runtime readiness for a worktree."""
+        """Diagnose host-target/runtime readiness for a worktree."""
         qualified_name = str(params.get("qualified_name") or "").strip()
         active_context = await self._context_get_active({})
 
@@ -18067,10 +18377,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         readiness_reasons = []
         if not remote_profile:
-            readiness_reasons.append("No enabled SSH remote profile is configured for this worktree.")
+            readiness_reasons.append("No enabled host profile is configured for this worktree.")
         if remote_test and not remote_test.get("success"):
             readiness_reasons.append(
-                str(remote_test.get("stderr") or remote_test.get("message") or "SSH connectivity test failed")
+                str(remote_test.get("stderr") or remote_test.get("message") or "Host connectivity test failed")
             )
 
         recommended_commands = [
@@ -18078,11 +18388,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             f"i3pm worktree current --json",
         ]
         if remote_profile:
-            recommended_commands.append(f"i3pm worktree remote test {full_qualified_name}")
+            recommended_commands.append(f"i3pm worktree host test {full_qualified_name}")
             recommended_commands.append(f"i3pm scratchpad toggle --context-key {target_identity['context_key']}")
         else:
             recommended_commands.append(
-                f"i3pm worktree remote set {full_qualified_name} --host ryzen --user {os.environ.get('USER', 'vpittamp')} --dir <remote_dir>"
+                f"i3pm worktree host set {full_qualified_name} --host ryzen --user {os.environ.get('USER', 'vpittamp')} --dir <host_dir>"
             )
 
         return {
@@ -18090,29 +18400,34 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "qualified_name": full_qualified_name,
             "active_context": {
                 "qualified_name": str(active_context.get("qualified_name") or ""),
-                "execution_mode": str(active_context.get("execution_mode") or "global"),
+                "target_host": self._target_host_from_context_payload(
+                    active_context,
+                    project_name=str(active_context.get("qualified_name") or ""),
+                ),
+                "transport_kind": str(active_context.get("transport_kind") or "global"),
                 "connection_key": str(active_context.get("connection_key") or ""),
                 "context_key": str(active_context.get("context_key") or ""),
                 "is_global": bool(active_context.get("is_global", False)),
             },
             "target_context": {
-                "execution_mode": target_identity["execution_mode"],
+                "target_host": target_identity["target_host"],
+                "transport_kind": target_identity["transport_kind"],
                 "connection_key": target_identity["connection_key"],
                 "context_key": target_identity["context_key"],
             },
-            "remote_profile_configured": bool(remote_profile),
-            "remote_profile": remote_profile,
-            "remote_test": remote_test,
+            "host_profile_configured": bool(remote_profile),
+            "host_profile": remote_profile,
+            "host_test": remote_test,
             "scratchpad": scratchpad_payload,
             "launch_support": {
-                "ssh_terminal_supported": bool(remote_profile),
-                "ssh_scoped_gui_supported": False,
-                "ssh_policy": "terminal_only",
+                "host_terminal_supported": bool(remote_profile),
+                "host_scoped_gui_supported": False,
+                "host_policy": "terminal_only",
             },
             "launch_stats": launch_stats,
             "project_pending_launches": project_pending_launches,
             "readiness": {
-                "ssh_ready": bool(remote_profile and (remote_test is None or remote_test.get("success"))),
+                "host_ready": bool(remote_profile and (remote_test is None or remote_test.get("success"))),
                 "reasons": readiness_reasons,
             },
             "recommended_commands": recommended_commands,

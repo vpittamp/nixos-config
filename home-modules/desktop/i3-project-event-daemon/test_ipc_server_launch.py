@@ -44,6 +44,9 @@ class DummyLaunchRegistry:
     def get_stats(self):
         return SimpleNamespace(total_pending=0)
 
+    async def add(self, _pending_launch):
+        return "launch-test"
+
 
 class DummyStateManager:
     def __init__(self, active_project: str):
@@ -124,6 +127,7 @@ def server_local():
     }
     server.registry_loader.version = "test"
     server._local_host_alias = lambda: "thinkpad"
+    server._managed_tmux_session_probe = lambda _spec: {"exists": True, "healthy": True}
     server._set_active_runtime_context(
         make_context(execution_mode="local", connection_key="local@thinkpad")
     )
@@ -148,6 +152,7 @@ def server_ssh():
     }
     server.registry_loader.version = "test"
     server._local_host_alias = lambda: "thinkpad"
+    server._managed_tmux_session_probe = lambda _spec: {"exists": True, "healthy": True}
     server._set_active_runtime_context(
         make_context(
             execution_mode="ssh",
@@ -182,6 +187,7 @@ def server_ssh_current_host():
     }
     server.registry_loader.version = "test"
     server._local_host_alias = lambda: "ryzen"
+    server._managed_tmux_session_probe = lambda _spec: {"exists": True, "healthy": True}
     server._set_active_runtime_context(
         make_context(
             execution_mode="ssh",
@@ -202,7 +208,8 @@ def server_ssh_current_host():
 async def test_prepare_launch_terminal_local_uses_managed_tmux(server_local):
     spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    assert spec["execution_mode"] == "local"
+    assert spec["target_host"] == "thinkpad"
+    assert spec["transport_kind"] == "local_process"
     assert spec["launch_strategy"] == "managed_local_terminal"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
     assert spec["terminal_launch"]["helper_name"] == "project-terminal-launch.sh"
@@ -216,7 +223,8 @@ async def test_prepare_launch_terminal_local_uses_managed_tmux(server_local):
 async def test_prepare_launch_terminal_ssh_uses_managed_tmux(server_ssh):
     spec = await server_ssh._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "ssh_helper"
     assert spec["launch_strategy"] == "managed_remote_terminal"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
     assert spec["terminal_launch"]["helper_name"] == "project-terminal-launch.sh"
@@ -230,13 +238,15 @@ async def test_prepare_launch_terminal_ssh_uses_managed_tmux(server_ssh):
 async def test_prepare_launch_terminal_ssh_current_host_uses_local_transport(server_ssh_current_host):
     spec = await server_ssh_current_host._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "local_process"
     assert spec["launch_strategy"] == "managed_local_terminal"
     assert spec["launch_transport"] == "local_helper"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
     assert "remote" not in spec["terminal_launch"]
-    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@ryzen:22"
-    assert spec["environment"]["I3PM_CONTEXT_VARIANT"] == "ssh"
+    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "local@ryzen"
+    assert spec["environment"]["I3PM_TARGET_HOST"] == "ryzen"
+    assert spec["environment"]["I3PM_TRANSPORT_KIND"] == "local_process"
 
 
 @pytest.mark.asyncio
@@ -267,7 +277,8 @@ async def test_launch_open_clears_stale_focus_override_for_explicit_project_inte
 async def test_prepare_launch_yazi_local_uses_scoped_terminal_command(server_local):
     spec = await server_local._prepare_launch({"app_name": "yazi", "register_launch": False})
 
-    assert spec["execution_mode"] == "local"
+    assert spec["target_host"] == "thinkpad"
+    assert spec["transport_kind"] == "local_process"
     assert spec["launch_strategy"] == "dedicated_local_scoped_window"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_name"] == "project-command-launch.sh"
@@ -280,7 +291,8 @@ async def test_prepare_launch_yazi_local_uses_scoped_terminal_command(server_loc
 async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(server_ssh):
     spec = await server_ssh._prepare_launch({"app_name": "yazi", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "ssh_helper"
     assert spec["launch_strategy"] == "dedicated_remote_scoped_window"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_name"] == "project-command-launch.sh"
@@ -294,7 +306,8 @@ async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(serve
 async def test_prepare_launch_yazi_ssh_current_host_uses_local_scoped_window(server_ssh_current_host):
     spec = await server_ssh_current_host._prepare_launch({"app_name": "yazi", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "local_process"
     assert spec["launch_strategy"] == "dedicated_local_scoped_window"
     assert spec["launch_transport"] == "local_helper"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
@@ -375,10 +388,10 @@ async def test_build_remote_session_attach_spec_overrides_bridge_context_env(ser
 
     spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
 
-    assert spec["connection_key"] == "vpittamp@thinkpad:22"
-    assert spec["context_key"] == f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22"
+    assert spec["connection_key"] == "local@thinkpad"
+    assert spec["context_key"] == f"{QUALIFIED_NAME}::host::thinkpad"
     assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@thinkpad:22"
-    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22"
+    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{QUALIFIED_NAME}::host::thinkpad"
     assert spec["environment"]["I3PM_REMOTE_HOST"] == "thinkpad"
     assert spec["environment"]["I3PM_REMOTE_USER"] == "vpittamp"
 
@@ -461,11 +474,11 @@ def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_
 
 def test_build_remote_helper_script_rejects_current_host_ssh_launch(server_ssh_current_host):
     spec = {
-        "execution_mode": "ssh",
-        "connection_key": "vpittamp@ryzen:22",
+        "execution_mode": "local",
+        "connection_key": "local@ryzen",
         "environment": {
             "I3PM_PROJECT_NAME": QUALIFIED_NAME,
-            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
+            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::host::ryzen",
         },
         "terminal_launch": {
             "mode": "managed_project_terminal",
@@ -680,14 +693,14 @@ async def test_launch_open_reuses_attached_remote_bridge_when_context_mark_drift
         },
     }
     server_ssh._prepare_launch = AsyncMock(return_value=spec)
-    server_ssh._get_reusable_context_terminal_window = AsyncMock(return_value=None)
+    server_ssh._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(window_id=14))
     server_ssh._load_reconciled_session_runtime = AsyncMock(return_value=(
         {"outputs": []},
         [{
             "project_name": QUALIFIED_NAME,
             "connection_key": "local@ryzen",
             "focus_connection_key": "vpittamp@ryzen:22",
-            "context_key": f"{QUALIFIED_NAME}::local::local@ryzen",
+            "context_key": f"{QUALIFIED_NAME}::host::ryzen",
             "focus_execution_mode": "ssh",
             "availability_state": "attached_here",
             "bridge_window_id": 14,

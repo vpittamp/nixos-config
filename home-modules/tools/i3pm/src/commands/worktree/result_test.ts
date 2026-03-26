@@ -36,12 +36,12 @@ Deno.test("buildWorktreeRemoveResult includes cleanup flags", () => {
     repo: "vpittamp/nixos-config",
     branch: "feature/test",
     force: true,
-    remoteProfileRemoved: true,
+    hostProfileRemoved: true,
     contextCleared: false,
     usedGtr: false,
   });
 
-  if (!result.force || !result.remote_profile_removed) {
+  if (!result.force || !result.host_profile_removed) {
     throw new Error("expected cleanup flags in remove result");
   }
 
@@ -56,7 +56,7 @@ Deno.test("buildWorktreeRenameResult includes previous identity", () => {
     previousBranch: "feature/old",
     newBranch: "feature/new",
     force: false,
-    remoteProfileMigrated: true,
+    hostProfileMigrated: true,
     contextUpdated: true,
     usedGtr: true,
   });
@@ -65,7 +65,7 @@ Deno.test("buildWorktreeRenameResult includes previous identity", () => {
     throw new Error(`unexpected previous_qualified_name: ${result.previous_qualified_name}`);
   }
 
-  if (!result.context_updated || !result.remote_profile_migrated) {
+  if (!result.context_updated || !result.host_profile_migrated) {
     throw new Error("expected rename flags");
   }
 });

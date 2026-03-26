@@ -17,7 +17,7 @@ function showHelp(): void {
 i3pm worktree switch - Switch to a worktree by qualified name
 
 USAGE:
-  i3pm worktree switch [--local] <qualified_name>
+  i3pm worktree switch [--host <host>] <qualified_name>
 
 ARGUMENTS:
   qualified_name    Worktree qualified name (account/repo:branch)
@@ -26,11 +26,12 @@ ARGUMENTS:
 OPTIONS:
   -h, --help        Show this help message
   --json            Output result as JSON
-  --local           Force local context (ignore SSH remote profile for this switch)
+  --host <host>     Target host alias for this worktree context
 
 EXAMPLES:
   # Switch to specific worktree
   i3pm worktree switch vpittamp/nixos-config:main
+  i3pm worktree switch --host thinkpad vpittamp/nixos-config:main
   i3pm worktree switch PittampalliOrg/stacks:feature-branch
 
   # Switch to repository's main worktree
@@ -50,7 +51,8 @@ NOTES:
  */
 export async function worktreeSwitch(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    boolean: ["help", "json", "local"],
+    boolean: ["help", "json"],
+    string: ["host"],
     alias: { h: "help" },
     stopEarly: false,
   });
@@ -63,7 +65,7 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
 
   if (!qualifiedName) {
     console.error("Error: Qualified name is required");
-    console.error("Usage: i3pm worktree switch [--local] <account/repo:branch>");
+    console.error("Usage: i3pm worktree switch [--host <host>] <account/repo:branch>");
     return 1;
   }
 
@@ -74,19 +76,21 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
       qualified_name: string;
       directory: string;
       local_directory?: string;
-      remote?: {
+      host_profile?: {
         enabled: boolean;
         host: string;
         user: string;
         port: number;
-        remote_dir: string;
+        directory: string;
       } | null;
+      target_host: string;
+      transport_kind: string;
       branch: string;
       previous_project?: string;
       duration_ms?: number;
     }>("worktree.switch", {
       qualified_name: qualifiedName,
-      prefer_local: Boolean(parsed.local),
+      target_host: parsed.host || "",
     });
 
     if (parsed.json) {
@@ -97,8 +101,10 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
       if (result.local_directory && result.local_directory !== result.directory) {
         console.log(`  Local directory: ${result.local_directory}`);
       }
-      if (result.remote?.enabled) {
-        console.log(`  Remote: ${result.remote.user}@${result.remote.host}:${result.remote.port}`);
+      console.log(`  Target host: ${result.target_host}`);
+      console.log(`  Transport: ${result.transport_kind}`);
+      if (result.host_profile?.enabled) {
+        console.log(`  Host profile: ${result.host_profile.user}@${result.host_profile.host}:${result.host_profile.port}`);
       }
       console.log(`  Branch: ${result.branch}`);
       if (result.previous_project) {

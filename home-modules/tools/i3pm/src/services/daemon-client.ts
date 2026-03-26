@@ -247,8 +247,7 @@ export class DaemonClient {
   async ensureContext<T = unknown>(params: {
     qualified_name?: string;
     project_name?: string;
-    target_variant?: "local" | "ssh";
-    prefer_local?: boolean;
+    target_host?: string;
     clear?: boolean;
   }): Promise<T> {
     return await this.request<T>("context.ensure", params);

@@ -92,20 +92,28 @@ Item {
         commandProcess.running = true;
     }
 
-    function switchWorktree(qualifiedName, variant) {
-        if (!qualifiedName || !variant)
+    function switchWorktree(qualifiedName, targetHost) {
+        if (!qualifiedName)
             return;
-        runJsonCommand([appConfig.i3pmBin, "context", "ensure", qualifiedName, "--variant", variant, "--json"], variant === "ssh" ? "Switched to SSH context" : "Switched to local context");
+        const host = stringOrEmpty(targetHost).trim();
+        const command = [appConfig.i3pmBin, "context", "ensure", qualifiedName, "--json"];
+        if (host)
+            command.splice(command.length - 1, 0, "--host", host);
+        runJsonCommand(command, host ? `Switched to ${host}` : "Switched context");
     }
 
     function clearContext() {
         runJsonCommand([appConfig.i3pmBin, "context", "clear", "--json"], "Cleared worktree context");
     }
 
-    function openTerminal(qualifiedName, variant) {
-        if (!qualifiedName || !variant)
+    function openTerminal(qualifiedName, targetHost) {
+        if (!qualifiedName)
             return;
-        runJsonCommand([appConfig.i3pmBin, "launch", "open", "terminal", "--project", qualifiedName, "--variant", variant, "--json"], "Opened managed terminal");
+        const host = stringOrEmpty(targetHost).trim();
+        const command = [appConfig.i3pmBin, "launch", "open", "terminal", "--project", qualifiedName, "--json"];
+        if (host)
+            command.splice(command.length - 1, 0, "--host", host);
+        runJsonCommand(command, "Opened managed terminal");
     }
 
     function createWorktree(repoQualified, branch, baseBranch) {
@@ -151,12 +159,14 @@ Item {
         runJsonCommand([appConfig.i3pmBin, "session", "focus", target, "--json"], "Focused AI session");
     }
 
-    function focusWindow(windowId, qualifiedName, variant, connectionKey) {
+    function focusWindow(windowId, qualifiedName, targetHost, connectionKey) {
         const numericWindowId = Number(windowId || 0);
         if (!Number.isInteger(numericWindowId) || numericWindowId <= 0)
             return;
 
-        const command = [appConfig.i3pmBin, "window", "focus", String(numericWindowId), "--project", stringOrEmpty(qualifiedName), "--variant", stringOrEmpty(variant), "--json"];
+        const command = [appConfig.i3pmBin, "window", "focus", String(numericWindowId), "--project", stringOrEmpty(qualifiedName), "--json"];
+        if (stringOrEmpty(targetHost))
+            command.splice(command.length - 1, 0, "--host", stringOrEmpty(targetHost));
         if (stringOrEmpty(connectionKey))
             command.splice(command.length - 1, 0, "--connection-key", stringOrEmpty(connectionKey));
         runJsonCommand(command, "Focused window");

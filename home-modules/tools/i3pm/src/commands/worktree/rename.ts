@@ -15,7 +15,7 @@ import {
 } from "./helpers.ts";
 
 const HOME = Deno.env.get("HOME") || "";
-const REMOTE_PROFILES_FILE = `${HOME}/.config/i3/worktree-remote-profiles.json`;
+const REMOTE_PROFILES_FILE = `${HOME}/.config/i3/worktree-host-profiles.json`;
 
 function showUsage(): void {
   console.error(
@@ -333,7 +333,7 @@ export async function worktreeRename(args: string[]): Promise<number> {
     return 1;
   }
 
-  const remoteProfileMigrated = await moveRemoteProfile(resolved.qualifiedName, newQualified);
+  const hostProfileMigrated = await moveRemoteProfile(resolved.qualifiedName, newQualified);
   const contextUpdated = await updateActiveContextIfNeeded(resolved.qualifiedName, newQualified);
 
   if (parsed.json) {
@@ -343,7 +343,7 @@ export async function worktreeRename(args: string[]): Promise<number> {
         previousBranch: resolved.branch,
         newBranch,
         force: parsed.force,
-        remoteProfileMigrated,
+        hostProfileMigrated,
         contextUpdated,
         usedGtr: useGtr,
       }),

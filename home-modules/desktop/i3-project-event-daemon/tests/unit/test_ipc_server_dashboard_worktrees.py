@@ -191,10 +191,10 @@ async def test_build_dashboard_worktrees_exposes_remote_availability_and_active_
 
     assert result[0]["qualified_name"] == "vpittamp/nixos-config:main"
     assert result[0]["is_active"] is True
-    assert result[0]["active_execution_mode"] == "ssh"
-    assert result[0]["remote_available"] is True
+    assert result[0]["active_target_host"] == "ryzen"
+    assert result[0]["host_profile_available"] is True
     assert result[1]["qualified_name"] == "vpittamp/nixos-config:feature-local"
-    assert result[1]["remote_available"] is False
+    assert result[1]["host_profile_available"] is False
 
 
 @pytest.mark.asyncio

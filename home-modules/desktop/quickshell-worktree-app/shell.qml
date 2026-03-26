@@ -106,7 +106,7 @@ ShellRoot {
     function worktreeGroups(qualifiedName) {
         const target = stringOrEmpty(qualifiedName);
         const groups = arrayOrEmpty(appService.dashboard.projects).filter(group => stringOrEmpty(group && group.project) === target);
-        groups.sort((left, right) => stringOrEmpty(left.execution_mode).localeCompare(stringOrEmpty(right.execution_mode)));
+        groups.sort((left, right) => stringOrEmpty(left.target_host).localeCompare(stringOrEmpty(right.target_host)));
         return groups;
     }
 
@@ -116,7 +116,7 @@ ShellRoot {
         if (filterMode === "dirty")
             return numberOrZero(worktree.dirty_count) > 0 || boolOrFalse(worktree.has_conflicts);
         if (filterMode === "remote")
-            return boolOrFalse(worktree.remote_available);
+            return boolOrFalse(worktree.host_profile_available);
         if (filterMode === "sessions")
             return worktreeSessions(worktree.qualified_name).length > 0;
         if (filterMode === "windows")
@@ -163,7 +163,7 @@ ShellRoot {
 
     function sessionMeta(session) {
         const phase = stringOrEmpty(session && (session.session_phase_label || session.session_phase)) || "idle";
-        const host = stringOrEmpty(session && (session.host_name || session.connection_key || session.execution_mode));
+        const host = stringOrEmpty(session && (session.target_host || session.host_name || session.connection_key));
         return host ? `${phase}  •  ${host}` : phase;
     }
 
@@ -288,7 +288,7 @@ ShellRoot {
                         }
 
                         Text {
-                            text: `${root.shortProject(root.activeQualifiedName() || "global")}  •  ${appConfig.hostName}  •  ${stringOrEmpty(appService.dashboard.active_context && appService.dashboard.active_context.execution_mode) || "local"}`
+                            text: `${root.shortProject(root.activeQualifiedName() || "global")}  •  ${appConfig.hostName}  •  ${stringOrEmpty(appService.dashboard.active_context && appService.dashboard.active_context.target_host) || appConfig.hostName}`
                             color: root.palette.subtle
                             font.pixelSize: 11
                         }
@@ -620,7 +620,7 @@ ShellRoot {
                                         Repeater {
                                             model: root.currentWorktree() ? [
                                                 { text: `${root.numberOrZero(root.currentWorktree().dirty_count)} dirty`, fill: root.numberOrZero(root.currentWorktree().dirty_count) > 0 ? root.palette.amberBg : root.palette.cardAlt, border: root.numberOrZero(root.currentWorktree().dirty_count) > 0 ? root.palette.amber : root.palette.border, color: root.numberOrZero(root.currentWorktree().dirty_count) > 0 ? root.palette.amber : root.palette.textDim },
-                                                { text: root.boolOrFalse(root.currentWorktree().remote_available) ? "SSH ready" : "Local only", fill: root.boolOrFalse(root.currentWorktree().remote_available) ? root.palette.blueBg : root.palette.cardAlt, border: root.boolOrFalse(root.currentWorktree().remote_available) ? root.palette.blue : root.palette.border, color: root.boolOrFalse(root.currentWorktree().remote_available) ? root.palette.blue : root.palette.textDim },
+                                                { text: root.boolOrFalse(root.currentWorktree().host_profile_available) ? `Peer host ${root.stringOrEmpty(root.currentWorktree().host_profile_host)}` : "Current host only", fill: root.boolOrFalse(root.currentWorktree().host_profile_available) ? root.palette.blueBg : root.palette.cardAlt, border: root.boolOrFalse(root.currentWorktree().host_profile_available) ? root.palette.blue : root.palette.border, color: root.boolOrFalse(root.currentWorktree().host_profile_available) ? root.palette.blue : root.palette.textDim },
                                                 { text: `${root.numberOrZero(root.currentWorktree().ahead)} ahead / ${root.numberOrZero(root.currentWorktree().behind)} behind`, fill: root.palette.cardAlt, border: root.palette.border, color: root.palette.textDim }
                                             ] : []
 
@@ -650,22 +650,22 @@ ShellRoot {
                                         spacing: 8
 
                                         Button {
-                                            text: "Switch Local"
+                                            text: "Switch Current Host"
                                             enabled: !!root.currentWorktree() && !appService.busy
                                             onClicked: {
                                                 const item = root.currentWorktree();
                                                 if (item)
-                                                    appService.switchWorktree(item.qualified_name, "local");
+                                                    appService.switchWorktree(item.qualified_name, appConfig.hostName);
                                             }
                                         }
 
                                         Button {
-                                            text: "Switch SSH"
-                                            enabled: !!root.currentWorktree() && root.boolOrFalse(root.currentWorktree().remote_available) && !appService.busy
+                                            text: "Switch Peer Host"
+                                            enabled: !!root.currentWorktree() && root.boolOrFalse(root.currentWorktree().host_profile_available) && !appService.busy
                                             onClicked: {
                                                 const item = root.currentWorktree();
                                                 if (item)
-                                                    appService.switchWorktree(item.qualified_name, "ssh");
+                                                    appService.switchWorktree(item.qualified_name, item.host_profile_host || "");
                                             }
                                         }
 
@@ -687,22 +687,22 @@ ShellRoot {
                                         spacing: 8
 
                                         Button {
-                                            text: "Open Local Shell"
+                                            text: "Open Current Host Shell"
                                             enabled: !!root.currentWorktree() && !appService.busy
                                             onClicked: {
                                                 const item = root.currentWorktree();
                                                 if (item)
-                                                    appService.openTerminal(item.qualified_name, "local");
+                                                    appService.openTerminal(item.qualified_name, appConfig.hostName);
                                             }
                                         }
 
                                         Button {
-                                            text: "Open SSH Shell"
-                                            enabled: !!root.currentWorktree() && root.boolOrFalse(root.currentWorktree().remote_available) && !appService.busy
+                                            text: "Open Peer Host Shell"
+                                            enabled: !!root.currentWorktree() && root.boolOrFalse(root.currentWorktree().host_profile_available) && !appService.busy
                                             onClicked: {
                                                 const item = root.currentWorktree();
                                                 if (item)
-                                                    appService.openTerminal(item.qualified_name, "ssh");
+                                                    appService.openTerminal(item.qualified_name, item.host_profile_host || "");
                                             }
                                         }
                                     }
@@ -779,7 +779,7 @@ ShellRoot {
 
                                                                 Text {
                                                                     Layout.fillWidth: true
-                                                                    text: `${root.stringOrEmpty(modelData.execution_mode || "local").toUpperCase()}  •  ${root.numberOrZero(modelData.visible_window_count)} visible / ${root.numberOrZero(modelData.hidden_window_count)} hidden`
+                                                                    text: `${root.stringOrEmpty(modelData.target_host || appConfig.hostName)}  •  ${root.numberOrZero(modelData.visible_window_count)} visible / ${root.numberOrZero(modelData.hidden_window_count)} hidden`
                                                                     color: root.palette.text
                                                                     font.pixelSize: 11
                                                                     font.weight: Font.DemiBold
@@ -788,13 +788,13 @@ ShellRoot {
                                                                 Button {
                                                                     text: "Focus"
                                                                     enabled: !!preferredWindow && !appService.busy
-                                                                    onClicked: appService.focusWindow(preferredWindow.id, modelData.project, modelData.execution_mode, preferredWindow.connection_key)
+                                                                    onClicked: appService.focusWindow(preferredWindow.id, modelData.project, modelData.target_host, preferredWindow.connection_key)
                                                                 }
 
                                                                 Button {
                                                                     text: "Shell"
                                                                     enabled: !appService.busy
-                                                                    onClicked: appService.openTerminal(modelData.project, modelData.execution_mode || "local")
+                                                                    onClicked: appService.openTerminal(modelData.project, modelData.target_host || appConfig.hostName)
                                                                 }
                                                             }
 
