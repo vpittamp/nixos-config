@@ -6,6 +6,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-bleeding.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
+    # Pinned nixpkgs for sunshine — v2025.924.154138 crashes as user service
+    # https://github.com/NixOS/nixpkgs/issues/475181
+    nixpkgs-sunshine.url = "github:NixOS/nixpkgs/b5ad8986fecea232ef2e1ee9eecce5b972dc4114";
+
     # Flake organization
     flake-parts = {
       url = "github:hercules-ci/flake-parts";

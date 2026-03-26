@@ -8,25 +8,6 @@ let
   helpers = import ../lib/helpers.nix { inherit inputs self; };
 in
 {
-  # Hetzner Cloud Server with Sway
-  # Headless Wayland with VNC remote access
-  # Build: sudo nixos-rebuild switch --flake .#hetzner
-  hetzner = helpers.mkSystem {
-    hostname = "hetzner";
-    system = "x86_64-linux";
-    modules = [
-      disko.nixosModules.disko
-      ../configurations/hetzner.nix
-
-      # Home Manager integration
-      (helpers.mkHomeManagerConfig {
-        system = "x86_64-linux";
-        user = "vpittamp";
-        modules = [ ../home-modules/hetzner.nix ];
-      })
-    ];
-  };
-
   # Lenovo ThinkPad (Intel Core Ultra 7 155U + Intel Arc)
   # Physical laptop with Sway/Wayland desktop
   # Build: sudo nixos-rebuild switch --flake .#thinkpad
@@ -101,6 +82,7 @@ in
 
   # ARCHIVED/REMOVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
+  # - hetzner.nix (Hetzner Cloud Server with Sway - no longer in use)
   # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)
   # - hetzner-mangowc.nix (MangoWC experimental compositor)
   # - hetzner-minimal.nix, hetzner-example.nix (nixos-anywhere templates)
