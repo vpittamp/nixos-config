@@ -273,6 +273,52 @@ async def test_process_event_repairs_restored_native_session_window_binding(monk
 
 
 @pytest.mark.asyncio
+async def test_process_event_prefers_discovered_worktree_identity_over_raw_project_label(monkeypatch):
+    tracker = SessionTracker(output=_DummyOutput())
+    monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+
+    canonical_project = "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323"
+    project_path = "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main"
+    monkeypatch.setattr(
+        session_tracker_module,
+        "resolve_discovered_worktree",
+        lambda path_value: {
+            "qualified_name": canonical_project,
+            "repo_qualified_name": "PittampalliOrg/workflow-builder",
+            "branch": "codex-shared-workspace-capabilities-20260323",
+            "path": project_path,
+        } if str(path_value or "") == project_path else None,
+    )
+
+    event = TelemetryEvent(
+        event_name="codex.api_request",
+        timestamp=datetime.now(timezone.utc),
+        session_id="codex-native-session-workflow-builder",
+        tool=AITool.CODEX_CLI,
+        attributes={
+            "project": "PittampalliOrg/workflow-builder:main",
+            "project_path": project_path,
+            "terminal.tmux.session": "i3pm-workflow-builder",
+            "terminal.tmux.window": "0:main",
+            "terminal.tmux.pane": "%77",
+            "terminal.execution_mode": "local",
+            "terminal.connection_key": "local@thinkpad",
+            "terminal.context_key": "PittampalliOrg/workflow-builder:main::local::local@thinkpad",
+        },
+    )
+
+    await tracker.process_event(event)
+
+    async with tracker._lock:
+        matches = [
+            s for s in tracker._sessions.values()
+            if s.native_session_id == "codex-native-session-workflow-builder"
+        ]
+        assert len(matches) == 1
+        assert matches[0].project == canonical_project
+
+
+@pytest.mark.asyncio
 async def test_process_event_preserves_established_tmux_identity_when_resolution_misses(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
@@ -733,6 +779,7 @@ def test_build_session_list_exports_canonical_project_fields(monkeypatch):
 def test_build_session_list_collapses_duplicate_sessions_on_same_tmux_surface(monkeypatch):
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
+    session_tracker_module._tmux_panes_cache = (0.0, [])
     monkeypatch.setattr(session_tracker_module, "tmux_target_exists", lambda **_kwargs: True)
     monkeypatch.setattr(
         session_tracker_module,
@@ -1558,6 +1605,7 @@ async def test_claude_explicit_run_finished_rebinds_stale_process_identity(monke
     tracker = SessionTracker(output=_DummyOutput())
     now = datetime.now(timezone.utc)
     monkeypatch.setattr(tracker, "_load_session_metadata_pid", lambda _sid: None)
+    monkeypatch.setattr(session_tracker_module, "pid_exists", lambda _pid: True)
 
     await tracker.process_event(
         TelemetryEvent(

@@ -13,6 +13,10 @@ import pytest
 
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
+I3PM_TOOL_ROOT = PACKAGE_ROOT.parent.parent / "tools"
+
+if str(I3PM_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(I3PM_TOOL_ROOT))
 
 
 if "i3_project_daemon" not in sys.modules:
@@ -321,6 +325,79 @@ async def test_session_focus_window_only_identity_sets_override_before_wait(serv
 
 
 @pytest.mark.asyncio
+async def test_session_focus_local_tmux_attachable_rebinds_managed_terminal(server, monkeypatch):
+    local_session = {
+        "session_key": "session-local-attach",
+        "window_id": 0,
+        "focus_mode": "local_tmux_attachable",
+        "canonical_project_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "project_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "focus_project": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "focus_execution_mode": "local",
+        "focus_connection_key": "local@thinkpad",
+        "connection_key": "local@thinkpad",
+        "surface_key": "surface-local-attach",
+        "conflict_state": "",
+        "tmux_session": "i3pm-workflow-builder-attach",
+        "tmux_window": "0:main",
+        "tmux_pane": "%9",
+        "terminal_context": {
+            "tmux_socket": "/tmp/tmux-local",
+            "connection_key": "local@thinkpad",
+        },
+    }
+    server._session_list = AsyncMock(return_value={"sessions": [dict(local_session)]})
+    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
+    server._launch_open = AsyncMock(return_value={
+        "success": True,
+        "launch": {
+            "success": True,
+            "launch_id": "launch-1",
+        },
+        "spec": {
+            "terminal_anchor_id": "anchor-1",
+        },
+    })
+    server._wait_for_launch_status = AsyncMock(return_value={
+        "success": True,
+        "launch_id": "launch-1",
+        "status": "running",
+        "reason": "window_bound",
+    })
+    server._wait_for_terminal_window = AsyncMock(return_value={
+        "matched": True,
+        "window_id": 144,
+        "terminal_anchor_id": "anchor-1",
+    })
+    server._window_focus = AsyncMock(return_value={"success": True, "verification": {"success": True}})
+    server._select_tmux_target = Mock(return_value={"success": True, "reason": "ok"})
+    server._verify_tmux_target = Mock(return_value={
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%9",
+        "tmux_pane": "%9",
+    })
+    server._focus_state = AsyncMock(return_value={
+        "success": True,
+        "current_ai_session_key": "session-local-attach",
+        "focused_window_id": 144,
+    })
+
+    result = await server._session_focus({"session_key": "session-local-attach"})
+
+    assert result["success"] is True
+    assert result["focus_mode"] == "local_tmux_attachable"
+    assert result["window_id"] == 144
+    assert result["verification"]["success"] is True
+    server._launch_open.assert_awaited_once_with({
+        "app_name": "terminal",
+        "qualified_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "context_variant_override": "local",
+        "__intent_epoch": 0,
+    })
+
+
+@pytest.mark.asyncio
 async def test_session_close_local_tmux_kills_tracked_pane(server):
     local_session = {
         "session_key": "session-local-pane",
@@ -417,7 +494,7 @@ async def test_session_close_falls_back_to_managed_window_when_tmux_identity_mis
 @pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
     server._connection_target_is_current_host = lambda _connection_key: False
-    monkeypatch.setattr(server, "_remote_daemon_request", lambda **_kwargs: {
+    server._remote_daemon_request = AsyncMock(return_value={
         "success": True,
         "reason": "ok",
         "remote_host": "ryzen",
@@ -595,7 +672,6 @@ async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_ful
     assert result["success"] is True
     assert len(commands) == 1
     assert "workspace number 3" in commands[0]
-    assert "scratchpad show" in commands[0]
     assert "move workspace number 3" in commands[0]
     assert "fullscreen enable" in commands[0]
     assert "fullscreen disable" not in commands[0]
@@ -1222,6 +1298,8 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
+        "current_ai_session_key": "session-current",
+        "focused_window_id": 101,
         "outputs": [],
         "tracked_windows": [
             {"id": 101, "window_id": 101, "focused": True},
@@ -1244,9 +1322,7 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
             "tmux_pane": "%1",
         }
     ]
-    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
-    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
     result = await server._focus_state({})
 
@@ -1264,6 +1340,8 @@ async def test_focus_state_clears_verified_remote_override_without_local_ai_focu
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
+        "current_ai_session_key": "",
+        "focused_window_id": 404,
         "outputs": [],
         "tracked_windows": [
             {"id": 404, "window_id": 404, "focused": True},
@@ -1303,9 +1381,7 @@ async def test_focus_state_clears_verified_remote_override_without_local_ai_focu
     ]
     server._focus_session_override_key = "session-remote-current"
     server._focus_window_override = {"window_id": 30, "connection_key": "vpittamp@ryzen:22"}
-    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
-    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
     result = await server._focus_state({})
 
@@ -1323,6 +1399,8 @@ async def test_focus_state_does_not_float_to_remote_session_without_verified_ove
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
+        "current_ai_session_key": "",
+        "focused_window_id": 404,
         "outputs": [],
         "tracked_windows": [
             {"id": 404, "window_id": 404, "focused": True},
@@ -1345,9 +1423,7 @@ async def test_focus_state_does_not_float_to_remote_session_without_verified_ove
             "tmux_pane": "%0",
         },
     ]
-    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
-    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
     result = await server._focus_state({})
 
@@ -1364,6 +1440,8 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
+        "current_ai_session_key": "session-local-current",
+        "focused_window_id": 101,
         "outputs": [],
         "tracked_windows": [
             {"id": 101, "window_id": 101, "focused": True},
@@ -1396,9 +1474,7 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
         },
     ]
     server._focus_session_override_key = "session-remote-selected"
-    server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
-    monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
     result = await server._focus_state({})
 

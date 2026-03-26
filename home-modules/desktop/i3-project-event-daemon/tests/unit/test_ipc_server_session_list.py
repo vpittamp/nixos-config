@@ -15,6 +15,10 @@ import pytest
 
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
+I3PM_TOOL_ROOT = PACKAGE_ROOT.parent.parent / "tools"
+
+if str(I3PM_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(I3PM_TOOL_ROOT))
 
 
 if "i3_project_daemon" not in sys.modules:
@@ -996,6 +1000,74 @@ async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, 
 
 
 @pytest.mark.asyncio
+async def test_local_unbound_session_uses_canonical_worktree_identity_and_attachable_focus(server, monkeypatch):
+    raw_session = make_runtime_session({
+        "session_key": "session-local-headless",
+        "render_session_key": "session-local-headless",
+        "surface_key": "surface-local-headless",
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "project": "PittampalliOrg/workflow-builder:main",
+        "display_project": "PittampalliOrg/workflow-builder:main",
+        "focus_project": "PittampalliOrg/workflow-builder:main",
+        "project_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+        "window_id": 0,
+        "terminal_anchor_id": "",
+        "binding_state": "tmux_present_unbound",
+        "availability_state": "unavailable",
+        "focusability_reason": "unavailable",
+        "focus_mode": "unavailable",
+        "is_current_window": False,
+        "window_active": False,
+        "pane_active": False,
+        "terminal_context": {
+            "window_id": 0,
+            "terminal_anchor_id": "",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "PittampalliOrg/workflow-builder:main::local::local@thinkpad",
+            "host_name": "thinkpad",
+            "pane_title": "main",
+            "pane_active": False,
+            "window_active": False,
+            "binding_state": "tmux_present_unbound",
+            "tmux_session": "i3pm-workflow-builder-headless",
+            "tmux_window": "0:main",
+            "tmux_pane": "%9",
+        },
+        "tmux_session": "i3pm-workflow-builder-headless",
+        "tmux_window": "0:main",
+        "tmux_pane": "%9",
+    })
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "thinkpad")
+    monkeypatch.setattr(
+        ipc_server_module,
+        "resolve_discovered_worktree",
+        lambda path_value: {
+            "qualified_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+            "repo_qualified_name": "PittampalliOrg/workflow-builder",
+            "branch": "codex-shared-workspace-capabilities-20260323",
+            "path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+        } if str(path_value or "") == "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main" else None,
+    )
+
+    result = server._normalize_session_items(
+        [raw_session],
+        source_connection_key="local@thinkpad",
+        source_host_name="thinkpad",
+        tracked_windows=[],
+    )
+
+    assert len(result) == 1
+    session = result[0]
+    assert session["project_name"] == "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323"
+    assert session["raw_project_name"] == "PittampalliOrg/workflow-builder:main"
+    assert session["project_identity_source"] == "project_path"
+    assert session["focus_mode"] == "local_tmux_attachable"
+    assert session["availability_state"] == "local_tmux_attachable"
+    assert session["focusability_reason"] == "exact_local_tmux_attachable"
+
+
+@pytest.mark.asyncio
 async def test_remote_ssh_session_bound_to_local_window_uses_remote_bridge_focus(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["tracked_windows"][0].update({
@@ -1669,3 +1741,84 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
     assert window["focused"] is True
     assert window["visible"] is True
     assert window["hidden"] is False
+
+
+@pytest.mark.asyncio
+async def test_hydrate_runtime_git_state_uses_canonical_project_identity(server):
+    runtime_snapshot = {
+        "active_context": {},
+        "tracked_windows": [],
+    }
+    sessions = [{
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "canonical_project_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+    }]
+    server._build_dashboard_worktrees = AsyncMock(return_value=[{
+        "qualified_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "path": "/tmp/workflow-builder",
+        "branch": "codex-shared-workspace-capabilities-20260323",
+        "visible_window_count": 0,
+        "scoped_window_count": 0,
+    }])
+    server._get_or_schedule_git_snapshot = AsyncMock(return_value={
+        "state": "dirty",
+        "status_compact": "● 1",
+        "status_tooltip": "dirty",
+        "freshness": "fresh",
+        "attribution": "exact_worktree",
+        "has_conflicts": False,
+        "ahead": 0,
+        "behind": 0,
+        "staged_count": 0,
+        "modified_count": 1,
+        "untracked_count": 0,
+        "dirty_count": 1,
+    })
+
+    await server._hydrate_runtime_git_state(runtime_snapshot, sessions)
+
+    assert sessions[0]["git_state"] == "dirty"
+    assert runtime_snapshot["dashboard_worktrees"][0]["git_state"] == "dirty"
+
+
+@pytest.mark.asyncio
+async def test_build_dashboard_worktrees_rebuilds_when_cached_active_context_is_stale(server, monkeypatch):
+    runtime_snapshot = {
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "project_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+        },
+        "tracked_windows": [],
+    }
+    server._worktree_cache = [{
+        "qualified_name": "PittampalliOrg/stacks:main",
+        "is_active": True,
+    }]
+    server._worktree_cache_time = time.time()
+    server._worktree_cache_fingerprint = {
+        "active_qualified": "PittampalliOrg/stacks:main",
+        "active_mode": "local",
+        "repos": (0, 0),
+        "usage": (0, 0),
+    }
+    monkeypatch.setattr(server, "_stat_fingerprint", lambda _path: (0, 0))
+    server._repo_list = AsyncMock(return_value={
+        "repositories": [{
+            "account": "vpittamp",
+            "name": "nixos-config",
+            "worktrees": [{
+                "branch": "main",
+                "path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                "is_clean": True,
+                "is_main": True,
+            }],
+        }],
+    })
+    monkeypatch.setattr(server, "_get_project_remote_profile", lambda _qualified_name: None)
+
+    worktrees = await server._build_dashboard_worktrees(runtime_snapshot)
+
+    assert len(worktrees) == 1
+    assert worktrees[0]["qualified_name"] == "vpittamp/nixos-config:main"
+    assert worktrees[0]["is_active"] is True

@@ -24,6 +24,12 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
 import psutil
+from i3_project_manager.core.identity import (
+    normalize_session_name_key,
+    project_names_match,
+    normalize_project_path as normalize_identity_project_path,
+    resolve_discovered_worktree,
+)
 
 from .models import (
     ActivityFreshness,
@@ -2608,32 +2614,12 @@ class SessionTracker:
         preferred_project: Optional[str], candidate_project: Optional[str]
     ) -> bool:
         """Best-effort project name matching across short/qualified forms."""
-        try:
-            from i3_project_manager.core.identity import project_names_match
-            return project_names_match(preferred_project, candidate_project)
-        except ImportError:
-            # Fallback if module is missing
-            if not preferred_project or not candidate_project:
-                return False
-            preferred = preferred_project.strip().lower()
-            candidate = candidate_project.strip().lower()
-            if preferred == candidate:
-                return True
-            import re
-            return re.sub(r"[^a-z0-9]+", "-", preferred).strip("-") == re.sub(r"[^a-z0-9]+", "-", candidate).strip("-")
+        return project_names_match(preferred_project, candidate_project)
 
     @staticmethod
     def _normalize_project_path(value: Optional[str]) -> Optional[str]:
         """Normalize filesystem path for project comparisons."""
-        if not value or not isinstance(value, str):
-            return None
-        try:
-            expanded = os.path.expanduser(value.strip())
-            if not expanded:
-                return None
-            return os.path.realpath(expanded)
-        except Exception:
-            return value
+        return normalize_identity_project_path(value)
 
     @staticmethod
     def _parse_context_key(value: Optional[str]) -> dict[str, str]:
@@ -2677,23 +2663,21 @@ class SessionTracker:
         if value.startswith("/") or value.startswith("~"):
             normalized_path = SessionTracker._normalize_project_path(value)
         if normalized_path:
-            parts = [segment for segment in normalized_path.split(os.sep) if segment]
-            for idx, segment in enumerate(parts):
-                if segment != "repos":
-                    continue
-                if idx + 3 >= len(parts):
-                    continue
-                account = parts[idx + 1].strip()
-                repo = parts[idx + 2].strip()
-                branch = parts[idx + 3].strip()
-                if not account or not repo:
-                    continue
-                prefixes.add(f"{account}/{repo}")
-                if branch:
-                    exact.add(f"{account}/{repo}:{branch}")
-                break
+            resolved = SessionTracker._resolve_discovered_worktree(normalized_path)
+            if resolved:
+                repo_qualified = str(resolved.get("repo_qualified_name") or "").strip()
+                qualified_name = str(resolved.get("qualified_name") or "").strip()
+                if repo_qualified:
+                    prefixes.add(repo_qualified)
+                if qualified_name:
+                    exact.add(qualified_name)
 
         return exact, prefixes
+
+    @staticmethod
+    def _resolve_discovered_worktree(path_value: Optional[str]) -> Optional[dict[str, str]]:
+        """Resolve canonical worktree metadata from repos.json by path."""
+        return resolve_discovered_worktree(path_value)
 
     @staticmethod
     def _project_session_suffix(project_name: Optional[str]) -> str:
@@ -2783,19 +2767,11 @@ class SessionTracker:
 
     @staticmethod
     def _normalize_tmux_session_key(value: Optional[str]) -> str:
-        try:
-            from i3_project_manager.core.identity import normalize_session_name_key
-            return normalize_session_name_key(value)
-        except ImportError:
-            raw = str(value or "").strip().lower()
-            return "".join(ch if ch.isalnum() else "-" for ch in raw).strip("-")
+        return normalize_session_name_key(value)
 
     def _resolve_export_project_labels(self, session: Session) -> dict[str, str]:
         """Resolve canonical project fields from daemon-backed anchor state only."""
         session_project = str(session.project or "").strip()
-        project_path = str(session.project_path or "").strip()
-        if not session_project and project_path:
-            session_project = self._project_from_path(project_path) or project_path
 
         display_project = session_project or "unknown"
         focus_project = session_project
@@ -2903,25 +2879,15 @@ class SessionTracker:
 
     @staticmethod
     def _project_from_path(path_value: Optional[str]) -> Optional[str]:
-        """Best-effort derive <account>/<repo>:<branch> from a repos path."""
+        """Resolve canonical discovered worktree identity from a filesystem path."""
         normalized = SessionTracker._normalize_project_path(path_value)
         if not normalized:
             return None
-        try:
-            parts = [segment for segment in normalized.split(os.sep) if segment]
-            for idx, segment in enumerate(parts):
-                if segment != "repos":
-                    continue
-                if idx + 3 >= len(parts):
-                    continue
-                account = parts[idx + 1].strip()
-                repo = parts[idx + 2].strip()
-                branch = parts[idx + 3].strip()
-                if not account or not repo or not branch:
-                    continue
-                return f"{account}/{repo}:{branch}"
-        except Exception:
-            return None
+        resolved = SessionTracker._resolve_discovered_worktree(normalized)
+        if resolved:
+            qualified_name = str(resolved.get("qualified_name") or "").strip()
+            if qualified_name:
+                return qualified_name
         return None
 
     def _extract_project_context(
@@ -2931,6 +2897,7 @@ class SessionTracker:
         attrs = event.attributes
         project: Optional[str] = None
         project_path = None
+        context_project = ""
 
         for key in ("project", "project_name", "i3pm.project_name"):
             value = attrs.get(key)
@@ -2944,9 +2911,27 @@ class SessionTracker:
                 project_path = self._normalize_project_path(value)
                 break
 
+        for key in ("i3pm.context_key", "terminal.context_key"):
+            value = attrs.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            parsed = self._parse_context_key(value)
+            context_project = str(parsed.get("qualified_name") or "").strip()
+            if context_project:
+                break
+
         project_from_path = self._project_from_path(project_path)
         if project_from_path:
             if not project:
+                project = project_from_path
+            elif context_project and not self._project_names_match(context_project, project_from_path):
+                logger.debug(
+                    "Project/context mismatch detected; preferring discovered worktree path: raw=%s context=%s path=%s derived=%s",
+                    project,
+                    context_project,
+                    project_path,
+                    project_from_path,
+                )
                 project = project_from_path
             elif not self._project_names_match(project, project_from_path):
                 # Resource/env project names can become stale after context
@@ -2958,9 +2943,16 @@ class SessionTracker:
                     project_from_path,
                 )
                 project = project_from_path
-        elif not project and project_path:
-            project = project_path
-
+        elif context_project:
+            if not project:
+                project = context_project
+            elif not self._project_names_match(project, context_project):
+                logger.debug(
+                    "Project mismatch detected; preferring context project: raw=%s context=%s",
+                    project,
+                    context_project,
+                )
+                project = context_project
         return project, project_path
 
     @staticmethod

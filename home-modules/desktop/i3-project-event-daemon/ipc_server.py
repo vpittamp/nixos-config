@@ -50,6 +50,12 @@ from .services.window_filter import (
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.agent_harness import CodexHarnessManager
 from .models.window_command import CommandBatch
+from i3_project_manager.core.identity import (
+    normalize_project_path,
+    parse_context_key_project,
+    project_names_match,
+    resolve_discovered_worktree,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +350,7 @@ class IPCServer:
         self._worktree_cache: Optional[List[Dict[str, Any]]] = None
         self._worktree_cache_time: float = 0.0
         self._worktree_cache_ttl: float = 10.0
+        self._worktree_cache_fingerprint: Dict[str, Any] = {}
         self._git_snapshot_cache: Dict[str, Dict[str, Any]] = {}
         self._git_snapshot_tasks: Dict[str, asyncio.Task] = {}
         self._git_probe_timeout_seconds: float = 2.5
@@ -3243,6 +3250,7 @@ class IPCServer:
         """Invalidate the cached worktree summary used by dashboard snapshots."""
         self._worktree_cache = None
         self._worktree_cache_time = 0.0
+        self._worktree_cache_fingerprint = {}
         self._git_snapshot_cache.clear()
 
     def _git_snapshot_ttl(self, priority: str, *, success: bool = True) -> float:
@@ -3266,6 +3274,25 @@ class IPCServer:
         if age_seconds <= (ttl_seconds * 3):
             return "aging"
         return "stale"
+
+    @staticmethod
+    def _stat_fingerprint(path: Path) -> Tuple[int, int]:
+        """Return a cheap file fingerprint tuple for cache coherence checks."""
+        try:
+            stat_result = path.stat()
+        except OSError:
+            return (0, 0)
+        return (int(stat_result.st_mtime_ns), int(stat_result.st_size))
+
+    def _dashboard_worktree_cache_fingerprint(self, runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Build the coherence key for dashboard worktree snapshots."""
+        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
+        return {
+            "active_qualified": str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
+            "active_mode": str(active_context.get("execution_mode") or "local").strip() or "local",
+            "repos": self._stat_fingerprint(ConfigPaths.REPOS_FILE),
+            "usage": self._stat_fingerprint(ConfigPaths.PROJECT_USAGE_FILE),
+        }
 
     @staticmethod
     def _git_snapshot_state(*, has_conflicts: bool, dirty_count: int) -> str:
@@ -3763,7 +3790,12 @@ class IPCServer:
         for session in sessions:
             if not isinstance(session, dict):
                 continue
-            project_name = str(session.get("project_name") or session.get("project") or "").strip()
+            project_name = str(
+                session.get("canonical_project_name")
+                or session.get("project_name")
+                or session.get("project")
+                or ""
+            ).strip()
             if not project_name or project_name not in worktree_by_name:
                 continue
             priority = "current" if session is current_session else "visible"
@@ -3793,7 +3825,12 @@ class IPCServer:
         for session in sessions:
             if not isinstance(session, dict):
                 continue
-            project_name = str(session.get("project_name") or session.get("project") or "").strip()
+            project_name = str(
+                session.get("canonical_project_name")
+                or session.get("project_name")
+                or session.get("project")
+                or ""
+            ).strip()
             snapshot = snapshots_by_project.get(project_name)
             self._apply_git_snapshot_to_session(session, snapshot)
 
@@ -9066,6 +9103,7 @@ class IPCServer:
             return "tmux_missing"
         if normalized_focus_mode in {
             "local_window",
+            "local_tmux_attachable",
             "remote_bridge_bound",
             "remote_bridge_attachable",
         }:
@@ -9079,6 +9117,7 @@ class IPCServer:
         session_phase: str,
         remote_source_stale: bool,
         has_tmux_identity: bool,
+        has_canonical_project: bool,
     ) -> str:
         """Return the primary reason a session can or cannot be focused."""
         normalized_phase = str(session_phase or "").strip().lower()
@@ -9093,8 +9132,12 @@ class IPCServer:
             return "exact_remote_tmux_attachable"
         if normalized_focus_mode == "local_window":
             return "local_window_bound"
+        if normalized_focus_mode == "local_tmux_attachable":
+            return "exact_local_tmux_attachable"
         if not has_tmux_identity:
             return "missing_tmux_identity"
+        if not has_canonical_project:
+            return "missing_canonical_worktree_identity"
         return "unavailable"
 
     def _normalize_session_items(
@@ -9133,7 +9176,7 @@ class IPCServer:
             context_key = str(terminal_context.get("context_key") or "").strip()
             if not connection_key or connection_key == "unknown":
                 continue
-            project_name = str(
+            raw_project_name = str(
                 raw_session.get("focus_project")
                 or raw_session.get("window_project")
                 or raw_session.get("display_project")
@@ -9141,7 +9184,14 @@ class IPCServer:
                 or bound_window.get("project")
                 or ""
             ).strip()
-            display_project = str(raw_session.get("display_project") or project_name or "global").strip() or "global"
+            project_identity = self._resolve_session_worktree_identity(
+                project_name=raw_project_name,
+                project_path=str(raw_session.get("project_path") or "").strip(),
+                context_key=context_key,
+            )
+            canonical_project_name = str(project_identity.get("canonical_project_name") or "").strip()
+            project_name = canonical_project_name or raw_project_name
+            display_project = project_name or "global"
             stats_source = str(raw_session.get("stats_source") or "missing").strip() or "missing"
             if source_received_at > 0 and stats_source == "local_process":
                 stats_source = "remote_process"
@@ -9224,6 +9274,7 @@ class IPCServer:
                 remote_source_stale=source_stale,
                 has_tmux_identity=bool(tmux_session and tmux_pane),
                 execution_mode=execution_mode,
+                has_canonical_project=bool(canonical_project_name),
             )
             session_phase, session_phase_label = self._session_phase_with_runtime_overrides(
                 phase=str(raw_session.get("session_phase") or "").strip(),
@@ -9248,6 +9299,7 @@ class IPCServer:
                 session_phase=session_phase,
                 remote_source_stale=bool(source_stale),
                 has_tmux_identity=bool(tmux_session and tmux_pane),
+                has_canonical_project=bool(canonical_project_name),
             )
             normalized.append({
                 "session_key": session_key,
@@ -9257,7 +9309,16 @@ class IPCServer:
                 "display_tool": str(raw_session.get("tool") or "unknown").strip() or "unknown",
                 "project": project_name,
                 "project_name": project_name,
-                "project_path": str(raw_session.get("project_path") or "").strip(),
+                "project_path": str(project_identity.get("canonical_project_path") or raw_session.get("project_path") or "").strip(),
+                "canonical_project_name": canonical_project_name,
+                "canonical_project_path": str(project_identity.get("canonical_project_path") or "").strip(),
+                "raw_project_name": raw_project_name,
+                "context_project_name": str(project_identity.get("context_project_name") or "").strip(),
+                "repo_qualified_name": str(project_identity.get("repo_qualified_name") or "").strip(),
+                "project_identity_source": str(project_identity.get("project_identity_source") or "").strip(),
+                "project_identity_blocker": str(project_identity.get("project_identity_blocker") or "").strip(),
+                "project_identity_mismatch": bool(project_identity.get("project_identity_mismatch", False)),
+                "project_identity_mismatch_sources": list(project_identity.get("project_identity_mismatch_sources") or []),
                 "display_project": display_project,
                 "window_project": str(bound_window.get("project") or project_name or "").strip(),
                 "window_id": bound_window_id,
@@ -9322,7 +9383,7 @@ class IPCServer:
                 "is_current_host": is_current_host,
                 "source_is_current_host": source_is_current_host,
                 "focus_mode": focus_mode,
-                "focus_target_host": "" if focus_mode == "local_window" else host_name,
+                "focus_target_host": "" if focus_mode in {"local_window", "local_tmux_attachable"} else host_name,
                 "availability_state": availability_state,
                 "focusability_reason": focusability_reason,
                 "identity_source": str(raw_session.get("identity_source") or "").strip(),
@@ -10264,6 +10325,154 @@ class IPCServer:
             "verification": verification,
         }
 
+    async def _focus_local_session_attach(
+        self,
+        *,
+        session_key: str,
+        session: Dict[str, Any],
+        intent_epoch: int = 0,
+    ) -> Dict[str, Any]:
+        """Attach a local tmux-backed session into a managed project terminal."""
+        project_name = str(
+            session.get("canonical_project_name")
+            or session.get("project_name")
+            or session.get("project")
+            or ""
+        ).strip()
+        if not project_name:
+            raise RuntimeError(f"Session {session_key} is missing canonical worktree identity")
+        if not self._user_intent_is_current(intent_epoch):
+            return self._stale_intent_result(
+                session_key=session_key,
+                project_name=project_name,
+                reason="superseded_before_local_attach",
+            )
+
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+
+        launch_wrapper = await self._launch_open({
+            "app_name": "terminal",
+            "qualified_name": project_name,
+            "context_variant_override": "local",
+            "__intent_epoch": intent_epoch,
+        })
+        launch_result = dict(launch_wrapper.get("launch") or {})
+        launch_spec = dict(launch_wrapper.get("spec") or {})
+        reused_existing = bool(launch_result.get("reused_existing", False))
+        launch_id = str(launch_result.get("launch_id") or "").strip()
+        terminal_anchor_id = str(launch_spec.get("terminal_anchor_id") or "").strip()
+        local_window_id = int(launch_result.get("window_id") or 0)
+
+        launch_status: Dict[str, Any] = {
+            "success": True,
+            "launch_id": launch_id,
+            "status": "reused_existing" if reused_existing else "not_applicable",
+            "reason": "reused_existing" if reused_existing else "not_applicable",
+        }
+        if not reused_existing and launch_id:
+            launch_status = await self._wait_for_launch_status(
+                launch_id,
+                terminal_anchor_id=terminal_anchor_id,
+            )
+
+        if local_window_id <= 0 and terminal_anchor_id:
+            anchor_result = await self._wait_for_terminal_window(terminal_anchor_id)
+            local_window_id = int(anchor_result.get("window_id") or 0)
+        if local_window_id <= 0:
+            raise RuntimeError(
+                f"Local session terminal for {session_key} did not bind to a live window"
+            )
+
+        if not self._user_intent_is_current(intent_epoch):
+            return self._stale_intent_result(
+                session_key=session_key,
+                project_name=project_name,
+                reason="superseded_before_local_focus",
+            )
+
+        focus_result = await self._window_focus({
+            "window_id": local_window_id,
+            "project_name": project_name,
+            "target_variant": "local",
+            "connection_key": str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+        })
+
+        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
+        tmux_result: Dict[str, Any] = {
+            "success": True,
+            "reason": "not_required",
+        }
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "session_key": session_key,
+            "current_session_key": "",
+        }
+        overall_success = bool(launch_result.get("success", False)) and bool(launch_status.get("success", False)) and bool(focus_result.get("success", False))
+        if overall_success and tmux_session and tmux_window:
+            tmux_result = self._select_tmux_target(
+                execution_mode="local",
+                tmux_session=tmux_session,
+                tmux_window=tmux_window,
+                tmux_pane=tmux_pane,
+                remote_target="",
+                connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                tmux_socket=tmux_socket,
+            )
+            overall_success = overall_success and bool(tmux_result.get("success", False))
+
+        if overall_success and tmux_session and tmux_window and tmux_pane:
+            tmux_verification = self._verify_tmux_target(
+                execution_mode="local",
+                tmux_session=tmux_session,
+                tmux_window=tmux_window,
+                tmux_pane=tmux_pane,
+                remote_target="",
+                connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                tmux_socket=tmux_socket,
+            )
+            verification = {
+                "success": bool(tmux_verification.get("success", False)),
+                "reason": str(tmux_verification.get("reason") or "tmux_target_mismatch"),
+                "session_key": session_key,
+                "current_session_key": session_key if bool(tmux_verification.get("success", False)) else "",
+                "verification_source": "tmux",
+                "active_tmux_pane": str(tmux_verification.get("active_tmux_pane") or "").strip(),
+                "tmux_pane": str(tmux_verification.get("tmux_pane") or "").strip(),
+            }
+            overall_success = overall_success and bool(verification.get("success", False))
+
+        focus_state_after = await self._focus_state({})
+        if overall_success:
+            self._set_focus_overrides(
+                session_key=session_key,
+                window_id=local_window_id,
+                connection_key=str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+            )
+
+        return {
+            "success": overall_success,
+            "session_key": session_key,
+            "window_id": local_window_id,
+            "surface_key": str(session.get("surface_key") or "").strip(),
+            "conflict_state": str(session.get("conflict_state") or "").strip(),
+            "focus_mode": "local_tmux_attachable",
+            "focus_target_host": "",
+            "focus": focus_result,
+            "launch": launch_result,
+            "launch_status": launch_status,
+            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+            "focus_state_after": focus_state_after,
+            "tmux": tmux_result,
+            "verification": verification,
+        }
+
     async def _session_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Focus an AI session by its daemon-owned session key."""
         session_key = str(params.get("session_key") or "").strip()
@@ -10289,11 +10498,17 @@ class IPCServer:
 
         window_id = int(session.get("window_id") or 0)
         focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"
-        if window_id <= 0 and focus_mode not in {"remote_bridge_bound", "remote_bridge_attachable"}:
+        if window_id <= 0 and focus_mode not in {"remote_bridge_bound", "remote_bridge_attachable", "local_tmux_attachable"}:
             raise RuntimeError(f"Session {session_key} is not focusable")
 
         if focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
             return await self._focus_remote_session_attach(
+                session_key=session_key,
+                session=session,
+                intent_epoch=int(params.get("__intent_epoch") or 0),
+            )
+        if focus_mode == "local_tmux_attachable":
+            return await self._focus_local_session_attach(
                 session_key=session_key,
                 session=session,
                 intent_epoch=int(params.get("__intent_epoch") or 0),
@@ -10787,14 +11002,28 @@ class IPCServer:
     ) -> List[Dict[str, Any]]:
         """Build a compact worktree list for the runtime shell."""
         now = time.time()
-        if self._worktree_cache is not None and (now - self._worktree_cache_time) < self._worktree_cache_ttl:
-            return [dict(item) for item in self._worktree_cache]
-
-        repo_result = await self._repo_list({})
-        repositories = list(repo_result.get("repositories", []) or [])
         active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
         active_qualified = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
         active_mode = str(active_context.get("execution_mode") or "local").strip() or "local"
+        cache_fingerprint = self._dashboard_worktree_cache_fingerprint(runtime_snapshot)
+        if (
+            self._worktree_cache is not None
+            and (now - self._worktree_cache_time) < self._worktree_cache_ttl
+            and self._worktree_cache_fingerprint == cache_fingerprint
+        ):
+            cached_active = next(
+                (
+                    str(item.get("qualified_name") or "").strip()
+                    for item in self._worktree_cache
+                    if isinstance(item, dict) and bool(item.get("is_active", False))
+                ),
+                "",
+            )
+            if cached_active == active_qualified:
+                return [dict(item) for item in self._worktree_cache]
+
+        repo_result = await self._repo_list({})
+        repositories = list(repo_result.get("repositories", []) or [])
         usage_map: Dict[str, Dict[str, Any]] = {}
 
         try:
@@ -10886,6 +11115,7 @@ class IPCServer:
         )
         self._worktree_cache = [dict(item) for item in worktrees]
         self._worktree_cache_time = now
+        self._worktree_cache_fingerprint = cache_fingerprint
         return worktrees
 
     async def _display_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -16070,6 +16300,54 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         return ""
 
+    def _resolve_session_worktree_identity(
+        self,
+        *,
+        project_name: str,
+        project_path: str,
+        context_key: str,
+    ) -> Dict[str, Any]:
+        """Resolve canonical worktree identity for a session payload."""
+        raw_project = str(project_name or "").strip()
+        normalized_path = normalize_project_path(project_path)
+        context_project = parse_context_key_project(context_key)
+        discovered = resolve_discovered_worktree(normalized_path) if normalized_path else None
+
+        canonical_project = ""
+        canonical_path = normalized_path or ""
+        identity_source = ""
+        repo_qualified_name = ""
+        branch = ""
+        mismatch_sources: List[str] = []
+
+        if isinstance(discovered, dict):
+            canonical_project = str(discovered.get("qualified_name") or "").strip()
+            repo_qualified_name = str(discovered.get("repo_qualified_name") or "").strip()
+            branch = str(discovered.get("branch") or "").strip()
+            canonical_path = str(discovered.get("path") or canonical_path).strip()
+            identity_source = "project_path"
+        elif context_project:
+            canonical_project = context_project
+            identity_source = "context_key"
+
+        if canonical_project and raw_project and not project_names_match(raw_project, canonical_project):
+            mismatch_sources.append("raw_project")
+        if canonical_project and context_project and not project_names_match(context_project, canonical_project):
+            mismatch_sources.append("context_key")
+
+        return {
+            "raw_project_name": raw_project,
+            "context_project_name": context_project,
+            "canonical_project_name": canonical_project,
+            "canonical_project_path": canonical_path,
+            "repo_qualified_name": repo_qualified_name,
+            "branch": branch,
+            "project_identity_source": identity_source,
+            "project_identity_mismatch": bool(mismatch_sources),
+            "project_identity_mismatch_sources": list(mismatch_sources),
+            "project_identity_blocker": "" if canonical_project else "missing_canonical_worktree_identity",
+        }
+
     def _session_has_tracking_identity(self, terminal_context: Dict[str, Any]) -> bool:
         """Return whether a session can be tracked deterministically."""
         tmux_session = str(terminal_context.get("tmux_session") or "").strip()
@@ -16100,6 +16378,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         remote_source_stale: bool,
         has_tmux_identity: bool,
         execution_mode: str,
+        has_canonical_project: bool,
     ) -> str:
         """Return how a session should be focused."""
         normalized_execution_mode = str(execution_mode or "").strip().lower() or "local"
@@ -16113,6 +16392,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             return "unavailable"
         if window_id > 0:
             return "local_window"
+        if has_tmux_identity and has_canonical_project:
+            return "local_tmux_attachable"
         return "unavailable"
 
     def _remote_session_terminal_role(self, context_key: str) -> str:
