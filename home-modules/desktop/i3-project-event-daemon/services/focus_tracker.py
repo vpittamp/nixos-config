@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,21 +19,62 @@ logger = logging.getLogger(__name__)
 class FocusTracker:
     """Service for tracking workspace and window focus state (T021, US1)"""
 
-    def __init__(self, state_manager, config_dir: Path = Path.home() / ".config/i3"):
+    def __init__(
+        self,
+        state_manager,
+        config_dir: Path = Path.home() / ".config/i3",
+        project_validator: Optional[Callable[[str], bool]] = None,
+    ):
         """Initialize focus tracker.
 
         Args:
             state_manager: StateManager instance for accessing DaemonState
             config_dir: Directory for persistent focus state files
+            project_validator: Optional callback used to validate canonical project names
         """
         self.state_manager = state_manager
         self.config_dir = config_dir
         self.config_dir.mkdir(parents=True, exist_ok=True)
+        self._project_validator = project_validator
 
         self.project_focus_file = self.config_dir / "project-focus-state.json"
         self.workspace_focus_file = self.config_dir / "workspace-focus-state.json"
 
         self._lock = asyncio.Lock()
+
+    def set_project_validator(self, validator: Optional[Callable[[str], bool]]) -> None:
+        """Update the validator used for canonical project enforcement."""
+        self._project_validator = validator
+
+    def _is_valid_project(self, project: str) -> bool:
+        """Return True when the project is allowed to persist in focus history."""
+        normalized = str(project or "").strip()
+        if not normalized or normalized.lower() == "global":
+            return False
+        validator = self._project_validator
+        if validator is None:
+            return True
+        try:
+            return bool(validator(normalized))
+        except Exception as exc:
+            logger.warning(f"Project validator failed for {normalized}: {exc}")
+            return False
+
+    def _prune_project_focus_map(self, mapping: object) -> dict[str, int]:
+        """Return a project focus map containing only valid canonical projects."""
+        if not isinstance(mapping, dict):
+            return {}
+
+        pruned: dict[str, int] = {}
+        for project, workspace_num in mapping.items():
+            normalized = str(project or "").strip()
+            if not self._is_valid_project(normalized):
+                continue
+            try:
+                pruned[normalized] = int(workspace_num)
+            except (TypeError, ValueError):
+                continue
+        return pruned
 
     async def track_workspace_focus(self, project: str, workspace_num: int) -> None:
         """Track workspace focus for a project (T022, US1)
@@ -42,6 +83,10 @@ class FocusTracker:
             project: Project name
             workspace_num: Workspace number that was focused
         """
+        if not self._is_valid_project(project):
+            logger.info(f"Skipping focus tracking for invalid project identity: {project}")
+            return
+
         async with self._lock:
             # Update DaemonState
             self.state_manager.state.set_focused_workspace(project, workspace_num)
@@ -76,6 +121,9 @@ class FocusTracker:
         Returns:
             Workspace number or None if no focus history
         """
+        if not self._is_valid_project(project):
+            return None
+
         async with self._lock:
             workspace_num = self.state_manager.state.get_focused_workspace(project)
             logger.debug(f"Retrieved focused workspace for {project}: {workspace_num}")
@@ -102,7 +150,10 @@ class FocusTracker:
         """
         try:
             # Persist project focus state
-            project_focus_data = self.state_manager.state.project_focused_workspace
+            project_focus_data = self._prune_project_focus_map(
+                self.state_manager.state.project_focused_workspace
+            )
+            self.state_manager.state.project_focused_workspace = project_focus_data
             self.project_focus_file.write_text(json.dumps(project_focus_data, indent=2))
 
             # Persist workspace focus state
@@ -125,8 +176,11 @@ class FocusTracker:
         try:
             # Load project focus state
             if self.project_focus_file.exists():
-                project_focus_data = json.loads(self.project_focus_file.read_text())
+                raw_project_focus_data = json.loads(self.project_focus_file.read_text())
+                project_focus_data = self._prune_project_focus_map(raw_project_focus_data)
                 self.state_manager.state.project_focused_workspace = project_focus_data
+                if project_focus_data != raw_project_focus_data:
+                    self.project_focus_file.write_text(json.dumps(project_focus_data, indent=2))
                 logger.info(f"Loaded project focus state: {len(project_focus_data)} projects")
             else:
                 logger.debug("No project focus state file found (first run)")

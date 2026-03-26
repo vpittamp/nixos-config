@@ -10,15 +10,32 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock
-
-# Import directly from modules to avoid relative import issues
+import importlib.util
 import sys
-from pathlib import Path as ImportPath
-sys.path.insert(0, str(ImportPath(__file__).parent.parent.parent / "services"))
-sys.path.insert(0, str(ImportPath(__file__).parent.parent.parent / "models"))
-from focus_tracker import FocusTracker
-from legacy import DaemonState
+
+PACKAGE_ROOT = Path(__file__).parent.parent.parent.parent
+
+
+def _load_module(module_name: str, relative_path: str):
+    spec = importlib.util.spec_from_file_location(module_name, PACKAGE_ROOT / relative_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+focus_tracker_module = _load_module(
+    "i3_project_daemon_focus_tracker",
+    "services/focus_tracker.py",
+)
+legacy_module = _load_module(
+    "i3_project_daemon_legacy",
+    "models/legacy.py",
+)
+
+FocusTracker = focus_tracker_module.FocusTracker
+DaemonState = legacy_module.DaemonState
 
 
 class MockStateManager:
@@ -161,6 +178,20 @@ class TestWorkspaceFocusTracking:
         persisted_data = json.loads(focus_tracker.project_focus_file.read_text())
         assert len(persisted_data) == 3
 
+    @pytest.mark.asyncio
+    async def test_track_workspace_focus_rejects_invalid_project(self, state_manager, temp_config_dir):
+        """Invalid project names should not be persisted once a validator is configured."""
+        tracker = FocusTracker(
+            state_manager,
+            config_dir=temp_config_dir,
+            project_validator=lambda project: project == "vpittamp/nixos-config:main",
+        )
+
+        await tracker.track_workspace_focus("PittampalliOrg/workflow-builder:main", 3)
+
+        assert state_manager.state.project_focused_workspace == {}
+        assert not tracker.project_focus_file.exists()
+
 
 # ============================================================================
 # Window Focus Tracking Tests (T065-T066, US4)
@@ -274,6 +305,26 @@ class TestFocusPersistence:
         assert state_manager.state.get_focused_workspace("dotfiles") == 5
         assert state_manager.state.get_focused_window(3) == 12345
         assert state_manager.state.get_focused_window(5) == 67890
+
+    @pytest.mark.asyncio
+    async def test_load_focus_state_prunes_invalid_projects(self, state_manager, temp_config_dir):
+        """Loading should prune stale project keys when a validator is configured."""
+        tracker = FocusTracker(
+            state_manager,
+            config_dir=temp_config_dir,
+            project_validator=lambda project: project == "vpittamp/nixos-config:main",
+        )
+        project_focus_data = {
+            "vpittamp/nixos-config:main": 3,
+            "PittampalliOrg/workflow-builder:main": 5,
+        }
+        (temp_config_dir / "project-focus-state.json").write_text(json.dumps(project_focus_data))
+
+        await tracker.load_focus_state()
+
+        assert state_manager.state.project_focused_workspace == {"vpittamp/nixos-config:main": 3}
+        persisted = json.loads((temp_config_dir / "project-focus-state.json").read_text())
+        assert persisted == {"vpittamp/nixos-config:main": 3}
 
     @pytest.mark.asyncio
     async def test_load_focus_state_missing_files(self, focus_tracker, state_manager):

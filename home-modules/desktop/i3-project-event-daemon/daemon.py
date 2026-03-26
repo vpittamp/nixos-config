@@ -28,6 +28,7 @@ from .config import (
     load_app_classification,
     load_application_registry,  # Feature 037 T027
     load_active_project,
+    atomic_write_json,
     reload_window_rules,
     WindowRulesWatcher,
     OutputStatesWatcher,
@@ -231,6 +232,14 @@ class I3ProjectDaemon:
             workspace_tracker=self.workspace_tracker,
             badge_state=self.badge_state
         )
+        self.state_manager.focus_tracker.set_project_validator(
+            self.ipc_server._canonical_discovered_project_name
+        )
+
+        cleanup_stats = self.ipc_server.prune_persisted_project_state()
+        removed_total = sum(int(value or 0) for value in cleanup_stats.values())
+        if removed_total > 0:
+            logger.info("Pruned stale project state on startup: %s", cleanup_stats)
 
         # Create event buffer with broadcast callback (Feature 017: T019)
         self.event_buffer = EventBuffer(max_size=500, broadcast_callback=self.ipc_server.broadcast_event_entry)
@@ -287,7 +296,18 @@ class I3ProjectDaemon:
         active_project_file = self.config_dir / "active-project.json"
         active_state = load_active_project(active_project_file)
         if active_state:
-            await self.state_manager.set_active_project(active_state.project_name)
+            project_name = self.ipc_server._canonical_discovered_project_name(active_state.project_name)
+            if project_name:
+                await self.state_manager.set_active_project(project_name)
+                resolved = self.ipc_server._find_worktree_by_qualified_name(project_name)
+                context = self.ipc_server._build_active_worktree_context(
+                    project_name,
+                    resolved["repo_name"],
+                    resolved["repo"],
+                    resolved["worktree"],
+                )
+                atomic_write_json(ConfigPaths.ACTIVE_WORKTREE_FILE, context)
+                self.ipc_server._set_active_runtime_context(context)
 
         # Create connection manager
         self.connection = ResilientI3Connection(self.state_manager)

@@ -91,6 +91,23 @@ async def test_build_dashboard_worktrees_prefers_active_visibility_recency_and_d
         },
     }))
     monkeypatch.setattr(constants_module.ConfigPaths, "PROJECT_USAGE_FILE", usage_file)
+    repos_file = tmp_path / "repos.json"
+    repos_file.write_text(json.dumps({
+        "repositories": [{
+            "account": "vpittamp",
+            "name": "nixos-config",
+            "worktrees": [
+                make_worktree("main"),
+                make_worktree("feature-visible"),
+                make_worktree("feature-recent"),
+                make_worktree("feature-frequent"),
+                make_worktree("feature-infrequent"),
+                make_worktree("feature-dirty", is_clean=False, modified_count=2),
+                make_worktree("feature-clean"),
+            ],
+        }],
+    }))
+    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
 
     server._repo_list = AsyncMock(return_value={
         "repositories": [{
@@ -135,6 +152,18 @@ async def test_build_dashboard_worktrees_exposes_remote_availability_and_active_
     usage_file = tmp_path / "project-usage.json"
     usage_file.write_text(json.dumps({"version": 1, "projects": {}}))
     monkeypatch.setattr(constants_module.ConfigPaths, "PROJECT_USAGE_FILE", usage_file)
+    repos_file = tmp_path / "repos.json"
+    repos_file.write_text(json.dumps({
+        "repositories": [{
+            "account": "vpittamp",
+            "name": "nixos-config",
+            "worktrees": [
+                make_worktree("main"),
+                make_worktree("feature-local"),
+            ],
+        }],
+    }))
+    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
 
     server._repo_list = AsyncMock(return_value={
         "repositories": [{
@@ -166,6 +195,126 @@ async def test_build_dashboard_worktrees_exposes_remote_availability_and_active_
     assert result[0]["remote_available"] is True
     assert result[1]["qualified_name"] == "vpittamp/nixos-config:feature-local"
     assert result[1]["remote_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_build_dashboard_worktrees_prunes_stale_usage_and_invalid_window_projects(server, tmp_path, monkeypatch):
+    usage_file = tmp_path / "project-usage.json"
+    usage_file.write_text(json.dumps({
+        "version": 1,
+        "projects": {
+            "vpittamp/nixos-config:main": {"last_used_at": 10, "use_count": 1},
+            "PittampalliOrg/workflow-builder:main": {"last_used_at": 20, "use_count": 2},
+        },
+    }))
+    monkeypatch.setattr(constants_module.ConfigPaths, "PROJECT_USAGE_FILE", usage_file)
+
+    repos_file = tmp_path / "repos.json"
+    repos_file.write_text(json.dumps({
+        "repositories": [{
+            "account": "vpittamp",
+            "name": "nixos-config",
+            "worktrees": [make_worktree("main")],
+        }],
+    }))
+    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
+
+    server._repo_list = AsyncMock(return_value={
+        "repositories": [{
+            "account": "vpittamp",
+            "name": "nixos-config",
+            "worktrees": [make_worktree("main")],
+        }],
+    })
+    server._flatten_runtime_windows = lambda _snapshot: [
+        {"project": "vpittamp/nixos-config:main", "hidden": False},
+        {"project": "PittampalliOrg/workflow-builder:main", "hidden": False},
+    ]
+    server._get_project_remote_profile = lambda _qualified_name: None
+
+    result = await server._build_dashboard_worktrees({
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+        },
+    })
+
+    assert [item["qualified_name"] for item in result] == ["vpittamp/nixos-config:main"]
+    assert result[0]["visible_window_count"] == 1
+    persisted = json.loads(usage_file.read_text())
+    assert persisted["projects"] == {
+        "vpittamp/nixos-config:main": {"last_used_at": 10, "use_count": 1},
+    }
+
+
+@pytest.mark.asyncio
+async def test_prune_persisted_project_state_clears_stale_active_files(server, tmp_path, monkeypatch):
+    usage_file = tmp_path / "project-usage.json"
+    usage_file.write_text(json.dumps({
+        "version": 1,
+        "projects": {
+            "vpittamp/nixos-config:main": {"last_used_at": 10, "use_count": 1},
+            "PittampalliOrg/workflow-builder:main": {"last_used_at": 20, "use_count": 2},
+        },
+    }))
+    active_project_file = tmp_path / "active-project.json"
+    active_project_file.write_text(json.dumps({"project_name": "PittampalliOrg/workflow-builder:main"}))
+    active_worktree_file = tmp_path / "active-worktree.json"
+    active_worktree_file.write_text(json.dumps({
+        "qualified_name": "PittampalliOrg/workflow-builder:main",
+        "local_directory": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+    }))
+    repos_file = tmp_path / "repos.json"
+    repos_file.write_text(json.dumps({
+        "repositories": [{
+            "account": "vpittamp",
+            "name": "nixos-config",
+            "worktrees": [make_worktree("main")],
+        }],
+    }))
+
+    monkeypatch.setattr(constants_module.ConfigPaths, "PROJECT_USAGE_FILE", usage_file)
+    monkeypatch.setattr(constants_module.ConfigPaths, "ACTIVE_PROJECT_FILE", active_project_file)
+    monkeypatch.setattr(constants_module.ConfigPaths, "ACTIVE_WORKTREE_FILE", active_worktree_file)
+    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
+
+    class DummyFocusTracker:
+        def __init__(self, path):
+            self.project_focus_file = path
+
+        def _prune_project_focus_map(self, mapping):
+            return {
+                key: int(value)
+                for key, value in mapping.items()
+                if key == "vpittamp/nixos-config:main"
+            }
+
+    focus_file = tmp_path / "project-focus-state.json"
+    server.state_manager.focus_tracker = DummyFocusTracker(focus_file)
+    server.state_manager.state.project_focused_workspace = {
+        "vpittamp/nixos-config:main": 3,
+        "PittampalliOrg/workflow-builder:main": 5,
+    }
+    focus_file.write_text(json.dumps(
+        server.state_manager.state.project_focused_workspace
+    ))
+
+    stats = server.prune_persisted_project_state()
+
+    assert stats == {
+        "usage_removed": 1,
+        "focus_removed": 1,
+        "active_project_cleared": 1,
+        "active_worktree_cleared": 1,
+    }
+    assert json.loads(usage_file.read_text())["projects"] == {
+        "vpittamp/nixos-config:main": {"last_used_at": 10, "use_count": 1},
+    }
+    assert json.loads(focus_file.read_text()) == {
+        "vpittamp/nixos-config:main": 3,
+    }
+    assert not active_project_file.exists()
+    assert not active_worktree_file.exists()
 
 
 @pytest.mark.asyncio

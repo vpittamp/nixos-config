@@ -71,9 +71,11 @@ APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
+    "file_path": "",
     "mtime_ns": None,
     "size": None,
     "by_path": {},
+    "by_qualified_name": {},
 }
 
 
@@ -132,78 +134,136 @@ def project_names_match(
 
 def resolve_discovered_worktree(path_value: Optional[str]) -> Optional[Dict[str, str]]:
     """Resolve a canonical worktree entry from `repos.json` by normalized path."""
+    cache = _load_discovered_worktree_cache()
+    if not cache:
+        return None
+
     normalized = normalize_project_path(path_value)
     if not normalized:
         return None
 
+    entry = cache.get("by_path", {}).get(normalized)
+    if not isinstance(entry, dict):
+        return None
+    return dict(entry)
+
+
+def resolve_discovered_worktree_name(qualified_name: Optional[str]) -> Optional[Dict[str, str]]:
+    """Resolve a canonical worktree entry from `repos.json` by qualified name."""
+    cache = _load_discovered_worktree_cache()
+    if not cache:
+        return None
+
+    normalized_name = str(qualified_name or "").strip()
+    if not normalized_name:
+        return None
+
+    entry = cache.get("by_qualified_name", {}).get(normalized_name)
+    if not isinstance(entry, dict):
+        return None
+    return dict(entry)
+
+
+def is_discovered_worktree_name(qualified_name: Optional[str]) -> bool:
+    """Return True when the qualified name exists in discovered worktrees."""
+    return resolve_discovered_worktree_name(qualified_name) is not None
+
+
+def discovered_worktree_matches_path(
+    qualified_name: Optional[str],
+    path_value: Optional[str],
+) -> bool:
+    """Return True when the qualified name resolves and matches the discovered local path."""
+    discovered = resolve_discovered_worktree_name(qualified_name)
+    normalized_path = normalize_project_path(path_value)
+    if not discovered or not normalized_path:
+        return False
+    return normalize_project_path(discovered.get("path")) == normalized_path
+
+
+def _load_discovered_worktree_cache(force_refresh: bool = False) -> Dict[str, Any]:
+    """Load discovered worktree identity maps keyed by path and qualified name."""
     repos_file = ConfigPaths.REPOS_FILE
     if not repos_file.exists():
         _DISCOVERED_WORKTREE_CACHE.update({
+            "file_path": "",
             "mtime_ns": None,
             "size": None,
             "by_path": {},
+            "by_qualified_name": {},
         })
-        return None
+        return {}
 
     try:
         stat_result = repos_file.stat()
     except OSError:
-        return None
+        return {}
 
-    cached_mapping = _DISCOVERED_WORKTREE_CACHE.get("by_path")
-    if (
-        _DISCOVERED_WORKTREE_CACHE.get("mtime_ns") != stat_result.st_mtime_ns
-        or _DISCOVERED_WORKTREE_CACHE.get("size") != stat_result.st_size
-        or not isinstance(cached_mapping, dict)
-    ):
-        try:
-            with repos_file.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            return None
+    cached_by_path = _DISCOVERED_WORKTREE_CACHE.get("by_path")
+    cached_by_name = _DISCOVERED_WORKTREE_CACHE.get("by_qualified_name")
+    cache_valid = (
+        not force_refresh
+        and str(_DISCOVERED_WORKTREE_CACHE.get("file_path") or "") == str(repos_file)
+        and _DISCOVERED_WORKTREE_CACHE.get("mtime_ns") == stat_result.st_mtime_ns
+        and _DISCOVERED_WORKTREE_CACHE.get("size") == stat_result.st_size
+        and isinstance(cached_by_path, dict)
+        and isinstance(cached_by_name, dict)
+    )
+    if cache_valid:
+        return {
+            "by_path": dict(cached_by_path),
+            "by_qualified_name": dict(cached_by_name),
+        }
 
-        mapping: Dict[str, Dict[str, str]] = {}
-        repositories = payload.get("repositories", []) if isinstance(payload, dict) else []
-        for repo in repositories if isinstance(repositories, list) else []:
-            if not isinstance(repo, dict):
+    try:
+        with repos_file.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    by_path: Dict[str, Dict[str, str]] = {}
+    by_name: Dict[str, Dict[str, str]] = {}
+    repositories = payload.get("repositories", []) if isinstance(payload, dict) else []
+    for repo in repositories if isinstance(repositories, list) else []:
+        if not isinstance(repo, dict):
+            continue
+        account = str(repo.get("account") or "").strip()
+        repo_name = str(repo.get("name") or "").strip()
+        repo_qualified = f"{account}/{repo_name}" if account and repo_name else ""
+        if not repo_qualified:
+            continue
+        worktrees = repo.get("worktrees", [])
+        if not isinstance(worktrees, list):
+            continue
+        for worktree in worktrees:
+            if not isinstance(worktree, dict):
                 continue
-            account = str(repo.get("account") or "").strip()
-            repo_name = str(repo.get("name") or "").strip()
-            repo_qualified = f"{account}/{repo_name}" if account and repo_name else ""
-            if not repo_qualified:
+            branch = str(worktree.get("branch") or "").strip()
+            worktree_path = normalize_project_path(worktree.get("path"))
+            if not branch or not worktree_path:
                 continue
-            worktrees = repo.get("worktrees", [])
-            if not isinstance(worktrees, list):
-                continue
-            for worktree in worktrees:
-                if not isinstance(worktree, dict):
-                    continue
-                branch = str(worktree.get("branch") or "").strip()
-                worktree_path = normalize_project_path(worktree.get("path"))
-                if not branch or not worktree_path:
-                    continue
-                mapping[worktree_path] = {
-                    "qualified_name": f"{repo_qualified}:{branch}",
-                    "repo_qualified_name": repo_qualified,
-                    "account": account,
-                    "repo_name": repo_name,
-                    "branch": branch,
-                    "path": worktree_path,
-                }
+            entry = {
+                "qualified_name": f"{repo_qualified}:{branch}",
+                "repo_qualified_name": repo_qualified,
+                "account": account,
+                "repo_name": repo_name,
+                "branch": branch,
+                "path": worktree_path,
+            }
+            by_path[worktree_path] = entry
+            by_name[entry["qualified_name"]] = entry
 
-        _DISCOVERED_WORKTREE_CACHE.update({
-            "mtime_ns": stat_result.st_mtime_ns,
-            "size": stat_result.st_size,
-            "by_path": mapping,
-        })
-        cached_mapping = mapping
-
-    if not isinstance(cached_mapping, dict):
-        return None
-    entry = cached_mapping.get(normalized)
-    if not isinstance(entry, dict):
-        return None
-    return dict(entry)
+    _DISCOVERED_WORKTREE_CACHE.update({
+        "file_path": str(repos_file),
+        "mtime_ns": stat_result.st_mtime_ns,
+        "size": stat_result.st_size,
+        "by_path": by_path,
+        "by_qualified_name": by_name,
+    })
+    return {
+        "by_path": dict(by_path),
+        "by_qualified_name": dict(by_name),
+    }
 
 
 class DesktopIconIndex:
@@ -2502,8 +2562,11 @@ class IPCServer:
         error_msg = None
 
         try:
-            project = params["project"]
+            requested_project = str(params["project"] or "").strip()
             workspace = params["workspace"]
+            project = self._canonical_discovered_project_name(requested_project)
+            if not project:
+                raise ValueError(f"Unknown discovered worktree project: {requested_project}")
 
             # Validate workspace number
             if not isinstance(workspace, int) or workspace < 1 or workspace > 70:
@@ -3381,6 +3444,142 @@ class IPCServer:
         self._worktree_cache_time = 0.0
         self._worktree_cache_fingerprint = {}
         self._git_snapshot_cache.clear()
+
+    def _canonical_discovered_project_name(
+        self,
+        project_name: Optional[str],
+        *,
+        project_path: Optional[str] = None,
+    ) -> str:
+        """Return the canonical discovered worktree name or an empty string."""
+        normalized_name = str(project_name or "").strip()
+        if not normalized_name or normalized_name.lower() == "global":
+            return ""
+
+        discovered = resolve_discovered_worktree_name(normalized_name)
+        if not discovered:
+            return ""
+
+        if project_path and not discovered_worktree_matches_path(
+            discovered.get("qualified_name"),
+            project_path,
+        ):
+            return ""
+        return str(discovered.get("qualified_name") or "").strip()
+
+    def _load_validated_project_usage_map(self) -> Dict[str, Dict[str, Any]]:
+        """Load project usage and prune entries that no longer resolve to worktrees."""
+        usage_file = ConfigPaths.PROJECT_USAGE_FILE
+        data: Dict[str, Any] = {"version": 1, "projects": {}}
+
+        if usage_file.exists():
+            try:
+                existing_usage = json.loads(usage_file.read_text())
+                if isinstance(existing_usage, dict):
+                    data.update(existing_usage)
+            except Exception as exc:
+                logger.debug("dashboard.worktrees could not read project usage map: %s", exc)
+
+        raw_projects = data.get("projects", {})
+        if not isinstance(raw_projects, dict):
+            raw_projects = {}
+
+        pruned_projects: Dict[str, Dict[str, Any]] = {}
+        removed = 0
+        for qualified_name, entry in raw_projects.items():
+            canonical_name = self._canonical_discovered_project_name(str(qualified_name or "").strip())
+            if not canonical_name:
+                removed += 1
+                continue
+            if not isinstance(entry, dict):
+                entry = {}
+            pruned_projects[canonical_name] = {
+                "last_used_at": int(entry.get("last_used_at", 0) or 0),
+                "use_count": int(entry.get("use_count", 0) or 0),
+            }
+
+        if removed or pruned_projects != raw_projects:
+            updated = {
+                "version": int(data.get("version", 1) or 1),
+                "updated_at": int(time.time()),
+                "projects": pruned_projects,
+            }
+            atomic_write_json(usage_file, updated)
+            logger.info("Pruned %s stale project usage entr%s", removed, "y" if removed == 1 else "ies")
+
+        return pruned_projects
+
+    def prune_persisted_project_state(self) -> Dict[str, int]:
+        """Prune persisted project state that no longer resolves to discovered worktrees."""
+        stats = {
+            "usage_removed": 0,
+            "focus_removed": 0,
+            "active_project_cleared": 0,
+            "active_worktree_cleared": 0,
+        }
+
+        usage_file = ConfigPaths.PROJECT_USAGE_FILE
+        if usage_file.exists():
+            before_count = 0
+            try:
+                existing = json.loads(usage_file.read_text())
+                if isinstance(existing, dict) and isinstance(existing.get("projects"), dict):
+                    before_count = len(existing.get("projects", {}))
+            except Exception:
+                before_count = 0
+            usage_map = self._load_validated_project_usage_map()
+            stats["usage_removed"] = max(0, before_count - len(usage_map))
+
+        focus_tracker = getattr(self.state_manager, "focus_tracker", None)
+        if focus_tracker is not None:
+            focus_file_exists = False
+            try:
+                if focus_tracker.project_focus_file.exists():
+                    focus_file_exists = True
+                    raw_focus = json.loads(focus_tracker.project_focus_file.read_text())
+                    before_count = len(raw_focus) if isinstance(raw_focus, dict) else 0
+                else:
+                    raw_focus = {}
+                    before_count = 0
+            except Exception:
+                raw_focus = {}
+                before_count = 0
+            pruned_focus = focus_tracker._prune_project_focus_map(raw_focus)
+            self.state_manager.state.project_focused_workspace = pruned_focus
+            if focus_file_exists or before_count > 0 or pruned_focus:
+                focus_tracker.project_focus_file.write_text(json.dumps(pruned_focus, indent=2))
+            stats["focus_removed"] = max(0, before_count - len(pruned_focus))
+
+        active_project_file = ConfigPaths.ACTIVE_PROJECT_FILE
+        if active_project_file.exists():
+            try:
+                payload = json.loads(active_project_file.read_text())
+            except Exception:
+                payload = {}
+            project_name = str((payload or {}).get("project_name") or "").strip()
+            if project_name and not self._canonical_discovered_project_name(project_name):
+                active_project_file.unlink(missing_ok=True)
+                stats["active_project_cleared"] = 1
+                if getattr(self.state_manager.state, "active_project", None) == project_name:
+                    self.state_manager.state.active_project = None
+
+        active_worktree_file = ConfigPaths.ACTIVE_WORKTREE_FILE
+        if active_worktree_file.exists():
+            try:
+                payload = json.loads(active_worktree_file.read_text())
+            except Exception:
+                payload = {}
+            qualified_name = str((payload or {}).get("qualified_name") or "").strip()
+            local_directory = str((payload or {}).get("local_directory") or (payload or {}).get("path") or "").strip()
+            if (
+                not self._canonical_discovered_project_name(qualified_name)
+                or not discovered_worktree_matches_path(qualified_name, local_directory)
+            ):
+                active_worktree_file.unlink(missing_ok=True)
+                stats["active_worktree_cleared"] = 1
+                self._set_active_runtime_context(None)
+
+        return stats
 
     def _git_snapshot_ttl(self, priority: str, *, success: bool = True) -> float:
         """Return the cache TTL for a live git snapshot priority bucket."""
@@ -10996,7 +11195,11 @@ class IPCServer:
             window_id = int(window.get("window_id") or window.get("id") or 0)
             if window_id <= 0:
                 continue
-            project_name = str(window.get("project") or "global").strip() or "global"
+            raw_project_name = str(window.get("project") or "global").strip() or "global"
+            project_name = self._canonical_discovered_project_name(
+                raw_project_name,
+                project_path=window.get("project_path"),
+            ) or "global"
             execution_mode = str(window.get("execution_mode") or "local").strip() or "local"
             group_key = project_name if project_name == "global" else f"{project_name}::{execution_mode}"
             hidden = bool(window.get("hidden", False))
@@ -11153,25 +11356,17 @@ class IPCServer:
 
         repo_result = await self._repo_list({})
         repositories = list(repo_result.get("repositories", []) or [])
-        usage_map: Dict[str, Dict[str, Any]] = {}
-
-        try:
-            usage_file = ConfigPaths.PROJECT_USAGE_FILE
-            if usage_file.exists():
-                existing_usage = json.loads(usage_file.read_text())
-                if isinstance(existing_usage, dict):
-                    usage_projects = existing_usage.get("projects", {})
-                    if isinstance(usage_projects, dict):
-                        usage_map = usage_projects
-        except Exception as exc:
-            logger.debug("dashboard.worktrees could not read project usage map: %s", exc)
+        usage_map = self._load_validated_project_usage_map()
 
         window_counts: Dict[str, Dict[str, int]] = {}
         for window in self._flatten_runtime_windows(runtime_snapshot):
             if not isinstance(window, dict):
                 continue
-            project_name = str(window.get("project") or "global").strip() or "global"
-            if project_name == "global":
+            project_name = self._canonical_discovered_project_name(
+                window.get("project"),
+                project_path=window.get("project_path"),
+            )
+            if not project_name:
                 continue
 
             counts = window_counts.setdefault(project_name, {
@@ -12786,6 +12981,13 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
             # Get project name (can be None for global mode)
             name = params.get("name")
+            if name is not None:
+                normalized_name = str(name or "").strip()
+                if not self._canonical_discovered_project_name(normalized_name):
+                    raise FileNotFoundError(
+                        f"Legacy non-worktree project activation is not supported: {normalized_name}"
+                    )
+                name = normalized_name
 
             # Set active project
             result = await service.set_active(name)
@@ -13636,7 +13838,15 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             with open(path) as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                return data
+                qualified_name = str(data.get("qualified_name") or "").strip()
+                local_directory = str(data.get("local_directory") or data.get("path") or "").strip()
+                if self._canonical_discovered_project_name(qualified_name) and discovered_worktree_matches_path(
+                    qualified_name,
+                    local_directory,
+                ):
+                    return data
+                path.unlink(missing_ok=True)
+                logger.info("Cleared stale active-worktree context for %s", qualified_name or "<empty>")
         except Exception as e:
             logger.debug(f"Failed to read active-worktree context: {e}")
         return None
