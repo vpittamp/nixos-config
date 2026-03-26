@@ -405,11 +405,11 @@ let
   ryzenMonitorProfiles = {
     default = {
       name = "default";
-      description = "Full Ryzen desktop layout (DP-1, HDMI-A-1, DP-2 @1.25x)";
+      description = "Full Ryzen desktop layout (HDMI-A-1, DP-1, DP-2 @1.25x)";
       default = true;
       outputs = [
         {
-          name = "DP-1";
+          name = "HDMI-A-1";
           enabled = true;
           scale = 1.25;
           position = {
@@ -420,7 +420,7 @@ let
           };
         }
         {
-          name = "HDMI-A-1";
+          name = "DP-1";
           enabled = true;
           scale = 1.25;
           position = {
@@ -445,10 +445,10 @@ let
     };
     dual = {
       name = "dual";
-      description = "Dual monitor mode (DP-1 + HDMI-A-1 @1.25x, DP-2 disabled)";
+      description = "Dual monitor mode (HDMI-A-1 + DP-1 @1.25x, DP-2 disabled)";
       outputs = [
         {
-          name = "DP-1";
+          name = "HDMI-A-1";
           enabled = true;
           scale = 1.25;
           position = {
@@ -459,7 +459,7 @@ let
           };
         }
         {
-          name = "HDMI-A-1";
+          name = "DP-1";
           enabled = true;
           scale = 1.25;
           position = {
