@@ -165,7 +165,7 @@ in
     };
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o DP-1 -S /run/user/1000/wayvnc-dp1.sock 0.0.0.0 5900";
+      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o DP-1 -S /run/user/1000/wayvnc-dp1.sock -g 0.0.0.0 5900";
       Restart = "on-failure";
       RestartSec = "5s";
     };
@@ -182,7 +182,7 @@ in
     };
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HDMI-A-1 -S /run/user/1000/wayvnc-hdmi.sock 0.0.0.0 5901";
+      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HDMI-A-1 -S /run/user/1000/wayvnc-hdmi.sock -g 0.0.0.0 5901";
       Restart = "on-failure";
       RestartSec = "5s";
     };
