@@ -405,29 +405,29 @@ let
   ryzenMonitorProfiles = {
     default = {
       name = "default";
-      description = "Full Ryzen desktop layout (DP-1, DP-2, HDMI-A-1 @1.25x)";
+      description = "Full Ryzen desktop layout (DP-1, HDMI-A-1, DP-2 @1.25x)";
       default = true;
       outputs = [
         {
-          name = "HDMI-A-1";
+          name = "DP-1";
           enabled = true;
           scale = 1.25;
           position = {
             x = 0;
             y = 0;
             width = 1920;
-            height = 1080;
+            height = 1200;
           };
         }
         {
-          name = "DP-1";
+          name = "HDMI-A-1";
           enabled = true;
           scale = 1.25;
           position = {
             x = 1536;
             y = 0;
             width = 1920;
-            height = 1200;
+            height = 1080;
           };
         }
         {
@@ -445,28 +445,28 @@ let
     };
     dual = {
       name = "dual";
-      description = "Dual monitor mode (HDMI-A-1 + DP-1 @1.25x, DP-2 disabled)";
+      description = "Dual monitor mode (DP-1 + HDMI-A-1 @1.25x, DP-2 disabled)";
       outputs = [
         {
-          name = "HDMI-A-1";
+          name = "DP-1";
           enabled = true;
           scale = 1.25;
           position = {
             x = 0;
             y = 0;
             width = 1920;
-            height = 1080;
+            height = 1200;
           };
         }
         {
-          name = "DP-1";
+          name = "HDMI-A-1";
           enabled = true;
           scale = 1.25;
           position = {
             x = 1536;
             y = 0;
             width = 1920;
-            height = 1200;
+            height = 1080;
           };
         }
         {
@@ -767,24 +767,24 @@ in
         #   - DP-2: 3840,0 (after DP-1's 1920px, total 1920+1920=3840)
         #   - DP-3: 1920,1200 (below DP-1, aligned to DP-1's X position)
         #           Y offset = DP-1 height (1200px)
-        "HDMI-A-1" = {
-          mode = "1920x1080@60Hz";
+        "DP-1" = {
+          mode = "1920x1200@60Hz";
           position = "0,0";
           scale = "1.25";
         };
-        "DP-1" = {
-          mode = "1920x1200@60Hz";
-          position = "1536,0";  # After HDMI-A-1 logical width (1920/1.25=1536)
+        "HDMI-A-1" = {
+          mode = "1920x1080@60Hz";
+          position = "1536,0";  # After DP-1 logical width (1920/1.25=1536)
           scale = "1.25";
         };
         "DP-2" = {
           mode = "1920x1200@60Hz";
-          position = "3072,0";  # After DP-1 logical right (1536+1536=3072)
+          position = "3072,0";  # After HDMI-A-1 logical right (1536+1536=3072)
           scale = "1.25";
         };
         "DP-3" = {
           mode = "1920x1080@60Hz";
-          position = "1536,960";  # Below DP-1, Y = DP-1 logical height (1200/1.25=960)
+          position = "0,960";  # Below DP-1, Y = DP-1 logical height (1200/1.25=960)
           scale = "1.25";
         };
       } else if isHybrid then {
