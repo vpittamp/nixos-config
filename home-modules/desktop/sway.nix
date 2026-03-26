@@ -368,7 +368,7 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
             x = 1920;
             y = 0;
@@ -407,7 +407,7 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
@@ -446,7 +446,7 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
