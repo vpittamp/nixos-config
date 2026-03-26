@@ -216,7 +216,8 @@ def server_ssh_current_host():
 async def test_prepare_launch_terminal_local_uses_managed_tmux(server_local):
     spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    assert spec["execution_mode"] == "local"
+    assert spec["target_host"] == "thinkpad"
+    assert spec["transport_kind"] == "local_process"
     assert spec["launch_strategy"] == "managed_local_terminal"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
     assert spec["terminal_launch"]["helper_name"] == "project-terminal-launch.sh"
@@ -230,7 +231,8 @@ async def test_prepare_launch_terminal_local_uses_managed_tmux(server_local):
 async def test_prepare_launch_terminal_ssh_uses_managed_tmux(server_ssh):
     spec = await server_ssh._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "ssh_helper"
     assert spec["launch_strategy"] == "managed_remote_terminal"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
     assert spec["terminal_launch"]["helper_name"] == "project-terminal-launch.sh"
@@ -241,17 +243,18 @@ async def test_prepare_launch_terminal_ssh_uses_managed_tmux(server_ssh):
 
 
 @pytest.mark.asyncio
-async def test_prepare_launch_terminal_ssh_current_host_uses_remote_transport(server_ssh_current_host):
+async def test_prepare_launch_terminal_ssh_current_host_uses_local_transport(server_ssh_current_host):
     spec = await server_ssh_current_host._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
-    assert spec["launch_strategy"] == "managed_remote_terminal"
-    assert spec["launch_transport"] == "remote_helper"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "local_process"
+    assert spec["launch_strategy"] == "managed_local_terminal"
+    assert spec["launch_transport"] == "local_helper"
     assert spec["terminal_launch"]["mode"] == "managed_project_terminal"
-    assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
-    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@ryzen:22"
-    assert spec["environment"]["I3PM_CONTEXT_VARIANT"] == "ssh"
-    assert spec["environment"]["I3PM_EXECUTION_MODE"] == "ssh"
+    assert "remote" not in spec["terminal_launch"]
+    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "local@ryzen"
+    assert spec["environment"]["I3PM_TARGET_HOST"] == "ryzen"
+    assert spec["environment"]["I3PM_TRANSPORT_KIND"] == "local_process"
 
 
 @pytest.mark.asyncio
@@ -400,7 +403,8 @@ async def test_launch_open_clears_stale_focus_override_for_explicit_project_inte
 async def test_prepare_launch_yazi_local_uses_scoped_terminal_command(server_local):
     spec = await server_local._prepare_launch({"app_name": "yazi", "register_launch": False})
 
-    assert spec["execution_mode"] == "local"
+    assert spec["target_host"] == "thinkpad"
+    assert spec["transport_kind"] == "local_process"
     assert spec["launch_strategy"] == "dedicated_local_scoped_window"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_name"] == "project-command-launch.sh"
@@ -413,7 +417,8 @@ async def test_prepare_launch_yazi_local_uses_scoped_terminal_command(server_loc
 async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(server_ssh):
     spec = await server_ssh._prepare_launch({"app_name": "yazi", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "ssh_helper"
     assert spec["launch_strategy"] == "dedicated_remote_scoped_window"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
     assert spec["terminal_launch"]["helper_name"] == "project-command-launch.sh"
@@ -424,14 +429,15 @@ async def test_prepare_launch_yazi_ssh_uses_remote_scoped_terminal_command(serve
 
 
 @pytest.mark.asyncio
-async def test_prepare_launch_yazi_ssh_current_host_uses_remote_scoped_window(server_ssh_current_host):
+async def test_prepare_launch_yazi_ssh_current_host_uses_local_scoped_window(server_ssh_current_host):
     spec = await server_ssh_current_host._prepare_launch({"app_name": "yazi", "register_launch": False})
 
-    assert spec["execution_mode"] == "ssh"
-    assert spec["launch_strategy"] == "dedicated_remote_scoped_window"
-    assert spec["launch_transport"] == "remote_helper"
+    assert spec["target_host"] == "ryzen"
+    assert spec["transport_kind"] == "local_process"
+    assert spec["launch_strategy"] == "dedicated_local_scoped_window"
+    assert spec["launch_transport"] == "local_helper"
     assert spec["terminal_launch"]["mode"] == "dedicated_scoped_window"
-    assert spec["terminal_launch"]["remote"]["host"] == "ryzen"
+    assert "remote" not in spec["terminal_launch"]
 
 
 @pytest.mark.asyncio
@@ -508,10 +514,10 @@ async def test_build_remote_session_attach_spec_overrides_bridge_context_env(ser
 
     spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
 
-    assert spec["connection_key"] == "vpittamp@thinkpad:22"
-    assert spec["context_key"] == f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22"
+    assert spec["connection_key"] == "local@thinkpad"
+    assert spec["context_key"] == f"{QUALIFIED_NAME}::host::thinkpad"
     assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@thinkpad:22"
-    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22"
+    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{QUALIFIED_NAME}::host::thinkpad"
     assert spec["environment"]["I3PM_REMOTE_HOST"] == "thinkpad"
     assert spec["environment"]["I3PM_REMOTE_USER"] == "vpittamp"
 
@@ -558,9 +564,9 @@ async def test_build_remote_session_attach_spec_does_not_require_local_worktree(
     assert spec["launch_transport"] == "remote_helper"
     assert spec["project_directory"] == "/home/vpittamp/repos/PittampalliOrg/workflow-builder/104-create-coding-agent"
     assert spec["local_project_directory"] == ""
-    assert spec["context_key"] == f"{remote_only_project}::ssh::vpittamp@ryzen:22"
+    assert spec["context_key"] == f"{remote_only_project}::host::ryzen"
     assert spec["environment"]["I3PM_PROJECT_NAME"] == remote_only_project
-    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{remote_only_project}::ssh::vpittamp@ryzen:22"
+    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{remote_only_project}::host::ryzen"
     assert spec["terminal_launch"]["remote_attach"]["tmux_pane"] == "%2"
 
 

@@ -21,7 +21,7 @@ from datetime import datetime
 # Feature 091: Import performance optimization services
 from ..models.window_command import WindowCommand, CommandBatch, CommandType
 from ..models.performance_metrics import OperationMetrics, ProjectSwitchMetrics
-from ..worktree_utils import parse_mark  # Feature 101
+from ..worktree_utils import canonicalize_context_key, parse_mark  # Feature 101
 from .command_batch import CommandBatchService
 from .tree_cache import TreeCacheService, get_tree_cache
 from .performance_tracker import PerformanceTrackerService, get_performance_tracker
@@ -366,7 +366,12 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
             launcher_pid=env.get("I3PM_LAUNCHER_PID", ""),
             target_workspace=target_workspace,
             connection_key=env.get("I3PM_CONNECTION_KEY"),
-            context_key=env.get("I3PM_CONTEXT_KEY"),
+            context_key=canonicalize_context_key(
+                env.get("I3PM_CONTEXT_KEY"),
+                project_name=env.get("I3PM_PROJECT_NAME"),
+                connection_key=env.get("I3PM_CONNECTION_KEY"),
+                target_host=env.get("I3PM_TARGET_HOST"),
+            ),
             remote_session_key=env.get("I3PM_REMOTE_SESSION_KEY"),
             remote_surface_key=env.get("I3PM_REMOTE_SURFACE_KEY"),
             remote_tmux_socket=env.get("I3PM_REMOTE_TMUX_SOCKET"),
@@ -749,7 +754,7 @@ async def filter_windows_by_project(
         window_context_key = ""
         for mark in window.marks:
             if mark.startswith("ctx:"):
-                window_context_key = mark[len("ctx:"):].strip()
+                window_context_key = canonicalize_context_key(mark[len("ctx:"):].strip())
                 break
 
         if active_context_key and not window_context_key:
@@ -757,7 +762,12 @@ async def filter_windows_by_project(
             if window_pid > 0:
                 try:
                     env = read_process_environ_with_fallback(window_pid)
-                    env_context_key = str(env.get("I3PM_CONTEXT_KEY") or "").strip()
+                    env_context_key = canonicalize_context_key(
+                        env.get("I3PM_CONTEXT_KEY"),
+                        project_name=env.get("I3PM_PROJECT_NAME"),
+                        connection_key=env.get("I3PM_CONNECTION_KEY"),
+                        target_host=env.get("I3PM_TARGET_HOST"),
+                    )
                     if env_context_key:
                         window_context_key = env_context_key
                         context_mark = f"ctx:{env_context_key}"

@@ -39,7 +39,13 @@ from .window_rules import WindowRule
 from .pattern_resolver import classify_window
 from .models import EventEntry
 from . import window_filtering  # Feature 037: Window filtering utilities
-from .worktree_utils import parse_mark, parse_qualified_name, is_qualified_name  # Feature 101
+from .worktree_utils import (
+    canonicalize_context_key,
+    is_qualified_name,
+    parse_context_key,
+    parse_mark,
+    parse_qualified_name,
+)  # Feature 101
 from .constants import ConfigPaths  # Feature 101
 from .config import atomic_write_json  # Feature 137: Atomic file writes
 from .services.window_filter import (
@@ -93,21 +99,15 @@ def normalize_project_path(value: Optional[str]) -> Optional[str]:
 
 
 def parse_context_key_project(value: Optional[str]) -> str:
-    """Extract the qualified worktree name from `<qualified>::host::<target_host>`."""
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    if "::host::" not in raw:
-        return ""
-    return raw.split("::host::", 1)[0].strip()
+    """Extract the qualified worktree name from a canonicalized context key."""
+    project_name, _target_host = parse_context_key(value)
+    return project_name
 
 
 def parse_context_key_target_host(value: Optional[str]) -> str:
-    """Extract the canonical target host from `<qualified>::host::<target_host>`."""
-    raw = str(value or "").strip()
-    if "::host::" not in raw:
-        return ""
-    return raw.split("::host::", 1)[1].strip().lower()
+    """Extract the canonical target host from a canonicalized context key."""
+    _project_name, target_host = parse_context_key(value)
+    return target_host
 
 
 def project_names_match(
@@ -7707,17 +7707,18 @@ class IPCServer:
 
         metadata = {
             "managed": _read_option("@i3pm_managed"),
-            "context_key": _read_option("@i3pm_context_key"),
+            "context_key": canonicalize_context_key(_read_option("@i3pm_context_key")),
             "terminal_role": _read_option("@i3pm_terminal_role"),
             "tmux_server_key": _read_option("@i3pm_tmux_server_key"),
             "schema_version": _read_option("@i3pm_schema_version"),
         }
         healthy = True
         reason = "healthy"
+        normalized_expected_context = canonicalize_context_key(expected_context)
         if metadata["managed"] != "1":
             healthy = False
             reason = "unmanaged"
-        elif expected_context and metadata["context_key"] != expected_context:
+        elif normalized_expected_context and metadata["context_key"] != normalized_expected_context:
             healthy = False
             reason = "context_mismatch"
         elif expected_role and metadata["terminal_role"] and metadata["terminal_role"] != expected_role:
@@ -9137,6 +9138,7 @@ class IPCServer:
             or terminal_context.get("context_key")
             or ""
         ).strip()
+        context_key = canonicalize_context_key(context_key)
 
         if surface_key and session_id:
             return f"{surface_key}::{session_id}"
@@ -9162,7 +9164,7 @@ class IPCServer:
         if not isinstance(terminal_context, dict):
             terminal_context = {}
         tool = str(session.get("tool") or "unknown").strip() or "unknown"
-        context_key = str(terminal_context.get("context_key") or "").strip()
+        context_key = canonicalize_context_key(terminal_context.get("context_key"))
         render_identity = self._session_render_identity(session)
         project_name = str(
             session.get("focus_project")
@@ -9305,12 +9307,12 @@ class IPCServer:
             if len(matches) == 1:
                 return dict(matches[0])
 
-        context_key = str(terminal_context.get("context_key") or "").strip()
+        context_key = canonicalize_context_key(terminal_context.get("context_key"))
         if context_key:
             matches = [
                 item for item in tracked_windows
                 if isinstance(item, dict)
-                and str(item.get("context_key") or "").strip() == context_key
+                and canonicalize_context_key(item.get("context_key")) == context_key
             ]
             if len(matches) == 1:
                 return dict(matches[0])
@@ -9586,7 +9588,19 @@ class IPCServer:
                 or source_connection_key
                 or ""
             ).strip()
-            context_key = str(terminal_context.get("context_key") or "").strip()
+            context_key = canonicalize_context_key(
+                terminal_context.get("context_key"),
+                project_name=str(
+                    raw_session.get("focus_project")
+                    or raw_session.get("window_project")
+                    or raw_session.get("display_project")
+                    or raw_session.get("project")
+                    or ""
+                ).strip(),
+                connection_key=connection_key,
+                target_host=terminal_context.get("host_name"),
+            )
+            terminal_context["context_key"] = context_key
             if not connection_key or connection_key == "unknown":
                 continue
             raw_project_name = str(
@@ -9663,6 +9677,10 @@ class IPCServer:
             pane_title = str(terminal_context.get("pane_title") or "").strip()
             pane_label = str(raw_session.get("pane_label") or "").strip() or pane_title or tmux_pane
             host_name = str(terminal_context.get("host_name") or source_host_name or "").strip().lower()
+            parsed_context_host = parse_context_key_target_host(context_key)
+            if parsed_context_host:
+                host_name = parsed_context_host
+                terminal_context["host_name"] = host_name
             source_is_current_host = self._session_is_current_host(
                 host_name=host_name,
                 connection_key=connection_key,
@@ -15122,9 +15140,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
     def _parse_context_key(self, context_key: str) -> Dict[str, str]:
         """Parse context key into project/target-host tuple."""
-        raw = str(context_key or "").strip()
-        if "::host::" in raw:
-            project_name, target_host = raw.split("::host::", 1)
+        project_name, target_host = parse_context_key(context_key)
+        if project_name and target_host:
             return {
                 "project_name": project_name,
                 "target_host": self._normalize_target_host(target_host),

@@ -12,7 +12,11 @@ from .models import DaemonState, WindowInfo, WorkspaceInfo
 from .services.launch_registry import LaunchRegistry  # Feature 041: IPC Launch Context - T013
 from .services.focus_tracker import FocusTracker  # Feature 074: Session Management - T021
 from .services.window_filter import parse_window_environment, read_process_environ
-from .worktree_utils import extract_project_from_mark  # Feature 101
+from .worktree_utils import (
+    canonicalize_context_key,
+    extract_project_from_mark,
+    target_host_from_connection_key,
+)  # Feature 101
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -20,6 +24,29 @@ logger = logging.getLogger(__name__)
 
 def _normalize_window_runtime(window_info: WindowInfo) -> None:
     """Keep tracked window binding state and durable workspace/output in sync."""
+    window_info.connection_key = str(getattr(window_info, "connection_key", "") or "").strip()
+    window_info.context_key = canonicalize_context_key(
+        getattr(window_info, "context_key", ""),
+        project_name=getattr(window_info, "project", ""),
+        connection_key=window_info.connection_key,
+    )
+    if window_info.context_key and not window_info.project:
+        window_info.project = window_info.context_key.split("::host::", 1)[0].strip()
+    normalized_marks: list[str] = []
+    for mark in list(getattr(window_info, "marks", []) or []):
+        raw_mark = str(mark or "").strip()
+        if raw_mark.startswith("ctx:"):
+            canonical_context_mark = canonicalize_context_key(
+                raw_mark.split("ctx:", 1)[1],
+                project_name=getattr(window_info, "project", ""),
+                connection_key=window_info.connection_key,
+            )
+            if canonical_context_mark:
+                raw_mark = f"ctx:{canonical_context_mark}"
+        if raw_mark and raw_mark not in normalized_marks:
+            normalized_marks.append(raw_mark)
+    window_info.marks = normalized_marks
+
     state = str(getattr(window_info, "binding_state", "") or "").strip()
     if state not in {"bound_workspace", "scratchpad_hidden", "transient_unbound"}:
         state = "bound_workspace" if getattr(window_info, "workspace", "") else "transient_unbound"
@@ -249,7 +276,7 @@ class StateManager:
                     project_name = extract_project_from_mark(
                         project_marks[0], tracked_window_id
                     )
-                    context_key = next(
+                    raw_context_key = next(
                         (
                             str(mark).split("ctx:", 1)[1]
                             for mark in container.marks
@@ -257,19 +284,21 @@ class StateManager:
                         ),
                         "",
                     )
-                    parsed_context = context_key.split("::", 2) if context_key else []
-                    parsed_execution_mode = (
-                        parsed_context[1]
-                        if len(parsed_context) == 3 and parsed_context[1] in {"local", "ssh"}
-                        else ""
+                    context_key = canonicalize_context_key(
+                        raw_context_key,
+                        project_name=project_name,
                     )
+                    parsed_connection_key = str(window_env.connection_key or "").strip() if window_env else ""
+                    parsed_execution_mode = ""
+                    if parsed_connection_key:
+                        parsed_execution_mode = (
+                            "local"
+                            if parsed_connection_key.startswith("local@")
+                            else "ssh"
+                        )
                     if not parsed_execution_mode and "i3pm_exec:ssh" in container.marks:
                         parsed_execution_mode = "ssh"
-                    parsed_connection_key = (
-                        parsed_context[2]
-                        if len(parsed_context) == 3
-                        else ""
-                    )
+                    parsed_target_host = target_host_from_connection_key(parsed_connection_key)
 
                     # Create WindowInfo
                     from datetime import datetime
@@ -329,10 +358,15 @@ class StateManager:
                             if window_env and str(window_env.connection_key or "").strip()
                             else parsed_connection_key
                         ),
-                        context_key=str(window_env.context_key or "") if window_env and str(window_env.context_key or "").strip() else context_key,
+                        context_key=(
+                            str(window_env.context_key or "")
+                            if window_env and str(window_env.context_key or "").strip()
+                            else context_key
+                        ),
                         remote_enabled=bool(
                             (window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@"))
                             or parsed_execution_mode == "ssh"
+                            or bool(parsed_target_host and parsed_execution_mode == "ssh")
                         ),
                         remote_session_key=str(window_env.remote_session_key or "") if window_env else "",
                         remote_surface_key=str(window_env.remote_surface_key or "") if window_env else "",

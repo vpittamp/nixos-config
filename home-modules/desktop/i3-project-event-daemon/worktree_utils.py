@@ -15,6 +15,13 @@ from .constants import ConfigPaths
 
 logger = logging.getLogger(__name__)
 
+_LEGACY_CONTEXT_KEY_PATTERN = re.compile(
+    r"^(?P<project>.+)::(?P<mode>local|ssh)::(?P<connection>.+)$"
+)
+_CONNECTION_KEY_HOST_PATTERN = re.compile(
+    r"^(?:[^@]+@)?(?P<host>[^:]+)(?::\d+)?$"
+)
+
 
 @dataclass
 class ParsedQualifiedName:
@@ -129,6 +136,74 @@ def is_qualified_name(name: str) -> bool:
         False
     """
     return "/" in name and ":" in name
+
+
+def normalize_host_alias(value: Optional[str]) -> str:
+    """Return a normalized host alias suitable for canonical context keys."""
+    return str(value or "").strip().lower()
+
+
+def target_host_from_connection_key(connection_key: Optional[str]) -> str:
+    """Extract the canonical host alias from a connection key."""
+    raw = str(connection_key or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("local@"):
+        return normalize_host_alias(raw.split("@", 1)[1])
+
+    match = _CONNECTION_KEY_HOST_PATTERN.match(raw)
+    if not match:
+        return ""
+    return normalize_host_alias(match.group("host"))
+
+
+def parse_context_key(
+    value: Optional[str],
+    *,
+    project_name: Optional[str] = None,
+    connection_key: Optional[str] = None,
+    target_host: Optional[str] = None,
+) -> Tuple[str, str]:
+    """Return canonical `(project_name, target_host)` from any supported context payload."""
+    raw = str(value or "").strip()
+    explicit_project = str(project_name or "").strip()
+    explicit_target_host = normalize_host_alias(target_host) or target_host_from_connection_key(
+        connection_key
+    )
+
+    if "::host::" in raw:
+        project, raw_target_host = raw.split("::host::", 1)
+        return str(project).strip(), normalize_host_alias(raw_target_host)
+
+    legacy_match = _LEGACY_CONTEXT_KEY_PATTERN.match(raw)
+    if legacy_match:
+        parsed_project = str(legacy_match.group("project") or "").strip()
+        parsed_target_host = target_host_from_connection_key(legacy_match.group("connection"))
+        return parsed_project, parsed_target_host or explicit_target_host
+
+    if explicit_project and explicit_target_host:
+        return explicit_project, explicit_target_host
+
+    return "", ""
+
+
+def canonicalize_context_key(
+    value: Optional[str],
+    *,
+    project_name: Optional[str] = None,
+    connection_key: Optional[str] = None,
+    target_host: Optional[str] = None,
+) -> str:
+    """Return the canonical host-targeted context key or an empty string."""
+    resolved_project, resolved_target_host = parse_context_key(
+        value,
+        project_name=project_name,
+        connection_key=connection_key,
+        target_host=target_host,
+    )
+    if not resolved_project or not resolved_target_host:
+        return ""
+    return f"{resolved_project}::host::{resolved_target_host}"
 
 
 def parse_mark(mark: str, window_id_hint: Optional[int] = None) -> Optional[ParsedMark]:

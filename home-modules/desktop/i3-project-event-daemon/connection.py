@@ -17,6 +17,7 @@ from i3ipc import aio
 from i3ipc.events import IpcBaseEvent
 
 from .state import StateManager
+from .worktree_utils import canonicalize_context_key
 
 logger = logging.getLogger(__name__)
 
@@ -530,7 +531,12 @@ class ResilientI3Connection:
                 project_name = i3pm_env.get('I3PM_PROJECT_NAME')
                 app_name = i3pm_env.get('I3PM_APP_NAME')
                 scope = i3pm_env.get('I3PM_SCOPE', 'scoped')
-                context_key = i3pm_env.get('I3PM_CONTEXT_KEY')
+                context_key = canonicalize_context_key(
+                    i3pm_env.get('I3PM_CONTEXT_KEY'),
+                    project_name=project_name,
+                    connection_key=i3pm_env.get('I3PM_CONNECTION_KEY'),
+                    target_host=i3pm_env.get('I3PM_TARGET_HOST'),
+                )
                 if project_name and app_name:
                     # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
                     # VSCode windows share a single process, so I3PM environment doesn't distinguish
