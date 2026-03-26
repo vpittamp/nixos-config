@@ -406,6 +406,7 @@ let
     default = {
       name = "default";
       description = "Full Ryzen desktop layout (HDMI-A-1, DP-1, DP-2)";
+      default = true;
       outputs = [
         {
           name = "HDMI-A-1";
@@ -466,46 +467,6 @@ let
             y = 0;
             width = 1920;
             height = 1200;
-          };
-        }
-        {
-          name = "DP-2";
-          enabled = false;
-          scale = 1.0;
-          position = {
-            x = 0;
-            y = 0;
-            width = 1920;
-            height = 1200;
-          };
-        }
-      ];
-    };
-    "dual-stream" = {
-      name = "dual-stream";
-      description = "Dual monitor streaming mode (DP-1 + HDMI-A-1 at 1080p, DP-2 disabled)";
-      default = true;
-      outputs = [
-        {
-          name = "DP-1";
-          enabled = true;
-          scale = 1.0;
-          position = {
-            x = 0;
-            y = 0;
-            width = 1920;
-            height = 1080;
-          };
-        }
-        {
-          name = "HDMI-A-1";
-          enabled = true;
-          scale = 1.0;
-          position = {
-            x = 1920;
-            y = 0;
-            width = 1920;
-            height = 1080;
           };
         }
         {

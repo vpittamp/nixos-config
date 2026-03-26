@@ -222,11 +222,9 @@ in
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
-      # Sunshine's KMS path is reliable with the live monitor index but has
-      # been flaky with named output selection on this host. In the default
-      # layout, monitor 0 is DP-1, which keeps streaming targeted at the
-      # practical main display without connect/disconnect scripting.
-      output_name = 0;
+      # Stream the practical main display directly without mutating the
+      # desktop layout on connect/disconnect.
+      output_name = "DP-1";
     };
     desktopAppOverrides.auto-detach = "true";
     pairedClients = [

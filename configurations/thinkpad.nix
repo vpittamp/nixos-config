@@ -36,96 +36,9 @@ let
 
     exec ${pkgs.rustdesk}/bin/rustdesk --connect "$host_ip"
   '';
-  ryzenDualStream = pkgs.writeShellScriptBin "ryzen-dual-stream" ''
-    #!${pkgs.bash}/bin/bash
-    set -euo pipefail
-
-    # Resolve Ryzen Tailscale IP
-    ryzen_ip="$(${pkgs.tailscale}/bin/tailscale ip -4 ryzen 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)"
-    if [ -z "$ryzen_ip" ]; then
-      ryzen_ip="$(getent ahostsv4 ryzen | ${pkgs.gawk}/bin/awk 'NR == 1 { print $1 }')"
-    fi
-    if [ -z "$ryzen_ip" ]; then
-      echo "Unable to resolve ryzen to a Tailscale IPv4 address" >&2
-      exit 1
-    fi
-
-    # Ensure local+ipad profile is active (HEADLESS-1 enabled for iPad)
-    current_profile="$(${pkgs.coreutils}/bin/cat "$HOME/.config/sway/monitor-profile.current" 2>/dev/null || true)"
-    if [ "$current_profile" != "local+ipad" ]; then
-      echo "Activating local+ipad monitor profile..."
-      set-monitor-profile local+ipad
-      ${pkgs.coreutils}/bin/sleep 1
-    fi
-
-    # Ensure HEADLESS-1 is at correct iPad resolution and position
-    ${pkgs.sway}/bin/swaymsg 'output HEADLESS-1 enable resolution 2048x1536 position 0 0 scale 1.5' >/dev/null 2>&1 || true
-    ${pkgs.sway}/bin/swaymsg 'output eDP-1 position 1365 0' >/dev/null 2>&1 || true
-
-    cleanup() {
-      echo "Stopping Ryzen dual stream..."
-      [ -n "''${vnc_pid:-}" ] && ${pkgs.coreutils}/bin/kill "$vnc_pid" 2>/dev/null || true
-      [ -n "''${moonlight_pid:-}" ] && ${pkgs.coreutils}/bin/kill "$moonlight_pid" 2>/dev/null || true
-      wait 2>/dev/null || true
-    }
-    trap cleanup EXIT INT TERM
-
-    # Launch Moonlight for Ryzen DP-1 → eDP-1 (launch first so it claims eDP-1)
-    moonlight-ryzen-desktop &
-    moonlight_pid=$!
-
-    # Launch wlvncc for Ryzen HDMI-A-1 → HEADLESS-1 (iPad sees this via thinkpad:5900)
-    ${pkgs.wlvncc}/bin/wlvncc \
-      --app-id ryzen-hdmi-viewer \
-      --no-decorations \
-      "$ryzen_ip" 5901 &
-    vnc_pid=$!
-
-    # Enforce correct output placement in a retry loop.
-    # The i3pm daemon moves windows to preferred workspaces which may land on the
-    # wrong output. We re-place both windows every second until they stick.
-    (
-      # Wait for Moonlight to appear
-      attempts=0
-      while [ "$attempts" -lt 40 ]; do
-        if ${pkgs.sway}/bin/swaymsg -t get_tree -r | ${pkgs.jq}/bin/jq -e '.. | objects | select(.app_id? == "com.moonlight_stream.Moonlight")' >/dev/null 2>&1; then
-          break
-        fi
-        attempts=$((attempts + 1))
-        ${pkgs.coreutils}/bin/sleep 0.25
-      done
-
-      # Retry placement every second for 10 seconds to outlast the daemon
-      for _ in $(seq 1 10); do
-        ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] move container to output eDP-1' >/dev/null 2>&1
-        ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] fullscreen enable' >/dev/null 2>&1
-        ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] border pixel 0' >/dev/null 2>&1
-        ${pkgs.sway}/bin/swaymsg '[app_id="ryzen-hdmi-viewer"] move container to output HEADLESS-1' >/dev/null 2>&1
-        ${pkgs.sway}/bin/swaymsg '[app_id="ryzen-hdmi-viewer"] fullscreen enable' >/dev/null 2>&1
-        ${pkgs.sway}/bin/swaymsg '[app_id="ryzen-hdmi-viewer"] border pixel 0' >/dev/null 2>&1
-        ${pkgs.coreutils}/bin/sleep 1
-      done
-    ) &
-
-    echo "Ryzen dual stream active (Moonlight PID=$moonlight_pid, VNC PID=$vnc_pid)"
-    echo "Press Ctrl+C to stop"
-
-    # Wait for both processes — they run independently
-    wait "$vnc_pid" "$moonlight_pid" 2>/dev/null || true
-  '';
   moonlightRyzenDesktop = pkgs.writeShellScriptBin "moonlight-ryzen-desktop" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
-
-    current_profile="$(${pkgs.coreutils}/bin/cat "$HOME/.config/sway/monitor-profile.current" 2>/dev/null || true)"
-    mouse_args=()
-    case "$current_profile" in
-      local+ipad|local+1vnc|local+2vnc)
-        ;;
-      *)
-        mouse_args+=(--absolute-mouse)
-        ;;
-    esac
 
     socket_path="''${SWAYSOCK:-}"
     if [ -z "$socket_path" ]; then
@@ -141,11 +54,8 @@ let
         stream \
         --resolution 1920x1200 \
         --fps 60 \
-        --bitrate 20000 \
         --display-mode windowed \
-        "''${mouse_args[@]}" \
-        --no-game-optimization \
-        --video-codec HEVC \
+        --no-absolute-mouse \
         --capture-system-keys fullscreen \
         ryzen \
         Desktop
@@ -176,11 +86,8 @@ let
       stream \
       --resolution 1920x1200 \
       --fps 60 \
-      --bitrate 20000 \
       --display-mode windowed \
-      "''${mouse_args[@]}" \
-      --no-game-optimization \
-      --video-codec HEVC \
+      --no-absolute-mouse \
       --capture-system-keys fullscreen \
       ryzen \
       Desktop &
