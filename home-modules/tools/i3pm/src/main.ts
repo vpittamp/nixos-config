@@ -273,7 +273,11 @@ async function main(): Promise<void> {
     case "windows":
       {
         const { windowsCommand } = await import("./commands/windows.ts");
-        await windowsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+        const exitCode = await windowsCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
+        Deno.exit(exitCode);
       }
       break;
 

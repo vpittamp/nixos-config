@@ -45,9 +45,7 @@ in
         User vpittamp
         ForwardAgent yes
         StrictHostKeyChecking accept-new
-        ControlMaster auto
-        ControlPersist 10m
-        ControlPath ~/.ssh/controlmasters/%C
+        ControlMaster no
 
       Host nixos-* *.tail*.ts.net
         User vpittamp

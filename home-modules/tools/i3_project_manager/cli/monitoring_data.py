@@ -279,6 +279,29 @@ def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def _target_host_from_connection_key(connection_key: Any) -> str:
+    """Return the canonical host alias encoded by a connection key."""
+    raw = str(connection_key or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("local@"):
+        return _normalize_connection_key(raw.split("@", 1)[1])
+
+    parsed = _parse_ssh_connection_key(raw)
+    if not parsed:
+        return ""
+    return _normalize_connection_key(str(parsed.get("host") or ""))
+
+
+def _canonical_host_context_key(qualified_name: Any, target_host: Any) -> str:
+    """Return canonical host-based context identity or an empty string."""
+    qualified = str(qualified_name or "").strip()
+    host = _normalize_connection_key(str(target_host or "").strip())
+    if not qualified or not host:
+        return ""
+    return f"{qualified}::host::{host}"
+
+
 def _load_remote_otel_sink() -> Dict[str, Any]:
     """Load deterministic remote OTEL sink payload."""
     if not REMOTE_OTEL_SINK_FILE.exists():
@@ -507,18 +530,10 @@ def _normalize_remote_otel_session(
     if raw_context_key:
         parsed_context = _parse_context_key(raw_context_key)
         qualified_name = str(parsed_context.get("qualified_name") or "").strip()
-        parsed_mode = _normalize_execution_mode(
-            parsed_context.get("execution_mode"),
-            default="",
-        )
-        parsed_connection = str(parsed_context.get("connection_key") or "").strip()
-        if (
-            qualified_name
-            and parsed_mode == "ssh"
-            and parsed_connection
-            and _connection_keys_equivalent(parsed_connection, connection_key)
-        ):
-            canonical_context_key = f"{qualified_name}::ssh::{connection_key}"
+        parsed_target_host = str(parsed_context.get("target_host") or "").strip()
+        expected_target_host = _target_host_from_connection_key(connection_key) or _normalize_connection_key(host)
+        if qualified_name and parsed_target_host and parsed_target_host == expected_target_host:
+            canonical_context_key = _canonical_host_context_key(qualified_name, expected_target_host)
 
     normalized["execution_mode"] = "ssh"
     normalized["connection_key"] = connection_key
@@ -2883,15 +2898,22 @@ def _extract_context_key_from_marks(marks: Any) -> str:
 
 
 def _parse_context_key(value: Any) -> Dict[str, str]:
-    """Parse context key format '<qualified>::<mode>::<connection>'."""
+    """Parse canonical host-based or legacy transport-based context keys."""
     raw = str(value or "").strip()
     parsed = {
         "context_key": raw,
         "qualified_name": "",
         "execution_mode": "",
         "connection_key": "",
+        "target_host": "",
     }
     if not raw:
+        return parsed
+
+    if "::host::" in raw:
+        qualified_name, target_host = raw.split("::host::", 1)
+        parsed["qualified_name"] = qualified_name.strip()
+        parsed["target_host"] = _normalize_connection_key(target_host)
         return parsed
 
     parts = raw.split("::")
@@ -2907,6 +2929,7 @@ def _parse_context_key(value: Any) -> Dict[str, str]:
     parsed["qualified_name"] = qualified_name
     parsed["execution_mode"] = execution_mode
     parsed["connection_key"] = connection_key
+    parsed["target_host"] = _target_host_from_connection_key(connection_key)
     return parsed
 
 
@@ -6250,7 +6273,10 @@ def _active_worktree_identity_from_context(active_context: Dict[str, Any]) -> Di
         identity_key = f"{execution_mode}:{connection_key}"
 
     if not context_key and qualified_name and execution_mode in {"local", "ssh"}:
-        context_key = f"{qualified_name}::{execution_mode}::{connection_key}"
+        target_host = _target_host_from_connection_key(connection_key)
+        if not target_host and execution_mode == "local":
+            target_host = _normalize_connection_key(host_alias)
+        context_key = _canonical_host_context_key(qualified_name, target_host)
 
     return {
         "qualified_name": qualified_name,

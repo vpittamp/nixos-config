@@ -57,6 +57,9 @@ export interface WindowState {
   /** Whether window is currently hidden (scoped to inactive project) */
   hidden: boolean;
 
+  /** Canonical host-scoped context identity for the window */
+  context_key: string;
+
   /** Whether window is floating (not tiled) */
   floating: boolean;
 

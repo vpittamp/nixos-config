@@ -9,19 +9,69 @@ import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../client.ts";
 import { OutputSchema } from "../validation.ts";
 import type { Output } from "../models.ts";
-import { renderTreeByProject, renderLegend as renderTreeLegend } from "../ui/tree.ts";
-import { renderTable, renderLegend as renderTableLegend } from "../ui/table.ts";
+import { renderLegend as renderTreeLegend, renderTreeByProject } from "../ui/tree.ts";
+import { renderLegend as renderTableLegend, renderTable } from "../ui/table.ts";
 import { z } from "zod";
 import { setup, Spinner } from "@cli-ux";
-import { bold, cyan, dim, gray, green, yellow, red } from "../ui/ansi.ts";
+import { bold, cyan, dim, gray, green, red, yellow } from "../ui/ansi.ts";
 
 interface WindowsCommandOptions {
   verbose?: boolean;
   debug?: boolean;
 }
 
+export type WindowsSubcommand = "show" | "hidden" | "restore" | "inspect";
+
+export interface WindowsCommandRoute {
+  subcommand: WindowsSubcommand;
+  args: string[];
+}
+
 // Initialize CLI-UX formatter for semantic colors
 const { formatter } = setup();
+const WINDOWS_SUBCOMMANDS = new Set<WindowsSubcommand>(["show", "hidden", "restore", "inspect"]);
+
+function emitJsonError(code: string, message: string): void {
+  console.log(JSON.stringify({ error: { code, message } }, null, 2));
+}
+
+function emitCommandError(
+  message: string,
+  options: { json?: boolean; code?: string } = {},
+): number {
+  if (options.json) {
+    emitJsonError(options.code ?? "command_error", message);
+  } else {
+    console.error(red("✗ Error: ") + message);
+  }
+  return 1;
+}
+
+function ensureExclusiveModes(
+  parsed: Record<string, unknown>,
+  modeNames: string[],
+): string | null {
+  const enabledModes = modeNames.filter((mode) => parsed[mode] === true);
+  if (enabledModes.length <= 1) {
+    return null;
+  }
+  return `Choose exactly one of ${modeNames.map((mode) => `--${mode}`).join(", ")}`;
+}
+
+export function routeWindowsCommandArgs(args: string[]): WindowsCommandRoute {
+  const normalizedArgs = args.map(String);
+  const firstArg = normalizedArgs[0] ?? "";
+  if (WINDOWS_SUBCOMMANDS.has(firstArg as WindowsSubcommand)) {
+    return {
+      subcommand: firstArg as WindowsSubcommand,
+      args: normalizedArgs.slice(1),
+    };
+  }
+  return {
+    subcommand: "show",
+    args: normalizedArgs,
+  };
+}
 
 /**
  * Show windows command help
@@ -154,12 +204,11 @@ async function getWindowState(
 async function hiddenCommand(
   args: (string | number)[],
   _options: WindowsCommandOptions,
-): Promise<void> {
+): Promise<number> {
   const parsed = parseArgs(args.map(String), {
     boolean: ["help", "json", "tree", "table"],
     string: ["project", "workspace", "app"],
     alias: { h: "help" },
-    default: { tree: true },
   });
 
   if (parsed.help) {
@@ -185,7 +234,19 @@ EXAMPLES:
   i3pm windows hidden --app vscode    ${dim("# Show hidden VS Code windows")}
   i3pm windows hidden --json          ${dim("# JSON output")}
 `);
-    return;
+    return 0;
+  }
+
+  const modeError = ensureExclusiveModes(parsed as Record<string, unknown>, [
+    "json",
+    "tree",
+    "table",
+  ]);
+  if (modeError) {
+    return emitCommandError(modeError, {
+      json: parsed.json === true,
+      code: "invalid_arguments",
+    });
   }
 
   const client = new DaemonClient();
@@ -203,15 +264,18 @@ EXAMPLES:
 
     // Request hidden windows from daemon
     const result = await client.request<{
-      projects: Record<string, Array<{
-        window_id: number;
-        app_name: string;
-        window_class: string;
-        window_title: string;
-        tracked_workspace: number;
-        floating: boolean;
-        last_seen: number;
-      }>>;
+      projects: Record<
+        string,
+        Array<{
+          window_id: number;
+          app_name: string;
+          window_class: string;
+          window_title: string;
+          tracked_workspace: number;
+          floating: boolean;
+          last_seen: number;
+        }>
+      >;
       total_hidden: number;
       duration_ms: number;
     }>("windows.getHidden", params);
@@ -221,7 +285,7 @@ EXAMPLES:
     // JSON output
     if (parsed.json) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+      return 0;
     }
 
     // Check if any windows found
@@ -230,7 +294,7 @@ EXAMPLES:
       if (parsed.project) console.log(`  Project filter: ${cyan(String(parsed.project))}`);
       if (parsed.workspace) console.log(`  Workspace filter: ${cyan(String(parsed.workspace))}`);
       if (parsed.app) console.log(`  App filter: ${cyan(String(parsed.app))}`);
-      return;
+      return 0;
     }
 
     // Render based on format
@@ -257,7 +321,9 @@ EXAMPLES:
 
       // Print table header
       const header = ["ID", "Project", "App", "Class", "Title", "Workspace", "Float"];
-      console.log(bold(header.map((h, i) => padEnd(h, getColumnWidth(i, header, rows))).join("  ")));
+      console.log(
+        bold(header.map((h, i) => padEnd(h, getColumnWidth(i, header, rows))).join("  ")),
+      );
       console.log(dim("─".repeat(120)));
 
       // Print rows
@@ -274,7 +340,11 @@ EXAMPLES:
         for (const window of windows) {
           const floatIndicator = window.floating ? " ⬜" : "";
           console.log(`  ${window.app_name} ${dim("-")} ${truncate(window.window_title, 50)}`);
-          console.log(`    ${gray("Class:")} ${window.window_class} ${gray("WS:")} ${window.tracked_workspace}${floatIndicator}`);
+          console.log(
+            `    ${gray("Class:")} ${window.window_class} ${
+              gray("WS:")
+            } ${window.tracked_workspace}${floatIndicator}`,
+          );
           console.log(`    ${gray("ID:")} ${dim(String(window.window_id))}`);
         }
         console.log("");
@@ -283,21 +353,22 @@ EXAMPLES:
 
     // Footer
     console.log(dim(`Query completed in ${result.duration_ms.toFixed(1)}ms`));
+    return 0;
   } catch (err) {
     spinner.stop();
-    if (err instanceof Error) {
-      console.error(red("✗ Error: ") + err.message);
-      if (err.message.includes("Failed to connect")) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (parsed.json) {
+      emitJsonError("daemon_error", errorMessage);
+    } else {
+      console.error(red("✗ Error: ") + errorMessage);
+      if (errorMessage.includes("Failed to connect")) {
         console.error(dim("\nThe daemon is not running. Start it with:"));
         console.error(dim("  systemctl --user start i3-project-event-listener"));
       }
-    } else {
-      console.error(red("✗ Error: ") + String(err));
     }
-    return;
+    return 1;
   } finally {
     await client.close();
-    return;
   }
 }
 
@@ -307,7 +378,7 @@ EXAMPLES:
 async function restoreCommand(
   args: (string | number)[],
   _options: WindowsCommandOptions,
-): Promise<void> {
+): Promise<number> {
   const parsed = parseArgs(args.map(String), {
     boolean: ["help", "json", "dry-run"],
     string: ["workspace"],
@@ -335,16 +406,20 @@ EXAMPLES:
   i3pm windows restore --dry-run nixos  ${dim("# Preview without restoring")}
   i3pm windows restore --workspace 5 nixos ${dim("# Restore all to workspace 5")}
 `);
-    return;
+    return 0;
   }
 
   // Get project name from positional arg
   const projectName = String(parsed._[0] || "");
   if (!projectName) {
-    console.error(red("✗ Error: ") + "Project name required");
-    console.error(dim("\nUsage: i3pm windows restore <PROJECT>"));
-    console.error(dim("Example: i3pm windows restore nixos"));
-    return;
+    if (parsed.json) {
+      emitJsonError("invalid_arguments", "Project name required");
+    } else {
+      console.error(red("✗ Error: ") + "Project name required");
+      console.error(dim("\nUsage: i3pm windows restore <PROJECT>"));
+      console.error(dim("Example: i3pm windows restore nixos"));
+    }
+    return 1;
   }
 
   const client = new DaemonClient();
@@ -363,14 +438,17 @@ EXAMPLES:
     if (isDryRun) {
       // Dry run - query hidden windows
       const result = await client.request<{
-        projects: Record<string, Array<{
-          window_id: number;
-          app_name: string;
-          window_class: string;
-          window_title: string;
-          tracked_workspace: number;
-          floating: boolean;
-        }>>;
+        projects: Record<
+          string,
+          Array<{
+            window_id: number;
+            app_name: string;
+            window_class: string;
+            window_title: string;
+            tracked_workspace: number;
+            floating: boolean;
+          }>
+        >;
         total_hidden: number;
       }>("windows.getHidden", { project_name: projectName });
 
@@ -378,13 +456,15 @@ EXAMPLES:
 
       if (parsed.json) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+        return 0;
       }
 
       const windows = result.projects[projectName] || [];
       if (windows.length === 0) {
-        console.log(yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"));
-        return;
+        console.log(
+          yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"),
+        );
+        return 0;
       }
 
       console.log(yellow("🔍 DRY RUN") + dim(` - Would restore ${windows.length} windows:`));
@@ -393,9 +473,12 @@ EXAMPLES:
       for (const window of windows) {
         const ws = workspaceOverride !== undefined ? workspaceOverride : window.tracked_workspace;
         const overrideIndicator = workspaceOverride !== undefined ? yellow(" (override)") : "";
-        console.log(`  ${green("✓")} ${window.app_name} ${dim("→")} ${bold(`WS ${ws}`)}${overrideIndicator}`);
+        console.log(
+          `  ${green("✓")} ${window.app_name} ${dim("→")} ${bold(`WS ${ws}`)}${overrideIndicator}`,
+        );
         console.log(`    ${gray(window.window_class)} - ${truncate(window.window_title, 60)}`);
       }
+      return 0;
     } else {
       // Actual restore
       const fallbackWorkspace = workspaceOverride !== undefined ? workspaceOverride : 1;
@@ -413,20 +496,27 @@ EXAMPLES:
 
       if (parsed.json) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+        return 0;
       }
 
       if (result.windows_restored === 0) {
-        console.log(yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"));
-        return;
+        console.log(
+          yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"),
+        );
+        return 0;
       }
 
-      console.log(green("✓ Restored ") + bold(String(result.windows_restored)) + green(" windows for project '") + cyan(projectName) + green("'"));
+      console.log(
+        green("✓ Restored ") + bold(String(result.windows_restored)) +
+          green(" windows for project '") + cyan(projectName) + green("'"),
+      );
 
       // Show fallback warnings
       if (result.fallback_warnings && result.fallback_warnings.length > 0) {
         console.log("");
-        console.log(yellow(`⚠ ${result.fallback_warnings.length} windows used fallback workspace:`));
+        console.log(
+          yellow(`⚠ ${result.fallback_warnings.length} windows used fallback workspace:`),
+        );
         const displayCount = Math.min(5, result.fallback_warnings.length);
         for (let i = 0; i < displayCount; i++) {
           console.log(`  ${dim("•")} ${result.fallback_warnings[i]}`);
@@ -451,22 +541,23 @@ EXAMPLES:
 
       console.log("");
       console.log(dim(`Completed in ${result.duration_ms.toFixed(1)}ms`));
+      return 0;
     }
   } catch (err) {
     spinner.stop();
-    if (err instanceof Error) {
-      console.error(red("✗ Error: ") + err.message);
-      if (err.message.includes("Failed to connect")) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (parsed.json) {
+      emitJsonError("daemon_error", errorMessage);
+    } else {
+      console.error(red("✗ Error: ") + errorMessage);
+      if (errorMessage.includes("Failed to connect")) {
         console.error(dim("\nThe daemon is not running. Start it with:"));
         console.error(dim("  systemctl --user start i3-project-event-listener"));
       }
-    } else {
-      console.error(red("✗ Error: ") + String(err));
     }
-    return;
+    return 1;
   } finally {
     await client.close();
-    return;
   }
 }
 
@@ -476,7 +567,7 @@ EXAMPLES:
 async function inspectCommand(
   args: (string | number)[],
   _options: WindowsCommandOptions,
-): Promise<void> {
+): Promise<number> {
   const parsed = parseArgs(args.map(String), {
     boolean: ["help", "json"],
     alias: { h: "help" },
@@ -502,23 +593,29 @@ EXAMPLES:
 
 TIP: Get window IDs with: i3pm windows --tree
 `);
-    return;
+    return 0;
   }
 
   // Get window ID from positional arg
   const windowIdStr = String(parsed._[0] || "");
   if (!windowIdStr) {
-    console.error(red("✗ Error: ") + "Window ID required");
-    console.error(dim("\nUsage: i3pm windows inspect <WINDOW_ID>"));
-    console.error(dim("Example: i3pm windows inspect 94371598417536"));
-    console.error(dim("\nTip: Get window IDs with: i3pm windows --tree"));
-    return;
+    if (parsed.json) {
+      emitJsonError("invalid_arguments", "Window ID required");
+    } else {
+      console.error(red("✗ Error: ") + "Window ID required");
+      console.error(dim("\nUsage: i3pm windows inspect <WINDOW_ID>"));
+      console.error(dim("Example: i3pm windows inspect 94371598417536"));
+      console.error(dim("\nTip: Get window IDs with: i3pm windows --tree"));
+    }
+    return 1;
   }
 
   const windowId = Number(windowIdStr);
   if (isNaN(windowId)) {
-    console.error(red("✗ Error: ") + "Invalid window ID (must be a number)");
-    return;
+    return emitCommandError("Invalid window ID (must be a number)", {
+      json: parsed.json === true,
+      code: "invalid_arguments",
+    });
   }
 
   const client = new DaemonClient();
@@ -555,7 +652,7 @@ TIP: Get window IDs with: i3pm windows --tree
 
     if (parsed.json) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+      return 0;
     }
 
     // Display formatted output
@@ -622,23 +719,26 @@ TIP: Get window IDs with: i3pm windows --tree
 
     console.log(dim(`Completed in ${result.duration_ms.toFixed(1)}ms`));
     console.log("");
+    return 0;
   } catch (err) {
     spinner.stop();
-    if (err instanceof Error) {
-      console.error(red("✗ Error: ") + err.message);
-      if (err.message.includes("not found")) {
-        console.error(dim("\nWindow not found. Use 'i3pm windows --tree' to see all windows and their IDs"));
-      } else if (err.message.includes("Failed to connect")) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (parsed.json) {
+      emitJsonError("daemon_error", errorMessage);
+    } else {
+      console.error(red("✗ Error: ") + errorMessage);
+      if (errorMessage.includes("not found")) {
+        console.error(
+          dim("\nWindow not found. Use 'i3pm windows --tree' to see all windows and their IDs"),
+        );
+      } else if (errorMessage.includes("Failed to connect")) {
         console.error(dim("\nThe daemon is not running. Start it with:"));
         console.error(dim("  systemctl --user start i3-project-event-listener"));
       }
-    } else {
-      console.error(red("✗ Error: ") + String(err));
     }
-    return;
+    return 1;
   } finally {
     await client.close();
-    return;
   }
 }
 
@@ -669,54 +769,43 @@ export async function windowsCommand(
   args: string[],
   flags: Record<string, unknown>,
 ): Promise<number> {
-  // Parse command-specific flags from args
-  const parsed = parseArgs(args, {
+  const route = routeWindowsCommandArgs(args);
+  const options: WindowsCommandOptions = {
+    verbose: Boolean(flags.verbose),
+    debug: Boolean(flags.debug),
+  };
+
+  if (route.subcommand === "hidden") {
+    return await hiddenCommand(route.args, options);
+  }
+
+  if (route.subcommand === "restore") {
+    return await restoreCommand(route.args, options);
+  }
+
+  if (route.subcommand === "inspect") {
+    return await inspectCommand(route.args, options);
+  }
+
+  const parsed = parseArgs(route.args, {
     boolean: ["help", "tree", "table", "json", "live", "hidden", "legend"],
     string: ["project", "output"],
     alias: { h: "help" },
     stopEarly: false,
   });
-
-  // Merge parsed flags with passed-in flags (verbose, debug)
   flags = { ...flags, ...parsed };
 
-  // Remaining positional arguments after flag parsing
-  args = parsed._.map(String);
-
-  // Check if first arg is a subcommand
-  const firstArg = String(args[0] || "");
-  const subcommands = ["hidden", "restore", "inspect", "show"];
-
-  if (subcommands.includes(firstArg)) {
-    const subcommand = firstArg;
-    const subArgs = args.slice(1);
-    const options: WindowsCommandOptions = {
-      verbose: Boolean(flags.verbose),
-      debug: Boolean(flags.debug),
-    };
-
-    switch (subcommand) {
-      case "hidden":
-        await hiddenCommand(subArgs, options);
-        return 0;
-      case "restore":
-        await restoreCommand(subArgs, options);
-        return 0;
-      case "inspect":
-        await inspectCommand(subArgs, options);
-        return 0;
-      case "show":
-        // Fall through to default visualization
-        args = subArgs;
-        break;
-    }
-  }
-
-  // Default visualization command (original behavior)
-  // Note: flags are already parsed in main.ts, so we use them directly
   if (flags.help) {
     showHelp();
     return 0;
+  }
+
+  const modeError = ensureExclusiveModes(flags, ["tree", "table", "json", "live"]);
+  if (modeError) {
+    return emitCommandError(modeError, {
+      json: flags.json === true,
+      code: "invalid_arguments",
+    });
   }
 
   // Show legend if requested
@@ -724,11 +813,6 @@ export async function windowsCommand(
     console.log(flags.table ? renderTableLegend() : renderTreeLegend());
     return 0;
   }
-
-  const options: WindowsCommandOptions = {
-    verbose: Boolean(flags.verbose),
-    debug: Boolean(flags.debug),
-  };
 
   // Determine output mode (default to tree)
   const isLive = flags.live === true;
@@ -817,25 +901,23 @@ export async function windowsCommand(
     }
 
     await client.close();
-
-    // Force exit to prevent hanging on pending file operations
-    // This is safe for non-live commands as all output is already complete
-    Deno.exit(0);
+    return 0;
   } catch (err) {
     spinner.stop();
 
-    if (err instanceof Error) {
-      console.error(formatter.error(err.message));
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (isJson) {
+      emitJsonError("daemon_error", errorMessage);
+    } else {
+      console.error(formatter.error(errorMessage));
 
-      if (err.message.includes("Failed to connect")) {
+      if (errorMessage.includes("Failed to connect")) {
         console.error(formatter.info("\nThe daemon is not running. Start it with:"));
         console.error(formatter.dim("  systemctl --user start i3-project-event-listener"));
       }
-    } else {
-      console.error(formatter.error(String(err)));
     }
 
     await client.close();
-    Deno.exit(1);
+    return 1;
   }
 }

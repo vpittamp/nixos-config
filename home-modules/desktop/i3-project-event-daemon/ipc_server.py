@@ -11792,6 +11792,7 @@ class IPCServer:
             "snapshot_version": self._snapshot_version,
             "session_generation": self._session_generation,
             "display_generation": self._display_generation,
+            "active_project": runtime_snapshot.get("active_project"),
             "active_context": runtime_snapshot.get("active_context", {}),
             "active_terminal": runtime_snapshot.get("active_terminal", {}),
             "outputs": runtime_snapshot.get("outputs", []),
@@ -15106,6 +15107,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             })
 
         runtime_snapshot = {
+            "active_project": active_project_name or None,
             "active_context": active_context,
             "outputs": outputs,
             "active_outputs": active_outputs,

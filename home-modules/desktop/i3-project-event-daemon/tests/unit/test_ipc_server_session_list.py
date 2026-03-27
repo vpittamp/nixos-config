@@ -81,7 +81,7 @@ def make_runtime_snapshot():
                 "project": "vpittamp/nixos-config:main",
                 "execution_mode": "local",
                 "connection_key": "local@thinkpad",
-                "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::host::thinkpad",
                 "terminal_anchor_id": "terminal-anchor",
                 "focused": True,
                 "hidden": False,
@@ -106,7 +106,7 @@ def make_runtime_session(overrides: dict | None = None) -> dict:
         "focus_project": "vpittamp/nixos-config:main",
         "execution_mode": "local",
         "connection_key": "local@thinkpad",
-        "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        "context_key": "vpittamp/nixos-config:main::host::thinkpad",
         "focus_execution_mode": "local",
         "focus_connection_key": "local@thinkpad",
         "host_name": "thinkpad",
@@ -143,7 +143,7 @@ def make_runtime_session(overrides: dict | None = None) -> dict:
             "terminal_anchor_id": "terminal-anchor",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "host_name": "thinkpad",
             "pane_title": "main",
             "pane_active": True,
@@ -199,7 +199,7 @@ async def test_runtime_snapshot_keeps_transient_unbound_window_visible(server, m
             "project_name": "vpittamp/nixos-config:main",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
         }
 
     async def fake_window_map_snapshot():
@@ -235,6 +235,7 @@ async def test_runtime_snapshot_keeps_transient_unbound_window_visible(server, m
 
     snapshot = await server._runtime_snapshot({})
 
+    assert snapshot["active_project"] == "vpittamp/nixos-config:main"
     assert snapshot["total_windows"] == 1
     assert snapshot["tracked_windows"][0]["binding_state"] == "transient_unbound"
     assert snapshot["tracked_windows"][0]["visible"] is True
@@ -297,7 +298,7 @@ def make_local_payload():
                     "terminal_anchor_id": "terminal-anchor",
                     "execution_mode": "local",
                     "connection_key": "local@thinkpad",
-                    "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                    "context_key": "vpittamp/nixos-config:main::host::thinkpad",
                     "host_name": "thinkpad",
                     "pane_title": "main",
                     "pane_active": True,
@@ -580,7 +581,7 @@ async def test_session_list_acknowledges_background_stopped_session_on_focus(ser
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "terminal_anchor_id": "other-terminal-anchor",
             "focused": True,
             "hidden": False,
@@ -666,7 +667,7 @@ async def test_session_list_stopped_current_session_requires_leave_and_return_to
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "terminal_anchor_id": "other-terminal-anchor",
             "focused": False,
             "hidden": False,
@@ -759,7 +760,7 @@ async def test_session_list_explicit_focus_acknowledgement_persists_until_new_st
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "terminal_anchor_id": "other-terminal-anchor",
             "focused": True,
             "hidden": False,
@@ -852,7 +853,7 @@ async def test_session_list_user_input_acknowledgement_persists_until_new_bounda
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "terminal_anchor_id": "other-terminal-anchor",
             "focused": True,
             "hidden": False,
@@ -936,7 +937,7 @@ async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, 
     runtime_snapshot["tracked_windows"][0].update({
         "execution_mode": "local",
         "connection_key": "local@ryzen",
-        "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+        "context_key": "vpittamp/nixos-config:main::host::ryzen",
     })
     session = make_runtime_session({
         "session_key": "session-remote-local",
@@ -944,7 +945,7 @@ async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, 
         "surface_key": "surface-remote-local",
         "execution_mode": "local",
         "connection_key": "local@thinkpad",
-        "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        "context_key": "vpittamp/nixos-config:main::host::thinkpad",
         "focus_execution_mode": "ssh",
         "focus_connection_key": "vpittamp@thinkpad:22",
         "host_name": "thinkpad",
@@ -968,7 +969,7 @@ async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, 
             "terminal_anchor_id": "remote-anchor",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "host_name": "thinkpad",
             "pane_title": "main",
             "pane_active": False,
@@ -1024,7 +1025,7 @@ async def test_local_unbound_session_uses_canonical_worktree_identity_and_attach
             "terminal_anchor_id": "",
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "PittampalliOrg/workflow-builder:main::local::local@thinkpad",
+            "context_key": "PittampalliOrg/workflow-builder:main::host::thinkpad",
             "host_name": "thinkpad",
             "pane_title": "main",
             "pane_active": False,
@@ -1076,10 +1077,10 @@ async def test_remote_ssh_session_bound_to_local_window_uses_remote_bridge_focus
         "project": "PittampalliOrg/stacks:main",
         "execution_mode": "ssh",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/stacks:main::host::ryzen",
         "terminal_anchor_id": "remote-ssh-anchor",
         "remote_surface_key": "surface-remote-ssh",
-        "remote_session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+        "remote_session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::host::ryzen",
         "remote_tmux_server_key": "/run/user/1000/tmux-1000/default",
         "remote_tmux_session": "i3pm-stacks-main",
         "remote_tmux_window": "0:main",
@@ -1087,8 +1088,8 @@ async def test_remote_ssh_session_bound_to_local_window_uses_remote_bridge_focus
         "focused": False,
     })
     session = make_runtime_session({
-        "session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
-        "render_session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+        "session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::host::ryzen",
+        "render_session_key": "codex|surface-remote-ssh|PittampalliOrg/stacks:main::host::ryzen",
         "surface_key": "surface-remote-ssh",
         "project_name": "PittampalliOrg/stacks:main",
         "project": "PittampalliOrg/stacks:main",
@@ -1097,7 +1098,7 @@ async def test_remote_ssh_session_bound_to_local_window_uses_remote_bridge_focus
         "focus_project": "PittampalliOrg/stacks:main",
         "execution_mode": "ssh",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/stacks:main::host::ryzen",
         "focus_execution_mode": "ssh",
         "focus_connection_key": "vpittamp@ryzen:22",
         "host_name": "ryzen",
@@ -1121,7 +1122,7 @@ async def test_remote_ssh_session_bound_to_local_window_uses_remote_bridge_focus
             "terminal_anchor_id": "remote-ssh-anchor",
             "execution_mode": "ssh",
             "connection_key": "vpittamp@ryzen:22",
-            "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+            "context_key": "PittampalliOrg/stacks:main::host::ryzen",
             "host_name": "ryzen",
             "pane_title": "main",
             "pane_active": True,
@@ -1164,22 +1165,22 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "ssh",
             "connection_key": "vpittamp@thinkpad:22",
-            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "terminal_anchor_id": "bridge-anchor",
             "terminal_role": "remote-session:123456789abc",
-            "remote_session_key": "codex|surface-remote|vpittamp/nixos-config:main::local::local@thinkpad",
+            "remote_session_key": "codex|surface-remote|vpittamp/nixos-config:main::host::thinkpad",
             "remote_surface_key": "surface-remote",
             "focused": False,
             "hidden": False,
         }
     ]
     session = make_runtime_session({
-        "session_key": "codex|surface-remote|vpittamp/nixos-config:main::local::local@thinkpad",
-        "render_session_key": "codex|surface-remote|vpittamp/nixos-config:main::local::local@thinkpad",
+        "session_key": "codex|surface-remote|vpittamp/nixos-config:main::host::thinkpad",
+        "render_session_key": "codex|surface-remote|vpittamp/nixos-config:main::host::thinkpad",
         "surface_key": "surface-remote",
         "execution_mode": "local",
         "connection_key": "local@thinkpad",
-        "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        "context_key": "vpittamp/nixos-config:main::host::thinkpad",
         "focus_execution_mode": "ssh",
         "focus_connection_key": "vpittamp@thinkpad:22",
         "host_name": "thinkpad",
@@ -1200,7 +1201,7 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
         "terminal_context": {
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "host_name": "thinkpad",
             "tmux_session": "i3pm-nixos-config-main",
             "tmux_window": "0:main",
@@ -1233,6 +1234,7 @@ async def test_remote_session_binds_to_local_bridge_window_by_surface_key(server
 @pytest.mark.asyncio
 async def test_session_list_marks_stale_remote_sources(server, monkeypatch):
     runtime_snapshot = {
+        "active_project": "vpittamp/nixos-config:main",
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
             "project_name": "vpittamp/nixos-config:main",
@@ -1247,7 +1249,7 @@ async def test_session_list_marks_stale_remote_sources(server, monkeypatch):
         "surface_key": "surface-remote-stale",
         "execution_mode": "local",
         "connection_key": "local@thinkpad",
-        "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+        "context_key": "vpittamp/nixos-config:main::host::thinkpad",
         "focus_execution_mode": "ssh",
         "focus_connection_key": "vpittamp@thinkpad:22",
         "host_name": "thinkpad",
@@ -1271,7 +1273,7 @@ async def test_session_list_marks_stale_remote_sources(server, monkeypatch):
         "terminal_context": {
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
-            "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "host_name": "thinkpad",
             "terminal_anchor_id": "remote-anchor",
             "tmux_session": "i3pm-nixos-config-main",
@@ -1311,7 +1313,7 @@ async def test_session_cleanup_closes_stale_remote_bridge_windows(server, monkey
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "ssh",
             "connection_key": "vpittamp@thinkpad:22",
-            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "terminal_anchor_id": "bridge-anchor",
             "terminal_role": "remote-session:123456789abc",
             "remote_session_key": "session-remote",
@@ -1368,7 +1370,7 @@ async def test_session_cleanup_reports_but_does_not_close_stale_remote_source_br
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "ssh",
             "connection_key": "vpittamp@thinkpad:22",
-            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "remote_session_key": "session-remote",
             "remote_surface_key": "surface-remote",
             "remote_tmux_server_key": "/tmp/tmux-1000/default",
@@ -1418,7 +1420,7 @@ async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
             "project": "vpittamp/nixos-config:main",
             "execution_mode": "ssh",
             "connection_key": "vpittamp@thinkpad:22",
-            "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@thinkpad:22",
+            "context_key": "vpittamp/nixos-config:main::host::thinkpad",
             "remote_session_key": "session-remote",
             "remote_surface_key": "surface-remote",
             "remote_tmux_server_key": "/tmp/tmux-1000/default",
@@ -1500,7 +1502,7 @@ def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monk
                     "terminal_anchor_id": "terminal-anchor",
                     "execution_mode": "local",
                     "connection_key": "local@thinkpad",
-                    "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                    "context_key": "vpittamp/nixos-config:main::host::thinkpad",
                     "host_name": "thinkpad",
                     "pane_active": True,
                     "window_active": False,
@@ -1537,7 +1539,7 @@ def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monk
                     "terminal_anchor_id": "terminal-anchor",
                     "execution_mode": "local",
                     "connection_key": "local@thinkpad",
-                    "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
+                    "context_key": "vpittamp/nixos-config:main::host::thinkpad",
                     "host_name": "thinkpad",
                     "pane_active": True,
                     "window_active": False,
@@ -1694,6 +1696,7 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
         },
     ]
     runtime_snapshot = {
+        "active_project": "vpittamp/nixos-config:main",
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
             "project_name": "vpittamp/nixos-config:main",
@@ -1708,7 +1711,7 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
                 "project": "PittampalliOrg/stacks:main",
                 "execution_mode": "ssh",
                 "connection_key": "vpittamp@ryzen:22",
-                "context_key": "PittampalliOrg/stacks:main::ssh::vpittamp@ryzen:22",
+                "context_key": "PittampalliOrg/stacks:main::host::ryzen",
                 "focused": False,
                 "visible": False,
                 "hidden": True,
@@ -1736,11 +1739,45 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
 
     result = await server._dashboard_snapshot({})
 
+    assert result["active_project"] == "vpittamp/nixos-config:main"
     assert result["current_ai_session_key"] == "session-remote-current"
     window = result["projects"][0]["windows"][0]
     assert window["focused"] is True
     assert window["visible"] is True
     assert window["hidden"] is False
+
+
+@pytest.mark.asyncio
+async def test_dashboard_snapshot_preserves_runtime_active_project(server):
+    runtime_snapshot = {
+        "active_project": "vpittamp/nixos-config:main",
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "project_name": "vpittamp/nixos-config:main",
+            "active_project": "vpittamp/nixos-config:main",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+        },
+        "outputs": [],
+        "tracked_windows": [],
+        "total_windows": 0,
+        "state_health": {},
+        "launch_stats": {},
+        "scratchpad": {},
+        "active_terminal": {},
+        "sessions": [],
+        "current_ai_session_key": "",
+        "focused_window_id": 0,
+    }
+
+    server._display_snapshot = AsyncMock(return_value={"outputs": []})
+    server._build_dashboard_worktrees = AsyncMock(return_value=[])
+    server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, [], {}))
+
+    result = await server._dashboard_snapshot({})
+
+    assert result["active_project"] == "vpittamp/nixos-config:main"
+    assert result["active_context"]["active_project"] == "vpittamp/nixos-config:main"
 
 
 @pytest.mark.asyncio

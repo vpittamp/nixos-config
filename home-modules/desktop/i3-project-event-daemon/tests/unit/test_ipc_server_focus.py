@@ -740,7 +740,7 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
         "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
         "terminal_role": "remote-session:abc123",
         "execution_mode": "ssh",
     })
@@ -806,7 +806,7 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
         "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
         "terminal_role": "remote-session:abc123",
         "terminal_anchor_id": "bridge-anchor",
         "execution_mode": "ssh",
@@ -876,14 +876,14 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
         "remote_port": 22,
         "remote_dir": "/home/vpittamp/repos/vpittamp/t3code/main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::host::ryzen",
     }
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
         "app_name": "terminal",
         "project_name": "vpittamp/t3code:main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::host::ryzen",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
         "terminal_anchor_id": "bridge-anchor",
@@ -946,13 +946,13 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
         "remote_port": 22,
         "remote_dir": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/104-create-coding-agent",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": f"{remote_project}::ssh::vpittamp@ryzen:22",
+        "context_key": f"{remote_project}::host::ryzen",
     }
     server._build_remote_session_attach_spec = AsyncMock(return_value={
         "app_name": "terminal",
         "project_name": remote_project,
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": f"{remote_project}::ssh::vpittamp@ryzen:22",
+        "context_key": f"{remote_project}::host::ryzen",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
         "terminal_anchor_id": "bridge-anchor",
@@ -1022,14 +1022,14 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
         "remote_port": 22,
         "remote_dir": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
     }
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
         "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-pittampalliorg-workflow--919ce57f",
         "execution_mode": "ssh",
@@ -1106,14 +1106,14 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
         "remote_port": 22,
         "remote_dir": "/home/vpittamp/repos/vpittamp/t3code/main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::host::ryzen",
     }
     server._switch_to_explicit_remote_context = AsyncMock()
     server._build_remote_session_attach_spec = AsyncMock(return_value={
         "app_name": "terminal",
         "project_name": "vpittamp/t3code:main",
         "connection_key": "vpittamp@ryzen:22",
-        "context_key": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        "context_key": "vpittamp/t3code:main::host::ryzen",
         "terminal_role": "remote-session:abc123",
         "tmux_session_name": "i3pm-vpittamp-t3code-main-f7056320",
         "terminal_anchor_id": "bridge-anchor",
@@ -1184,7 +1184,7 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
         "read_process_environ_with_fallback",
         lambda pid: {
             "I3PM_PROJECT_NAME": "vpittamp/t3code:main",
-            "I3PM_CONTEXT_KEY": "vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+            "I3PM_CONTEXT_KEY": "vpittamp/t3code:main::host::ryzen",
             "I3PM_CONTEXT_VARIANT": "ssh",
             "I3PM_TERMINAL_ROLE": "project-main",
             "I3PM_TMUX_SESSION_NAME": "i3pm-vpittamp-t3code-main-f7056320",
@@ -1197,7 +1197,7 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
         "parse_window_environment",
         lambda _env: SimpleNamespace(
             project_name="vpittamp/t3code:main",
-            context_key="vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+            context_key="vpittamp/t3code:main::host::ryzen",
             terminal_role="project-main",
             tmux_session_name="i3pm-vpittamp-t3code-main-f7056320",
             app_name="terminal",
@@ -1206,7 +1206,7 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
 
     result = server._find_context_terminal_window(
         project_name="vpittamp/t3code:main",
-        context_key="vpittamp/t3code:main::ssh::vpittamp@ryzen:22",
+        context_key="vpittamp/t3code:main::host::ryzen",
         execution_mode="ssh",
         app_name="terminal",
         terminal_role="project-main",

@@ -23,26 +23,27 @@ export type WindowGeometryValidated = z.infer<typeof WindowGeometrySchema>;
 export const WindowStateSchema = z.object({
   id: z.number().int().positive(),
   pid: z.number().int().positive().optional(),
-  app_id: z.string().nullable(),  // I3PM_APP_ID from process environment (can be null)
+  app_id: z.string().nullable(), // I3PM_APP_ID from process environment (can be null)
   class: z.string().min(1),
-  instance: z.string().nullable().optional(),  // Can be null or missing
+  instance: z.string().nullable().optional(), // Can be null or missing
   title: z.string(),
-  workspace: z.string(),  // Accept any workspace string including "scratchpad"
+  workspace: z.string(), // Accept any workspace string including "scratchpad"
   output: z.string().min(1),
   marks: z.array(z.string()),
   focused: z.boolean(),
   hidden: z.boolean(),
+  context_key: z.string(),
   floating: z.boolean(),
   fullscreen: z.boolean(),
   geometry: WindowGeometrySchema,
-  classification: z.enum(["scoped", "global"]).optional(),  // Window classification
-  project: z.string().optional(),  // Project name (can be empty string)
+  classification: z.enum(["scoped", "global"]).optional(), // Window classification
+  project: z.string().optional(), // Project name (can be empty string)
 });
 
 export type WindowStateValidated = z.infer<typeof WindowStateSchema>;
 
 export const WorkspaceSchema = z.object({
-  number: z.number().int().min(-1).max(999),  // -1 for scratchpad workspace
+  number: z.number().int().min(-1).max(999), // -1 for scratchpad workspace
   name: z.string().min(1),
   focused: z.boolean(),
   visible: z.boolean(),

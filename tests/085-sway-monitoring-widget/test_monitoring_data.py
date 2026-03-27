@@ -3579,14 +3579,30 @@ class TestAiReviewLifecycle:
             "qualified_name": "vpittamp/nixos-config:main",
             "execution_mode": "local",
             "connection_key": "local@ryzen",
-            "context_key": "vpittamp/nixos-config:main::local::local@ryzen",
+            "context_key": "vpittamp/nixos-config:main::host::ryzen",
         })
 
         assert identity["qualified_name"] == "vpittamp/nixos-config:main"
         assert identity["execution_mode"] == "local"
         assert identity["connection_key"] == "local@ryzen"
         assert identity["identity_key"] == "local:local@ryzen"
-        assert identity["context_key"] == "vpittamp/nixos-config:main::local::local@ryzen"
+        assert identity["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
+
+    def test_normalize_remote_otel_session_canonicalizes_host_context_key(self):
+        normalized = monitoring_data._normalize_remote_otel_session(
+            {
+                "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                "terminal_context": {
+                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+                },
+            },
+            "vpittamp@ryzen:22",
+            "ryzen",
+            "vpittamp@ryzen:22",
+        )
+
+        assert normalized["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
+        assert normalized["terminal_context"]["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
 
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{

@@ -11,8 +11,8 @@ import type {
   ScratchpadCloseResult,
   ScratchpadLaunchResult,
   ScratchpadStatusResult,
-  ScratchpadToggleResult,
   ScratchpadToggleParams,
+  ScratchpadToggleResult,
 } from "../models.ts";
 import { bold, cyan, dim, green, red, yellow } from "../ui/ansi.ts";
 import { Spinner } from "@cli-ux";
@@ -82,9 +82,7 @@ NOTES:
 function parseTarget(
   parsed: ParsedScratchpadArgs,
 ): { project_name?: string; context_key?: string } {
-  const projectName = parsed._ && parsed._[0]
-    ? String(parsed._[0])
-    : undefined;
+  const projectName = parsed._ && parsed._[0] ? String(parsed._[0]) : undefined;
   const contextKeyRaw = parsed["context-key"];
   const contextKey = typeof contextKeyRaw === "string" && contextKeyRaw.trim().length > 0
     ? contextKeyRaw.trim()
@@ -127,14 +125,14 @@ USAGE:
   i3pm scratchpad toggle [project_name] [OPTIONS]
 
 OPTIONS:
-  --context-key <key>  Explicit context key (account/repo:branch::variant::identity)
+  --context-key <key>  Explicit context key (account/repo:branch::host::<hostname>)
   --json        Output result as JSON
   -h, --help    Show this help
 
 EXAMPLES:
   i3pm scratchpad toggle
   i3pm scratchpad toggle vpittamp/nixos-config:main
-  i3pm scratchpad toggle --context-key vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22
+  i3pm scratchpad toggle --context-key vpittamp/nixos-config:main::host::ryzen
 `);
     Deno.exit(0);
   }
@@ -204,14 +202,14 @@ USAGE:
 
 OPTIONS:
   --dir <path>  Working directory (default: project root)
-  --context-key <key>  Explicit context key (account/repo:branch::variant::identity)
+  --context-key <key>  Explicit context key (account/repo:branch::host::<hostname>)
   --json        Output result as JSON
   -h, --help    Show this help
 
 EXAMPLES:
   i3pm scratchpad launch
   i3pm scratchpad launch vpittamp/nixos-config:main
-  i3pm scratchpad launch --context-key vpittamp/nixos-config:main::local::local@thinkpad
+  i3pm scratchpad launch --context-key vpittamp/nixos-config:main::host::thinkpad
   i3pm scratchpad launch --dir /tmp/test
 `);
     Deno.exit(0);
@@ -302,7 +300,7 @@ EXAMPLES:
   i3pm scratchpad status
   i3pm scratchpad status --all
   i3pm scratchpad status vpittamp/nixos-config:main
-  i3pm scratchpad status --context-key vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22
+  i3pm scratchpad status --context-key vpittamp/nixos-config:main::host::ryzen
 `);
     Deno.exit(0);
   }
@@ -327,16 +325,15 @@ EXAMPLES:
             : red("✗");
 
           console.log(
-            `${statusIcon} ${cyan(terminal.project_name)} ${
-              dim(`(${terminal.state})`)
-            }`,
+            `${statusIcon} ${cyan(terminal.project_name)} ${dim(`(${terminal.state})`)}`,
           );
           console.log(`  ${dim("Context:")} ${terminal.context_key}`);
           console.log(
-            `  ${dim("Mode:")} ${terminal.execution_mode} ${
+            `  ${dim("Host:")} ${terminal.target_host} ${
               dim(`(${terminal.connection_key || "unknown"})`)
             }`,
           );
+          console.log(`  ${dim("Transport:")} ${terminal.transport_kind}`);
           console.log(`  ${dim("PID:")} ${terminal.pid}`);
           console.log(`  ${dim("Window ID:")} ${terminal.window_id}`);
           console.log(`  ${dim("Working dir:")} ${terminal.working_dir}`);
@@ -346,18 +343,14 @@ EXAMPLES:
           console.log(`  ${dim("Mark:")} ${terminal.mark}`);
           console.log(
             `  ${dim("Health:")} process=${terminal.process_running ? "up" : "down"} ` +
-            `window=${terminal.window_exists ? "present" : "missing"}`,
+              `window=${terminal.window_exists ? "present" : "missing"}`,
           );
           console.log(
-            `  ${dim("Created:")} ${
-              new Date(terminal.created_at * 1000).toLocaleString()
-            }`,
+            `  ${dim("Created:")} ${new Date(terminal.created_at * 1000).toLocaleString()}`,
           );
           if (terminal.last_shown_at) {
             console.log(
-              `  ${dim("Last shown:")} ${
-                new Date(terminal.last_shown_at * 1000).toLocaleString()
-              }`,
+              `  ${dim("Last shown:")} ${new Date(terminal.last_shown_at * 1000).toLocaleString()}`,
             );
           }
           console.log();
@@ -401,7 +394,7 @@ USAGE:
 
 OPTIONS:
   --force       Force close even if invalid
-  --context-key <key>  Explicit context key (account/repo:branch::variant::identity)
+  --context-key <key>  Explicit context key (account/repo:branch::host::<hostname>)
   --json        Output result as JSON
   -h, --help    Show this help
 
