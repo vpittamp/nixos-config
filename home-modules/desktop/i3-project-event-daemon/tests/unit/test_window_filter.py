@@ -2,6 +2,8 @@ import importlib
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -22,11 +24,13 @@ if "i3_project_daemon" not in sys.modules:
 
 
 window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
+window_filtering_module = importlib.import_module("i3_project_daemon.window_filtering")
 format_switch_performance_label = window_filter_module.format_switch_performance_label
 format_switch_phase_breakdown = window_filter_module.format_switch_phase_breakdown
 log_restore_workspace_fallback = window_filter_module.log_restore_workspace_fallback
 log_tracking_workspace_fallback = window_filter_module.log_tracking_workspace_fallback
 read_process_environ = window_filter_module.read_process_environ
+restore_windows_batch = window_filtering_module.restore_windows_batch
 
 
 def test_read_process_environ_logs_permission_denied_at_debug(monkeypatch, caplog):
@@ -80,3 +84,83 @@ def test_switch_phase_breakdown_reports_accounted_and_other_time():
         "classify=100.0ms, track=10.0ms, hide=20.0ms, restore=30.0ms, "
         "trace_tree=40.0ms, trace_record=5.0ms, other=45.0ms"
     )
+
+
+@pytest.mark.asyncio
+async def test_restore_windows_batch_blocks_windows_without_tracked_workspace():
+    tracker = SimpleNamespace(get_window_workspace=AsyncMock(return_value=None))
+    i3_conn = SimpleNamespace(get_workspaces=AsyncMock(return_value=[]), command=AsyncMock())
+
+    restored_count, errors, blocked_windows = await restore_windows_batch(
+        i3_conn,
+        [101],
+        tracker,
+    )
+
+    assert restored_count == 0
+    assert errors == []
+    assert blocked_windows == [{
+        "window_id": 101,
+        "reason": "missing_tracked_workspace",
+        "message": "Window 101 has no tracked workspace",
+    }]
+    i3_conn.command.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_restore_windows_batch_restores_only_windows_with_valid_workspace():
+    tracked_state = {
+        101: {"workspace_number": 2, "floating": True},
+        202: None,
+    }
+    tracker = SimpleNamespace(
+        get_window_workspace=AsyncMock(side_effect=lambda window_id: tracked_state[window_id]),
+    )
+
+    class FakeI3:
+        def __init__(self):
+            self.commands = []
+
+        async def get_workspaces(self):
+            return [SimpleNamespace(num=2, name="2")]
+
+        async def command(self, command):
+            self.commands.append(command)
+            return [SimpleNamespace(success=True, error="")]
+
+    i3_conn = FakeI3()
+
+    restored_count, errors, blocked_windows = await restore_windows_batch(
+        i3_conn,
+        [101, 202],
+        tracker,
+    )
+
+    assert restored_count == 1
+    assert errors == []
+    assert blocked_windows == [{
+        "window_id": 202,
+        "reason": "missing_tracked_workspace",
+        "message": "Window 202 has no tracked workspace",
+    }]
+    assert len(i3_conn.commands) == 1
+    assert '[con_id="101"] scratchpad show, move workspace number 2, floating enable' in i3_conn.commands[0]
+
+
+@pytest.mark.asyncio
+async def test_restore_windows_batch_rejects_invalid_workspace_override():
+    tracker = SimpleNamespace(get_window_workspace=AsyncMock())
+    i3_conn = SimpleNamespace(get_workspaces=AsyncMock(return_value=[SimpleNamespace(num=2, name="2")]), command=AsyncMock())
+
+    restored_count, errors, blocked_windows = await restore_windows_batch(
+        i3_conn,
+        [101],
+        tracker,
+        workspace_override=7,
+    )
+
+    assert restored_count == 0
+    assert errors == ["Restore workspace 7 does not exist"]
+    assert blocked_windows == []
+    tracker.get_window_workspace.assert_not_awaited()
+    i3_conn.command.assert_not_awaited()

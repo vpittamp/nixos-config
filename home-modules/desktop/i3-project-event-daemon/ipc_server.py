@@ -6229,7 +6229,8 @@ class IPCServer:
         Args:
             params: {
                 "project_name": str,  # Project whose windows to restore
-                "fallback_workspace": int = 1  # Workspace for invalid positions
+                "workspace": int | None,  # Explicit restore workspace override
+                "dry_run": bool = False,  # Validate restore targets without restoring
             }
             correlation_id: Feature 102 - UUID for causality chain tracking
 
@@ -6237,7 +6238,9 @@ class IPCServer:
             {
                 "windows_restored": int,
                 "errors": List[str],
-                "fallback_warnings": List[str],
+                "blocked_windows": List[Dict[str, Any]],
+                "requested_count": int,
+                "dry_run": bool,
                 "duration_ms": float
             }
         """
@@ -6246,10 +6249,17 @@ class IPCServer:
 
         try:
             project_name = params.get("project_name")
-            fallback_workspace = params.get("fallback_workspace", 1)
+            workspace_override = params.get("workspace")
+            dry_run = bool(params.get("dry_run", False))
 
             if not project_name:
                 raise ValueError("project_name parameter is required")
+
+            if workspace_override is not None:
+                try:
+                    workspace_override = int(workspace_override)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("workspace parameter must be an integer") from exc
 
             if not self.i3_connection or not self.i3_connection.conn:
                 raise RuntimeError("i3 connection not available")
@@ -6302,16 +6312,22 @@ class IPCServer:
                         break  # Found matching project mark
 
             # Restore windows in batch
-            restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(
+            restored_count, errors, blocked_windows = await window_filtering.restore_windows_batch(
                 self.i3_connection.conn,
                 window_ids_to_restore,
                 self.workspace_tracker,
-                fallback_workspace,
+                workspace_override=workspace_override,
+                dry_run=dry_run,
             )
 
             # Feature 102: Log visibility::shown events for each restored window
-            if correlation_id:
+            if correlation_id and not dry_run:
                 for win_info in windows_info:
+                    if any(
+                        int(blocked.get("window_id") or 0) == int(win_info["window_id"])
+                        for blocked in blocked_windows
+                    ):
+                        continue
                     await self._log_i3pm_event(
                         "visibility::shown",
                         window_id=win_info["window_id"],
@@ -6324,7 +6340,7 @@ class IPCServer:
 
             logger.info(
                 f"Restored {restored_count} windows for project '{project_name}' "
-                f"({len(errors)} errors, {len(fallback_warnings)} fallbacks)"
+                f"({len(errors)} errors, {len(blocked_windows)} blocked, dry_run={dry_run})"
             )
 
             duration_ms = (time.perf_counter() - start_time) * 1000
@@ -6332,7 +6348,9 @@ class IPCServer:
             return {
                 "windows_restored": restored_count,
                 "errors": errors,
-                "fallback_warnings": fallback_warnings,
+                "blocked_windows": blocked_windows,
+                "requested_count": len(window_ids_to_restore),
+                "dry_run": dry_run,
                 "duration_ms": duration_ms,
             }
 
@@ -6355,7 +6373,6 @@ class IPCServer:
             params: {
                 "old_project": str,  # Previous project (windows to hide)
                 "new_project": str,  # New project (windows to restore)
-                "fallback_workspace": int = 1
             }
 
         Returns:
@@ -6363,7 +6380,7 @@ class IPCServer:
                 "windows_hidden": int,
                 "windows_restored": int,
                 "errors": List[str],
-                "fallback_warnings": List[str],
+                "blocked_windows": List[Dict[str, Any]],
                 "duration_ms": float
             }
         """
@@ -6377,7 +6394,6 @@ class IPCServer:
         try:
             old_project = params.get("old_project", "")
             new_project = params.get("new_project")
-            fallback_workspace = params.get("fallback_workspace", 1)
 
             if not new_project:
                 raise ValueError("new_project parameter is required")
@@ -6389,7 +6405,7 @@ class IPCServer:
                 raise RuntimeError("workspace tracker not available")
 
             all_errors = []
-            fallback_warnings = []
+            blocked_windows: List[Dict[str, Any]] = []
 
             # Feature 102: Log project::switch event as root (depth 0)
             await self._log_i3pm_event(
@@ -6436,13 +6452,12 @@ class IPCServer:
             restore_result = await self._restore_windows(
                 {
                     "project_name": new_project,
-                    "fallback_workspace": fallback_workspace,
                 },
                 correlation_id=correlation_id,
             )
             windows_restored = restore_result["windows_restored"]
             all_errors.extend(restore_result.get("errors", []))
-            fallback_warnings = restore_result.get("fallback_warnings", [])
+            blocked_windows = restore_result.get("blocked_windows", [])
 
             logger.info(
                 f"Project switch filtering: {old_project or '(none)'} → {new_project} "
@@ -6455,7 +6470,7 @@ class IPCServer:
                 "windows_hidden": windows_hidden,
                 "windows_restored": windows_restored,
                 "errors": all_errors,
-                "fallback_warnings": fallback_warnings,
+                "blocked_windows": blocked_windows,
                 "duration_ms": duration_ms,
             }
 
@@ -13193,7 +13208,6 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                         filter_result = await self._switch_with_filtering({
                             "old_project": old_project,
                             "new_project": new_project or "",
-                            "fallback_workspace": 1
                         })
                         filtering_applied = True
                         logger.info(
@@ -15204,12 +15218,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             if not context_key:
                 target_host = self._local_host_alias()
                 connection_key = self._normalize_connection_key(f"local@{target_host}")
-                context_key = self._build_target_context_key("global", target_host)
-                parsed_context = self._parse_context_key(context_key)
+                parsed_context = {}
             target_host = self._normalize_target_host(parsed_context.get("target_host"))
             execution_mode = self._execution_mode_for_target_host(target_host)
             connection_key = self._connection_key_for_target_host(target_host=target_host, host_profile=None)
-            context_key = self._build_target_context_key("global", target_host)
+            context_key = ""
             working_dir = Path(str(working_dir_override)) if working_dir_override else Path.home()
             return {
                 "project_name": "global",

@@ -5,7 +5,7 @@
  * These schemas ensure data integrity and provide clear error messages.
  */
 
-import { z } from "zod";
+import { z, type RefinementCtx } from "zod";
 
 // ============================================================================
 // Core Window Management Schemas
@@ -19,6 +19,11 @@ export const WindowGeometrySchema = z.object({
 });
 
 export type WindowGeometryValidated = z.infer<typeof WindowGeometrySchema>;
+
+const HostContextKeySchema = z.string().regex(
+  /^.+::host::[A-Za-z0-9._-]+$/,
+  "Scoped windows must use host-based context keys",
+);
 
 export const WindowStateSchema = z.object({
   id: z.number().int().positive(),
@@ -38,6 +43,40 @@ export const WindowStateSchema = z.object({
   geometry: WindowGeometrySchema,
   classification: z.enum(["scoped", "global"]).optional(), // Window classification
   project: z.string().optional(), // Project name (can be empty string)
+}).superRefine((
+  window: { classification?: "scoped" | "global"; context_key: string },
+  ctx: RefinementCtx,
+) => {
+  if (window.classification === "global") {
+    if (window.context_key !== "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["context_key"],
+        message: "Global windows must not emit a context key",
+      });
+    }
+    return;
+  }
+
+  if (window.classification === "scoped") {
+    if (window.context_key === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["context_key"],
+        message: "Scoped windows must emit a host-based context key",
+      });
+      return;
+    }
+
+    const parsed = HostContextKeySchema.safeParse(window.context_key);
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["context_key"],
+        message: "Scoped windows must use host-based context keys",
+      });
+    }
+  }
 });
 
 export type WindowStateValidated = z.infer<typeof WindowStateSchema>;
@@ -285,7 +324,7 @@ export function validateResponse<T>(schema: z.ZodSchema<T>, data: unknown): T {
     return schema.parse(data);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      const issues = err.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+      const issues = err.issues.map((issue: z.ZodIssue) => `${issue.path.join(".")}: ${issue.message}`);
       throw new Error(
         `Invalid daemon response:\n  ${issues.join("\n  ")}\n\n` +
           "This may indicate a protocol version mismatch between CLI and daemon.",

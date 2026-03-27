@@ -960,11 +960,11 @@ class TestQueryMonitoringData:
                                     "focused": True,
                                     "marks": [
                                         "scoped:terminal:PittampalliOrg/workflow-builder:main:100",
-                                        "ctx:PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                        "ctx:PittampalliOrg/workflow-builder:main::host::ryzen",
                                     ],
                                     "execution_mode": "ssh",
                                     "connection_key": "vpittamp@ryzen:22",
-                                    "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                    "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
                                     "remote_enabled": "true",
                                     "remote_user": "vpittamp",
                                     "remote_host": "ryzen",
@@ -1023,7 +1023,7 @@ class TestQueryMonitoringData:
                                 "window_id": 100,
                                 "execution_mode": "ssh",
                                 "connection_key": "vpittamp@ryzen:22",
-                                "context_key": "PittampalliOrg/workflow-builder:main::ssh::vpittamp@ryzen:22",
+                                "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
                                 "tmux_session": "workflow-builder/main",
                                 "tmux_window": "1:bash",
                                 "tmux_pane": "%37",
@@ -3587,6 +3587,70 @@ class TestAiReviewLifecycle:
         assert identity["connection_key"] == "local@ryzen"
         assert identity["identity_key"] == "local:local@ryzen"
         assert identity["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
+
+    def test_resolve_session_project_labels_uses_explicit_unknown_when_project_identity_missing(self):
+        labels = monitoring_data._resolve_session_project_labels({})
+
+        assert labels["session_project"] == ""
+        assert labels["window_project"] == ""
+        assert labels["display_project"] == "unknown"
+        assert labels["project_source"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_query_monitoring_data_requires_active_identity_match_for_project_card_activation(self):
+        runtime_snapshot = {
+            "status": "ok",
+            "outputs": [],
+            "active_project": "vpittamp/nixos-config:main",
+            "active_context": {
+                "qualified_name": "vpittamp/nixos-config:main",
+                "execution_mode": "local",
+                "connection_key": "local@thinkpad",
+                "identity_key": "local:local@thinkpad",
+                "context_key": "vpittamp/nixos-config:main::host::thinkpad",
+            },
+            "sessions": [],
+        }
+        project_cards = [
+            {
+                "name": "vpittamp/nixos-config:main",
+                "variant": "local",
+                "identity_key": "local:local@thinkpad",
+                "windows": [],
+            },
+            {
+                "name": "vpittamp/nixos-config:main",
+                "variant": "ssh",
+                "identity_key": "ssh:vpittamp@ryzen:22",
+                "windows": [],
+            },
+            {
+                "name": "Global Windows",
+                "variant": "global",
+                "identity_key": "global:global",
+                "windows": [],
+            },
+        ]
+
+        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
+             patch("i3_project_manager.cli.monitoring_data.transform_to_project_view", return_value=copy.deepcopy(project_cards)), \
+             patch("i3_project_manager.cli.monitoring_data.validate_and_count", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}), \
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.load_ai_session_pins", return_value=[]), \
+             patch("i3_project_manager.cli.monitoring_data.load_ai_session_mru", return_value=[]), \
+             patch("i3_project_manager.cli.monitoring_data.load_ai_monitor_metrics", return_value={}), \
+             patch("i3_project_manager.cli.monitoring_data.emit_ai_state_transition_notifications"), \
+             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
+            mock_instance = AsyncMock()
+            mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
+            MockClient.return_value = mock_instance
+
+            result = await query_monitoring_data()
+
+        assert result["status"] == "ok"
+        assert [project["is_active"] for project in result["projects"]] == [True, False, False]
 
     def test_normalize_remote_otel_session_canonicalizes_host_context_key(self):
         normalized = monitoring_data._normalize_remote_otel_session(

@@ -16,7 +16,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 try:
@@ -583,18 +583,20 @@ async def restore_windows_batch(
     i3_conn,
     window_ids: List[int],
     workspace_tracker: WorkspaceTracker,
-    fallback_workspace: int = 1,
-) -> Tuple[int, List[str], List[str]]:
+    workspace_override: Optional[int] = None,
+    dry_run: bool = False,
+) -> Tuple[int, List[str], List[Dict[str, Any]]]:
     """Restore multiple windows from scratchpad in single batch operation.
 
     Args:
         i3_conn: i3 IPC connection
         window_ids: List of window container IDs to restore
         workspace_tracker: WorkspaceTracker instance for loading positions
-        fallback_workspace: Workspace to use if tracked workspace invalid
+        workspace_override: Explicit workspace to use for every restored window
+        dry_run: Validate restore targets without executing restore commands
 
     Returns:
-        (restored_count, errors, fallback_warnings) tuple
+        (restored_count, errors, blocked_windows) tuple
 
     Side effects:
         - Moves windows from scratchpad to tracked workspaces via i3 IPC
@@ -603,41 +605,72 @@ async def restore_windows_batch(
     if not window_ids:
         return (0, [], [])
 
+    if workspace_override is not None and workspace_override <= 0:
+        return (
+            0,
+            [f"Invalid restore workspace override: {workspace_override}"],
+            [],
+        )
+
+    if workspace_override is not None and not await validate_workspace_exists(i3_conn, workspace_override):
+        return (
+            0,
+            [f"Restore workspace {workspace_override} does not exist"],
+            [],
+        )
+
     restore_commands = []
     errors = []
-    fallback_warnings = []
+    blocked_windows: List[Dict[str, Any]] = []
 
     for window_id in window_ids:
-        # Get tracked workspace
         tracked = await workspace_tracker.get_window_workspace(window_id)
+        floating = bool(tracked.get("floating", False)) if tracked else False
 
-        if tracked:
-            # Feature 038: get_window_workspace returns Dict, not tuple
-            workspace_number = tracked.get("workspace_number", fallback_workspace)
-            floating = tracked.get("floating", False)
-
-            # Validate workspace exists
-            if not await validate_workspace_exists(i3_conn, workspace_number):
-                logger.warning(
-                    f"Workspace {workspace_number} doesn't exist for window {window_id}, "
-                    f"falling back to workspace {fallback_workspace}"
-                )
-                fallback_warnings.append(
-                    f"Window {window_id}: WS {workspace_number} → WS {fallback_workspace} (fallback)"
-                )
-                workspace_number = fallback_workspace
+        if workspace_override is not None:
+            workspace_number = workspace_override
         else:
-            # No tracking info, use fallback
-            workspace_number = fallback_workspace
-            floating = False
+            if not tracked:
+                blocked_windows.append({
+                    "window_id": window_id,
+                    "reason": "missing_tracked_workspace",
+                    "message": f"Window {window_id} has no tracked workspace",
+                })
+                continue
 
-        # Build restore command
-        # Feature 046: For Sway scratchpad restoration, use 'scratchpad show' first
-        # See: https://github.com/swaywm/sway/blob/master/sway/commands/scratchpad.c
+            workspace_number = int(tracked.get("workspace_number") or 0)
+            if workspace_number <= 0:
+                blocked_windows.append({
+                    "window_id": window_id,
+                    "reason": "missing_tracked_workspace",
+                    "message": f"Window {window_id} has no valid tracked workspace",
+                })
+                continue
+
+            if not await validate_workspace_exists(i3_conn, workspace_number):
+                blocked_windows.append({
+                    "window_id": window_id,
+                    "workspace_number": workspace_number,
+                    "reason": "workspace_missing",
+                    "message": (
+                        f"Window {window_id} tracked workspace {workspace_number} does not exist"
+                    ),
+                })
+                continue
+
+        if dry_run:
+            continue
+
         floating_cmd = "floating enable" if floating else "floating disable"
         restore_commands.append(
             f'[con_id="{window_id}"] scratchpad show, move workspace number {workspace_number}, {floating_cmd}'
         )
+
+    if dry_run:
+        return (len(window_ids) - len(blocked_windows), [], blocked_windows)
+
+    if not restore_commands:
+        return (0, errors, blocked_windows)
 
     # Execute batch restore command
     batch_command = build_batch_move_command(restore_commands)
@@ -653,9 +686,9 @@ async def restore_windows_batch(
     except Exception as e:
         logger.error(f"Batch restore command failed: {e}")
         errors.append(str(e))
-        return (0, errors, fallback_warnings)
+        return (0, errors, blocked_windows)
 
-    restored_count = len(window_ids) - len(errors)
-    return (restored_count, errors, fallback_warnings)
+    restored_count = len(restore_commands) - len(errors)
+    return (restored_count, errors, blocked_windows)
 # Force rebuild Tue Nov  4 05:29:55 AM EST 2025
 # Force rebuild Tue Nov  4 05:50:56 AM EST 2025

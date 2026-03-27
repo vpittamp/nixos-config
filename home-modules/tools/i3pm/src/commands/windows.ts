@@ -20,6 +20,13 @@ interface WindowsCommandOptions {
   debug?: boolean;
 }
 
+interface RestoreBlockedWindow {
+  window_id: number;
+  workspace_number?: number;
+  reason: string;
+  message: string;
+}
+
 export type WindowsSubcommand = "show" | "hidden" | "restore" | "inspect";
 
 export interface WindowsCommandRoute {
@@ -189,7 +196,7 @@ async function getWindowState(
     if (err instanceof z.ZodError) {
       console.error(formatter.error("Invalid daemon response format"));
       if (options.debug) {
-        console.error(formatter.dim("Validation errors:"), err.errors);
+        console.error(formatter.dim("Validation errors:"), err.issues);
       }
       console.error(formatter.warning("This may indicate a protocol version mismatch"));
       throw new Error("Invalid daemon response format");
@@ -436,70 +443,27 @@ EXAMPLES:
     await client.connect();
 
     if (isDryRun) {
-      // Dry run - query hidden windows
-      const result = await client.request<{
-        projects: Record<
-          string,
-          Array<{
-            window_id: number;
-            app_name: string;
-            window_class: string;
-            window_title: string;
-            tracked_workspace: number;
-            floating: boolean;
-          }>
-        >;
-        total_hidden: number;
-      }>("windows.getHidden", { project_name: projectName });
-
-      spinner.stop();
-
-      if (parsed.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return 0;
-      }
-
-      const windows = result.projects[projectName] || [];
-      if (windows.length === 0) {
-        console.log(
-          yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"),
-        );
-        return 0;
-      }
-
-      console.log(yellow("🔍 DRY RUN") + dim(` - Would restore ${windows.length} windows:`));
-      console.log("");
-
-      for (const window of windows) {
-        const ws = workspaceOverride !== undefined ? workspaceOverride : window.tracked_workspace;
-        const overrideIndicator = workspaceOverride !== undefined ? yellow(" (override)") : "";
-        console.log(
-          `  ${green("✓")} ${window.app_name} ${dim("→")} ${bold(`WS ${ws}`)}${overrideIndicator}`,
-        );
-        console.log(`    ${gray(window.window_class)} - ${truncate(window.window_title, 60)}`);
-      }
-      return 0;
-    } else {
-      // Actual restore
-      const fallbackWorkspace = workspaceOverride !== undefined ? workspaceOverride : 1;
       const result = await client.request<{
         windows_restored: number;
-        fallback_warnings: string[];
+        blocked_windows: RestoreBlockedWindow[];
         errors: string[];
+        requested_count: number;
+        dry_run: boolean;
         duration_ms: number;
       }>("project.restoreWindows", {
         project_name: projectName,
-        fallback_workspace: fallbackWorkspace,
+        workspace: workspaceOverride,
+        dry_run: true,
       });
 
       spinner.stop();
 
       if (parsed.json) {
         console.log(JSON.stringify(result, null, 2));
-        return 0;
+        return result.errors.length > 0 || result.blocked_windows.length > 0 ? 1 : 0;
       }
 
-      if (result.windows_restored === 0) {
+      if (result.requested_count === 0) {
         console.log(
           yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"),
         );
@@ -507,24 +471,80 @@ EXAMPLES:
       }
 
       console.log(
+        yellow("🔍 DRY RUN") +
+          dim(` - ${result.windows_restored} restore-ready, ${result.blocked_windows.length} blocked`),
+      );
+
+      if (result.blocked_windows.length > 0) {
+        console.log("");
+        console.log(red(`✗ ${result.blocked_windows.length} windows are blocked:`));
+        for (const blocked of result.blocked_windows.slice(0, 5)) {
+          console.log(`  ${red("✗")} ${blocked.message}`);
+        }
+        if (result.blocked_windows.length > 5) {
+          console.log(dim(`  ... and ${result.blocked_windows.length - 5} more`));
+        }
+        return 1;
+      }
+
+      console.log("");
+      console.log(green("✓ Restore constraints satisfied"));
+      return 0;
+    } else {
+      const result = await client.request<{
+        windows_restored: number;
+        blocked_windows: RestoreBlockedWindow[];
+        errors: string[];
+        requested_count: number;
+        dry_run: boolean;
+        duration_ms: number;
+      }>("project.restoreWindows", {
+        project_name: projectName,
+        workspace: workspaceOverride,
+      });
+
+      spinner.stop();
+
+      if (parsed.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return result.errors.length > 0 || result.blocked_windows.length > 0 ? 1 : 0;
+      }
+
+      if (result.requested_count === 0) {
+        console.log(
+          yellow("⚠ No hidden windows found for project '") + cyan(projectName) + yellow("'"),
+        );
+        return 0;
+      }
+
+      if (result.blocked_windows.length > 0) {
+        console.log(red("✗ Restore blocked for project '") + cyan(projectName) + red("'"));
+        console.log("");
+        for (const blocked of result.blocked_windows.slice(0, 5)) {
+          console.log(`  ${red("✗")} ${blocked.message}`);
+        }
+        if (result.blocked_windows.length > 5) {
+          console.log(dim(`  ... and ${result.blocked_windows.length - 5} more`));
+        }
+        if (result.errors.length > 0) {
+          console.log("");
+          console.log(red(`✗ ${result.errors.length} restore errors occurred:`));
+          for (const error of result.errors.slice(0, 3)) {
+            console.log(`  ${red("✗")} ${error}`);
+          }
+          if (result.errors.length > 3) {
+            console.log(dim(`  ... and ${result.errors.length - 3} more`));
+          }
+        }
+        console.log("");
+        console.log(dim(`Completed in ${result.duration_ms.toFixed(1)}ms`));
+        return 1;
+      }
+
+      console.log(
         green("✓ Restored ") + bold(String(result.windows_restored)) +
           green(" windows for project '") + cyan(projectName) + green("'"),
       );
-
-      // Show fallback warnings
-      if (result.fallback_warnings && result.fallback_warnings.length > 0) {
-        console.log("");
-        console.log(
-          yellow(`⚠ ${result.fallback_warnings.length} windows used fallback workspace:`),
-        );
-        const displayCount = Math.min(5, result.fallback_warnings.length);
-        for (let i = 0; i < displayCount; i++) {
-          console.log(`  ${dim("•")} ${result.fallback_warnings[i]}`);
-        }
-        if (result.fallback_warnings.length > 5) {
-          console.log(dim(`  ... and ${result.fallback_warnings.length - 5} more`));
-        }
-      }
 
       // Show errors
       if (result.errors && result.errors.length > 0) {

@@ -2133,46 +2133,65 @@ async def cmd_restore(args: argparse.Namespace) -> int:
             result = await daemon.get_hidden_windows(project_name=project_name)
             await daemon.close()
 
+            dry_run_result = await daemon.restore_windows(
+                project_name,
+                workspace_override,
+                dry_run=True,
+            )
+            await daemon.close()
+
             if json_output:
                 import json
-                print(json.dumps(result, indent=2))
-                return 0
+                print(json.dumps(dry_run_result, indent=2))
+                return 1 if dry_run_result.get('errors') or dry_run_result.get('blocked_windows') else 0
 
-            if result['total_hidden'] == 0:
+            if dry_run_result['requested_count'] == 0:
                 print_info(f"No hidden windows found for project '{project_name}'")
                 return 0
 
-            print(f"{Colors.YELLOW}[DRY RUN]{Colors.RESET} Would restore {result['total_hidden']} windows:")
-            for window in result['projects'].get(project_name, []):
-                ws = workspace_override if workspace_override else window['tracked_workspace']
-                print(f"  • {window['app_name']} ({window['window_class']}) → WS {ws}")
+            print(
+                f"{Colors.YELLOW}[DRY RUN]{Colors.RESET} "
+                f"{dry_run_result['windows_restored']} restore-ready, "
+                f"{len(dry_run_result.get('blocked_windows', []))} blocked"
+            )
+            if dry_run_result.get('blocked_windows'):
+                for blocked in dry_run_result['blocked_windows'][:5]:
+                    print(f"  ✗ {blocked['message']}")
+                if len(dry_run_result['blocked_windows']) > 5:
+                    print(f"  ... and {len(dry_run_result['blocked_windows']) - 5} more")
+                return 1
 
+            print_success("Restore constraints satisfied")
             return 0
 
         # Perform actual restore
-        fallback_workspace = workspace_override if workspace_override else 1
-        result = await daemon.restore_windows(project_name, fallback_workspace)
+        result = await daemon.restore_windows(project_name, workspace_override)
         await daemon.close()
 
         if json_output:
             import json
             print(json.dumps(result, indent=2))
-            return 0
+            return 1 if result.get('errors') or result.get('blocked_windows') else 0
 
         # Display results
-        if result['windows_restored'] == 0:
+        if result['requested_count'] == 0:
             print_info(f"No hidden windows found for project '{project_name}'")
             return 0
 
-        print_success(f"Restored {result['windows_restored']} windows for project '{project_name}'")
+        if result.get('blocked_windows'):
+            print_error(f"Restore blocked for project '{project_name}'")
+            for blocked in result['blocked_windows'][:5]:
+                print(f"  ✗ {blocked['message']}")
+            if len(result['blocked_windows']) > 5:
+                print(f"  ... and {len(result['blocked_windows']) - 5} more")
+            if result.get('errors'):
+                print_error(f"{len(result['errors'])} errors occurred:")
+                for error in result['errors'][:3]:
+                    print(f"  ✗ {error}")
+            print(f"{Colors.GRAY}Duration: {result['duration_ms']:.1f}ms{Colors.RESET}")
+            return 1
 
-        # Show fallback warnings if any
-        if result.get('fallback_warnings'):
-            print_warning(f"{len(result['fallback_warnings'])} windows used fallback workspace:")
-            for warning in result['fallback_warnings'][:5]:  # Show first 5
-                print(f"  ⚠ {warning}")
-            if len(result['fallback_warnings']) > 5:
-                print(f"  ... and {len(result['fallback_warnings']) - 5} more")
+        print_success(f"Restored {result['windows_restored']} windows for project '{project_name}'")
 
         # Show errors if any
         if result.get('errors'):

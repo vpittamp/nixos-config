@@ -3393,7 +3393,14 @@ def _resolve_session_project_labels(
         or "unknown"
     )
     focus_project = resolved_window_project or upstream_focus_project or session_project or ""
-    project_source = upstream_project_source or ("anchor" if session_project else "window")
+    if upstream_project_source:
+        project_source = upstream_project_source
+    elif session_project:
+        project_source = "anchor"
+    elif resolved_window_project:
+        project_source = "window"
+    else:
+        project_source = "unknown"
 
     return {
         "session_project": session_project,
@@ -4336,7 +4343,7 @@ def _build_otel_badges(
         session_project = str(project_labels.get("session_project") or "").strip()
         display_project = str(project_labels.get("display_project") or "").strip()
         focus_project = str(project_labels.get("focus_project") or "").strip()
-        project_source = str(project_labels.get("project_source") or "window_fallback")
+        project_source = str(project_labels.get("project_source") or "unknown")
         tmux_session = str(terminal_context.get("tmux_session") or "")
         tmux_window = str(terminal_context.get("tmux_window") or "")
         tmux_pane = str(terminal_context.get("tmux_pane") or "")
@@ -4537,7 +4544,7 @@ def _build_active_ai_sessions(
         session_project = str(project_labels.get("session_project") or "").strip()
         display_project = str(project_labels.get("display_project") or "").strip()
         focus_project = str(project_labels.get("focus_project") or "").strip()
-        project_source = str(project_labels.get("project_source") or "window_fallback")
+        project_source = str(project_labels.get("project_source") or "unknown")
         tool = str(raw_session.get("tool", "unknown") or "unknown").strip() or "unknown"
 
         tmux_session = str(terminal_context.get("tmux_session") or "")
@@ -4851,7 +4858,7 @@ def _update_review_entry_from_session(
     _assign("window_project", str(session.get("window_project") or ""))
     _assign("focus_project", str(session.get("focus_project") or session.get("window_project") or session.get("project") or ""))
     _assign("display_project", str(session.get("display_project") or session.get("project") or ""))
-    _assign("project_source", str(session.get("project_source") or "window_fallback"))
+    _assign("project_source", str(session.get("project_source") or "unknown"))
     _assign("window_id", _safe_int(session.get("window_id"), 0))
     _assign("execution_mode", str(session.get("execution_mode") or "local"))
     _assign("connection_key", str(session.get("connection_key") or ""))
@@ -5539,12 +5546,27 @@ def transform_window(
     class_normalized = str(window_class or "").strip()
     is_pwa = (
         registry_name.endswith("-pwa")
+        or class_normalized == "FFPWA"
         or class_normalized.startswith("WebApp-")
         or app_id_normalized.startswith("chrome-")
     )
 
     # Generate composite state classes (floating, hidden, focused)
     state_classes = get_window_state_classes(window)
+
+    workspace_value = window.get("workspace", "")
+    workspace_raw = str(workspace_value or "")
+    if workspace_raw == "scratchpad":
+        workspace_num = -1
+        normalized_workspace = "scratchpad"
+    else:
+        workspace_head = workspace_raw.split(":", 1)[0]
+        try:
+            workspace_num = int(workspace_head)
+            normalized_workspace = workspace_num
+        except (TypeError, ValueError):
+            workspace_num = 0
+            normalized_workspace = workspace_raw
 
     # Get geometry for detail view
     geometry = window.get("geometry", {})
@@ -5564,7 +5586,7 @@ def transform_window(
         "project": window.get("project", ""),
         "scope": scope,
         "icon_path": icon_path,
-        "workspace": workspace_raw,  # Keep original value ("scratchpad", "1", etc.)
+        "workspace": normalized_workspace,
         "workspace_number": workspace_num,  # Numeric workspace for badges
         "output": window.get("output", ""),
         "marks": window.get("marks", []),
@@ -6840,7 +6862,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         # UX Enhancement: Add is_active flag to each project
         active_qualified_name = str(active_identity.get("qualified_name", "")).strip()
         active_identity_key = str(active_identity.get("identity_key", "")).strip()
-        active_mode = str(active_identity.get("execution_mode", "")).strip()
 
         for project in projects:
             project_name = str(project.get("name", "")).strip()
@@ -6848,39 +6869,17 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             project_identity = str(project.get("identity_key", "")).strip()
 
             if variant == "global":
-                project["is_active"] = not active_qualified_name and (active_project in {None, "", "global"})
+                project["is_active"] = not active_qualified_name
                 continue
 
-            # Prefer active-worktree identity as the source of truth for variant cards.
-            if active_qualified_name:
-                if project_name != active_qualified_name:
-                    project["is_active"] = False
-                    continue
-
-                if project_identity and active_identity_key:
-                    project["is_active"] = project_identity == active_identity_key
-                    continue
-
-                # Backward-compatibility fallback for older active-worktree payloads.
-                if variant in {"local", "ssh"} and active_mode in {"local", "ssh"}:
-                    project["is_active"] = variant == active_mode
-                else:
-                    project["is_active"] = True
-                continue
-
-            # Legacy fallback path when active-worktree context is unavailable.
-            if project_name != active_project:
+            if not active_qualified_name or not active_identity_key:
                 project["is_active"] = False
                 continue
 
-            if project_identity and active_identity_key:
-                project["is_active"] = project_identity == active_identity_key
-                continue
-
-            if variant in {"local", "ssh"} and active_mode in {"local", "ssh"}:
-                project["is_active"] = variant == active_mode
-            else:
-                project["is_active"] = True
+            project["is_active"] = (
+                project_name == active_qualified_name
+                and project_identity == active_identity_key
+            )
 
         # Create flat list of all windows for easy ID lookup in detail view
         all_windows = []
@@ -6992,10 +6991,15 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "stage_from_process": sum(1 for s in active_ai_sessions if str(s.get("identity_source") or "") in {"pid", "pane", "heuristic"}),
             "stage_from_review": sum(1 for s in active_ai_sessions if str(s.get("identity_source") or "") == "review"),
             "stale_source_sessions": sum(1 for s in active_ai_sessions if bool(s.get("remote_source_stale"))),
-            "window_fallback_project": sum(
+            "window_project_source": sum(
                 1
                 for s in active_ai_sessions
-                if str(s.get("project_source") or "") in {"window_fallback", "tmux_window_fallback"}
+                if str(s.get("project_source") or "") == "window"
+            ),
+            "missing_project_source": sum(
+                1
+                for s in active_ai_sessions
+                if str(s.get("project_source") or "") == "unknown"
             ),
             "remote_relabel_prevented": sum(
                 1
@@ -9315,8 +9319,8 @@ async def main():
         print(json.dumps(data, separators=(",", ":")))
 
         # Exit with appropriate code
-        # "partial" = valid data with degraded subsystems → exit 0 so EWW gets clean JSON
-        # Only "error" (no usable data at all) exits non-zero to trigger the shell fallback
+        # "partial" = valid data with degraded subsystems → exit 0 so consumers keep structured JSON
+        # Only "error" (no usable data at all) exits non-zero
         sys.exit(0 if data.get("status") != "error" else 1)
 
     except Exception as e:
