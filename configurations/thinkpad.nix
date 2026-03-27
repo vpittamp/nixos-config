@@ -627,7 +627,6 @@ in
     rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access
     wlvncc  # Wayland-native VNC client (for Ryzen HDMI-A-1 → HEADLESS-1 proxy)
-    ryzenDualStream
 
     # 1Password GUI
     _1password-gui
