@@ -4495,9 +4495,9 @@ class IPCServer:
                     window_class = window.window_class if hasattr(window, 'window_class') and window.window_class else (window.app_id if hasattr(window, 'app_id') else "unknown")
 
                     # Determine if hidden (scoped to different project)
-                    classification = "global"
+                    classification = scope if scope in {"scoped", "global"} else "global"
                     hidden = True  # Scratchpad windows are hidden by definition
-                    if window_class and project:
+                    if classification == "global" and window_class and project:
                         if window_class in self.state_manager.state.scoped_classes:
                             classification = "scoped"
 
