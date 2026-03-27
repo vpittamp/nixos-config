@@ -307,6 +307,10 @@ Symptoms:
 - QuickShell still launched old config paths
 - child process still used `dashboard watch --interval 750`
 
+Current verification path:
+- run `i3pm health` after rebuilds
+- treat core failures or QuickShell/Home Manager path mismatches as deployment issues before debugging QML
+
 Root cause:
 - `ryzen` had not actually switched to the newest system generation during the first rebuild attempt
 - the system-level `home-manager-vpittamp.service` was still activating an older HM generation

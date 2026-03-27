@@ -4918,12 +4918,19 @@ ShellRoot {
         if (section === "sessions") {
             const hostCount = groupedSessionBands().length;
             const sessionCount = panelSessions().length;
+            const aiMetrics = (dashboard && typeof dashboard.ai_monitor_metrics === "object")
+                ? dashboard.ai_monitor_metrics
+                : {};
+            const remotePushHealth = stringOrEmpty(aiMetrics.remote_push_health).toLowerCase();
             const bits = [];
             if (hostCount > 0) {
                 bits.push(String(hostCount) + (hostCount === 1 ? " host" : " hosts"));
             }
             if (sessionCount > 0) {
                 bits.push(String(sessionCount) + (sessionCount === 1 ? " session" : " sessions"));
+            }
+            if (remotePushHealth === "degraded" || remotePushHealth === "down") {
+                bits.push(remotePushHealth === "down" ? "remote push down" : "remote push degraded");
             }
             return bits.join(" • ");
         }
@@ -7455,6 +7462,7 @@ ShellRoot {
             projects: [],
             worktrees: [],
             scratchpad: {},
+            ai_monitor_metrics: {},
             state_health: {},
             total_windows: 0
         };

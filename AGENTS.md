@@ -139,6 +139,9 @@ Implications:
 - Documented a deployment pitfall on `ryzen`:
   - system generation and Home Manager generation can diverge operationally
   - always verify activated generations before assuming a QML/runtime bug
+- Added `i3pm health` as the canonical post-rebuild runtime check:
+  - fails on core runtime/convergence issues
+  - warns on optional units like non-enabled `wayvnc@...` services
 - Unified and cleaned i3pm TypeScript surface:
   - full `deno check` pass
   - removed stale/unreferenced legacy modules
@@ -174,6 +177,9 @@ Validated in live Sway session after rebuild/restart:
   - `i3pm daemon ping`
   - `i3pm daemon status`
   - `i3pm daemon status --json`
+- Post-rebuild health:
+  - `i3pm health`
+  - `i3pm health --json`
 - Context checks:
   - `cat ~/.config/i3/active-worktree.json`
   - `i3pm worktree switch [--local] <account/repo:branch>`

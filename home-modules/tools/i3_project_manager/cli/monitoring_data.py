@@ -119,10 +119,16 @@ INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
 REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
 REMOTE_OTEL_SINK_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-sink.json"
+REMOTE_OTEL_PUSH_STATE_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-push-state.json"
 REMOTE_OTEL_SOURCE_STALE_SECONDS = float(
     os.environ.get("I3PM_MONITORING_REMOTE_OTEL_STALE_SECONDS", "20")
 )
 REMOTE_OTEL_SINK_CACHE: Dict[str, Any] = {
+    "mtime_ns": None,
+    "size": None,
+    "payload": {},
+}
+REMOTE_OTEL_PUSH_STATE_CACHE: Dict[str, Any] = {
     "mtime_ns": None,
     "size": None,
     "payload": {},
@@ -297,6 +303,40 @@ def _load_remote_otel_sink() -> Dict[str, Any]:
             payload = json.load(f)
             if isinstance(payload, dict):
                 REMOTE_OTEL_SINK_CACHE.update({
+                    "mtime_ns": stat_result.st_mtime_ns,
+                    "size": stat_result.st_size,
+                    "payload": dict(payload),
+                })
+                return payload
+    except (json.JSONDecodeError, IOError, OSError):
+        return {}
+    return {}
+
+
+def _load_remote_otel_push_state() -> Dict[str, Any]:
+    """Load deterministic remote OTEL push sender state."""
+    if not REMOTE_OTEL_PUSH_STATE_FILE.exists():
+        REMOTE_OTEL_PUSH_STATE_CACHE.update({
+            "mtime_ns": None,
+            "size": None,
+            "payload": {},
+        })
+        return {}
+    try:
+        stat_result = REMOTE_OTEL_PUSH_STATE_FILE.stat()
+        cached_mtime = REMOTE_OTEL_PUSH_STATE_CACHE.get("mtime_ns")
+        cached_size = REMOTE_OTEL_PUSH_STATE_CACHE.get("size")
+        if (
+            cached_mtime == stat_result.st_mtime_ns
+            and cached_size == stat_result.st_size
+        ):
+            cached_payload = REMOTE_OTEL_PUSH_STATE_CACHE.get("payload")
+            if isinstance(cached_payload, dict):
+                return dict(cached_payload)
+        with open(REMOTE_OTEL_PUSH_STATE_FILE, "r") as f:
+            payload = json.load(f)
+            if isinstance(payload, dict):
+                REMOTE_OTEL_PUSH_STATE_CACHE.update({
                     "mtime_ns": stat_result.st_mtime_ns,
                     "size": stat_result.st_size,
                     "payload": dict(payload),
@@ -800,6 +840,19 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
 
 def load_ai_monitor_metrics() -> Dict[str, Any]:
     """Load persisted AI focus metrics."""
+    remote_push_state = _load_remote_otel_push_state()
+    remote_push_health = str(remote_push_state.get("health") or "").strip() or "unknown"
+    remote_push_last_attempt = str(remote_push_state.get("last_attempt_at") or "").strip()
+    remote_push_last_success = str(remote_push_state.get("last_success_at") or "").strip()
+    remote_push_last_error = str(remote_push_state.get("last_error_at") or "").strip()
+    remote_push_last_error_summary = str(remote_push_state.get("last_error_summary") or "").strip()
+    remote_push_endpoint = str(remote_push_state.get("endpoint_url") or "").strip()
+    remote_push_source = str(remote_push_state.get("source_connection_key") or "").strip()
+    try:
+        remote_push_failures = int(remote_push_state.get("consecutive_failures", 0) or 0)
+    except (TypeError, ValueError):
+        remote_push_failures = 0
+
     default_metrics = {
         "focus_attempts": 0,
         "focus_success": 0,
@@ -815,6 +868,14 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
         "stage_from_process": 0,
         "stage_from_review": 0,
         "stale_source_sessions": 0,
+        "remote_push_health": remote_push_health,
+        "remote_push_consecutive_failures": remote_push_failures,
+        "remote_push_last_attempt_at": remote_push_last_attempt,
+        "remote_push_last_success_at": remote_push_last_success,
+        "remote_push_last_error_at": remote_push_last_error,
+        "remote_push_last_error_summary": remote_push_last_error_summary,
+        "remote_push_endpoint": remote_push_endpoint,
+        "remote_push_source_connection_key": remote_push_source,
     }
     if not AI_MONITOR_METRICS_FILE.exists():
         return default_metrics
@@ -840,6 +901,14 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
                 "stage_from_process": int(data.get("stage_from_process", 0) or 0),
                 "stage_from_review": int(data.get("stage_from_review", 0) or 0),
                 "stale_source_sessions": int(data.get("stale_source_sessions", 0) or 0),
+                "remote_push_health": remote_push_health,
+                "remote_push_consecutive_failures": remote_push_failures,
+                "remote_push_last_attempt_at": remote_push_last_attempt,
+                "remote_push_last_success_at": remote_push_last_success,
+                "remote_push_last_error_at": remote_push_last_error,
+                "remote_push_last_error_summary": remote_push_last_error_summary,
+                "remote_push_endpoint": remote_push_endpoint,
+                "remote_push_source_connection_key": remote_push_source,
             }
     except (json.JSONDecodeError, IOError, ValueError, TypeError):
         return default_metrics
@@ -1012,6 +1081,9 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if REMOTE_OTEL_SINK_FILE.parent.exists():
         if str(REMOTE_OTEL_SINK_FILE.parent) not in watch_paths:
             watch_paths.append(str(REMOTE_OTEL_SINK_FILE.parent))
+    if REMOTE_OTEL_PUSH_STATE_FILE.parent.exists():
+        if str(REMOTE_OTEL_PUSH_STATE_FILE.parent) not in watch_paths:
+            watch_paths.append(str(REMOTE_OTEL_PUSH_STATE_FILE.parent))
 
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
@@ -1067,6 +1139,8 @@ async def read_inotify_events(
     seen_events_tmp_filename = seen_events_filename + ".tmp"
     remote_otel_sink_filename = REMOTE_OTEL_SINK_FILE.name
     remote_otel_sink_tmp_filename = remote_otel_sink_filename + ".tmp"
+    remote_otel_push_state_filename = REMOTE_OTEL_PUSH_STATE_FILE.name
+    remote_otel_push_state_tmp_filename = remote_otel_push_state_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -1100,8 +1174,9 @@ async def read_inotify_events(
             is_review_file = filename in (review_filename, review_tmp_filename)
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
             is_remote_otel_sink_file = filename in (remote_otel_sink_filename, remote_otel_sink_tmp_filename)
+            is_remote_otel_push_state_file = filename in (remote_otel_push_state_filename, remote_otel_push_state_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_sink_file:
+            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_sink_file or is_remote_otel_push_state_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)

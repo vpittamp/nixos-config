@@ -131,6 +131,11 @@ class RemoteSessionPushClient:
         self._last_sent_monotonic = 0.0
         self._last_sent_hash: Optional[str] = None
         self._last_sent_sequence = 0
+        self._last_attempt_at = ""
+        self._last_success_at = ""
+        self._last_error_at = ""
+        self._last_error_summary = ""
+        self._consecutive_failures = 0
 
     async def start(self) -> None:
         if self._running:
@@ -246,9 +251,11 @@ class RemoteSessionPushClient:
 
         if not self._session:
             return
+        self._record_attempt()
         try:
             async with self._session.post(self.endpoint_url, json=envelope, headers=headers) as response:
                 if 200 <= response.status < 300:
+                    self._record_success()
                     self._last_sent_monotonic = time.monotonic()
                     self._last_sent_hash = payload_hash
                     self._last_sent_sequence = sequence
@@ -256,18 +263,44 @@ class RemoteSessionPushClient:
                         self._persist_state_unlocked()
                     return
                 body = await response.text()
+                self._record_failure(
+                    f"HTTP {response.status}: {body[:160].strip() or 'remote sink rejected payload'}"
+                )
                 logger.warning(
                     "Remote OTEL push rejected: status=%s body=%s",
                     response.status,
                     body[:300],
                 )
         except Exception as exc:
+            self._record_failure(_format_exception_detail(exc))
             logger.warning(
                 "Remote OTEL push failed: endpoint=%s source=%s detail=%s",
                 self.endpoint_url,
                 self.source_connection_key,
                 _format_exception_detail(exc),
             )
+
+    def _record_attempt(self) -> None:
+        self._last_attempt_at = _utc_now_iso()
+
+    def _record_success(self) -> None:
+        self._last_success_at = _utc_now_iso()
+        self._last_error_at = ""
+        self._last_error_summary = ""
+        self._consecutive_failures = 0
+
+    def _record_failure(self, summary: str) -> None:
+        self._last_error_at = _utc_now_iso()
+        self._last_error_summary = str(summary or "").strip()[:300]
+        self._consecutive_failures = max(1, int(self._consecutive_failures) + 1)
+        self._persist_state_unlocked()
+
+    def _health_status_unlocked(self) -> str:
+        if self._consecutive_failures <= 0:
+            return "healthy"
+        if self._last_success_at:
+            return "degraded"
+        return "down"
 
     def _restore_state(self) -> None:
         if not self.state_file_path.exists():
@@ -291,17 +324,33 @@ class RemoteSessionPushClient:
             self._last_sent_sequence = max(int(payload.get("last_sent_sequence", 0) or 0), 0)
         except (TypeError, ValueError):
             self._last_sent_sequence = 0
+        self._last_attempt_at = str(payload.get("last_attempt_at") or "").strip()
+        self._last_success_at = str(payload.get("last_success_at") or "").strip()
+        self._last_error_at = str(payload.get("last_error_at") or "").strip()
+        self._last_error_summary = str(payload.get("last_error_summary") or "").strip()
+        try:
+            self._consecutive_failures = max(int(payload.get("consecutive_failures", 0) or 0), 0)
+        except (TypeError, ValueError):
+            self._consecutive_failures = 0
 
     def _persist_state_unlocked(self) -> None:
         _atomic_write_json(
             self.state_file_path,
             {
-                "schema_version": "1",
+                "schema_version": "2",
+                "endpoint_url": self.endpoint_url,
                 "source_connection_key": self.source_connection_key,
+                "source_host_name": self.source_host_name,
                 "boot_id": self.boot_id,
                 "sequence": int(self._sequence),
                 "last_sent_hash": str(self._last_sent_hash or ""),
                 "last_sent_sequence": int(self._last_sent_sequence),
+                "last_attempt_at": self._last_attempt_at,
+                "last_success_at": self._last_success_at,
+                "last_error_at": self._last_error_at,
+                "last_error_summary": self._last_error_summary,
+                "consecutive_failures": int(self._consecutive_failures),
+                "health": self._health_status_unlocked(),
                 "updated_at": _utc_now_iso(),
             },
         )

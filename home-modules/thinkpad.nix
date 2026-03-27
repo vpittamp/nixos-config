@@ -131,7 +131,7 @@ EOF
   # Feature 117: i3 project event listener daemon (user service)
   programs.i3-project-daemon = {
     enable = true;
-    logLevel = "DEBUG";  # Temporary for testing
+    logLevel = "INFO";
   };
 
   # Use the shared hybrid display path so the ThinkPad can expose a virtual second monitor.
@@ -145,7 +145,7 @@ EOF
   services.otel-ai-monitor = {
     enable = true;
     port = 4320;  # Non-standard port (collector uses 4318)
-    verbose = true;  # Enable debug logging to trace event parsing
+    verbose = false;
     enableNotifications = false;  # Suppress "Claude Code Ready" alerts
     remoteSink.enable = true;
     remotePush = {

@@ -140,6 +140,13 @@ let
   headlessSingleOutputMode =
     headlessOutputStateDefaults."HEADLESS-2" == false
     && headlessOutputStateDefaults."HEADLESS-3" == false;
+  wayvncLogLevel = config.programs.sway-profile.wayvncLogLevel;
+  wayvncAutostartOutputs = if isHeadless then [ headlessPrimaryOutput ] else [ ];
+  wayvncManagedOutputs =
+    if isHeadless then [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ]
+    else if isHybrid then [ "HEADLESS-1" "HEADLESS-2" ]
+    else [ ];
+  wayvncNonAutostartOutputs = builtins.filter (output: !(builtins.elem output wayvncAutostartOutputs)) wayvncManagedOutputs;
   # Feature 001: Map monitor roles to outputs for workspace assignments
   # Always use full triple-monitor mapping - daemon handles profile switching at runtime
   # DO NOT use headlessSingleOutputMode here as it would incorrectly map all roles to primary
@@ -546,6 +553,43 @@ let
     pkgs.writeShellScript ("wayvnc-" + lib.strings.toLower output + "-wrapper") ''
       set -euo pipefail
 
+      output_available=$(${pkgs.python3}/bin/python - <<'PY'
+import json
+import subprocess
+import sys
+
+output_name = ${lib.escapeShellArg output}
+swaymsg_path = ${lib.escapeShellArg "${pkgs.sway}/bin/swaymsg"}
+
+try:
+    proc = subprocess.run(
+        [swaymsg_path, "-r", "-t", "get_outputs"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(proc.stdout or "[]")
+except Exception:
+    print("unknown")
+    sys.exit(0)
+
+for item in payload:
+    if not isinstance(item, dict):
+        continue
+    if str(item.get("name") or "") != output_name:
+        continue
+    print("active" if bool(item.get("active", False)) else "inactive")
+    sys.exit(0)
+
+print("missing")
+PY
+      )
+
+      if [ "$output_available" != "active" ]; then
+        echo "wayvnc ${output}: output is $output_available; not starting VNC server" >&2
+        exit 0
+      fi
+
       has_transient=0
       wayland_display="$(${pkgs.coreutils}/bin/printenv WAYLAND_DISPLAY 2>/dev/null || true)"
       if [ -n "$wayland_display" ]; then
@@ -561,7 +605,7 @@ let
           -o ${output} \
           -S ${socket} \
           -R \
-          -Ldebug \
+          -L${wayvncLogLevel} \
           -r \
           --transient-seat \
           0.0.0.0 ${toString port}
@@ -572,10 +616,33 @@ let
         -o ${output} \
         -S ${socket} \
         -R \
-        -Ldebug \
+        -L${wayvncLogLevel} \
         -r \
         0.0.0.0 ${toString port}
     '';
+
+  mkWayvncService = output: port: socket: autostart:
+    {
+      Unit = {
+        Description = "wayvnc VNC server for ${output}";
+        Documentation = "https://github.com/any1/wayvnc";
+        After = [ "sway-session.target" ];
+        Requires = [ "sway-session.target" ];
+        PartOf = [ "sway-session.target" ];
+      };
+
+      Service = {
+        Type = "simple";
+        ExecStart = mkWayvncWrapper output port socket;
+        Restart = "on-failure";
+        RestartSec = "1";
+      };
+    }
+    // lib.optionalAttrs autostart {
+      Install = {
+        WantedBy = [ "sway-session.target" ];
+      };
+    };
 
   # Feature 001: Import validated application definitions with monitor role preferences
   appRegistryData = import ./app-registry-data.nix { inherit lib hostName; };
@@ -670,6 +737,15 @@ in
           `hybrid` keeps the physical panel and adds declarative virtual outputs.
           `laptop` forces single-display defaults.
           `desktop4` forces the 4-monitor desktop layout.
+        '';
+      };
+
+      options.programs.sway-profile.wayvncLogLevel = lib.mkOption {
+        type = lib.types.str;
+        default = "info";
+        description = ''
+          wayvnc log level passed to `-L`.
+          Use `debug` temporarily when investigating virtual display issues.
         '';
       };
     })
@@ -1393,6 +1469,17 @@ PY
     fi
   '');
 
+  home.activation.cleanupInactiveWayvncUnits = lib.mkIf (wayvncNonAutostartOutputs != [ ]) (lib.hm.dag.entryBefore [ "reloadSystemd" ] ''
+    set -euo pipefail
+
+    if command -v systemctl >/dev/null 2>&1; then
+      for output in ${lib.escapeShellArgs wayvncNonAutostartOutputs}; do
+        systemctl --user stop "wayvnc@$output.service" >/dev/null 2>&1 || true
+        systemctl --user reset-failed "wayvnc@$output.service" >/dev/null 2>&1 || true
+      done
+    fi
+  '');
+
   # Native QuickShell notifications should be the only owner of org.freedesktop.Notifications.
   # Older generations may leave swaync enabled/running, so clean it up during activation.
   home.activation.disableLegacySwayncForNativeNotifications =
@@ -1408,70 +1495,22 @@ PY
   # Three independent VNC instances (auto-started)
 
   # HEADLESS-1 (Port 5900)
-  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf hasVirtualOutputs {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-1";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStart = mkWayvncWrapper "HEADLESS-1" 5900 "/run/user/1000/wayvnc-headless-1.sock";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
+  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf hasVirtualOutputs (
+    mkWayvncService "HEADLESS-1" 5900 "/run/user/1000/wayvnc-headless-1.sock"
+      (builtins.elem "HEADLESS-1" wayvncAutostartOutputs)
+  );
 
   # HEADLESS-2 (Port 5901)
-  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf hasVirtualOutputs {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-2";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStart = mkWayvncWrapper "HEADLESS-2" 5901 "/run/user/1000/wayvnc-headless-2.sock";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
+  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf hasVirtualOutputs (
+    mkWayvncService "HEADLESS-2" 5901 "/run/user/1000/wayvnc-headless-2.sock"
+      (builtins.elem "HEADLESS-2" wayvncAutostartOutputs)
+  );
 
   # HEADLESS-3 (Tertiary display, workspaces 6-9, port 5902)
-  systemd.user.services."wayvnc@HEADLESS-3" = lib.mkIf isHeadless {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-3";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStart = mkWayvncWrapper "HEADLESS-3" 5902 "/run/user/1000/wayvnc-headless-3.sock";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
+  systemd.user.services."wayvnc@HEADLESS-3" = lib.mkIf isHeadless (
+    mkWayvncService "HEADLESS-3" 5902 "/run/user/1000/wayvnc-headless-3.sock"
+      (builtins.elem "HEADLESS-3" wayvncAutostartOutputs)
+  );
 
   systemd.user.services."tailscale-rtp-default-sink" = lib.mkIf (isHeadless && tailscaleAudioEnabled) {
     Unit = {

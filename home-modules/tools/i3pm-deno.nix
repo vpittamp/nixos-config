@@ -30,6 +30,7 @@ let
         "$out/share/i3pm/src/commands/context.ts" \
         "$out/share/i3pm/src/commands/dashboard.ts" \
         "$out/share/i3pm/src/commands/display.ts" \
+        "$out/share/i3pm/src/commands/health.ts" \
         "$out/share/i3pm/src/commands/launch.ts" \
         "$out/share/i3pm/src/commands/session.ts" \
         "$out/share/i3pm/src/commands/workspace.ts" \

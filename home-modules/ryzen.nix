@@ -72,7 +72,7 @@ in
   # Feature 117: i3 project event listener daemon (user service)
   programs.i3-project-daemon = {
     enable = true;
-    logLevel = "DEBUG";  # Temporary for testing
+    logLevel = "INFO";
   };
 
   programs.disk-guardrails.enable = true;

@@ -11767,6 +11767,20 @@ class IPCServer:
         )
         display_snapshot = await self._display_snapshot({})
         current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
+        remote_push_state: Dict[str, Any] = {}
+        remote_push_state_path = (
+            Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+            / "eww-monitoring-panel"
+            / "remote-otel-push-state.json"
+        )
+        if remote_push_state_path.exists():
+            try:
+                with open(remote_push_state_path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                if isinstance(payload, dict):
+                    remote_push_state = payload
+            except (OSError, json.JSONDecodeError):
+                remote_push_state = {}
 
         projects = self._build_dashboard_projects(runtime_snapshot, sessions)
         worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
@@ -11819,6 +11833,14 @@ class IPCServer:
                     1 for session in sessions
                     if bool(session.get("remote_source_stale", False))
                 ),
+                "remote_push_health": str(remote_push_state.get("health") or "").strip() or "unknown",
+                "remote_push_consecutive_failures": int(remote_push_state.get("consecutive_failures", 0) or 0),
+                "remote_push_last_attempt_at": str(remote_push_state.get("last_attempt_at") or "").strip(),
+                "remote_push_last_success_at": str(remote_push_state.get("last_success_at") or "").strip(),
+                "remote_push_last_error_at": str(remote_push_state.get("last_error_at") or "").strip(),
+                "remote_push_last_error_summary": str(remote_push_state.get("last_error_summary") or "").strip(),
+                "remote_push_endpoint": str(remote_push_state.get("endpoint_url") or "").strip(),
+                "remote_push_source_connection_key": str(remote_push_state.get("source_connection_key") or "").strip(),
             },
         }
 
