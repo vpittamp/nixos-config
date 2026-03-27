@@ -16,6 +16,7 @@ with lib;
 
 let
   cfg = config.services.otel-ai-monitor;
+  pythonSitePackages = pkgs.python311.sitePackages;
 
   # Python environment with required dependencies
   pythonEnv = pkgs.python311.withPackages (ps: with ps; [
@@ -53,6 +54,18 @@ let
     pythonImportsCheck = [ "opentelemetry.proto" ];
   };
 
+  # session_tracker imports i3_project_manager.core.identity directly, so the
+  # monitor runtime must ship that legacy Python module on PYTHONPATH.
+  legacyI3ProjectManagerPackage = pkgs.stdenv.mkDerivation {
+    name = "i3-project-manager-legacy-python";
+    src = ./../tools/i3_project_manager;
+
+    installPhase = ''
+      mkdir -p $out/${pythonSitePackages}/i3_project_manager
+      cp -r $src/* $out/${pythonSitePackages}/i3_project_manager/
+    '';
+  };
+
   # Package the monitor scripts
   monitorPackage = pkgs.stdenv.mkDerivation {
     pname = "otel-ai-monitor";
@@ -69,7 +82,7 @@ let
       mkdir -p $out/bin
       makeWrapper ${pythonEnv}/bin/python $out/bin/otel-ai-monitor \
         --add-flags "-m otel_ai_monitor" \
-        --set PYTHONPATH "$out/lib:${opentelemetryProto}/${pythonEnv.sitePackages}"
+        --set PYTHONPATH "$out/lib:${opentelemetryProto}/${pythonEnv.sitePackages}:${legacyI3ProjectManagerPackage}/${pythonSitePackages}"
     '';
   };
 
