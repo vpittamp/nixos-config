@@ -23,6 +23,118 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  sunshinePrimaryMonitorEnsure = pkgs.writeShellScriptBin "sunshine-primary-monitor-ensure" ''
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    primary_output="DP-1"
+    target_output_index="0"
+    runtime_conf="$HOME/.config/sunshine/sunshine-runtime.conf"
+    override_dir="$HOME/.config/systemd/user/sunshine.service.d"
+    override_file="$override_dir/override.conf"
+
+    log() {
+      printf 'sunshine-primary-monitor-ensure: %s\n' "$*" >&2
+    }
+
+    fail() {
+      log "$1"
+      exit 1
+    }
+
+    show_environment="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null || true)"
+    socket_path="$(printf '%s\n' "$show_environment" | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p' | ${pkgs.coreutils}/bin/head -n1)"
+
+    if [ -z "$socket_path" ]; then
+      fail "Sway socket is unavailable"
+    fi
+
+    outputs_json="$(SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg -t get_outputs -r 2>/dev/null)" \
+      || fail "Unable to query Sway outputs"
+
+    if ! printf '%s' "$outputs_json" | ${pkgs.jq}/bin/jq -e --arg name "$primary_output" '
+      .[]
+      | select(
+          .name == $name
+          and .active == true
+          and ((.power? // true) == true)
+          and ((.dpms? // true) == true)
+        )
+    ' >/dev/null; then
+      fail "Primary monitor $primary_output is not active"
+    fi
+
+    base_conf="$(
+      ${pkgs.systemd}/bin/systemctl --user cat sunshine 2>/dev/null \
+        | ${pkgs.gnused}/bin/sed -n 's/^ExecStart="\/run\/wrappers\/bin\/sunshine" "\([^"]*\)"$/\1/p' \
+        | ${pkgs.coreutils}/bin/head -n1
+    )"
+
+    if [ -z "$base_conf" ]; then
+      fail "Unable to resolve Sunshine ExecStart config"
+    fi
+
+    if [ ! -f "$base_conf" ]; then
+      fail "Sunshine config file not found: $base_conf"
+    fi
+
+    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/sunshine" "$override_dir"
+
+    tmp_conf="$(${pkgs.coreutils}/bin/mktemp)"
+    tmp_override="$(${pkgs.coreutils}/bin/mktemp)"
+    trap '${pkgs.coreutils}/bin/rm -f "$tmp_conf" "$tmp_override"' EXIT
+
+    ${pkgs.gnused}/bin/sed "s/^output_name=.*/output_name=$target_output_index/" "$base_conf" > "$tmp_conf"
+    cat > "$tmp_override" <<EOF
+[Service]
+ExecStart=
+ExecStart=/run/wrappers/bin/sunshine $runtime_conf
+EOF
+
+    needs_restart=0
+
+    if [ ! -f "$runtime_conf" ] || ! ${pkgs.diffutils}/bin/cmp -s "$tmp_conf" "$runtime_conf"; then
+      ${pkgs.coreutils}/bin/mv "$tmp_conf" "$runtime_conf"
+      needs_restart=1
+    fi
+
+    if [ ! -f "$override_file" ] || ! ${pkgs.diffutils}/bin/cmp -s "$tmp_override" "$override_file"; then
+      ${pkgs.coreutils}/bin/mv "$tmp_override" "$override_file"
+      needs_restart=1
+    fi
+
+    current_exec="$(${pkgs.systemd}/bin/systemctl --user show sunshine -p ExecStart --value 2>/dev/null || true)"
+    if ! printf '%s' "$current_exec" | ${pkgs.gnugrep}/bin/grep -F "$runtime_conf" >/dev/null 2>&1; then
+      needs_restart=1
+    fi
+
+    if ! ${pkgs.systemd}/bin/systemctl --user is-active --quiet sunshine; then
+      needs_restart=1
+    fi
+
+    if [ "$needs_restart" -eq 1 ]; then
+      log "restarting Sunshine for $primary_output"
+      ${pkgs.systemd}/bin/systemctl --user daemon-reload
+      ${pkgs.systemd}/bin/systemctl --user restart sunshine
+      ${pkgs.coreutils}/bin/sleep 2
+    fi
+
+    ${pkgs.systemd}/bin/systemctl --user is-active --quiet sunshine \
+      || fail "Sunshine user service is not active"
+
+    active_since="$(${pkgs.systemd}/bin/systemctl --user show sunshine -p ActiveEnterTimestamp --value 2>/dev/null || true)"
+    recent_logs="$(${pkgs.systemd}/bin/journalctl --user -u sunshine --since "''${active_since:-2 minutes ago}" --no-pager 2>/dev/null || true)"
+
+    if printf '%s' "$recent_logs" | ${pkgs.gnugrep}/bin/grep -F "Couldn't find monitor" >/dev/null 2>&1; then
+      fail "Sunshine is still targeting a stale monitor"
+    fi
+
+    if printf '%s' "$recent_logs" | ${pkgs.gnugrep}/bin/grep -F "Fatal: Unable to find display or encoder during startup." >/dev/null 2>&1; then
+      fail "Sunshine failed to initialize capture or encoding"
+    fi
+
+    log "ready: Sunshine is targeting monitor index $target_output_index for $primary_output"
+  '';
 in
 {
   imports = [
@@ -222,9 +334,11 @@ in
       # PipeWire's remembered default devices can drift; pin Sunshine to the
       # actual Ryzen analog output instead of its transient virtual sink.
       audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
-      # Stream the practical main display directly without mutating the
-      # desktop layout on connect/disconnect.
-      output_name = "DP-1";
+      # Sunshine's KMS path is reliable with the live monitor index but has
+      # been flaky with named output selection on this host. In the default
+      # layout, monitor 0 is DP-1, which keeps streaming targeted at the
+      # practical main display without connect/disconnect scripting.
+      output_name = 0;
     };
     desktopAppOverrides.auto-detach = "true";
     pairedClients = [
@@ -558,6 +672,7 @@ in
     remmina
     rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access
+    sunshinePrimaryMonitorEnsure
 
     # 1Password GUI
     _1password-gui

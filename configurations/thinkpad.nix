@@ -40,6 +40,15 @@ let
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
 
+    phase() {
+      printf 'moonlight-ryzen-desktop: %s\n' "$*" >&2
+    }
+
+    fail() {
+      phase "$1"
+      exit 1
+    }
+
     socket_path="''${SWAYSOCK:-}"
     if [ -z "$socket_path" ]; then
       socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
@@ -61,7 +70,28 @@ let
         Desktop
     }
 
+    phase "checking ryzen host"
+    ${pkgs.openssh}/bin/ssh \
+      -o BatchMode=yes \
+      -o ConnectTimeout=5 \
+      ryzen \
+      /run/current-system/sw/bin/sunshine-primary-monitor-ensure \
+      || fail "ryzen host is not stream-ready"
+
+    phase "validating desktop stream"
+    available_apps="$(${pkgs.moonlight-qt}/bin/moonlight list ryzen 2>&1)" \
+      || {
+        printf '%s\n' "$available_apps" >&2
+        fail "Moonlight could not query Sunshine applications"
+      }
+
+    if ! printf '%s\n' "$available_apps" | ${pkgs.gnugrep}/bin/grep -Fx "Desktop" >/dev/null 2>&1; then
+      printf '%s\n' "$available_apps" >&2
+      fail "Sunshine is reachable but Desktop is not exported"
+    fi
+
     if [ -z "$socket_path" ]; then
+      phase "starting stream"
       run_moonlight
     fi
 
@@ -81,6 +111,7 @@ let
       unset "$var_name"
     done < <(${pkgs.coreutils}/bin/env | ${pkgs.gawk}/bin/awk -F= '/^I3PM_/ { print $1 }')
 
+    phase "starting stream"
     export SDL_VIDEODRIVER=wayland
     ${pkgs.moonlight-qt}/bin/moonlight \
       stream \
