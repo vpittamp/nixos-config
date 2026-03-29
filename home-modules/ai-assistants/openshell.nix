@@ -5,7 +5,8 @@ let
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else null;
-  isRyzen = hostName == "ryzen";
+  supportedHosts = [ "ryzen" "thinkpad" ];
+  enableRyzenGateway = builtins.elem hostName supportedHosts;
   gatewayName = "ryzen-internal";
   gatewayEndpoint = "https://openshell-ryzen.tail286401.ts.net:8080";
   gatewayPort = 8080;
@@ -17,6 +18,7 @@ let
     auth_mode = "mtls";
   };
   openshellConfigRoot = "${config.home.homeDirectory}/.config/openshell";
+  preferredKubeconfig = "${config.home.homeDirectory}/.kube/stacks/config";
   ryzenGatewaySync = pkgs.writeShellScriptBin "openshell-ryzen-sync" ''
     set -euo pipefail
 
@@ -39,20 +41,81 @@ let
       exit 0
     }
 
-    kubectl_cmd=(${pkgs.kubectl}/bin/kubectl --context kind-ryzen)
+    kubectl_bin=${pkgs.kubectl}/bin/kubectl
     config_root="${openshellConfigRoot}"
     gateway_dir="$config_root/gateways/${gatewayName}"
     mtls_dir="$gateway_dir/mtls"
     temp_dir="$(${pkgs.coreutils}/bin/mktemp -d)"
+    kubeconfig_path=
+    resolved_context=
+
+    try_context() {
+      local candidate="$1"
+      shift
+      "$kubectl_bin" "$@" --context "$candidate" get namespace openshell >/dev/null 2>&1
+    }
+
+    discover_context() {
+      local default_kubeconfig="$HOME/.kube/config"
+      local -a kubeconfig_candidates=()
+      local -a context_candidates=(
+        ryzen
+        ryzen-cluster
+        ryzen-api.tail286401.ts.net
+        kind-ryzen
+      )
+
+      if [ -f "${preferredKubeconfig}" ]; then
+        kubeconfig_candidates+=("${preferredKubeconfig}")
+      fi
+
+      if [ -n "''${KUBECONFIG:-}" ]; then
+        kubeconfig_candidates+=("''${KUBECONFIG}")
+      fi
+
+      if [ -f "$default_kubeconfig" ]; then
+        kubeconfig_candidates+=("$default_kubeconfig")
+      fi
+
+      for kubeconfig in "''${kubeconfig_candidates[@]}"; do
+        [ -n "$kubeconfig" ] || continue
+        if [ ! -f "$kubeconfig" ]; then
+          continue
+        fi
+
+        for candidate in "''${context_candidates[@]}"; do
+          if try_context "$candidate" --kubeconfig "$kubeconfig"; then
+            kubeconfig_path="$kubeconfig"
+            resolved_context="$candidate"
+            return 0
+          fi
+        done
+      done
+
+      for candidate in "''${context_candidates[@]}"; do
+        if try_context "$candidate"; then
+          resolved_context="$candidate"
+          return 0
+        fi
+      done
+
+      return 1
+    }
 
     cleanup() {
       ${pkgs.coreutils}/bin/rm -rf "$temp_dir"
     }
     trap cleanup EXIT
 
-    if ! "''${kubectl_cmd[@]}" get namespace openshell >/dev/null 2>&1; then
-      fail "kind-ryzen context or openshell namespace is unavailable"
+    if ! discover_context; then
+      fail "could not find a kubeconfig context for the ryzen OpenShell namespace"
     fi
+
+    kubectl_cmd=("$kubectl_bin")
+    if [ -n "$kubeconfig_path" ]; then
+      kubectl_cmd+=(--kubeconfig "$kubeconfig_path")
+    fi
+    kubectl_cmd+=(--context "$resolved_context")
 
     if ! "''${kubectl_cmd[@]}" get secret -n openshell openshell-client-tls >/dev/null 2>&1; then
       fail "openshell-client-tls secret not found in namespace openshell"
@@ -123,7 +186,7 @@ lib.mkMerge [
   {
     home.packages = [ openshellPkg ];
   }
-  (lib.mkIf isRyzen {
+  (lib.mkIf enableRyzenGateway {
     home.packages = [ ryzenGatewaySync ];
 
     home.sessionVariables.OPENSHELL_GATEWAY = gatewayName;
