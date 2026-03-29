@@ -77,7 +77,7 @@ Item {
                 }
                 shellRoot.launcherNormalizingInput = false;
                 shellRoot.resetLauncherListViewport();
-                shellRoot.restartLauncherQuery();
+                launcherQueryDebounce.restart();
                 launcherFocusTimer.restart();
                 sessionPreviewDebounce.restart();
                 return;
@@ -125,7 +125,7 @@ Item {
             }
             shellRoot.resetLauncherListViewport();
             if (shellRoot.launcherVisible) {
-                shellRoot.restartLauncherQuery();
+                launcherQueryDebounce.restart();
                 launcherFocusTimer.restart();
                 if (shellRoot.launcherMode === "sessions") {
                     sessionPreviewDebounce.restart();
@@ -277,7 +277,7 @@ Item {
 
     Timer {
         id: launcherFocusTimer
-        interval: 0
+        interval: 40
         repeat: false
         onTriggered: {
             if (!shellRoot.launcherField) {

@@ -96,9 +96,6 @@ QtObject {
   readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}
   readonly property bool supportsLidPolicyControls: ${if supportsLidPolicyControls then "true" else "false"}
   readonly property string lidPolicyFragmentPath: "${lidPolicyFragmentPath}"
-  readonly property string appRegistryPath: "${config.home.homeDirectory}/.config/i3/application-registry.json"
-  readonly property string appRegistryFallbackPath: "${config.home.homeDirectory}/.local/share/i3pm/registry/base.json"
-  readonly property string appDesktopDir: "${config.home.homeDirectory}/.local/share/i3pm-applications/applications"
 }
 EOF
   '';
