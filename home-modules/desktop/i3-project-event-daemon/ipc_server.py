@@ -17926,6 +17926,66 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             # Best-effort only; never block an otherwise-successful project switch.
             logger.warning(f"[Feature 101] Failed to record project usage for {qualified_name}: {e}")
 
+    async def _apply_project_window_filter(
+        self,
+        *,
+        active_project: Optional[str],
+        active_context_key: Optional[str],
+        log_label: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Apply project window filtering with one immediate reconnect retry."""
+        if not self.i3_connection or not self.i3_connection.conn:
+            logger.warning("[Feature 101] Cannot apply filtering - i3 connection not available")
+            return None
+
+        from .services.tree_cache import initialize_tree_cache
+        from .services.window_filter import filter_windows_by_project
+
+        logger.info(f"[Feature 101] Applying window filtering for '{log_label}'")
+        try:
+            filter_result = await filter_windows_by_project(
+                self.i3_connection.conn,
+                active_project,
+                self.workspace_tracker,
+                active_context_key=active_context_key,
+            )
+        except ConnectionError as filter_error:
+            logger.warning(
+                "[Feature 101] Window filtering hit a stale i3 connection for '%s'; retrying after reconnect",
+                log_label,
+            )
+            try:
+                reconnected = await self.i3_connection.validate_and_reconnect_if_needed()
+            except Exception as reconnect_error:
+                logger.error(
+                    "[Feature 101] Failed to reconnect stale i3 connection while filtering '%s': %s: %s",
+                    log_label,
+                    type(reconnect_error).__name__,
+                    reconnect_error,
+                )
+                raise filter_error
+
+            if not reconnected or not self.i3_connection.conn:
+                raise filter_error
+
+            initialize_tree_cache(self.i3_connection.conn, ttl_ms=100.0)
+            filter_result = await filter_windows_by_project(
+                self.i3_connection.conn,
+                active_project,
+                self.workspace_tracker,
+                active_context_key=active_context_key,
+            )
+            logger.info(
+                "[Feature 101] Window filtering recovered after reconnect for '%s'",
+                log_label,
+            )
+
+        logger.info(
+            f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
+            f"{filter_result.get('hidden', 0)} hidden"
+        )
+        return filter_result
+
     async def _worktree_switch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Switch to a worktree by qualified name.
 
@@ -18013,33 +18073,23 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
             # Apply window filtering based on new project context
             # Feature 137: Wrap in try/except for graceful degradation
-            if self.i3_connection and self.i3_connection.conn:
-                logger.info(f"[Feature 101] Applying window filtering for '{full_qualified_name}'")
-                try:
-                    from .services.window_filter import filter_windows_by_project
-                    filter_result = await filter_windows_by_project(
-                        self.i3_connection.conn,
-                        full_qualified_name,
-                        self.workspace_tracker,
-                        active_context_key=worktree_context.get("context_key"),
-                    )
-                    logger.info(
-                        f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
-                        f"{filter_result.get('hidden', 0)} hidden"
-                    )
-                except Exception as e:
-                    import traceback
-                    logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {type(e).__name__}: {e}")
-                    logger.debug(f"[Feature 101] Traceback: {traceback.format_exc()}")
-                    # Notify clients of partial failure - project switched but windows not filtered
-                    await self.broadcast_event({
-                        "type": "error",
-                        "action": "window_filter_failed",
-                        "project": full_qualified_name,
-                        "error": str(e)
-                    })
-            else:
-                logger.warning("[Feature 101] Cannot apply filtering - i3 connection not available")
+            try:
+                await self._apply_project_window_filter(
+                    active_project=full_qualified_name,
+                    active_context_key=worktree_context.get("context_key"),
+                    log_label=full_qualified_name,
+                )
+            except Exception as e:
+                import traceback
+                logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {type(e).__name__}: {e}")
+                logger.debug(f"[Feature 101] Traceback: {traceback.format_exc()}")
+                # Notify clients of partial failure - project switched but windows not filtered
+                await self.broadcast_event({
+                    "type": "error",
+                    "action": "window_filter_failed",
+                    "project": full_qualified_name,
+                    "error": str(e)
+                })
 
             # Broadcast project change event
             await self.broadcast_event({
@@ -18126,21 +18176,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             logger.info("[Feature 101] Cleared active project context files")
 
             # Apply window filtering for global mode (show all scoped windows)
-            if self.i3_connection and self.i3_connection.conn:
-                logger.info("[Feature 101] Applying window filtering for global mode")
-                from .services.window_filter import filter_windows_by_project
-                filter_result = await filter_windows_by_project(
-                    self.i3_connection.conn,
-                    None,  # None = global mode
-                    self.workspace_tracker,
-                    active_context_key=None,
-                )
-                logger.info(
-                    f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
-                    f"{filter_result.get('hidden', 0)} hidden"
-                )
-            else:
-                logger.warning("[Feature 101] Cannot apply filtering - i3 connection not available")
+            await self._apply_project_window_filter(
+                active_project=None,
+                active_context_key=None,
+                log_label="global mode",
+            )
 
             # Broadcast project change event
             await self.broadcast_event({

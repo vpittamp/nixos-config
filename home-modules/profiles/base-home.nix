@@ -89,6 +89,7 @@ in
     ../ai-assistants/codex.nix
     ../ai-assistants/copilot-cli.nix
     ../ai-assistants/gemini-cli.nix
+    ../ai-assistants/holmesgpt.nix
     ../ai-assistants/nix-ai-help.nix
     ../ai-assistants/opencode.nix
     ../ai-assistants/openshell.nix

@@ -31,6 +31,8 @@ connection_module = importlib.import_module("i3_project_daemon.connection")
 ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
 state_module = importlib.import_module("i3_project_daemon.state")
 models_module = importlib.import_module("i3_project_daemon.models")
+tree_cache_module = importlib.import_module("i3_project_daemon.services.tree_cache")
+window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
 
 
 @pytest.mark.asyncio
@@ -199,3 +201,74 @@ async def test_ipc_server_await_with_timeout_does_not_block_on_stubborn_coro():
     await stubborn_task
 
     assert elapsed < 0.5
+
+
+@pytest.mark.asyncio
+async def test_apply_project_window_filter_retries_after_reconnect(monkeypatch):
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    stale_conn = SimpleNamespace(name="stale")
+    fresh_conn = SimpleNamespace(name="fresh")
+
+    async def reconnect():
+        server.i3_connection.conn = fresh_conn
+        return True
+
+    server.i3_connection = SimpleNamespace(
+        conn=stale_conn,
+        validate_and_reconnect_if_needed=AsyncMock(side_effect=reconnect),
+    )
+
+    filter_calls = []
+
+    async def fake_filter_windows_by_project(conn, active_project, workspace_tracker, active_context_key=None):
+        filter_calls.append((conn, active_project, active_context_key))
+        if len(filter_calls) == 1:
+            raise ConnectionError("stale tree")
+        return {"visible": 3, "hidden": 2}
+
+    initialize_tree_cache = Mock()
+    monkeypatch.setattr(window_filter_module, "filter_windows_by_project", fake_filter_windows_by_project)
+    monkeypatch.setattr(tree_cache_module, "initialize_tree_cache", initialize_tree_cache)
+
+    result = await server._apply_project_window_filter(
+        active_project="vpittamp/nixos-config:main",
+        active_context_key="vpittamp/nixos-config:main::host::ryzen",
+        log_label="vpittamp/nixos-config:main",
+    )
+
+    assert result == {"visible": 3, "hidden": 2}
+    assert filter_calls == [
+        (stale_conn, "vpittamp/nixos-config:main", "vpittamp/nixos-config:main::host::ryzen"),
+        (fresh_conn, "vpittamp/nixos-config:main", "vpittamp/nixos-config:main::host::ryzen"),
+    ]
+    server.i3_connection.validate_and_reconnect_if_needed.assert_awaited_once()
+    initialize_tree_cache.assert_called_once_with(fresh_conn, ttl_ms=100.0)
+
+
+@pytest.mark.asyncio
+async def test_apply_project_window_filter_raises_when_reconnect_fails(monkeypatch):
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    stale_conn = SimpleNamespace(name="stale")
+    server.i3_connection = SimpleNamespace(
+        conn=stale_conn,
+        validate_and_reconnect_if_needed=AsyncMock(return_value=False),
+    )
+
+    async def fake_filter_windows_by_project(conn, active_project, workspace_tracker, active_context_key=None):
+        raise ConnectionError("stale tree")
+
+    initialize_tree_cache = Mock()
+    monkeypatch.setattr(window_filter_module, "filter_windows_by_project", fake_filter_windows_by_project)
+    monkeypatch.setattr(tree_cache_module, "initialize_tree_cache", initialize_tree_cache)
+
+    with pytest.raises(ConnectionError, match="stale tree"):
+        await server._apply_project_window_filter(
+            active_project="vpittamp/nixos-config:main",
+            active_context_key="vpittamp/nixos-config:main::host::ryzen",
+            log_label="vpittamp/nixos-config:main",
+        )
+
+    server.i3_connection.validate_and_reconnect_if_needed.assert_awaited_once()
+    initialize_tree_cache.assert_not_called()

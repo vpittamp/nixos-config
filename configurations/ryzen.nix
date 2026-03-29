@@ -331,9 +331,10 @@ in
           3840x2160
         ]
       '';
-      # PipeWire's remembered default devices can drift; pin Sunshine to the
-      # actual Ryzen analog output instead of its transient virtual sink.
-      audio_sink = "alsa_output.pci-0000_11_00.6.pro-output-0";
+      # Sunshine routes app audio into its own virtual stereo sink on this
+      # host. Point capture at that sink explicitly so the ThinkPad receives
+      # the streamed audio instead of silence from the physical monitor path.
+      audio_sink = lib.mkForce "sink-sunshine-stereo";
       # Sunshine's KMS path is reliable with the live monitor index but has
       # been flaky with named output selection on this host. In the default
       # layout, monitor 0 is DP-1, which keeps streaming targeted at the
@@ -877,6 +878,107 @@ in
         if ${pkgs.pulseaudio}/bin/pactl list short sources 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'alsa_input.pci-0000_11_00.6.pro-input-0'; then
           ${pkgs.pulseaudio}/bin/pactl set-default-source alsa_input.pci-0000_11_00.6.pro-input-0 || true
         fi
+      '';
+    };
+  };
+
+  systemd.user.services.ryzen-sunshine-audio-router = {
+    description = "Route active app audio through Sunshine during Moonlight sessions";
+    wantedBy = [ "sway-session.target" ];
+    partOf = [ "sway-session.target" ];
+    after = [ "pipewire.service" "wireplumber.service" "sunshine.service" "sway-session.target" ];
+
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 2;
+      ExecStart = pkgs.writeShellScript "ryzen-sunshine-audio-router" ''
+        set -euo pipefail
+
+        export XDG_RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u)"
+        export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+
+        PACTL=${pkgs.pulseaudio}/bin/pactl
+        PW_DUMP=${pkgs.pipewire}/bin/pw-dump
+        JQ=${pkgs.jq}/bin/jq
+
+        physical_sink="alsa_output.pci-0000_11_00.6.pro-output-0"
+        sunshine_sink="sink-sunshine-stereo"
+        previous_sink="$physical_sink"
+        stream_active=0
+
+        sink_exists() {
+          local target="$1"
+          "$PACTL" list short sinks 2>/dev/null | ${pkgs.gawk}/bin/awk -v target="$target" '$2 == target { found = 1 } END { exit(found ? 0 : 1) }'
+        }
+
+        current_default_sink() {
+          "$PACTL" info 2>/dev/null | ${pkgs.gawk}/bin/awk -F': ' '/^Default Sink: / { print $2; exit }'
+        }
+
+        move_all_sink_inputs() {
+          local target="$1"
+          "$PACTL" list short sink-inputs 2>/dev/null \
+            | ${pkgs.gawk}/bin/awk '{ print $1 }' \
+            | while IFS= read -r input_id; do
+                [ -n "$input_id" ] || continue
+                "$PACTL" move-sink-input "$input_id" "$target" >/dev/null 2>&1 || true
+              done
+        }
+
+        sunshine_session_active() {
+          "$PW_DUMP" | "$JQ" -e '
+            any(
+              .[];
+              .type == "PipeWire:Interface:Node"
+              and ((.info.props["application.name"] // "") == "sunshine")
+              and ((.info.props["media.class"] // "") == "Stream/Input/Audio")
+              and ((.info.props["media.name"] // "") == "sunshine-record")
+            )
+          ' >/dev/null 2>&1
+        }
+
+        attempts=0
+        until "$PACTL" info >/dev/null 2>&1; do
+          if [ "$attempts" -ge 40 ]; then
+            echo "pactl not ready, delaying Sunshine audio router startup" >&2
+            exit 1
+          fi
+          attempts=$((attempts + 1))
+          sleep 0.5
+        done
+
+        while true; do
+          if sunshine_session_active && sink_exists "$sunshine_sink"; then
+            current_sink="$(current_default_sink || true)"
+            if [ "$stream_active" -eq 0 ]; then
+              if [ -n "$current_sink" ] && [ "$current_sink" != "$sunshine_sink" ]; then
+                previous_sink="$current_sink"
+              else
+                previous_sink="$physical_sink"
+              fi
+            fi
+
+            "$PACTL" set-default-sink "$sunshine_sink" >/dev/null 2>&1 || true
+            move_all_sink_inputs "$sunshine_sink"
+            stream_active=1
+          else
+            if [ "$stream_active" -eq 1 ]; then
+              restore_sink="$previous_sink"
+              if ! sink_exists "$restore_sink"; then
+                restore_sink="$physical_sink"
+              fi
+
+              if sink_exists "$restore_sink"; then
+                "$PACTL" set-default-sink "$restore_sink" >/dev/null 2>&1 || true
+                move_all_sink_inputs "$restore_sink"
+              fi
+            fi
+
+            stream_active=0
+          fi
+
+          sleep 2
+        done
       '';
     };
   };
