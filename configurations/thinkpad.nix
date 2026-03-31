@@ -57,18 +57,89 @@ let
       socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
     fi
 
+    runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    lock_file="$runtime_dir/moonlight-ryzen-desktop.lock"
+
+    ${pkgs.coreutils}/bin/mkdir -p "$runtime_dir"
+
     run_moonlight() {
       export SDL_VIDEODRIVER=wayland
       exec ${pkgs.moonlight-qt}/bin/moonlight \
         stream \
         --resolution 1920x1200 \
         --fps 60 \
+        --bitrate 10000 \
+        --packet-size 1024 \
+        --video-codec H.264 \
+        --frame-pacing \
+        --audio-config stereo \
         --display-mode windowed \
         --no-absolute-mouse \
-        --capture-system-keys fullscreen \
+        --capture-system-keys always \
         ryzen \
         Desktop
     }
+
+    focus_existing_stream() {
+      if [ -z "$socket_path" ]; then
+        return 1
+      fi
+
+      if ! SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg -t get_tree -r \
+        | ${pkgs.jq}/bin/jq -e '
+          .. | objects | select((.app_id? // "") == "com.moonlight_stream.Moonlight")
+        ' >/dev/null 2>&1; then
+        return 1
+      fi
+
+      phase "existing Moonlight session detected; focusing current stream"
+      SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] focus' >/dev/null 2>&1 || true
+      return 0
+    }
+
+    cleanup_stale_stream() {
+      phase "cleaning up stale Moonlight session"
+      while IFS= read -r stale_pid; do
+        [ -n "$stale_pid" ] || continue
+        ${pkgs.coreutils}/bin/kill "$stale_pid" >/dev/null 2>&1 || true
+      done < <(${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' || true)
+
+      while IFS= read -r stale_pid; do
+        [ -n "$stale_pid" ] || continue
+        if [ "$stale_pid" != "$$" ]; then
+          ${pkgs.coreutils}/bin/kill "$stale_pid" >/dev/null 2>&1 || true
+        fi
+      done < <(${pkgs.procps}/bin/pgrep -f '/run/current-system/sw/bin/moonlight-ryzen-desktop' || true)
+
+      attempts=0
+      while ${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' >/dev/null 2>&1; do
+        if [ "$attempts" -ge 20 ]; then
+          fail "stale Moonlight processes would not exit"
+        fi
+        attempts=$((attempts + 1))
+        ${pkgs.coreutils}/bin/sleep 0.25
+      done
+    }
+
+    acquire_launch_lock() {
+      exec 9>"$lock_file"
+      if ${pkgs.util-linux}/bin/flock -n 9; then
+        return 0
+      fi
+
+      focus_existing_stream && exit 0
+      cleanup_stale_stream
+
+      exec 9>"$lock_file"
+      ${pkgs.util-linux}/bin/flock -n 9 || fail "another Ryzen Desktop launch is already in progress"
+    }
+
+    acquire_launch_lock
+
+    if ${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' >/dev/null 2>&1; then
+      focus_existing_stream && exit 0
+      cleanup_stale_stream
+    fi
 
     phase "checking ryzen host"
     ${pkgs.openssh}/bin/ssh \
@@ -85,9 +156,9 @@ let
         fail "Moonlight could not query Sunshine applications"
       }
 
-    if ! printf '%s\n' "$available_apps" | ${pkgs.gnugrep}/bin/grep -Fx "Desktop" >/dev/null 2>&1; then
+    if [ -n "$available_apps" ] && ! printf '%s\n' "$available_apps" | ${pkgs.gnugrep}/bin/grep -Fx "Desktop" >/dev/null 2>&1; then
       printf '%s\n' "$available_apps" >&2
-      fail "Sunshine is reachable but Desktop is not exported"
+      phase "Moonlight list did not include Desktop; continuing with direct Desktop stream"
     fi
 
     if [ -z "$socket_path" ]; then
@@ -117,9 +188,14 @@ let
       stream \
       --resolution 1920x1200 \
       --fps 60 \
+      --bitrate 10000 \
+      --packet-size 1024 \
+      --video-codec H.264 \
+      --frame-pacing \
+      --audio-config stereo \
       --display-mode windowed \
       --no-absolute-mouse \
-      --capture-system-keys fullscreen \
+      --capture-system-keys always \
       ryzen \
       Desktop &
     moonlight_pid=$!

@@ -67,8 +67,10 @@ in
           if (!general_seen) {
             print "[General]"
             print "abstouchmode=false"
-            print "bitrate=20000"
+            print "bitrate=10000"
+            print "framepacing=true"
             print "gameoptimize=false"
+            print "packetsize=1024"
           }
           exit
         }
@@ -76,8 +78,10 @@ in
           general_seen = 1
           print
           print "abstouchmode=false"
-          print "bitrate=20000"
+          print "bitrate=10000"
+          print "framepacing=true"
           print "gameoptimize=false"
+          print "packetsize=1024"
           next
         }
         /^abstouchmode=/ {
@@ -86,7 +90,16 @@ in
         /^bitrate=/ {
           next
         }
+        /^capturesyskeys=/ {
+          next
+        }
+        /^framepacing=/ {
+          next
+        }
         /^gameoptimize=/ {
+          next
+        }
+        /^packetsize=/ {
           next
         }
         { print }
@@ -95,8 +108,10 @@ in
       cat > "$tmp_file" <<'EOF'
 [General]
 abstouchmode=false
-bitrate=20000
+bitrate=10000
+framepacing=true
 gameoptimize=false
+packetsize=1024
 EOF
     fi
 
@@ -189,9 +204,10 @@ EOF
     }
   ];
 
-  # Mod+Escape exits Moonlight fullscreen even with capture-system-keys
+  # These bindings remain available while Moonlight inhibits local system shortcuts.
   wayland.windowManager.sway.extraConfig = ''
     bindsym --inhibited Mod4+Escape [app_id="com.moonlight_stream.Moonlight"] fullscreen disable
+    bindsym --inhibited Mod4+Shift+Escape [app_id="com.moonlight_stream.Moonlight"] kill
   '';
 
   programs.quickshell-worktree-app.enable = true;

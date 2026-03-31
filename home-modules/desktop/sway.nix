@@ -418,9 +418,9 @@ let
         {
           name = "HDMI-A-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
-            x = 1536;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1080;
@@ -429,9 +429,9 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
-            x = 0;
+            x = 1920;
             y = 0;
             width = 1920;
             height = 1200;
@@ -440,9 +440,9 @@ let
         {
           name = "DP-2";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
-            x = 3072;
+            x = 3840;
             y = 0;
             width = 1920;
             height = 1200;
@@ -457,9 +457,9 @@ let
         {
           name = "HDMI-A-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
-            x = 1536;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1080;
@@ -468,9 +468,9 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
-            x = 0;
+            x = 1920;
             y = 0;
             width = 1920;
             height = 1200;
@@ -496,7 +496,7 @@ let
         {
           name = "HDMI-A-1";
           enabled = false;
-          scale = 1.25;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
@@ -507,7 +507,7 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.25;
+          scale = 1.0;
           position = {
             x = 0;
             y = 0;
@@ -518,9 +518,9 @@ let
         {
           name = "DP-2";
           enabled = false;
-          scale = 1.25;
+          scale = 1.0;
           position = {
-            x = 0;
+            x = 3840;
             y = 0;
             width = 1920;
             height = 1200;
@@ -844,23 +844,23 @@ in
         #           Y offset = DP-1 height (1200px)
         "DP-1" = {
           mode = "1920x1200@60Hz";
-          position = "0,0";
-          scale = "1.25";
+          position = "1920,0";
+          scale = "1.0";
         };
         "HDMI-A-1" = {
           mode = "1920x1080@60Hz";
-          position = "1536,0";  # After DP-1 logical width (1920/1.25=1536)
-          scale = "1.25";
+          position = "0,0";
+          scale = "1.0";
         };
         "DP-2" = {
           mode = "1920x1200@60Hz";
-          position = "3072,0";  # After HDMI-A-1 logical right (1536+1536=3072)
-          scale = "1.25";
+          position = "3840,0";
+          scale = "1.0";
         };
         "DP-3" = {
           mode = "1920x1080@60Hz";
-          position = "0,960";  # Below DP-1, Y = DP-1 logical height (1200/1.25=960)
-          scale = "1.25";
+          position = "1920,1200";
+          scale = "1.0";
         };
       } else if isHybrid then {
         "eDP-1" = {
