@@ -418,9 +418,9 @@ let
         {
           name = "HDMI-A-1";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
-            x = 0;
+            x = 1536;
             y = 0;
             width = 1920;
             height = 1080;
@@ -429,9 +429,9 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
-            x = 1920;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
@@ -440,9 +440,9 @@ let
         {
           name = "DP-2";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
-            x = 3840;
+            x = 3072;
             y = 0;
             width = 1920;
             height = 1200;
@@ -457,9 +457,9 @@ let
         {
           name = "HDMI-A-1";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
-            x = 0;
+            x = 1536;
             y = 0;
             width = 1920;
             height = 1080;
@@ -468,9 +468,9 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
-            x = 1920;
+            x = 0;
             y = 0;
             width = 1920;
             height = 1200;
@@ -496,7 +496,7 @@ let
         {
           name = "HDMI-A-1";
           enabled = false;
-          scale = 1.0;
+          scale = 1.25;
           position = {
             x = 0;
             y = 0;
@@ -507,7 +507,7 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.0;
+          scale = 1.25;
           position = {
             x = 0;
             y = 0;
@@ -518,7 +518,7 @@ let
         {
           name = "DP-2";
           enabled = false;
-          scale = 1.0;
+          scale = 1.25;
           position = {
             x = 0;
             y = 0;
@@ -752,7 +752,6 @@ in
     ./sway-keybindings.nix
     ./unified-bar-theme.nix  # Feature 057: Centralized Catppuccin Mocha theme
     ./swaync.nix  # Feature 057: SwayNC notification center with unified theming
-    ../tools/sway-tree-monitor.nix
   ];
   # Sway window manager configuration via home-manager
   wayland.windowManager.sway = {

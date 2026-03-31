@@ -27,7 +27,6 @@
     ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
-    ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
 
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
@@ -237,13 +236,6 @@
       StartLimitBurst = 3;
       StartLimitIntervalSec = 30;
     };
-  };
-
-  # Sway Tree Diff Monitor (Feature 064) - Real-time window state monitoring
-  services.sway-tree-monitor = {
-    enable = true;
-    bufferSize = 500;  # Circular buffer size (default)
-    logLevel = "INFO";
   };
 
   # Firewall - open additional ports for services

@@ -75,6 +75,7 @@ DESKTOP_DIRS = [
 ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
+CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -83,6 +84,11 @@ _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "by_path": {},
     "by_qualified_name": {},
 }
+
+
+def _is_transient_chrome_icon_path(path: Path) -> bool:
+    """Chrome's scoped-dir icons disappear quickly and cause noisy broken lookups."""
+    return str(path).startswith(CHROME_SCOPED_TMP_PREFIX)
 
 
 def normalize_project_path(value: Optional[str]) -> Optional[str]:
@@ -399,7 +405,7 @@ class DesktopIconIndex:
             return cached or None
 
         candidate = Path(str(icon_name))
-        if candidate.is_absolute() and candidate.exists():
+        if candidate.is_absolute() and candidate.exists() and not _is_transient_chrome_icon_path(candidate):
             resolved = str(candidate)
             self._icon_cache[cache_key] = resolved
             return resolved

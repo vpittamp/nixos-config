@@ -31,7 +31,6 @@ let
     # Import essential modules from hetzner-sway configuration
     # Feature 117: i3-project-daemon now runs as user service (home-manager)
     imports = [
-      ../../modules/services/sway-tree-monitor.nix
       ../../modules/desktop/sway.nix
     ];
 
@@ -131,13 +130,6 @@ let
     # Feature 117: i3pm daemon now runs as home-manager user service
     # Test VM would need home-manager integration to use the daemon
     # For now, tests should use mock daemon responses or run daemon manually
-
-    # Enable sway-tree-monitor for event tracking
-    services.sway-tree-monitor = {
-      enable = true;
-      bufferSize = 500;
-      logLevel = "INFO";
-    };
 
     # Install test framework and dependencies
     environment.systemPackages = with pkgs; [

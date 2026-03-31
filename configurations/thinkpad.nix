@@ -176,7 +176,6 @@ in
     ../modules/services/onepassword.nix
     ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector (legacy, replaced by Alloy)
     ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector
-    ../modules/services/grafana-beyla.nix      # Feature 129: eBPF auto-instrumentation
     ../modules/services/arize-phoenix.nix      # Feature 129 Enhancement: GenAI tracing
     ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
     ../modules/services/litellm-proxy.nix      # Feature 123: LiteLLM proxy for full OTEL traces
@@ -280,7 +279,6 @@ in
     enableJournald = true;
     journaldUnits = [
       "grafana-alloy.service"
-      "grafana-beyla.service"
       "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
@@ -307,15 +305,6 @@ in
   services.otel-ai-collector = {
     enable = false;
   };
-
-  # Feature 129: Grafana Beyla - eBPF Auto-Instrumentation
-  services.grafana-beyla = {
-    enable = true;
-    openPorts = "4320,8080";  # otel-ai-monitor and i3pm ports
-    executableNames = "(claude|gemini|codex|node|python3)";
-    serviceName = "thinkpad-services";
-  };
-
 
   # Arize Phoenix - GenAI Observability (Local)
   services.arize-phoenix.enable = false;  # Disabled: port 4317 conflicts with Alloy

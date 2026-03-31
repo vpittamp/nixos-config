@@ -19,7 +19,6 @@
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
     # Feature 117: System service removed - now runs as home-manager user service
     ../modules/services/keyd.nix
-    ../modules/services/sway-tree-monitor.nix
 
     # Phase 2: Wayland/Sway Desktop Environment
     ../modules/desktop/sway.nix
@@ -126,13 +125,6 @@
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
-
-  # Sway Tree Diff Monitor (Feature 064) - Real-time window state monitoring
-  services.sway-tree-monitor = {
-    enable = true;
-    bufferSize = 500;  # Circular buffer size (default)
-    logLevel = "INFO";
-  };
 
   # Firewall - open additional ports for services
   networking.firewall = {

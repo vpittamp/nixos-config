@@ -159,7 +159,6 @@ in
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/grafana-alloy.nix      # Feature 129: Unified telemetry collector
-    ../modules/services/grafana-beyla.nix     # Feature 129: eBPF auto-instrumentation
     # Feature 117: System service removed - now runs as home-manager user service
 
     # Bare metal optimizations (KVM, Podman, gaming, printing, TPM, etc.)
@@ -368,19 +367,9 @@ in
     enableJournald = true;
     journaldUnits = [
       "grafana-alloy.service"
-      "grafana-beyla.service"
       "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
-  };
-
-  # Feature 129: Grafana Beyla - eBPF Auto-Instrumentation
-  # Monitors Claude Code, Gemini CLI, and Codex for low-level system events
-  # Beyla sends traces to local Alloy (127.0.0.1:4318), which then exports to K8s
-  services.grafana-beyla = {
-    enable = true;
-    openPorts = "4320,8080";  # otel-ai-monitor and i3pm ports
-    # alloyEndpoint defaults to http://127.0.0.1:4318 (local Alloy)
   };
 
   # Display manager - greetd for Wayland/Sway login
