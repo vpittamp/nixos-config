@@ -61,6 +61,7 @@ let
     icon = pwa.icon;  # Include icon for workspace panel
     preferred_workspace = if pwa ? preferred_workspace then pwa.preferred_workspace else null;
     preferred_monitor_role = if pwa ? preferred_monitor_role then pwa.preferred_monitor_role else null;
+    extraChromeFlags = if pwa ? extraChromeFlags then pwa.extraChromeFlags else [];
   }) pwaSitesConfig.pwaSites;
 
   # Helper to generate .desktop file content manually
@@ -69,6 +70,26 @@ let
     let
       comment = if app ? description then app.description else "Launch ${app.display_name}";
       categories = if app.scope == "scoped" then "Development;ProjectScoped;" else "Application;Global;";
+      launchCommand = lib.concatStringsSep " " (map lib.escapeShellArg (
+        [
+          "${config.home.profileDirectory}/bin/nix-usage-log-launch"
+          "--source"
+          "app-registry"
+          "--app"
+          app.name
+        ]
+        ++ lib.optionals (app ? nix_package) [
+          "--package"
+          app.nix_package
+        ]
+        ++ [
+          "--"
+          "${config.home.profileDirectory}/bin/i3pm"
+          "launch"
+          "open"
+          app.name
+        ]
+      ));
     in
     ''
       [Desktop Entry]
@@ -76,7 +97,7 @@ let
       Type=Application
       Name=${app.display_name}
       Comment=${comment}
-      Exec=${config.home.profileDirectory}/bin/i3pm launch open ${app.name}
+      Exec=${launchCommand}
       Icon=${if app ? icon then app.icon else "application-x-executable"}
       Terminal=false
       NoDisplay=false

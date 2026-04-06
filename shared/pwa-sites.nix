@@ -955,6 +955,7 @@ let
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
       routing_domains = [ "workflow-builder-ryzen.tail286401.ts.net" ];
+      extraChromeFlags = [ "--js-flags=--max-old-space-size=2048" ];
     }
 
     # Redis Insights (Ryzen K8s via Tailscale)
@@ -1396,6 +1397,7 @@ let
       preferred_workspace = 131;
       preferred_monitor_role = "secondary";
       routing_domains = [ "workflow-builder-dev.tail286401.ts.net" ];
+      extraChromeFlags = [ "--js-flags=--max-old-space-size=2048" ];
     }
 
     # --- Staging Environment (workspaces 132-142) ---
@@ -1585,6 +1587,7 @@ let
       preferred_workspace = 142;
       preferred_monitor_role = "secondary";
       routing_domains = [ "workflow-builder-staging.tail286401.ts.net" ];
+      extraChromeFlags = [ "--js-flags=--max-old-space-size=2048" ];
     }
 
     # --- Prod Environment (workspaces 143-153) ---
@@ -1774,6 +1777,7 @@ let
       preferred_workspace = 153;
       preferred_monitor_role = "secondary";
       routing_domains = [ "workflow-builder-prod.tail286401.ts.net" ];
+      extraChromeFlags = [ "--js-flags=--max-old-space-size=2048" ];
     }
 
     # BlueBubbles

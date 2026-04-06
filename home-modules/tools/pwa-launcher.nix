@@ -63,9 +63,19 @@ let
     fi
 
     PWA_URL=$(echo "$PWA_DATA" | ${pkgs.jq}/bin/jq -r '.url')
+    EXTRA_CHROME_FLAGS=$(echo "$PWA_DATA" | ${pkgs.jq}/bin/jq -r '.extraChromeFlags // [] | .[]')
 
     # If URL argument is provided, use it instead of base URL
     TARGET_URL="''${URL:-$PWA_URL}"
+
+    if command -v nix-usage-log-launch >/dev/null 2>&1; then
+      nix-usage-log-launch \
+        --source pwa \
+        --app "$NAME" \
+        --package google-chrome \
+        --record-only \
+        >/dev/null 2>&1 || true
+    fi
 
     # ============================================================================
     # PHASE 2: Launch Chrome From Main Profile
@@ -154,6 +164,13 @@ let
       --password-store=basic
       --disable-features=DesktopPWAsElidedExtensionsMenu
     )
+
+    # Append per-PWA Chrome flags from registry (e.g. --js-flags for heap limits)
+    if [[ -n "$EXTRA_CHROME_FLAGS" ]]; then
+      while IFS= read -r flag; do
+        cmd+=("$flag")
+      done <<< "$EXTRA_CHROME_FLAGS"
+    fi
 
     if use_legacy_onepassword_forwarding; then
       echo "Forwarding PWA launch through legacy onepassword Chrome session" >&2
