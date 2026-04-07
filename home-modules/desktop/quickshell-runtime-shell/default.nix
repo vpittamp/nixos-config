@@ -934,7 +934,6 @@ app_filter = str(os.environ.get("QUICKSHELL_LAUNCHER_APP_FILTER", "all") or "all
 
 registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
 base_registry_path = Path.home() / ".local" / "share" / "i3pm" / "registry" / "base.json"
-desktop_dir = Path.home() / ".local" / "share" / "i3pm-applications" / "applications"
 
 
 def normalize(value: object) -> str:
@@ -1173,8 +1172,7 @@ for index, raw_app in enumerate(applications):
     if workspace is not None:
         state.append("workspace-pinned")
 
-    desktop_path = desktop_dir / f"{name}.desktop"
-    identifier = str(desktop_path if desktop_path.exists() else f"{name}.desktop")
+    identifier = name
     scored_results.append(
         (
             score,
@@ -1214,36 +1212,7 @@ PY
       exit 1
     fi
 
-    if [ -f "$identifier" ]; then
-      exec ${pkgs.glib}/bin/gio launch "$identifier"
-    fi
-
-    find_desktop_file() {
-      local candidate="$1"
-      local base_dir
-
-      if [ -n "''${XDG_DATA_HOME:-}" ] && [ -f "$XDG_DATA_HOME/applications/$candidate" ]; then
-        printf '%s\n' "$XDG_DATA_HOME/applications/$candidate"
-        return 0
-      fi
-
-      local data_dirs="''${XDG_DATA_DIRS:-}"
-      IFS=: read -r -a search_dirs <<<"$data_dirs"
-      for base_dir in "''${search_dirs[@]}"; do
-        [ -n "$base_dir" ] || continue
-        if [ -f "$base_dir/applications/$candidate" ]; then
-          printf '%s\n' "$base_dir/applications/$candidate"
-          return 0
-        fi
-      done
-
-      return 1
-    }
-
-    if desktop_file=$(find_desktop_file "$identifier"); then
-      exec ${pkgs.glib}/bin/gio launch "$desktop_file"
-    fi
-
+    # gtk-launch searches XDG_DATA_DIRS for <name>.desktop
     exec ${pkgs.gtk3}/bin/gtk-launch "''${identifier%.desktop}"
   '';
 
