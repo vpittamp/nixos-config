@@ -109,6 +109,7 @@ in
     accentBg = "#241b43";
     accentMuted = "#8b7bb5";
     accentWash = "#1e1639";
+    notifications.toastMaxPerOutput = 0;
   };
 
   programs.quickshell-worktree-app.enable = true;

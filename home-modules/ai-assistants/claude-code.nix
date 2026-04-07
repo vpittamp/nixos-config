@@ -397,7 +397,8 @@ lib.mkIf enableClaudeCode {
           "SlashCommand"
 
           # MCP Server permissions
-          "mcp__chrome-devtools"  # Linux only
+          "mcp__claude-in-chrome"  # Claude-in-Chrome browser automation (built-in via --chrome)
+          "mcp__chrome-devtools"   # Chrome DevTools Protocol (Linux only)
         ];
       };
 

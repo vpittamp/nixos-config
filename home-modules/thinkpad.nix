@@ -183,6 +183,7 @@ EOF
 
   programs.quickshell-runtime-shell = {
     enable = true;
+    notifications.toastMaxPerOutput = 0;
   };
 
   wayland.windowManager.sway.config.window.commands = lib.mkAfter [

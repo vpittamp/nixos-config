@@ -1558,7 +1558,11 @@ ShellRoot {
     }
 
     function toastItemsForOutput(outputName) {
-        return notificationFeed.filter(item => !notificationClosed(item) && boolOrFalse(item.toast_visible) && stringOrEmpty(item.output_name) === stringOrEmpty(outputName)).slice(0, Math.max(1, Number(shellConfig.notificationToastMaxPerOutput || 4)));
+        const toastLimit = Math.max(0, Number(shellConfig.notificationToastMaxPerOutput || 0));
+        if (toastLimit <= 0) {
+            return [];
+        }
+        return notificationFeed.filter(item => !notificationClosed(item) && boolOrFalse(item.toast_visible) && stringOrEmpty(item.output_name) === stringOrEmpty(outputName)).slice(0, toastLimit);
     }
 
     function refreshNotificationState() {

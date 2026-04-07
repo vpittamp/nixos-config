@@ -1132,23 +1132,16 @@ in
   # which doesn't work on NixOS. We fix this with an activation script below.
 
   # Fix Claude Code's native host script shebang on activation
-  # This runs after Claude Code creates the file, replacing the broken #!/bin/bash shebang
+  # Claude Code generates chrome-native-host with #!/bin/sh or #!/bin/bash
+  # which may not exist on NixOS. Replace with #!/usr/bin/env bash.
+  # Handles both old format (node + cli.js) and new format (.claude-unwrapped).
   home.activation.fixClaudeNativeHost = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if [ -f "$HOME/.claude/chrome/chrome-native-host" ]; then
-      # Check if the shebang is the problematic #!/bin/bash
-      if head -1 "$HOME/.claude/chrome/chrome-native-host" | grep -q '^#!/bin/bash'; then
+    HOST_FILE="$HOME/.claude/chrome/chrome-native-host"
+    if [ -f "$HOST_FILE" ]; then
+      SHEBANG=$(head -1 "$HOST_FILE")
+      if [ "$SHEBANG" = "#!/bin/bash" ] || [ "$SHEBANG" = "#!/bin/sh" ]; then
         echo "Fixing Claude native host shebang for NixOS..."
-        # Get the node and cli paths from the existing script
-        NODE_PATH=$(grep -o '/nix/store/[^/]*/bin/node' "$HOME/.claude/chrome/chrome-native-host" | head -1)
-        CLI_PATH=$(grep -o '/nix/store/[^"]*cli\.js' "$HOME/.claude/chrome/chrome-native-host" | head -1)
-        if [ -n "$NODE_PATH" ] && [ -n "$CLI_PATH" ]; then
-          cat > "$HOME/.claude/chrome/chrome-native-host" << EOF
-#!/usr/bin/env bash
-# Chrome native host wrapper script - Fixed for NixOS
-exec "$NODE_PATH" "$CLI_PATH" --chrome-native-host
-EOF
-          chmod +x "$HOME/.claude/chrome/chrome-native-host"
-        fi
+        ${pkgs.gnused}/bin/sed -i '1s|^#!.*/\(ba\)\?sh$|#!/usr/bin/env bash|' "$HOST_FILE"
       fi
     fi
   '';

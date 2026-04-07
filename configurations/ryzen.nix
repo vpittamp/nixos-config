@@ -167,6 +167,9 @@ in
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
 
+    # Chrome policy for Claude-in-Chrome extension (force-install in all Chrome profiles)
+    ../modules/desktop/chrome-claude.nix
+
     # Sunshine game streaming (NVIDIA NVENC hardware encoding)
     ../modules/desktop/sunshine.nix
 
@@ -243,6 +246,12 @@ in
     # Fingerprint reader support (if USB fingerprint reader is connected)
     # Enroll fingerprint with: fprintd-enroll
     enableFingerprint = true;
+  };
+
+  # Ryzen is a stationary remote-access host and should never idle-suspend.
+  services.logind.settings.Login = {
+    IdleAction = lib.mkForce "ignore";
+    IdleActionSec = lib.mkForce "0";
   };
 
   # ========== INCUS VIRTUALIZATION FOR NIXOS VM TESTING ==========
