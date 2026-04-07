@@ -300,6 +300,32 @@ in
       # fzf's built-in widget uses 'fc -lnr -2001' which reads bash history
       # This includes commands from Claude Code via the PostToolUse hook
       # The built-in implementation handles READLINE_LINE/READLINE_POINT correctly
+      if [[ $- == *i* ]] && command -v nix-usage-log-shell >/dev/null 2>&1; then
+        __nix_usage_last_history_id=""
+        __nix_usage_precmd() {
+          local history_entry history_id history_cmd
+          history_entry="$(HISTTIMEFORMAT= builtin history 1 2>/dev/null || true)"
+          if [ -z "$history_entry" ]; then
+            return
+          fi
+
+          history_id="$(printf '%s\n' "$history_entry" | ${pkgs.gnused}/bin/sed -E 's/^ *([0-9]+).*/\1/')"
+          history_cmd="$(printf '%s\n' "$history_entry" | ${pkgs.gnused}/bin/sed -E 's/^ *[0-9]+[* ]*//')"
+
+          if [ -z "$history_id" ] || [ "$history_id" = "$__nix_usage_last_history_id" ]; then
+            return
+          fi
+
+          __nix_usage_last_history_id="$history_id"
+          nix-usage-log-shell --shell bash --cwd "$PWD" --command "$history_cmd" >/dev/null 2>&1 || true
+        }
+
+        if [ -n "''${PROMPT_COMMAND:-}" ]; then
+          PROMPT_COMMAND="__nix_usage_precmd;''${PROMPT_COMMAND}"
+        else
+          PROMPT_COMMAND="__nix_usage_precmd"
+        fi
+      fi
 
       # Terminal configuration moved to TERM settings below
       

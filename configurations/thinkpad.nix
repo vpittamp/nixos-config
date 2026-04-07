@@ -19,6 +19,206 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  mkMoonlightRyzenDesktop = {
+    scriptName,
+    logName,
+    workspaceName,
+    fps,
+    bitrate,
+    packetSize ? 1024,
+    videoCodec ? "H.264",
+  }:
+    pkgs.writeShellScriptBin scriptName ''
+      #!${pkgs.bash}/bin/bash
+      set -euo pipefail
+
+      phase() {
+        printf '${logName}: %s\n' "$*" >&2
+      }
+
+      fail() {
+        phase "$1"
+        exit 1
+      }
+
+      socket_path="''${SWAYSOCK:-}"
+      if [ -z "$socket_path" ]; then
+        socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
+      fi
+      if [ -z "$socket_path" ]; then
+        socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
+      fi
+
+      runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+      lock_file="$runtime_dir/moonlight-ryzen-desktop.lock"
+
+      ${pkgs.coreutils}/bin/mkdir -p "$runtime_dir"
+
+      run_moonlight() {
+        export SDL_VIDEODRIVER=wayland
+        exec ${pkgs.moonlight-qt}/bin/moonlight \
+          stream \
+          --resolution 1920x1200 \
+          --fps ${toString fps} \
+          --bitrate ${toString bitrate} \
+          --packet-size ${toString packetSize} \
+          --video-codec ${videoCodec} \
+          --frame-pacing \
+          --audio-config stereo \
+          --display-mode windowed \
+          --no-absolute-mouse \
+          --capture-system-keys always \
+          ryzen \
+          Desktop
+      }
+
+      focus_existing_stream() {
+        if [ -z "$socket_path" ]; then
+          return 1
+        fi
+
+        if ! SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg -t get_tree -r \
+          | ${pkgs.jq}/bin/jq -e '
+            .. | objects | select((.app_id? // "") == "com.moonlight_stream.Moonlight")
+          ' >/dev/null 2>&1; then
+          return 1
+        fi
+
+        phase "existing Moonlight session detected; focusing current stream"
+        SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] focus' >/dev/null 2>&1 || true
+        return 0
+      }
+
+      cleanup_stale_stream() {
+        phase "cleaning up stale Moonlight session"
+        while IFS= read -r stale_pid; do
+          [ -n "$stale_pid" ] || continue
+          ${pkgs.coreutils}/bin/kill "$stale_pid" >/dev/null 2>&1 || true
+        done < <(${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' || true)
+
+        while IFS= read -r stale_pid; do
+          [ -n "$stale_pid" ] || continue
+          if [ "$stale_pid" != "$$" ]; then
+            ${pkgs.coreutils}/bin/kill "$stale_pid" >/dev/null 2>&1 || true
+          fi
+        done < <(${pkgs.procps}/bin/pgrep -f '/run/current-system/sw/bin/moonlight-ryzen-desktop(-remote)?' || true)
+
+        attempts=0
+        while ${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' >/dev/null 2>&1; do
+          if [ "$attempts" -ge 20 ]; then
+            fail "stale Moonlight processes would not exit"
+          fi
+          attempts=$((attempts + 1))
+          ${pkgs.coreutils}/bin/sleep 0.25
+        done
+      }
+
+      acquire_launch_lock() {
+        exec 9>"$lock_file"
+        if ${pkgs.util-linux}/bin/flock -n 9; then
+          return 0
+        fi
+
+        focus_existing_stream && exit 0
+        cleanup_stale_stream
+
+        exec 9>"$lock_file"
+        ${pkgs.util-linux}/bin/flock -n 9 || fail "another Ryzen Desktop launch is already in progress"
+      }
+
+      acquire_launch_lock
+
+      if ${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' >/dev/null 2>&1; then
+        focus_existing_stream && exit 0
+        cleanup_stale_stream
+      fi
+
+      phase "checking ryzen host"
+      if ! ${pkgs.openssh}/bin/ssh \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        ryzen \
+        /run/current-system/sw/bin/sunshine-primary-monitor-ensure; then
+        phase "ryzen SSH preflight failed; continuing with direct Moonlight validation"
+      fi
+
+      phase "probing desktop stream"
+      available_apps="$(${pkgs.coreutils}/bin/timeout 8s ${pkgs.moonlight-qt}/bin/moonlight list ryzen 2>&1 || true)"
+      if [ -z "$available_apps" ]; then
+        phase "Moonlight list probe produced no response; continuing with direct Desktop stream"
+      elif ! printf '%s\n' "$available_apps" | ${pkgs.gnugrep}/bin/grep -Fx "Desktop" >/dev/null 2>&1; then
+        printf '%s\n' "$available_apps" >&2
+        phase "Moonlight list probe did not include Desktop; continuing with direct Desktop stream"
+      fi
+
+      if [ -z "$socket_path" ]; then
+        phase "starting stream"
+        run_moonlight
+      fi
+
+      original_workspace="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_workspaces -r | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')"
+      moonlight_workspace="${workspaceName}"
+
+      restore_workspace() {
+        if [ -n "''${original_workspace:-}" ]; then
+          ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$original_workspace" >/dev/null 2>&1 || true
+        fi
+      }
+
+      trap 'restore_workspace' EXIT INT TERM
+
+      # Keep launch-correlation metadata for the daemon, but drop project/terminal context.
+      while IFS= read -r var_name; do
+        case "$var_name" in
+          I3PM_APP_ID|I3PM_APP_NAME|I3PM_EXPECTED_CLASS|I3PM_SCOPE|I3PM_TARGET_WORKSPACE|I3PM_TERMINAL_ANCHOR_ID)
+            ;;
+          I3PM_*)
+            unset "$var_name"
+            ;;
+        esac
+      done < <(${pkgs.coreutils}/bin/env | ${pkgs.gawk}/bin/awk -F= '/^I3PM_/ { print $1 }')
+
+      phase "starting stream"
+      export SDL_VIDEODRIVER=wayland
+      ${pkgs.moonlight-qt}/bin/moonlight \
+        stream \
+        --resolution 1920x1200 \
+        --fps ${toString fps} \
+        --bitrate ${toString bitrate} \
+        --packet-size ${toString packetSize} \
+        --video-codec ${videoCodec} \
+        --frame-pacing \
+        --audio-config stereo \
+        --display-mode windowed \
+        --no-absolute-mouse \
+        --capture-system-keys always \
+        ryzen \
+        Desktop &
+      moonlight_pid=$!
+
+      attempts=0
+      until ${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_tree -r | ${pkgs.jq}/bin/jq -e '
+        .. | objects | select((.app_id? // "") == "com.moonlight_stream.Moonlight")
+      ' >/dev/null 2>&1; do
+        if ! ${pkgs.coreutils}/bin/kill -0 "$moonlight_pid" >/dev/null 2>&1; then
+          wait "$moonlight_pid"
+          exit $?
+        fi
+        if [ "$attempts" -ge 40 ]; then
+          break
+        fi
+        attempts=$((attempts + 1))
+        ${pkgs.coreutils}/bin/sleep 0.25
+      done
+
+      # Move Moonlight to its workspace and remove borders (no forced fullscreen)
+      ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] border none' >/dev/null 2>&1 || true
+      ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] move container to workspace "'"$moonlight_workspace"'"' >/dev/null 2>&1 || true
+      ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$moonlight_workspace" >/dev/null 2>&1 || true
+      ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] focus' >/dev/null 2>&1 || true
+
+      wait "$moonlight_pid"
+    '';
   rustdeskConnectRyzen = pkgs.writeShellScriptBin "rustdesk-connect-ryzen" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
@@ -36,193 +236,20 @@ let
 
     exec ${pkgs.rustdesk}/bin/rustdesk --connect "$host_ip"
   '';
-  moonlightRyzenDesktop = pkgs.writeShellScriptBin "moonlight-ryzen-desktop" ''
-    #!${pkgs.bash}/bin/bash
-    set -euo pipefail
-
-    phase() {
-      printf 'moonlight-ryzen-desktop: %s\n' "$*" >&2
-    }
-
-    fail() {
-      phase "$1"
-      exit 1
-    }
-
-    socket_path="''${SWAYSOCK:-}"
-    if [ -z "$socket_path" ]; then
-      socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
-    fi
-    if [ -z "$socket_path" ]; then
-      socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
-    fi
-
-    runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
-    lock_file="$runtime_dir/moonlight-ryzen-desktop.lock"
-
-    ${pkgs.coreutils}/bin/mkdir -p "$runtime_dir"
-
-    run_moonlight() {
-      export SDL_VIDEODRIVER=wayland
-      exec ${pkgs.moonlight-qt}/bin/moonlight \
-        stream \
-        --resolution 1920x1200 \
-        --fps 60 \
-        --bitrate 10000 \
-        --packet-size 1024 \
-        --video-codec H.264 \
-        --frame-pacing \
-        --audio-config stereo \
-        --display-mode windowed \
-        --no-absolute-mouse \
-        --capture-system-keys always \
-        ryzen \
-        Desktop
-    }
-
-    focus_existing_stream() {
-      if [ -z "$socket_path" ]; then
-        return 1
-      fi
-
-      if ! SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg -t get_tree -r \
-        | ${pkgs.jq}/bin/jq -e '
-          .. | objects | select((.app_id? // "") == "com.moonlight_stream.Moonlight")
-        ' >/dev/null 2>&1; then
-        return 1
-      fi
-
-      phase "existing Moonlight session detected; focusing current stream"
-      SWAYSOCK="$socket_path" ${pkgs.sway}/bin/swaymsg '[app_id="com.moonlight_stream.Moonlight"] focus' >/dev/null 2>&1 || true
-      return 0
-    }
-
-    cleanup_stale_stream() {
-      phase "cleaning up stale Moonlight session"
-      while IFS= read -r stale_pid; do
-        [ -n "$stale_pid" ] || continue
-        ${pkgs.coreutils}/bin/kill "$stale_pid" >/dev/null 2>&1 || true
-      done < <(${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' || true)
-
-      while IFS= read -r stale_pid; do
-        [ -n "$stale_pid" ] || continue
-        if [ "$stale_pid" != "$$" ]; then
-          ${pkgs.coreutils}/bin/kill "$stale_pid" >/dev/null 2>&1 || true
-        fi
-      done < <(${pkgs.procps}/bin/pgrep -f '/run/current-system/sw/bin/moonlight-ryzen-desktop' || true)
-
-      attempts=0
-      while ${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' >/dev/null 2>&1; do
-        if [ "$attempts" -ge 20 ]; then
-          fail "stale Moonlight processes would not exit"
-        fi
-        attempts=$((attempts + 1))
-        ${pkgs.coreutils}/bin/sleep 0.25
-      done
-    }
-
-    acquire_launch_lock() {
-      exec 9>"$lock_file"
-      if ${pkgs.util-linux}/bin/flock -n 9; then
-        return 0
-      fi
-
-      focus_existing_stream && exit 0
-      cleanup_stale_stream
-
-      exec 9>"$lock_file"
-      ${pkgs.util-linux}/bin/flock -n 9 || fail "another Ryzen Desktop launch is already in progress"
-    }
-
-    acquire_launch_lock
-
-    if ${pkgs.procps}/bin/pgrep -f '${pkgs.moonlight-qt}/bin/moonlight[[:space:]]+stream([[:space:]].*)?[[:space:]]+ryzen[[:space:]]+Desktop([[:space:]]|$)' >/dev/null 2>&1; then
-      focus_existing_stream && exit 0
-      cleanup_stale_stream
-    fi
-
-    phase "checking ryzen host"
-    ${pkgs.openssh}/bin/ssh \
-      -o BatchMode=yes \
-      -o ConnectTimeout=5 \
-      ryzen \
-      /run/current-system/sw/bin/sunshine-primary-monitor-ensure \
-      || fail "ryzen host is not stream-ready"
-
-    phase "validating desktop stream"
-    available_apps="$(${pkgs.moonlight-qt}/bin/moonlight list ryzen 2>&1)" \
-      || {
-        printf '%s\n' "$available_apps" >&2
-        fail "Moonlight could not query Sunshine applications"
-      }
-
-    if [ -n "$available_apps" ] && ! printf '%s\n' "$available_apps" | ${pkgs.gnugrep}/bin/grep -Fx "Desktop" >/dev/null 2>&1; then
-      printf '%s\n' "$available_apps" >&2
-      phase "Moonlight list did not include Desktop; continuing with direct Desktop stream"
-    fi
-
-    if [ -z "$socket_path" ]; then
-      phase "starting stream"
-      run_moonlight
-    fi
-
-    original_workspace="$(${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_workspaces -r | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')"
-    moonlight_workspace="12: Ryzen Desktop"
-
-    restore_workspace() {
-      if [ -n "''${original_workspace:-}" ]; then
-        ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$original_workspace" >/dev/null 2>&1 || true
-      fi
-    }
-
-    trap 'restore_workspace' EXIT INT TERM
-
-    # Avoid inheriting terminal/project launcher identity into Moonlight itself.
-    while IFS= read -r var_name; do
-      unset "$var_name"
-    done < <(${pkgs.coreutils}/bin/env | ${pkgs.gawk}/bin/awk -F= '/^I3PM_/ { print $1 }')
-
-    phase "starting stream"
-    export SDL_VIDEODRIVER=wayland
-    ${pkgs.moonlight-qt}/bin/moonlight \
-      stream \
-      --resolution 1920x1200 \
-      --fps 60 \
-      --bitrate 10000 \
-      --packet-size 1024 \
-      --video-codec H.264 \
-      --frame-pacing \
-      --audio-config stereo \
-      --display-mode windowed \
-      --no-absolute-mouse \
-      --capture-system-keys always \
-      ryzen \
-      Desktop &
-    moonlight_pid=$!
-
-    attempts=0
-    until ${pkgs.sway}/bin/swaymsg -s "$socket_path" -t get_tree -r | ${pkgs.jq}/bin/jq -e '
-      .. | objects | select((.app_id? // "") == "com.moonlight_stream.Moonlight")
-    ' >/dev/null 2>&1; do
-      if ! ${pkgs.coreutils}/bin/kill -0 "$moonlight_pid" >/dev/null 2>&1; then
-        wait "$moonlight_pid"
-        exit $?
-      fi
-      if [ "$attempts" -ge 40 ]; then
-        break
-      fi
-      attempts=$((attempts + 1))
-      ${pkgs.coreutils}/bin/sleep 0.25
-    done
-
-    # Move Moonlight to its workspace and remove borders (no forced fullscreen)
-    ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] border none' >/dev/null 2>&1 || true
-    ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] move container to workspace "'"$moonlight_workspace"'"' >/dev/null 2>&1 || true
-    ${pkgs.sway}/bin/swaymsg -s "$socket_path" workspace "$moonlight_workspace" >/dev/null 2>&1 || true
-    ${pkgs.sway}/bin/swaymsg -s "$socket_path" '[app_id="com.moonlight_stream.Moonlight"] focus' >/dev/null 2>&1 || true
-
-    wait "$moonlight_pid"
-  '';
+  moonlightRyzenDesktop = mkMoonlightRyzenDesktop {
+    scriptName = "moonlight-ryzen-desktop";
+    logName = "moonlight-ryzen-desktop";
+    workspaceName = "12: Ryzen Desktop";
+    fps = 60;
+    bitrate = 10000;
+  };
+  moonlightRyzenDesktopRemote = mkMoonlightRyzenDesktop {
+    scriptName = "moonlight-ryzen-desktop-remote";
+    logName = "moonlight-ryzen-desktop-remote";
+    workspaceName = "32: Ryzen Desktop Remote";
+    fps = 30;
+    bitrate = 7000;
+  };
 in
 {
   imports = [
@@ -263,6 +290,9 @@ in
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
+
+    # Chrome policy for Claude-in-Chrome extension (force-install in all Chrome profiles)
+    ../modules/desktop/chrome-claude.nix
 
     # Sunshine game streaming (Intel Quick Sync hardware encoding)
     ../modules/desktop/sunshine.nix
@@ -719,6 +749,7 @@ in
     rustdeskConnectRyzen
     moonlight-qt
     moonlightRyzenDesktop
+    moonlightRyzenDesktopRemote
     remmina
     rustdesk-flutter  # Open-source remote desktop
     wayvnc  # VNC server for Wayland remote access

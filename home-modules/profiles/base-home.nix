@@ -75,6 +75,7 @@ in
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
+    ../tools/nix-bloat-audit.nix
     ../tools/vscode.nix
     ../tools/gitkraken.nix
     ../tools/postman.nix

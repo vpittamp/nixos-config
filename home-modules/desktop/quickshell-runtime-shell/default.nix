@@ -2488,7 +2488,7 @@ in
       toastMaxPerOutput = lib.mkOption {
         type = lib.types.int;
         default = 4;
-        description = "Maximum number of visible notification toasts per output.";
+        description = "Maximum number of visible notification toasts per output. Set to 0 to disable overlay toasts.";
       };
 
       defaultTimeoutMs = lib.mkOption {

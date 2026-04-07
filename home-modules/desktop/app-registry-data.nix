@@ -670,6 +670,21 @@ let
     description = "Stream Ryzen DP-1 to ThinkPad via Moonlight. iPad connects to ryzen:5901 for HDMI-A-1";
   })
   ++ lib.optional (hostName == "thinkpad") (mkApp {
+    name = "ryzen-desktop-remote";
+    display_name = "Ryzen Desktop Remote";
+    command = "moonlight-ryzen-desktop-remote";
+    parameters = "";
+    scope = "global";
+    expected_class = "com.moonlight_stream.Moonlight";
+    preferred_workspace = 32;
+    icon = iconPath "ryzen-desktop.svg";
+    nix_package = "pkgs.moonlight-qt";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "ryzen-remote" "moonlight-remote" "sunshine-remote" "tailscale-desktop" ];
+    description = "Tailscale-tuned Moonlight profile for Ryzen at 1920x1200, 30 FPS, and 7 Mbps";
+  })
+  ++ lib.optional (hostName == "thinkpad") (mkApp {
     name = "rustdesk-ryzen";
     display_name = "RustDesk Ryzen";
     command = "rustdesk-connect-ryzen";

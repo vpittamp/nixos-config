@@ -18,6 +18,8 @@ let
     NativeMessagingAllowlist = [
       "com.1password.1password"
       "com.1password.browser_support"
+      "com.anthropic.claude_code_browser_extension"
+      "com.vpittamp.i3pm_url_bridge"
     ];
     PasswordManagerEnabled = false;
     AutofillEnabled = true;
