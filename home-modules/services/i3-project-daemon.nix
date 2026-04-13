@@ -51,8 +51,8 @@ let
   daemonSrc = ../desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon-v135.3";  # Deferred retry on stale Sway IPC
-    version = "1.35.3";  # Fix window filter silently failing on stale connection
+    name = "i3-project-event-daemon-v135.4";  # Serialize IPC to prevent socket corruption
+    version = "1.35.4";  # Lock i3ipc _message to prevent concurrent request interleaving
     src = daemonSrc;
 
     installPhase = ''

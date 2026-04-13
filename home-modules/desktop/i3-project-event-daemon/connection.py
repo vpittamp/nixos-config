@@ -130,6 +130,12 @@ class ResilientI3Connection:
         self.reconnect_delay = 0.1  # Initial delay: 100ms
         self.is_performing_startup_scan = False  # Flag to suppress event handlers during startup scan
 
+        # Serialize all IPC commands through a single lock to prevent
+        # concurrent requests from interleaving on the i3ipc command socket.
+        # i3ipc's _message() is not coroutine-safe: concurrent get_tree()
+        # calls cause response bytes to interleave, corrupting the stream.
+        self._ipc_lock = asyncio.Lock()
+
         # Feature 121: Socket health tracking
         self.reconnection_count = 0
         self.last_connection_time: Optional[float] = None  # time.time() when connected
@@ -258,6 +264,7 @@ class ResilientI3Connection:
             try:
                 if self.conn:
                     # Use get_tree() for health check - it's more likely to fail on stale connections
+                    # The _locked_message wrapper on conn serializes this automatically
                     await self.conn.get_tree()
                     return False
             except Exception as e:
@@ -318,6 +325,20 @@ class ResilientI3Connection:
 
                 # Create async connection
                 self.conn = await aio.Connection(auto_reconnect=True).connect()
+
+                # Wrap the command-channel _message method with a lock to
+                # prevent concurrent IPC requests from interleaving bytes
+                # on the socket.  i3ipc's _message() does send+recv without
+                # any synchronization — two concurrent get_tree() calls
+                # corrupt the stream and raise AssertionError.
+                original_message = self.conn._message
+                lock = self._ipc_lock
+
+                async def _locked_message(*args, **kwargs):
+                    async with lock:
+                        return await original_message(*args, **kwargs)
+
+                self.conn._message = _locked_message
 
                 # Test connection by getting version
                 version = await self.conn.get_version()
@@ -740,6 +761,34 @@ class ResilientI3Connection:
                 raise
             else:
                 logger.info("i3 event loop stopped (shutdown)")
+
+    async def get_tree(self) -> 'aio.Con':
+        """Get the i3/Sway window tree.
+
+        Serialization is handled by the _locked_message wrapper installed
+        on the connection in connect_with_retry().
+        """
+        if not self.conn:
+            raise ConnectionError("No i3 connection")
+        return await self.conn.get_tree()
+
+    async def get_workspaces(self):
+        """Get workspace list."""
+        if not self.conn:
+            raise ConnectionError("No i3 connection")
+        return await self.conn.get_workspaces()
+
+    async def get_outputs(self):
+        """Get output list."""
+        if not self.conn:
+            raise ConnectionError("No i3 connection")
+        return await self.conn.get_outputs()
+
+    async def ipc_command(self, cmd: str):
+        """Run an i3/Sway command."""
+        if not self.conn:
+            raise ConnectionError("No i3 connection")
+        return await self.conn.command(cmd)
 
     def close(self) -> None:
         """Close the i3 connection."""
