@@ -573,6 +573,7 @@ class IPCServer:
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
         self._malformed_json_count: int = 0
+        self._deferred_filter_task: Optional[asyncio.Task] = None
         self._malformed_json_last_at: Optional[str] = None
         self._malformed_json_last_peer: str = ""
         self._malformed_json_last_error: str = ""
@@ -17932,6 +17933,92 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             # Best-effort only; never block an otherwise-successful project switch.
             logger.warning(f"[Feature 101] Failed to record project usage for {qualified_name}: {e}")
 
+    async def _deferred_window_filter_retry(
+        self,
+        *,
+        active_project: Optional[str],
+        active_context_key: Optional[str],
+        log_label: str,
+        max_attempts: int = 3,
+    ) -> None:
+        """Retry window filtering with exponential backoff after initial failure.
+
+        Runs as a background task. Each attempt reconnects the Sway IPC
+        connection before retrying the filter. Gives up after max_attempts.
+        """
+        from .services.tree_cache import initialize_tree_cache
+        from .services.window_filter import filter_windows_by_project
+
+        delays = [1.0, 2.0, 4.0]  # exponential backoff seconds
+        for attempt in range(max_attempts):
+            delay = delays[attempt] if attempt < len(delays) else delays[-1]
+            logger.info(
+                "[Feature 101] Deferred filter retry %d/%d for '%s' in %.1fs",
+                attempt + 1, max_attempts, log_label, delay,
+            )
+            await asyncio.sleep(delay)
+
+            # Check that the active project hasn't changed since we scheduled
+            current_ctx = self._active_runtime_context
+            current_project = current_ctx.get("qualified_name") if current_ctx else None
+            if current_project != active_project:
+                logger.info(
+                    "[Feature 101] Deferred filter cancelled: project changed from '%s' to '%s'",
+                    active_project, current_project,
+                )
+                return
+
+            try:
+                reconnected = await self.i3_connection.validate_and_reconnect_if_needed()
+                if reconnected:
+                    initialize_tree_cache(self.i3_connection.conn, ttl_ms=100.0)
+
+                if not self.i3_connection.conn:
+                    logger.warning("[Feature 101] Deferred filter retry %d: no connection", attempt + 1)
+                    continue
+
+                filter_result = await filter_windows_by_project(
+                    self.i3_connection.conn,
+                    active_project,
+                    self.workspace_tracker,
+                    active_context_key=active_context_key,
+                )
+                logger.info(
+                    "[Feature 101] Deferred filter retry %d succeeded for '%s': %d visible, %d hidden",
+                    attempt + 1, log_label,
+                    filter_result.get("visible", 0),
+                    filter_result.get("hidden", 0),
+                )
+                return
+            except Exception as e:
+                logger.warning(
+                    "[Feature 101] Deferred filter retry %d failed for '%s': %s: %s",
+                    attempt + 1, log_label, type(e).__name__, e,
+                )
+
+        logger.error(
+            "[Feature 101] All %d deferred filter retries exhausted for '%s'",
+            max_attempts, log_label,
+        )
+
+    def _schedule_deferred_filter(
+        self,
+        *,
+        active_project: Optional[str],
+        active_context_key: Optional[str],
+        log_label: str,
+    ) -> None:
+        """Schedule a background deferred filter retry, cancelling any prior one."""
+        if self._deferred_filter_task and not self._deferred_filter_task.done():
+            self._deferred_filter_task.cancel()
+        self._deferred_filter_task = asyncio.create_task(
+            self._deferred_window_filter_retry(
+                active_project=active_project,
+                active_context_key=active_context_key,
+                log_label=log_label,
+            )
+        )
+
     async def _apply_project_window_filter(
         self,
         *,
@@ -18089,6 +18176,12 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 import traceback
                 logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {type(e).__name__}: {e}")
                 logger.debug(f"[Feature 101] Traceback: {traceback.format_exc()}")
+                # Schedule deferred retry so windows eventually get filtered
+                self._schedule_deferred_filter(
+                    active_project=full_qualified_name,
+                    active_context_key=worktree_context.get("context_key"),
+                    log_label=full_qualified_name,
+                )
                 # Notify clients of partial failure - project switched but windows not filtered
                 await self.broadcast_event({
                     "type": "error",
@@ -18182,11 +18275,19 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             logger.info("[Feature 101] Cleared active project context files")
 
             # Apply window filtering for global mode (show all scoped windows)
-            await self._apply_project_window_filter(
-                active_project=None,
-                active_context_key=None,
-                log_label="global mode",
-            )
+            try:
+                await self._apply_project_window_filter(
+                    active_project=None,
+                    active_context_key=None,
+                    log_label="global mode",
+                )
+            except Exception as e:
+                logger.error(f"[Feature 101] Window filtering failed during clear: {type(e).__name__}: {e}")
+                self._schedule_deferred_filter(
+                    active_project=None,
+                    active_context_key=None,
+                    log_label="global mode",
+                )
 
             # Broadcast project change event
             await self.broadcast_event({
