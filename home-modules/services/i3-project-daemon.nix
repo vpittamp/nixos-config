@@ -51,8 +51,8 @@ let
   daemonSrc = ../desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon-v135.2";  # Return structured not-found response
-    version = "1.35.2";  # Feature 135: Return {window_id: null} instead of null
+    name = "i3-project-event-daemon-v135.3";  # Deferred retry on stale Sway IPC
+    version = "1.35.3";  # Fix window filter silently failing on stale connection
     src = daemonSrc;
 
     installPhase = ''
