@@ -762,6 +762,7 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
     result = server_local._execute_launch_spec(spec)
 
     assert result["success"] is True
+    assert "--property=KillMode=process" not in captured["cmd"]
     assert captured["cmd"][-3] == "bash"
     assert captured["cmd"][-2] == "-lc"
     assert "project-command-launch.sh" in captured["cmd"][-1]
@@ -801,6 +802,7 @@ def test_execute_launch_spec_ssh_current_host_uses_local_terminal_helper(server_
     result = server_ssh_current_host._execute_launch_spec(spec)
 
     assert result["success"] is True
+    assert "--property=KillMode=process" in captured["cmd"]
     assert captured["cmd"][-3] == "bash"
     assert captured["cmd"][-2] == "-lc"
     assert "project-terminal-launch.sh" in captured["cmd"][-1]

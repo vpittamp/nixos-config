@@ -12319,6 +12319,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "--working-directory",
             str(workdir),
         ]
+        if terminal_mode == "managed_project_terminal" and launch_transport == "local_helper":
+            # This path may create the shared tmux server. Keep unit teardown from
+            # reaping that server and every pane attached to the canonical socket.
+            systemd_cmd.append("--property=KillMode=process")
         for key, value in environment.items():
             systemd_cmd.extend(["--setenv", f"{key}={value}"])
         if shell_command:
