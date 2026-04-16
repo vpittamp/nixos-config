@@ -23,7 +23,7 @@ from ..models.window_command import WindowCommand, CommandBatch, CommandType
 from ..models.performance_metrics import OperationMetrics, ProjectSwitchMetrics
 from ..worktree_utils import canonicalize_context_key, parse_mark  # Feature 101
 from .command_batch import CommandBatchService
-from .tree_cache import TreeCacheService, get_tree_cache
+from .tree_cache import get_tree_cache_for_connection
 from .performance_tracker import PerformanceTrackerService, get_performance_tracker
 # Feature 101/103: Import window tracer for visibility and filter decision events
 from .window_tracer import get_tracer, TraceEventType
@@ -686,7 +686,7 @@ async def filter_windows_by_project(
         logger.debug(f"[Trace] Error broadcasting project switch: {e}")
 
     # Feature 091: Use tree cache to eliminate duplicate queries
-    tree_cache = get_tree_cache()
+    tree_cache = get_tree_cache_for_connection(conn)
     if tree_cache:
         tree = await tree_cache.get_tree()
         cache_hits = 1 if tree_cache.is_cached else 0
@@ -1264,7 +1264,7 @@ async def filter_windows_by_project(
             if tracer:
                 # Re-fetch the tree to get updated window states
                 tree_refresh_start = time.perf_counter()
-                tree_cache = get_tree_cache()
+                tree_cache = get_tree_cache_for_connection(conn)
                 if tree_cache:
                     # Invalidate cache to get fresh state
                     tree_cache.invalidate("post-restore trace")

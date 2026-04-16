@@ -247,16 +247,61 @@ async def test_apply_project_window_filter_retries_after_reconnect(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_apply_project_window_filter_raises_when_reconnect_fails(monkeypatch):
+async def test_apply_project_window_filter_refreshes_cache_without_reconnect(monkeypatch):
     state_manager = state_module.StateManager()
     server = ipc_server_module.IPCServer(state_manager)
-    stale_conn = SimpleNamespace(name="stale")
+    current_conn = SimpleNamespace(name="current")
     server.i3_connection = SimpleNamespace(
-        conn=stale_conn,
+        conn=current_conn,
         validate_and_reconnect_if_needed=AsyncMock(return_value=False),
     )
 
+    filter_calls = []
+
     async def fake_filter_windows_by_project(conn, active_project, workspace_tracker, active_context_key=None):
+        filter_calls.append((conn, active_project, active_context_key))
+        if len(filter_calls) == 1:
+            raise ConnectionError("stale tree cache")
+        return {"visible": 1, "hidden": 4}
+
+    initialize_tree_cache = Mock()
+    monkeypatch.setattr(window_filter_module, "filter_windows_by_project", fake_filter_windows_by_project)
+    monkeypatch.setattr(tree_cache_module, "initialize_tree_cache", initialize_tree_cache)
+
+    result = await server._apply_project_window_filter(
+        active_project="vpittamp/nixos-config:main",
+        active_context_key="vpittamp/nixos-config:main::host::ryzen",
+        log_label="vpittamp/nixos-config:main",
+    )
+
+    assert result == {"visible": 1, "hidden": 4}
+    assert filter_calls == [
+        (current_conn, "vpittamp/nixos-config:main", "vpittamp/nixos-config:main::host::ryzen"),
+        (current_conn, "vpittamp/nixos-config:main", "vpittamp/nixos-config:main::host::ryzen"),
+    ]
+    server.i3_connection.validate_and_reconnect_if_needed.assert_awaited_once()
+    initialize_tree_cache.assert_called_once_with(current_conn, ttl_ms=100.0)
+
+
+@pytest.mark.asyncio
+async def test_apply_project_window_filter_raises_when_connection_unavailable_after_reconnect(monkeypatch):
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+    stale_conn = SimpleNamespace(name="stale")
+
+    async def reconnect_fails():
+        server.i3_connection.conn = None
+        return False
+
+    server.i3_connection = SimpleNamespace(
+        conn=stale_conn,
+        validate_and_reconnect_if_needed=AsyncMock(side_effect=reconnect_fails),
+    )
+
+    filter_calls = []
+
+    async def fake_filter_windows_by_project(conn, active_project, workspace_tracker, active_context_key=None):
+        filter_calls.append((conn, active_project, active_context_key))
         raise ConnectionError("stale tree")
 
     initialize_tree_cache = Mock()
@@ -271,4 +316,7 @@ async def test_apply_project_window_filter_raises_when_reconnect_fails(monkeypat
         )
 
     server.i3_connection.validate_and_reconnect_if_needed.assert_awaited_once()
+    assert filter_calls == [
+        (stale_conn, "vpittamp/nixos-config:main", "vpittamp/nixos-config:main::host::ryzen"),
+    ]
     initialize_tree_cache.assert_not_called()

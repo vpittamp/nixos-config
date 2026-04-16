@@ -17970,8 +17970,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 return
 
             try:
-                reconnected = await self.i3_connection.validate_and_reconnect_if_needed()
-                if reconnected:
+                await self.i3_connection.validate_and_reconnect_if_needed()
+                if self.i3_connection.conn:
                     initialize_tree_cache(self.i3_connection.conn, ttl_ms=100.0)
 
                 if not self.i3_connection.conn:
@@ -18049,7 +18049,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 log_label,
             )
             try:
-                reconnected = await self.i3_connection.validate_and_reconnect_if_needed()
+                await self.i3_connection.validate_and_reconnect_if_needed()
             except Exception as reconnect_error:
                 logger.error(
                     "[Feature 101] Failed to reconnect stale i3 connection while filtering '%s': %s: %s",
@@ -18059,9 +18059,12 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 )
                 raise filter_error
 
-            if not reconnected or not self.i3_connection.conn:
+            if not self.i3_connection.conn:
                 raise filter_error
 
+            # Even when validation says the current connection is healthy, the
+            # module-level tree cache may still be bound to an older connection.
+            # Refresh it before retrying the filter.
             initialize_tree_cache(self.i3_connection.conn, ttl_ms=100.0)
             filter_result = await filter_windows_by_project(
                 self.i3_connection.conn,

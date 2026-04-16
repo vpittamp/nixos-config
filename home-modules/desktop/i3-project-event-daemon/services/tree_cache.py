@@ -107,6 +107,7 @@ class TreeCacheService:
         try:
             tree = await self.conn.get_tree()
         except Exception as e:
+            self._cache = None
             # Connection may be stale - raise with context for better debugging
             logger.error(f"[Feature 091] Tree cache get_tree() failed: {type(e).__name__}: {e}")
             raise ConnectionError(f"Failed to get Sway tree (connection may be stale): {type(e).__name__}: {e}") from e
@@ -230,3 +231,21 @@ def initialize_tree_cache(conn: Connection, ttl_ms: float = 100.0) -> TreeCacheS
     _tree_cache_instance = TreeCacheService(conn, ttl_ms=ttl_ms)
     logger.info(f"[Feature 091] Tree cache initialized (TTL: {ttl_ms}ms)")
     return _tree_cache_instance
+
+
+def get_tree_cache_for_connection(conn: Connection, ttl_ms: float = 100.0) -> TreeCacheService:
+    """Return a tree cache bound to the provided live connection.
+
+    The daemon can reconnect Sway IPC while module-level services still hold a
+    cache instance from the old connection. Project filtering must never reuse
+    that stale cache, because one bad get_tree() then keeps failing every switch.
+    """
+    global _tree_cache_instance
+
+    if _tree_cache_instance is not None and _tree_cache_instance.conn is conn:
+        return _tree_cache_instance
+
+    if _tree_cache_instance is not None:
+        logger.info("[Feature 091] Tree cache connection changed; reinitializing")
+
+    return initialize_tree_cache(conn, ttl_ms=ttl_ms)
