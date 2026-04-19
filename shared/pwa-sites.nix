@@ -1849,6 +1849,24 @@ let
       preferred_workspace = 158;
       routing_domains = [ "mediaite.com" "www.mediaite.com" ];
     }
+
+    # AutoKube Hub (via Tailscale)
+    {
+      name = "AutoKube Hub";
+      url = "https://autokube-hub.tail286401.ts.net";
+      domain = "autokube-hub.tail286401.ts.net";
+      icon = iconPath "autokube.svg";
+      description = "AutoKube - Self-hosted Kubernetes management UI with AI assistant";
+      categories = "Development;Network;System;";
+      keywords = "autokube;kubernetes;k8s;dashboard;management;ai;cluster;";
+      scope = "https://autokube-hub.tail286401.ts.net/";
+      ulid = "36GVEYRAD75KN7R1D8TDHZTRW1";  # Generated 2026-04-19
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 164;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "autokube-hub.tail286401.ts.net" ];
+    }
   ];
 
   # Filter and format sites
