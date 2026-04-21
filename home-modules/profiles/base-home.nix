@@ -88,6 +88,7 @@ in
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix
     ../ai-assistants/codex.nix
+    ../ai-assistants/browser-mcp-lifecycle.nix
     ../ai-assistants/copilot-cli.nix
     ../ai-assistants/gemini-cli.nix
     ../ai-assistants/holmesgpt.nix

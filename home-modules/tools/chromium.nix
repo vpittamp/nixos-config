@@ -1,6 +1,7 @@
 { config, pkgs, lib, osConfig ? null, ... }:
 
 let
+  sharedBrowserMcp = import ../ai-assistants/browser-mcp-shared.nix { inherit config lib pkgs; };
   hostName =
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
@@ -8,6 +9,11 @@ let
 
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwaSites = pwaSitesConfig.pwaSites;
+
+  ryzenCaptureSafeChromeArgs = lib.optionals (hostName == "ryzen") [
+    "--disable-accelerated-video-decode"
+    "--disable-zero-copy"
+  ];
 
   pwaRouteEntries =
     builtins.concatMap
@@ -941,6 +947,7 @@ let
       set -euo pipefail
       cmd=(
         ${pkgs.google-chrome}/bin/google-chrome-stable
+        ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
         "$@"
       )
@@ -973,16 +980,19 @@ let
     ];
   };
 
-  # Dedicated debuggable Chrome instance for Codex/DevTools attachment.
-  # Keep this separate from the main browser so remote debugging is deterministic.
-  chromeCodexDevtoolsWrapper = mkChromeWrapper {
-    name = "google-chrome-codex-devtools";
-    extraArgs = [
-      "--remote-debugging-port=9222"
-      "--user-data-dir=${config.xdg.dataHome}/codex/browser-profiles/chrome-devtools"
-      "--no-first-run"
-    ];
-  };
+  # Dedicated debuggable Chrome instance for assistant DevTools attachment.
+  # This intentionally avoids the onepassword group wrapper so lifecycle/health
+  # tooling can manage the process directly.
+  chromeCodexDevtoolsWrapper = lib.hiPrio (pkgs.writeShellScriptBin "google-chrome-codex-devtools" ''
+    set -euo pipefail
+    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)} \
+      --remote-debugging-address=${sharedBrowserMcp.chromeDevtoolsBrowserHost} \
+      --remote-debugging-port=${toString sharedBrowserMcp.chromeDevtoolsBrowserPort} \
+      --user-data-dir=${lib.escapeShellArg sharedBrowserMcp.chromeDevtoolsProfileDir} \
+      --no-first-run \
+      "$@"
+  '');
 
   # Cluster CA certificate for *.cnoe.localtest.me
   # This is the CA certificate (with CA:TRUE) that signs the server certificates

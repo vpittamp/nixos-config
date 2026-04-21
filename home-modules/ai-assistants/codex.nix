@@ -2,6 +2,7 @@
 
 let
   repoRoot = ../../.;
+  sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
   # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
   # Installed into ~/.codex/skills/create-mcp-app
@@ -37,16 +38,14 @@ let
   # Browser and desktop MCP servers only make sense in a real Sway session.
   # The Codex module is also imported by container profiles, so keep docs
   # servers available there while omitting local desktop/browser integrations.
-  hasSwaySession = pkgs.stdenv.isLinux && lib.attrByPath [ "wayland" "windowManager" "sway" "enable" ] false config;
-  enableDesktopMcpServers = hasSwaySession;
-  enableBrowserMcpServers = hasSwaySession;
+  enableDesktopMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
+  enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
 
   nodeNpx = "${pkgs.nodejs}/bin/npx";
   codexMcpStateRoot = "${config.xdg.stateHome}/codex/mcp";
-  codexBrowserProfilesRoot = "${config.xdg.dataHome}/codex/browser-profiles";
-  playwrightProfileDir = "${codexBrowserProfilesRoot}/playwright";
+  playwrightProfileDir = sharedBrowserMcp.codexPlaywrightProfileDir;
   playwrightOutputDir = "${codexMcpStateRoot}/playwright";
-  chromeDevtoolsBrowserUrl = "http://127.0.0.1:9222";
+  chromeDevtoolsBrowserUrl = sharedBrowserMcp.chromeDevtoolsBrowserUrl;
 
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";

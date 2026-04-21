@@ -2,6 +2,7 @@
 
 let
   repoRoot = ../../.;
+  sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
   # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
   # Installed into ~/.gemini/skills/create-mcp-app so Gemini CLI can discover it as a user skill.
@@ -17,14 +18,12 @@ let
   # All AI assistants now use repoRoot consistently
 
   # Browser MCP servers only make sense in a real desktop session.
-  hasSwaySession = pkgs.stdenv.isLinux && lib.attrByPath [ "wayland" "windowManager" "sway" "enable" ] false config;
-  enableBrowserMcpServers = hasSwaySession;
+  enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
   nodeNpx = "${pkgs.nodejs}/bin/npx";
   geminiMcpStateRoot = "${config.xdg.stateHome}/gemini/mcp";
-  geminiBrowserProfilesRoot = "${config.xdg.dataHome}/gemini/browser-profiles";
-  geminiPlaywrightProfileDir = "${geminiBrowserProfilesRoot}/playwright";
+  geminiPlaywrightProfileDir = sharedBrowserMcp.geminiPlaywrightProfileDir;
   geminiPlaywrightOutputDir = "${geminiMcpStateRoot}/playwright";
-  chromeDevtoolsBrowserUrl = "http://127.0.0.1:9222";
+  chromeDevtoolsBrowserUrl = sharedBrowserMcp.chromeDevtoolsBrowserUrl;
 
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";

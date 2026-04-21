@@ -2,6 +2,7 @@
 
 let
   repoRoot = ../../.;
+  sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
   # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
   # Installed into ~/.claude/skills/create-mcp-app
@@ -46,10 +47,9 @@ let
   enableClaudeCode = pkgs.stdenv.isLinux;
 
   # Browser MCP servers only make sense in a real desktop session.
-  hasSwaySession = pkgs.stdenv.isLinux && lib.attrByPath [ "wayland" "windowManager" "sway" "enable" ] false config;
-  enableBrowserMcpServers = hasSwaySession;
+  enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
   nodeNpx = "${pkgs.nodejs}/bin/npx";
-  chromeDevtoolsBrowserUrl = "http://127.0.0.1:9222";
+  chromeDevtoolsBrowserUrl = sharedBrowserMcp.chromeDevtoolsBrowserUrl;
 
   # Chromium configuration - only define when needed to avoid evaluation on Darwin
   # On Linux: use Nix-managed Chromium
@@ -601,8 +601,8 @@ lib.mkIf enableClaudeCode {
       };
     } // lib.optionalAttrs enableBrowserMcpServers {
       # Chrome DevTools MCP server for debugging and performance.
-      # Attach to the dedicated debug Chrome instance launched via
-      # `google-chrome-codex-devtools` instead of spawning an isolated browser.
+      # Attach to the managed shared debug Chrome service instead of
+      # spawning an isolated browser per assistant session.
       # Provides: take_snapshot, click, fill, navigate_page, evaluate_script, etc.
       chrome-devtools = {
         command = nodeNpx;

@@ -36,6 +36,36 @@ interface RemotePushHealth {
   consecutive_failures: number;
 }
 
+interface McpBrowserCandidate {
+  pid: number;
+  ppid: number;
+  age_seconds: number;
+  cmdline: string;
+}
+
+interface McpBrowserHealth {
+  healthy: boolean;
+  issues: string[];
+  endpoint_url: string;
+  managed_browser_service: {
+    name: string;
+    active: boolean;
+    profile_dir: string;
+    port: number;
+  };
+  reaper_timer: {
+    name: string;
+    active: boolean;
+  };
+  listener: {
+    line: string;
+    pid: number | null;
+    cmdline: string;
+    matches_expected_profile: boolean;
+  };
+  stale_candidates: McpBrowserCandidate[];
+}
+
 interface HealthReport {
   timestamp: string;
   overall_status: "ok" | "warn" | "fail";
@@ -55,6 +85,7 @@ interface HealthReport {
     service_unit: PathCheck;
   };
   remote_push: RemotePushHealth | null;
+  mcp_browser_runtime: McpBrowserHealth | null;
 }
 
 const OPTIONAL_USER_UNIT_PREFIXES = ["wayvnc@"];
@@ -190,6 +221,18 @@ async function loadRemotePushState(): Promise<RemotePushHealth | null> {
   }
 }
 
+async function loadMcpBrowserHealth(): Promise<McpBrowserHealth | null> {
+  const result = await runCommand(["mcp-browser-lifecycle", "health"]);
+  if (result.code !== 0 || !result.stdout) {
+    return null;
+  }
+  try {
+    return JSON.parse(result.stdout) as McpBrowserHealth;
+  } catch {
+    return null;
+  }
+}
+
 async function loadHomeManagerGenerationFromService(): Promise<string> {
   const result = await runCommand([
     "systemctl",
@@ -236,6 +279,8 @@ async function collectHealthReport(): Promise<HealthReport> {
     loadUnitStatus("i3-project-daemon.service", "user"),
     loadUnitStatus("otel-ai-monitor.service", "user"),
     loadUnitStatus("quickshell-runtime-shell.service", "user"),
+    loadUnitStatus("mcp-chrome-devtools-browser.service", "user"),
+    loadUnitStatus("mcp-browser-orphan-reaper.timer", "user"),
     loadUnitStatus("home-manager-vpittamp.service", "system"),
   ]);
 
@@ -267,6 +312,7 @@ async function collectHealthReport(): Promise<HealthReport> {
   const daemonSocketPath = getSocketPath();
   const daemonSocketExists = await Deno.stat(daemonSocketPath).then(() => true).catch(() => false);
   const remotePush = await loadRemotePushState();
+  const mcpBrowserRuntime = await loadMcpBrowserHealth();
 
   const coreIssues: string[] = [];
   for (const unit of coreUnits) {
@@ -297,6 +343,11 @@ async function collectHealthReport(): Promise<HealthReport> {
       : label;
     optionalIssues.push(detail);
   }
+  if (!mcpBrowserRuntime) {
+    coreIssues.push("mcp browser health helper unavailable");
+  } else if (!mcpBrowserRuntime.healthy) {
+    coreIssues.push(...mcpBrowserRuntime.issues.map((issue) => `mcp browsers: ${issue}`));
+  }
 
   const overallStatus: HealthReport["overall_status"] = coreIssues.length > 0
     ? "fail"
@@ -323,6 +374,7 @@ async function collectHealthReport(): Promise<HealthReport> {
       service_unit: shellServiceCheck,
     },
     remote_push: remotePush,
+    mcp_browser_runtime: mcpBrowserRuntime,
   };
 }
 
@@ -376,6 +428,44 @@ function printReport(report: HealthReport): void {
     }
     if (report.remote_push.last_error_summary) {
       console.log(`  last error ${yellow(report.remote_push.last_error_summary)}`);
+    }
+    console.log("");
+  }
+
+  if (report.mcp_browser_runtime) {
+    const runtime = report.mcp_browser_runtime;
+    console.log(bold("MCP Browsers"));
+    console.log(
+      `  browser service ${
+        runtime.managed_browser_service.active ? green("active") : red("inactive")
+      } ${dim(runtime.managed_browser_service.name)}`,
+    );
+    console.log(
+      `  reaper timer ${runtime.reaper_timer.active ? green("active") : red("inactive")} ${
+        dim(runtime.reaper_timer.name)
+      }`,
+    );
+    console.log(
+      `  endpoint ${
+        runtime.listener.pid && runtime.listener.matches_expected_profile
+          ? green("matched")
+          : red("drift")
+      } ${dim(runtime.endpoint_url)}`,
+    );
+    if (runtime.listener.pid) {
+      console.log(`  listener pid ${runtime.listener.pid} ${dim(runtime.listener.cmdline || "(unknown)")}`);
+    }
+    if (runtime.stale_candidates.length > 0) {
+      console.log(`  stale processes ${red(String(runtime.stale_candidates.length))}`);
+      for (const candidate of runtime.stale_candidates.slice(0, 5)) {
+        console.log(
+          `    ${candidate.pid} ${dim(`${candidate.age_seconds}s`)} ${
+            dim(candidate.cmdline || "(unknown)")
+          }`,
+        );
+      }
+    } else {
+      console.log(`  stale processes ${green("0")}`);
     }
     console.log("");
   }
