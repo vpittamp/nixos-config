@@ -14,6 +14,25 @@ let
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
+  # Auto-discover repo-managed Gemini skills under .gemini/skills/.
+  # Each entry becomes a home.file link, then setupGeminiSkills materializes
+  # SKILL.md as a real file so Gemini's discovery (which doesn't follow symlinks)
+  # can find it.
+  geminiSkillsDir = repoRoot + "/.gemini/skills";
+  hasGeminiSkillsDir = builtins.pathExists geminiSkillsDir;
+  hasRepoCreateMcpAppSkill = hasGeminiSkillsDir && builtins.pathExists (geminiSkillsDir + "/create-mcp-app");
+
+  repoGeminiSkillEntries = if hasGeminiSkillsDir then builtins.readDir geminiSkillsDir else {};
+  repoGeminiSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") repoGeminiSkillEntries;
+  repoGeminiSkillHomeFiles = lib.mapAttrs'
+    (name: _:
+      lib.nameValuePair ".gemini/skills/${name}" {
+        source = geminiSkillsDir + "/${name}";
+        recursive = true;
+      }
+    )
+    repoGeminiSkillDirs;
+
   # Alias for backward compatibility with patterns using 'self'
   # All AI assistants now use repoRoot consistently
 
@@ -335,6 +354,18 @@ let
   };
 in
 {
+  # Install repo-managed Gemini skills into ~/.gemini/skills/.
+  # Each skill is linked recursively; setupGeminiSkills then materializes
+  # SKILL.md as a real file so Gemini can discover it (it does not follow symlinks).
+  home.file =
+    repoGeminiSkillHomeFiles
+    // (lib.optionalAttrs (!hasRepoCreateMcpAppSkill) {
+      ".gemini/skills/create-mcp-app" = {
+        source = createMcpAppSkillDir;
+        recursive = true;
+      };
+    });
+
   home.activation.setupGeminiMcpRuntimeDirs = lib.mkIf enableBrowserMcpServers (lib.hm.dag.entryAfter ["writeBoundary"] ''
     set -euo pipefail
 
@@ -444,44 +475,46 @@ EOF
     fi
   '';
 
-  # Install Gemini CLI Agent Skills into ~/.gemini/skills/
-  #
-  # Note: home-manager normally symlinks files into the Nix store, but Gemini/Codex skills
-  # discovery expects real files. We materialize SKILL.md and minimal UI metadata as regular
-  # files under ~/.gemini/skills so `gemini skills list` can discover them reliably.
+  # Materialize Gemini skill SKILL.md files as real files.
+  # home.file installs the skill trees as symlinks (into the Nix store or repo),
+  # but Gemini's skill discovery does not follow symlinks for SKILL.md. Replace
+  # any symlinked SKILL.md with a regular-file copy of its target.
   home.activation.setupGeminiSkills = lib.hm.dag.entryAfter ["writeBoundary"] ''
     set -euo pipefail
 
     GEMINI_DIR="$HOME/.gemini"
     SKILLS_ROOT="$GEMINI_DIR/skills"
-    SKILL_DIR="$SKILLS_ROOT/create-mcp-app"
 
-    $DRY_RUN_CMD mkdir -p "$SKILL_DIR"
+    $DRY_RUN_CMD mkdir -p "$SKILLS_ROOT"
     $DRY_RUN_CMD chmod 700 "$SKILLS_ROOT" || true
 
-    # Materialize SKILL.md as a real file (not a symlink).
-    if [ ! -f "$SKILL_DIR/SKILL.md" ] || [ -L "$SKILL_DIR/SKILL.md" ]; then
-      $DRY_RUN_CMD rm -f "$SKILL_DIR/SKILL.md"
-      $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "${createMcpAppSkillDir}/SKILL.md" "$SKILL_DIR/SKILL.md"
-    else
-      # Keep it up to date if the Nix-pinned source changes.
-      if ! ${pkgs.diffutils}/bin/cmp -s "$SKILL_DIR/SKILL.md" "${createMcpAppSkillDir}/SKILL.md"; then
-        $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "${createMcpAppSkillDir}/SKILL.md" "$SKILL_DIR/SKILL.md"
+    for d in "$SKILLS_ROOT"/*; do
+      [ -d "$d" ] || continue
+      skill_md="$d/SKILL.md"
+      if [ -L "$skill_md" ]; then
+        target="$(${pkgs.coreutils}/bin/readlink -f "$skill_md" || true)"
+        if [ -n "$target" ] && [ -f "$target" ]; then
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/rm -f "$skill_md"
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "$target" "$skill_md"
+        fi
       fi
-    fi
+    done
 
-    # Optional UI metadata file (improves how the skill appears in some UIs).
-    $DRY_RUN_CMD mkdir -p "$SKILL_DIR/agents"
-    TMP="$(${pkgs.coreutils}/bin/mktemp)"
-    ${pkgs.coreutils}/bin/cat > "$TMP" <<'EOF'
+    # create-mcp-app: install minimal UI metadata so it renders nicely in some UIs.
+    SKILL_DIR="$SKILLS_ROOT/create-mcp-app"
+    if [ -d "$SKILL_DIR" ]; then
+      $DRY_RUN_CMD mkdir -p "$SKILL_DIR/agents"
+      TMP="$(${pkgs.coreutils}/bin/mktemp)"
+      ${pkgs.coreutils}/bin/cat > "$TMP" <<'EOF'
 interface:
   display_name: "Create MCP App"
   short_description: "Scaffold MCP Apps (tool + UI resource) using @modelcontextprotocol/ext-apps patterns"
 EOF
-    if [ ! -f "$SKILL_DIR/agents/openai.yaml" ] || ! ${pkgs.diffutils}/bin/cmp -s "$TMP" "$SKILL_DIR/agents/openai.yaml"; then
-      $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "$TMP" "$SKILL_DIR/agents/openai.yaml"
+      if [ ! -f "$SKILL_DIR/agents/openai.yaml" ] || ! ${pkgs.diffutils}/bin/cmp -s "$TMP" "$SKILL_DIR/agents/openai.yaml"; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 0644 "$TMP" "$SKILL_DIR/agents/openai.yaml"
+      fi
+      $DRY_RUN_CMD rm -f "$TMP"
     fi
-    $DRY_RUN_CMD rm -f "$TMP"
   '';
 
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
