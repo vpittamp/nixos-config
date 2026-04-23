@@ -1,15 +1,27 @@
-# Runbook: Debug Tailscale Funnel orphan tag (webhook → hub Tekton broken)
+# Runbook: Debug hub Tekton webhook path (GitHub → outer-loop)
 
-## Symptoms / when to use
+## Triage — which failure mode?
 
-GitHub webhook deliveries to the hub Tekton outer-loop never trigger a build. Concrete symptoms:
+Webhook deliveries to hub Tekton can fail at multiple points. Check `gh api repos/PittampalliOrg/workflow-builder/hooks/<id>/deliveries` and triage by `status_code`:
+
+| `status_code` | DNS resolves | Symptom | Where to look |
+|---|---|---|---|
+| `0` (timeout) | NXDOMAIN | Funnel public DNS missing — GitHub can't connect at all | Below: "Funnel orphan tag" |
+| `202` (accepted) | resolves | EL accepted webhook but no PipelineRun appeared | Below: "EL processing failure" |
+| `4xx`/`5xx` (HTTP error) | resolves | EL rejected the payload | Check EL pod logs (`kubectl logs -n tekton-pipelines deploy/el-github-outer-loop`) for the corresponding `/triggers-eventid` and read its error |
+
+The webhook path is: GitHub → Tailscale Funnel public DNS (`tekton-hub.tail286401.ts.net`) → `ts-tekton-github-triggers` operator-managed proxy pod → `el-github-outer-loop` Service (in `tekton-pipelines` ns — NOT the same-named EL in `workflow-builder-builds` ns, which is unused/legacy) → EventListener → CEL/github interceptors → PipelineRun.
+
+---
+
+## Funnel orphan tag (status_code=0, NXDOMAIN)
+
+### Symptoms
 
 - `gh api repos/PittampalliOrg/workflow-builder/hooks/<id>/deliveries` shows recent deliveries with `status_code: 0` and `duration ~0.02s` (no response body received)
 - No PipelineRuns on hub Tekton: `kubectl --kubeconfig ~/.kube/hub-config get pipelineruns -A --sort-by=.metadata.creationTimestamp | tail`
 - Ryzen has built and committed `chore(dev-images): deploy ... to ryzen` commits on `gitea-ryzen/main` but the matching tag never appeared on ghcr.io
 - `dig @1.1.1.1 tekton-hub.tail286401.ts.net` returns NXDOMAIN
-
-The webhook path is: GitHub → Tailscale Funnel public DNS (`tekton-hub.tail286401.ts.net`) → `ts-tekton-github-triggers` operator-managed proxy pod → `el-github-outer-loop` Service → EventListener → PipelineRun. When Funnel's public DNS is missing, GitHub can't connect at all.
 
 The almost-always cause: the proxy pod is tagged with a tag that's no longer in `policy.hujson` ("orphan tag"). Tailscale's control plane drops the funnel cap silently — the operator pod still claims `Funnel on` locally, but no public DNS gets registered.
 
@@ -127,6 +139,98 @@ kubectl --kubeconfig ~/.kube/hub-config get pipelineruns -A --sort-by=.metadata.
 
 A historical example: commit `1d3301c6` ("chore: persist local stacks changes", 2026-03-15) removed `tag:ts-hub-webhook`, `tag:ts-hub-ui`, `tag:ts-spoke-ui`, `tag:ts-ingress-proxy`, `tag:spoke-api`, `tag:spoke-ingress` all in one cleanup. Any Tailscale operator-managed proxy provisioned before that commit could have orphan tags.
 
-## Cleanup follow-up
+### Cleanup follow-up
 
 If you used Option A, the orphan tag is back in policy as a transitional measure. Plan to re-create the proxy with `PROXY_TAGS=tag:k8s` (current operator default) and remove the orphan tag from policy when convenient.
+
+---
+
+## EL processing failure (status_code=202, no PipelineRun)
+
+### Symptoms
+
+- `gh api .../hooks/<id>/deliveries` shows `status_code: 202` (so the Funnel triage above doesn't apply — DNS resolves and the EL accepts the request)
+- No PipelineRun appears on hub for the commit
+- `kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines logs deploy/el-github-outer-loop --tail=200` shows error lines like:
+
+```
+{"severity":"error","timestamp":"...","logger":"eventlistener","caller":"sink/sink.go:413",
+ "message":"Post \"\": unsupported protocol scheme \"\"","commit":"8c160e2",
+ "eventlistener":"github-outer-loop","namespace":"tekton-pipelines",
+ "/triggers-eventid":"<uuid>","/trigger":"workflow-builder-push"}
+```
+
+The `/triggers-eventid` correlates with a webhook delivery at the same timestamp. The EL receives the webhook, identifies the trigger (`workflow-builder-push`), then fails to dispatch with an empty target URL.
+
+### Diagnostic
+
+1. **Confirm which EL the Funnel actually targets** (there are two ELs with similar names; only one serves GitHub):
+
+```bash
+# Funnel proxy serve config
+POD=$(kubectl --kubeconfig ~/.kube/hub-config get pods -n tailscale -o name | grep tekton-github | head -1 | sed 's|pod/||')
+kubectl --kubeconfig ~/.kube/hub-config -n tailscale exec $POD -- tailscale serve status
+# Note the upstream IP, e.g. http://10.111.137.150:8080
+
+# Which Service is that IP?
+kubectl --kubeconfig ~/.kube/hub-config get svc -A \
+  -o jsonpath='{range .items[*]}{.spec.clusterIP} {.metadata.namespace}/{.metadata.name}{"\n"}{end}' \
+  | grep <ip>
+# Expected: tekton-pipelines/el-github-outer-loop
+```
+
+2. **Confirm RBAC is fine** (the obvious-looking suspect, but usually not the cause):
+
+```bash
+SA=$(kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines get deploy el-github-outer-loop \
+  -o jsonpath='{.spec.template.spec.serviceAccountName}')
+kubectl --kubeconfig ~/.kube/hub-config auth can-i list clustertriggerbindings.triggers.tekton.dev \
+  --as=system:serviceaccount:tekton-pipelines:$SA
+kubectl --kubeconfig ~/.kube/hub-config auth can-i list clusterinterceptors.triggers.tekton.dev \
+  --as=system:serviceaccount:tekton-pipelines:$SA
+# Both `yes` → RBAC is fine; the bug is elsewhere
+```
+
+3. **Confirm ClusterInterceptors are healthy**:
+
+```bash
+kubectl --kubeconfig ~/.kube/hub-config get clusterinterceptor github cel \
+  -o jsonpath='{range .items[*]}{.metadata.name}: status.address.url={.status.address.url}{"\n"}{end}'
+# Should both show https://tekton-triggers-core-interceptors.tekton-pipelines.svc:8443/<name>
+
+# And the backend service is up
+kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines get pods -l app.kubernetes.io/component=interceptors
+```
+
+4. **Verify other ELs DO use the same interceptor service successfully** (confirms the interceptor backend isn't the problem):
+
+```bash
+kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines logs deploy/tekton-triggers-core-interceptors --tail=50 \
+  | grep -E "Interceptor response is" | head -5
+# Should show recent traffic from el-workflow-builder-image-builds (the other EL) responding ok
+```
+
+### Workaround (the path that has worked all session)
+
+Until the root cause is fixed, use ryzen Tekton + manual mirror to ship images to ghcr.io:
+
+1. Push to `gitea-ryzen` (this triggers ryzen Tekton inner-loop instead of hub outer-loop):
+   ```bash
+   git push gitea-ryzen HEAD:main
+   ```
+2. Wait for `workflow-builder-image-build-*` PipelineRun on `kubectl -n tekton-pipelines get pipelinerun` (ryzen kind cluster, not hub).
+3. Mirror the new image: `runbooks/mirror-image-gitea-to-ghcr.md`.
+4. Bump `release-pins/workflow-builder-images.yaml` on stacks origin/main: `runbooks/promote-image-to-spokes.md`.
+
+### Open
+
+Root cause not identified at the time this runbook was written. Hypotheses tested and ruled out:
+- RBAC (`auth can-i` returns yes for clustertriggerbindings + clusterinterceptors)
+- ClusterInterceptor URL resolution (status.address.url is set, backend service is healthy)
+- Tekton Triggers version mismatch (hub at v0.35.0, ryzen at v0.35.0 — same)
+- EL pod stale cache (`kubectl rollout restart deploy/el-github-outer-loop` did not recover)
+
+Next things to try:
+- Recreate the EL CR itself (`kubectl delete el github-outer-loop` then re-apply from stacks/manifests). Slightly destructive — will drop in-flight requests for ~30s — so do it during a quiet period.
+- Compare hub's `el-github-outer-loop` EL spec field-by-field to ryzen's working `el-workflow-builder-image-builds` for any structural difference (e.g., `resources` field set to `{}` vs unset).
+- Bump Tekton Triggers to a newer patch version on hub.

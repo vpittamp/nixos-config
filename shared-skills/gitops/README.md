@@ -25,7 +25,9 @@ shared-skills/gitops/
     ├── mirror-image-gitea-to-ghcr.md
     ├── recover-stuck-promotion.md
     ├── recover-stuck-job-finalizer.md
-    ├── debug-funnel-orphan-tag.md
+    ├── debug-funnel-orphan-tag.md          ← covers BOTH funnel-NXDOMAIN and EL-202-no-PipelineRun modes
+    ├── fix-drizzle-migration.md            ← drizzle-kit silent journal-skip + dual atlas/drizzle dirs
+    ├── track-promotion-state.md            ← PromotionStrategy + ChangeTransferPolicy CLI cheat-sheet
     ├── access-spoke-cluster-fallback.md
     └── rotate-oauth-secret.md
 ```

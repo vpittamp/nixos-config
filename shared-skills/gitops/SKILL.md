@@ -46,7 +46,18 @@ The two image-pin systems for the **same workflow-builder base** are the most co
 
 ### "GitHub webhook didn't fire / image is on gitea-ryzen but missing on ghcr.io"
 
-Almost always a Tailscale Funnel orphan-tag issue on `ts-tekton-github-triggers` proxy. See `runbooks/debug-funnel-orphan-tag.md`. Symptoms: `gh api .../hooks/<id>/deliveries` shows `status_code: 0`, `dig @1.1.1.1 tekton-hub.tail286401.ts.net` is NXDOMAIN, no recent PipelineRuns on hub Tekton.
+Triage by `gh api .../hooks/<id>/deliveries` `status_code` first — there are TWO common failure modes on the same path:
+
+- **`status_code: 0` + `dig @1.1.1.1 tekton-hub.tail286401.ts.net` NXDOMAIN** → Tailscale Funnel orphan-tag on `ts-tekton-github-triggers` proxy. The `policy.hujson` lost a tag the device still uses; control plane drops the funnel cap. See `runbooks/debug-funnel-orphan-tag.md` (Funnel orphan tag section).
+- **`status_code: 202` (accepted) but no PipelineRun on hub** → EL processing failure. `el-github-outer-loop` logs show `Post "": unsupported protocol scheme ""` at `sink/sink.go:413` for the matching `/triggers-eventid`. Same runbook, "EL processing failure" section. Workaround: skopeo-mirror to ghcr.io + bump release-pins manually until the EL is fixed.
+
+### "I shipped a migration but the new columns aren't on dev/staging"
+
+Almost always: the SQL file in `drizzle/` is missing from `drizzle/meta/_journal.json`. `npx drizzle-kit migrate` (the `db-migrate` Sync hook) silently skips files without journal entries — Job exits 0 but nothing gets applied. See `runbooks/fix-drizzle-migration.md`. (BFF will then 500 on every query that includes the new column.)
+
+### "I want to track a promotion in flight"
+
+PromotionStrategy + ChangeTransferPolicy + spoke ArgoCD apps each show a different layer. See `runbooks/track-promotion-state.md` for a CLI cheat-sheet. Most "stuck" reports are actually normal ~3 min source-hydrator poll cycles.
 
 ### "I need kubectl on a spoke (dev / staging) and Tailscale isn't working"
 
@@ -64,6 +75,10 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 - **Hub pods cannot resolve `gitea-ryzen.tail286401.ts.net`.** Use the Tailscale **egress** service pattern (`gitea-ryzen-egress.tailscale.svc.cluster.local`) or run skopeo/git from ryzen host instead of inside hub.
 - **Stacks repo is mirrored to two remotes.** `origin/main` (GitHub) feeds hub ArgoCD. `gitea-ryzen/main` feeds ryzen. Pushing to only one causes drift. After a manual change to stacks, push to both unless you specifically want one-sided.
 - **`argocd-hub.tail286401.ts.net` works even when other Tailscale ProxyGroups are down.** It's an independent ProxyGroup. When per-spoke Tailscale access is broken, you can still drive ArgoCD ops from the hub via `argocd login argocd-hub.tail286401.ts.net --grpc-web`.
+- **Drizzle Kit silently skips SQL files lacking `_journal.json` entries.** The `db-migrate` Sync hook on dev/staging runs `npx drizzle-kit migrate`, which globs `drizzle/*.sql` BUT only applies files with a matching `entries[]` tag in `drizzle/meta/_journal.json`. Job exits 0 either way — easy to miss. Always update the journal when adding a migration; older files in the repo (0006/0007/0020/0032/0037-0043) lack journal entries because their columns were applied via out-of-band paths historically. See `runbooks/fix-drizzle-migration.md`.
+- **Two migration runners read from two different directories.** `src/lib/server/startup.ts` reads from `atlas/migrations/` (timestamp-prefixed); `npx drizzle-kit migrate` reads from `drizzle/` (incremental + journal-gated). The production image's `Dockerfile` copies `drizzle/` but `.dockerignore` excludes `atlas/`, so the atlas-runner is effectively only active in the ryzen devspace pod (which file-syncs source). New migrations usually need to live in BOTH dirs, both idempotent (`ADD COLUMN IF NOT EXISTS`).
+- **Source-hydrator polls every ~3 min.** When you bump `release-pins` on origin/main, expect 5-8 min before dev's pod is rolling on the new image (hydrator + promoter + spoke ArgoCD each have their own poll interval). `argocd app refresh --hard` triggers manifest re-render but does NOT immediately repoll branch tips. `argocd app sync --revision <sha>` is rejected on auto-sync + branch-tracking apps (`Cannot sync to <sha>: auto-sync currently set to <branch>`). Don't hard-sync; wait. See `runbooks/track-promotion-state.md` for what's-actually-stuck triage.
+- **`git status --porcelain` `R ` prefix means "renamed in INDEX, already staged".** Filtering with `grep -E "^A |^M "` MISSES it. After a stale `git add` or interrupted commit, your next `git commit` will scoop in any pre-staged renames/deletes alongside what you intended. Before committing, either `git reset HEAD --` to clear the index then re-stage exact paths, or use `git diff --cached --name-status` (which shows ALL staged changes including renames + deletes + mode changes).
 
 ## What to read next
 
@@ -77,7 +92,9 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 | Image missing on ghcr.io | `runbooks/mirror-image-gitea-to-ghcr.md` |
 | ArgoCD operationState stuck Running | `runbooks/recover-stuck-promotion.md` |
 | db-migrate Job stuck Terminating | `runbooks/recover-stuck-job-finalizer.md` |
-| Webhook not firing / Funnel broken | `runbooks/debug-funnel-orphan-tag.md` |
+| Webhook not firing / hub Tekton path broken (NXDOMAIN or 202-no-PipelineRun) | `runbooks/debug-funnel-orphan-tag.md` |
+| Migration shipped but columns missing on dev | `runbooks/fix-drizzle-migration.md` |
+| Track a promotion in flight / what's gating it | `runbooks/track-promotion-state.md` |
 | Spoke kubectl when Tailscale down | `runbooks/access-spoke-cluster-fallback.md` |
 | Rotate a per-spoke OAuth client secret | `runbooks/rotate-oauth-secret.md` |
 
