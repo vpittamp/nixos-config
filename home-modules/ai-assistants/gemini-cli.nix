@@ -475,6 +475,26 @@ EOF
     fi
   '';
 
+  # Before home-manager re-links files, drop any SKILL.md that we previously
+  # materialized as a regular file. Otherwise home-manager refuses to overwrite
+  # the unmanaged file ("would be clobbered") and activation fails. The
+  # setupGeminiSkills step below will re-materialize it from the new symlink.
+  home.activation.preMaterializeGeminiSkills = lib.hm.dag.entryBefore ["writeBoundary"] ''
+    set -euo pipefail
+
+    SKILLS_ROOT="$HOME/.gemini/skills"
+    if [ ! -d "$SKILLS_ROOT" ]; then
+      exit 0
+    fi
+
+    for d in "$SKILLS_ROOT"/*; do
+      [ -d "$d" ] || continue
+      if [ -f "$d/SKILL.md" ] && [ ! -L "$d/SKILL.md" ]; then
+        ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
+      fi
+    done
+  '';
+
   # Materialize Gemini skill SKILL.md files as real files.
   # home.file installs the skill trees as symlinks (into the Nix store or repo),
   # but Gemini's skill discovery does not follow symlinks for SKILL.md. Replace

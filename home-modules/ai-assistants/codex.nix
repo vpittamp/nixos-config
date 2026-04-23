@@ -183,6 +183,28 @@ in
       };
     });
 
+  # Before home-manager re-links files, drop any SKILL.md that we previously
+  # materialized as a regular file. Otherwise home-manager refuses to overwrite
+  # the unmanaged file ("would be clobbered") and activation fails. The
+  # materializeCodexSkills step below will re-materialize it from the new symlink.
+  home.activation.preMaterializeCodexSkills = lib.hm.dag.entryBefore ["writeBoundary"] ''
+    set -euo pipefail
+
+    SKILLS_ROOT="$HOME/.codex/skills"
+    if [ ! -d "$SKILLS_ROOT" ]; then
+      exit 0
+    fi
+
+    for d in "$SKILLS_ROOT"/*; do
+      [ -d "$d" ] || continue
+      name="$(${pkgs.coreutils}/bin/basename "$d")"
+      [ "$name" = ".system" ] && continue
+      if [ -f "$d/SKILL.md" ] && [ ! -L "$d/SKILL.md" ]; then
+        ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
+      fi
+    done
+  '';
+
   # Codex currently ignores skills whose `SKILL.md` is a symlink (home-manager typically
   # materializes files as symlinks into the Nix store). After home.file links are in place,
   # replace symlinked `SKILL.md` files with regular files so `codex /skills` can discover them.
