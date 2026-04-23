@@ -301,6 +301,15 @@ in
       # Session switching
       bind l switch-client -l
 
+      # Mobile-friendly session/window/pane tree picker (backtick + s)
+      # Starts with windows expanded so all panes are visible in one view.
+      # Arrow keys + Enter navigate; works well on iPhone Termius over Tailscale.
+      bind s choose-tree -Zw
+
+      # Fuzzy session jumper via sesh (backtick + j)
+      bind-key j display-popup -E -h 70% -w 80% \
+        "sesh connect \"\$(sesh list -i | fzf-tmux -p 80%,70% --no-border)\""
+
       # Tmux Popup Windows with Enhanced Copy Support
       # Using UPPERCASE to avoid conflicts
       # Tips: Use 'less' for scrollable output, mouse selection works in most popups
