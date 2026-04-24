@@ -187,7 +187,7 @@ in
   # materialized as a regular file. Otherwise home-manager refuses to overwrite
   # the unmanaged file ("would be clobbered") and activation fails. The
   # materializeCodexSkills step below will re-materialize it from the new symlink.
-  home.activation.preMaterializeCodexSkills = lib.hm.dag.entryBefore ["writeBoundary"] ''
+  home.activation.preMaterializeCodexSkills = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
     set -euo pipefail
 
     SKILLS_ROOT="$HOME/.codex/skills"
