@@ -1,6 +1,6 @@
 ---
 name: gitops
-description: Use this skill when the user is working with the PittampalliOrg/stacks GitOps system — promoting an image to dev/staging/ryzen, reconciling origin/main with gitea-ryzen/main, recovering a stuck ArgoCD Application or PromotionStrategy, debugging a hub Tekton outer-loop that didn't fire, mirroring an image from gitea-ryzen to ghcr.io, rotating a per-spoke GitHub or Google OAuth client secret, reaching a spoke cluster (dev, staging, ryzen) when Tailscale is broken, or anything involving release-pins/workflow-builder-images.yaml, env/spokes-dev, env/spokes-staging, env/hub-next, source-hydrator, GitOps Promoter, or the ts-tekton-github-triggers Funnel proxy. Provides a decision tree, the two-image-pin mental model, and runbooks for the failure modes that actually happen in this hub-and-spoke Talos / ArgoCD / Tekton / GitOps Promoter setup.
+description: Use this skill when the user is working with the PittampalliOrg/stacks GitOps system — promoting an image to dev/staging/ryzen, reconciling origin/main with gitea-ryzen/main, recovering a stuck ArgoCD Application or PromotionStrategy, debugging a hub Tekton outer-loop that didn't fire, checking workflow-builder deployment inventory/image metadata, mirroring an image from gitea-ryzen to ghcr.io, rotating a per-spoke GitHub or Google OAuth client secret, reaching a spoke cluster (dev, staging, ryzen) when Tailscale is broken, or anything involving release-pins/workflow-builder-images.yaml, env/spokes-dev, env/spokes-staging, env/hub-next, source-hydrator, GitOps Promoter, Tailscale ProxyGroup service-host VIPs, or the ts-tekton-github-triggers Funnel proxy. Provides a decision tree, the two-image-pin mental model, and runbooks for the failure modes that actually happen in this hub-and-spoke Talos / ArgoCD / Tekton / GitOps Promoter setup.
 ---
 
 # GitOps for PittampalliOrg/stacks
@@ -57,7 +57,15 @@ Almost always: the SQL file in `drizzle/` is missing from `drizzle/meta/_journal
 
 ### "I want to track a promotion in flight"
 
-PromotionStrategy + ChangeTransferPolicy + spoke ArgoCD apps each show a different layer. See `runbooks/track-promotion-state.md` for a CLI cheat-sheet. Most "stuck" reports are actually normal ~3 min source-hydrator poll cycles.
+Start with workflow-builder's admin deployment inventory when available; it shows desired image, live images, drift, build, and promotion metadata in one place. PromotionStrategy + ChangeTransferPolicy + spoke ArgoCD apps each show a different lower layer. See `runbooks/track-promotion-state.md` for both views and a CLI cheat-sheet. Most "stuck" reports are actually normal ~3 min source-hydrator poll cycles.
+
+### "Which image / commit is live on dev or staging?"
+
+Use the workflow-builder admin Deployments view or the hub inventory endpoint first. It is backed by `gitops-deployment-inventory` on the hub and is the fastest way to compare release-pins, Argo live images, promotion SHAs, and outer-loop build status. See `runbooks/track-promotion-state.md`.
+
+### "A Tailscale Ingress/VIP has no address or TLS/cert is broken"
+
+If the resource is a ProxyGroup-hosted service such as `argocd-hub`, `nocodb-hub`, `autokube-hub`, or `gitops-inventory-hub`, debug service-host tags, not Funnel. Check the Ingress `tailscale.com/tags`, `policy.hujson` `autoApprovers.services`, the Tailscale Service tags, and the proxy pod `Self.Tags` / `CapMap["service-host"]`. See `runbooks/debug-proxygroup-service-host.md`.
 
 ### "I need kubectl on a spoke (dev / staging) and Tailscale isn't working"
 
@@ -71,6 +79,7 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 
 - **Branch divergence is normal.** `origin/main` and `gitea-ryzen/main` drift 10+ commits each way after a few days because two different Tekton instances commit independently. Reconcile periodically via `runbooks/reconcile-branches.md`. Eleven files commonly conflict.
 - **Tailscale Funnel orphan tags silently break webhooks.** If a tag is removed from `policy.hujson` but a device still uses it, the operator pod claims "Funnel on" locally but the control plane revokes the cap. Public DNS goes NXDOMAIN. Diagnostic: `tailscale status --json | jq '.Self.{Tags, CapMap}'` from inside the proxy pod.
+- **ProxyGroup service-host tags are separate from Funnel tags.** For hub browser VIPs, the Ingress `tailscale.com/tags`, Tailscale Service tags, `policy.hujson` `autoApprovers.services`, and the authenticated ProxyGroup pod tag must agree. Hub `cluster-ingress` should authenticate as `tag:k8s-services`; `tag:k8s` is legacy compatibility only.
 - **ESO refresh ↔ pod restart race.** When rotating a KeyVault secret, ESO may not finish writing the K8s Secret before a Deployment restart kicks off. The new pod reads the stale value. Always verify the K8s Secret head matches the new value **before** triggering the restart.
 - **Hub pods cannot resolve `gitea-ryzen.tail286401.ts.net`.** Use the Tailscale **egress** service pattern (`gitea-ryzen-egress.tailscale.svc.cluster.local`) or run skopeo/git from ryzen host instead of inside hub.
 - **Stacks repo is mirrored to two remotes.** `origin/main` (GitHub) feeds hub ArgoCD. `gitea-ryzen/main` feeds ryzen. Pushing to only one causes drift. After a manual change to stacks, push to both unless you specifically want one-sided.
@@ -78,6 +87,7 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 - **Drizzle Kit silently skips SQL files lacking `_journal.json` entries.** The `db-migrate` Sync hook on dev/staging runs `npx drizzle-kit migrate`, which globs `drizzle/*.sql` BUT only applies files with a matching `entries[]` tag in `drizzle/meta/_journal.json`. Job exits 0 either way — easy to miss. Always update the journal when adding a migration; older files in the repo (0006/0007/0020/0032/0037-0043) lack journal entries because their columns were applied via out-of-band paths historically. See `runbooks/fix-drizzle-migration.md`.
 - **Two migration runners read from two different directories.** `src/lib/server/startup.ts` reads from `atlas/migrations/` (timestamp-prefixed); `npx drizzle-kit migrate` reads from `drizzle/` (incremental + journal-gated). The production image's `Dockerfile` copies `drizzle/` but `.dockerignore` excludes `atlas/`, so the atlas-runner is effectively only active in the ryzen devspace pod (which file-syncs source). New migrations usually need to live in BOTH dirs, both idempotent (`ADD COLUMN IF NOT EXISTS`).
 - **Source-hydrator polls every ~3 min.** When you bump `release-pins` on origin/main, expect 5-8 min before dev's pod is rolling on the new image (hydrator + promoter + spoke ArgoCD each have their own poll interval). `argocd app refresh --hard` triggers manifest re-render but does NOT immediately repoll branch tips. `argocd app sync --revision <sha>` is rejected on auto-sync + branch-tracking apps (`Cannot sync to <sha>: auto-sync currently set to <branch>`). Don't hard-sync; wait. See `runbooks/track-promotion-state.md` for what's-actually-stuck triage.
+- **Generated `env/spokes-*` branches need guardrails.** If the generated app directory drifts from `env/spokes-*-next`, use `scripts/gitops/reconcile-spoke-generated-dir.sh <dev|staging> check|fix`; do not hand-edit generated env branches unless the script proves the root and child dry SHAs match.
 - **`git status --porcelain` `R ` prefix means "renamed in INDEX, already staged".** Filtering with `grep -E "^A |^M "` MISSES it. After a stale `git add` or interrupted commit, your next `git commit` will scoop in any pre-staged renames/deletes alongside what you intended. Before committing, either `git reset HEAD --` to clear the index then re-stage exact paths, or use `git diff --cached --name-status` (which shows ALL staged changes including renames + deletes + mode changes).
 
 ## What to read next
@@ -93,6 +103,7 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 | ArgoCD operationState stuck Running | `runbooks/recover-stuck-promotion.md` |
 | db-migrate Job stuck Terminating | `runbooks/recover-stuck-job-finalizer.md` |
 | Webhook not firing / hub Tekton path broken (NXDOMAIN or 202-no-PipelineRun) | `runbooks/debug-funnel-orphan-tag.md` |
+| Tailscale Ingress/VIP service-host missing address or cert domain | `runbooks/debug-proxygroup-service-host.md` |
 | Migration shipped but columns missing on dev | `runbooks/fix-drizzle-migration.md` |
 | Track a promotion in flight / what's gating it | `runbooks/track-promotion-state.md` |
 | Spoke kubectl when Tailscale down | `runbooks/access-spoke-cluster-fallback.md` |
@@ -124,6 +135,7 @@ The runbooks each follow the same shape: **Symptoms** → **Diagnostic** → **F
 | `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` | Direct image edit — no per-cluster override |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | env/spokes-dev → env/spokes-staging promotion config |
 | `packages/components/hub-management/manifests/gitops-promoter/ArgoCDCommitStatus.yaml` | The `argocd-health` gate definition |
+| `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin deployment metadata |
 | `policy.hujson` | Tailscale ACL — `tagOwners`, `nodeAttrs` (funnel grants). Synced to tailnet by `.github/workflows/tailscale-acl.yml` on push to main |
 | `docs/outer-loop-promotion.md` | Full reference (this skill is a curated subset). Has its own "Recovery Runbooks" section |
 
@@ -133,3 +145,4 @@ The runbooks each follow the same shape: **Symptoms** → **Diagnostic** → **F
 - **Always shred extracted credentials.** When you `kubectl get secret … -o jsonpath='{...}' | base64 -d > /tmp/foo`, immediately `shred -u /tmp/foo` after. The Crossplane spoke kubeconfigs are admin certs.
 - **Rotating a KeyVault secret** = wait for ESO + verify K8s Secret head + restart pod (in that order). Skipping the verify step bites every time.
 - **Editing `release-pins/workflow-builder-images.yaml`** triggers an automatic rollout to dev and staging via the `workflow-builder-release` PromotionStrategy. The dev rollout fires first; if dev fails health gate, staging won't promote. There is no manual confirmation step in between.
+- **Do not bypass Promoter for dev/staging rollout state.** Direct workload patches, manual Argo syncs, or ad hoc deploy scripts are emergency diagnostics only; the normal path is GitHub push → hub Tekton → release-pins → source-hydrator → Promoter → ArgoCD.

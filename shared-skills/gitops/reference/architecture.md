@@ -101,6 +101,29 @@ Hub ArgoCD syncs ryzen apps from gitea-ryzen/main
 - An image tag bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it, but if the GitHub webhook is broken, the tag exists only on gitea-ryzen and you need to skopeo-mirror it manually.
 - `agent-runtime-controller` is the exception: bumped directly in `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (no per-cluster override). Single bump applies to all spokes once on `origin/main`.
 
+## Live deployment inventory
+
+Workflow-builder has an admin Deployments view that reads the current GitOps state instead of asking an operator to mentally join release-pins, Promoter status, and ArgoCD summaries. The data path is:
+
+```
+Hub CronJob gitops-deployment-inventory
+    │  reads release-pins, PromotionStrategy/CommitStatus, ArgoCD Applications,
+    │  and recent outer-loop PipelineRuns
+    ▼
+ConfigMap argocd/gitops-deployment-inventory
+    │
+    ▼
+Deployment/Service/Ingress gitops-deployment-inventory
+    │  https://gitops-inventory-hub.tail286401.ts.net/inventory.json
+    ▼
+workflow-builder WORKFLOW_BUILDER_GITOPS_INVENTORY_URL
+    │
+    ▼
+/admin/deployments
+```
+
+Use this first when the question is "which image/commit is live on dev or staging?" It shows desired release-pin images, live Argo images, drift state, hydrated/source SHAs, commit metadata, and recent build/promotion evidence in one place. Fall back to `PromotionStrategy`, `ChangeTransferPolicy`, and raw ArgoCD Applications when the inventory is stale or unavailable.
+
 ## Branch model
 
 | Branch | Origin | Role |
@@ -130,6 +153,7 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` | dev/staging image pins ← **the file you edit most often** |
 | `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` | Matrix AppSet generator + Kustomize patches per spoke |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | dev → staging promotion (autoMerge: true on both, gate: argocd-health) |
+| `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin Deployments |
 | `packages/components/active-development/manifests/<image>/kustomization.yaml` | ryzen image-pin per workload |
 | `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Inner-loop pipeline definitions |

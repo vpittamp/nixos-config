@@ -1,3 +1,3 @@
 interface:
   display_name: "GitOps (PittampalliOrg/stacks)"
-  short_description: "Operational knowledge for the hub-and-spoke GitOps system: image promotion across dev/staging/ryzen, recovery runbooks, secret rotation, spoke cluster access."
+  short_description: "Operational knowledge for hub-and-spoke GitOps: image promotion, deployment inventory, ProxyGroup recovery, secret rotation, and spoke cluster access."

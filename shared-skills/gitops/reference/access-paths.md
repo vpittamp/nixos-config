@@ -124,3 +124,21 @@ kubectl --kubeconfig ~/.kube/hub-config exec -n tailscale <pod> -- tailscale fun
 ```
 
 The local daemon doesn't see every device on the tailnet — sharing/ACL rules can hide them. If `tailscale status` doesn't show a device but `kubectl exec` into its operator pod does, the device is alive but not shared with you (or the device's tag dropped its share grant — see orphan-tag runbook).
+
+### ProxyGroup service-host VIPs
+
+Hub browser services such as `argocd-hub`, `nocodb-hub`, `autokube-hub`, and `gitops-inventory-hub` are Tailscale Ingresses served by the `cluster-ingress` ProxyGroup. They are **not** Funnel endpoints. Their readiness depends on the Tailscale `service-host` capability, so four layers must line up:
+
+- The Ingress has `tailscale.com/proxy-group: cluster-ingress` and `tailscale.com/tags: tag:k8s-services`.
+- `policy.hujson` has `autoApprovers.services["svc:<hostname>"]` allowing `tag:k8s-services`.
+- The Tailscale Service exists as `svc:<hostname>` with the same service tag.
+- The `cluster-ingress-*` proxy pods authenticate as `tag:k8s-services` and expose `Self.CapMap["service-host"]` for the service.
+
+Quick check:
+
+```bash
+kubectl --kubeconfig ~/.kube/hub-config -n tailscale exec cluster-ingress-0 -- \
+  tailscale status --json | jq '.Self | {Tags, serviceHost: .CapMap["service-host"]}'
+```
+
+If an Ingress has no address, `tailscale cert <host>.tail286401.ts.net` says the domain is invalid, or `curl` to the VIP times out despite a healthy backing Service, use `runbooks/debug-proxygroup-service-host.md`.

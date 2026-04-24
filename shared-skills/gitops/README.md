@@ -5,7 +5,8 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 ## What it covers
 
 - **Image promotion lifecycle** — the two image-pin systems (release-pins vs active-development), how outer-loop and inner-loop Tekton pipelines interact, branch reconciliation between `origin/main` and `gitea-ryzen/main`.
-- **Recovery runbooks** — stuck PromotionStrategy, db-migrate Job finalizer hangs, Tailscale Funnel orphan tags, missing ghcr.io tags.
+- **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
+- **Recovery runbooks** — stuck PromotionStrategy, db-migrate Job finalizer hangs, Tailscale Funnel orphan tags, ProxyGroup service-host VIPs, missing ghcr.io tags.
 - **Spoke cluster access** — Tailscale primary path + Crossplane-managed kubeconfig fallback.
 - **Secret rotation** — KeyVault → ExternalSecret → pod env chain, including the ESO refresh ↔ pod restart race.
 
@@ -26,6 +27,7 @@ shared-skills/gitops/
     ├── recover-stuck-promotion.md
     ├── recover-stuck-job-finalizer.md
     ├── debug-funnel-orphan-tag.md          ← covers BOTH funnel-NXDOMAIN and EL-202-no-PipelineRun modes
+    ├── debug-proxygroup-service-host.md    ← service-host VIPs such as argocd-hub and gitops-inventory-hub
     ├── fix-drizzle-migration.md            ← drizzle-kit silent journal-skip + dual atlas/drizzle dirs
     ├── track-promotion-state.md            ← PromotionStrategy + ChangeTransferPolicy CLI cheat-sheet
     ├── access-spoke-cluster-fallback.md
@@ -51,9 +53,9 @@ The runbook content was seeded from these docs in `PittampalliOrg/stacks/main/`:
 | Skill file | Stacks-docs source |
 |---|---|
 | `reference/architecture.md` | `docs/outer-loop-promotion.md`, `docs/gitops-architecture-overview.md` |
-| `reference/access-paths.md` | `docs/spoke-cluster-access.md`, `docs/hub-and-spoke-quickstart.md` |
+| `reference/access-paths.md` | `docs/spoke-cluster-access.md`, `docs/hub-and-spoke-quickstart.md`, `docs/tailscale-naming.md` |
 | `reference/secret-flow.md` | `docs/oauth-rotation.md`, `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` |
-| `runbooks/*.md` | `docs/outer-loop-promotion.md` "Recovery Runbooks", `docs/oauth-rotation.md`, `docs/spoke-cluster-access.md` |
+| `runbooks/*.md` | `docs/outer-loop-promotion.md` "Recovery Runbooks", `docs/oauth-rotation.md`, `docs/spoke-cluster-access.md`, `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` |
 
 The stacks docs remain the canonical living reference. **The skill is a periodic snapshot** with a curated decision tree on top — re-sync after any major recovery procedure change in stacks.
 

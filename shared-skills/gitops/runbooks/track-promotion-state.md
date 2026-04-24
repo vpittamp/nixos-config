@@ -10,6 +10,8 @@ You bumped `release-pins/workflow-builder-images.yaml` (or one of its peers) and
 
 The ArgoCD UI doesn't have a dedicated promoter view, so most of the visibility is via CRD inspection.
 
+For workflow-builder specifically, start with `/admin/deployments` in the app. It is backed by the hub `gitops-deployment-inventory` API and usually answers "what's live, what's desired, and what is drifting?" faster than stitching together the lower-level CRDs.
+
 ## Mental model
 
 ```
@@ -27,24 +29,33 @@ env/spokes-<env>-next   ──merged──▶  env/spokes-<env>   ──synced�
 env/spokes-staging-next ── blocked until dev's argocd-health=success ──▶ env/spokes-staging
 ```
 
-Three layers of state to read in order:
+Four layers of state to read in order:
 
 | Layer | What to look at | What it tells you |
 |---|---|---|
+| 0. Inventory | workflow-builder `/admin/deployments` or `gitops-inventory-hub` | Desired images, live images, drift, commit/build metadata, and promotion SHAs in one place |
 | 1. Hydrator | `env/spokes-<env>-next` branch tip on github | Whether your release-pins commit got rendered (~30-90s after origin/main lands) |
 | 2. Promoter | `PromotionStrategy.status.environments[*]` + `ChangeTransferPolicy` | Whether the promoter PR was opened/merged (gated by `argocd-health` CommitStatus) |
 | 3. Spoke ArgoCD | `spoke-<env>-<app>` and `<env>-<app>` Application status | Whether the spoke synced; whether the new image is live |
 
 ## Web UI on argocd-hub.tail286401.ts.net
 
-1. **PromotionStrategy** — `argocd / workflow-builder-release` (or `stacks-environments` for hub-only changes). View YAML; look at `.status.environments[]` for per-environment dry/hydrated SHAs and `commitStatuses[?(@.key=="argocd-health")].phase`.
-2. **`spoke-<env>-<app>` apps** (e.g. `spoke-dev-workflow-builder`) — these are the meta-apps that watch `env/spokes-<env>` and deploy Application CRDs to the spoke cluster. Sync revision = the hydrated commit currently serving.
-3. **`<env>-<app>` apps** (e.g. `dev-workflow-builder`) — these run ON the spoke cluster (`destination.name=dev`) and deploy actual workloads. `summary.images` shows the resolved image tag after kustomize image substitution.
-4. **Open PRs in stacks** — promoter creates auto-merge PRs from `env/spokes-<env>-next` → `env/spokes-<env>` for each promotion. https://github.com/PittampalliOrg/stacks/pulls?q=is%3Aopen+head%3Aenv%2Fspokes-
+1. **workflow-builder `/admin/deployments`** — preferred first view for app/runtime metadata. It compares release-pins, live Argo images, commit metadata, build status, and promotion state.
+2. **PromotionStrategy** — `argocd / workflow-builder-release` (or `stacks-environments` for hub-only changes). View YAML; look at `.status.environments[]` for per-environment dry/hydrated SHAs and `commitStatuses[?(@.key=="argocd-health")].phase`.
+3. **`spoke-<env>-<app>` apps** (e.g. `spoke-dev-workflow-builder`) — these are the meta-apps that watch `env/spokes-<env>` and deploy Application CRDs to the spoke cluster. Sync revision = the hydrated commit currently serving.
+4. **`<env>-<app>` apps** (e.g. `dev-workflow-builder`) — these run ON the spoke cluster (`destination.name=dev`) and deploy actual workloads. `summary.images` shows the resolved image tag after kustomize image substitution.
+5. **Open PRs in stacks** — promoter creates auto-merge PRs from `env/spokes-<env>-next` → `env/spokes-<env>` for each promotion. https://github.com/PittampalliOrg/stacks/pulls?q=is%3Aopen+head%3Aenv%2Fspokes-
 
 ## CLI cheat-sheet
 
 ```bash
+# 0. Inventory API: same data workflow-builder uses for /admin/deployments
+TOKEN=$(kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret gitops-deployment-inventory \
+  -o jsonpath='{.data.bearerToken}' | base64 -d)
+curl -fsS -H "Authorization: Bearer ${TOKEN}" \
+  https://gitops-inventory-hub.tail286401.ts.net/inventory.json | \
+  jq '.environments[] | {env: .name, apps: [.applications[] | {name, desired: .desired.image, live: .live.images, drift: .drift.status}]}'
+
 # 1. One-line PromotionStrategy summary (per environment)
 kubectl --kubeconfig ~/.kube/hub-config -n argocd get promotionstrategy workflow-builder-release \
   -o jsonpath='{range .status.environments[*]}env={.branch} dry={.active.dry.sha} hydrated={.active.hydrated.sha} health={.active.commitStatuses[?(@.key=="argocd-health")].phase}{"\n"}{end}'
