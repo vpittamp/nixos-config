@@ -8,7 +8,7 @@ You bumped `release-pins/workflow-builder-images.yaml` (or one of its peers) and
 - Which spoke is currently on which image
 - Whether "stuck" is actually stuck or just waiting on a normal poll
 
-The ArgoCD UI doesn't have a dedicated promoter view, so most of the visibility is via CRD inspection.
+The hub ArgoCD UI has the GitOps Promoter extension installed. Use it for visualizing Promoter resources and relationships, but still treat CRD status and branch tips as authoritative when debugging.
 
 For workflow-builder specifically, start with `/admin/deployments` in the app. It is backed by the hub `gitops-deployment-inventory` API and usually answers "what's live, what's desired, and what is drifting?" faster than stitching together the lower-level CRDs.
 
@@ -41,10 +41,11 @@ Four layers of state to read in order:
 ## Web UI on argocd-hub.tail286401.ts.net
 
 1. **workflow-builder `/admin/deployments`** — preferred first view for app/runtime metadata. It compares release-pins, live Argo images, commit metadata, build status, and promotion state.
-2. **PromotionStrategy** — `argocd / workflow-builder-release` (or `stacks-environments` for hub-only changes). View YAML; look at `.status.environments[]` for per-environment dry/hydrated SHAs and `commitStatuses[?(@.key=="argocd-health")].phase`.
-3. **`spoke-<env>-<app>` apps** (e.g. `spoke-dev-workflow-builder`) — these are the meta-apps that watch `env/spokes-<env>` and deploy Application CRDs to the spoke cluster. Sync revision = the hydrated commit currently serving.
-4. **`<env>-<app>` apps** (e.g. `dev-workflow-builder`) — these run ON the spoke cluster (`destination.name=dev`) and deploy actual workloads. `summary.images` shows the resolved image tag after kustomize image substitution.
-5. **Open PRs in stacks** — promoter creates auto-merge PRs from `env/spokes-<env>-next` → `env/spokes-<env>` for each promotion. https://github.com/PittampalliOrg/stacks/pulls?q=is%3Aopen+head%3Aenv%2Fspokes-
+2. **GitOps Promoter UI extension in ArgoCD** — use the Promoter section to visualize `PromotionStrategy`, `ChangeTransferPolicy`, `PullRequest`, and related CRDs. If the section is missing, see `runbooks/manage-gitops-promoter.md`.
+3. **PromotionStrategy** — `argocd / workflow-builder-release` for spokes, or `argocd / stacks-environments` for hub-only changes. View YAML; look at `.status.environments[]` for per-environment dry/hydrated SHAs and `commitStatuses[?(@.key=="argocd-health")].phase`.
+4. **`spoke-<env>-<app>` apps** (e.g. `spoke-dev-workflow-builder`) — these are the meta-apps that watch `env/spokes-<env>` and deploy Application CRDs to the spoke cluster. Sync revision = the hydrated commit currently serving.
+5. **`<env>-<app>` apps** (e.g. `dev-workflow-builder`) — these run ON the spoke cluster (`destination.name=dev`) and deploy actual workloads. `summary.images` shows the resolved image tag after kustomize image substitution.
+6. **Open PRs in stacks** — promoter creates auto-merge PRs from `env/spokes-<env>-next` → `env/spokes-<env>` for each promotion. https://github.com/PittampalliOrg/stacks/pulls?q=is%3Aopen+head%3Aenv%2Fspokes-
 
 ## CLI cheat-sheet
 

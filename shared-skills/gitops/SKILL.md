@@ -1,6 +1,6 @@
 ---
 name: gitops
-description: Use this skill when the user is working with the PittampalliOrg/stacks GitOps system — promoting an image to dev/staging/ryzen, reconciling origin/main with gitea-ryzen/main, recovering a stuck ArgoCD Application or PromotionStrategy, debugging a hub Tekton outer-loop that didn't fire, checking workflow-builder deployment inventory/image metadata, mirroring an image from gitea-ryzen to ghcr.io, rotating a per-spoke GitHub or Google OAuth client secret, reaching a spoke cluster (dev, staging, ryzen) when Tailscale is broken, or anything involving release-pins/workflow-builder-images.yaml, env/spokes-dev, env/spokes-staging, env/hub-next, source-hydrator, GitOps Promoter, Tailscale ProxyGroup service-host VIPs, or the ts-tekton-github-triggers Funnel proxy. Provides a decision tree, the two-image-pin mental model, and runbooks for the failure modes that actually happen in this hub-and-spoke Talos / ArgoCD / Tekton / GitOps Promoter setup.
+description: Use this skill when the user is working with the PittampalliOrg/stacks GitOps system — promoting an image to dev/staging/ryzen, reconciling origin/main with gitea-ryzen/main, recovering a stuck ArgoCD Application or PromotionStrategy, upgrading GitOps Promoter or its ArgoCD UI extension, debugging a hub Tekton outer-loop that didn't fire, checking workflow-builder deployment inventory/image metadata, mirroring an image from gitea-ryzen to ghcr.io, rotating a per-spoke GitHub or Google OAuth client secret, reaching a spoke cluster (dev, staging, ryzen) when Tailscale is broken, or anything involving release-pins/workflow-builder-images.yaml, env/spokes-dev, env/spokes-staging, env/hub-next, source-hydrator, GitOps Promoter, Tailscale ProxyGroup service-host VIPs, or the ts-tekton-github-triggers Funnel proxy. Provides a decision tree, the two-image-pin mental model, and runbooks for the failure modes that actually happen in this hub-and-spoke Talos / ArgoCD / Tekton / GitOps Promoter setup.
 ---
 
 # GitOps for PittampalliOrg/stacks
@@ -14,7 +14,8 @@ Operational knowledge for the hub-and-spoke gitops system across **dev**, **stag
 - **Two Tekton instances**:
   - **Hub Tekton** (outer-loop): triggered by GitHub webhooks on app repos (`PittampalliOrg/workflow-builder`, etc.); builds images, pushes to **ghcr.io**, commits image-tag bumps to `origin/main` (GitHub) at `release-pins/workflow-builder-images.yaml`. This drives **dev/staging**.
   - **Ryzen Tekton** (inner-loop): triggered locally on ryzen; builds images, pushes to the **gitea-ryzen** registry, commits to `gitea-ryzen/main` at `active-development/manifests/<image>/kustomization.yaml`. This drives **ryzen** only.
-- **GitOps Promoter** (`workflow-builder-release` PromotionStrategy) gates the dev → staging promotion through `argocd-health` checks; both have `autoMerge: true`.
+- **GitOps Promoter** gates hub and spoke promotions. `workflow-builder-release` gates dev → staging through `argocd-health` checks; both have `autoMerge: true`. `stacks-environments` gates hub self-management from `env/hub-next` → `env/hub`.
+- **ArgoCD Promoter UI extension** is installed on hub ArgoCD so operators can visualize `PromotionStrategy`, `ChangeTransferPolicy`, `PullRequest`, and related Promoter CRDs in the ArgoCD UI.
 - **Source-hydrator** renders `packages/overlays/<spoke>` → `env/spokes-<spoke>-next`; promoter merges to `env/spokes-<spoke>`; spoke-side ArgoCD apps sync from there.
 
 The two image-pin systems for the **same workflow-builder base** are the most common source of confusion. Read `reference/architecture.md` first if you've never seen this setup.
@@ -57,7 +58,11 @@ Almost always: the SQL file in `drizzle/` is missing from `drizzle/meta/_journal
 
 ### "I want to track a promotion in flight"
 
-Start with workflow-builder's admin deployment inventory when available; it shows desired image, live images, drift, build, and promotion metadata in one place. PromotionStrategy + ChangeTransferPolicy + spoke ArgoCD apps each show a different lower layer. See `runbooks/track-promotion-state.md` for both views and a CLI cheat-sheet. Most "stuck" reports are actually normal ~3 min source-hydrator poll cycles.
+Start with workflow-builder's admin deployment inventory when available; it shows desired image, live images, drift, build, and promotion metadata in one place. The hub ArgoCD UI now has a GitOps Promoter extension for visualizing Promoter CRDs, and PromotionStrategy + ChangeTransferPolicy + spoke ArgoCD apps remain the authoritative lower layers. See `runbooks/track-promotion-state.md` for both views and a CLI cheat-sheet. Most "stuck" reports are actually normal ~3 min source-hydrator poll cycles.
+
+### "I need to upgrade GitOps Promoter or fix the Promoter UI"
+
+Use `runbooks/manage-gitops-promoter.md`. The current deployment pattern is: keep the latest published Helm chart unless a newer chart exists, override `manager.image.tag` when the app release is newer than the chart appVersion, and manage the ArgoCD UI extension through `argocd-gitops-promoter-ui` plus bootstrap `deployment/config/argocd-values.yaml`. Do not hand-patch long-term state without committing it to stacks.
 
 ### "Which image / commit is live on dev or staging?"
 
@@ -84,6 +89,9 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 - **Hub pods cannot resolve `gitea-ryzen.tail286401.ts.net`.** Use the Tailscale **egress** service pattern (`gitea-ryzen-egress.tailscale.svc.cluster.local`) or run skopeo/git from ryzen host instead of inside hub.
 - **Stacks repo is mirrored to two remotes.** `origin/main` (GitHub) feeds hub ArgoCD. `gitea-ryzen/main` feeds ryzen. Pushing to only one causes drift. After a manual change to stacks, push to both unless you specifically want one-sided.
 - **`argocd-hub.tail286401.ts.net` works even when other Tailscale ProxyGroups are down.** It's an independent ProxyGroup. When per-spoke Tailscale access is broken, you can still drive ArgoCD ops from the hub via `argocd login argocd-hub.tail286401.ts.net --grpc-web`.
+- **GitOps Promoter app releases may be newer than the Helm chart appVersion.** Verify both upstream release and Helm chart metadata. As of 2026-04-24, the controller runs `v0.27.1`; the latest Helm chart is `0.6.0` with `appVersion: 0.26.2`, so stacks keeps chart `0.6.0` and overrides `manager.image.tag`.
+- **Promoter UI patch hooks need a shell-capable kubectl image.** `registry.k8s.io/kubectl` is distroless and has no `/bin/sh`; use `alpine/k8s:<version>` for shell-scripted hook jobs. The ArgoCD Helm chart's server container is named `server`, even though the Deployment is `argocd-server`.
+- **Hub source-hydrator status can pin a stale dry SHA.** If `root-application.status.sourceHydrator.currentOperation.drySHA` stays behind `origin/main`, remove `currentOperation` and `lastSuccessfulOperation` from status and hard-refresh the app. See `runbooks/manage-gitops-promoter.md`.
 - **Drizzle Kit silently skips SQL files lacking `_journal.json` entries.** The `db-migrate` Sync hook on dev/staging runs `npx drizzle-kit migrate`, which globs `drizzle/*.sql` BUT only applies files with a matching `entries[]` tag in `drizzle/meta/_journal.json`. Job exits 0 either way — easy to miss. Always update the journal when adding a migration; older files in the repo (0006/0007/0020/0032/0037-0043) lack journal entries because their columns were applied via out-of-band paths historically. See `runbooks/fix-drizzle-migration.md`.
 - **Two migration runners read from two different directories.** `src/lib/server/startup.ts` reads from `atlas/migrations/` (timestamp-prefixed); `npx drizzle-kit migrate` reads from `drizzle/` (incremental + journal-gated). The production image's `Dockerfile` copies `drizzle/` but `.dockerignore` excludes `atlas/`, so the atlas-runner is effectively only active in the ryzen devspace pod (which file-syncs source). New migrations usually need to live in BOTH dirs, both idempotent (`ADD COLUMN IF NOT EXISTS`).
 - **Source-hydrator polls every ~3 min.** When you bump `release-pins` on origin/main, expect 5-8 min before dev's pod is rolling on the new image (hydrator + promoter + spoke ArgoCD each have their own poll interval). `argocd app refresh --hard` triggers manifest re-render but does NOT immediately repoll branch tips. `argocd app sync --revision <sha>` is rejected on auto-sync + branch-tracking apps (`Cannot sync to <sha>: auto-sync currently set to <branch>`). Don't hard-sync; wait. See `runbooks/track-promotion-state.md` for what's-actually-stuck triage.
@@ -100,6 +108,7 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 | Bumping an image to dev/staging | `runbooks/promote-image-to-spokes.md` |
 | Catching dev/staging up to ryzen | `runbooks/reconcile-branches.md` |
 | Image missing on ghcr.io | `runbooks/mirror-image-gitea-to-ghcr.md` |
+| Upgrade GitOps Promoter or repair its ArgoCD UI extension | `runbooks/manage-gitops-promoter.md` |
 | ArgoCD operationState stuck Running | `runbooks/recover-stuck-promotion.md` |
 | db-migrate Job stuck Terminating | `runbooks/recover-stuck-job-finalizer.md` |
 | Webhook not firing / hub Tekton path broken (NXDOMAIN or 202-no-PipelineRun) | `runbooks/debug-funnel-orphan-tag.md` |
@@ -136,6 +145,10 @@ The runbooks each follow the same shape: **Symptoms** → **Diagnostic** → **F
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | env/spokes-dev → env/spokes-staging promotion config |
 | `packages/components/hub-management/manifests/gitops-promoter/ArgoCDCommitStatus.yaml` | The `argocd-health` gate definition |
 | `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin deployment metadata |
+| `packages/components/hub-management/apps/gitops-promoter.yaml` | GitOps Promoter Helm chart app; chart version plus `manager.image.tag` override |
+| `packages/components/hub-management/apps/argocd-gitops-promoter-ui.yaml` | Hub ArgoCD Application that installs/patches the GitOps Promoter UI extension |
+| `packages/components/hub-management/manifests/argocd-gitops-promoter-ui/` | UI-extension patch Job, RBAC, and `argocd-cm` resource links/custom labels |
+| `deployment/config/argocd-values.yaml` | Bootstrap-time ArgoCD Helm values; keep Promoter UI extension settings in sync with the patch app |
 | `policy.hujson` | Tailscale ACL — `tagOwners`, `nodeAttrs` (funnel grants). Synced to tailnet by `.github/workflows/tailscale-acl.yml` on push to main |
 | `docs/outer-loop-promotion.md` | Full reference (this skill is a curated subset). Has its own "Recovery Runbooks" section |
 

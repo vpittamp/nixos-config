@@ -7,7 +7,7 @@
                          │  HUB (Talos on Hetzner, 5.161.99.23:6443)    │
                          │  - Single ArgoCD (manages itself + spokes)   │
                          │  - Hub Tekton (outer-loop, GHCR pushes)      │
-                         │  - GitOps Promoter (workflow-builder-release)│
+                         │  - GitOps Promoter + ArgoCD Promoter UI      │
                          │  - Crossplane (spoke lifecycle)              │
                          │  - ExternalSecrets Operator                  │
                          │  - Tailscale operator (ProxyGroups, Funnel)  │
@@ -135,6 +135,36 @@ Use this first when the question is "which image/commit is live on dev or stagin
 | `env/spokes-dev` / `env/spokes-staging` | `origin` only | What spoke ArgoCD apps sync from (`workflow-builder-release` PromotionStrategy promotes to these) |
 | (no `env/spokes-ryzen-next`) | — | Ryzen does not go through promoter; spoke-workloads AppSet writes directly to `env/spokes-ryzen` |
 
+## Hub self-management and GitOps Promoter
+
+Hub changes follow the same GitOps shape as spoke changes, but with their own promotion strategy:
+
+```
+origin/main
+   │
+   │ root-application sourceHydrator
+   ▼
+env/hub-next
+   │
+   │ GitOps Promoter: stacks-environments
+   ▼
+env/hub
+   │
+   │ root-application sync source
+   ▼
+hub ArgoCD resources
+```
+
+`stacks-environments` is intentionally part of the normal path for hub changes. If a hub change is merged to `origin/main` but `root-application` is still reading an old `env/hub` commit, inspect `root-application.status.sourceHydrator`. A stale `currentOperation.drySHA` can pin hydration to an old source commit; clear the sourceHydrator status fields and hard-refresh before bypassing Promoter.
+
+GitOps Promoter itself is managed by hub ArgoCD:
+- `packages/components/hub-management/apps/gitops-promoter.yaml` deploys the Helm chart. The chart can lag the app release, so the current pattern is to keep the latest chart and override `manager.image.tag` when the latest app release is newer.
+- `packages/components/hub-management/apps/gitops-promoter-config.yaml` applies PromotionStrategy, CommitStatus, inventory, and related config.
+- `packages/components/hub-management/apps/argocd-gitops-promoter-ui.yaml` installs the Promoter ArgoCD UI extension and `argocd-cm` resource links/custom labels.
+- `deployment/config/argocd-values.yaml` mirrors the UI extension settings for fresh/bootstrap ArgoCD installs.
+
+As of 2026-04-24, the live controller is `quay.io/argoprojlabs/gitops-promoter:v0.27.1`. The latest Helm chart at that time is `0.6.0` with `appVersion: 0.26.2`, so the app release is selected with `manager.image.tag: v0.27.1`.
+
 ## Why ryzen is special
 
 Ryzen exists for **fast iteration** (DevSpace hot reload, local builds, kind image loading). It's intentionally outside the promoter chain:
@@ -154,6 +184,10 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` | Matrix AppSet generator + Kustomize patches per spoke |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | dev → staging promotion (autoMerge: true on both, gate: argocd-health) |
 | `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin Deployments |
+| `packages/components/hub-management/apps/gitops-promoter.yaml` | Promoter Helm chart app plus image tag override when chart appVersion lags |
+| `packages/components/hub-management/apps/argocd-gitops-promoter-ui.yaml` | ArgoCD app that manages the Promoter UI extension patch resources |
+| `packages/components/hub-management/manifests/argocd-gitops-promoter-ui/` | UI extension initContainer patch Job, RBAC, and ArgoCD resource links |
+| `deployment/config/argocd-values.yaml` | Bootstrap ArgoCD values; keep Promoter UI extension config synchronized here |
 | `packages/components/active-development/manifests/<image>/kustomization.yaml` | ryzen image-pin per workload |
 | `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Inner-loop pipeline definitions |
