@@ -3,16 +3,16 @@
 
 let
   pname = "headlamp";
-  version = "0.36.0";
+  version = "0.41.0";
 
   # Select architecture-specific source
   src = fetchurl (
     if stdenv.isx86_64 then {
       url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v${version}/Headlamp-${version}-linux-x64.AppImage";
-      sha256 = "1scfp1c7y7sx2c9n9gxw2mg1gq2lj2ip0c06k7mv55rnh0mb6ksb";
+      sha256 = "11svhr19c0ad90g8j8x4gaf705r9937cb6q9svijfzg658d9vmj9";
     } else if stdenv.isAarch64 then {
       url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v${version}/Headlamp-${version}-linux-arm64.AppImage";
-      sha256 = "16d7w7hc31cqw42pj56b58nfxj0yqinqi3w6d8j71zj179gv53kg";
+      sha256 = "12249rgqiads2rks4zqawf83a9d94ips5g88p4jp98zj4c65bn5s";
     } else throw "Unsupported platform for headlamp"
   );
 
