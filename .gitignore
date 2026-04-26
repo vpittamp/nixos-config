@@ -50,3 +50,5 @@ Thumbs.db
 /.claude-trace-context.json
 Trace-*.json
 .codex-tmp/
+# Claude Code scheduled-task lock (local runtime state)
+.claude/scheduled_tasks.lock

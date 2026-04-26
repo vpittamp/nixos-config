@@ -827,6 +827,24 @@ let
       routing_domains = [ "crawl4ai-ryzen.tail286401.ts.net" ];
     }
 
+    # MCPJam (Ryzen K8s via Tailscale)
+    {
+      name = "MCPJam";
+      url = "https://mcpjam-ryzen.tail286401.ts.net";
+      domain = "mcpjam-ryzen.tail286401.ts.net";
+      icon = iconPath "mcpjam.svg";
+      description = "MCPJam - Inspector and testing tool for MCP servers";
+      categories = "Development;Network;";
+      keywords = "mcpjam;mcp;inspector;debug;test;ai;kubernetes;";
+      scope = "https://mcpjam-ryzen.tail286401.ts.net/";
+      ulid = "1YFTMZDSM0H9YWWN21Y3W9ZE0K";  # Generated 2026-04-20
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 77;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "mcpjam-ryzen.tail286401.ts.net" ];
+    }
+
     # AI Chatbot Ryzen
     {
       name = "AI Chatbot Ryzen";
@@ -1848,6 +1866,60 @@ let
       app_scope = "global";
       preferred_workspace = 158;
       routing_domains = [ "mediaite.com" "www.mediaite.com" ];
+    }
+
+    # ClickHouse Play (Ryzen K8s via Tailscale)
+    {
+      name = "ClickHouse Play";
+      url = "https://clickhouse-ryzen.tail286401.ts.net/play";
+      domain = "clickhouse-ryzen.tail286401.ts.net";
+      icon = iconPath "clickhouse.svg";
+      description = "ClickHouse Play - Interactive SQL query interface";
+      categories = "Development;Network;";
+      keywords = "clickhouse;sql;database;query;analytics;olap;kubernetes;";
+      scope = "https://clickhouse-ryzen.tail286401.ts.net/";
+      ulid = "03ZV7FW3XTA0EEQF6FWQMQXXJG";  # Generated 2026-04-08
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 161;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "clickhouse-ryzen.tail286401.ts.net" ];
+    }
+
+    # Diagrid Dashboard (Ryzen K8s via Tailscale)
+    {
+      name = "Diagrid Dashboard";
+      url = "https://diagrid-dashboard-ryzen.tail286401.ts.net";
+      domain = "diagrid-dashboard-ryzen.tail286401.ts.net";
+      icon = iconPath "diagrid.svg";
+      description = "Diagrid Dashboard - Dapr management and monitoring";
+      categories = "Development;Network;";
+      keywords = "diagrid;dapr;dashboard;kubernetes;management;monitoring;";
+      scope = "https://diagrid-dashboard-ryzen.tail286401.ts.net/";
+      ulid = "5Z73H46E6N4D6444J4Q7PFJTME";  # Generated 2026-04-11
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 162;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "diagrid-dashboard-ryzen.tail286401.ts.net" ];
+    }
+
+    # Redash Hub (via Tailscale)
+    {
+      name = "Redash Hub";
+      url = "https://redash-hub.tail286401.ts.net";
+      domain = "redash-hub.tail286401.ts.net";
+      icon = iconPath "redash.png";
+      description = "Redash - SQL query and visualization dashboard";
+      categories = "Development;Network;";
+      keywords = "redash;sql;query;visualization;dashboard;analytics;data;";
+      scope = "https://redash-hub.tail286401.ts.net/";
+      ulid = "0YHFJQYBJP0W48DVNR5R3DDMVT";  # Generated 2026-04-15
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 163;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "redash-hub.tail286401.ts.net" ];
     }
 
     # AutoKube Hub (via Tailscale)
