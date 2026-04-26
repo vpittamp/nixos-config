@@ -9,8 +9,8 @@ let
   extApps = pkgs.fetchFromGitHub {
     owner = "modelcontextprotocol";
     repo = "ext-apps";
-    rev = "704b6e0af9ec1b3d4a351f12fb2596d2da1e0818";
-    hash = "sha256-u/NwVzf1QwEIpZFDX+NKOOrPTwfoHS+EqdwlQzUeRw4=";
+    rev = "30a78b60b4829282656daf10c298e2f5f6510f58";
+    hash = "sha256-/9Cq/RYAOFuWu3nXORCe9jDm50D4BUI5ju4UPwBzw0A=";
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
@@ -82,24 +82,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-04-11, using v0.37.1.
+  # As of 2026-04-25, using v0.39.1.
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.39.0";
+    version = "0.39.1";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-cVEDCnDmICw0b3wQyU3hWynBjn+xPH9Tfmd085nyAUw=";
+      hash = "sha256-O0TBrT3WDCBZ3ZyFyJPBBtPfnDzdFQ7b8pOJOD7bj2g=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-xysC1nSj70nRyIndJgNgbUh/0Dr1W1p7sZTg0ZuzXNs=";
+    npmDepsHash = "sha256-y0LafX1+ukW8HRYBqQ3QfZGHo1cVk00bNygdwsBR/7g=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 

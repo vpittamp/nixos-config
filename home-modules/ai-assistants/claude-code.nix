@@ -2,15 +2,14 @@
 
 let
   repoRoot = ../../.;
-  sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
   # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
   # Installed into ~/.claude/skills/create-mcp-app
   extApps = pkgs.fetchFromGitHub {
     owner = "modelcontextprotocol";
     repo = "ext-apps";
-    rev = "704b6e0af9ec1b3d4a351f12fb2596d2da1e0818";
-    hash = "sha256-u/NwVzf1QwEIpZFDX+NKOOrPTwfoHS+EqdwlQzUeRw4=";
+    rev = "30a78b60b4829282656daf10c298e2f5f6510f58";
+    hash = "sha256-/9Cq/RYAOFuWu3nXORCe9jDm50D4BUI5ju4UPwBzw0A=";
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
@@ -45,18 +44,6 @@ let
   # Claude Code's home-manager module has Chromium dependencies that break on Darwin
   # Only enable on Linux where Chromium is available
   enableClaudeCode = pkgs.stdenv.isLinux;
-
-  # Browser MCP servers only make sense in a real desktop session.
-  enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
-  nodeNpx = "${pkgs.nodejs}/bin/npx";
-  chromeDevtoolsBrowserUrl = sharedBrowserMcp.chromeDevtoolsBrowserUrl;
-
-  # Chromium configuration - only define when needed to avoid evaluation on Darwin
-  # On Linux: use Nix-managed Chromium
-  # On Darwin: MCP servers that need Chromium are disabled
-  chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
-    chromiumBin = "${pkgs.chromium}/bin/chromium";
-  };
 
   # Auto-import all .md files from .claude/commands/ as slash commands
   # This creates an attribute set where keys are command names (without .md)
@@ -398,7 +385,6 @@ lib.mkIf enableClaudeCode {
 
           # MCP Server permissions
           "mcp__claude-in-chrome"  # Claude-in-Chrome browser automation (built-in via --chrome)
-          "mcp__chrome-devtools"   # Chrome DevTools Protocol (Linux only)
         ];
       };
 
@@ -573,47 +559,6 @@ lib.mkIf enableClaudeCode {
     # MCP Servers configuration
     # Uses full Nix store paths to work in isolated environments (devenv, nix-shell)
     # Enable interactively via `/mcp` command or `@` menu when needed
-    mcpServers = {
-      # Next.js DevTools MCP server for Next.js 16+ development
-      # Provides: nextjs_index, nextjs_call (runtime diagnostics), upgrade_nextjs_16, enable_cache_components
-      # Auto-discovers running Next.js dev servers on common ports (3000, 3001, etc.)
-      # See: https://github.com/vercel/next-devtools-mcp
-      next-devtools = {
-        command = "${pkgs.nodejs}/bin/npx";
-        args = [
-          "-y"
-          "next-devtools-mcp@latest"
-        ];
-        disabled = true;
-      };
-
-      # Mastra Docs MCP server - access Mastra's full documentation
-      # Provides tools for querying Mastra framework docs, examples, and API reference
-      # Enable interactively via `/mcp` command when working on Mastra projects
-      # See: https://mastra.ai/docs/getting-started/mcp-docs-server
-      mastra = {
-        command = "${pkgs.nodejs}/bin/npx";
-        args = [
-          "-y"
-          "@mastra/mcp-docs-server@latest"
-        ];
-        disabled = true;
-      };
-    } // lib.optionalAttrs enableBrowserMcpServers {
-      # Chrome DevTools MCP server for debugging and performance.
-      # Attach to the managed shared debug Chrome service instead of
-      # spawning an isolated browser per assistant session.
-      # Provides: take_snapshot, click, fill, navigate_page, evaluate_script, etc.
-      chrome-devtools = {
-        command = nodeNpx;
-        args = [
-          "-y"
-          "chrome-devtools-mcp@latest"
-          "--browserUrl"
-          chromeDevtoolsBrowserUrl
-        ];
-        disabled = true;
-      };
-    };
+    mcpServers = {};
   };
 }

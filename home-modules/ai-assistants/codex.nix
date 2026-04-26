@@ -9,8 +9,8 @@ let
   extApps = pkgs.fetchFromGitHub {
     owner = "modelcontextprotocol";
     repo = "ext-apps";
-    rev = "704b6e0af9ec1b3d4a351f12fb2596d2da1e0818";
-    hash = "sha256-u/NwVzf1QwEIpZFDX+NKOOrPTwfoHS+EqdwlQzUeRw4=";
+    rev = "30a78b60b4829282656daf10c298e2f5f6510f58";
+    hash = "sha256-/9Cq/RYAOFuWu3nXORCe9jDm50D4BUI5ju4UPwBzw0A=";
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
@@ -35,10 +35,9 @@ let
   hasInstructions = builtins.pathExists instructionsFile;
   customInstructions = if hasInstructions then builtins.readFile instructionsFile else null;
 
-  # Browser and desktop MCP servers only make sense in a real Sway session.
+  # Browser MCP servers only make sense in a real Sway session.
   # The Codex module is also imported by container profiles, so keep docs
-  # servers available there while omitting local desktop/browser integrations.
-  enableDesktopMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
+  # servers available there while omitting local browser integrations.
   enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
 
   nodeNpx = "${pkgs.nodejs}/bin/npx";
@@ -262,202 +261,93 @@ EOF
   '');
 
   # Codex - Lightweight coding agent (using native home-manager module with unstable package)
+  # NOTE: We do NOT use programs.codex.settings for config because the HM module
+  # creates a read-only symlink into /nix/store. Codex needs to write to config.toml
+  # at runtime (trust settings, plugin sync), so we generate a mutable copy via
+  # activation script instead.
   programs.codex = {
     enable = true;
     package = codexWrapped; # Wrapper with OTEL batch env vars for real-time monitoring
-    # We don't need backups; overwrite the config directly
-    settings.force = lib.mkForce true;
 
     # Custom instructions for the agent - auto-imported from .codex/INSTRUCTIONS.md
     # This follows the same centralization pattern as Claude Code and Gemini CLI
     custom-instructions = lib.mkIf hasInstructions customInstructions;
 
-    # Configuration for codex (TOML format)
-    settings = {
-      # Model configuration - using latest gpt-5.4 (flagship frontier model)
-      model = "gpt-5.4";
-      model_provider = "openai";
-      model_reasoning_effort = "high"; # Use high reasoning for complex tasks
-
-      # Sandbox and permission settings for sandboxed environment
-      # WARNING: This grants full permissions. Only use in trusted/sandboxed environments.
-      sandbox_mode = "danger-full-access";  # Disable sandbox (equivalent to --yolo)
-      approval_policy = "never";            # Never prompt for permissions
-
-      # Workspace write settings (used when sandbox_mode != danger-full-access)
-      sandbox_workspace_write = {
-        exclude_tmpdir_env_var = false;  # Allow temp directory access
-        exclude_slash_tmp = false;       # Allow /tmp access
-        network_access = true;           # Enable network access
-        writable_roots = [               # Additional writable locations
-          "/home/vpittamp"
-          "/tmp"
-          "/etc/nixos"
-        ];
-      };
-
-      # Project trust settings - mark all dev directories as trusted
-      projects = {
-        "/home/vpittamp/mcp" = {
-          trust_level = "trusted";
-        };
-        "/home/vpittamp/.claude" = {
-          trust_level = "trusted";
-        };
-        "/home/vpittamp/backstage-cnoe" = {
-          trust_level = "trusted";
-        };
-        "/home/vpittamp/stacks" = {
-          trust_level = "trusted";
-        };
-        "/etc/nixos" = {
-          trust_level = "trusted";
-        };
-        "/home/vpittamp" = {
-          trust_level = "trusted";
-        };
-      };
-
-      # Additional settings
-      auto_save = true;
-      theme = "dark";
-      vim_mode = true;
-      # Web search: "live", "cached", or "disabled" (top-level, replaces deprecated features.web_search_request)
-      web_search = "live";
-
-      # Status line configuration for project context and monitoring
-      tui = {
-        status_line = [
-          "project_root"
-          "tmux_pane"
-          "model"
-          "git_branch"
-          "context_stats"
-        ];
-      };
-
-      # Experimental features
-      experimental = {
-        shell_snapshotting = true;   # Snapshot shell env to avoid re-running login scripts
-        background_terminal = true;  # Run long-running terminal commands in background
-      };
-
-      # Feature 123: OpenTelemetry configuration for OTLP export
-      # Sends logs to local interceptor which synthesizes traces and forwards to Alloy
-      otel = {
-        environment = "dev";
-        log_user_prompt = true;  # Enable for debugging (disable in production)
-        exporter = {
-          otlp-http = {
-            # Send Codex OTLP *logs* to local interceptor (synthesizes traces + forwards)
-            endpoint = "http://${codexOtelInterceptorHost}:${toString codexOtelInterceptorPort}/v1/logs";
-            # NOTE: traces_endpoint removed - interceptor synthesizes traces from logs
-            # Native Codex traces are low-signal; let interceptor create proper OpenInference spans
-            protocol = "json";  # Use JSON for compatibility with our receiver
-          };
-        };
-      };
-
-      # Codex hook: external program invoked on certain lifecycle events.
-      # Used for explicit Turn completion boundaries (agent-turn-complete).
-      notify = [
-        "${pkgs.nodejs}/bin/node"
-        "${repoRoot}/scripts/codex-hooks/notify.js"
-      ];
-
-      # MCP Servers configuration
-      # Note: Codex does NOT support a `disabled` flag for MCP servers
-      # Servers are either defined (always active) or not defined (unavailable)
-      # Only Linux is supported due to Chromium dependency
-      mcp_servers = {
-        openaiDeveloperDocs = {
-          url = "https://developers.openai.com/mcp";
-          enabled = true;
-          startup_timeout_sec = 30;
-          tool_timeout_sec = 60;
-        };
-
-      } // lib.optionalAttrs enableDesktopMcpServers {
-        i3pm-desktop = {
-          command = "${pkgs.python3}/bin/python3";
-          args = [
-            "${repoRoot}/scripts/i3pm-desktop-mcp.py"
-          ];
-          enabled = true;
-          startup_timeout_sec = 10;
-          tool_timeout_sec = 30;
-        };
-      } // lib.optionalAttrs enableBrowserMcpServers {
-        # Playwright MCP server for browser automation with a persistent profile
-        playwright = {
-          command = nodeNpx;
-          args = [
-            "-y"
-            "@playwright/mcp@latest"
-            "--browser"
-            "chromium"
-            "--executable-path"
-            chromiumConfig.chromiumBin
-            "--user-data-dir"
-            playwrightProfileDir
-            "--output-dir"
-            playwrightOutputDir
-            "--viewport-size"
-            "1440x900"
-          ];
-          env = {
-            # Skip downloading Chromium since we use system package
-            PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
-            PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-          };
-          enabled = true;
-          startup_timeout_sec = 60;
-          tool_timeout_sec = 120;
-        };
-
-        # Chrome DevTools MCP server for browser debugging with a persistent profile
-        chrome-devtools = {
-          command = nodeNpx;
-          args = [
-            "-y"
-            "chrome-devtools-mcp@latest"
-            "--browserUrl"
-            chromeDevtoolsBrowserUrl
-          ];
-          enabled = true;
-          startup_timeout_sec = 30;  # Attachs to an already-running debug browser
-          tool_timeout_sec = 120;    # Browser debugging flows are often multi-step
-        };
-      };
-    };
+    # Settings left empty — config.toml is generated by materializeCodexConfig below
   };
 
-  # Feature 123: Create OTEL config section via activation script
-  # The home-manager codex module filters unknown settings, so we append OTEL config manually
-  home.activation.appendCodexOtelConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+  # Generate a mutable ~/.codex/config.toml so Codex can write to it at runtime.
+  # The HM codex module would create a read-only Nix store symlink, which causes
+  # "thread/start failed during TUI bootstrap" when Codex tries to persist trust
+  # settings or sync plugins.
+  home.activation.materializeCodexConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    set -euo pipefail
     CONFIG="$HOME/.codex/config.toml"
+    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.codex"
+
+    # Remove any stale symlink from a previous HM generation
     if [ -L "$CONFIG" ]; then
-      # Config is a symlink to nix store - copy and modify
-      TEMP=$(${pkgs.coreutils}/bin/mktemp)
-      ${pkgs.coreutils}/bin/cat "$CONFIG" > "$TEMP"
+      ${pkgs.coreutils}/bin/rm -f "$CONFIG"
+    fi
 
-      # Feature 126: Ensure notify hook is configured at the TOML root.
-      # (In TOML, root keys must appear before any `[table]` headers.)
-      if ! ${pkgs.gnugrep}/bin/grep -q '^notify[[:space:]]*=' "$TEMP"; then
-        TEMP2=$(${pkgs.coreutils}/bin/mktemp)
-        ${pkgs.gawk}/bin/awk \
-          -v line='notify = ["${pkgs.nodejs}/bin/node", "${repoRoot}/scripts/codex-hooks/notify.js"]' \
-          'BEGIN{inserted=0} /^[[:space:]]*\\[/{ if(!inserted){ print line; inserted=1 } } { print } END{ if(!inserted){ print line } }' \
-          "$TEMP" > "$TEMP2"
-        ${pkgs.coreutils}/bin/mv "$TEMP2" "$TEMP"
-      fi
+    # Generate the full config as a regular writable file.
+    # Preserve any runtime additions (extra [projects.*] entries) that Codex wrote.
+    TEMP=$(${pkgs.coreutils}/bin/mktemp)
+    ${pkgs.coreutils}/bin/cat > "$TEMP" << 'TOMLEOF'
+approval_policy = "never"
+auto_save = true
+force = true
+model = "gpt-5.4"
+model_provider = "openai"
+model_reasoning_effort = "high"
+notify = ["${pkgs.nodejs}/bin/node", "${repoRoot}/scripts/codex-hooks/notify.js"]
+sandbox_mode = "danger-full-access"
+theme = "dark"
+vim_mode = true
+web_search = "live"
 
-      # Only add OTEL if not already present
-      if ! ${pkgs.gnugrep}/bin/grep -q '^\[otel\]' "$TEMP"; then
-        ${pkgs.coreutils}/bin/cat >> "$TEMP" << 'EOF'
+[experimental]
+background_terminal = true
+shell_snapshotting = true
 
-# Feature 123: OpenTelemetry configuration for OTLP export
-# NOTE: traces_endpoint removed - interceptor synthesizes traces from logs
+[mcp_servers.openaiDeveloperDocs]
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 60
+url = "https://developers.openai.com/mcp"
+
+${lib.optionalString enableBrowserMcpServers ''
+[mcp_servers.chrome-devtools]
+args = ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "${chromeDevtoolsBrowserUrl}"]
+command = "${nodeNpx}"
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.playwright]
+args = [
+    "-y",
+    "@playwright/mcp@latest",
+    "--browser",
+    "chromium",
+    "--executable-path",
+    "${chromiumConfig.chromiumBin}",
+    "--user-data-dir",
+    "${playwrightProfileDir}",
+    "--output-dir",
+    "${playwrightOutputDir}",
+    "--viewport-size",
+    "1440x900",
+]
+command = "${nodeNpx}"
+enabled = true
+startup_timeout_sec = 60
+tool_timeout_sec = 120
+
+[mcp_servers.playwright.env]
+PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true"
+PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true"
+''}
 [otel]
 environment = "dev"
 log_user_prompt = true
@@ -465,14 +355,50 @@ log_user_prompt = true
 [otel.exporter.otlp-http]
 endpoint = "http://${codexOtelInterceptorHost}:${toString codexOtelInterceptorPort}/v1/logs"
 protocol = "json"
-EOF
-      fi
 
-      # Replace symlink with patched file
-      ${pkgs.coreutils}/bin/rm -f "$CONFIG"
-      ${pkgs.coreutils}/bin/mv "$TEMP" "$CONFIG"
-      ${pkgs.coreutils}/bin/chmod 600 "$CONFIG"
+[projects."/etc/nixos"]
+trust_level = "trusted"
+
+[projects."/home/vpittamp"]
+trust_level = "trusted"
+
+[projects."/home/vpittamp/.claude"]
+trust_level = "trusted"
+
+[projects."/home/vpittamp/backstage-cnoe"]
+trust_level = "trusted"
+
+[projects."/home/vpittamp/mcp"]
+trust_level = "trusted"
+
+[projects."/home/vpittamp/stacks"]
+trust_level = "trusted"
+
+[sandbox_workspace_write]
+exclude_slash_tmp = false
+exclude_tmpdir_env_var = false
+network_access = true
+writable_roots = ["/home/vpittamp", "/tmp", "/etc/nixos"]
+
+[tui]
+status_line = ["project_root", "tmux_pane", "model", "git_branch", "context_stats"]
+TOMLEOF
+
+    # If an existing mutable config has extra [projects.*] entries added by Codex
+    # at runtime, merge them in so they aren't lost on rebuild.
+    if [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ]; then
+      # Extract project trust entries from the old config that aren't in the new one
+      ${pkgs.gnugrep}/bin/grep -E '^\[projects\.' "$CONFIG" 2>/dev/null | while IFS= read -r line; do
+        if ! ${pkgs.gnugrep}/bin/grep -qF "$line" "$TEMP"; then
+          # Add the project header and its trust_level line
+          project_key=$(echo "$line" | ${pkgs.gnused}/bin/sed 's/\[projects\."\(.*\)"\]/\1/')
+          printf '\n%s\ntrust_level = "trusted"\n' "$line" >> "$TEMP"
+        fi
+      done
     fi
+
+    ${pkgs.coreutils}/bin/mv "$TEMP" "$CONFIG"
+    ${pkgs.coreutils}/bin/chmod 600 "$CONFIG"
   '';
 
   # Feature 126: Codex OTEL interceptor (local user service)
