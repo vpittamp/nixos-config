@@ -2,7 +2,7 @@
 
 ## When to use
 
-Use this for Tailscale Ingresses served by the hub `cluster-ingress` ProxyGroup, such as `argocd-hub`, `nocodb-hub`, `autokube-hub`, and `gitops-inventory-hub`.
+Use this for Tailscale Ingresses served by a ProxyGroup service-host, especially hub `cluster-ingress` VIPs such as `argocd-hub`, `nocodb-hub`, and `gitops-inventory-hub`. The same service-host/tag/capability model also applies to spoke API VIPs such as `dev-api-v2` and `staging-api-v2`, but those use the spoke API ProxyGroup and `tag:spoke-api`.
 
 Symptoms:
 - Ingress `status.loadBalancer.ingress` is empty.
@@ -11,6 +11,12 @@ Symptoms:
 - The Tailscale Service exists, but the proxy pod's `Self.CapMap["service-host"]` does not list it.
 
 This is different from Funnel. If GitHub webhooks to `tekton-hub.tail286401.ts.net` return `status_code: 0` or DNS is NXDOMAIN, use `debug-funnel-orphan-tag.md` instead.
+
+This is also different from device-backed promoted-spoke app Ingresses such as `workflow-builder-staging`, `mcp-gateway-staging`, and `phoenix-staging` when they do not set `tailscale.com/proxy-group`. Those register as Tailscale devices, not `svc:*` service-hosts. If a canonical hostname is missing, has a `-1` suffix, or has an empty Ingress address despite a working device, use `debug-device-backed-tailscale-ingress.md`.
+
+This is also different from spoke cluster egress. Workflow-builder pods do **not** egress to `gitops-inventory-hub.tail286401.ts.net`; that hostname is a service-host VIP. They egress to the node-backed `gitops-inventory-hub-node.tail286401.ts.net:8080` through `gitops-inventory-hub-egress.tailscale.svc.cluster.local:8080`. If the failure is `/admin/deployments` showing "fetch failed" while the public VIP works, use `runbooks/track-promotion-state.md` and inspect the egress Service target.
+
+For `dev-api-v2` / `staging-api-v2`, also check the Kubernetes grant in `policy.hujson`: `tag:spoke-api` must be allowed to impersonate `system:masters` against `tag:k8s`. Without that grant, DNS/service-host can exist but `kubectl --context <spoke>-api-v2.tail286401.ts.net get nodes` still fails.
 
 ## Mental model
 
@@ -106,10 +112,15 @@ TOKEN=$(kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret gitops-depl
 curl -kfsS -H "Authorization: Bearer ${TOKEN}" \
   https://gitops-inventory-hub.tail286401.ts.net/inventory.json | \
   jq '{generatedAt, environments: (.environments | length)}'
+
+# The separate node-backed inventory endpoint should exist for spoke egress.
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get svc gitops-deployment-inventory-tailnet \
+  -o jsonpath='host={.status.loadBalancer.ingress[0].hostname} ip={.status.loadBalancer.ingress[1].ip}{"\n"}'
 ```
 
 ## Notes
 
 - Restarting the proxy pods may be enough to refresh `service-host` after policy changes, but it does not change the device tag. If the pod is authenticated as the wrong tag, re-authenticate the ProxyGroup.
 - The hub `argocd-hub` browser VIP and `gitops-inventory-hub` inventory VIP are both served by `cluster-ingress`. Fixing this ProxyGroup affects all of those browser services.
+- The `gitops-inventory-hub-node` LoadBalancer is intentionally separate from the `gitops-inventory-hub` service-host VIP. Do not collapse them unless the spoke egress path is redesigned.
 - Do not use this runbook for `ts-tekton-github-triggers` / `tekton-hub`; that path uses Funnel and is covered by `debug-funnel-orphan-tag.md`.

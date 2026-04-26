@@ -220,7 +220,7 @@ Until the root cause is fixed, use ryzen Tekton + manual mirror to ship images t
    ```
 2. Wait for `workflow-builder-image-build-*` PipelineRun on `kubectl -n tekton-pipelines get pipelinerun` (ryzen kind cluster, not hub).
 3. Mirror the new image: `runbooks/mirror-image-gitea-to-ghcr.md`.
-4. Bump `release-pins/workflow-builder-images.yaml` on stacks origin/main: `runbooks/promote-image-to-spokes.md`.
+4. Open/merge a release-intent PR, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
 
 ### Open
 

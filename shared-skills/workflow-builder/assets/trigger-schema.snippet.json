@@ -1,0 +1,52 @@
+{
+  "_comment": "Drop-in spec.input block. Demonstrates JSON Schema patterns the Execute dialog renders nicely. Reference fields as ${ .trigger.<name> } inside your tasks.",
+  "input": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "title": "URL",
+            "description": "Renders as a URL input.",
+            "default": "https://example.com"
+          },
+          "task": {
+            "type": "string",
+            "title": "Task",
+            "description": "Free-text instruction.",
+            "default": "Summarize this in two sentences."
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Renders as a dropdown when enum is set.",
+            "enum": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"],
+            "default": "claude-sonnet-4-6"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "title": "Max tokens",
+            "minimum": 256,
+            "maximum": 16384,
+            "default": 4096
+          },
+          "include_thinking": {
+            "type": "boolean",
+            "title": "Include thinking blocks",
+            "default": false
+          },
+          "tags": {
+            "type": "array",
+            "title": "Tags",
+            "items": { "type": "string" },
+            "default": []
+          }
+        },
+        "required": ["url", "task"]
+      }
+    }
+  }
+}

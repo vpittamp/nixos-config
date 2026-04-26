@@ -1,0 +1,183 @@
+{
+  "name": "Workspace + Agent (sandbox bridge)",
+  "engineType": "dapr",
+  "spec": {
+    "document": {
+      "dsl": "1.0.0",
+      "namespace": "workflow-builder",
+      "name": "workspace-keepalive",
+      "version": "1.0.0",
+      "title": "Workspace + Agent (sandbox bridge)",
+      "summary": "Provision a workspace sandbox (kept alive after run), then run a durable agent inside it. The keepAfterRun flag preserves the sandbox for live preview."
+    },
+    "input": {
+      "schema": {
+        "format": "json",
+        "document": {
+          "type": "object",
+          "properties": {
+            "task": {
+              "type": "string",
+              "title": "Coding task",
+              "default": "Write a Python script that prints 'hello world' and save it to /sandbox/hello.py."
+            }
+          },
+          "required": ["task"]
+        }
+      }
+    },
+    "do": [
+      {
+        "workspace_profile": {
+          "call": "workspace/profile",
+          "with": {
+            "rootPath": "/sandbox",
+            "sandboxTemplate": "dapr-agent",
+            "ttlSeconds": 7200,
+            "keepAfterRun": true,
+            "managedBy": "workflow-builder:sandbox-policy",
+            "name": "workspace_profile",
+            "enabledTools": [
+              "execute_command",
+              "read_file",
+              "write_file",
+              "edit_file",
+              "list_files",
+              "mkdir",
+              "file_stat"
+            ],
+            "sandboxPolicy": {
+              "keepAfterRun": true,
+              "mode": "per-run",
+              "template": "dapr-agent",
+              "ttlSeconds": 7200
+            },
+            "commandTimeoutMs": 900000,
+            "timeoutMs": 1200000
+          }
+        }
+      },
+      {
+        "agent_step": {
+          "call": "durable/run",
+          "with": {
+            "body": {
+              "agentRef": {
+                "id": "REPLACE_WITH_REAL_AGENT_ID"
+              },
+              "overrides": {
+                "cwd": "/sandbox",
+                "maxTurns": 30,
+                "timeoutMinutes": 60
+              },
+              "prompt": "${ .trigger.task + \" When you're done, list the files you created.\" }"
+            },
+            "mode": "execute_direct",
+            "cwd": "/sandbox",
+            "sandboxName": "${ .workspace_profile.sandboxName }",
+            "workspaceRef": "${ .workspace_profile.workspaceRef }",
+            "sandboxPolicy": {
+              "keepAfterRun": true,
+              "mode": "per-run",
+              "template": "dapr-agent",
+              "ttlSeconds": 7200
+            }
+          }
+        }
+      }
+    ],
+    "output": {
+      "as": {
+        "summary": "${ .agent_step.result }"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "__start__",
+      "type": "start",
+      "position": { "x": 250, "y": 50 },
+      "data": {
+        "label": "Start",
+        "type": "start",
+        "status": "idle",
+        "enabled": true,
+        "taskConfig": {
+          "input": {
+            "format": "json",
+            "schema": {
+              "format": "json",
+              "document": {
+                "type": "object",
+                "properties": {
+                  "task": { "type": "string", "title": "Coding task", "default": "Write a Python script that prints 'hello world' and save it to /sandbox/hello.py." }
+                },
+                "required": ["task"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "workspace_profile",
+      "type": "call",
+      "position": { "x": 250, "y": 200 },
+      "data": {
+        "label": "Workspace Profile",
+        "type": "call",
+        "status": "idle",
+        "enabled": true,
+        "taskConfig": {
+          "call": "workspace/profile",
+          "with": {
+            "rootPath": "/sandbox",
+            "sandboxTemplate": "dapr-agent",
+            "ttlSeconds": 7200,
+            "keepAfterRun": true,
+            "managedBy": "workflow-builder:sandbox-policy",
+            "name": "workspace_profile",
+            "enabledTools": ["execute_command", "read_file", "write_file", "edit_file", "list_files", "mkdir", "file_stat"]
+          }
+        }
+      }
+    },
+    {
+      "id": "agent_step",
+      "type": "agent",
+      "position": { "x": 250, "y": 350 },
+      "data": {
+        "label": "Agent Step",
+        "type": "agent",
+        "status": "idle",
+        "enabled": true,
+        "agent": { "id": "REPLACE_WITH_REAL_AGENT_ID", "runtime": "dapr-agent-py" },
+        "taskConfig": {
+          "call": "durable/run",
+          "with": {
+            "body": {
+              "agentRef": { "id": "REPLACE_WITH_REAL_AGENT_ID" },
+              "overrides": { "cwd": "/sandbox", "maxTurns": 30, "timeoutMinutes": 60 },
+              "prompt": "${ .trigger.task + \" When you're done, list the files you created.\" }"
+            },
+            "mode": "execute_direct",
+            "cwd": "/sandbox",
+            "sandboxName": "${ .workspace_profile.sandboxName }",
+            "workspaceRef": "${ .workspace_profile.workspaceRef }"
+          }
+        }
+      }
+    },
+    {
+      "id": "__end__",
+      "type": "end",
+      "position": { "x": 250, "y": 500 },
+      "data": { "label": "End", "type": "end", "status": "idle", "enabled": true }
+    }
+  ],
+  "edges": [
+    { "id": "__start__->workspace_profile", "source": "__start__", "target": "workspace_profile" },
+    { "id": "workspace_profile->agent_step", "source": "workspace_profile", "target": "agent_step" },
+    { "id": "agent_step->__end__", "source": "agent_step", "target": "__end__" }
+  ]
+}

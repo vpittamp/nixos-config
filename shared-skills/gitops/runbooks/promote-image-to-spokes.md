@@ -2,53 +2,82 @@
 
 ## Symptoms / when to use
 
-User wants a new image tag of `workflow-builder` (or any other workflow-builder-system component) running on dev and/or staging. The tag has been built (either by ryzen Tekton inner-loop, or by hub Tekton outer-loop, or imported manually) and the user has identified the SHA / tag they want deployed.
+User wants a new image tag of `workflow-builder` (or any other promoted workflow-builder-system component) running on dev and/or staging.
 
-## Diagnostic — verify the tag exists on ghcr.io
+Normal path: hub Tekton outer-loop has built the image, pushed it to GHCR, and opened a `release/workflow-builder-*` release-intent PR that updates `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml`.
 
-dev/staging pull from `ghcr.io/pittampalliorg/<image>:<tag>`. Confirm the tag exists before editing release-pins, otherwise the spoke pods will land in `Init:ImagePullBackOff`:
+Manual path: the tag has been built/imported and you need to edit release metadata yourself.
+
+## Diagnostic — verify tag and digest exist on ghcr.io
+
+dev/staging pull from `ghcr.io/pittampalliorg/<image>:<tag>` and render tag+digest refs when `digests.<image>` is set. Confirm the tag exists before merging release metadata, otherwise the spoke pods will land in `Init:ImagePullBackOff`:
 
 ```bash
-GHCR_TOKEN=$(curl -sS "https://ghcr.io/token?scope=repository:pittampalliorg/workflow-builder:pull" | jq -r .token)
-curl -sI -H "Authorization: Bearer $GHCR_TOKEN" \
-  "https://ghcr.io/v2/pittampalliorg/workflow-builder/manifests/git-<sha>" | head -1
-# HTTP/2 200 = exists; HTTP/2 404 / "manifest unknown" = missing
+# Preferred when you have registry credentials available:
+skopeo inspect --no-tags docker://ghcr.io/pittampalliorg/<image>:git-<sha> | jq -r .Digest
+
+# Or validate every release pin in the repo:
+scripts/gitops/validate-workflow-builder-release-pins.sh
 ```
 
 If missing → run `runbooks/mirror-image-gitea-to-ghcr.md` first.
 
 ## Fix steps
 
-1. **Edit `release-pins`** in the stacks repo:
+### Normal path — release-intent PR
+
+1. Find the release PR:
 
 ```bash
-cd /path/to/stacks/main
-# Edit packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml
-# Update the relevant key, e.g.:
-#   workflow-builder: git-c0f662425e0e301abbcb065001ebe21a2350d970
+gh pr list --repo PittampalliOrg/stacks --state open --search "head:release/workflow-builder" \
+  --json number,title,headRefName,updatedAt
 ```
 
-Available keys (don't add new ones unless you also update the AppSet template):
-`workflow-builder`, `workflow-mcp-server`, `mcp-gateway`, `function-router`, `workflow-orchestrator`, `code-parser`, `code-runtime`, `openshell-agent-runtime`, `openshell-sandbox`, `openshell-sandbox-xlsx`, `dapr-agent-py-sandbox`, `dapr-agent-py-testing-sandbox`, `browser-use-agent-sandbox`, `workspace-runtime`.
-
-2. **Sanity-build the affected overlays** before pushing:
+2. Inspect the release metadata change:
 
 ```bash
+gh pr diff <number> --repo PittampalliOrg/stacks
+```
+
+Confirm the relevant key changed consistently under:
+
+- `images`
+- `digests`
+- `imageRefs`
+- `sourceShas`
+- `pipelineRuns`
+- `updatedAts`
+
+3. Merge the PR when it is the desired release. The merge to `origin/main` starts source-hydrator + GitOps Promoter.
+
+### Manual path — exceptional
+
+1. Edit `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml`.
+
+Available promoted keys:
+`workflow-builder`, `workflow-mcp-server`, `mcp-gateway`, `function-router`, `workflow-orchestrator`, `code-parser`, `code-runtime`, `openshell-agent-runtime`, `openshell-sandbox`, `openshell-sandbox-xlsx`, `dapr-agent-py-sandbox`, `dapr-agent-py-testing-sandbox`, `browser-use-agent-sandbox`, `workspace-runtime`.
+
+`images` is the compatibility tag map. If the image exists on GHCR, also fill the matching `digests`, `imageRefs`, `sourceShas`, `pipelineRuns`, and `updatedAts` entries. Use an empty digest only as a temporary compatibility fallback.
+
+2. Validate release pins and sanity-build overlays:
+
+```bash
+scripts/gitops/validate-workflow-builder-release-pins.sh
 for ovl in hub dev staging kind-ryzen; do
   kubectl kustomize packages/overlays/$ovl > /dev/null && echo "$ovl OK" || echo "$ovl FAIL"
 done
 ```
 
-3. **Commit + push to BOTH remotes** (origin/main is what hub ArgoCD reads, gitea-ryzen/main keeps the mirror in sync):
+3. Commit and push. For release-only metadata, opening/merging a PR to `origin/main` is sufficient for dev/staging; use `scripts/gitops/check-branch-drift.sh` afterward if you need the ryzen mirror aligned too.
 
 ```bash
 git add packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml
-git commit -m "chore(release-pins): bump <image> to <tag>"
-git push origin HEAD:main
-git push gitea-ryzen HEAD:main
+git commit -m "chore(release-pins): release <image> <tag>"
+git push origin HEAD:release/workflow-builder-<image>-<tag>
+gh pr create --repo PittampalliOrg/stacks --base main --head release/workflow-builder-<image>-<tag>
 ```
 
-4. **Watch the promoter advance:**
+4. Watch the promoter advance:
 
 ```bash
 # These are read-only; use Ctrl-C when you've seen enough
@@ -57,12 +86,13 @@ kubectl --kubeconfig ~/.kube/hub-config get app dev-workflow-builder staging-wor
 ```
 
 Expected timeline:
-- ~30-90s: hub source-hydrator regenerates `env/spokes-dev-next` and `env/spokes-staging-next`
-- ~30-60s: `workflow-builder-release` PromotionStrategy creates PRs on the env-next branches and `argocd-health` gate evaluates
-- ~30-60s: with `autoMerge: true`, both env/spokes-dev and env/spokes-staging get merged
+- ~30-90s after merge to `origin/main`: hub source-hydrator regenerates `env/spokes-dev-next` and `env/spokes-staging-next`
+- ~30-60s: `workflow-builder-release` PromotionStrategy creates PRs on the env-next branches and evaluates `argocd-health` plus `timer`
+- ~30-60s: dev merges after health (`timer=0s`)
+- ~10m plus reconcile latency: staging merges after health plus soak timer
 - ~1-2 min: hub ArgoCD picks up the new env/spokes-* HEAD, syncs the spoke apps; `db-migrate` Job runs; `workflow-builder` Deployment rolls forward
 
-If dev's `argocd-health` gate fails (Deployment Unhealthy), staging won't promote until dev is recovered.
+If dev's `argocd-health` gate fails (Deployment Unhealthy), staging won't promote until dev is recovered. If staging is healthy but waiting, check the `timer` CommitStatus before intervening.
 
 ## Verify
 
@@ -75,7 +105,7 @@ kubectl --kubeconfig ~/.kube/hub-config get app dev-workflow-builder staging-wor
 # 2. Image actually live on the spoke (use Crossplane kubeconfig fallback if Tailscale broken)
 KUBECONFIG=/tmp/dev-kubeconfig kubectl -n workflow-builder get deploy workflow-builder \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
-# Should match ghcr.io/pittampalliorg/workflow-builder:<new-tag>
+# Should match ghcr.io/pittampalliorg/workflow-builder:<new-tag>@sha256:<digest> when digest metadata is present
 
 # 3. Image overrides on the spoke-workloads-managed Application
 kubectl --kubeconfig ~/.kube/hub-config get app dev-workflow-builder -n argocd \

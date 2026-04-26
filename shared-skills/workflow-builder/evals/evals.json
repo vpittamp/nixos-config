@@ -1,0 +1,23 @@
+{
+  "skill_name": "workflow-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Build me a workflow that takes a URL as input, opens it with the browser-use-web-navigator agent, and reports the page title plus a one-paragraph summary. Find the agent's id via /api/agents (or psql), insert the workflow into the DB, and tell me the canvas URL so I can run it.",
+      "expected_output": "Valid SW 1.0 spec with: trigger schema declaring `url` (string/uri/required); one durable/run task with real agentRef.id (not the placeholder); prompt uses jq full-string concat (no embedded interpolation); matching nodes/edges (3 nodes: __start__, agent task, __end__); workflow row inserted with non-NULL project_id via scripts/upsert-workflow.py; canvas URL printed.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I have a workflow that runs a coding agent in a workspace, but the live preview returns 404 'Retained sandbox not found' immediately after the run finishes. Fix it.",
+      "expected_output": "Identifies that `with.keepAfterRun: true` is missing on the workspace/profile step (per references/troubleshooting.md § Workspace / sandbox). Edits the spec to add it. Mentions the persist_workspace_session activity contract and the _should_cleanup_workspaces gate that reads the spec — not just task outputs.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "My durable/run step times out — the agent never seems to start. Walk me through what to check.",
+      "expected_output": "Triage from references/troubleshooting.md: AgentRuntime CR phase (`kubectl get agentruntime/<slug>`), per-agent pod logs, dapr-agent-py-statestore.scopes for the slug in stacks, openshell-sandbox-dapr-webhook namespaceSelector. Distinguishes 'Ignoring unexpected taskCompleted event' (normal replay chatter) from actually stuck. Suggests rolling restart of agent-runtime-controller as the Kopf annotation watcher fix.",
+      "files": []
+    }
+  ]
+}

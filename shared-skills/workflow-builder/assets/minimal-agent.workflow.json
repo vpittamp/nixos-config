@@ -1,0 +1,130 @@
+{
+  "name": "Minimal Agent",
+  "engineType": "dapr",
+  "spec": {
+    "document": {
+      "dsl": "1.0.0",
+      "namespace": "workflow-builder",
+      "name": "minimal-agent",
+      "version": "1.0.0",
+      "title": "Minimal Agent",
+      "summary": "Single durable/run agent step driven by trigger inputs. Replace agentRef.id with a real agent id from /api/agents."
+    },
+    "input": {
+      "schema": {
+        "format": "json",
+        "document": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "title": "Starting URL",
+              "default": "https://example.com"
+            },
+            "task": {
+              "type": "string",
+              "title": "What to do",
+              "default": "Open the page and report the exact title and final URL in one paragraph."
+            }
+          },
+          "required": ["url", "task"]
+        }
+      }
+    },
+    "do": [
+      {
+        "agent_run": {
+          "call": "durable/run",
+          "with": {
+            "agentRef": {
+              "id": "REPLACE_WITH_REAL_AGENT_ID",
+              "slug": "REPLACE_WITH_REAL_AGENT_SLUG"
+            },
+            "prompt": "${ \"Open \" + .trigger.url + \" and \" + .trigger.task + \" Finish your final message with TASK COMPLETE.\" }",
+            "mode": "execute_direct",
+            "maxTurns": 15,
+            "timeoutMinutes": 10,
+            "workspaceRef": "local",
+            "stopCondition": "Stop after the final response includes TASK COMPLETE."
+          }
+        }
+      }
+    ],
+    "output": {
+      "as": {
+        "answer": "${ .agent_run.result }"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "__start__",
+      "type": "start",
+      "position": { "x": 250, "y": 50 },
+      "data": {
+        "label": "Start",
+        "type": "start",
+        "status": "idle",
+        "enabled": true,
+        "taskConfig": {
+          "input": {
+            "format": "json",
+            "schema": {
+              "format": "json",
+              "document": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string", "format": "uri", "title": "Starting URL", "default": "https://example.com" },
+                  "task": { "type": "string", "title": "What to do", "default": "Open the page and report the exact title and final URL in one paragraph." }
+                },
+                "required": ["url", "task"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "agent_run",
+      "type": "agent",
+      "position": { "x": 250, "y": 200 },
+      "data": {
+        "label": "Agent Run",
+        "type": "agent",
+        "status": "idle",
+        "enabled": true,
+        "agent": {
+          "id": "REPLACE_WITH_REAL_AGENT_ID",
+          "slug": "REPLACE_WITH_REAL_AGENT_SLUG",
+          "runtime": "dapr-agent-py"
+        },
+        "taskConfig": {
+          "call": "durable/run",
+          "with": {
+            "agentRef": {
+              "id": "REPLACE_WITH_REAL_AGENT_ID",
+              "slug": "REPLACE_WITH_REAL_AGENT_SLUG"
+            },
+            "prompt": "${ \"Open \" + .trigger.url + \" and \" + .trigger.task + \" Finish your final message with TASK COMPLETE.\" }",
+            "mode": "execute_direct",
+            "maxTurns": 15,
+            "timeoutMinutes": 10,
+            "workspaceRef": "local",
+            "stopCondition": "Stop after the final response includes TASK COMPLETE."
+          }
+        }
+      }
+    },
+    {
+      "id": "__end__",
+      "type": "end",
+      "position": { "x": 250, "y": 350 },
+      "data": { "label": "End", "type": "end", "status": "idle", "enabled": true }
+    }
+  ],
+  "edges": [
+    { "id": "__start__->agent_run", "source": "__start__", "target": "agent_run" },
+    { "id": "agent_run->__end__", "source": "agent_run", "target": "__end__" }
+  ]
+}

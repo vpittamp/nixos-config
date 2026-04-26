@@ -4,10 +4,12 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 
 ## What it covers
 
-- **Image promotion lifecycle** — the two image-pin systems (release-pins vs active-development), how outer-loop and inner-loop Tekton pipelines interact, branch reconciliation between `origin/main` and `gitea-ryzen/main`.
+- **Image promotion lifecycle** — the two image-pin systems (release-pins vs active-development), how outer-loop and inner-loop Tekton pipelines interact, direct-main vs PR-mode release handoffs, post-push ryzen/dev verification, and branch reconciliation between `origin/main` and `gitea-ryzen/main`.
 - **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
 - **GitOps Promoter operations** — controller upgrades, hub `stacks-environments` promotion, and the ArgoCD UI extension used to visualize Promoter resources.
-- **Recovery runbooks** — stuck PromotionStrategy, db-migrate Job finalizer hangs, Tailscale Funnel orphan tags, ProxyGroup service-host VIPs, missing ghcr.io tags.
+- **ArgoCD health/drift review** — fleet-wide OutOfSync/Degraded triage, keep/remove decisions for legacy resources, and stable handling of controller default drift.
+- **App placement policy** — which apps belong on hub, per-spoke, or ryzen-local.
+- **Recovery runbooks** — stuck PromotionStrategy, db-migrate Job finalizer hangs, Tailscale Funnel orphan tags, device-backed Tailscale Ingress DNS/status issues, ProxyGroup service-host VIPs, missing ghcr.io tags.
 - **Spoke cluster access** — Tailscale primary path + Crossplane-managed kubeconfig fallback.
 - **Secret rotation** — KeyVault → ExternalSecret → pod env chain, including the ESO refresh ↔ pod restart race.
 
@@ -19,16 +21,21 @@ shared-skills/gitops/
 ├── agents/openai.yaml                ← Codex UI metadata
 ├── reference/
 │   ├── architecture.md               ← cluster model, two-image-pin flow, branch model
+│   ├── app-placement.md              ← hub-vs-spoke placement policy
 │   ├── access-paths.md               ← how to reach hub/spokes/ArgoCD/registries
 │   └── secret-flow.md                ← KV → ESO → pod chain + per-spoke key naming
 └── runbooks/
     ├── promote-image-to-spokes.md
+    ├── bump-image-pin-not-in-release-pins.md  ← browserstation, chrome-sandbox, AGENT_RUNTIME_*_DEFAULT_IMAGE
+    ├── upsert-workflow-json.md                ← workflow JSON spec → DB UPDATE (image rebuild does not roll specs)
     ├── reconcile-branches.md
     ├── mirror-image-gitea-to-ghcr.md
     ├── manage-gitops-promoter.md          ← controller upgrades + ArgoCD Promoter UI extension
+    ├── review-argocd-app-health.md        ← OutOfSync/Degraded fleet review + legacy cleanup decisions
     ├── recover-stuck-promotion.md
     ├── recover-stuck-job-finalizer.md
     ├── debug-funnel-orphan-tag.md          ← covers BOTH funnel-NXDOMAIN and EL-202-no-PipelineRun modes
+    ├── debug-device-backed-tailscale-ingress.md ← app Ingress DNS suffix/status/stale tailnet records
     ├── debug-proxygroup-service-host.md    ← service-host VIPs such as argocd-hub and gitops-inventory-hub
     ├── fix-drizzle-migration.md            ← drizzle-kit silent journal-skip + dual atlas/drizzle dirs
     ├── track-promotion-state.md            ← PromotionStrategy + ChangeTransferPolicy CLI cheat-sheet
@@ -55,9 +62,10 @@ The runbook content was seeded from these docs in `PittampalliOrg/stacks/main/`:
 | Skill file | Stacks-docs source |
 |---|---|
 | `reference/architecture.md` | `docs/outer-loop-promotion.md`, `docs/gitops-architecture-overview.md` |
+| `reference/app-placement.md` | `docs/hub-spoke-app-placement.md` |
 | `reference/access-paths.md` | `docs/spoke-cluster-access.md`, `docs/hub-and-spoke-quickstart.md`, `docs/tailscale-naming.md` |
 | `reference/secret-flow.md` | `docs/oauth-rotation.md`, `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` |
-| `runbooks/*.md` | `docs/outer-loop-promotion.md` "Recovery Runbooks", `docs/oauth-rotation.md`, `docs/spoke-cluster-access.md`, `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml`, `packages/components/hub-management/manifests/argocd-gitops-promoter-ui/` |
+| `runbooks/*.md` | `docs/outer-loop-promotion.md` "Recovery Runbooks", `docs/oauth-rotation.md`, `docs/spoke-cluster-access.md`, `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml`, `packages/components/hub-management/manifests/argocd-gitops-promoter-ui/`, recent ArgoCD health cleanups |
 
 The stacks docs remain the canonical living reference. **The skill is a periodic snapshot** with a curated decision tree on top — re-sync after any major recovery procedure change in stacks.
 
@@ -68,4 +76,4 @@ The stacks docs remain the canonical living reference. **The skill is a periodic
 3. `home-manager switch --flake .#vpittamp` (or whichever target you use) — the changes flow through the symlinks to each agent's discovery directory.
 4. Test in a fresh agent session by triggering the skill with a phrase from `description`.
 
-When the underlying stacks system changes (new failure modes, new image pinning paths, new spoke onboarding pattern), update both the stacks docs **and** this skill.
+When the underlying stacks system changes (new failure modes, new image pinning paths, new spoke onboarding pattern, or a legacy app is removed), update both the stacks docs **and** this skill.

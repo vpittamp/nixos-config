@@ -79,6 +79,16 @@ git push gitea-ryzen HEAD:main
 
 7. Let source-hydrator and Promoter move `origin/main` through `env/hub-next` to `env/hub`. If hub promotion does not create/merge the PR, inspect `stacks-environments` and open/merge the `env/hub-next` → `env/hub` PR only if the diff is expected.
 
+If `env/hub-next` has advanced but `ChangeTransferPolicy/stacks-environments-env-hub-*` still proposes a prior dry SHA or prior PR, force a promoter refresh before bypassing the normal flow:
+
+```bash
+TS=$(date +%s)
+kubectl --kubeconfig ~/.kube/hub-config annotate promotionstrategy stacks-environments -n argocd \
+  promoter.argoproj.io/refresh-ts="$TS" --overwrite
+kubectl --kubeconfig ~/.kube/hub-config annotate changetransferpolicy stacks-environments-env-hub-8c9641d5 -n argocd \
+  promoter.argoproj.io/refresh-ts="$TS" --overwrite
+```
+
 ## UI extension details
 
 The UI extension follows the upstream ArgoCD integration pattern: an `extension-gitops-promoter` initContainer downloads the release tarball, verifies the checksum, and writes extension files to an `extensions` emptyDir mounted at `/tmp/extensions/`.
@@ -111,6 +121,26 @@ kubectl --context hub -n argocd get applications.argoproj.io root-application -o
   jq '.status.sourceHydrator'
 git ls-remote origin refs/heads/env/hub-next refs/heads/env/hub
 ```
+
+## Recover stale hub promotion proposal
+
+Symptom: `root-application.status.sourceHydrator.currentOperation.drySHA` matches the latest `origin/main`, and `env/hub-next` has the latest hydrated commit, but `ChangeTransferPolicy/stacks-environments-env-hub-*` still shows the previously merged dry SHA/PR.
+
+Fix:
+
+```bash
+TS=$(date +%s)
+kubectl --kubeconfig ~/.kube/hub-config annotate promotionstrategy stacks-environments -n argocd \
+  promoter.argoproj.io/refresh-ts="$TS" --overwrite
+kubectl --kubeconfig ~/.kube/hub-config annotate changetransferpolicy stacks-environments-env-hub-8c9641d5 -n argocd \
+  promoter.argoproj.io/refresh-ts="$TS" --overwrite
+
+kubectl --kubeconfig ~/.kube/hub-config get changetransferpolicy stacks-environments-env-hub-8c9641d5 -n argocd -o json |
+  jq '{activeDry:.status.active.dry.sha, proposedDry:.status.proposed.dry.sha, proposedHydrated:.status.proposed.hydrated.sha, pr:.status.pullRequest}'
+gh pr list --repo PittampalliOrg/stacks --state open --base env/hub --json number,title,headRefName,url
+```
+
+Expected: the proposed dry SHA advances to the latest main commit and a new `env/hub` PR appears. Merge it after checking the diff is expected.
 
 ## Recover a failed UI patch hook
 

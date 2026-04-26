@@ -1,0 +1,125 @@
+{
+  "name": "Minimal HTTP",
+  "engineType": "dapr",
+  "spec": {
+    "document": {
+      "dsl": "1.0.0",
+      "namespace": "workflow-builder",
+      "name": "minimal-http",
+      "version": "1.0.0",
+      "title": "Minimal HTTP",
+      "summary": "Fetch a URL declared by the trigger and surface the response body."
+    },
+    "input": {
+      "schema": {
+        "format": "json",
+        "document": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "title": "URL to fetch",
+              "default": "https://example.com"
+            }
+          },
+          "required": ["url"]
+        }
+      }
+    },
+    "do": [
+      {
+        "fetch": {
+          "call": "system/http-request",
+          "with": {
+            "url": "${ .trigger.url }",
+            "method": "GET",
+            "headers": { "User-Agent": "workflow-builder" },
+            "timeoutMs": 30000
+          },
+          "output": {
+            "as": {
+              "status": "${ .status }",
+              "body": "${ .data }"
+            }
+          }
+        }
+      }
+    ],
+    "output": {
+      "as": {
+        "fetched": "${ .fetch.status }",
+        "preview": "${ .fetch.body | tostring | .[0:200] }"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "__start__",
+      "type": "start",
+      "position": { "x": 250, "y": 50 },
+      "data": {
+        "label": "Start",
+        "type": "start",
+        "status": "idle",
+        "enabled": true,
+        "taskConfig": {
+          "input": {
+            "format": "json",
+            "schema": {
+              "format": "json",
+              "document": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "title": "URL to fetch",
+                    "default": "https://example.com"
+                  }
+                },
+                "required": ["url"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "fetch",
+      "type": "call",
+      "position": { "x": 250, "y": 200 },
+      "data": {
+        "label": "Fetch URL",
+        "type": "call",
+        "status": "idle",
+        "enabled": true,
+        "taskConfig": {
+          "call": "system/http-request",
+          "with": {
+            "url": "${ .trigger.url }",
+            "method": "GET",
+            "headers": { "User-Agent": "workflow-builder" },
+            "timeoutMs": 30000
+          },
+          "output": {
+            "as": {
+              "status": "${ .status }",
+              "body": "${ .data }"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "__end__",
+      "type": "end",
+      "position": { "x": 250, "y": 350 },
+      "data": { "label": "End", "type": "end", "status": "idle", "enabled": true }
+    }
+  ],
+  "edges": [
+    { "id": "__start__->fetch", "source": "__start__", "target": "fetch" },
+    { "id": "fetch->__end__", "source": "fetch", "target": "__end__" }
+  ]
+}

@@ -28,12 +28,16 @@ kubectl --context hub-cluster get nodes
 Per-spoke ProxyGroups expose each spoke's API server as `<spoke>-api-v2.tail286401.ts.net` (or similar — check `hub-and-spoke-quickstart.md` for the current naming). The K9s launcher script auto-merges them into `~/.kube/config`:
 
 ```bash
+kubectl --context dev-api-v2.tail286401.ts.net get nodes
+kubectl --context staging-api-v2.tail286401.ts.net get nodes
 kubectl --context dev-cluster get nodes      # if Tailscale registers it
 kubectl --context staging-cluster get nodes
 kubectl --context kind-ryzen get nodes        # ryzen kind, no Tailscale needed
 ```
 
 If the context exists in `~/.kube/config` but `kubectl` errors with `lookup …: no such host`, the Tailscale device for that ProxyGroup isn't registering its hostname publicly (often the orphan-tag issue — see `runbooks/debug-funnel-orphan-tag.md`).
+
+The `*-api-v2` VIPs are Tailscale service-hosts. `policy.hujson` must approve `svc:dev-api-v2` / `svc:staging-api-v2`, and devices authenticated as `tag:spoke-api` need a Kubernetes grant to `tag:k8s` with `system:masters`. If ACL policy has changed but the VIP still fails, re-authenticate the spoke ProxyGroup with `deployment/scripts/tailscale/proxygroup-auth.sh --cluster <spoke>` after verifying the Tailscale ACL GitHub Action succeeded.
 
 ## Spoke kubectl — fallback (Crossplane-managed kubeconfig)
 
@@ -127,7 +131,7 @@ The local daemon doesn't see every device on the tailnet — sharing/ACL rules c
 
 ### ProxyGroup service-host VIPs
 
-Hub browser services such as `argocd-hub`, `nocodb-hub`, `autokube-hub`, and `gitops-inventory-hub` are Tailscale Ingresses served by the `cluster-ingress` ProxyGroup. They are **not** Funnel endpoints. Their readiness depends on the Tailscale `service-host` capability, so four layers must line up:
+Hub browser services such as `argocd-hub`, `nocodb-hub`, and `gitops-inventory-hub` are Tailscale Ingresses served by the `cluster-ingress` ProxyGroup. They are **not** Funnel endpoints. Their readiness depends on the Tailscale `service-host` capability, so four layers must line up:
 
 - The Ingress has `tailscale.com/proxy-group: cluster-ingress` and `tailscale.com/tags: tag:k8s-services`.
 - `policy.hujson` has `autoApprovers.services["svc:<hostname>"]` allowing `tag:k8s-services`.
@@ -141,4 +145,17 @@ kubectl --kubeconfig ~/.kube/hub-config -n tailscale exec cluster-ingress-0 -- \
   tailscale status --json | jq '.Self | {Tags, serviceHost: .CapMap["service-host"]}'
 ```
 
-If an Ingress has no address, `tailscale cert <host>.tail286401.ts.net` says the domain is invalid, or `curl` to the VIP times out despite a healthy backing Service, use `runbooks/debug-proxygroup-service-host.md`.
+If a ProxyGroup-hosted Ingress has no address, `tailscale cert <host>.tail286401.ts.net` says the domain is invalid, or `curl` to the VIP times out despite a healthy backing Service, use `runbooks/debug-proxygroup-service-host.md`.
+
+Promoted-spoke app URLs such as `workflow-builder-staging`, `mcp-gateway-staging`, and `phoenix-staging` are normally device-backed Tailscale Ingresses unless they explicitly set `tailscale.com/proxy-group`. They should not have `svc:*` service approvals. If one gets a `-1` suffix or its Ingress address is empty while the device works, use `runbooks/debug-device-backed-tailscale-ingress.md`.
+
+### Workflow-builder deployment inventory paths
+
+The inventory service has two intentional network paths:
+
+| Path | Host | Use |
+|---|---|---|
+| HTTPS service-host VIP | `https://gitops-inventory-hub.tail286401.ts.net/inventory.json` | Human/browser and direct operator checks |
+| Node-backed egress target | `gitops-inventory-hub-node.tail286401.ts.net:8080` via `gitops-inventory-hub-egress.tailscale.svc.cluster.local:8080` | workflow-builder pods on dev/staging/ryzen |
+
+Do not configure Tailscale egress to target the service-host VIP. Cluster egress proxies target tailnet nodes or IPs; `gitops-inventory-hub` is `svc:gitops-inventory-hub`, not a node. If a spoke workflow-builder pod logs `fetch failed`, verify `WORKFLOW_BUILDER_GITOPS_INVENTORY_URL` and the `tailscale.com/tailnet-fqdn` annotation on `Service/gitops-inventory-hub-egress`.

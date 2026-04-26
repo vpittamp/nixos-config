@@ -2,9 +2,9 @@
 
 ## Symptoms / when to use
 
-`git log origin/main..gitea-ryzen/main` and the reverse both show 5+ commits each → the branches have diverged. Common because two automated bumpers commit independently:
+`git log origin/main..gitea-ryzen/main` and the reverse both show 5+ commits each → the branches have diverged. Common because two automated paths write different sources of truth:
 
-- **Hub Tekton outer-loop** commits image-pin updates to `origin/main` (file: `release-pins/workflow-builder-images.yaml`)
+- **Hub Tekton outer-loop** opens release-intent PRs that merge release metadata to `origin/main` (file: `release-pins/workflow-builder-images.yaml`)
 - **Ryzen Tekton inner-loop** commits ryzen-only image bumps to `gitea-ryzen/main` (commit subject: `chore(dev-images): deploy <image> <tag> to ryzen`, file: `active-development/manifests/<image>/kustomization.yaml`)
 
 Reconcile when:
@@ -46,7 +46,7 @@ git merge --no-ff --no-commit gitea-ryzen/main
 | Conflict file | Resolution rule |
 |---|---|
 | `packages/components/active-development/manifests/<workload>/kustomization.yaml` (image pins for ryzen) | **Take gitea-ryzen** — it has the newer ryzen tag |
-| `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` | **Take origin's structure**, then bump tags to current ryzen values (so dev/staging catch up to ryzen too) |
+| `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` | **Take origin's schema v2 structure**, then update the `images` tag and matching `digests`/provenance maps only for tags that exist on GHCR |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/kustomization.yaml` and other Tekton resource lists | **Union** — keep all entries from both sides (origin tends to add new pipelines first) |
 | `packages/components/active-development/manifests/dapr-agent-py/Component-dapr-agent-py-statestore.yaml` and other Dapr Component scopes | **Take gitea-ryzen** (it's the working scope set; origin may have a partial refactor) |
 | `packages/components/active-development/manifests/.../ExternalSecret-*.yaml` (data lists like `INTERNAL_API_TOKEN`, `BROWSERSTATION_API_KEY`) | **Union** — keep all data entries from both sides |
@@ -87,22 +87,31 @@ git push origin HEAD:main
 git push gitea-ryzen HEAD:main
 ```
 
+If the merge includes ryzen root/child Application spec changes (for example app `ignoreDifferences`, new app resources, or root overlay changes), also fast-forward the branch tracked by ryzen's root Application:
+
+```bash
+git push gitea-ryzen HEAD:ryzen-main
+```
+
 ## Verify
 
 ```bash
-# Both branches should now point at the same commit:
+# Both main branches should now point at the same commit:
 git rev-parse origin/main gitea-ryzen/main
+
+# If ryzen app-spec changes were included, ryzen-main should also match:
+git ls-remote gitea-ryzen refs/heads/main refs/heads/ryzen-main
 
 # Hub ArgoCD picks up the new origin/main HEAD; check root-application revision:
 kubectl --kubeconfig ~/.kube/hub-config get app root-application -n argocd \
   -o jsonpath='{.status.sync.revision}{"\n"}'
 
-# spoke-workloads ApplicationSet re-templates dev/staging apps with new release-pins tags;
+# spoke-workloads ApplicationSet re-templates dev/staging apps with new release-pins tag/digest metadata;
 # expect dev-workflow-builder and staging-workflow-builder to enter a sync within ~2 min.
 ```
 
 ## Risks
 
 - **Tekton may commit again during the merge.** If a `chore(dev-images):` lands on gitea-ryzen between your fetch and push, you'll see a non-fast-forward push rejection. Re-merge and try again.
-- **The release-pins update triggers an automatic dev rollout** as soon as the merge lands on origin/main. Verify the new image tags exist on ghcr.io before pushing (otherwise dev workflow-builder lands in ImagePullBackOff). If the bump is for ryzen-only tags that haven't been mirrored to ghcr.io, run `runbooks/mirror-image-gitea-to-ghcr.md` first.
+- **The release-pins update triggers a Promoter rollout** as soon as the merge lands on origin/main. Verify the new image tags/digests exist on ghcr.io before pushing (otherwise dev workflow-builder lands in ImagePullBackOff). If the bump is for ryzen-only tags that haven't been mirrored to ghcr.io, run `runbooks/mirror-image-gitea-to-ghcr.md` first, then `scripts/gitops/validate-workflow-builder-release-pins.sh`.
 - **Long branch-divergence (>50 commits each way)** is harder to merge cleanly; consider doing it in stages or asking for help.
