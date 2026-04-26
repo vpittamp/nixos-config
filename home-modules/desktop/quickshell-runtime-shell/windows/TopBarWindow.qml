@@ -13,17 +13,20 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     id: topBarWindow
     required property var modelData
-    readonly property var topBarScreen: modelData
-    readonly property string topOutputName: root.screenOutputName(topBarScreen)
+    property bool fallbackMode: false
+    property string fallbackOutputName: ""
+    readonly property var topBarScreen: fallbackMode ? null : modelData
+    readonly property string topOutputName: fallbackMode ? root.stringOrEmpty(fallbackOutputName) : root.screenOutputName(topBarScreen)
     readonly property bool isPrimaryBar: root.isPrimaryOutput(topOutputName)
     readonly property bool isFocusedBar: root.isFocusedOutput(topOutputName)
 
     screen: topBarScreen
-    visible: topBarScreen !== null
+    visible: fallbackMode || topBarScreen !== null
     color: "transparent"
     anchors.left: true
     anchors.right: true
     anchors.top: true
+    height: runtimeConfig.topBarHeight
     implicitHeight: runtimeConfig.topBarHeight
     exclusiveZone: implicitHeight
     focusable: false

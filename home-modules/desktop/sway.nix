@@ -413,7 +413,7 @@ let
     default = {
       name = "default";
       description = "Full Ryzen desktop layout (HDMI-A-1, DP-1, DP-2)";
-      default = true;
+      default = false;
       outputs = [
         {
           name = "HDMI-A-1";
@@ -492,6 +492,7 @@ let
     single = {
       name = "single";
       description = "Manual single-monitor mode (DP-1 only)";
+      default = true;
       outputs = [
         {
           name = "HDMI-A-1";
@@ -537,7 +538,7 @@ let
   managedProfileDefault =
     if isHeadless then headlessProfileDefault
     else if isHybrid then "local-only"
-    else if isRyzen then "default"
+    else if isRyzen then "single"
     else "";
   hasManagedMonitorProfiles = (builtins.length (builtins.attrNames managedMonitorProfiles)) > 0;
 
@@ -817,49 +818,12 @@ in
           scale = "1.0";
         };
       } else if isRyzen then {
-        # Ryzen 4-monitor desktop layout (Feature 001 extension for 4-tier system)
-        # Physical layout:
-        #   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-        #   │   HDMI-A-1  │  │    DP-1     │  │    DP-2     │
-        #   │   (Left)    │  │  (Primary)  │  │   (Right)   │
-        #   │  1920x1080  │  │  1920x1200  │  │  1920x1200  │
-        #   └─────────────┘  └─────────────┘  └─────────────┘
-        #                    ┌─────────────┐
-        #                    │    DP-3     │
-        #                    │  (Bottom)   │
-        #                    │  1920x1080  │
-        #                    └─────────────┘
-        #
-        # Monitor roles (4-tier system):
-        #   - Primary:    DP-1 (Center, main workspace)
-        #   - Secondary:  HDMI-A-1 (Left, supporting windows)
-        #   - Tertiary:   DP-2 (Right, reference/docs)
-        #   - Quaternary: DP-3 (Bottom, monitoring/terminals)
-        #
-        # Position calculations for natural mouse movement:
-        #   - HDMI-A-1: 0,0 (leftmost)
-        #   - DP-1: 1920,0 (after HDMI-A-1's 1920px width)
-        #   - DP-2: 3840,0 (after DP-1's 1920px, total 1920+1920=3840)
-        #   - DP-3: 1920,1200 (below DP-1, aligned to DP-1's X position)
-        #           Y offset = DP-1 height (1200px)
+        # Capture-safe Ryzen default for Moonlight/Sunshine.
+        # Full and dual physical layouts remain available through monitor profiles,
+        # but Sway reload should not re-enable side outputs and change KMS index 0.
         "DP-1" = {
           mode = "1920x1200@60Hz";
-          position = "1920,0";
-          scale = "1.0";
-        };
-        "HDMI-A-1" = {
-          mode = "1920x1080@60Hz";
           position = "0,0";
-          scale = "1.0";
-        };
-        "DP-2" = {
-          mode = "1920x1200@60Hz";
-          position = "3840,0";
-          scale = "1.0";
-        };
-        "DP-3" = {
-          mode = "1920x1080@60Hz";
-          position = "1920,1200";
           scale = "1.0";
         };
       } else if isHybrid then {
@@ -1216,6 +1180,15 @@ in
       # Behavior: Workspace automatically switches to show newly launched app
       focus_on_window_activation focus
 
+      ${lib.optionalString isRyzen ''
+        # Keep Sunshine's numeric KMS output stable. When Sway reload enabled
+        # HDMI-A-1/DP-2, Sunshine started capturing DP-2 as output_name=0.
+        output DP-1 enable mode 1920x1200@60Hz position 0 0 scale 1.0
+        output HDMI-A-1 disable
+        output DP-2 disable
+        output DP-3 disable
+      ''}
+
       # NOTE: focus_follows_mouse and mouse_warping are now set in config.focus block
       # to properly override home-manager defaults (see lines 415-420)
 
@@ -1293,12 +1266,13 @@ in
     wl-clipboard     # Clipboard utilities (wl-copy, wl-paste)
     grim             # Screenshot tool
     slurp            # Screen area selection
-    swaynotificationcenter  # Notification daemon with action button support
     swaylock         # Screen locker
     swayidle         # Idle management
     sov              # Workspace overview
     lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
+  ] ++ lib.optionals (!nativeQuickshellNotifications) [
+    pkgs.swaynotificationcenter  # Notification daemon with action button support
   ] ++ lib.optionals hasVirtualOutputs [
     # wayvnc for declarative virtual displays
     pkgs.wayvnc

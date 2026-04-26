@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, osConfig ? null, ... }:
 
 # PWA Launcher - Declarative Google Chrome PWA launcher
 # Resolves declarative PWA entries from pwa-registry.json and launches them
@@ -16,6 +16,16 @@
 # - Remains compatible with i3pm domain-based PWA matching
 
 let
+  hostName =
+    if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
+    then osConfig.networking.hostName
+    else "";
+
+  captureSafeChromeArgs = lib.optionals (hostName == "ryzen") [
+    "--disable-accelerated-video-decode"
+    "--disable-zero-copy"
+  ];
+
   launch-pwa-by-name = pkgs.writeShellScriptBin "launch-pwa-by-name" ''
     #!/usr/bin/env bash
     # PWA Launcher - Resolves declarative PWA metadata and launches Chrome app mode
@@ -156,6 +166,7 @@ let
 
     cmd=(
       ${pkgs.google-chrome}/bin/google-chrome-stable
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) captureSafeChromeArgs)}
       --profile-directory=Default
       --app="$TARGET_URL"
       --new-window

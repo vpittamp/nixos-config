@@ -14,7 +14,7 @@ PanelWindow {
     property alias settingsCommandsListRef: settingsCommandsList
     id: settingsWindow
     screen: root.primaryScreen
-    visible: root.settingsVisible && root.primaryScreen !== null
+    visible: root.settingsVisible
     color: "transparent"
     anchors.left: true
     anchors.right: true

@@ -15,7 +15,7 @@ PanelWindow {
     required property QtObject assistantService
     id: panelWindow
     screen: root.primaryScreen
-    visible: root.panelVisible && root.primaryScreen !== null
+    visible: root.panelVisible
     color: "transparent"
     implicitWidth: runtimeConfig.panelWidth
     anchors.top: true

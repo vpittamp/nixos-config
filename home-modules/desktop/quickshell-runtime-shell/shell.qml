@@ -17,6 +17,7 @@ import "windows" as Windows
 ShellRoot {
     id: root
     readonly property QtObject shellRootRef: root
+    signal displayLayoutStateChanged()
 
     ShellConfig {
         id: shellConfig
@@ -283,6 +284,10 @@ ShellRoot {
         })
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
+    readonly property bool hasQuickshellScreens: arrayOrEmpty(Quickshell.screens).length > 0
+    readonly property bool useFallbackScreenWindows: !hasQuickshellScreens
+    readonly property string fallbackOutputName:
+        focusedOutputName() || livePrimaryOutputName() || primaryOutputName || "DP-1"
     readonly property var settingsSectionsModel: [
         {
             id: "commands",
@@ -631,6 +636,21 @@ ShellRoot {
             return "Local";
         }
         return value ? value : "Global";
+    }
+
+    function modeChipLabel(mode) {
+        return modeLabel(mode);
+    }
+
+    function modeAccentColor(mode) {
+        const value = stringOrEmpty(mode).toLowerCase();
+        if (value === "ssh") {
+            return colors.teal;
+        }
+        if (value === "local") {
+            return colors.blue;
+        }
+        return colors.subtle;
     }
 
     function currentContextTitle() {
@@ -7777,7 +7797,7 @@ ShellRoot {
 
 
     Variants {
-        model: Quickshell.screens
+        model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
         delegate: Windows.TopBarWindow {
             shellRoot: shellRootRef
             runtimeConfig: shellConfig
@@ -7785,8 +7805,18 @@ ShellRoot {
         }
     }
 
+    Windows.TopBarWindow {
+        visible: shellRootRef.useFallbackScreenWindows && shellConfig.perMonitorBars
+        modelData: null
+        fallbackMode: true
+        fallbackOutputName: shellRootRef.fallbackOutputName
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
     Variants {
-        model: Quickshell.screens
+        model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
         delegate: Windows.BottomBarWindow {
             shellRoot: shellRootRef
             runtimeConfig: shellConfig
@@ -7794,8 +7824,18 @@ ShellRoot {
         }
     }
 
+    Windows.BottomBarWindow {
+        modelData: null
+        fallbackMode: true
+        fallbackOutputName: shellRootRef.fallbackOutputName
+        visible: shellRootRef.useFallbackScreenWindows && shellConfig.perMonitorBars
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
     Variants {
-        model: Quickshell.screens
+        model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
         delegate: Windows.ToastWindow {
             shellRoot: shellRootRef
             runtimeConfig: shellConfig

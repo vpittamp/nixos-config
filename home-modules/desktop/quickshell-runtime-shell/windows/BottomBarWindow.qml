@@ -11,8 +11,10 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     required property var modelData
-    readonly property var barScreen: modelData
-    readonly property string barOutputName: root.screenOutputName(barScreen)
+    property bool fallbackMode: false
+    property string fallbackOutputName: ""
+    readonly property var barScreen: fallbackMode ? null : modelData
+    readonly property string barOutputName: fallbackMode ? root.stringOrEmpty(fallbackOutputName) : root.screenOutputName(barScreen)
 
     screen: barScreen
     visible: runtimeConfig.perMonitorBars
@@ -20,6 +22,7 @@ PanelWindow {
     anchors.left: true
     anchors.right: true
     anchors.bottom: true
+    height: runtimeConfig.barHeight
     implicitHeight: runtimeConfig.barHeight
     exclusiveZone: implicitHeight
     focusable: false
