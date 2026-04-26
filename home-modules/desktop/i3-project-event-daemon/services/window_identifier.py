@@ -277,6 +277,7 @@ def match_with_registry(
     actual_class: str,
     actual_instance: str,
     application_registry: dict,
+    window_title: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Match window against application registry using tiered matching.
@@ -287,6 +288,8 @@ def match_with_registry(
         actual_class: WM_CLASS class field
         actual_instance: WM_CLASS instance field
         application_registry: Application registry dict (app_name -> app_def)
+        window_title: Window title used when a registry entry sets
+            expected_title_contains to disambiguate shared window classes
 
     Returns:
         Matched application definition dict, or None if no match
@@ -297,9 +300,15 @@ def match_with_registry(
     for app_name, app_def in application_registry.items():
         # Get expected class from registry
         expected_class = app_def.get("expected_class", app_name)
+        expected_title_contains = app_def.get("expected_title_contains")
         pwa_domain = app_def.get("pwa_domain")
         pwa_domains = app_def.get("pwa_match_domains", [])
         aliases = app_def.get("aliases", [])
+
+        if expected_title_contains:
+            title = window_title or ""
+            if expected_title_contains not in title:
+                continue
 
         # Try matching using PWA logic first
         if match_pwa_instance(expected_class, actual_class, actual_instance, pwa_domain, pwa_domains):

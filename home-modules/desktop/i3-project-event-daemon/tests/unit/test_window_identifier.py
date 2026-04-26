@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "services"))
 
-from window_identifier import match_pwa_instance
+from window_identifier import match_pwa_instance, match_with_registry
 
 
 def test_match_pwa_instance_matches_dynamic_wayland_app_id_with_path_suffix():
@@ -26,3 +26,34 @@ def test_match_pwa_instance_matches_domain_aliases():
         "",
         pwa_domains=["youtube.com", "www.youtube.com", "m.youtube.com"],
     )
+
+
+def test_registry_match_requires_expected_title_when_present():
+    registry = {
+        "worktree-manager": {
+            "display_name": "AI Worktree Manager",
+            "expected_class": "quickshell",
+            "expected_title_contains": "AI Worktree Manager",
+            "preferred_workspace": 23,
+        }
+    }
+
+    assert (
+        match_with_registry(
+            actual_class="org.quickshell",
+            actual_instance="",
+            application_registry=registry,
+            window_title="Runtime Settings",
+        )
+        is None
+    )
+
+    match = match_with_registry(
+        actual_class="org.quickshell",
+        actual_instance="",
+        application_registry=registry,
+        window_title="AI Worktree Manager",
+    )
+
+    assert match is not None
+    assert match["_matched_app_name"] == "worktree-manager"

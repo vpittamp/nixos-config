@@ -302,7 +302,8 @@ async def _delayed_property_recheck(
                 app_match = match_with_registry(
                     actual_class=new_class,
                     actual_instance=fresh_container.window_instance or "",
-                    application_registry=application_registry
+                    application_registry=application_registry,
+                    window_title=fresh_container.name or "",
                 )
 
                 if app_match and "preferred_workspace" in app_match:
@@ -776,6 +777,7 @@ async def on_window_new(
                     actual_class=window_class,
                     actual_instance=container.window_instance or "",
                     application_registry=application_registry,
+                    window_title=window_title,
                 )
                 if app_match:
                     matched_app_name = str(app_match.get("_matched_app_name") or "").strip()
@@ -1155,7 +1157,8 @@ async def on_window_new(
                     app_match = match_with_registry(
                         actual_class=window_class,
                         actual_instance=container.window_instance or "",
-                        application_registry=application_registry
+                        application_registry=application_registry,
+                        window_title=window_title,
                     )
 
                     if app_match and "preferred_workspace" in app_match:
