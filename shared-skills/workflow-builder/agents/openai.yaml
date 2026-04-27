@@ -1,0 +1,3 @@
+interface:
+  display_name: "Workflow Builder"
+  short_description: "Author and debug SW 1.0 workflows, durable agent steps, MCP connections, canvas JSON, and workflow-builder runtime issues."

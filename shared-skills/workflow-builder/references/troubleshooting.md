@@ -8,6 +8,7 @@ Scope: failure-symptom triage map for workflow runs. Each entry: **Symptom → W
 2. **Then check orchestrator logs** — `kubectl -n workflow-builder logs deploy/workflow-orchestrator -c workflow-orchestrator --tail=200`. Parse errors land here.
 3. **For agent failures, check the per-agent pod** — `kubectl -n workflow-builder logs deploy/agent-runtime-<slug> -c dapr-agent-py --tail=200`. Agent runtime errors land here.
 4. **For Dapr issues, check the daprd sidecar** — `kubectl -n workflow-builder logs <pod> -c daprd --tail=100`. Boot crashes + placement issues land here.
+5. **For MCP/tool failures, check resolved bootstrap config** — inspect `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`, `activepieces-mcp-catalog`, and `[mcp-bootstrap]` logs before changing the workflow spec.
 
 ## Symptom map
 
@@ -29,6 +30,8 @@ Scope: failure-symptom triage map for workflow runs. Each entry: **Symptom → W
 | `durable/run` step times out, agent never starts | AgentRuntime CR `phase=Sleeping` or pod not woken | `kubectl -n workflow-builder get agentruntime/<slug>` → if Sleeping for >30s after the wake annotation, restart the controller: `kubectl -n workflow-builder rollout restart deploy/agent-runtime-controller`. Kopf annotation watcher dropouts after dapr-placement-server flaps are a known issue. |
 | `ctx.call_child_workflow` times out `the app may not be available` | Target pod isn't Dapr-placement-registered (scaled to 0 OR cross-namespace) | Confirm pod replicas: `kubectl -n workflow-builder get deploy/agent-runtime-<slug>`. Per-agent pods MUST be in the `workflow-builder` namespace — Dapr workflow sub-orchestration doesn't cross namespaces. |
 | Agent loops with empty assistant responses, never terminates | Anthropic SDK [issue #1204](https://github.com/anthropics/anthropic-sdk-python/issues/1204) — Opus 4.7 + adaptive thinking emits empty `end_turn` | Empty-response circuit breaker should trip after `DAPR_AGENT_PY_EMPTY_RESPONSE_THRESHOLD` (default 3). Check pod logs for `[call-llm] circuit-breaker tripped`. Tunable via env. |
+| Agent responds but lacks expected MCP tools | `mcpConnectionMode` is `explicit`, project `mcp_connection` row is disabled/missing, or AgentRuntime bootstrap wasn't refreshed after MCP changes | Read `references/mcp-connections.md`; inspect `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`; run agent registry sync or re-publish. |
+| Agent with Outlook/Excel/etc. MCP gets no response or tool call hangs | Generated AP piece KService missing/cold-starting, stale `:3100` URL, or missing `X-Connection-External-Id` | Check `activepieces-mcp-catalog`, `ksvc ap-<piece>-service`, and runtime logs for `[mcp-bootstrap]` / `Missing credentials`. KService URL should omit `:3100`. |
 | Child session hangs forever, no LLM traffic | Session-turn timer timeout (default 600s) didn't fire | Check pod logs for `Session turn N exceeded`. Tunable via `DAPR_AGENT_PY_SESSION_TURN_TIMEOUT_SECONDS`. If the timer didn't fire at all, look for `when_any` handler issues in `session_workflow`. |
 | Anthropic API returns `HTTP 400 prompt is too long: N tokens > 1000000` | Image tool_results accumulated past compaction limit | `_compact_image_tool_results` keeps the last `DAPR_AGENT_PY_MAX_IMAGE_TOOL_RESULTS` (default 3) images intact. Lower the env var or tighten the validator prompt to take fewer screenshots. |
 | Anthropic API returns `HTTP 400 Streaming is required for operations that may take longer than 10 minutes` | Non-streaming `messages.create()` exceeded the server's 10-min estimate | Should already be fixed by `_stream_final_message` in `anthropic_adapter.py` — verify the deployed image is recent. As a workaround, lower `DAPR_AGENT_PY_MAX_TOKENS` (default 16384). |
@@ -53,7 +56,7 @@ Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions
 
 | Crash message | Likely cause | Fix |
 | --- | --- | --- |
-| `detected duplicate actor state store` | Pod sees more than one Component with `actorStateStore=true` | New agent slug missing from `dapr-agent-py-statestore.scopes` in stacks. Append the slug; let GitOps deploy. See `references/cluster-topology.md` § Dapr Component scoping. |
+| `detected duplicate actor state store` | Pod sees more than one Component with `actorStateStore=true`, or Component scopes drifted | Verify `workflowstatestore` is scoped only to parent workflow apps and `dapr-agent-py-statestore` includes the per-agent app id. The controller should patch scopes on AgentRuntime create/update; do not create per-agent state stores. See `references/cluster-topology.md` § Dapr Component scoping. |
 | `no X509 SVID available / failed to get configuration` | The `dapr.io/config`-referenced Configuration is missing in pod's namespace | Ensure `Configuration/openshell-sandbox-dapr` exists in `workflow-builder` (file: `packages/components/active-development/manifests/workflow-builder/Configuration-openshell-sandbox-dapr.yaml`). |
 | Pod has no daprd sidecar at all | Webhook didn't fire | Confirm `MutatingWebhookConfiguration/openshell-sandbox-dapr-webhook` exists and `namespaceSelector` includes `workflow-builder`. Re-publish the agent to retry the inject. |
 
@@ -82,6 +85,12 @@ kubectl -n workflow-builder logs deploy/workflow-orchestrator -c workflow-orches
 kubectl -n workflow-builder get agentruntime
 kubectl -n workflow-builder logs deploy/agent-runtime-<slug> -c dapr-agent-py --tail=200 -f
 
+# MCP bootstrap on a per-agent runtime
+kubectl -n workflow-builder get deploy agent-runtime-<slug> -o json | \
+  jq -r '.spec.template.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
+kubectl -n workflow-builder logs deploy/agent-runtime-<slug> -c dapr-agent-py --tail=250 | \
+  rg 'mcp-bootstrap|Loaded|Registered|Missing credentials'
+
 # Daprd boot
 kubectl -n workflow-builder logs <pod> -c daprd --tail=100
 
@@ -106,7 +115,8 @@ Anything that's actually a deploy / image / GitOps issue:
 
 - Image needs to be rebuilt or promoted (`dapr-agent-py` source change, etc.).
 - ConfigMap (`function-registry`) needs a slug routing change.
-- Agent slug needs to be added to `dapr-agent-py-statestore.scopes` and rolled.
+- Dapr Component scopes or controller-managed `dapr-agent-py-statestore` reconciliation drifted.
+- `activepieces-mcps`, Knative Serving, or piece MCP services are missing/unhealthy.
 - ArgoCD app stuck OutOfSync.
 
 The `gitops` skill covers all of that — this skill stops at "what does the runtime do and how do I read its logs."

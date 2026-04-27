@@ -70,7 +70,7 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 | `agentGraph` | Auto-filled | `AgentGraphDefinition` | Custom decision graph (rarely set by hand). `normalizeAgentTaskConfig` injects a default. |
 | `environmentRef` | No | `EnvironmentRef` | Override the environment (sandbox config). Default uses the agent's published environment. |
 | `overrides` | No | `AgentOverrides` | Per-call overrides: `sandboxPolicy`, `tools`, `maxTurns`, `timeoutMinutes`, `cwd`. |
-| `mcpServers` | No | `McpServer[]` | Per-call MCP server list. Layered on top of the agent's startup config. **Playwright stdio entries are auto-rewritten** — see below. |
+| `mcpServers` | No | `McpServer[]` | Per-call MCP server list. Can be direct endpoints or unresolved project references such as `{ "pieceName": "microsoft-outlook" }`. Layered on top of the agent's startup/project config. **Playwright stdio entries are auto-rewritten** — see below. |
 | `hooks` | No | `HooksSettings` | Per-call hook config (PreToolUse, PostToolUse, etc.). Per `docs/hooks-and-plugins.md`. |
 | `plugins` | No | `string[]` | Plugin IDs to enable for this call. |
 
@@ -101,7 +101,9 @@ SELECT id, slug, name FROM agents WHERE is_archived = false ORDER BY updated_at 
 
 ## MCP servers (`mcpServers`)
 
-Per-call MCP server config is layered on top of the agent's startup config. Each entry:
+Per-call MCP server config is layered on top of the agent's startup/project config. Read `references/mcp-connections.md` before adding OAuth-backed ActivePieces tools; most users should create a project MCP connection in the UI and let `mcpConnectionMode` resolve URL/auth instead of hardcoding secrets.
+
+Direct stdio entry:
 
 ```json
 {
@@ -117,6 +119,14 @@ OR HTTP/SSE:
 ```json
 { "name": "my-server", "transport": "streamable_http", "url": "https://my-server/mcp", "headers": { "Authorization": "Bearer ..." } }
 ```
+
+Project-resolved ActivePieces piece:
+
+```json
+{ "pieceName": "microsoft-outlook" }
+```
+
+The resolver matches by `name`, `serverName`, `server_name`, `pieceName`, `serverKey`, or `displayName`, then fills the Knative URL and `X-Connection-External-Id` from the project's `mcp_connection` row. Generated piece MCP URLs should look like `http://ap-microsoft-outlook-service.workflow-builder.svc.cluster.local/mcp` with no explicit `:3100`.
 
 ### Playwright sidecar rewrite (important)
 
@@ -189,5 +199,6 @@ Critical: `workspace/profile.with.keepAfterRun: true` is required. Without it `_
 ## See also
 
 - `references/cluster-topology.md` — what an `agent-runtime-<slug>` pod looks like, why it must be in the same namespace.
+- `references/mcp-connections.md` — project MCP modes, ActivePieces auth binding, and bootstrap checks.
 - `references/troubleshooting.md` — debug an agent that times out or never starts.
 - `references/action-catalog.md` — how to discover which agents are published and runnable.

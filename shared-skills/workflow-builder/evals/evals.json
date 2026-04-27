@@ -16,7 +16,13 @@
     {
       "id": 3,
       "prompt": "My durable/run step times out — the agent never seems to start. Walk me through what to check.",
-      "expected_output": "Triage from references/troubleshooting.md: AgentRuntime CR phase (`kubectl get agentruntime/<slug>`), per-agent pod logs, dapr-agent-py-statestore.scopes for the slug in stacks, openshell-sandbox-dapr-webhook namespaceSelector. Distinguishes 'Ignoring unexpected taskCompleted event' (normal replay chatter) from actually stuck. Suggests rolling restart of agent-runtime-controller as the Kopf annotation watcher fix.",
+      "expected_output": "Triage from references/troubleshooting.md: AgentRuntime CR phase (`kubectl get agentruntime/<slug>`), per-agent pod logs, daprd sidecar logs, controller-managed dapr-agent-py-statestore scope for the app id, and openshell-sandbox-dapr-webhook namespaceSelector. Distinguishes 'Ignoring unexpected taskCompleted event' (normal replay chatter) from actually stuck. Suggests rolling restart of agent-runtime-controller as the Kopf annotation watcher fix, but does not tell the user to manually add every new slug to scopes as the normal path.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "I added the Outlook MCP connection to my agent and sent a test message, but the agent never responded. Debug it without exposing any OAuth tokens.",
+      "expected_output": "Uses references/mcp-connections.md and troubleshooting.md. Checks activepieces-mcp-catalog, ap-microsoft-outlook-service KService readiness and no-port /mcp URL, mcp_connection.connection_external_id -> active app_connection.external_id, AgentRuntime/Deployment DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON, and dapr-agent-py [mcp-bootstrap] logs. Explains credentials flow through X-Connection-External-Id/internal decrypt API and avoids printing or embedding OAuth secrets.",
       "files": []
     }
   ]

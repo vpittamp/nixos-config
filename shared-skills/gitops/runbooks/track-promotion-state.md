@@ -181,3 +181,27 @@ done
 gh pr list --repo PittampalliOrg/stacks --state open --search "head:env/spokes" --json number
 # Should be []
 ```
+
+## Verify workflow-builder MCP/auth after a rollout
+
+When the change touches MCP connection UX, ActivePieces auth, `piece-mcp-server`, `dapr-agent-py`, or AgentRuntime registry sync, add this check after the normal image/promotion verification:
+
+```bash
+ctx=dev
+
+kubectl --context "$ctx" -n workflow-builder get cm activepieces-mcp-catalog \
+  -o jsonpath='{.data.servers\.json}' | jq 'keys'
+
+kubectl --context "$ctx" -n workflow-builder get ksvc \
+  -l app.kubernetes.io/managed-by=activepieces-mcp-reconciler \
+  -o custom-columns=NAME:.metadata.name,READY:.status.conditions[?(@.type==\"Ready\")].status,URL:.status.address.url
+
+slug=<agent-slug>
+kubectl --context "$ctx" -n workflow-builder get deploy "agent-runtime-${slug}" -o json | \
+  jq -r '.spec.template.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
+
+kubectl --context "$ctx" -n workflow-builder logs deploy/"agent-runtime-${slug}" \
+  -c dapr-agent-py --tail=250 | rg 'mcp-bootstrap|Loaded|Registered|Missing credentials'
+```
+
+For piece MCP servers, runtime URLs should be Knative URLs without `:3100`, and OAuth-backed entries should include `headers.X-Connection-External-Id`. If this verification fails, switch to `runbooks/debug-workflow-builder-mcp-auth.md`.

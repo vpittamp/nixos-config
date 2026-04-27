@@ -6,6 +6,7 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 
 - **Image promotion lifecycle** — the two image-pin systems (release-pins vs active-development), how outer-loop and inner-loop Tekton pipelines interact, direct-main vs PR-mode release handoffs, post-push ryzen/dev verification, and branch reconciliation between `origin/main` and `gitea-ryzen/main`.
 - **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
+- **Workflow-builder MCP/auth runtime** — ActivePieces piece MCP KService reconciliation, searchable MCP catalog, OAuth connection binding, AgentRuntime bootstrap, and Dapr statestore durability checks.
 - **GitOps Promoter operations** — controller upgrades, hub `stacks-environments` promotion, and the ArgoCD UI extension used to visualize Promoter resources.
 - **ArgoCD health/drift review** — fleet-wide OutOfSync/Degraded triage, keep/remove decisions for legacy resources, and stable handling of controller default drift.
 - **App placement policy** — which apps belong on hub, per-spoke, or ryzen-local.
@@ -38,6 +39,7 @@ shared-skills/gitops/
     ├── debug-device-backed-tailscale-ingress.md ← app Ingress DNS suffix/status/stale tailnet records
     ├── debug-proxygroup-service-host.md    ← service-host VIPs such as argocd-hub and gitops-inventory-hub
     ├── fix-drizzle-migration.md            ← drizzle-kit silent journal-skip + dual atlas/drizzle dirs
+    ├── debug-workflow-builder-mcp-auth.md  ← ActivePieces MCP auth/catalog/AgentRuntime/Dapr bootstrap triage
     ├── track-promotion-state.md            ← PromotionStrategy + ChangeTransferPolicy CLI cheat-sheet
     ├── access-spoke-cluster-fallback.md
     └── rotate-oauth-secret.md

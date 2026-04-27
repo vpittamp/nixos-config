@@ -1,6 +1,6 @@
 ---
 name: gitops
-description: "Use this skill for PittampalliOrg/stacks GitOps operations: ArgoCD app health/drift review across hub/dev/staging/ryzen; image promotion; release-pins, GHCR/Gitea image drift, and image pins outside release-pins; workflow-builder spoke runtime drift; GitOps Promoter stuck apps, env branches, source-hydrator, and hub promotion; Tailscale ACLs, device-backed Ingress DNS/status, ProxyGroup service-host VIPs, spoke API access, stale tailnet devices/services, and Funnel webhooks; OAuth/secret rotation, deployment inventory, workflow JSON DB upserts, and app placement."
+description: "Use this skill for PittampalliOrg/stacks GitOps operations: ArgoCD app health/drift review across hub/dev/staging/ryzen; image promotion; release-pins, GHCR/Gitea image drift, and image pins outside release-pins; workflow-builder spoke runtime drift; workflow-builder MCP/auth and ActivePieces piece MCP services; Dapr AgentRuntime statestore/durability checks; GitOps Promoter stuck apps, env branches, source-hydrator, and hub promotion; Tailscale ACLs, device-backed Ingress DNS/status, ProxyGroup service-host VIPs, spoke API access, stale tailnet devices/services, and Funnel webhooks; OAuth/secret rotation, deployment inventory, workflow JSON DB upserts, and app placement."
 ---
 
 # GitOps for PittampalliOrg/stacks
@@ -20,6 +20,8 @@ Operational knowledge for the hub-and-spoke gitops system across **dev**, **stag
 - **Deployment inventory** is generated on the hub by `gitops-deployment-inventory`. Browser/human access uses the HTTPS service-host VIP `gitops-inventory-hub.tail286401.ts.net`; spoke workflow-builder pods use a separate node-backed Tailscale LoadBalancer `gitops-inventory-hub-node.tail286401.ts.net:8080` through the in-cluster egress Service `gitops-inventory-hub-egress.tailscale.svc.cluster.local:8080`.
 - **Promoted spoke hostnames are declarative.** Dev/staging workflow-builder system URLs live in `spoke-workloads-appset.yaml`, device-backed Tailscale Ingresses live under `packages/base/manifests/tailscale-ingresses/`, and `policy.hujson` is reserved for tailnet policy such as real `svc:*` service-host approvals, device tags, Funnel grants, and Kubernetes grants.
 - **OpenShell depends on agent sandbox CRDs.** Keep `agent-sandbox-crds` / `<spoke>-agent-sandbox-crds`; it owns required `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` CRDs. AutoKube is legacy and has been removed.
+- **Workflow-builder MCP/auth is a DB-backed runtime path, not just static manifests.** Project MCP rows in workflow-builder's `mcp_connection` table bind ActivePieces pieces to `app_connection.external_id` credentials. The `activepieces-mcps` app reconciles those rows into cluster-local Knative `ap-<piece>-service` MCP servers plus an `activepieces-mcp-catalog` ConfigMap. Agent publish/registry sync writes resolved MCP servers into each `AgentRuntime`, and the controller injects them into the runtime pod as `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`.
+- **Sandboxed Dapr agents use centralized durable state.** `workflowstatestore` is scoped to parent workflow runtimes; `dapr-agent-py-statestore` is the shared actor state store for per-agent runtimes. The agent-runtime controller mutates only Component scopes so each sidecar sees exactly one actor state store. Do not create per-agent state stores or move durable history into pod-local state.
 
 The two image-pin systems for the **same workflow-builder base** are the most common source of confusion. Read `reference/architecture.md` first if you've never seen this setup.
 
@@ -40,6 +42,8 @@ The two image-pin systems for the **same workflow-builder base** are the most co
 
 Ryzen has one extra branch nuance: ryzen workload Applications usually read manifests from `gitea-ryzen/main`, but the ryzen root Application spec tracks `gitea-ryzen/ryzen-main`. If a manual stacks change affects ryzen child Application specs, ignoreDifferences, appsets, or root-managed resources, fast-forward both `gitea-ryzen/main` and `gitea-ryzen/ryzen-main`.
 
+MCP/auth has a third, non-image flow. `mcp_connection` and `app_connection` rows live in the workflow-builder DB; `activepieces-mcps` reconciles those rows into Knative services; `AgentRuntime` registry sync copies the resolved server list into the runtime CR/pod. A source push alone does not fix an already-published agent if its `AgentRuntime` still has stale MCP bootstrap JSON; run registry sync or patch/re-publish the AgentRuntime, then verify the generated Deployment env and runtime logs.
+
 ## Decision tree
 
 ### "I need to roll out / promote / bump an image"
@@ -55,6 +59,16 @@ Ryzen has one extra branch nuance: ryzen workload Applications usually read mani
 3. Dev: watch hub `outer-loop-workflow-builder-*`; capture the built GHCR tag/digest and read `update-stacks` logs. The task may push release metadata directly to `origin/main` or open a release PR depending on the active pipeline.
 4. Track `spoke-dev-workflow-builder.status.sourceHydrator.currentOperation.{drySHA,hydratedSHA}`, the `workflow-builder-release-env-spokes-dev-*` ChangeTransferPolicy, and `dev-workflow-builder` / `spoke-dev-workflow-builder` health. If `env/spokes-dev-next` advanced but the CTP still proposes the older dry SHA after one source-hydrator poll, annotate `PromotionStrategy/workflow-builder-release` and the dev CTP with fresh `promoter.argoproj.io/refresh-ts`.
 5. Finish with authenticated smoke tests against the public URLs. On NixOS, if Playwright's bundled browser cannot launch, use system Chrome at `/etc/profiles/per-user/vpittamp/bin/google-chrome`.
+
+### "A workflow-builder agent is silent after adding an MCP/OAuth connection"
+
+Use `runbooks/debug-workflow-builder-mcp-auth.md`. The short path:
+
+1. Confirm `workflow-builder`, `activepieces-mcps`, and `knative-serving` are `Synced/Healthy` on the target cluster.
+2. Confirm the piece appears in `activepieces-mcp-catalog` and its `ap-<piece>-service` KService is Ready. The URL should be `http://ap-<piece>-service.workflow-builder.svc.cluster.local/mcp` with no explicit `:3100`.
+3. Confirm the `mcp_connection.connection_external_id` points at an active `app_connection.external_id`; MCP credentials flow through `X-Connection-External-Id`, not inline secrets in manifests.
+4. Trigger agent registry sync or re-publish the agent, then check the generated `agent-runtime-<slug>` Deployment env for `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`.
+5. Wake/test the agent and read `dapr-agent-py` logs for `[mcp-bootstrap] connected ...` and tool registration. A first health probe may time out during Knative cold start; retry before declaring the KService broken.
 
 ### "An ArgoCD app is OutOfSync / stuck"
 
@@ -137,6 +151,11 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 - **AutoKube is legacy.** If AutoKube Applications, Ingresses, ACL service approvals, or manifests appear, remove them declaratively and let Argo prune them instead of repairing them.
 - **Argo drift review is keep/remove first, fix second.** For needed resources, run `argocd app diff` and prefer declaring API defaults (ExternalSecret defaults, Tekton EventListener defaults, CRD defaults) over hiding real drift. Empty `argocd app diff` with OutOfSync status usually means stale Argo status; hard-refresh first and restart the application controller only if it remains stale.
 - **AgentRuntime CR images flow through the BFF env var, not release-pins.** `agent-runtime-<slug>` Deployment images are set at agent-publish time by `registry-sync.ts:725` reading `env.AGENT_RUNTIME_BROWSER_USE_DEFAULT_IMAGE` (browser-use-agent runtime) or `env.AGENT_RUNTIME_DEFAULT_IMAGE` (default). These env vars are static literals on `Deployment-workflow-builder.yaml`. Bumping release-pins does not update them; you must edit the Deployment YAML AND patch existing `AgentRuntime` CRs (`spec.environment.imageTag`) to re-roll already-published agents. See `runbooks/bump-image-pin-not-in-release-pins.md`.
+- **ActivePieces piece MCP URLs should not include port `:3100` when targeting Knative.** The container listens on 3100, but callers hit the cluster-local Knative Service URL. Stale AgentRuntime or workflow configs containing `http://ap-...svc.cluster.local:3100/mcp` bypass Knative routing and can leave agents silent.
+- **MCP auth is request-scoped by connection external ID.** For piece MCP tools, the runtime sends `X-Connection-External-Id`; `piece-mcp-server` calls workflow-builder's internal decrypt API. Do not put OAuth tokens, decrypted credentials, or user-specific secrets into KService env, workflow JSON, or GitOps manifests. The reconciler may set a fallback `CONNECTION_EXTERNAL_ID`, but per-request headers are the correct multi-user path.
+- **ActivePieces MCP services are generated from DB state.** Pinned pieces (`github`, `google-calendar`, `openai`) stay available; enabled `mcp_connection` pieces create additional KServices and catalog entries. If a user adds Outlook/Excel/OneDrive and the KService is missing, debug `activepieces-mcp-reconciler` before patching workloads by hand.
+- **Piece MCP KServices scale to zero by design.** `knative-serving` must allow `allow-zero-initial-scale: "true"`, and generated services use `initialScale: "0"`. Cold starts can make the first `/health` or `/mcp` probe exceed a short timeout; retry with a longer timeout before treating it as a hard failure.
+- **Dapr durable protocol compatibility depends on a single actor state store per sidecar.** Parent workflows use `workflowstatestore`; per-agent runtimes use `dapr-agent-py-statestore`. The controller enrolls each agent app id into the shared Component scopes. If agent sessions hang after an AgentRuntime change, verify Component scopes before restarting pods or clearing state.
 - **Workflow JSON specs do not flow through image rebuilds.** `services/<agent>/<name>.workflow.json` is excluded from the production Dockerfile copy list. Editing it in the repo + rebuilding doesn't change runtime behavior; the spoke's `workflows.spec` JSONB column is read at execution time. Updating the spec requires a DB UPDATE on each spoke. See `runbooks/upsert-workflow-json.md`.
 - **ArgoCD SSA validation blocks parent-syncs-child-Application apply.** When the parent app (e.g., `spoke-dev-workflow-builder`) tries to apply a kustomize-patched child Application (e.g., `dev-browserstation`), you may see `Application.argoproj.io "<child>" is invalid: status.sync.comparedTo.source.repoURL: Required value`. The parent's SSA payload nullifies a status field the CRD validator requires. Workaround: patch the live child directly with `kubectl patch app dev-<name> --type=json -p='[{op:replace,path:/spec/source/kustomize/images/0,value:...}]'`. The parent will keep retrying with the failing apply but the child's live spec is correct.
 - **KubeRay head pod doesn't auto-roll on image change.** When a RayCluster spec image is bumped via `kustomize.images`, the KubeRay operator gradually rolls workers but the head stays on the old image until explicitly deleted (`kubectl delete pod -n ray-system browserstation-head-<id>`). Workers wait on head GCS via `wait-gcs-ready` init container, so a stuck old head blocks worker rollout too. Verify with `kubectl get pod -l ray.io/cluster=browserstation -o jsonpath='{range .items[*]}{.metadata.name} {.spec.containers[?(@.name=="ray-head")].image}{.spec.containers[?(@.name=="ray-worker")].image}{"\n"}{end}'`.
@@ -176,6 +195,7 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 | Anything secret-related (rotation, audit, debugging) | `reference/secret-flow.md` |
 | Bumping an image to dev/staging | `runbooks/promote-image-to-spokes.md` |
 | Post-push workflow-builder rollout verification on ryzen/dev | `runbooks/track-promotion-state.md` |
+| Agent is silent after adding MCP/OAuth connection; ActivePieces piece MCP catalog, Knative KServices, AgentRuntime bootstrap, or Dapr statestore scope is suspect | `runbooks/debug-workflow-builder-mcp-auth.md` |
 | workflow-builder works on ryzen but not dev/staging | `runbooks/reconcile-workflow-builder-spoke-environment.md` |
 | Catching dev/staging up to ryzen | `runbooks/reconcile-branches.md` |
 | Image missing on ghcr.io | `runbooks/mirror-image-gitea-to-ghcr.md` |
@@ -218,6 +238,10 @@ The runbooks each follow the same shape: **Symptoms** → **Diagnostic** → **F
 | `packages/base/manifests/tailscale-ingresses/` | Shared device-backed Tailscale Ingress declarations using `*-CLUSTER` placeholders for promoted-spoke app hostnames |
 | `packages/components/active-development/manifests/<image>/kustomization.yaml` | Per-image kustomization with the gitea-ryzen registry tag (ryzen-only) |
 | `packages/components/active-development/manifests/workflow-builder/Deployment-workflow-builder.yaml` | `AGENT_RUNTIME_*_DEFAULT_IMAGE` env vars that drive AgentRuntime CR images (separate from release-pins; see gotchas) |
+| `packages/components/active-development/manifests/activepieces-mcps/` | Reconciler that turns workflow-builder DB `mcp_connection` rows into cluster-local ActivePieces piece MCP Knative Services and `activepieces-mcp-catalog` |
+| `packages/base/manifests/knative-serving/kustomization.yaml` | Knative Serving install and autoscaler config, including `allow-zero-initial-scale` needed by generated piece MCP services |
+| `packages/components/active-development/manifests/workflow-builder/Component-workflowstatestore.yaml` | Parent workflow Dapr actor state store, scoped away from per-agent runtimes |
+| `packages/components/active-development/manifests/openshell-agent-runtime/Component-dapr-agent-py-statestore.yaml` | Shared per-agent Dapr actor state store; agent-runtime-controller mutates scopes for durable AgentRuntime pods |
 | `packages/base/manifests/agent-sandbox-crds/` | Required OpenShell/agent-runtime CRDs: `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, `SandboxWarmPool` |
 | `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` | Direct image edit — no per-cluster override |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | env/spokes-dev → env/spokes-staging promotion config |

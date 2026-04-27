@@ -152,6 +152,55 @@ If a promoted spoke fails because it is using ryzen/localhost hostnames or a hos
 
 If a promoted-spoke app hostname resolves as `<name>-1.tail286401.ts.net`, look for a stale tailnet `svc:<name>` Service or old offline device that is reserving the canonical name. Remove the stale tailnet record and remove the matching `svc:*` ACL entry from `policy.hujson` if the hostname is device-backed.
 
+## Workflow-builder MCP/auth runtime
+
+The workflow-builder MCP path is intentionally split between durable DB state, generated platform services, and per-agent runtime bootstrap:
+
+```
+app_connection + oauth_app + mcp_connection rows
+    |
+    | activepieces-mcps CronJob
+    v
+cluster-local Knative KServices
+  ap-<piece>-service.workflow-builder.svc.cluster.local/mcp
+    |
+    |- activepieces-mcp-catalog ConfigMap for searchable/predefined MCP choices
+    |
+    `- piece-mcp-server containers that decrypt per-request credentials through
+       workflow-builder's internal connection decrypt API
+
+Agent publish / registry sync
+    |
+    v
+AgentRuntime.spec.mcpServers
+    |
+    | agent-runtime-controller
+    v
+agent-runtime-<slug> Deployment
+  DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON
+    |
+    v
+dapr-agent-py loads tools and calls piece MCP with X-Connection-External-Id
+```
+
+Important boundaries:
+- **Service discovery**: `activepieces-mcps` reconciles enabled `mcp_connection` rows and pinned pieces into Knative Services plus `activepieces-mcp-catalog`. Workflow-builder uses that catalog for search/predefined MCP server choices.
+- **Auth**: OAuth credentials stay in workflow-builder app connection storage. Runtime MCP requests carry `X-Connection-External-Id`; `piece-mcp-server` calls the internal decrypt API. Do not put decrypted OAuth values into GitOps manifests or workflow JSON.
+- **Networking**: callers use the Knative Service URL without `:3100`; the container port is hidden behind Knative.
+- **Scale**: generated piece MCP services use `initialScale: "0"` and can cold-start. `knative-serving` must keep `allow-zero-initial-scale: "true"`.
+- **Existing agents**: changing `mcp_connection` rows or catalog entries does not by itself rewrite an already-published `AgentRuntime`. Re-run registry sync/re-publish, then verify the runtime Deployment env.
+
+## Dapr durable state for agents
+
+Dapr durable workflows use actor state, and each sidecar must see exactly one `actorStateStore=true` Component.
+
+| Component | Scope | Purpose |
+|---|---|---|
+| `workflowstatestore` | `workspace-runtime`, `workflow-orchestrator`, `swebench-coordinator` | Parent workflow/orchestrator durable state |
+| `dapr-agent-py-statestore` | `dapr-agent-py` plus per-agent app ids enrolled by agent-runtime-controller | Shared durable state for sandboxed per-agent runtimes |
+
+The agent-runtime controller mutates the shared `dapr-agent-py-statestore` `scopes` list when AgentRuntime CRs are created or updated. This keeps history centralized and avoids creating/deleting per-agent Dapr Components, while preserving Dapr's requirement that a sidecar has a single actor state store.
+
 ## Branch model
 
 | Branch | Origin | Role |
@@ -228,10 +277,14 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` | dev/staging release metadata: tags, digests, image refs, source SHAs, PipelineRuns |
 | `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` | Matrix AppSet generator + Kustomize patches per spoke, including promoted-spoke MCP/Phoenix runtime env |
 | `packages/base/manifests/tailscale-ingresses/` | Shared device-backed Tailscale Ingresses with `*-CLUSTER` placeholders for dev/staging/talos app hostnames |
+| `packages/components/active-development/manifests/activepieces-mcps/` | CronJob/RBAC/script that turns workflow-builder DB `mcp_connection` rows into piece MCP Knative Services and catalog entries |
+| `packages/base/manifests/knative-serving/kustomization.yaml` | Knative Serving and autoscaler settings, including `allow-zero-initial-scale` for piece MCP scale-to-zero |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | dev → staging promotion (autoMerge true; gates: argocd-health + timer) |
 | `packages/components/hub-management/manifests/gitops-promoter/TimedCommitStatus-workflow-builder-soak.yaml` | timer gate (`dev=0s`, `staging=10m`) |
 | `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin Deployments |
 | `packages/components/active-development/manifests/workflow-builder/Service-gitops-inventory-hub-egress.yaml` | Spoke egress Service for inventory; points to `gitops-inventory-hub-node.tail286401.ts.net:8080` |
+| `packages/components/active-development/manifests/workflow-builder/Component-workflowstatestore.yaml` | Parent workflow Dapr actor state store |
+| `packages/components/active-development/manifests/openshell-agent-runtime/Component-dapr-agent-py-statestore.yaml` | Shared per-agent Dapr actor state store |
 | `packages/components/active-development/apps/workflow-builder.yaml` | Workflow-builder Argo app spec, including ignoreDifferences for operator-mutated egress Service fields |
 | `packages/base/manifests/agent-sandbox-crds/` | Required OpenShell/agent-runtime CRDs: `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, `SandboxWarmPool`. Do not remove as duplicate. |
 | `packages/components/hub-management/apps/gitops-promoter.yaml` | Promoter Helm chart app plus image tag override when chart appVersion lags |

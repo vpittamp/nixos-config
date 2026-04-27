@@ -82,6 +82,17 @@ For the spec, reference connections by `connectionId` in `with.auth`:
 
 `${ .connections.<name> }` is resolved by the BFF's connection-ref injector (see `src/lib/server/workflow-connections/`). The user must have created a connection with the matching alias.
 
+## ActivePieces as MCP tools
+
+Do not confuse AP action slugs with piece MCP servers:
+
+| Path | Use when | Auth path |
+| --- | --- | --- |
+| `@activepieces/piece-<name>/<action>` task slug | The workflow spec should call one specific AP action as a task | function-router decrypts `app_connection` and calls fn-activepieces |
+| `mcp_connection` + piece MCP server | The agent should see a piece's actions as tools during `durable/run` | agent sends `X-Connection-External-Id` to `piece-mcp-server`, which decrypts via workflow-builder |
+
+For agent tool use, prefer the MCP path and read `references/mcp-connections.md`. For deterministic workflow steps, prefer an explicit AP action slug.
+
 ## Per-task patterns to know
 
 ### `system/http-request`
@@ -151,4 +162,5 @@ See `references/agent-task.md` for the full body shape.
 
 - `references/sw-1.0-spec.md` — `call` + `with` field shapes.
 - `references/agent-task.md` — `durable/run` body in depth.
+- `references/mcp-connections.md` — AP pieces exposed as agent MCP tools.
 - `references/cluster-topology.md` — how function-router fits in.

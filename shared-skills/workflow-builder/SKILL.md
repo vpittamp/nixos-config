@@ -1,15 +1,15 @@
 ---
 name: workflow-builder
-description: "Author, visualize, and debug SW 1.0 workflows for the workflow-builder app — including agent (durable/run) steps, trigger schemas, jq expressions, action-slug routing, and per-agent-runtime cluster troubleshooting. Use this skill whenever the user mentions building/authoring/editing/debugging a workflow, adding agent steps, defining workflow inputs or triggers, jq or ${trigger.x} expressions, action slugs (system/*, workspace/*, browser/*, durable/run, etc.), the workflow canvas, why a workflow run failed, why an agent never started, or anything touching the workflow-builder repo's `workflows` table or the workflow-orchestrator pod. Spans both the SvelteKit BFF (PittampalliOrg/workflow-builder) and the Kubernetes manifests (PittampalliOrg/stacks)."
+description: "Author, visualize, and debug SW 1.0 workflows for the workflow-builder app — including agent (durable/run) steps, trigger schemas, jq expressions, action-slug routing, workflow/agent MCP connections, ActivePieces piece MCP auth, and per-agent-runtime cluster troubleshooting. Use this skill whenever the user mentions building/authoring/editing/debugging a workflow, adding agent steps, defining workflow inputs or triggers, jq or ${trigger.x} expressions, action slugs (system/*, workspace/*, browser/*, durable/run, etc.), MCP tools/connections on an agent or workflow, the workflow canvas, why a workflow run failed, why an agent never started/responded, or anything touching the workflow-builder repo's `workflows`, `agents`, `mcp_connection`, or `app_connection` tables or the workflow-orchestrator pod. Spans both the SvelteKit BFF (PittampalliOrg/workflow-builder) and the Kubernetes manifests (PittampalliOrg/stacks)."
 ---
 
 # Workflow Builder
 
-Author SW 1.0 workflows for the workflow-builder app, get them rendered in the canvas, and run them end-to-end. Diagnose runtime failures using the cluster topology of the per-agent runtime model.
+Author SW 1.0 workflows for the workflow-builder app, get them rendered in the canvas, and run them end-to-end. Diagnose runtime failures using the cluster topology of the per-agent runtime model, including MCP connection resolution and Dapr durability state.
 
 ## Mental model in one paragraph
 
-A workflow is a **CNCF Serverless Workflow 1.0** document with workflow-builder extensions, stored in the `workflows` table as three JSONB columns: `spec` (the SW 1.0 doc), `nodes` + `edges` (SvelteFlow canvas representation derived from the spec). The Python `workflow-orchestrator` pod parses the spec at execution time and dispatches each task: most go through `function-router` via Dapr service-invoke, but `durable/run` agent steps are dispatched as **Dapr child workflows** to a per-agent runtime pod (`agent-runtime-<slug>`) reconciled from an `AgentRuntime` CR. The SvelteKit BFF is a UI + proxy layer; everything durable lives in Dapr. Edits to a workflow's spec are picked up at the next execution — no image rebuild required.
+A workflow is a **CNCF Serverless Workflow 1.0** document with workflow-builder extensions, stored in the `workflows` table as three JSONB columns: `spec` (the SW 1.0 doc), `nodes` + `edges` (SvelteFlow canvas representation derived from the spec). The Python `workflow-orchestrator` pod parses the spec at execution time and dispatches each task: most go through `function-router` via Dapr service-invoke, but `durable/run` agent steps are dispatched as **Dapr child workflows** to a per-agent runtime pod (`agent-runtime-<slug>`) reconciled from an `AgentRuntime` CR. Agent MCP tools come from two layers: explicit `mcpServers` in the agent/workflow config and project-level `mcp_connection` rows resolved by `mcpConnectionMode` (`auto`, `project`, `explicit`). OAuth-backed ActivePieces MCP tools pass only `X-Connection-External-Id`; credentials stay in `app_connection` storage and are decrypted by workflow-builder's internal API. The SvelteKit BFF is a UI + proxy layer; everything durable lives in Dapr. Edits to a workflow's spec are picked up at the next execution — no image rebuild required.
 
 ## When to use this skill
 
@@ -23,6 +23,7 @@ Trigger on any of: "build a workflow", "author a workflow", "add an agent step",
 | Add an agent step (call Claude/GPT in a sandbox) | Copy `assets/minimal-agent.workflow.json`. Read `references/agent-task.md`. |
 | Take user input at run time | Use the `input.schema` block from `assets/trigger-schema.snippet.json`; reference fields as `${ .trigger.<name> }`. Read `references/authoring-recipe.md` § *Trigger inputs*. |
 | Share a sandbox between a coding step and an agent step | Copy `assets/workspace-keepalive.workflow.json`. Read `references/agent-task.md` § *Sandbox bridging*. |
+| Attach or debug MCP tools on an agent/workflow | Read `references/mcp-connections.md`, then `references/agent-task.md` § *MCP servers*. |
 | Discover what `actionType` slugs exist | Call `GET /api/action-catalog` (see `references/action-catalog.md`) — don't guess. |
 | Insert a finished workflow into the DB | Run `scripts/upsert-workflow.py <file.json>`. It POSTs to the BFF (which stamps `project_id`) and PUTs the `spec` column. |
 | Diagnose a failed run | Read `references/troubleshooting.md` and triage by symptom (parse error / agent timeout / replay chatter / prompt-too-long / project_id NULL). |
@@ -53,7 +54,13 @@ These are the failure modes that look like obscure bugs but are actually doing-i
 
 - **POST `/api/workflows` does NOT write the `spec` column.** It writes `name`, `nodes`, `edges`, `engineType`, `userId`, `projectId` only (see `src/routes/api/workflows/+server.ts:34-44`). To set `spec`, follow up with `PUT /api/workflows/[workflowId]` with `body.spec`. The bundled `scripts/upsert-workflow.py` does both calls.
 
-- **New agent slugs must join `dapr-agent-py-statestore.scopes` in stacks.** The Dapr Component scoping invariant says each pod sees exactly one `actorStateStore=true` Component — `dapr-agent-py-statestore` enumerates which app-ids may use it. New `agent-runtime-<slug>` Deployments need their slug appended in `packages/components/active-development/manifests/workflow-builder/Component-dapr-agent-py-statestore.yaml`, otherwise daprd refuses to boot. Controller doesn't patch this automatically yet.
+- **Agent statestore scopes are controller-managed now.** The Dapr Component invariant still matters: each sidecar must see exactly one `actorStateStore=true` Component. But new `agent-runtime-<slug>` app ids are enrolled by `agent-runtime-controller` through `dapr-agent-py-statestore.scopes`; do not add per-agent state stores or tell users to hand-edit scopes as the normal publish path. If daprd reports duplicate/no actor state store, verify the controller and Component scopes.
+
+- **Project MCP connections are resolved, not copied as secrets.** `mcp_connection` rows point to server/catalog metadata and optionally `connection_external_id`; `app_connection` stores encrypted OAuth credentials. Runtime MCP calls send `X-Connection-External-Id` to `piece-mcp-server`, which decrypts through workflow-builder. Do not put OAuth tokens or decrypted credential JSON into workflow specs, agent markdown, or KService env.
+
+- **ActivePieces piece MCP URLs should not include `:3100` through Knative.** The container listens on 3100, but workflow/agent configs should target the cluster-local KService URL such as `http://ap-microsoft-outlook-service.workflow-builder.svc.cluster.local/mcp`. Stale `:3100` URLs bypass Knative and make agents look silent.
+
+- **MCP connection changes may require agent registry sync.** Direct workflow runs resolve project MCP at execution, but published/direct agents also carry startup MCP config in `AgentRuntime.spec.mcpServers` → `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`. After changing an agent's MCP settings, re-publish or call `/api/agents/<id>/registry/sync`, then verify the Deployment env and `[mcp-bootstrap]` logs.
 
 - **`Ignoring unexpected taskCompleted event` is normal replay chatter, NOT stuck.** durabletask-worker emits this during every `call_child_workflow` replay cycle. Real "stuck" signals: AgentRuntime CR `phase=Sleeping` after the wake annotation was set, OR the orchestrator emitting the same `Orchestrator yielded with N task(s) and 0 event(s) outstanding` line for >5 min with placement flaps in target daprd logs. Check the AgentRuntime phase + `sessions.updated_at` *before* assuming a hang.
 
@@ -67,6 +74,7 @@ Load these on demand based on what you're doing.
 | --- | --- |
 | Authoring a spec from scratch | `references/sw-1.0-spec.md` (12 task types, jq rules, validation checklist) + `references/authoring-recipe.md` (end-to-end) |
 | Adding an agent step | `references/agent-task.md` (durable/run body) + `references/cluster-topology.md` (per-agent pods) |
+| Adding or debugging MCP tools/connections | `references/mcp-connections.md` (modes, project rows, ActivePieces auth, bootstrap checks) |
 | Choosing the right action slug | `references/action-catalog.md` (routing table + catalog API) |
 | Inspecting/editing the canvas JSON | `references/canvas-shape.md` (node + edge shapes) |
 | Confirming a workflow renders + runs | `references/verify-in-ui.md` |
@@ -105,13 +113,14 @@ Open the file in `assets/` first to see the exact shape before drafting your own
 - **Don't `pnpm dev`** in the workflow-builder repo. DevSpace file sync into the running pod is the canonical dev loop.
 - **Don't run a workflow with `"prefix ${ .trigger.x }"` style expressions** — they'll silently pass through as literal text. Fix the jq to a single full-string expression first.
 - **Don't insert workflows directly into psql without `project_id`.** Migration 0040 made the column NOT NULL; without it the workflow can't appear in any workspace.
-- **Don't add a new `agent-runtime-<slug>` to the cluster without updating `dapr-agent-py-statestore.scopes` in stacks first.** daprd will refuse to start with `duplicate actor state store`.
+- **Don't create per-agent Dapr state stores.** Per-agent runtimes use the centralized `dapr-agent-py-statestore`; the controller enrolls app ids in its scopes.
+- **Don't store MCP OAuth credentials in workflow JSON or agent markdown.** Bind project MCP rows to `app_connection.external_id` and let runtime requests carry `X-Connection-External-Id`.
 
 ## Authoritative source files (in the repos, not in this skill)
 
 When you need ground truth, read these:
 
-- workflow-builder: `CLAUDE.md`, `services/workflow-orchestrator/core/sw_types.py`, `core/sw_expressions.py`, `workflows/sw_workflow.py`, `src/lib/utils/spec-graph-adapter.ts`, `src/lib/types/agent-graph.ts`, `src/routes/api/workflows/+server.ts`, `src/lib/server/action-catalog/index.ts`, `scripts/fixtures/sample-workflows.json`
-- stacks: `packages/components/active-development/manifests/workflow-builder/Component-dapr-agent-py-statestore.yaml`, `packages/components/active-development/manifests/function-router/ConfigMap-function-registry.yaml`, `packages/base/manifests/agent-sandbox-crds/CustomResourceDefinition-agentruntimes.yaml`, `packages/base/manifests/openshell/MutatingWebhookConfiguration-openshell-sandbox-dapr-webhook.yaml`
+- workflow-builder: `CLAUDE.md`, `services/workflow-orchestrator/core/sw_types.py`, `services/workflow-orchestrator/core/sw_expressions.py`, `services/workflow-orchestrator/workflows/sw_workflow.py`, `services/workflow-orchestrator/activities/resolve_mcp_config.py`, `src/lib/utils/spec-graph-adapter.ts`, `src/lib/types/agent-graph.ts`, `src/lib/types/agents.ts`, `src/lib/server/agents/mcp-resolution.ts`, `src/lib/server/mcp-connections.ts`, `src/lib/server/mcp-catalog.ts`, `src/routes/api/workflows/+server.ts`, `src/routes/api/mcp-connections/`, `src/lib/server/action-catalog/index.ts`, `services/piece-mcp-server/src/auth-resolver.ts`, `scripts/fixtures/sample-workflows.json`
+- stacks: `packages/components/active-development/manifests/workflow-builder/Component-dapr-agent-py-statestore.yaml`, `packages/components/active-development/manifests/workflow-builder/Component-workflowstatestore.yaml`, `packages/components/active-development/manifests/activepieces-mcps/`, `packages/base/manifests/knative-serving/kustomization.yaml`, `packages/components/active-development/manifests/function-router/ConfigMap-function-registry.yaml`, `packages/base/manifests/agent-sandbox-crds/CustomResourceDefinition-agentruntimes.yaml`, `packages/base/manifests/openshell/MutatingWebhookConfiguration-openshell-sandbox-dapr-webhook.yaml`
 
 The skill summarizes — these are authoritative if anything looks contradictory.

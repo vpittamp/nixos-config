@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evaluations"
+  short_description: "Build and debug Workflow Builder evaluation runs."
+  default_prompt: "Use $evaluations to create or debug a Workflow Builder evaluation run."

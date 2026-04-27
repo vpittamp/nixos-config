@@ -102,11 +102,11 @@ Read `references/verify-in-ui.md`. Quick version:
 ### Adding an agent step to an existing workflow
 
 1. Find the agent: `curl /api/agents` → copy `id` + `slug`.
-2. Add the slug to `dapr-agent-py-statestore.scopes` in stacks (`packages/components/active-development/manifests/workflow-builder/Component-dapr-agent-py-statestore.yaml`) — see `references/cluster-topology.md` for *why*. Skipping this means the per-agent pod's daprd refuses to start.
-3. Append a `durable/run` task to `do[]` per `assets/minimal-agent.workflow.json`.
-4. Update `nodes`/`edges` to include the new node + edge to/from existing nodes (or use Path B in Step 4 to let the BFF regenerate).
-5. Re-upsert via the script.
-6. The new `agent-runtime-<slug>` Deployment lands when the agent is published — agents not yet published WILL fail at runtime even if the spec parses.
+2. Confirm the agent is published/registered. The `agent-runtime-<slug>` Deployment lands when the agent is published; agents not yet published WILL fail at runtime even if the spec parses.
+3. If the agent needs project MCP tools, set its `mcpConnectionMode`/MCP connections in the agent UI or use an unresolved `mcpServers` reference; read `references/mcp-connections.md`.
+4. Append a `durable/run` task to `do[]` per `assets/minimal-agent.workflow.json`.
+5. Update `nodes`/`edges` to include the new node + edge to/from existing nodes (or use Path B in Step 4 to let the BFF regenerate).
+6. Re-upsert via the script.
 
 ### Defining trigger inputs
 
