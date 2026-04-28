@@ -41,13 +41,39 @@ let
         exit 1
       }
 
-      socket_path="''${SWAYSOCK:-}"
-      if [ -z "$socket_path" ]; then
-        socket_path="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p')"
-      fi
-      if [ -z "$socket_path" ]; then
-        socket_path="$(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -n1)"
-      fi
+      is_live_sway_socket() {
+        local candidate="$1"
+        [ -n "$candidate" ] || return 1
+        [ -S "$candidate" ] || return 1
+        SWAYSOCK="$candidate" ${pkgs.sway}/bin/swaymsg -s "$candidate" -t get_version >/dev/null 2>&1
+      }
+
+      resolve_sway_socket() {
+        local candidate
+
+        candidate="''${SWAYSOCK:-}"
+        if is_live_sway_socket "$candidate"; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+
+        candidate="$(${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^SWAYSOCK=//p' | ${pkgs.coreutils}/bin/head -n1)"
+        if is_live_sway_socket "$candidate"; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+
+        while IFS= read -r candidate; do
+          if is_live_sway_socket "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
+          fi
+        done < <(${pkgs.findutils}/bin/find /run/user/$(${pkgs.coreutils}/bin/id -u) -maxdepth 1 -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/sort)
+
+        return 1
+      }
+
+      socket_path="$(resolve_sway_socket || true)"
 
       runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
       lock_file="$runtime_dir/moonlight-ryzen-desktop.lock"
