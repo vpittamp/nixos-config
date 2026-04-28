@@ -14,6 +14,14 @@ let
   chromeExtensionId = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
   chromeExtensionOrigin = "chrome-extension://${chromeExtensionId}/";
   browserSupportHostPath = "/run/wrappers/bin/1Password-BrowserSupport";
+  # Chrome reads multiple files from /etc/opt/chrome/policies/managed/ but does
+  # NOT merge dictionary policies across files at the same source level — the
+  # alphabetically-last file's `ExtensionSettings` overrides the others. The
+  # `PolicyDictionaryMultipleSourceMergeList` directive only merges across
+  # different POLICY SOURCES (cloud vs. machine vs. AD), not multiple machine
+  # files. So we consolidate every Chrome managed extension into this single
+  # file. Other modules (e.g. chrome-claude.nix) contribute their extensions
+  # via `services.onepassword.chromeManagedExtensions`.
   chromePolicyJson = builtins.toJSON {
     NativeMessagingAllowlist = [
       "com.1password.1password"
@@ -33,7 +41,7 @@ let
         runtime_allowed_hosts = [ "*://*" ];
         toolbar_pin = "force_pinned";
       };
-    };
+    } // cfg.chromeManagedExtensions;
   };
   mkChromeNativeHost = name: description: {
     text = builtins.toJSON {
@@ -53,6 +61,18 @@ in
       type = types.str;
       default = "vpittamp";
       description = "User to run 1Password services as";
+    };
+
+    chromeManagedExtensions = mkOption {
+      type = types.attrsOf (types.attrsOf types.anything);
+      default = {};
+      description = ''
+        Extra Chrome managed-extension entries to merge into the
+        ExtensionSettings dictionary written by this module. Other modules
+        (e.g. chrome-claude.nix) contribute extensions here so they end up in
+        the same policy file — Chrome does not merge ExtensionSettings across
+        multiple files at the same source level.
+      '';
     };
 
     gui = {
