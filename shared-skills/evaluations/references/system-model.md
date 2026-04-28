@@ -19,8 +19,8 @@ Use this reference when you need more detail than `SKILL.md`: implementation wor
 UI:
 
 - `/workspaces/<slug>/evaluations?tab=datasets|evals` — router shell with tab strip, search, and Create CTA.
-- `/workspaces/<slug>/evaluations/evals/<evalId>` — eval detail. Top tabs: **Report** (default — summary cards + runs table) and **Data** (run selector + extracted `<RunItemsTable>` + `<RunInspectDrawer>`). URL pattern: `?tab=report|data`.
-- `/workspaces/<slug>/evaluations/evals/<evalId>/runs/<runId>` — run detail. KPI strip mirroring OpenAI's `result_counts: { total, passed, failed, errored }`, per-criteria breakdown, items table with per-grader pass/fail icons, Inspect drawer with row rail. Cancel / Re-grade / Download predictions actions. Polls every 4s while status is non-terminal.
+- `/workspaces/<slug>/evaluations/evals/<evalId>` — eval detail. Top tabs: **Report** (default — summary cards + runs table) and **Data** (run selector + extracted `<RunItemsTable>` + `<RunInspectDrawer>`). URL pattern: `?tab=report|data`. The Data tab fetches run items in summary mode and lazy-loads the selected full item.
+- `/workspaces/<slug>/evaluations/evals/<evalId>/runs/<runId>` — run detail. KPI strip mirroring OpenAI's `result_counts: { total, passed, failed, errored }`, per-criteria breakdown, items table with per-grader pass/fail icons, Inspect drawer with row rail. Cancel / Re-grade / Download predictions actions. Polls every 4s while status is non-terminal, but only with compact row summaries.
 - `/workspaces/<slug>/evaluations/evals/create` — 3-step wizard. Reads `?preset=` query param.
 - `/workspaces/<slug>/evaluations/datasets/<datasetId>` — dataset detail with rows table and side drawer.
 - `/workspaces/<slug>/evaluations/evals-legacy` — preserved monolith fallback.
@@ -35,11 +35,13 @@ Public API (`src/routes/api/evaluations/`):
 - `evals`: create / list eval definitions.
 - `evals/[evaluationId]`: read / update / delete eval definition.
 - `runs`: create / list runs and start coordinator for executable subjects.
-- `runs/[runId]`: run detail.
+- `runs/[runId]`: run detail. Accepts `?items=summary` to compact each run item (`input`, `expectedOutput`, `generatedOutput`) for table/drawer polling.
+- `runs/[runId]/items/[itemId]`: full run-item detail on demand for the Inspect drawer.
 - `runs/[runId]/grade`: grade or re-grade.
 - `runs/[runId]/cancel`: cancel.
 - `runs/[runId]/predictions.jsonl`: download predictions in compatibility format.
 - `templates/swebench`: create a SWE-bench dataset/eval from imported content or instance IDs.
+- `templates/humaneval`, `templates/mbpp`, `templates/bigcodebench`: create sandbox-native code-eval dataset/eval definitions.
 
 Internal coordinator routes are BFF-only and require `INTERNAL_API_TOKEN`. They live under `/api/internal/evaluations/...` and start/sync/status-mark run items.
 
@@ -86,6 +88,16 @@ Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav
 9. For `agent` subjects, the BFF builds a hidden evaluation workflow with one `durable/run` task. For SWE-bench, it builds a larger adapter workflow around clone, solve, patch extraction, and harness output.
 10. Item workflow polls BFF `items/<itemId>/sync` until the item is terminal or times out.
 11. Sync extracts generated output from workflow execution output, grades the item via `runGraderAsync`, recomputes run summary, and completes the run when all items are terminal.
+
+## Run Item Payload Modes
+
+`getEvaluationRun(projectId, runId, { itemMode: "summary" })` keeps the run envelope and item status/score metadata but compacts heavyweight fields:
+
+- `input`: keeps task id, suite, entry point, libs, prompt preview, and omitted byte counts.
+- `expectedOutput`: keeps harness metadata, test-file hash, canonical-solution preview, and omitted byte counts.
+- `generatedOutput`: keeps phase/success/duration/error plus compact workflow output such as exit code, sandbox, solution/test hashes, runtime probe, pytest tail, solution preview, and omitted byte counts. Raw workflow step outputs stay omitted.
+
+The public run route defaults to full mode for compatibility, but eval run pages should request `?items=summary` and fetch `runs/<runId>/items/<itemId>` only for the selected drawer row. This prevents active code-eval pages from repeatedly downloading and `JSON.stringify`-rendering large test files, pytest logs, raw traces, and solution bodies.
 
 ## Prompt Rendering
 

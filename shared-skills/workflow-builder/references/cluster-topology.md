@@ -14,6 +14,8 @@ All in `workflow-builder` namespace unless noted.
 | --- | --- | --- | --- |
 | `workflow-builder` | SvelteKit BFF + UI | 3000 | `packages/components/active-development/manifests/workflow-builder/Deployment-workflow-builder.yaml` |
 | `workflow-orchestrator` | Python Dapr orchestrator | 8080 | `packages/components/active-development/manifests/workflow-orchestrator/Deployment-workflow-orchestrator.yaml` |
+| `workspace-runtime` | Durable workspace/file/command runtime; backs `workspace/*` flows | 8001 | `packages/components/active-development/manifests/workspace-runtime/` |
+| `swebench-coordinator` | Legacy SWE-bench Dapr coordinator and evaluator job launcher | 8080 | `packages/components/active-development/manifests/swebench-coordinator/` |
 | `agent-runtime-<slug>` | Per-agent runtime (one Deployment per published agent) | n/a (Dapr-app-id routed) | Created by `agent-runtime-controller` from `AgentRuntime` CR; image set via env var on the BFF Deployment |
 | `agent-runtime-controller` | Kopf operator that reconciles AgentRuntime CRs | n/a | `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (lives in `openshell` ns; `CONTROLLER_NAMESPACE=workflow-builder` env points it at our ns) |
 | `function-router` | Sync credential broker + Knative proxy | 8080 | `packages/components/active-development/manifests/function-router/` |
@@ -56,6 +58,26 @@ When an `AgentRuntime` is created or updated, `agent-runtime-controller` patches
 ## Dapr Configuration
 
 The `openshell-sandbox-dapr` `Configuration` object MUST exist in the pod's namespace — daprd reads it for trace exporter config + log level + mTLS settings. It lives at `packages/components/active-development/manifests/workflow-builder/Configuration-openshell-sandbox-dapr.yaml`. If missing, daprd crashes with `no X509 SVID available / failed to get configuration`.
+
+## Dapr Sidecar Readiness
+
+Pods with Dapr injection have two relevant health surfaces:
+
+- App container readiness, e.g. `GET /healthz` or `GET /api/ready`.
+- `daprd` readiness, e.g. `GET http://127.0.0.1:3501/v1.0/healthz` from inside the pod.
+
+If a Deployment shows `1/1` replicas unavailable or a pod shows `1/2 Running`, check container statuses before touching app code:
+
+```bash
+kubectl get pod -n workflow-builder <pod> \
+  -o jsonpath='{range .status.containerStatuses[*]}{.name} ready={.ready} restarts={.restartCount}{"\n"}{end}'
+kubectl describe pod -n workflow-builder <pod> | rg -n 'Readiness|Unhealthy|daprd|Events'
+kubectl logs -n workflow-builder <pod> -c daprd --tail=200
+```
+
+Known stale-sidecar pattern: Dapr placement/scheduler restarts or certificate churn can leave workflow-enabled sidecars alive but unhealthy. The app container remains ready and `3500/v1.0/metadata` may still return actors/components, but `3501/v1.0/healthz` returns `ERR_HEALTH_NOT_READY` for `grpc-api-server` and/or `grpc-internal-server`; logs may show `Actor runtime shutting down`, `Placement client shutting down`, or `Workflow engine stopped`. Once `dapr-system` control-plane pods are healthy, recycle only the affected Deployment (`kubectl rollout restart deploy/<name> -n workflow-builder`) and verify `3501/v1.0/healthz` returns `204`.
+
+For the operational runbook and verification sequence, use the gitops skill: `runbooks/debug-dapr-sidecar-stale-readiness.md`.
 
 ## Function-router routing
 

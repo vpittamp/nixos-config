@@ -6,7 +6,7 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 
 - **Image promotion lifecycle** — the two image-pin systems (release-pins vs active-development), how outer-loop and inner-loop Tekton pipelines interact, direct-main vs PR-mode release handoffs, post-push ryzen/dev verification, and branch reconciliation between `origin/main` and `gitea-ryzen/main`.
 - **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
-- **Workflow-builder MCP/auth runtime** — ActivePieces piece MCP KService reconciliation, searchable MCP catalog, OAuth connection binding, AgentRuntime bootstrap, and Dapr statestore durability checks.
+- **Workflow-builder MCP/auth runtime** — ActivePieces piece MCP KService reconciliation, searchable MCP catalog, OAuth connection binding, AgentRuntime bootstrap, Dapr statestore durability checks, and stale sidecar readiness recovery.
 - **GitOps Promoter operations** — controller upgrades, hub `stacks-environments` promotion, and the ArgoCD UI extension used to visualize Promoter resources.
 - **ArgoCD health/drift review** — fleet-wide OutOfSync/Degraded triage, keep/remove decisions for legacy resources, and stable handling of controller default drift.
 - **App placement policy** — which apps belong on hub, per-spoke, or ryzen-local.
@@ -40,6 +40,7 @@ shared-skills/gitops/
     ├── debug-proxygroup-service-host.md    ← service-host VIPs such as argocd-hub and gitops-inventory-hub
     ├── fix-drizzle-migration.md            ← drizzle-kit silent journal-skip + dual atlas/drizzle dirs
     ├── debug-workflow-builder-mcp-auth.md  ← ActivePieces MCP auth/catalog/AgentRuntime/Dapr bootstrap triage
+    ├── debug-dapr-sidecar-stale-readiness.md ← `daprd` readiness false / workflow-builder pod `1/2`
     ├── track-promotion-state.md            ← PromotionStrategy + ChangeTransferPolicy CLI cheat-sheet
     ├── access-spoke-cluster-fallback.md
     └── rotate-oauth-secret.md
@@ -75,7 +76,7 @@ The stacks docs remain the canonical living reference. **The skill is a periodic
 
 1. Edit the relevant `.md` files under `shared-skills/gitops/`.
 2. Validate frontmatter (`SKILL.md` must parse as YAML in the leading `---`-delimited block).
-3. `home-manager switch --flake .#vpittamp` (or whichever target you use) — the changes flow through the symlinks to each agent's discovery directory.
+3. `sudo nixos-rebuild switch --flake .#<target>` (`ryzen` or `thinkpad`) — the changes flow through home-manager to each agent's discovery directory.
 4. Test in a fresh agent session by triggering the skill with a phrase from `description`.
 
 When the underlying stacks system changes (new failure modes, new image pinning paths, new spoke onboarding pattern, or a legacy app is removed), update both the stacks docs **and** this skill.
