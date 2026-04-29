@@ -1169,20 +1169,20 @@ let
     # Tekton Hub
     {
       name = "Tekton Hub";
-      url = "https://tekton-hub.tail286401.ts.net";
-      domain = "tekton-hub.tail286401.ts.net";
+      url = "https://tekton-dashboard-hub.tail286401.ts.net";
+      domain = "tekton-dashboard-hub.tail286401.ts.net";
       icon = iconPath "tekton-hub.png";
       description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard - Hub environment";
       categories = "Development;Network;";
       keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;hub;";
-      scope = "https://tekton-hub.tail286401.ts.net/";
+      scope = "https://tekton-dashboard-hub.tail286401.ts.net/";
       ulid = "4J8JTH6DJZTY538Z0G01P5GS7R";  # Generated 2026-02-24
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 118;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "tekton-hub.tail286401.ts.net" ];
+      routing_domains = [ "tekton-dashboard-hub.tail286401.ts.net" ];
     }
 
     # Tekton Ryzen
