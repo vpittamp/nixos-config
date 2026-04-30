@@ -1,11 +1,11 @@
 ---
 name: evaluations
-description: "Use for workflow-builder evals, benchmarks, datasets, graders, predictions JSONL, run summaries/items, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, and dapr-agent-py grader rollout."
+description: "Use for workflow-builder evals, official SWE-bench benchmark runs, benchmarks UI, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py grader rollout, the Braintrust-adoption analyst surfaces on the Benchmarks page (regression detection / scorer tiles / promote-to-dataset / composite trace view / cohort pivots / human annotations), benchmark_run_instance_scores + benchmark_run_instance_annotations tables, and the Phase G inline scorer-runner."
 ---
 
 # Workflow-Builder Evaluations
 
-Build, run, and debug the OpenAI-parity evaluation system in `/home/vpittamp/repos/PittampalliOrg/workflow-builder/main`. This skill covers the SvelteKit UI, the SvelteKit BFF service layer, the Python `evaluation-coordinator` Dapr workflow, the asynchronous grader runners (including the live `score_model` path against per-agent runtime pods), and the operational steps to roll dapr-agent-py changes into ryzen and dev/staging.
+Build, run, and debug the OpenAI-parity evaluation system in `/home/vpittamp/repos/PittampalliOrg/workflow-builder/main`. This skill covers the SvelteKit UI, the SvelteKit BFF service layer, the Python `evaluation-coordinator` Dapr workflow, the asynchronous grader runners (including the live `score_model` path against per-agent runtime pods), the official SWE-bench Benchmarks page/coordinator/evaluator path, and the operational steps to roll dapr-agent-py changes into ryzen and dev/staging.
 
 The system intentionally mirrors **platform.openai.com/evaluation** surface-by-surface:
 
@@ -16,9 +16,13 @@ The system intentionally mirrors **platform.openai.com/evaluation** surface-by-s
 - `/workspaces/<slug>/evaluations/datasets/<datasetId>` — dataset detail with rows table and drawer.
 - The legacy 1100-line `+page.svelte` is preserved at `evaluations/evals-legacy/` as a fallback.
 
+Official SWE-bench runs that operators need to see in the product use the separate `/workspaces/<slug>/benchmarks` surface backed by `benchmark_*` tables, `/api/benchmarks/*`, `swebench-coordinator`, and a Kubernetes evaluator Job.
+
 ## Mental Model
 
-A **dataset** is versionable input rows. An **eval** is a reusable contract = data source + ordered graders. A **run** is one async execution of that contract against a **subject** (Agent / Workflow / Imported outputs / SWE-bench template). Postgres stores the projection; Dapr Workflows provide execution durability via the `evaluation-coordinator` and `workflow-orchestrator`. Grading runs BFF-side after each item completes — the BFF dispatches to sync grader logic for `string_check` / `text_similarity` / `multi` / `external_harness` and to async runners (`grader-runners.ts`) for `score_model` / `python` / endpoint-shaped `external_harness`.
+A **dataset** is versionable input rows. An **eval** is a reusable contract = data source + ordered graders. A **run** is one async execution of that contract against a **subject** (Agent / Workflow / Imported outputs / legacy SWE-bench eval template). Postgres stores the projection; Dapr Workflows provide execution durability via the `evaluation-coordinator` and `workflow-orchestrator`. Grading runs BFF-side after each item completes — the BFF dispatches to sync grader logic for `string_check` / `text_similarity` / `multi` / `external_harness` and to async runners (`grader-runners.ts`) for `score_model` / `python` / endpoint-shaped `external_harness`.
+
+The official SWE-bench harness is deliberately separate from that eval-run model: `benchmark_runs` snapshot selected `benchmark_instances`, the coordinator writes dataset/predictions artifacts, validates predictions JSONL, launches one evaluator Job, and stores official resolved/unresolved/empty-patch results plus provenance for the Benchmarks page.
 
 ## First Steps For Any Eval Question
 
@@ -28,6 +32,8 @@ A **dataset** is versionable input rows. An **eval** is a reusable contract = da
    - Wizard host: `evals/create/+page.svelte` + `src/lib/components/evaluations/wizard/`
    - Shared components: `src/lib/components/evaluations/{run-items-table,run-inspect-drawer,types}.{svelte,ts}`
    - Service: `src/lib/server/evaluations/service.ts`
+   - Benchmarks surface: `src/routes/workspaces/[slug]/benchmarks/`, `src/routes/api/benchmarks/`, `src/routes/api/internal/benchmarks/`
+   - SWE-bench coordinator/evaluator: `deploy/swebench-coordinator/src/app.py`, `services/swebench-evaluator/`
    - Grader logic: `src/lib/server/evaluations/graders.ts` (sync) + `grader-runners.ts` (async)
    - Coordinator: `services/evaluation-coordinator/src/app.py`
    - Sync evaluator endpoint: `services/dapr-agent-py/src/main.py` (search `/api/grader-evaluate`)
@@ -52,7 +58,46 @@ A **dataset** is versionable input rows. An **eval** is a reusable contract = da
 | **Add a new code-eval template** (HumanEval+/MBPP+/BigCodeBench) | Caller fetches rows from `datasets-server.huggingface.co/rows?dataset=<hf_id>&split=test`, POSTs to `/api/evaluations/templates/{humaneval,mbpp,bigcodebench}`. `createCodeEvalTemplate` (`service.ts`) creates dataset+eval with `taskConfig.workflowId="code-eval-item"` and a default grader stack (`string_check` on pytest exit + `score_model` labeler with strict `responseSchema`). |
 | **Make a score_model judge return guaranteed JSON** | Set `responseSchema` (JSON Schema) + `responseToolName` (default `emit_evaluation`) on the grader config. The runtime forces a single Anthropic tool call constrained to that schema and returns `tool_use.input` as the parsed object — no prose, no JSON.parse fallback. See "Forced-tool LLM judge" below. |
 | **Use a reusable workflow for an eval** | Set `taskConfig.workflowId` on the eval definition. `startEvaluationRunItemWorkflow` (`service.ts:~1107`) loads the workflow from the `workflows` table, stamps `agentRef` into `trigger.input`, and runs that spec instead of generating one in TS. Edit the workflow JSON via the canonical seed file + `scripts/upsert-<workflow>-workflow.mjs` to roll prompts/maxTurns without a BFF redeploy. |
-| **Handle the legacy SWE-bench template** | It's still wired (`/api/evaluations/templates/swebench` + `buildSwebenchEvaluationWorkflowSpec`) but **not the recommended path** — the official harness needs Docker-in-Docker, which our OpenShell sandbox can't provide. Prefer HumanEval+/MBPP+/BigCodeBench (sandbox-native pytest) for code-eval coverage. SWE-bench output is graded by `external_harness` with `resultPath: generatedOutput.workflowOutput.evaluation`. |
+| **Run/verify official SWE-bench in the UI** | Use `/workspaces/<slug>/benchmarks` and `/api/benchmarks/*`, not the eval wizard template. Normal run creation starts agent inference; deterministic operator smoke can seed `benchmark_runs`/`benchmark_run_instances` with known patches and then call coordinator helpers to write artifacts and launch the evaluator Job. Results must land back in the Benchmarks page with provenance, artifact SHA-256s, official result, and raw harness notes. |
+| **Handle the legacy SWE-bench eval template** | It's still wired (`/api/evaluations/templates/swebench` + `buildSwebenchEvaluationWorkflowSpec`) but **not the official harness path**. Use it only when explicitly working on the old OpenAI-parity eval adapter. For real SWE-bench validation, use the Benchmarks page/coordinator/evaluator Job path. Prefer HumanEval+/MBPP+/BigCodeBench (sandbox-native pytest) for eval-wizard code-eval coverage. |
+
+## Official SWE-bench Benchmarks
+
+Use this path when the user asks for SWE-bench evals that should show up in workflow-builder's Benchmarks UI:
+
+1. UI/API surface: `/workspaces/<slug>/benchmarks`, `GET/POST /api/benchmarks/runs`, `GET /api/benchmarks/runs/<runId>`.
+2. Data model: `benchmark_suites`, `benchmark_instances`, `benchmark_runs`, `benchmark_run_instances`, `benchmark_artifacts`, `benchmark_run_provenance`, and (Braintrust adoption, 2026-04-30) `benchmark_run_instance_scores`, `benchmark_run_instance_annotations`, plus `evaluation_dataset_rows.{origin_run_instance_id, origin_session_id}`.
+3. Coordinator path: `deploy/swebench-coordinator/src/app.py` writes `dataset.jsonl` + `predictions.jsonl`, validates JSONL and selected instance coverage, then creates a Kubernetes evaluator Job.
+4. Evaluator callback: `/api/internal/benchmarks/evaluation-results` records official resolved/unresolved/empty-patch status, harness report/stdout/stderr/test-output paths, parsed counters, raw harness notes, and run provenance.
+5. Provenance should include evaluator image/job name, resource class, max workers, timeout/deadline, dataset/prediction paths + SHA-256s, harness report path, environment image/digest summaries, and timestamps.
+
+Deterministic operator smoke is allowed when agent inference is not the thing under test: insert a queued `benchmark_runs` row and explicit-id `benchmark_run_instances` rows with `model_patch`, `patch_sha256`, and `patch_bytes`; mark the run `inferencing`; call `_write_predictions`, `_write_evaluation_dataset`, then `_ensure_evaluator_job`. The status guard is strict (`queued -> inferencing -> evaluating -> completed/failed/cancelled`), so launching from `queued` fails.
+
+Empty or null `model_patch` is a valid evaluator input and should become `empty_patch` when the harness reports it. That is an expected unresolved instance, not a harness failure. Official SWE-bench resolved/unresolved remains authoritative even if raw pytest output has extra non-graded errors; show those separately as raw harness notes.
+
+**K8s label sanitization on coordinator-launched Jobs.** Run IDs are nanoid-generated and can legally end in `_` or `-`, which fails K8s label-value validation `(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?`. Symptom: run goes `failed` at the evaluating stage with HTTP 422 `Invalid value: "<id>": a valid label must ... start and end with an alphanumeric character`. The Phase G `patch_files_overlap_gold` scorer (gated on harness completion) won't fire as a side effect. Fix landed in coordinator at workflow-builder `0f369b58` via `_safe_label_value` (strips outer `[._-]`, caps 63 chars). If you add another K8s resource that labels with a run/instance ID, mirror the helper.
+
+## Benchmarks UI: Braintrust-adoption surfaces (Phase F → K)
+
+Six analyst surfaces shipped 2026-04-30 alongside the existing `/workspaces/<slug>/benchmarks` Phase A–E metrics. Each gates on its data being present so empty states render naturally — Phase G/K only populate after a fresh run completes (scorers fire inside `recomputeRunSummary` on instance terminal, not retroactively).
+
+| Phase | Surface | Server | Storage |
+|---|---|---|---|
+| **F** Statistical regression detection | `MetricRegressionStrip` on the compare page (`?runs=A,B[,C…]`) — Welch's t-test + Fisher's exact p-values vs the baseline run. 2 Fisher's tests + 5 Welch tests. | `src/lib/server/benchmarks/regression.ts` (pure TS, no deps; Fisher's exact, Welch's t-test, Lanczos log-gamma, Wilson). Wired through `comparison.ts:loadCompareData`. | none |
+| **G** Scorers | `ScorerTiles` on run-detail; per-instance scorer rows in the trace tab. **4 scorers** today: `patch_files_overlap_gold` (deterministic, harness-gated) · `ran_tests_locally` (deterministic span scan) · `edit_minimality` (LLM-judge via `claude-haiku-4-5`) · `reasoning_quality` (LLM-judge). | `score-runner.ts` invoked from `recomputeRunSummary` inline (~10–30 s after harness). Idempotent on `(run_instance_id, scorer_name, scorer_version)`. | `benchmark_run_instance_scores` (migration 0057) |
+| **H** Promote-to-dataset | `PromoteToDataset` popover on the drawer's Harness tab. Captures the SWE-bench problem identity + the harness-graded outcome as an evaluation dataset row, with bidirectional pointer back to the source run. | `POST /api/evaluations/datasets/[datasetId]/rows-from-benchmark`. Extends `createEvaluationDatasetRows`. | `evaluation_dataset_rows.{origin_run_instance_id, origin_session_id}` (migration 0058) |
+| **I** Composite trace view | `TraceDetail` Svelte component as a new `Trace` tab on the run-instance drawer. Header strip (turns/tool calls/TTFT/tokens) + scorers panel + chronological waterfall (LLM/tool spans, click-to-expand input/output) + annotation footer. | `GET /api/benchmarks/runs/[runId]/instances/[instanceId]/scores` for scorer rows; existing `/spans` for span data. | none |
+| **J** Cohort pivots | `CohortPivot` Svelte component on run-detail (5 dimensions × 8 measures dropdowns + horizontal bar chart). | `RunStats.cohortRows` shipped from `computeRunStats`. **`pivot()` lives at `$lib/benchmarks/cohort.ts`** — NOT `$lib/server/benchmarks/stats.ts`, intentionally — Svelte components can't import from `$lib/server` (vite-plugin-sveltekit-guard). | none |
+| **K** Human annotations | `<TraceDetail>` annotation footer: 4 verdict buttons (correct/incorrect/partial/unsure) + reasoning textarea. Run-detail page tile shows aggregate counts + `harnessDisagreement` count. | `GET/POST/DELETE /api/benchmarks/runs/[runId]/instances/[instanceId]/annotations`. UPSERT keyed on `(run_instance_id, user_id)` — one verdict per user per instance. Aggregated as `RunStats.humanAnnotations.{counts, totalAnnotated, harnessDisagreement}`. | `benchmark_run_instance_annotations` (migration 0059) |
+
+**Operator workflow that exercises all 6**:
+1. Launch 2 runs vs the same Verified instance subset on different agents → compare page shows Fisher/Welch p-values.
+2. Open a run's instances drawer → Harness tab shows "Add to dataset"; Trace tab shows header strip + scorer rows + waterfall + annotation footer.
+3. Run-detail page shows scorer tiles + cohort pivot dropdowns + (after annotations exist) human-annotation aggregate tile.
+
+**Don't roll workflow-orchestrator/swebench-coordinator images mid-run.** Dapr durable-task replay compares the in-process code's `call_activity` ordering to the persisted history. New image lands on the worker pod between yields → replay fails with `Sub-orchestration task #N failed: A previous execution called call_activity with ID=M, but the current execution doesn't have this action with this ID`. Hit twice on 2026-04-30. Wait for active runs to terminate before pushing image bumps.
+
+**Phase G scorer-runner integration with the existing grader system**: `score-runner.ts` reuses the same `score_model` LLM-judge transport (Anthropic Messages API via fetch) used by `runScoreModelGrader`, but it writes to `benchmark_run_instance_scores` instead of evaluation grader rows, and runs unconditionally per-instance from `recomputeRunSummary` — not per evaluation grader contract. The two systems are orthogonal: graders are part of the eval-run lifecycle and gate on `evaluation_run_items.status='terminal'`; benchmark scorers are part of `benchmark_run_instances.status='resolved'/'unresolved'/etc` and are SWE-bench-specific (the `patch_files_overlap_gold` and `ran_tests_locally` scorers only make sense for code-modifying agent runs).
 
 ## Grader Catalog (live status)
 
@@ -299,7 +344,7 @@ order by r.created_at desc limit 10;"
 
 ## Guardrails
 
-- Do NOT preserve legacy `/api/benchmarks/*` behavior unless explicitly asked — the OpenAI-parity wizard supersedes it.
+- Do NOT conflate the legacy SWE-bench eval template with `/api/benchmarks/*`. The OpenAI-parity wizard supersedes the old eval adapter, but `/api/benchmarks/*` plus `/workspaces/<slug>/benchmarks` is the current operator-visible official SWE-bench harness surface.
 - Do NOT start a local SvelteKit dev server. The dev loop on ryzen is **devspace sync** to the running pod; on dev/staging it's the hub Tekton outer-loop. Manual `pnpm dev` will not match the live environment.
 - Do NOT bake workflow JSON specs into images — `services/<agent>/<name>.workflow.json` is excluded by `.dockerignore`. The workflows table reads from postgres at execution time.
 - DO NOT hand-edit `release-pins/workflow-builder-images.yaml` unless the hub Tekton path is broken AND `scripts/gitops/validate-workflow-builder-release-pins.sh` passes locally.
@@ -331,6 +376,22 @@ src/routes/workspaces/[slug]/evaluations/evals/[evalId]/runs/[runId]/+page.svelt
 src/routes/workspaces/[slug]/evaluations/evals/create/+page.svelte       # 3-step wizard
 src/routes/workspaces/[slug]/evaluations/datasets/[datasetId]/+page.svelte
 src/routes/workspaces/[slug]/evaluations/evals-legacy/+page.svelte       # preserved monolith
+src/routes/workspaces/[slug]/benchmarks/             # operator-visible SWE-bench benchmark runs (Phase A–E metrics + F–K Braintrust surfaces)
+src/routes/workspaces/[slug]/benchmarks/compare/+page.svelte  # Phase F MetricRegressionStrip slot
+src/routes/api/benchmarks/                           # benchmark run/suite API
+src/routes/api/benchmarks/runs/[runId]/instances/[instanceId]/scores/+server.ts       # Phase G/I per-instance scorer rows
+src/routes/api/benchmarks/runs/[runId]/instances/[instanceId]/annotations/+server.ts  # Phase K CRUD (one row per (instance, user))
+src/routes/api/evaluations/datasets/[datasetId]/rows-from-benchmark/+server.ts        # Phase H promote endpoint
+src/routes/api/internal/benchmarks/                  # coordinator/evaluator artifact, status, result callbacks
+src/lib/benchmarks/cohort.ts                         # Phase J pivot() helper — IMPORTANT: NOT in $lib/server (client imports)
+src/lib/server/benchmarks/regression.ts              # Phase F Welch's t-test + Fisher's exact (pure TS)
+src/lib/server/benchmarks/regression.test.ts         # 11-case Phase F unit tests
+src/lib/server/benchmarks/score-runner.ts            # Phase G scorer dispatch from recomputeRunSummary
+src/lib/server/benchmarks/score-prompts.ts           # Phase G LLM-judge prompts (edit_minimality, reasoning_quality)
+src/lib/server/benchmarks/stats.ts                   # computeRunStats() — sources cohortRows, byScorer, humanAnnotations
+src/lib/components/benchmarks/{metric-regression-strip,scorer-tiles,promote-to-dataset,trace-detail,cohort-pivot}.svelte  # F–J components
+deploy/swebench-coordinator/src/app.py               # writes artifacts, validates predictions, launches evaluator Jobs; _safe_label_value() (0f369b58) sanitizes run IDs for K8s labels
+services/swebench-evaluator/                         # official harness wrapper + callback payloads
 services/code-eval-runner/code-eval-item.workflow.json  # canonical 4-step code-eval workflow (workspace_profile → write_test → solve → run_tests)
 scripts/upsert-code-eval-workflow.mjs                # seed code-eval-item into the workflows table
 services/openshell-sandbox/environments/Dockerfile.code-eval  # sandbox image (pytest + EvalPlus + BigCodeBench libs)

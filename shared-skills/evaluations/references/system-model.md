@@ -1,18 +1,20 @@
 # Evaluation System Model
 
-Use this reference when you need more detail than `SKILL.md`: implementation work, operational debugging, or accurate explanations of how eval runs move through the system. The current implementation mirrors **platform.openai.com/evaluation** — Datasets, Evals, Runs as first-class resources; an Inspect drawer with row navigation; a 3-step Create wizard with six grader forms.
+Use this reference when you need more detail than `SKILL.md`: implementation work, operational debugging, or accurate explanations of how eval runs move through the system. The current implementation mirrors **platform.openai.com/evaluation** — Datasets, Evals, Runs as first-class resources; an Inspect drawer with row navigation; a 3-step Create wizard with six grader forms. Official SWE-bench runs use a separate Benchmarks surface and coordinator/evaluator path so they can run the Docker harness and appear in the workflow-builder operator UI.
 
 ## Core Objects
 
 | Concept | Table / Module | Notes |
 | --- | --- | --- |
-| Dataset | `evaluation_datasets` | Project-scoped collection of rows. Source can be hand-authored, JSONL/JSON/CSV import, or adapter-created (e.g., SWE-bench template). |
+| Dataset | `evaluation_datasets` | Project-scoped collection of rows. Source can be hand-authored, JSONL/JSON/CSV import, or adapter-created (e.g., legacy SWE-bench eval template). |
 | Dataset row | `evaluation_dataset_rows` | Stores `externalId`, `input`, `expectedOutput`, optional `generatedOutput`, annotations, rating, and feedback. The wizard's upload mode auto-injects `externalId: "row_${i+1}"` when missing so predictions JSONL can match by id. |
 | Eval definition | `evaluations` | Reusable contract. Links to a dataset and stores `taskConfig`. |
 | Grader | `evaluation_graders` | Ordered, enabled criteria with type, config, weight, and pass threshold. |
 | Run | `evaluation_runs` | Async execution for subject type `imported_outputs`, `agent`, or `workflow`; stores execution config, status, summary, usage, and errors. |
 | Run item | `evaluation_run_items` | One row execution/result. Stores generated output, grader results, scores, session/workflow IDs, traces, status, and errors. |
 | Artifact | `evaluation_artifacts` | Run/item-level artifacts such as predictions JSONL, harness output, logs, or paths. |
+
+Official SWE-bench uses parallel benchmark objects instead of `evaluation_*`: `benchmark_suites`, `benchmark_instances`, `benchmark_runs`, `benchmark_run_instances`, `benchmark_artifacts`, and `benchmark_run_provenance`. Keep that model separate from the legacy `/api/evaluations/templates/swebench` adapter.
 
 ## Public Routes
 
@@ -24,6 +26,7 @@ UI:
 - `/workspaces/<slug>/evaluations/evals/create` — 3-step wizard. Reads `?preset=` query param.
 - `/workspaces/<slug>/evaluations/datasets/<datasetId>` — dataset detail with rows table and side drawer.
 - `/workspaces/<slug>/evaluations/evals-legacy` — preserved monolith fallback.
+- `/workspaces/<slug>/benchmarks` — operator-visible SWE-bench suite/run list and run detail. Reads `benchmark_*` state and provenance; this is the surface to use when a SWE-bench run must show up in workflow-builder.
 
 Public API (`src/routes/api/evaluations/`):
 
@@ -43,11 +46,17 @@ Public API (`src/routes/api/evaluations/`):
 - `templates/swebench`: create a SWE-bench dataset/eval from imported content or instance IDs.
 - `templates/humaneval`, `templates/mbpp`, `templates/bigcodebench`: create sandbox-native code-eval dataset/eval definitions.
 
+Benchmarks API (`src/routes/api/benchmarks/`):
+
+- `suites`, `instances`, and `runs`: list/create benchmark resources for the Benchmarks page.
+- `runs/[runId]`: read run detail, instance results, artifacts, and `benchmark_run_provenance`.
+- Internal artifact/status/result callbacks live under `src/routes/api/internal/benchmarks/` and require `INTERNAL_API_TOKEN`.
+
 Internal coordinator routes are BFF-only and require `INTERNAL_API_TOKEN`. They live under `/api/internal/evaluations/...` and start/sync/status-mark run items.
 
 ## Sidebar / Navigation
 
-Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav-config.ts` (matches OpenAI's IA). Icon: `FlaskConical`. Match regex covers both `/evaluations` and the legacy `/benchmarks` aliases.
+Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav-config.ts` (matches OpenAI's IA). Icon: `FlaskConical`. Match regex covers both `/evaluations` and `/benchmarks` so the official Benchmarks page stays in the same operator area.
 
 ## Wizard Internals
 
@@ -65,7 +74,7 @@ Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav
 
 - `createDatasetFromRows()` — manual rows path.
 - `createDatasetFromUpload()` — uploads JSONL/JSON/CSV. **Injects `externalId: "row_${i+1}"`** on parsed JSONL when no id is present, so predictions can match without forcing the user to add ids.
-- `createSwebenchTemplate()` — short-circuits the regular flow and POSTs `/api/evaluations/templates/swebench`.
+- `createSwebenchTemplate()` — short-circuits the regular flow and POSTs `/api/evaluations/templates/swebench`. This is the legacy eval adapter, not the official Benchmarks page harness path.
 - Predictions JSONL is parsed client-side into `Array<{id, output}>` before POSTing — `normalizeImportedOutputs` only accepts arrays/records and silently drops raw strings.
 
 ## Subject Types
@@ -85,9 +94,23 @@ Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav
 6. Run workflow marks the run `running`, loads run detail, chunks items by `executionConfig.concurrency`, and starts child `evaluation_item_workflow` instances.
 7. Item workflow calls BFF `items/<itemId>/start`.
 8. The BFF creates a `workflow_executions` row and invokes `workflow-orchestrator` `/api/v2/sw-workflows`.
-9. For `agent` subjects, the BFF builds a hidden evaluation workflow with one `durable/run` task. For SWE-bench, it builds a larger adapter workflow around clone, solve, patch extraction, and harness output.
+9. For `agent` subjects, the BFF builds a hidden evaluation workflow with one `durable/run` task. For the legacy SWE-bench eval template, it builds a larger adapter workflow around clone, solve, patch extraction, and harness output.
 10. Item workflow polls BFF `items/<itemId>/sync` until the item is terminal or times out.
 11. Sync extracts generated output from workflow execution output, grades the item via `runGraderAsync`, recomputes run summary, and completes the run when all items are terminal.
+
+## Official SWE-bench Benchmarks Lifecycle
+
+Use this path for runs that should be visible at `/workspaces/<slug>/benchmarks`:
+
+1. The BFF creates a `benchmark_runs` row and `benchmark_run_instances` rows for selected `benchmark_instances`.
+2. The coordinator transitions `queued -> inferencing`, either by running the selected agent or by consuming pre-seeded `model_patch` rows for deterministic smoke tests.
+3. `_write_predictions` creates `predictions.jsonl`; `_write_evaluation_dataset` creates `dataset.jsonl`. Artifact rows and `benchmark_run_provenance` capture paths and SHA-256s.
+4. Before any Kubernetes Job is created, prediction validation requires parseable JSONL, exactly one row per selected instance, required `instance_id` / `model_name_or_path` / `model_patch`, and a syntactically valid non-empty diff. Empty/null patches are allowed.
+5. `_ensure_evaluator_job` transitions `inferencing -> evaluating`, records evaluator image/job/resource/max-workers/timeout/deadline provenance, and launches the evaluator Job with `ttlSecondsAfterFinished=3600`.
+6. The evaluator callback records official SWE-bench result semantics (`resolved`, `unresolved`, `empty_patch`, errors), report/stdout/stderr/test-output paths, raw counters when available, and raw harness notes for non-graded pytest errors.
+7. The run summary and Benchmarks page show official result separately from raw harness notes. Official resolved/unresolved is the source of truth.
+
+Direct DB smoke runs are acceptable for operator/UI validation when agent inference is not under test. Provide explicit IDs for `benchmark_run_instances`; Drizzle generates IDs app-side and Postgres has no default. Follow the coordinator transition guard exactly: `queued -> inferencing -> evaluating -> completed/failed/cancelled`.
 
 ## Run Item Payload Modes
 
@@ -253,9 +276,9 @@ If a `python` grader errors with `code-runtime returned 404` or `python grader r
 - A failed `workflow-orchestrator` `StartInstance` with `DEADLINE_EXCEEDED` may show `workflow_runtime_unavailable` even when health probes say taskhub ready. Record the failure, inspect daprd logs for actor retries, and consider a workflow-orchestrator rollout restart if the local runtime is stuck.
 - The generated output for generic agent runs may appear in the UI as the full workflow result object. The assistant content can be nested at `outputs.evaluate.data.content`. Grading may still pass if the expected text is contained in that object.
 - Wizard-created evals rely on `row.input.prompt` for now; they do not expose `taskConfig.promptTemplate`.
-- SWE-bench is an adapter/template, not the base model. Do not design new core behavior around SWE-bench-only assumptions.
+- The legacy SWE-bench eval template is an adapter, not the base eval model. Do not design new core eval behavior around SWE-bench-only assumptions.
 - Local OpenAI `evals/main` registry JSONL files may be Git LFS pointers. Use the README examples or pull LFS data before importing actual rows.
-- Do not assume legacy `/api/benchmarks/*` must remain behavior-compatible — the OpenAI-parity wizard supersedes it.
+- Do not conflate `/api/benchmarks/*` with the legacy eval adapter. `/api/benchmarks/*` is the current official SWE-bench harness surface for workflow-builder operators; `/api/evaluations/templates/swebench` is the legacy OpenAI-parity eval template.
 - LLMs frequently ignore "respond with JSON" instructions and emit a bare label. The bare-label / bare-numeric fallback in `runScoreModelGrader` covers the common case; tighten the rubric if the model still drifts.
 - The wizard's upload mode injects `externalId: "row_${i+1}"` only when `id`/`externalId`/`external_id` are absent on the parsed JSONL. If users pre-populate `id`, the predictions JSONL must use the same id values.
 
