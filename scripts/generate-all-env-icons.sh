@@ -25,6 +25,7 @@ declare -A ICON_MAP=(
   [mcp-inspector-client]="mcp-inspector.svg"
   [mcp-inspector-proxy]="mcp-inspector.svg"
   [mimir]="mimir.svg"
+  [mlflow]="mlflow.svg"
   [phoenix]="phoenix-azire.svg"
   [redisinsight]="redis-insights.svg"
   [workflow-builder]="ai-workflow-builder.svg"
@@ -37,8 +38,12 @@ ALL_ENV_SERVICES=(ai-chatbot dapr grafana keycloak langfuse mcp-inspector-client
 # Services that only exist on dev/staging/prod (no ryzen deployment)
 NO_RYZEN_SERVICES=(loki mimir)
 
+# Services that only exist on ryzen/dev/staging (no prod deployment)
+NO_PROD_SERVICES=(mlflow)
+
 ENVS_ALL=(dev staging prod ryzen)
 ENVS_NO_RYZEN=(dev staging prod)
+ENVS_NO_PROD=(dev staging ryzen)
 
 COUNT=0
 ERRORS=0
@@ -74,6 +79,25 @@ for service in "${NO_RYZEN_SERVICES[@]}"; do
     continue
   fi
   for env in "${ENVS_NO_RYZEN[@]}"; do
+    output="$ICONS_DIR/${service}-${env}.png"
+    if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
+      ((COUNT++)) || true
+    else
+      echo "ERROR: Failed to generate $output" >&2
+      ((ERRORS++)) || true
+    fi
+  done
+done
+
+# Generate icons for services without prod
+for service in "${NO_PROD_SERVICES[@]}"; do
+  source_svg="$ICONS_DIR/${ICON_MAP[$service]}"
+  if [[ ! -f "$source_svg" ]]; then
+    echo "WARNING: Source icon not found: $source_svg (skipping $service)" >&2
+    ((ERRORS++)) || true
+    continue
+  fi
+  for env in "${ENVS_NO_PROD[@]}"; do
     output="$ICONS_DIR/${service}-${env}.png"
     if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
       ((COUNT++)) || true
