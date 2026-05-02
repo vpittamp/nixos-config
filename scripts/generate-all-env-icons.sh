@@ -28,6 +28,7 @@ declare -A ICON_MAP=(
   [mlflow]="mlflow.svg"
   [phoenix]="phoenix-azire.svg"
   [redisinsight]="redis-insights.svg"
+  [tekton]="tekton.svg"
   [workflow-builder]="ai-workflow-builder.svg"
   [ai-chatbot]="ai-chatbot.svg"
 )

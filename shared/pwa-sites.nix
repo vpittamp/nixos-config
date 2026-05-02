@@ -1993,6 +1993,42 @@ let
       preferred_monitor_role = "secondary";
       routing_domains = [ "mlflow-staging.tail286401.ts.net" ];
     }
+
+    # Tekton Dev
+    {
+      name = "Tekton Dev";
+      url = "https://tekton-dashboard-dev.tail286401.ts.net";
+      domain = "tekton-dashboard-dev.tail286401.ts.net";
+      icon = iconPath "tekton-dev.png";
+      description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard - Dev environment";
+      categories = "Development;Network;";
+      keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;dev;";
+      scope = "https://tekton-dashboard-dev.tail286401.ts.net/";
+      ulid = "6QW9KVHE2HJBSJ42R151RH0XZC";  # Generated 2026-05-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 168;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "tekton-dashboard-dev.tail286401.ts.net" ];
+    }
+
+    # Tekton Staging
+    {
+      name = "Tekton Staging";
+      url = "https://tekton-dashboard-staging.tail286401.ts.net";
+      domain = "tekton-dashboard-staging.tail286401.ts.net";
+      icon = iconPath "tekton-staging.png";
+      description = "Tekton Dashboard - Cloud-native CI/CD pipeline dashboard - Staging environment";
+      categories = "Development;Network;";
+      keywords = "tekton;cicd;pipeline;kubernetes;cloud-native;build;deploy;cnoe;staging;";
+      scope = "https://tekton-dashboard-staging.tail286401.ts.net/";
+      ulid = "5V0QWQ23R62VYV9CRDAH02QMHP";  # Generated 2026-05-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 169;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "tekton-dashboard-staging.tail286401.ts.net" ];
+    }
   ];
 
   # Filter and format sites
