@@ -1940,58 +1940,22 @@ let
       routing_domains = [ "autokube-hub.tail286401.ts.net" ];
     }
 
-    # MLflow Ryzen
+    # MLflow Hub
     {
-      name = "MLflow Ryzen";
-      url = "https://mlflow-ryzen.tail286401.ts.net";
-      domain = "mlflow-ryzen.tail286401.ts.net";
-      icon = iconPath "mlflow-ryzen.png";
-      description = "MLflow - Open source ML lifecycle platform - Ryzen environment";
+      name = "MLflow Hub";
+      url = "https://mlflow-hub.tail286401.ts.net";
+      domain = "mlflow-hub.tail286401.ts.net";
+      icon = iconPath "mlflow-hub.png";
+      description = "MLflow - Open source ML lifecycle platform - Hub environment";
       categories = "Development;Science;Network;";
-      keywords = "mlflow;ml;machine-learning;experiment;tracking;mlops;ryzen;";
-      scope = "https://mlflow-ryzen.tail286401.ts.net/";
-      ulid = "2H46Y7EHXV13SQQZ6GABKGTHSZ";  # Generated 2026-04-30
+      keywords = "mlflow;ml;machine-learning;experiment;tracking;mlops;hub;";
+      scope = "https://mlflow-hub.tail286401.ts.net/";
+      ulid = "4TQ8Q3044NHFPZD0XZVJSHG2CJ";  # Generated 2026-05-02
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 165;
       preferred_monitor_role = "secondary";
-      routing_domains = [ "mlflow-ryzen.tail286401.ts.net" ];
-    }
-
-    # MLflow Dev
-    {
-      name = "MLflow Dev";
-      url = "https://mlflow-dev.tail286401.ts.net";
-      domain = "mlflow-dev.tail286401.ts.net";
-      icon = iconPath "mlflow-dev.png";
-      description = "MLflow - Open source ML lifecycle platform - Dev environment";
-      categories = "Development;Science;Network;";
-      keywords = "mlflow;ml;machine-learning;experiment;tracking;mlops;dev;";
-      scope = "https://mlflow-dev.tail286401.ts.net/";
-      ulid = "26W5EDX7SGQ23EVSVFR6W68M4C";  # Generated 2026-04-30
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 166;
-      preferred_monitor_role = "secondary";
-      routing_domains = [ "mlflow-dev.tail286401.ts.net" ];
-    }
-
-    # MLflow Staging
-    {
-      name = "MLflow Staging";
-      url = "https://mlflow-staging.tail286401.ts.net";
-      domain = "mlflow-staging.tail286401.ts.net";
-      icon = iconPath "mlflow-staging.png";
-      description = "MLflow - Open source ML lifecycle platform - Staging environment";
-      categories = "Development;Science;Network;";
-      keywords = "mlflow;ml;machine-learning;experiment;tracking;mlops;staging;";
-      scope = "https://mlflow-staging.tail286401.ts.net/";
-      ulid = "0MG4TSW2D2HRA0EHCVVE3YE4QK";  # Generated 2026-04-30
-      # App registry metadata
-      app_scope = "global";
-      preferred_workspace = 167;
-      preferred_monitor_role = "secondary";
-      routing_domains = [ "mlflow-staging.tail286401.ts.net" ];
+      routing_domains = [ "mlflow-hub.tail286401.ts.net" ];
     }
 
     # Tekton Dev

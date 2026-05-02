@@ -39,12 +39,12 @@ ALL_ENV_SERVICES=(ai-chatbot dapr grafana keycloak langfuse mcp-inspector-client
 # Services that only exist on dev/staging/prod (no ryzen deployment)
 NO_RYZEN_SERVICES=(loki mimir)
 
-# Services that only exist on ryzen/dev/staging (no prod deployment)
-NO_PROD_SERVICES=(mlflow)
+# Services that only exist on the hub cluster
+HUB_ONLY_SERVICES=(mlflow)
 
 ENVS_ALL=(dev staging prod ryzen)
 ENVS_NO_RYZEN=(dev staging prod)
-ENVS_NO_PROD=(dev staging ryzen)
+ENVS_HUB_ONLY=(hub)
 
 COUNT=0
 ERRORS=0
@@ -90,15 +90,15 @@ for service in "${NO_RYZEN_SERVICES[@]}"; do
   done
 done
 
-# Generate icons for services without prod
-for service in "${NO_PROD_SERVICES[@]}"; do
+# Generate icons for hub-only services
+for service in "${HUB_ONLY_SERVICES[@]}"; do
   source_svg="$ICONS_DIR/${ICON_MAP[$service]}"
   if [[ ! -f "$source_svg" ]]; then
     echo "WARNING: Source icon not found: $source_svg (skipping $service)" >&2
     ((ERRORS++)) || true
     continue
   fi
-  for env in "${ENVS_NO_PROD[@]}"; do
+  for env in "${ENVS_HUB_ONLY[@]}"; do
     output="$ICONS_DIR/${service}-${env}.png"
     if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
       ((COUNT++)) || true
