@@ -792,10 +792,14 @@ let
       version = "1.0.0";
       description = "QuickShell launcher companion for Chrome history, bookmarks, and tabs.";
       key = chromeUrlExtensionKey;
-      permissions = [ "tabs" "bookmarks" "history" "alarms" "storage" "nativeMessaging" ];
+      permissions = [ "tabs" "bookmarks" "history" "alarms" "storage" "nativeMessaging" "webNavigation" ];
+      host_permissions = [ "<all_urls>" ];
       background.service_worker = "service-worker.js";
       minimum_chrome_version = "139";
     }}
+    EOF
+    cat >"$out/routes.json" <<'EOF'
+    ${pwaRouteRegistry}
     EOF
     cat >"$out/service-worker.js" <<'EOF'
     const HOST = "com.vpittamp.i3pm_url_bridge";
@@ -935,6 +939,65 @@ let
     chrome.bookmarks.onChanged.addListener(() => scheduleSync("bookmarks.onChanged"));
     chrome.history.onVisited.addListener(() => scheduleSync("history.onVisited"));
     chrome.history.onVisitRemoved.addListener(() => scheduleSync("history.onVisitRemoved"));
+
+    // Cross-PWA link routing: when navigation targets a URL whose host belongs to
+    // a different registered PWA, hand it off to launch-pwa-by-name (via the
+    // native host) and snap the source tab back so the originating PWA stays put.
+
+    let ROUTES = {};
+
+    fetch(chrome.runtime.getURL("routes.json"))
+      .then(response => response.json())
+      .then(data => { ROUTES = (data && data.routes) || {}; })
+      .catch(error => console.warn("i3pm-url-bridge routes load failed", error));
+
+    function matchRoute(host, path) {
+      if (!host) return null;
+      const lcHost = host.toLowerCase();
+      let current = (path || "").replace(/\/+$/, "");
+      while (current) {
+        const candidate = lcHost + current;
+        if (ROUTES[candidate]) return ROUTES[candidate];
+        const idx = current.lastIndexOf("/");
+        current = idx <= 0 ? "" : current.slice(0, idx);
+      }
+      return ROUTES[lcHost] || null;
+    }
+
+    chrome.webNavigation.onBeforeNavigate.addListener(async details => {
+      if (details.frameId !== 0) return;
+      if (!/^https?:\/\//.test(details.url)) return;
+      let target;
+      try { target = new URL(details.url); } catch (_e) { return; }
+      const targetRoute = matchRoute(target.host, target.pathname);
+      if (!targetRoute) return;
+
+      let tab;
+      try { tab = await chrome.tabs.get(details.tabId); } catch (_e) { return; }
+      if (!tab || !tab.url || !/^https?:\/\//.test(tab.url)) return;
+
+      let source;
+      try { source = new URL(tab.url); } catch (_e) { return; }
+      const sourceRoute = matchRoute(source.host, source.pathname);
+      if (sourceRoute && sourceRoute.ulid === targetRoute.ulid) return;
+
+      try {
+        await chrome.runtime.sendNativeMessage(HOST, {
+          type: "openUrl",
+          url: details.url,
+          mode: "preferred"
+        });
+      } catch (error) {
+        console.warn("i3pm-url-bridge openUrl failed", error);
+        return;
+      }
+
+      try {
+        await chrome.tabs.update(details.tabId, { url: tab.url });
+      } catch (error) {
+        console.warn("i3pm-url-bridge snap-back failed", error);
+      }
+    });
     EOF
   '';
 
@@ -1038,6 +1101,10 @@ let
 
 in
 {
+  # Expose the i3pm URL bridge extension to other home-manager modules
+  # (e.g. pwa-launcher.nix) so PWA windows can load it too.
+  _module.args.chromeUrlExtension = chromeUrlExtension;
+
   # Google Chrome browser configuration
   # Switched from Chromium to Chrome for Claude in Chrome compatibility
   # Claude in Chrome requires Google Chrome for full functionality

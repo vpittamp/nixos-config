@@ -1,4 +1,4 @@
-{ pkgs, lib, osConfig ? null, ... }:
+{ pkgs, lib, osConfig ? null, chromeUrlExtension ? null, ... }:
 
 # PWA Launcher - Declarative Google Chrome PWA launcher
 # Resolves declarative PWA entries from pwa-registry.json and launches them
@@ -168,6 +168,7 @@ let
       ${pkgs.google-chrome}/bin/google-chrome-stable
       ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) captureSafeChromeArgs)}
       --profile-directory=Default
+      ${lib.optionalString (chromeUrlExtension != null) ''--load-extension=${chromeUrlExtension}''}
       --app="$TARGET_URL"
       --new-window
       --no-first-run
