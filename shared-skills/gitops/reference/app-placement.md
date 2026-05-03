@@ -7,7 +7,7 @@ Use this policy when deciding where a new app belongs in the stacks hub-and-spok
 Run an app once on the hub when its primary job is cross-cluster coordination, release management, lifecycle management, or operator visibility:
 
 - ArgoCD, GitOps Promoter, source-hydrator configuration, and Promoter UI.
-- Hub Tekton outer-loop builds, GitHub webhook handling, GHCR release automation, and release metadata validation.
+- Hub Tekton outer-loop builds, Gitea dev-image builds for ryzen, webhook handling, GHCR release automation, Gitea registry publication, and release metadata validation.
 - Crossplane, Hetzner/Talos providers, and spoke cluster lifecycle compositions.
 - Deployment inventory and release dashboards.
 - NocoDB, Redash, and similar cross-cluster management/reporting UIs.
@@ -42,4 +42,5 @@ Ryzen is intentionally not a promoted release stage. Keep these local unless the
 - If it contains environment data, prefer per-spoke unless the product explicitly needs shared state.
 - If it exists only for local development velocity, keep it ryzen-local and out of GitOps Promoter.
 - If it affects dev/staging release state, route it through GitHub, source-hydrator, and GitOps Promoter.
+- If it is an image build workload, default it to the hub build pool. Spokes may own image tags and runtime manifests, but they should not run Buildah unless the task is explicitly local-only.
 - If an app is legacy, remove it declaratively and let Argo prune. AutoKube is currently legacy/removed; do not repair it unless it is explicitly reintroduced.

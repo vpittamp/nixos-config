@@ -1,6 +1,6 @@
 ---
 name: evaluations
-description: "Use for workflow-builder evals, official SWE-bench benchmark runs, benchmarks UI, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py grader rollout, the Braintrust-adoption analyst surfaces on the Benchmarks page (regression detection / scorer tiles / promote-to-dataset / composite trace view / cohort pivots / human annotations), benchmark_run_instance_scores + benchmark_run_instance_annotations tables, and the Phase G inline scorer-runner."
+description: "Use for workflow-builder evals, official SWE-bench benchmark runs, Benchmarks UI, DeepSeek/Together SWE-bench provider canaries, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, benchmark cancellation/cleanup, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py grader rollout, the Braintrust-adoption analyst surfaces on the Benchmarks page (regression detection / scorer tiles / promote-to-dataset / composite trace view / cohort pivots / human annotations), benchmark_run_instance_scores + benchmark_run_instance_annotations tables, and the Phase G inline scorer-runner."
 ---
 
 # Workflow-Builder Evaluations
@@ -71,11 +71,15 @@ Use this path when the user asks for SWE-bench evals that should show up in work
 4. Evaluator callback: `/api/internal/benchmarks/evaluation-results` records official resolved/unresolved/empty-patch status, harness report/stdout/stderr/test-output paths, parsed counters, raw harness notes, and run provenance.
 5. Provenance should include evaluator image/job name, resource class, max workers, timeout/deadline, dataset/prediction paths + SHA-256s, harness report path, environment image/digest summaries, and timestamps.
 
+Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Keep total active inference around the dev capacity envelope (usually 5 instances) unless node headroom has been revalidated.
+
 Deterministic operator smoke is allowed when agent inference is not the thing under test: insert a queued `benchmark_runs` row and explicit-id `benchmark_run_instances` rows with `model_patch`, `patch_sha256`, and `patch_bytes`; mark the run `inferencing`; call `_write_predictions`, `_write_evaluation_dataset`, then `_ensure_evaluator_job`. The status guard is strict (`queued -> inferencing -> evaluating -> completed/failed/cancelled`), so launching from `queued` fails.
 
 Empty or null `model_patch` is a valid evaluator input and should become `empty_patch` when the harness reports it. That is an expected unresolved instance, not a harness failure. Official SWE-bench resolved/unresolved remains authoritative even if raw pytest output has extra non-graded errors; show those separately as raw harness notes.
 
 **K8s label sanitization on coordinator-launched Jobs.** Run IDs are nanoid-generated and can legally end in `_` or `-`, which fails K8s label-value validation `(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?`. Symptom: run goes `failed` at the evaluating stage with HTTP 422 `Invalid value: "<id>": a valid label must ... start and end with an alphanumeric character`. The Phase G `patch_files_overlap_gold` scorer (gated on harness completion) won't fire as a side effect. Fix landed in coordinator at workflow-builder `0f369b58` via `_safe_label_value` (strips outer `[._-]`, caps 63 chars). If you add another K8s resource that labels with a run/instance ID, mirror the helper.
+
+**Cancellation and stalled-instance cleanup are Dapr lifecycle work, not just DB updates.** A terminal benchmark run may still have a parent `workflow-orchestrator` workflow plus `dapr-agent-py` session and per-turn child workflows running. Terminate/poll/purge the agent-runtime session/turn workflows first, then the parent workflow. Only mark `sessions`/`workflow_executions` terminal, delete sandboxes, or release leases after every durable instance is terminal or missing. If shutdown is not confirmed, leave leases and sandboxes in place so retry cleanup can find the still-running workflows. Post-cancel events such as `sandbox not found` or orphaned Dapr histories mean cleanup raced ahead of durable shutdown.
 
 ## Benchmarks UI: Braintrust-adoption surfaces (Phase F → K)
 
@@ -264,10 +268,11 @@ For full detail: `references/system-model.md`.
 
 ## Operational Rollout
 
-dapr-agent-py code changes (the `/api/grader-evaluate` endpoint, `_call_anthropic_sdk`, MCP, hooks, etc.) need TWO PipelineRuns:
+dapr-agent-py code changes (the `/api/grader-evaluate` endpoint, provider adapters such as `deepseek_adapter.py`, `_call_anthropic_sdk`, MCP, hooks, etc.) now fire THREE image PipelineRuns:
 
 1. `dapr-agent-py-image-build` — for legacy `dapr-agent-py:git-<sha>` (used by the legacy `dapr-agent-py` + `dapr-agent-py-testing` Deployments).
 2. `dapr-agent-py-sandbox-image-build` — for `dapr-agent-py-sandbox:git-<sha>` (used by every per-agent runtime pod via the AgentRuntime CR).
+3. `dapr-agent-py-testing-sandbox-image-build` — for the testing sandbox image used by runtime/conformance paths.
 
 Forced-tool grader-evaluate gotchas seen during the strict-tool rollout:
 

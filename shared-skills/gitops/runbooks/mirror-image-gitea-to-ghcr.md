@@ -2,7 +2,7 @@
 
 ## Symptoms / when to use
 
-A workflow-builder-system image tag exists on `gitea-ryzen.tail286401.ts.net/giteaadmin/<image>:git-<sha>` (because ryzen Tekton inner-loop built it) but is NOT on `ghcr.io/pittampalliorg/<image>:git-<sha>` (because hub Tekton outer-loop didn't run — usually because the GitHub webhook isn't reaching the hub; see `debug-funnel-orphan-tag.md` for that).
+A workflow-builder-system image tag exists on `gitea-ryzen.tail286401.ts.net/giteaadmin/<image>:git-<sha>` (because the hub Gitea/dev-image lane built it for ryzen) but is NOT on `ghcr.io/pittampalliorg/<image>:git-<sha>` (because the hub GHCR outer-loop didn't run — usually because the GitHub webhook isn't reaching the hub; see `debug-funnel-orphan-tag.md` for that).
 
 Concrete symptoms:
 - After bumping `release-pins/workflow-builder-images.yaml`, dev/staging Job pods sit in `Init:ImagePullBackOff` with `failed to resolve reference … ghcr.io/pittampalliorg/<image>:<tag>: not found`.
@@ -27,7 +27,7 @@ If source exists and dest is missing → mirror.
 
 ## Fix steps
 
-The mirror needs to run somewhere that can resolve `gitea-ryzen.tail286401.ts.net` AND has credentials with `pittampalliorg/*` org-write scope. Hub pods fail the DNS resolution; hub `ghcr-push-credentials` Secret is what carries the right scope (same secret outer-loop uses).
+The mirror needs to run somewhere that can resolve `gitea-ryzen.tail286401.ts.net` AND has credentials with `pittampalliorg/*` org-write scope. Ryzen resolves the hostname natively. Hub pods must use the `gitea-ryzen-egress.tailscale.svc.cluster.local` Service plus an `/etc/hosts` mapping. Hub `ghcr-push-credentials` Secret is what carries the right scope (same secret outer-loop uses).
 
 There are two practical cases. Pick one based on `hostname`:
 
@@ -89,11 +89,11 @@ KUBECONFIG=/tmp/dev-kubeconfig kubectl -n workflow-builder delete pod -l app=wor
 
 ## Why outer-loop should normally do this for you
 
-The hub Tekton `outer-loop-build` Pipeline (in `tekton-pipelines` ns on hub) builds the image fresh from GitHub source AND pushes to ghcr.io with the same `git-<sha>` tag, then opens a `release/workflow-builder-*` PR that updates `release-pins/workflow-builder-images.yaml` with tag, digest, and provenance. So a fresh push to `PittampalliOrg/workflow-builder` should trigger a build, push to ghcr.io, and prepare a release PR — no manual mirror needed.
+The hub Tekton `outer-loop-build` Pipeline (in `tekton-pipelines` ns on hub) builds the image fresh from GitHub source AND pushes to ghcr.io with the same `git-<sha>` tag, then either opens a `release/workflow-builder-*` PR or pushes release metadata directly to `origin/main` with tag, digest, and provenance. So a fresh push to `PittampalliOrg/workflow-builder` should trigger a build, push to ghcr.io, and prepare the release metadata handoff — no manual mirror needed.
 
 When that flow is broken (typically: GitHub webhook → Tailscale Funnel → hub EventListener path), you fall back to this manual mirror. **Fix the upstream cause too** — see `debug-funnel-orphan-tag.md` — otherwise you'll be mirroring by hand for every future commit.
 
 ## Risks
 
-- **The mirrored image is built from gitea-ryzen, not from the GitHub source repo.** If the gitea-ryzen image has any local divergence from the GitHub `git-<sha>` commit (uncommitted local changes baked in, different Dockerfile target, etc.), the manually-mirrored ghcr.io tag won't be byte-identical to what outer-loop would produce. For workflow-builder this rarely matters because the inner-loop pipeline builds from gitea-ryzen which mirrors the GitHub source, but **don't use this mirror procedure for production-only images** without confirming source provenance.
+- **The mirrored image is built from gitea-ryzen, not from the GitHub source repo.** If the gitea-ryzen image has any local divergence from the GitHub `git-<sha>` commit (uncommitted local changes baked in, different Dockerfile target, etc.), the manually-mirrored ghcr.io tag won't be byte-identical to what outer-loop would produce. For workflow-builder this rarely matters because the hub Gitea/dev-image lane builds from gitea-ryzen which mirrors the GitHub source, but **don't use this mirror procedure for production-only images** without confirming source provenance.
 - **You're using hub's `ghcr-push-credentials`** which has org-write scope. Treat the extracted authfile carefully and shred it as soon as the mirror is done.

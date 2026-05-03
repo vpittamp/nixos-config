@@ -1,3 +1,3 @@
 interface:
   display_name: "Workflow Builder"
-  short_description: "Author and debug SW 1.0 workflows, durable agent steps, MCP connections, canvas JSON, Dapr sidecars, and workflow-builder runtime issues."
+  short_description: "Author and debug SW 1.0 workflows, durable agent steps, Prompt Workbench, MCP connections, Dapr cleanup, DeepSeek routing, and runtime issues."

@@ -57,7 +57,7 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 | --- | --- | --- | --- |
 | `agentRef.id` | Recommended | `string` | The DB `agents.id`. Resolves to `agent-runtime-<agent.slug>` Dapr app-id. **Without this, the orchestrator falls back to legacy `dapr-agent-py` — almost certainly not what you want.** |
 | `agentRef.version` | No | `number` | Pin a specific agent version. Defaults to current. |
-| `prompt` | Yes | `string` | The user prompt to the agent. Use jq full-string interpolation: `"${ \"Look at \" + .trigger.url }"`. |
+| `prompt` | Yes | `string` | The appended user prompt to the agent. Use SW jq full-string interpolation for runtime values: `"${ \"Look at \" + .trigger.url }"`. Prompt Workbench Mustache placeholders are preview-only in V1 and are not substituted here at runtime. |
 | `mode` | Yes | `"execute_direct"` | Literal enum value. Only mode supported today. |
 | `maxTurns` | No | `number` | Default 50. Set lower for tight workflows; higher for complex multi-step agents. |
 | `timeoutMinutes` | No | `number` | Per-execution timeout. Default 60. |
@@ -84,6 +84,20 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 6. Pod runs the turn, returns, scales back to 0 after `idleTtlSeconds` (default 1800).
 
 If `agentRef.id` is missing OR resolves to an agent that hasn't been published, the orchestrator falls back to legacy `dapr-agent-py`. Don't rely on this — it's a backwards-compat shim.
+
+## Prompt preview, templating, and cache
+
+The workflow agent-node panel's `Compiled Prompt` preview uses the shared Prompt Workbench preview component. It should show:
+
+- The selected agent/version/config hash.
+- The canonical template name/hash when available.
+- The rendered system message from the saved agent instruction bundle.
+- The `chat_history` placeholder.
+- This node's `prompt` as the appended user message.
+
+Runtime interpolation inside `durable/run.with.prompt` is SW 1.0 jq only. Use `${ .trigger.<field> }`, `${ .previous_task.output }`, or concatenation inside a single full-string jq expression. A Mustache value such as `{{runtime.cwd}}` or `{{args.ticket}}` in the node prompt is an authoring preview warning, not a runtime variable, and will be sent literally unless another runtime layer handles it.
+
+For prompt caching, keep volatile node/run data in the appended user message where possible. Avoid stamping cwd, sandbox name, session id, run id, or workflow input into the agent's stable system prompt or preset text unless model behavior truly depends on it.
 
 ## How to find a real `agentRef.id`
 

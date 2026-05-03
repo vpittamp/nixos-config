@@ -38,7 +38,8 @@ Before fixing drift, answer these questions:
 Known decisions:
 
 - Keep `agent-sandbox-crds` and `<spoke>-agent-sandbox-crds`. OpenShell and agent-runtime controllers require `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` CRDs. CRDs are split into a separate early-wave app intentionally.
-- Keep hub Tekton/Gitea build apps when workflow-builder or OpenShell images still build through them.
+- Keep hub Tekton/Gitea build apps (`hub-workflow-builder-builds`, `hub-gitea-builds`, `hub-gitea-builds-egress`) when workflow-builder or OpenShell images still build through them.
+- Remove stale spoke-local build apps and egress resources such as `workflow-builder-builds-local` or `gitea-builds-egress` on ryzen/spokes. The current build plane is centralized on hub; ryzen owns the resulting image tags, not the Buildah workload.
 - Remove AutoKube resources. AutoKube is legacy in this repo; do not repair AutoKube apps, Ingresses, ACL approvals, or manifests unless the product is explicitly reintroduced.
 - The old hcloud-spoke Crossplane `AzureWorkloadIdentity` claim/provider path is legacy. The current hcloud spoke lifecycle uses hcloud/talos/kubernetes/terraform providers plus existing Azure Workload Identity configuration, not generated Azure Crossplane RoleAssignments/FICs.
 
@@ -91,6 +92,8 @@ Tekton defaults or normalizes several fields:
 - Embedded Pipeline `taskSpec` blocks may gain empty `metadata`, `spec: null`, or `computeResources`.
 
 Prefer declaring exact stable defaults for high-value resources like EventListeners so real trigger/filter drift remains visible. Use narrow `ignoreDifferences` for harmless CRD defaulting or deeply embedded generated fields.
+
+After pruning stale build resources, individual Tekton `Task` resources can remain Argo OutOfSync even when `kubectl diff -k <source>` is clean and no active failing pods remain. Treat that as comparison/cache noise first: hard-refresh the app, clear old tracking annotations on orphaned TaskRuns if present, and avoid reintroducing removed spoke-local build apps just to make Argo green.
 
 ### Tailscale egress Services
 

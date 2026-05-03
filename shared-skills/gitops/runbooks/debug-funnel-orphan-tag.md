@@ -212,13 +212,13 @@ kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines logs deploy/tekton-t
 
 ### Workaround (the path that has worked all session)
 
-Until the root cause is fixed, use ryzen Tekton + manual mirror to ship images to ghcr.io:
+Until the GitHub outer-loop root cause is fixed, use the hub Gitea/dev-image lane + manual mirror to ship images to ghcr.io:
 
-1. Push to `gitea-ryzen` (this triggers ryzen Tekton inner-loop instead of hub outer-loop):
+1. Push to `gitea-ryzen` (this triggers the hub `workflow-builder-image-builds` EventListener through `https://el-workflow-builds-hub.tail286401.ts.net`):
    ```bash
    git push gitea-ryzen HEAD:main
    ```
-2. Wait for `workflow-builder-image-build-*` PipelineRun on `kubectl -n tekton-pipelines get pipelinerun` (ryzen kind cluster, not hub).
+2. Wait for `workflow-builder-image-build-*` PipelineRun on the hub cluster: `kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines get pipelinerun`.
 3. Mirror the new image: `runbooks/mirror-image-gitea-to-ghcr.md`.
 4. Open/merge a release-intent PR, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
 
@@ -232,5 +232,5 @@ Root cause not identified at the time this runbook was written. Hypotheses teste
 
 Next things to try:
 - Recreate the EL CR itself (`kubectl delete el github-outer-loop` then re-apply from stacks/manifests). Slightly destructive — will drop in-flight requests for ~30s — so do it during a quiet period.
-- Compare hub's `el-github-outer-loop` EL spec field-by-field to ryzen's working `el-workflow-builder-image-builds` for any structural difference (e.g., `resources` field set to `{}` vs unset).
+- Compare hub's `el-github-outer-loop` EL spec field-by-field to hub's working `el-workflow-builder-image-builds` for any structural difference (e.g., `resources` field set to `{}` vs unset).
 - Bump Tekton Triggers to a newer patch version on hub.

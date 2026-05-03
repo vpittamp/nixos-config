@@ -4,8 +4,8 @@
 
 `git log origin/main..gitea-ryzen/main` and the reverse both show 5+ commits each → the branches have diverged. Common because two automated paths write different sources of truth:
 
-- **Hub Tekton outer-loop** opens release-intent PRs that merge release metadata to `origin/main` (file: `release-pins/workflow-builder-images.yaml`)
-- **Ryzen Tekton inner-loop** commits ryzen-only image bumps to `gitea-ryzen/main` (commit subject: `chore(dev-images): deploy <image> <tag> to ryzen`, file: `active-development/manifests/<image>/kustomization.yaml`)
+- **Hub Tekton outer-loop** opens release-intent PRs or pushes release metadata to `origin/main` (file: `release-pins/workflow-builder-images.yaml`)
+- **Hub Tekton Gitea/dev-image lane** commits ryzen-only image bumps to `gitea-ryzen/main` (commit subject: `chore(dev-images): deploy <image> <tag> to ryzen`, file: `active-development/manifests/<image>/kustomization.yaml`)
 
 Reconcile when:
 - Bumping dev/staging to "what ryzen has" — needs ryzen's tags merged into origin first
@@ -112,6 +112,6 @@ kubectl --kubeconfig ~/.kube/hub-config get app root-application -n argocd \
 
 ## Risks
 
-- **Tekton may commit again during the merge.** If a `chore(dev-images):` lands on gitea-ryzen between your fetch and push, you'll see a non-fast-forward push rejection. Re-merge and try again.
+- **Tekton may commit again during the merge.** If the hub Gitea/dev-image lane lands a `chore(dev-images):` commit on gitea-ryzen between your fetch and push, you'll see a non-fast-forward push rejection. Re-merge and try again.
 - **The release-pins update triggers a Promoter rollout** as soon as the merge lands on origin/main. Verify the new image tags/digests exist on ghcr.io before pushing (otherwise dev workflow-builder lands in ImagePullBackOff). If the bump is for ryzen-only tags that haven't been mirrored to ghcr.io, run `runbooks/mirror-image-gitea-to-ghcr.md` first, then `scripts/gitops/validate-workflow-builder-release-pins.sh`.
 - **Long branch-divergence (>50 commits each way)** is harder to merge cleanly; consider doing it in stages or asking for help.

@@ -135,6 +135,19 @@ Two known dead-ends:
 
 - **`argocd app refresh --hard`** triggers manifest re-render but does NOT immediately repoll branch tips. Useful when you suspect cache staleness for `targetRevision: <sha>` apps; useless for `sourceHydrator: targetBranch: <branch>` apps.
 - **`argocd app sync --revision <sha>`** is rejected on auto-sync + branch-tracking apps with `Cannot sync to <sha>: auto-sync currently set to <branch>`. This is Argo's safety, not a bug.
+- **Concurrent outer-loop commits can make the dev CTP propose the previous dry SHA.** This has happened when one push produced both workflow-builder and workflow-orchestrator release metadata commits. If source-hydrator's current dry SHA is the new one but `workflow-builder-release-env-spokes-dev-*` still proposes the older dry SHA after a poll, refresh the PromotionStrategy and CTP:
+
+```bash
+ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+ctp=$(kubectl --context hub-cluster -n argocd get changetransferpolicy -o name | \
+  rg 'workflow-builder-release-env-spokes-dev-' | head -n1)
+kubectl --context hub-cluster annotate promotionstrategy workflow-builder-release -n argocd \
+  promoter.argoproj.io/refresh-ts="$ts" --overwrite
+kubectl --context hub-cluster annotate "$ctp" -n argocd \
+  promoter.argoproj.io/refresh-ts="$ts" --overwrite
+kubectl --context hub-cluster annotate app spoke-dev-workflow-builder -n argocd \
+  argocd.argoproj.io/refresh=hard --overwrite
+```
 
 ## What "blocked" actually looks like
 
@@ -205,3 +218,22 @@ kubectl --context "$ctx" -n workflow-builder logs deploy/"agent-runtime-${slug}"
 ```
 
 For piece MCP servers, runtime URLs should be Knative URLs without `:3100`, and OAuth-backed entries should include `headers.X-Connection-External-Id`. If this verification fails, switch to `runbooks/debug-workflow-builder-mcp-auth.md`.
+
+## Verify workflow-builder prompt presets after a rollout
+
+When the change touches Prompt Workbench, `resource_prompts`, `resource_prompt_versions`, or `/api/prompt-presets`, add this after the normal image/promotion verification:
+
+```bash
+ctx=dev
+
+kubectl --context "$ctx" -n workflow-builder exec deploy/workflow-builder -- \
+  psql "$DATABASE_URL" -c "SELECT to_regclass('public.resource_prompt_versions') AS prompt_versions_table;"
+
+kubectl --context "$ctx" -n workflow-builder exec deploy/workflow-builder -- \
+  psql "$DATABASE_URL" -c "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 5;"
+
+# Public unauthenticated requests should not leak project presets.
+curl -i https://workflow-builder-dev.tail286401.ts.net/api/prompt-presets
+```
+
+Then run an authenticated API smoke in the target workspace: list presets, create a throwaway preset, update it and confirm version 2 exists, archive it, and clean up the smoke rows. If the table is missing but `db-migrate` succeeded, switch to `runbooks/fix-drizzle-migration.md`; the usual cause is a missing Drizzle journal entry.

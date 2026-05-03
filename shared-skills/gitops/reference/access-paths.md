@@ -98,7 +98,7 @@ Spoke clusters do **not** have a ready-made talosconfig file in `~/.talos/`. If 
 |---|---|---|---|
 | ghcr.io | `ghcr.io/pittampalliorg/<image>` | `ghcr-push-credentials` Secret in `tekton-pipelines` ns on hub (org PAT); local `~/.docker/config.json` for read | Hub Tekton, dev/staging spokes (public reads), local |
 | gitea-ryzen | `gitea-ryzen.tail286401.ts.net/giteaadmin/<image>` | Anonymous reads OK; pushes need `gitea-registry-credentials` Secret | Ryzen, hub via Tailscale **egress** service, local ryzen workstation |
-| gitea-hub / cnoe.localtest.me | `gitea-hub.tail286401.ts.net/giteaadmin/<image>` and `gitea.cnoe.localtest.me/giteaadmin/<image>` | Same as gitea-ryzen | Mostly historical / inner-loop; spoke-workloads AppSet rewrites these to ghcr.io |
+| gitea-hub / cnoe.localtest.me | `gitea-hub.tail286401.ts.net/giteaadmin/<image>` and `gitea.cnoe.localtest.me/giteaadmin/<image>` | Same as gitea-ryzen | Mostly historical/local-dev; spoke-workloads AppSet rewrites these to ghcr.io |
 
 **Hub pods cannot resolve `gitea-ryzen.tail286401.ts.net` through cluster DNS.** Two workarounds:
 - Use the Tailscale **egress** Service `gitea-ryzen-egress.tailscale.svc.cluster.local` and add an `/etc/hosts` mapping at runtime (the gitea-build Tasks demonstrate this pattern)

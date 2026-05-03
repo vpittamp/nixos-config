@@ -81,7 +81,7 @@ cp /tmp/atlas-mig/atlas.sum atlas/migrations/atlas.sum
 rm -rf /tmp/atlas-mig
 ```
 
-3. **Commit + push to BOTH workflow-builder remotes** (origin = GitHub, gitea-ryzen = inner-loop trigger):
+3. **Commit + push to BOTH workflow-builder remotes** (origin = GitHub outer-loop trigger, gitea-ryzen = hub Gitea/dev-image trigger):
 
 ```bash
 git add drizzle/meta/_journal.json drizzle/<NNNN>_<name>.sql \
@@ -91,7 +91,7 @@ git push origin main
 git push gitea-ryzen main
 ```
 
-4. **Wait for the new image to build + roll** through the normal pipeline (ryzen Tekton inner-loop builds, mirror to ghcr.io if hub Tekton outer-loop is still broken — see `mirror-image-gitea-to-ghcr.md` — then bump release-pins per `promote-image-to-spokes.md`).
+4. **Wait for the new image to build + roll** through the normal pipeline (hub Gitea/dev-image lane builds the ryzen tag, mirror to ghcr.io if the hub GHCR outer-loop is still broken — see `mirror-image-gitea-to-ghcr.md` — then bump release-pins per `promote-image-to-spokes.md`).
 
 5. The next dev sync will run `db-migrate` with the updated image; the `__drizzle_migrations` table will get a row, and the `ADD COLUMN` will execute.
 

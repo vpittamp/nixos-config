@@ -1,3 +1,3 @@
 interface:
   display_name: "GitOps (PittampalliOrg/stacks)"
-  short_description: "Operational knowledge for hub-and-spoke GitOps: Argo health, release handoffs, workflow-builder MCP/auth, Dapr state and sidecar readiness, Tailscale, and cluster access."
+  short_description: "Operational knowledge for hub-and-spoke GitOps: Argo health, release handoffs, workflow-builder runtime images, SWE-bench canaries, Dapr cleanup/readiness, Tailscale, and cluster access."

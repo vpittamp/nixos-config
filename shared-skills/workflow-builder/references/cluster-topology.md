@@ -100,7 +100,7 @@ Every `durable/run` step goes through a session bridge so workflow-driven runs a
 - `dapr-agent-py:git-<sha>` → legacy `dapr-agent-py` + `dapr-agent-py-testing` Deployments. Pinned by GitOps tag bump.
 - `dapr-agent-py-sandbox:latest` → per-agent runtime pods. Stamped into AgentRuntime CR `environment.imageTag` at agent-publish time. Uses `imagePullPolicy: Always`, so scaling 0→1 picks up new digests.
 
-A change in `services/dapr-agent-py/src/**` requires BOTH image builds. See the `gitops` skill for details.
+A change in `services/dapr-agent-py/src/**` requires both the runtime image and sandbox image builds. The current build plane is centralized on hub; see the `gitops` skill for details.
 
 ## Workflow JSON specs are NOT baked into images
 

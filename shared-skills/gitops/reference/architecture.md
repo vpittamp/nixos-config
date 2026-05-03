@@ -1,12 +1,12 @@
-# Architecture: hub + 3 spokes, two image-pin systems, two Tekton instances
+# Architecture: hub + 3 spokes, two image-pin systems, centralized hub builds
 
 ## Cluster roles
 
 ```
                          ┌─────────────────────────────────────────────┐
-                         │  HUB (Talos on Hetzner, 5.161.99.23:6443)    │
+                         │  HUB (Talos on Hetzner)                       │
                          │  - Single ArgoCD (manages itself + spokes)   │
-                         │  - Hub Tekton (outer-loop, GHCR pushes)      │
+                         │  - Hub Tekton (GHCR + Gitea/dev-image lanes) │
                          │  - GitOps Promoter + ArgoCD Promoter UI      │
                          │  - Crossplane (spoke lifecycle)              │
                          │  - ExternalSecrets Operator                  │
@@ -21,21 +21,20 @@
         │ (Talos, │         │ (Talos, │         │  (kind, │
         │ Hetzner)│         │ Hetzner)│         │  user's │
         └─────────┘         └─────────┘         │  workst.│
-                                                │  + own  │
-                                                │  Tekton │
-                                                │  inner- │
-                                                │  loop)  │
+                                                │  +      │
+                                                │  local  │
+                                                │  Gitea) │
                                                 └─────────┘
 ```
 
 `hcloud server list` (context `stacks`):
-- hub: `hub-cp-1` (5.161.48.192), `hub-worker-1` (5.161.43.68) on `hub-cluster-net` (10.1.1.0/24)
+- hub: `hub-cp-1..3` control/management nodes and `hub-build-1..2` dedicated Tekton build workers on `hub-cluster-net` (10.1.1.0/24)
 - dev: `dev-cp-1/2/3` (178.156.225.243, .239.75, .226.121), `dev-worker-1/2` on `dev-network` (10.0.1.0/24)
 - staging: `staging-cp-1/2/3`, `staging-worker-1/2` on `staging-network`
 
 ryzen is the user's local workstation (`hostname` returns `ryzen`); the kind cluster is registered with the hub ArgoCD as cluster `ryzen`.
 
-## Two Tekton instances, two image-pin systems
+## Hub build lanes, two image-pin systems
 
 This is **the** mental model for this system. The same workflow-builder base manifests at `packages/components/active-development/manifests/workflow-builder/` are used by all three spokes, but the image tags come from **different files**:
 
@@ -79,12 +78,13 @@ Hub ArgoCD syncs spoke apps from env/spokes-{spoke}
 
 ============================================================
 
-Local edit on ryzen (push to gitea-ryzen, the local Gitea)
+Local/ryzen dev-image push to gitea-ryzen
     │
+    │  webhook: el-workflow-builds-hub.tail286401.ts.net
     ▼
 ┌──────────────────────────────────────────────┐
-│  RYZEN TEKTON inner-loop pipeline             │
-│  - Build with Buildah                         │
+│  HUB TEKTON Gitea/dev-image lane              │
+│  - Build with Buildah on hub-build-* nodes    │
 │  - Push to gitea-ryzen.tail286401.ts.net/…    │
 │  - Update active-development/manifests/<img>/ │
 │    kustomization.yaml on gitea-ryzen/main     │
@@ -103,6 +103,7 @@ Hub ArgoCD syncs ryzen apps from gitea-ryzen/main
 - A tag/digest bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it and records the digest/provenance in the PR, but if the GitHub webhook is broken, the tag exists only on gitea-ryzen and you need to skopeo-mirror it manually.
 - `release-pins/workflow-builder-images.yaml` is schema v2: `images` remains the compatibility tag map; `digests`, `imageRefs`, `sourceShas`, `pipelineRuns`, and `updatedAts` hold immutable/provenance metadata. Dev/staging templates render tag+digest refs when a digest is present.
 - `agent-runtime-controller` is the exception: bumped directly in `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (no per-cluster override). Single bump applies to all spokes once on `origin/main`.
+- Spokes should not run Buildah for this path. If a `workflow-builder-builds-local` or spoke `gitea-builds-egress` resource appears, treat it as stale until proven otherwise.
 
 ## Live deployment inventory
 
@@ -216,7 +217,7 @@ Ryzen also has a local source branch split:
 
 | Branch | Role |
 |---|---|
-| `gitea-ryzen/main` | Default branch used by ryzen child Applications and inner-loop image-pin commits |
+| `gitea-ryzen/main` | Default branch used by ryzen child Applications and hub Gitea/dev-image image-pin commits |
 | `gitea-ryzen/ryzen-main` | Branch tracked by the ryzen root Application; fast-forward this for root/child Application spec changes such as ignoreDifferences or new app resources |
 
 ## Hub self-management and GitOps Promoter
