@@ -71,7 +71,7 @@ MCP/auth has a third, non-image flow. `mcp_connection` and `app_connection` rows
 4. Run a focused SWE-bench canary: one known gold patch that resolves, one empty-patch case that returns `empty_patch`, and, when available, an environment/build validation case. Evaluator Jobs should use the expected resource class and `ttlSecondsAfterFinished=3600`.
 5. For UI-visible validation, create or trigger a Benchmarks page run (`/workspaces/<slug>/benchmarks`) and confirm artifact SHA-256s, provenance, official result, raw harness notes, report path, and job name appear in the run API/UI. The evaluations skill has the DB/coordinator smoke path for deterministic runs.
 
-For DeepSeek SWE-bench validation, use the direct DeepSeek model specs (`deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`) and confirm the selected agent runtime reports provider `deepseek` with `llm-deepseek-v4-*` components. Keep canaries within the dev capacity envelope: around five active inference instances total unless live node headroom says otherwise.
+For DeepSeek SWE-bench validation, use the direct DeepSeek model specs (`deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`) and confirm the selected agent runtime reports provider `deepseek` with `llm-deepseek-v4-*` components. Effective concurrency is the minimum of UI/requested concurrency, runtime slots, per-sidecar Dapr workflow capacity, global benchmark caps, sandbox headroom, and model caps; when in doubt read the evaluations skill `references/swebench-concurrency.md` before changing stacks values.
 
 ### "A workflow-builder agent is silent after adding an MCP/OAuth connection"
 
@@ -223,20 +223,24 @@ Almost always: KeyVault `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were rotated at 
 
 - **K8s label values must match `(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?` — alphanumeric start AND end.** Nanoid-generated IDs (workflow-builder benchmark runs, etc.) can legally end in `_` or `-`. When a service uses `run["id"]` directly as a label value (e.g. swebench-coordinator's evaluator Job), the API rejects creation with HTTP 422 `Invalid value: "<id>": a valid label must ... start and end with an alphanumeric character`. Symptoms: run goes `failed` immediately at the evaluating stage with no useful inference error; harness eval never executes. Fix at the use site, not the ID generator (don't break existing data): trim outer `[._-]` characters and cap at 63 chars. Coordinator fix landed at workflow-builder `0f369b58` via `_safe_label_value` helper at lines 471/485 of `services/swebench-coordinator/src/app.py`. If you add a new service that labels K8s resources with run/instance IDs, mirror the helper.
 
-## Dev cluster capacity envelope (parallel benchmark runs)
+## Dev SWE-bench concurrency envelope
 
-Practical limits for `/workspaces/<slug>/benchmarks` parallelism. Dev has 5 Talos nodes x 8 CPU x 16 GiB, but only a subset are workload-eligible when control-plane taints or node readiness issues are present. Build workloads should now run on the hub build pool, so dev capacity pressure is mostly runtime pods, sandboxes, and evaluator Jobs rather than Buildah.
+Practical limits for `/workspaces/<slug>/benchmarks` are layered. The current intended dev GitOps values are:
 
-Per-instance peak draw during inference (sum of agent-runtime pod + openshell-sandbox pod): **~4 GiB**. Per-run harness evaluator Job adds **~6-8 GiB peak** (evaluator container 8Gi limit + dind 4Gi limit, "standard" profile). Hub-side env-image builds remain lock-serialized by cache when they run, but they should not consume spoke node memory.
-
-| Scenario | Per-run mem | Fits in 32 GiB worker total? |
+| Layer | Knobs | Intended dev value |
 |---|---|---|
-| 1 run × 5 instances | 5×4 + 6 ≈ 26 GiB | ✓ tight, recommended ceiling |
-| 2 parallel runs × 2 instances | 2×(8 + 6) = 28 GiB | ✓ tight |
-| 2 parallel runs × 3 instances | 2×(12 + 6) = 36 GiB | ✗ OOMKill risk |
-| 3 parallel runs × 1 instance | 3×(4 + 6) = 30 GiB | at the edge |
+| Launch/BFF default | `BENCHMARK_DEFAULT_CONCURRENCY` | `10` |
+| Global inference cap | `BENCHMARK_MAX_ACTIVE_INFERENCE_INSTANCES` | `56` |
+| Shared coding pool | `AGENT_RUNTIME_POOL_APP_IDS_JSON` | `agent-runtime-pool-coding`, `maxReplicas=7`, `slotsPerReplica=8` |
+| Dedicated coding fallback | `AGENT_RUNTIME_SLOTS_PER_REPLICA_JSON` | `coding=12` |
+| Per-sidecar Dapr workflow cap | `AGENT_RUNTIME_DAPR_WORKFLOW_LIMIT_PER_SIDECAR` | `12` |
+| Global child-workflow cap | `BENCHMARK_AGENT_WORKFLOW_MAX_ACTIVE_TURNS` | `56` |
+| Sandbox hard cap | `BENCHMARK_MAX_ACTIVE_SANDBOXES` | `60` plus live schedulable headroom |
+| Coordinator backstop | `SWEBENCH_COORDINATOR_MAX_INFERENCE_CONCURRENCY` | `56` |
+| Coordinator start pacing | `SWEBENCH_COORDINATOR_INSTANCE_START_BATCH_SIZE` / `...DELAY_SECONDS` | `12` / `2` |
+| Evaluator parallelism | `SWEBENCH_EVAL_MAX_PARALLEL` | `24` |
 
-**Safe rule of thumb**: <= **5 active inference instances total** AND <= **2 active runs** until the current runtime-pool admission caps and live node headroom are revalidated. Reuse runs against repo/version pairs you've already built (django-3.2, django-4.1, matplotlib-3.7, sympy-1.11, etc.) to skip env builds entirely. If builds appear on dev workers, treat that as placement drift and move the PipelineRun template back to the hub build pool.
+Per-instance peak draw during inference is still roughly the sum of the agent-runtime pod and OpenShell sandbox pod. Per-run harness evaluation adds an evaluator Job plus per-instance TaskRuns. The high caps above are admission ceilings, not a promise that every dev node set can safely sustain 56 active instances. Before raising a run above 10-12 active inference instances, verify live node headroom, sandbox capacity, model/provider rate limits, and that environment image builds are not landing on dev workers. Reuse repo/version pairs that already have validated inference images to avoid build pressure.
 
 ## What to read next
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Evaluations"
-  short_description: "Build and debug Workflow Builder evals, SWE-bench/DeepSeek canaries, code-eval harnesses, run payloads, and graders."
+  short_description: "Build and debug Workflow Builder evals, SWE-bench/DeepSeek canaries, concurrency limits, code-eval harnesses, run payloads, and graders."
   default_prompt: "Use $evaluations to create or debug a Workflow Builder evaluation run."

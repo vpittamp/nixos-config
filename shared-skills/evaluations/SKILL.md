@@ -40,7 +40,7 @@ The official SWE-bench harness is deliberately separate from that eval-run model
 
 2. Decide the layer first: UI (Svelte), service (TypeScript), grader runtime (TS + Python), or operational (kubectl + Tekton). Keep changes scoped to that layer unless the symptom crosses boundaries.
 
-3. For deeper detail (tables, lifecycle, gotchas, smoke tests) read `references/system-model.md`.
+3. For deeper detail (tables, lifecycle, gotchas, smoke tests) read `references/system-model.md`. For SWE-bench concurrency/capacity questions, read `references/swebench-concurrency.md` before changing limits.
 
 ## Decision Table
 
@@ -71,7 +71,7 @@ Use this path when the user asks for SWE-bench evals that should show up in work
 4. Evaluator callback: `/api/internal/benchmarks/evaluation-results` records official resolved/unresolved/empty-patch status, harness report/stdout/stderr/test-output paths, parsed counters, raw harness notes, and run provenance.
 5. Provenance should include evaluator image/job name, resource class, max workers, timeout/deadline, dataset/prediction paths + SHA-256s, harness report path, environment image/digest summaries, and timestamps.
 
-Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Keep total active inference around the dev capacity envelope (usually 5 instances) unless node headroom has been revalidated.
+Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Current dev concurrency is governed by the layered capacity model in `references/swebench-concurrency.md`; do not assume the launch-sheet value is the effective throughput.
 
 Deterministic operator smoke is allowed when agent inference is not the thing under test: insert a queued `benchmark_runs` row and explicit-id `benchmark_run_instances` rows with `model_patch`, `patch_sha256`, and `patch_bytes`; mark the run `inferencing`; call `_write_predictions`, `_write_evaluation_dataset`, then `_ensure_evaluator_job`. The status guard is strict (`queued -> inferencing -> evaluating -> completed/failed/cancelled`), so launching from `queued` fails.
 
