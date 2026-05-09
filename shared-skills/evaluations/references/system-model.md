@@ -103,12 +103,16 @@ Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav
 Use this path for runs that should be visible at `/workspaces/<slug>/benchmarks`:
 
 1. The BFF creates a `benchmark_runs` row and `benchmark_run_instances` rows for selected `benchmark_instances`.
-2. The coordinator transitions `queued -> inferencing`, either by running the selected agent or by consuming pre-seeded `model_patch` rows for deterministic smoke tests.
-3. `_write_predictions` creates `predictions.jsonl`; `_write_evaluation_dataset` creates `dataset.jsonl`. Artifact rows and `benchmark_run_provenance` capture paths and SHA-256s.
-4. Before any Kubernetes Job is created, prediction validation requires parseable JSONL, exactly one row per selected instance, required `instance_id` / `model_name_or_path` / `model_patch`, and a syntactically valid non-empty diff. Empty/null patches are allowed.
-5. `_ensure_evaluator_job` transitions `inferencing -> evaluating`, records evaluator image/job/resource/max-workers/timeout/deadline provenance, and launches the evaluator Job with `ttlSecondsAfterFinished=3600`.
-6. The evaluator callback records official SWE-bench result semantics (`resolved`, `unresolved`, `empty_patch`, errors), report/stdout/stderr/test-output paths, raw counters when available, and raw harness notes for non-graded pytest errors.
-7. The run summary and Benchmarks page show official result separately from raw harness notes. Official resolved/unresolved is the source of truth.
+2. For random UI/API launches, the BFF rejects selected instances that are not prevalidated. Static ConfigMap pins are ready when suite/repo/baseCommit/version and image digest match; dynamic build rows are ready only when their `env_spec_hash` equals the current `buildSwebenchEnvironmentSpec()` hash.
+3. The coordinator runs a preflight child workflow before inference. It resolves each selected instance to static pins or environment build rows. Missing images are built through hub Tekton `swe-env-*` PipelineRuns, not on the dev spoke.
+4. The coordinator transitions `queued -> inferencing`, either by running the selected agent or by consuming pre-seeded `model_patch` rows for deterministic smoke tests.
+5. `_write_predictions` creates `predictions.jsonl`; `_write_evaluation_dataset` creates `dataset.jsonl`. Artifact rows and `benchmark_run_provenance` capture paths and SHA-256s.
+6. Before any Kubernetes Job is created, prediction validation requires parseable JSONL, exactly one row per selected instance, required `instance_id` / `model_name_or_path` / `model_patch`, and a syntactically valid non-empty diff. Empty/null patches are allowed.
+7. `_ensure_evaluator_job` transitions `inferencing -> evaluating`, records evaluator image/job/resource/max-workers/timeout/deadline provenance, and launches the evaluator Job with `ttlSecondsAfterFinished=3600`.
+8. The evaluator callback records official SWE-bench result semantics (`resolved`, `unresolved`, `empty_patch`, errors), report/stdout/stderr/test-output paths, raw counters when available, and raw harness notes for non-graded pytest errors.
+9. The run summary and Benchmarks page show official result separately from raw harness notes. Official resolved/unresolved is the source of truth.
+
+Preflight data lands in `benchmark_runs.summary.preflight`. Valid static mappings have `buildId=null`, `pipelineRunName=null`, `validationStatus="validated"`, an `envSpecHash` from the static pin's `swebenchSpec.envSpecHash`, and a digest-pinned `sandboxImage`. If a run stays `queued`, compare that summary, coordinator logs, and hub Tekton `swe-env-*` PipelineRuns before looking at agent/model behavior.
 
 Direct DB smoke runs are acceptable for operator/UI validation when agent inference is not under test. Provide explicit IDs for `benchmark_run_instances`; Drizzle generates IDs app-side and Postgres has no default. Follow the coordinator transition guard exactly: `queued -> inferencing -> evaluating -> completed/failed/cancelled`.
 

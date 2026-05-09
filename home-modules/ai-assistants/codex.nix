@@ -56,18 +56,8 @@ let
   codexOtelInterceptorPort = 4319;
 
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
-  codexPackageRaw = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
-
-  # Fix missing libcap.so.2: patch RPATH on codex-raw binary so it finds libcap
-  # even when codex re-executes itself in a sandboxed subprocess (which strips LD_LIBRARY_PATH)
-  codexPackage = codexPackageRaw.overrideAttrs (old: {
-    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ pkgs.patchelf ];
-    postFixup = (old.postFixup or "") + ''
-      if [ -f $out/bin/codex-raw ]; then
-        patchelf --add-rpath "${pkgs.libcap.lib}/lib" $out/bin/codex-raw
-      fi
-    '';
-  });
+  # Codex 0.128.0+ ships a statically-linked musl binary, so no RPATH patching is needed.
+  codexPackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
 
   codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
     # Feature 125: Clear NODE_OPTIONS to prevent Claude Code's interceptor from loading
@@ -297,7 +287,7 @@ EOF
 approval_policy = "never"
 auto_save = true
 force = true
-model = "gpt-5.4"
+model = "gpt-5.5"
 model_provider = "openai"
 model_reasoning_effort = "high"
 notify = ["${pkgs.nodejs}/bin/node", "${repoRoot}/scripts/codex-hooks/notify.js"]
@@ -309,6 +299,9 @@ web_search = "live"
 [experimental]
 background_terminal = true
 shell_snapshotting = true
+
+[features]
+goals = true
 
 [mcp_servers.openaiDeveloperDocs]
 enabled = true

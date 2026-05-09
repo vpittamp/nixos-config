@@ -47,7 +47,7 @@ GitHub push to PittampalliOrg/workflow-builder
 │  HUB TEKTON outer-loop pipeline               │
 │  - Build with Buildah                         │
 │  - Push to ghcr.io/pittampalliorg/<img>:git-… │
-│  - Open release PR with tag/digest metadata   │
+│  - Push release metadata or open release PR   │
 └──────────────────────────────────────────────┘
     │
     │  release/workflow-builder-* PR → origin/main
@@ -99,7 +99,7 @@ Hub ArgoCD syncs ryzen apps from gitea-ryzen/main
 ```
 
 **Key implications:**
-- A bump on ryzen does **not** propagate to dev/staging. Bumping dev/staging normally means merging the hub Tekton release-intent PR for `release-pins/workflow-builder-images.yaml`.
+- A bump on ryzen does **not** propagate to dev/staging. Bumping dev/staging normally means the hub Tekton `update-stacks` task writes `release-pins/workflow-builder-images.yaml` to `origin/main` directly, or opens a release-intent PR that must be merged.
 - A tag/digest bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it and records the digest/provenance in the PR, but if the GitHub webhook is broken, the tag exists only on gitea-ryzen and you need to skopeo-mirror it manually.
 - `release-pins/workflow-builder-images.yaml` is schema v2: `images` remains the compatibility tag map; `digests`, `imageRefs`, `sourceShas`, `pipelineRuns`, and `updatedAts` hold immutable/provenance metadata. Dev/staging templates render tag+digest refs when a digest is present.
 - `agent-runtime-controller` is the exception: bumped directly in `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (no per-cluster override). Single bump applies to all spokes once on `origin/main`.

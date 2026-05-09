@@ -220,7 +220,7 @@ Until the GitHub outer-loop root cause is fixed, use the hub Gitea/dev-image lan
    ```
 2. Wait for `workflow-builder-image-build-*` PipelineRun on the hub cluster: `kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines get pipelinerun`.
 3. Mirror the new image: `runbooks/mirror-image-gitea-to-ghcr.md`.
-4. Open/merge a release-intent PR, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
+4. Promote the image with the normal direct-main or release-intent PR path, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
 
 ### Open
 

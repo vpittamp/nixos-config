@@ -4,7 +4,7 @@
 
 User wants a new image tag of `workflow-builder` (or any other promoted workflow-builder-system component) running on dev and/or staging.
 
-Normal path: hub Tekton outer-loop has built the image, pushed it to GHCR, and opened a `release/workflow-builder-*` release-intent PR that updates `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml`.
+Normal path: hub Tekton outer-loop has built the image, pushed it to GHCR, and its `update-stacks` task has either pushed release metadata directly to stacks `origin/main` or opened a `release/workflow-builder-*` release-intent PR. The release metadata update touches `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` and regenerates `packages/components/workloads/workflow-builder-system-overlays/{dev,staging}/kustomization.yaml`.
 
 Manual path: the tag has been built/imported and you need to edit release metadata yourself.
 
@@ -24,16 +24,25 @@ If missing → run `runbooks/mirror-image-gitea-to-ghcr.md` first.
 
 ## Fix steps
 
-### Normal path — release-intent PR
+### Normal path — direct-main or release-intent PR
 
-1. Find the release PR:
+1. Inspect the hub Tekton `update-stacks` task logs first. Current workflow-builder pipelines often push directly to `origin/main`:
+
+```bash
+kubectl --kubeconfig ~/.kube/hub-config logs -n tekton-pipelines \
+  <outer-loop-workflow-builder-...>-update-stacks-pod --all-containers --tail=240
+```
+
+If the logs show `Successfully pushed tag update`, record the stacks commit and skip to promotion tracking. If the logs mention a release branch/PR, continue below.
+
+2. Find the release PR:
 
 ```bash
 gh pr list --repo PittampalliOrg/stacks --state open --search "head:release/workflow-builder" \
   --json number,title,headRefName,updatedAt
 ```
 
-2. Inspect the release metadata change:
+3. Inspect the release metadata change:
 
 ```bash
 gh pr diff <number> --repo PittampalliOrg/stacks
@@ -48,7 +57,7 @@ Confirm the relevant key changed consistently under:
 - `pipelineRuns`
 - `updatedAts`
 
-3. Merge the PR when it is the desired release. The merge to `origin/main` starts source-hydrator + GitOps Promoter.
+4. Merge the PR when it is the desired release. The merge to `origin/main` starts source-hydrator + GitOps Promoter.
 
 ### Manual path — exceptional
 

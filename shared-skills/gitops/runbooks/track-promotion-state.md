@@ -2,7 +2,7 @@
 
 ## When to use
 
-You merged a `release/workflow-builder-*` release-intent PR, or manually changed `release-pins/workflow-builder-images.yaml`, and want to see:
+Hub Tekton `update-stacks` pushed release metadata to `origin/main`, you merged a `release/workflow-builder-*` release-intent PR, or you manually changed `release-pins/workflow-builder-images.yaml`, and want to see:
 - Where the promotion is in the pipeline (hydrating? promoter PR open? spoke synced?)
 - What's gating the next step (most often: dev's `argocd-health` not green yet → staging blocked)
 - Which spoke is currently on which image
@@ -16,7 +16,7 @@ For workflow-builder specifically, start with `/admin/deployments` in the app. I
 
 ```
 origin/main
-   │  (merge of release PR updates release-pins tag/digest/provenance)
+   │  (update-stacks direct push or release PR updates release-pins tag/digest/provenance)
    │  (per-app sourceHydrator on hub-side spoke-<env>-<app>)
    ▼
 env/spokes-<env>-next   ──merged──▶  env/spokes-<env>   ──synced──▶  Spoke cluster (dev/staging)
@@ -94,7 +94,7 @@ kubectl --kubeconfig ~/.kube/hub-config -n argocd get timedcommitstatus,commitst
 gh pr list --repo PittampalliOrg/stacks --state open --search "head:env/spokes" \
   --json number,title,headRefName
 
-# 4b. Open release-intent PRs waiting for human merge to main
+# 4b. Open release-intent PRs waiting for human merge to main (when update-stacks used PR mode)
 gh pr list --repo PittampalliOrg/stacks --state open --search "head:release/workflow-builder" \
   --json number,title,headRefName,updatedAt
 

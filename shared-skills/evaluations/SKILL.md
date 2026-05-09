@@ -33,7 +33,7 @@ The official SWE-bench harness is deliberately separate from that eval-run model
    - Shared components: `src/lib/components/evaluations/{run-items-table,run-inspect-drawer,types}.{svelte,ts}`
    - Service: `src/lib/server/evaluations/service.ts`
    - Benchmarks surface: `src/routes/workspaces/[slug]/benchmarks/`, `src/routes/api/benchmarks/`, `src/routes/api/internal/benchmarks/`
-   - SWE-bench coordinator/evaluator: `deploy/swebench-coordinator/src/app.py`, `services/swebench-evaluator/`
+   - SWE-bench coordinator/evaluator: `services/swebench-coordinator/src/app.py`, `services/swebench-evaluator/`
    - Grader logic: `src/lib/server/evaluations/graders.ts` (sync) + `grader-runners.ts` (async)
    - Coordinator: `services/evaluation-coordinator/src/app.py`
    - Sync evaluator endpoint: `services/dapr-agent-py/src/main.py` (search `/api/grader-evaluate`)
@@ -67,11 +67,15 @@ Use this path when the user asks for SWE-bench evals that should show up in work
 
 1. UI/API surface: `/workspaces/<slug>/benchmarks`, `GET/POST /api/benchmarks/runs`, `GET /api/benchmarks/runs/<runId>`.
 2. Data model: `benchmark_suites`, `benchmark_instances`, `benchmark_runs`, `benchmark_run_instances`, `benchmark_artifacts`, `benchmark_run_provenance`, and (Braintrust adoption, 2026-04-30) `benchmark_run_instance_scores`, `benchmark_run_instance_annotations`, plus `evaluation_dataset_rows.{origin_run_instance_id, origin_session_id}`.
-3. Coordinator path: `deploy/swebench-coordinator/src/app.py` writes `dataset.jsonl` + `predictions.jsonl`, validates JSONL and selected instance coverage, then creates a Kubernetes evaluator Job.
+3. Coordinator path: `services/swebench-coordinator/src/app.py` writes `dataset.jsonl` + `predictions.jsonl`, validates JSONL and selected instance coverage, then creates a Kubernetes evaluator Job.
 4. Evaluator callback: `/api/internal/benchmarks/evaluation-results` records official resolved/unresolved/empty-patch status, harness report/stdout/stderr/test-output paths, parsed counters, raw harness notes, and run provenance.
 5. Provenance should include evaluator image/job name, resource class, max workers, timeout/deadline, dataset/prediction paths + SHA-256s, harness report path, environment image/digest summaries, and timestamps.
 
 Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Current dev concurrency is governed by the layered capacity model in `references/swebench-concurrency.md`; do not assume the launch-sheet value is the effective throughput.
+
+**Random run readiness and preflight must agree.** Random SWE-bench launches require prevalidated inference environments before the run is inserted. The BFF has two valid readiness sources: exact static ConfigMap pins from `SWEBENCH_INFERENCE_ENVIRONMENTS_DIR` and dynamic build rows whose `environment_image_builds.env_spec_hash` matches the current `buildSwebenchEnvironmentSpec()` output. Static pins are exact when suite/repo/baseCommit/version and image digest match; they may omit `environmentSetupCommit`, and preflight still accepts them. Dynamic DB rows must match the current `envSpecHash`, not only repo/version/baseCommit, because harness spec generation can change while those coarse identifiers stay the same. Symptom of a readiness/preflight mismatch: the API accepts a random run, it remains `queued`, and `swebench-preflight-<run>` starts or waits on a hub `swe-env-*` build. Fix the shared readiness predicate instead of treating this as a model-specific DeepSeek/Kimi issue.
+
+**SWE-bench environment builds run on hub Tekton, not dev.** When preflight has to build an inference image, it submits `swe-env-<envSpecHash-prefix>` to hub Tekton via `SWEBENCH_INFERENCE_BUILD_SUBMISSION_MODE=hub` / `SWEBENCH_INFERENCE_BUILD_HUB_KUBECONFIG`. If a run is stuck in `queued` while a `swe-env-*` PipelineRun is active, the workflow is waiting on a hub build to validate and pin an image; it is not building on the dev cluster. After a successful hub build, confirm the dev workflow-builder pod sees the refreshed ConfigMap file under `/etc/workflow-builder/swebench-inference-environments` and the BFF Deployment has rolled if the code path changed.
 
 Deterministic operator smoke is allowed when agent inference is not the thing under test: insert a queued `benchmark_runs` row and explicit-id `benchmark_run_instances` rows with `model_patch`, `patch_sha256`, and `patch_bytes`; mark the run `inferencing`; call `_write_predictions`, `_write_evaluation_dataset`, then `_ensure_evaluator_job`. The status guard is strict (`queued -> inferencing -> evaluating -> completed/failed/cancelled`), so launching from `queued` fails.
 
@@ -80,6 +84,21 @@ Empty or null `model_patch` is a valid evaluator input and should become `empty_
 **K8s label sanitization on coordinator-launched Jobs.** Run IDs are nanoid-generated and can legally end in `_` or `-`, which fails K8s label-value validation `(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?`. Symptom: run goes `failed` at the evaluating stage with HTTP 422 `Invalid value: "<id>": a valid label must ... start and end with an alphanumeric character`. The Phase G `patch_files_overlap_gold` scorer (gated on harness completion) won't fire as a side effect. Fix landed in coordinator at workflow-builder `0f369b58` via `_safe_label_value` (strips outer `[._-]`, caps 63 chars). If you add another K8s resource that labels with a run/instance ID, mirror the helper.
 
 **Cancellation and stalled-instance cleanup are Dapr lifecycle work, not just DB updates.** A terminal benchmark run may still have a parent `workflow-orchestrator` workflow plus `dapr-agent-py` session and per-turn child workflows running. Terminate/poll/purge the agent-runtime session/turn workflows first, then the parent workflow. Only mark `sessions`/`workflow_executions` terminal, delete sandboxes, or release leases after every durable instance is terminal or missing. If shutdown is not confirmed, leave leases and sandboxes in place so retry cleanup can find the still-running workflows. Post-cancel events such as `sandbox not found` or orphaned Dapr histories mean cleanup raced ahead of durable shutdown.
+
+**Debug checklist for `queued` random runs.** First check `benchmark_runs.status`, `benchmark_run_instances.status`, active `benchmark_resource_leases`, and coordinator logs for the run id. If no instance workflows have `session_id` / `workflow_execution_id`, inspect the preflight child workflow and hub Tekton for `swe-env-*` PipelineRuns. If preflight reports static groups with `buildId=null`, `validationStatus=validated`, and `pipelineRunName=null`, the run should leave `queued` quickly. A healthy launch transitions `queued -> inferencing`, fills `inference_environment.source = "static_mapping"` or `"environment_image_builds"`, and creates per-instance workflow executions. Clean operator canaries through the normal benchmark cancel path and verify `active_runs`, `active_leases`, `active_sessions`, and active `workflow_executions` return to zero.
+
+**2026-05 SWE-bench start-path invariant.** BFF instance start calls
+`workflow-orchestrator` `GET /readyz` before creating the instance execution row
+or dispatching `/api/v2/sw-workflows`. If readiness fails because Dapr has zero
+connected workflow workers, the BFF returns `workflow_runtime_unavailable`; the
+coordinator releases the lease, requeues the instance, and sleeps
+`SWEBENCH_ORCHESTRATOR_NOT_READY_RETRY_SECONDS` (default
+`SWEBENCH_LEASE_RETRY_SECONDS`). MLflow is restored but background
+best-effort (`MLFLOW_FAILURE_MODE=best_effort`): `[mlflow]` timeouts can leave
+tracking IDs null, but they are not a start blocker. When token counts stay at
+zero, distinguish the stages in order: run row created, preflight complete,
+instance has Dapr workflow ID, OpenShell pod admitted, session ID created,
+`agent.llm_usage` recorded, evaluator job launched.
 
 ## Benchmarks UI: Braintrust-adoption surfaces (Phase F → K)
 
@@ -395,7 +414,7 @@ src/lib/server/benchmarks/score-runner.ts            # Phase G scorer dispatch f
 src/lib/server/benchmarks/score-prompts.ts           # Phase G LLM-judge prompts (edit_minimality, reasoning_quality)
 src/lib/server/benchmarks/stats.ts                   # computeRunStats() — sources cohortRows, byScorer, humanAnnotations
 src/lib/components/benchmarks/{metric-regression-strip,scorer-tiles,promote-to-dataset,trace-detail,cohort-pivot}.svelte  # F–J components
-deploy/swebench-coordinator/src/app.py               # writes artifacts, validates predictions, launches evaluator Jobs; _safe_label_value() (0f369b58) sanitizes run IDs for K8s labels
+services/swebench-coordinator/src/app.py             # writes artifacts, validates predictions, launches evaluator Jobs; _safe_label_value() (0f369b58) sanitizes run IDs for K8s labels
 services/swebench-evaluator/                         # official harness wrapper + callback payloads
 services/code-eval-runner/code-eval-item.workflow.json  # canonical 4-step code-eval workflow (workspace_profile → write_test → solve → run_tests)
 scripts/upsert-code-eval-workflow.mjs                # seed code-eval-item into the workflows table

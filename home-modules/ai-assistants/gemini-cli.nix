@@ -82,24 +82,24 @@ let
   };
 
   # Base gemini-cli package
-  # As of 2026-04-25, using v0.39.1.
+  # As of 2026-05-05, using v0.40.1.
   #
   # Note: We build our own package instead of `overrideAttrs` because the upstream
   # nixpkgs package bakes in `npmDeps` (so version overrides won't update deps).
   baseGeminiCli = pkgs-unstable.buildNpmPackage (finalAttrs: {
     pname = "gemini-cli";
-    version = "0.39.1";
+    version = "0.40.1";
 
     src = pkgs-unstable.fetchFromGitHub {
       owner = "google-gemini";
       repo = "gemini-cli";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-O0TBrT3WDCBZ3ZyFyJPBBtPfnDzdFQ7b8pOJOD7bj2g=";
+      hash = "sha256-oWznf9xleb9bpW2dnMIUehkMqKCb6AecZjcVwZgBrdo=";
     };
 
     nodejs = pkgs-unstable.nodejs_22;
 
-    npmDepsHash = "sha256-y0LafX1+ukW8HRYBqQ3QfZGHo1cVk00bNygdwsBR/7g=";
+    npmDepsHash = "sha256-sscqcey+hPsfajrTspy6FScjfFmtvJMP1w56cFuu3DI=";
 
     dontPatchElf = pkgs-unstable.stdenv.isDarwin;
 

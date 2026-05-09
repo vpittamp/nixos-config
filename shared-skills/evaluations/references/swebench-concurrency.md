@@ -24,7 +24,48 @@ If a run asks for 20 but only 12 are active, inspect the run summary capacity
 first, then the `benchmark_resource_leases` blockers. Raising only the UI
 slider rarely changes throughput by itself.
 
+## Start-Path Readiness
+
+Benchmark instance start is also gated by parent Dapr runtime readiness. The
+BFF calls `workflow-orchestrator` `GET /readyz` before creating the instance
+execution row or dispatching `/api/v2/sw-workflows`. Readiness requires Dapr
+outbound health, metadata access, at least one connected Dapr workflow worker,
+and taskhub access.
+
+If `/readyz` fails, the BFF returns 503
+`workflow_runtime_unavailable`. The coordinator treats that as retryable
+backpressure: release the lease, requeue the instance at the front of the run
+queue, and sleep `SWEBENCH_ORCHESTRATOR_NOT_READY_RETRY_SECONDS` (falling back
+to `SWEBENCH_LEASE_RETRY_SECONDS`).
+
+MLflow is not a dispatch gate. With `MLFLOW_FAILURE_MODE=best_effort`, MLflow
+timeouts only leave tracking IDs null and log `[mlflow]` warnings; Dapr workflow
+IDs, sessions, token usage, and evaluator handoff should continue.
+
 ## Main Knobs
+
+### Environment Preflight and Build Readiness
+
+This is not a concurrency cap, but it is the most common reason a random run
+appears stuck at zero active instances. The coordinator will not start instance
+workflows until every selected instance has a validated inference environment.
+
+Readiness is model-independent. It applies equally to Kimi, DeepSeek, Together,
+NVIDIA, Anthropic, and OpenAI-backed agents:
+
+- exact static mappings from `SWEBENCH_INFERENCE_ENVIRONMENTS_DIR` are valid
+  when suite/repo/baseCommit/version plus digest-pinned image match; these pins
+  may omit `environmentSetupCommit`;
+- dynamic rows in `environment_image_builds` are valid only when
+  `env_spec_hash` matches the current `buildSwebenchEnvironmentSpec()` output;
+- coarse repo/version/baseCommit matches are not enough, because harness spec
+  generation can change independently of those fields.
+
+Preflight builds are hub Tekton `swe-env-*` PipelineRuns. They should not run
+on dev workers. If `benchmark_runs.status='queued'`, no
+`benchmark_run_instances.session_id` values exist, and hub Tekton shows an
+active `swe-env-*`, the benchmark is waiting for environment validation rather
+than constrained by inference concurrency.
 
 ### Launch UI and BFF
 
@@ -48,6 +89,9 @@ Files: `src/lib/components/benchmarks/launch-run-sheet.svelte`,
 | `BENCHMARK_RESOURCE_LEASE_SECONDS` | `max(900, timeoutSeconds + 900)` | Lease TTL. Not a throughput cap, but stale leases hold capacity. |
 | `BENCHMARK_LEASE_RETRY_SECONDS` | `15` | BFF retry-after when a lease is denied. |
 | `BENCHMARK_INFERENCE_STALL_SECONDS` | `480` | Stale inference detector, not a dispatch cap. |
+| `MLFLOW_ENABLED` | true | Enables benchmark tracking metadata. |
+| `MLFLOW_FAILURE_MODE` | `best_effort` | Logs MLflow failures without blocking benchmark dispatch. |
+| `MLFLOW_REQUEST_TIMEOUT_MS` | `30000` | Per-request MLflow timeout; should not block start. |
 
 Sandbox headroom variables in `src/lib/server/benchmarks/sandbox-capacity.ts`:
 
@@ -91,6 +135,7 @@ Files: `services/swebench-coordinator/src/concurrency.py`,
 | `SWEBENCH_COORDINATOR_INSTANCE_START_BATCH_SIZE` | `10` | New instance workflows to start before pacing. Dev intended value is `12`. |
 | `SWEBENCH_COORDINATOR_INSTANCE_START_BATCH_DELAY_SECONDS` | `5` | Delay between start batches. Dev intended value is `2`. |
 | `SWEBENCH_LEASE_RETRY_SECONDS` | `15` | Coordinator delay after lease denial. |
+| `SWEBENCH_ORCHESTRATOR_NOT_READY_RETRY_SECONDS` | `SWEBENCH_LEASE_RETRY_SECONDS` | Coordinator delay after BFF reports parent orchestrator readiness unavailable. |
 | `SWEBENCH_EVAL_MAX_PARALLEL` | `24`, clamped `1..128` | Per-instance evaluator TaskRun parallelism. |
 | `SWEBENCH_MAX_WORKERS` | `24`, clamped `1..128` | Evaluator alias when `SWEBENCH_EVAL_MAX_PARALLEL` is absent. |
 
