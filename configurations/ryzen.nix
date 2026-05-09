@@ -18,6 +18,15 @@ let
   thinkpadMoonlightClient = gameStreaming.moonlightClients.thinkpad;
   ryzenSunshineHost = gameStreaming.sunshineHosts.ryzen;
 
+  # Wrapper around nvidia-container-runtime that pre-pins PATH so the
+  # binary can find runc when invoked by the containerd shim. Without
+  # this the wrapper exits "2" with no log because containerd doesn't
+  # propagate dockerd's PATH down to the OCI runtime.
+  nvidiaContainerRuntimeWrapped = pkgs.writeShellScriptBin "nvidia-container-runtime" ''
+    export PATH="${pkgs.runc}/bin:${pkgs.nvidia-container-toolkit.tools}/bin:$PATH"
+    exec ${pkgs.nvidia-container-toolkit.tools}/bin/nvidia-container-runtime "$@"
+  '';
+
   # Firefox 146+ overlay for native Wayland fractional scaling support
   pkgs-unstable = import inputs.nixpkgs-bleeding {
     system = pkgs.stdenv.hostPlatform.system;
@@ -500,7 +509,54 @@ in
   # GPU access without per-container --gpus flags. kind doesn't surface
   # --gpus, so default-runtime is the cleanest path; CDI feature stays
   # on (set by nvidia-container-toolkit) for newer device-spec callers.
-  virtualisation.docker.daemon.settings.default-runtime = "nvidia";
+  # nvidia-container-toolkit does NOT register the runtime in Docker's
+  # daemon.json on its own (it only flips features.cdi=true), so we
+  # register it here explicitly. Otherwise dockerd fails to start with
+  # "specified default runtime 'nvidia' does not exist".
+  virtualisation.docker.daemon.settings = {
+    default-runtime = "nvidia";
+    runtimes.nvidia.path =
+      "${nvidiaContainerRuntimeWrapped}/bin/nvidia-container-runtime";
+  };
+
+  # nvidia-container-runtime is a wrapper around runc. It searches PATH
+  # for a low-level runtime binary by name; containerd's shim doesn't
+  # propagate dockerd's PATH all the way down, so the search fails with
+  # an opaque "exit status 2". We pin the absolute paths in a config
+  # file the runtime always loads from /etc/nvidia-container-runtime.
+  systemd.services.docker.path = [
+    pkgs.runc
+    pkgs.nvidia-container-toolkit.tools  # nvidia-container-cli + hooks
+  ];
+  environment.etc."nvidia-container-runtime/config.toml".text = ''
+    disable-require = false
+
+    [nvidia-container-cli]
+    environment = []
+    ldconfig = "@${pkgs.glibc.bin}/bin/ldconfig"
+    load-kmods = true
+    no-cgroups = false
+    path = "${pkgs.nvidia-container-toolkit.tools}/bin/nvidia-container-cli"
+
+    [nvidia-container-runtime]
+    debug = "/dev/null"
+    log-level = "info"
+    # cdi mode reads /var/run/cdi/nvidia-container-toolkit.json (generated
+    # by nvidia-container-toolkit-cdi-generator.service at boot) instead
+    # of dynamically discovering the GPU at runtime via NVML/cgo. The cgo
+    # path was crashing with "malloc(): corrupted top size" on this host.
+    mode = "cdi"
+    runtimes = [
+      "${pkgs.runc}/bin/runc",
+    ]
+
+    [nvidia-container-runtime-hook]
+    path = "${pkgs.nvidia-container-toolkit.tools}/bin/nvidia-container-runtime-hook"
+    skip-mode-detection = false
+
+    [nvidia-ctk]
+    path = "${pkgs.nvidia-container-toolkit}/bin/nvidia-ctk"
+  '';
 
 
   # Display scaling configuration for Wayland
