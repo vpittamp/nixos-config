@@ -806,7 +806,7 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 5901 ];  # SSH, VNC DP-1, VNC HDMI-A-1
-    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 21116 21118 ];  # OTEL sink and RustDesk direct IP access
+    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 21116 21118 11434 ];  # OTEL sink, RustDesk direct IP, Ollama (services.ollama)
     interfaces."tailscale0".allowedUDPPorts = lib.mkAfter [ 21116 21119 ];  # RustDesk direct access transport
     extraInputRules = ''
       iifname "tailscale0" tcp dport { 21116, 21118 } accept comment "RustDesk over Tailscale"
@@ -1056,6 +1056,27 @@ in
   # Automatic mounting of USB drives
   services.udisks2.enable = true;
   services.gvfs.enable = true;  # For GUI file managers
+
+  # ========== OLLAMA (HOST-NATIVE LLM SERVER WITH CUDA) ==========
+  # Runs as a systemd unit on the NixOS host so it gets direct CUDA
+  # access to the RTX 5070 — far simpler than wiring GPU into the kind
+  # cluster's nodes (kind+NVIDIA on NixOS hits a chain of symlink/lib
+  # mount issues that the GPU Operator can't navigate).
+  #
+  # Pods inside kind reach Ollama via the Tailscale ingress on the host
+  # at http://ryzen.tail286401.ts.net:11434/v1, configured by the
+  # workflow-builder Dapr conversation Component (llm-ollama-llama32-3b)
+  # and the OpenShell agent runtime ConfigMap in PittampalliOrg/stacks.
+  services.ollama = {
+    enable = true;
+    package = pkgs.ollama-cuda; # CUDA-enabled build for the RTX 5070
+    host = "0.0.0.0"; # bind on all interfaces so kind pods + tailnet can reach
+    port = 11434;
+    loadModels = [ "llama3.2:3b" ];
+  };
+
+  # Note: Ollama on Tailscale is opened via the firewall block above
+  # (networking.firewall.interfaces."tailscale0".allowedTCPPorts).
 
   # ========== LIBRECHAT AI CHAT PLATFORM ==========
   # Open-source AI chat UI with MongoDB backend
