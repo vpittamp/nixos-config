@@ -72,6 +72,7 @@ Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions
 | --- | --- | --- |
 | Live-preview proxy returns 404 "Retained sandbox not found for this execution" | `workflow_workspace_sessions` row missing or `status='cleaned'` | Check `with.keepAfterRun: true` is set on the `workspace/*` step. The `_should_cleanup_workspaces` gate (`sw_workflow.py:130-180`) reads the spec — the flag MUST be in the spec, not just task outputs. Manually revive: `UPDATE workflow_workspace_sessions SET status='active' WHERE workflow_execution_id=<id>`. |
 | Tool fails with `[Errno 2] No such file or directory: '/root/.config/openshell/active_gateway'` | `seed-openshell-config` init container didn't run | Re-publish the agent to rebuild its Deployment with the current pod shape. The `openshell-sandbox-dapr-webhook` namespaceSelector must include `workflow-builder`. |
+| SWE-bench (or any benchmark) child workflow fails with `Request to openshell-agent-runtime (workspace/profile) timed out after 300000ms` — esp. under burst load | function-router image pre-dates workflow-builder commit `2a68cca7` (2026-05-09); `MAX_WORKSPACE_PROFILE_TIMEOUT_MS` was hard-coded to `300_000` | Roll dev `function-router` to `ghcr.io/pittampalliorg/function-router:git-2a68cca7c63b…` or newer. The cap is now an env var (default 1h). See `shared-skills/evaluations/references/swebench-concurrency.md` § Function-Router Workspace/Profile Timeout. |
 
 ### Daprd boot crashes (per-agent pod won't start)
 
