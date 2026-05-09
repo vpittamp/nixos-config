@@ -489,6 +489,20 @@ in
     nvidiaSettings = true;
   };
 
+  # ========== NVIDIA CONTAINER TOOLKIT ==========
+  # Lets Docker (and Podman) hand the RTX 5070 to containers, including
+  # kind cluster nodes used for local Kubernetes development. Sets up
+  # the CDI (Container Device Interface) spec under /var/run/cdi/nvidia.yaml
+  # and registers the `nvidia` OCI runtime with Docker.
+  hardware.nvidia-container-toolkit.enable = true;
+
+  # Make Docker use the nvidia runtime by default so kind nodes inherit
+  # GPU access without per-container --gpus flags. kind doesn't surface
+  # --gpus, so default-runtime is the cleanest path; CDI feature stays
+  # on (set by nvidia-container-toolkit) for newer device-spec callers.
+  virtualisation.docker.daemon.settings.default-runtime = "nvidia";
+
+
   # Display scaling configuration for Wayland
   environment.sessionVariables = {
     # Cursor size
@@ -695,6 +709,7 @@ in
     vulkan-tools   # Vulkan verification (vulkaninfo)
     clinfo         # OpenCL verification
     cudaPackages.cuda_nvcc  # CUDA compiler (optional, for CUDA development)
+    nvidia-container-toolkit  # nvidia-ctk CLI for CDI specs + kind GPU plumbing
 
     # Disk encryption and security
     cryptsetup     # LUKS disk encryption
