@@ -31,6 +31,7 @@ declare -A ICON_MAP=(
   [tekton]="tekton.svg"
   [workflow-builder]="ai-workflow-builder.svg"
   [ai-chatbot]="ai-chatbot.svg"
+  [kueueviz]="kueue.svg"
 )
 
 # Services that exist on all 4 environments (including ryzen)
@@ -39,11 +40,15 @@ ALL_ENV_SERVICES=(ai-chatbot dapr grafana keycloak langfuse mcp-inspector-client
 # Services that only exist on dev/staging/prod (no ryzen deployment)
 NO_RYZEN_SERVICES=(loki mimir)
 
+# Services that only exist on dev/staging
+DEV_STAGING_ONLY_SERVICES=(kueueviz)
+
 # Services that only exist on the hub cluster
 HUB_ONLY_SERVICES=(mlflow)
 
 ENVS_ALL=(dev staging prod ryzen)
 ENVS_NO_RYZEN=(dev staging prod)
+ENVS_DEV_STAGING=(dev staging)
 ENVS_HUB_ONLY=(hub)
 
 COUNT=0
@@ -80,6 +85,25 @@ for service in "${NO_RYZEN_SERVICES[@]}"; do
     continue
   fi
   for env in "${ENVS_NO_RYZEN[@]}"; do
+    output="$ICONS_DIR/${service}-${env}.png"
+    if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
+      ((COUNT++)) || true
+    else
+      echo "ERROR: Failed to generate $output" >&2
+      ((ERRORS++)) || true
+    fi
+  done
+done
+
+# Generate icons for dev/staging-only services
+for service in "${DEV_STAGING_ONLY_SERVICES[@]}"; do
+  source_svg="$ICONS_DIR/${ICON_MAP[$service]}"
+  if [[ ! -f "$source_svg" ]]; then
+    echo "WARNING: Source icon not found: $source_svg (skipping $service)" >&2
+    ((ERRORS++)) || true
+    continue
+  fi
+  for env in "${ENVS_DEV_STAGING[@]}"; do
     output="$ICONS_DIR/${service}-${env}.png"
     if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
       ((COUNT++)) || true

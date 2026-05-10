@@ -1993,6 +1993,42 @@ let
       preferred_monitor_role = "secondary";
       routing_domains = [ "tekton-dashboard-staging.tail286401.ts.net" ];
     }
+
+    # KueueViz Dev
+    {
+      name = "Kueueviz Dev";
+      url = "https://kueueviz-dev.tail286401.ts.net";
+      domain = "kueueviz-dev.tail286401.ts.net";
+      icon = iconPath "kueueviz-dev.png";
+      description = "KueueViz - Visualization UI for Kueue Kubernetes job queueing - Dev environment";
+      categories = "Development;Network;";
+      keywords = "kueueviz;kueue;kubernetes;job;queue;batch;workload;visualization;dev;";
+      scope = "https://kueueviz-dev.tail286401.ts.net/";
+      ulid = "5NJACR0TNWQ0BYXARKV2NVXK0Q";  # Generated 2026-05-09
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 170;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "kueueviz-dev.tail286401.ts.net" ];
+    }
+
+    # KueueViz Staging
+    {
+      name = "Kueueviz Staging";
+      url = "https://kueueviz-staging.tail286401.ts.net";
+      domain = "kueueviz-staging.tail286401.ts.net";
+      icon = iconPath "kueueviz-staging.png";
+      description = "KueueViz - Visualization UI for Kueue Kubernetes job queueing - Staging environment";
+      categories = "Development;Network;";
+      keywords = "kueueviz;kueue;kubernetes;job;queue;batch;workload;visualization;staging;";
+      scope = "https://kueueviz-staging.tail286401.ts.net/";
+      ulid = "22NC807YVKW61G1CC6R57ATFSA";  # Generated 2026-05-09
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 171;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "kueueviz-staging.tail286401.ts.net" ];
+    }
   ];
 
   # Filter and format sites

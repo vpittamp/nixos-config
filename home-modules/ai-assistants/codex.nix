@@ -56,7 +56,9 @@ let
   codexOtelInterceptorPort = 4319;
 
   # Wrapper for codex that sets OTEL batch processor env vars for real-time export
-  # Codex 0.128.0+ ships a statically-linked musl binary, so no RPATH patching is needed.
+  # Codex 0.128.0+ ships a statically-linked musl PIE binary with libcap bundled,
+  # so the legacy patchelf libcap rpath fix is no longer needed and actually
+  # corrupts the static binary, causing it to segfault on startup.
   codexPackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
 
   codexWrapperScript = pkgs.writeShellScriptBin "codex" ''
@@ -296,12 +298,12 @@ theme = "dark"
 vim_mode = true
 web_search = "live"
 
-[experimental]
-background_terminal = true
-shell_snapshotting = true
-
+# Codex feature flags. Beta features per `/experimental` menu (Codex 0.130+).
+# `shell_snapshot` and `unified_exec` are stable+default-on; explicit set is informational.
 [features]
-goals = true
+goals = true              # Persistent thread goals + automatic continuation
+memories = true           # Generate/use memories across conversations (/memories)
+prevent_idle_sleep = true # Keep machine awake while a thread is actively running
 
 [mcp_servers.openaiDeveloperDocs]
 enabled = true
