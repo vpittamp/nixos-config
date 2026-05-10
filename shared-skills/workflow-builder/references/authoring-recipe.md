@@ -134,6 +134,40 @@ The trigger drives `${ .trigger.<field> }`. Two-step:
 
 Set up the webhook in the BFF: `POST /api/workflows/[workflowId]/webhook` with auth via JWT API key (`wfb_*` prefix). The webhook payload becomes the trigger data — so `${ .trigger.<field> }` reads webhook body fields. See `src/routes/api/workflows/[workflowId]/webhook/+server.ts` for the auth + payload shape.
 
+### Self-contained upsert script (no source-clone)
+
+Modern pattern: write a single TypeScript/Node script that builds the entire spec inline and INSERT…ON CONFLICT-upserts it — no `SOURCE_WORKFLOW_ID` dependency. Recommended over the older "clone-and-append" pattern because cloned source rows tend to drift or disappear across cluster rebuilds, the cloned-from row's per-step shape goes stale relative to the per-agent-runtime architecture, and renderer/migration runs can wipe overlay-injected workflow rows.
+
+Canonical examples in `scripts/`:
+
+- `scripts/upsert-plan-execute-browser-demo-workflow.ts` (5-step plan → execute → test → browser/validate)
+- `scripts/upsert-3b1b-animation-workflow.ts` (3-step animation generation + browser/validate)
+- `services/code-eval-runner/code-eval-item.workflow.json` (4-step code-eval, evaluations-stamp path)
+
+Common shape:
+
+1. CLI args: `--user-email <addr>` (required for owner resolution on a fresh cluster), `--agent-id <id>` / `--agent-version <n>` (override hardcoded default).
+2. `resolveOwner(sql, existing, userEmail)` helper: prefers existing row's `user_id`/`project_id`, then matches user by email + first project membership, then first project member, then first user. Mirrors `scripts/upsert-claude-code-agent-loop-workflow.mjs`.
+3. Spec builders return `JsonRecord` shapes for each task; `buildSpec(args)` assembles `spec.do[]`, `spec.document['x-workflow-builder']`, and `spec.input.schema`.
+4. Single `INSERT INTO workflows … ON CONFLICT (id) DO UPDATE` keyed on `WORKFLOW_ID` env or default.
+5. `visibility: "public"` so any workspace can launch.
+
+Deploy from outside the cluster:
+```bash
+kubectl --context dev -n workflow-builder port-forward svc/postgresql 35432:5432 >/dev/null 2>&1 &
+PF=$!
+sleep 3
+DATABASE_URL="postgresql://postgres:password@127.0.0.1:35432/workflow_builder" \
+  npx tsx scripts/upsert-<your-script>.ts --user-email vinod@pittampalli.com
+kill $PF
+```
+
+Then verify the spec landed:
+```bash
+kubectl --context dev -n workflow-builder exec postgresql-0 -- psql -U postgres -d workflow_builder -c "
+  select id, name, visibility, jsonb_array_length(spec->'do') do_steps from workflows where id='<id>';"
+```
+
 ## See also
 
 - `references/sw-1.0-spec.md` — the spec.

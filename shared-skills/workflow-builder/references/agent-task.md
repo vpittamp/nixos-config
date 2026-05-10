@@ -85,6 +85,15 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 
 If `agentRef.id` is missing OR resolves to an agent that hasn't been published, the orchestrator falls back to legacy `dapr-agent-py`. Don't rely on this — it's a backwards-compat shim.
 
+### Two stamping paths (UI launch vs evaluations)
+
+`body.agentRef` can be either a static `{id, version}` object OR a jq placeholder like `${ .trigger.agentRef }` — but only ONE of those works for any given launch path:
+
+- **`/api/workflows/[id]/execute`** (regular UI / API launch): `resolveSpecAgentRefs` (`src/lib/server/agents/resolver.ts`) runs at workflow-LOAD time, BEFORE jq evaluates. It validates each `body.agentRef` is a real `{id, version}` shape; placeholder strings throw `AgentRefResolutionError`. So spec rows the UI launches must have **static** agentRef values.
+- **Evaluations / code-eval / SWE-bench launches**: `service.ts:startEvaluationRunItemWorkflow` walks the spec via `stampAgentRefIntoDurableRunSteps` and replaces every `body.agentRef` with the live `{id, version}` BEFORE handing the spec to the orchestrator. Placeholder strings work here.
+
+For a workflow you want runnable from BOTH paths, the simplest pattern is: hardcode a sensible default agentRef in the spec, expose it as a script CLI flag (`--agent-id`, `--agent-version`), and let evaluations callers stamp their own agentRef on top via the trigger. The `code-eval-item.workflow.json` + `scripts/upsert-3b1b-animation-workflow.ts` pair is the canonical example.
+
 ## Prompt preview, templating, and cache
 
 The workflow agent-node panel's `Compiled Prompt` preview uses the shared Prompt Workbench preview component. It should show:
