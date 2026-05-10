@@ -12137,6 +12137,68 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         raise RuntimeError(f"Terminal helper not found: {helper_name}")
 
+    def _reap_orphan_app_units(self, app_name: str, app_command: str) -> None:
+        """Stop orphan systemd user units left behind by a previous launch of this app.
+
+        Electron-based apps (Headlamp is the known case) re-parent their backend
+        processes into a separate ``app-<basename>-<pid>.scope`` managed by the user
+        systemd manager. When the GUI window closes, the scope keeps running because
+        the backend processes (e.g. headlamp-server on port 4466, zygotes) survive
+        the renderer. A subsequent launch then silently exits due to the
+        single-instance user-data-dir lock or the bound port. We pre-emptively stop
+        any such orphan scopes (and stale ``i3pm-launch-<app>-*.service`` units)
+        before falling through to a fresh launch.
+        """
+        systemctl = shutil.which("systemctl") or "/run/current-system/sw/bin/systemctl"
+        binary = os.path.basename(str(app_command or "").strip())
+        sanitized_command = re.sub(r"[^a-zA-Z0-9_.-]+", "-", binary) if binary else ""
+        sanitized_app = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(app_name or "")).strip("-")
+
+        prefixes: list[tuple[str, str]] = []
+        if sanitized_command:
+            prefixes.append((f"app-{sanitized_command}-", ".scope"))
+        if sanitized_app:
+            prefixes.append((f"i3pm-launch-{sanitized_app}-", ".service"))
+
+        if not prefixes:
+            return
+
+        try:
+            result = subprocess.run(
+                [systemctl, "--user", "list-units", "--all", "--no-legend",
+                 "--plain", "--type=scope,service"],
+                capture_output=True, text=True, check=False, timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning(
+                "Failed to enumerate user units while reaping orphans for %s: %s",
+                app_name, exc,
+            )
+            return
+
+        units_to_stop: list[str] = []
+        for line in result.stdout.splitlines():
+            unit = line.split(maxsplit=1)[0].strip() if line.strip() else ""
+            if not unit:
+                continue
+            for prefix, suffix in prefixes:
+                if unit.startswith(prefix) and unit.endswith(suffix):
+                    units_to_stop.append(unit)
+                    break
+
+        for unit in units_to_stop:
+            try:
+                subprocess.run(
+                    [systemctl, "--user", "stop", unit],
+                    capture_output=True, text=True, check=False, timeout=10,
+                )
+                logger.info(
+                    "Reaped orphan unit %s before relaunching %s",
+                    unit, app_name,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.warning("Failed to stop orphan unit %s: %s", unit, exc)
+
     def _execute_launch_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a daemon-prepared launch spec via systemd-run."""
         app_name = str(spec.get("app_name") or "").strip()
@@ -12495,6 +12557,13 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 project_name=str(spec.get("project_name") or "").strip(),
                 execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
             )
+            if existing_window is None:
+                # No live window for this single-instance app — clear any orphan
+                # systemd user scopes/services left over from a prior launch
+                # whose backend processes outlived the GUI window. Otherwise the
+                # fresh launch below silently exits due to single-instance locks
+                # or bound ports (e.g. Headlamp on 4466).
+                self._reap_orphan_app_units(app.name, str(app.command or ""))
             if existing_window is not None:
                 focus_result = await self._window_focus({
                     "window_id": int(getattr(existing_window, "window_id", 0) or 0),
