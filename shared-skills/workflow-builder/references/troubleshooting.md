@@ -101,6 +101,12 @@ Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions
 | Workflow visible to one user, not their teammate | `project_members` missing the teammate | `SELECT * FROM project_members WHERE project_id='<id>';` then INSERT a row with `role` ∈ ADMIN/EDITOR/OPERATOR/VIEWER. |
 | Sessions show raw IDs instead of agent labels | Sessions point at workflow-ephemeral agents | Expected — `/api/agents` filters those out. As of 2026-04-21 `listSessions` LEFT JOINs `agents` and returns `agentName/agentSlug/agentAvatar/agentEphemeral` so the row renders ⚡ + "eph". |
 
+### MLflow trace state (cosmetic-only)
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| MLflow Traces UI shows `IN_PROGRESS` on a workflow that finished long ago | **Known systemic limit** in MLflow OSS 3.10.x. Our orchestrator's Python spans all carry a `parent_id` pointing at `durabletask-go` engine spans that MLflow's OTLP receiver drops (no `gen_ai.*` attrs), so MLflow's `_on_end_impl` never sees a root span to flip state to OK. Affects ~92% of runs (11 of 12 recent async-coding traces; same for browserstation demos). | **No clean client-side fix exists.** MLflow REST API has no state-update endpoint: `StartTraceV3` errors with `"Dependency rule on column 'trace_info.request_id' tried to blank-out primary key column 'trace_tags.request_id'"` when the trace row already has tags; `PATCH/PUT/POST` on `/api/3.0/mlflow/traces/{id}` and `/state` and `/info` and `:end` all return 404/405. Spans + tags + duration are all queryable; only the state badge is wrong. Search filters (`tag.workflow.execution.id = X`, `tag.session.id = Y`, `tag.mlflow.traceName = ...`) work normally. Real fixes: (a) CronJob in mlflow ns doing `UPDATE trace_info SET state='OK' WHERE state='IN_PROGRESS' AND request_time < now() - interval '10 min'` (~1h work); (b) Tailscale egress for mlflow-postgres + inline SQL from orchestrator (~1d). REST-API attempt was tried and reverted (workflow-builder commits `c36747e7` → `854f0828`, 2026-05-12). |
+
 ## Diagnostic command cheat sheet
 
 ```bash
