@@ -14,6 +14,27 @@ let
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
+  # MLflow skills bundle (mlflow/skills repo ships 8 individual skills as top-level dirs).
+  mlflowSkillsRepo = pkgs.fetchFromGitHub {
+    owner = "mlflow";
+    repo = "skills";
+    rev = "b5426fa64c10709e76985c24a5ba4ba35e5f4ac0";
+    hash = "sha256-cpnDescmkkpLas0dX9jXIkMugiEd4mgvR3TyaQ09JZ8=";
+  };
+  mlflowSkillNames = [
+    "agent-evaluation"
+    "analyze-mlflow-chat-session"
+    "analyze-mlflow-trace"
+    "instrumenting-with-mlflow-tracing"
+    "mlflow-onboarding"
+    "querying-mlflow-metrics"
+    "retrieving-mlflow-traces"
+    "searching-mlflow-docs"
+  ];
+
+  # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
+  mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
+
   codexSkillsDir = repoRoot + "/.codex/skills";
   hasCodexSkillsDir = builtins.pathExists codexSkillsDir;
   hasRepoCreateMcpAppSkill = hasCodexSkillsDir && builtins.pathExists (codexSkillsDir + "/create-mcp-app");
@@ -28,6 +49,14 @@ let
       }
     )
     repoSkillDirs;
+
+  mlflowSkillHomeFiles = lib.listToAttrs (lib.concatMap (n:
+    let inRepo = hasCodexSkillsDir && builtins.pathExists (codexSkillsDir + "/${n}");
+    in lib.optional (!inRepo) (lib.nameValuePair ".codex/skills/${n}" {
+      source = mlflowSkillsRepo + "/${n}";
+      recursive = true;
+    })
+  ) mlflowSkillNames);
 
   # Auto-import custom instructions from .codex/INSTRUCTIONS.md
   # This follows the same centralization pattern as Claude Code and Gemini CLI
@@ -172,7 +201,8 @@ in
         source = createMcpAppSkillDir;
         recursive = true;
       };
-    });
+    })
+    // mlflowSkillHomeFiles;
 
   # Before home-manager re-links files, drop any SKILL.md that we previously
   # materialized as a regular file. Otherwise home-manager refuses to overwrite
@@ -310,6 +340,16 @@ enabled = true
 startup_timeout_sec = 30
 tool_timeout_sec = 60
 url = "https://developers.openai.com/mcp"
+
+[mcp_servers.mlflow]
+args = ["-y", "@us-all/mlflow-mcp"]
+command = "${nodeNpx}"
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.mlflow.env]
+MLFLOW_TRACKING_URI = "${mlflowTrackingUri}"
 
 ${lib.optionalString enableBrowserMcpServers ''
 [mcp_servers.chrome-devtools]

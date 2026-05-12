@@ -13,6 +13,27 @@ let
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
+  # MLflow skills bundle (mlflow/skills repo ships 8 individual skills as top-level dirs).
+  mlflowSkillsRepo = pkgs.fetchFromGitHub {
+    owner = "mlflow";
+    repo = "skills";
+    rev = "b5426fa64c10709e76985c24a5ba4ba35e5f4ac0";
+    hash = "sha256-cpnDescmkkpLas0dX9jXIkMugiEd4mgvR3TyaQ09JZ8=";
+  };
+  mlflowSkillNames = [
+    "agent-evaluation"
+    "analyze-mlflow-chat-session"
+    "analyze-mlflow-trace"
+    "instrumenting-with-mlflow-tracing"
+    "mlflow-onboarding"
+    "querying-mlflow-metrics"
+    "retrieving-mlflow-traces"
+    "searching-mlflow-docs"
+  ];
+
+  # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
+  mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
+
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
@@ -71,6 +92,14 @@ let
       }
     )
     repoSkillDirs;
+
+  mlflowSkillHomeFiles = lib.listToAttrs (lib.concatMap (n:
+    let inRepo = hasSkillsDir && builtins.pathExists (skillsDir + "/${n}");
+    in lib.optional (!inRepo) (lib.nameValuePair ".claude/skills/${n}" {
+      source = mlflowSkillsRepo + "/${n}";
+      recursive = true;
+    })
+  ) mlflowSkillNames);
 in
 lib.mkIf enableClaudeCode {
   # Install skills into ~/.claude/skills/
@@ -83,11 +112,13 @@ lib.mkIf enableClaudeCode {
         recursive = true;
       };
     })
+    // mlflowSkillHomeFiles
     // {
-      # Force PATH-preferred ~/.local/bin/claude to the wrapped Nix binary so
-      # telemetry/session hooks are deterministic across shells and hosts.
+      # Force PATH-preferred ~/.local/bin/claude to the home-manager finalPackage
+      # so telemetry/session hooks AND --mcp-config (which the HM module adds via
+      # a second wrapper layer when mcpServers is non-empty) are both present.
       ".local/bin/claude" = {
-        source = "${claudeCodePackage}/bin/claude";
+        source = "${config.programs.claude-code.finalPackage}/bin/claude";
         executable = true;
         force = true;
       };
@@ -559,6 +590,14 @@ lib.mkIf enableClaudeCode {
     # MCP Servers configuration
     # Uses full Nix store paths to work in isolated environments (devenv, nix-shell)
     # Enable interactively via `/mcp` command or `@` menu when needed
-    mcpServers = {};
+    mcpServers = {
+      mlflow = {
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [ "-y" "@us-all/mlflow-mcp" ];
+        env = {
+          MLFLOW_TRACKING_URI = mlflowTrackingUri;
+        };
+      };
+    };
   };
 }

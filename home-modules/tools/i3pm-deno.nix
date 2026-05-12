@@ -134,6 +134,12 @@ in
           is_default = false;
           ssh_host = "github.com";
         }
+        {
+          name = "diagridio";
+          path = "${config.home.homeDirectory}/repos/diagridio";
+          is_default = false;
+          ssh_host = "github.com";
+        }
       ];
     };
 

@@ -14,6 +14,27 @@ let
   };
   createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
 
+  # MLflow skills bundle (mlflow/skills repo ships 8 individual skills as top-level dirs).
+  mlflowSkillsRepo = pkgs.fetchFromGitHub {
+    owner = "mlflow";
+    repo = "skills";
+    rev = "b5426fa64c10709e76985c24a5ba4ba35e5f4ac0";
+    hash = "sha256-cpnDescmkkpLas0dX9jXIkMugiEd4mgvR3TyaQ09JZ8=";
+  };
+  mlflowSkillNames = [
+    "agent-evaluation"
+    "analyze-mlflow-chat-session"
+    "analyze-mlflow-trace"
+    "instrumenting-with-mlflow-tracing"
+    "mlflow-onboarding"
+    "querying-mlflow-metrics"
+    "retrieving-mlflow-traces"
+    "searching-mlflow-docs"
+  ];
+
+  # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
+  mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
+
   # Auto-discover repo-managed Gemini skills under .gemini/skills/.
   # Each entry becomes a home.file link, then setupGeminiSkills materializes
   # SKILL.md as a real file so Gemini's discovery (which doesn't follow symlinks)
@@ -33,6 +54,14 @@ let
     )
     repoGeminiSkillDirs;
 
+  mlflowSkillHomeFiles = lib.listToAttrs (lib.concatMap (n:
+    let inRepo = hasGeminiSkillsDir && builtins.pathExists (geminiSkillsDir + "/${n}");
+    in lib.optional (!inRepo) (lib.nameValuePair ".gemini/skills/${n}" {
+      source = mlflowSkillsRepo + "/${n}";
+      recursive = true;
+    })
+  ) mlflowSkillNames);
+
   # Alias for backward compatibility with patterns using 'self'
   # All AI assistants now use repoRoot consistently
 
@@ -48,7 +77,7 @@ let
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
 
-  geminiMcpServers = lib.optionalAttrs enableBrowserMcpServers {
+  geminiMcpServers = (lib.optionalAttrs enableBrowserMcpServers {
     chrome-devtools = {
       command = nodeNpx;
       args = [
@@ -77,6 +106,14 @@ let
       env = {
         PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
         PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+      };
+    };
+  }) // {
+    mlflow = {
+      command = nodeNpx;
+      args = [ "-y" "@us-all/mlflow-mcp" ];
+      env = {
+        MLFLOW_TRACKING_URI = mlflowTrackingUri;
       };
     };
   };
@@ -364,7 +401,8 @@ in
         source = createMcpAppSkillDir;
         recursive = true;
       };
-    });
+    })
+    // mlflowSkillHomeFiles;
 
   home.activation.setupGeminiMcpRuntimeDirs = lib.mkIf enableBrowserMcpServers (lib.hm.dag.entryAfter ["writeBoundary"] ''
     set -euo pipefail
