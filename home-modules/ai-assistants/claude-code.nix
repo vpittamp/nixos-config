@@ -52,7 +52,7 @@ let
         --set OTEL_METRICS_EXPORTER "otlp" \
         --set OTEL_TRACES_EXPORTER "otlp" \
         --set OTEL_EXPORTER_OTLP_PROTOCOL "http/protobuf" \
-        --set OTEL_EXPORTER_OTLP_ENDPOINT "http://localhost:4320" \
+        --set OTEL_EXPORTER_OTLP_ENDPOINT "http://localhost:4318" \
         --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js" \
         --add-flags "--chrome"
     '';
@@ -191,17 +191,13 @@ lib.mkIf enableClaudeCode {
   # These MUST be session variables (not just settings.env) because the OTEL SDK
   # initializes when Claude Code starts, before it reads settings.json.
   # settings.env only affects subprocesses, not Claude Code itself.
-  #
-  # Feature 132: Langfuse integration environment variables
-  # LANGFUSE_* variables are optional - if set, traces will include Langfuse-specific
-  # attributes for proper observation mapping in Langfuse UI.
   home.sessionVariables = {
     CLAUDE_CODE_ENABLE_TELEMETRY = "1";
     OTEL_LOGS_EXPORTER = "otlp";
     OTEL_METRICS_EXPORTER = "otlp";
     OTEL_TRACES_EXPORTER = "otlp";
     OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
-    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4320";
+    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
     OTEL_METRIC_EXPORT_INTERVAL = "60000";
     OTEL_METRIC_EXPORT_TIMEOUT = "30000";
     OTEL_LOGS_EXPORT_INTERVAL = "5000";
@@ -209,14 +205,6 @@ lib.mkIf enableClaudeCode {
     OTEL_LOG_USER_PROMPTS = "1";
     # Delta temporality for better memory efficiency with session metrics
     OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta";
-
-    # Feature 132: Langfuse integration
-    # These variables are used by the interceptor to add Langfuse-specific attributes
-    # LANGFUSE_ENABLED - Set to "1" to enable Langfuse-specific attribute emission
-    # LANGFUSE_USER_ID - Optional user identifier for Langfuse traces
-    # LANGFUSE_SESSION_ID - Optional override for session grouping (defaults to Claude session.id)
-    # LANGFUSE_TAGS - Optional JSON array of tags, e.g., '["production", "my-feature"]'
-    LANGFUSE_ENABLED = "1";
 
     # Experimental: Agent Teams - multi-agent coordination
     # Session variable ensures it's set before Claude Code initializes
@@ -307,7 +295,7 @@ lib.mkIf enableClaudeCode {
         OTEL_METRICS_EXPORTER = "otlp";
         OTEL_TRACES_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4320";
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
         # Export intervals - safer for Node.js SDK
         OTEL_METRIC_EXPORT_INTERVAL = "60000";  # 60 seconds
         OTEL_METRIC_EXPORT_TIMEOUT = "30000";   # 30 seconds

@@ -415,19 +415,19 @@ in
       "i3pm-daemon.service"
     ];
 
-    # Feature 132: Langfuse AI Observability
-    # Export traces to Langfuse for specialized LLM tracing and analytics
-    langfuse = {
+    # MLflow trace export: route per-CLI traces to the hub MLflow tracking
+    # server. Experiment IDs are bootstrapped by the stacks Job
+    # Job-mlflow-llm-cli-experiment-bootstrap.yaml; after it runs once,
+    # capture the IDs and paste them below:
+    #   kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
+    mlflow = {
       enable = true;
-      # Local Langfuse via cnoe.localtest.me ingress
-      endpoint = "https://langfuse.cnoe.localtest.me:8443/api/public/otel";
-      credentialSource = "1password";  # Use 1Password for local dev
-      onePasswordRefs = {
-        publicKey = "op://CLI/Langfuse/public_key";
-        secretKey = "op://CLI/Langfuse/secret_key";
+      endpoint = "https://mlflow-hub.tail286401.ts.net";
+      experiments = {
+        claudeCode = "9";
+        codex      = "10";
+        gemini     = "11";
       };
-      # Fallback: environment file for system services (1Password not available)
-      environmentFile = "/etc/langfuse/credentials";
       batchTimeout = "10s";
       batchSize = 100;
     };

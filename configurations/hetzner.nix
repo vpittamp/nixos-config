@@ -194,29 +194,19 @@
       "i3pm-daemon.service"
     ];
 
-    # Feature 132: Langfuse AI Observability
-    # Export traces to Langfuse for specialized LLM tracing and analytics
-    langfuse = {
+    # MLflow trace export: route per-CLI traces to the hub MLflow tracking
+    # server. Experiment IDs are bootstrapped by the stacks Job
+    # Job-mlflow-llm-cli-experiment-bootstrap.yaml; after it runs once,
+    # capture the IDs and paste them below:
+    #   kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
+    mlflow = {
       enable = true;
-      endpoint = "https://cloud.langfuse.com/api/public/otel";
-
-      # Credential source options:
-      # - "env": Use LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables
-      # - "files": Use publicKeyFile and secretKeyFile paths (sops-nix, agenix)
-      # - "1password": Use 1Password CLI to fetch keys
-      # - "azure": Use Azure Key Vault to fetch keys
-      credentialSource = "1password";  # Use 1Password for local dev
-
-      # Azure Key Vault configuration (when credentialSource = "azure")
-      # Secrets expected: LANGFUSE-PUBLIC-KEY, LANGFUSE-SECRET-KEY
-      # azureKeyVaultName = "your-keyvault-name";
-
-      # 1Password configuration (when credentialSource = "1password")
-      onePasswordRefs = {
-        publicKey = "op://CLI/Langfuse/public_key";
-        secretKey = "op://CLI/Langfuse/secret_key";
+      endpoint = "https://mlflow-hub.tail286401.ts.net";
+      experiments = {
+        claudeCode = "9";
+        codex      = "10";
+        gemini     = "11";
       };
-
       batchTimeout = "10s";
       batchSize = 100;
     };

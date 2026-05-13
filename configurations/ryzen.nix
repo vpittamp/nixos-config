@@ -388,6 +388,23 @@ in
       "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
+
+    # MLflow trace export: route per-CLI traces to the hub MLflow tracking
+    # server. Experiment IDs are bootstrapped by the stacks Job
+    # Job-mlflow-llm-cli-experiment-bootstrap.yaml; after it runs once,
+    # capture the IDs and paste them below:
+    #   kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
+    mlflow = {
+      enable = true;
+      endpoint = "https://mlflow-hub.tail286401.ts.net";
+      experiments = {
+        claudeCode = "9";
+        codex      = "10";
+        gemini     = "11";
+      };
+      batchTimeout = "10s";
+      batchSize = 100;
+    };
   };
 
   # Display manager - greetd for Wayland/Sway login

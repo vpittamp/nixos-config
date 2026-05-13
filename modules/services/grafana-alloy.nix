@@ -1,19 +1,21 @@
 # Feature 129: Grafana Alloy - Unified OpenTelemetry Collector
-# Feature 132: Langfuse Integration - Export traces to Langfuse for AI observability
+# MLflow integration - per-CLI trace export to the hub MLflow tracking server.
 #
 # This module provides Grafana Alloy as the unified telemetry collector that:
 # - Replaces otel-ai-collector.nix with a more capable solution
 # - Receives OTLP telemetry from AI CLIs (Claude Code, Codex, Gemini) on port 4318
 # - Forwards to otel-ai-monitor user service on port 4320 for local session tracking
 # - Exports all telemetry to Kubernetes LGTM stack via Tailscale
-# - Exports traces to Langfuse for AI-specific observability (Feature 132)
+# - Exports traces to MLflow with per-CLI experiment routing (routes spans by
+#   resource.service.name to claude-code/codex/gemini-cli experiments). Experiment
+#   IDs are bootstrapped in the hub via the LLM CLI bootstrap Job in stacks.
 # - Collects system metrics via built-in node exporter
 # - Collects journald logs and forwards to Loki
 #
 # Architecture:
 #   AI CLIs → Alloy :4318 → [batch processor] → otel-ai-monitor :4320 (local)
 #                                            → K8s OTEL Collector (remote)
-#                                            → Langfuse OTEL endpoint (Feature 132)
+#                                            → MLflow /v1/traces (per-CLI experiments)
 #   System → node exporter → Alloy → Mimir (K8s)
 #   Journald → Alloy → Loki (K8s)
 #
@@ -113,7 +115,7 @@ let
     // Filter Processor - Drop Beyla auto-instrumentation traces
     //
     // Beyla generates HTTP/gRPC spans via eBPF that aren't LLM-specific.
-    // Filter them out before sending to AI-focused backends (Langfuse, local monitor).
+    // Filter them out before sending to AI-focused backends (MLflow, local monitor).
     // =============================================================================
 
     otelcol.processor.filter "drop_beyla" {
@@ -211,7 +213,7 @@ let
           otelcol.exporter.otlphttp.local.input,
           otelcol.exporter.otlphttp.k8s.input,
           ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) "otelcol.exporter.otlphttp.phoenix.input,"}
-          ${optionalString cfg.langfuse.enable "otelcol.exporter.otlphttp.langfuse.input,"}
+          ${optionalString cfg.mlflow.enable "otelcol.processor.batch.mlflow.input,"}
         ]
       }
     }
@@ -270,48 +272,136 @@ let
       }
     }
 
-    ${optionalString cfg.langfuse.enable ''
+    ${optionalString cfg.mlflow.enable ''
     // =============================================================================
-    // Feature 132: Langfuse - AI Observability Platform
-    // Export traces to Langfuse for specialized LLM tracing and analytics
+    // MLflow Tracing - per-CLI experiment routing
+    //
+    // Routes each LLM CLI's trace stream to its own MLflow experiment via the
+    // x-mlflow-experiment-id header. Experiment IDs are bootstrapped in the hub
+    // cluster by the stacks Job-mlflow-llm-cli-experiment-bootstrap.yaml and
+    // pinned per-host in services.grafana-alloy.mlflow.experiments.
+    //
+    // The routing connector keys on the resource attribute `service.name`,
+    // which each interceptor sets to one of:
+    //   - "claude-code" (minimal-otel-interceptor.js)
+    //   - "codex"       (codex-otel-interceptor.js)
+    //   - "gemini-cli"  (gemini-otel-interceptor.js)
     // =============================================================================
 
-    // Langfuse OTEL HTTP Exporter
-    // Uses HTTP Basic Auth with base64-encoded public_key:secret_key
-    otelcol.exporter.otlphttp "langfuse" {
+    otelcol.exporter.otlphttp "mlflow_claude_code" {
       client {
-        endpoint = "${cfg.langfuse.endpoint}"
+        endpoint = "${cfg.mlflow.endpoint}"
         headers = {
-          // Authorization header is set via environment variable
-          // Format: Basic <base64(public_key:secret_key)>
-          "Authorization" = env("LANGFUSE_AUTH_HEADER"),
+          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.claudeCode}",
         }
       }
 
-      ${optionalString cfg.langfuse.retryEnabled ''
       retry_on_failure {
         enabled          = true
         initial_interval = "5s"
         max_interval     = "30s"
         max_elapsed_time = "5m"
       }
-      ''}
 
       sending_queue {
         enabled       = true
-        num_consumers = 5
-        queue_size    = ${toString cfg.langfuse.queueSize}
+        num_consumers = 4
+        queue_size    = ${toString cfg.mlflow.queueSize}
       }
     }
 
-    // Langfuse-specific batch processor for optimized trace export
-    otelcol.processor.batch "langfuse" {
-      send_batch_size     = ${toString cfg.langfuse.batchSize}
-      timeout             = "${cfg.langfuse.batchTimeout}"
-      send_batch_max_size = ${toString (cfg.langfuse.batchSize * 2)}
+    otelcol.exporter.otlphttp "mlflow_codex" {
+      client {
+        endpoint = "${cfg.mlflow.endpoint}"
+        headers = {
+          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.codex}",
+        }
+      }
+
+      retry_on_failure {
+        enabled          = true
+        initial_interval = "5s"
+        max_interval     = "30s"
+        max_elapsed_time = "5m"
+      }
+
+      sending_queue {
+        enabled       = true
+        num_consumers = 4
+        queue_size    = ${toString cfg.mlflow.queueSize}
+      }
+    }
+
+    otelcol.exporter.otlphttp "mlflow_gemini" {
+      client {
+        endpoint = "${cfg.mlflow.endpoint}"
+        headers = {
+          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.gemini}",
+        }
+      }
+
+      retry_on_failure {
+        enabled          = true
+        initial_interval = "5s"
+        max_interval     = "30s"
+        max_elapsed_time = "5m"
+      }
+
+      sending_queue {
+        enabled       = true
+        num_consumers = 4
+        queue_size    = ${toString cfg.mlflow.queueSize}
+      }
+    }
+
+    // Per-CLI filter processors. Each drops spans whose `service.name` is
+    // not the target CLI, so only matching spans reach the corresponding
+    // exporter. (Alloy doesn't ship `otelcol.connector.routing`, so we
+    // fan out the batch to three filters instead.)
+    otelcol.processor.filter "mlflow_claude_code" {
+      error_mode = "ignore"
+      traces {
+        span = ["resource.attributes[\"service.name\"] != \"claude-code\""]
+      }
+      output {
+        traces = [otelcol.exporter.otlphttp.mlflow_claude_code.input]
+      }
+    }
+
+    otelcol.processor.filter "mlflow_codex" {
+      error_mode = "ignore"
+      traces {
+        span = ["resource.attributes[\"service.name\"] != \"codex\""]
+      }
+      output {
+        traces = [otelcol.exporter.otlphttp.mlflow_codex.input]
+      }
+    }
+
+    otelcol.processor.filter "mlflow_gemini" {
+      error_mode = "ignore"
+      traces {
+        span = ["resource.attributes[\"service.name\"] != \"gemini-cli\""]
+      }
+      output {
+        traces = [otelcol.exporter.otlphttp.mlflow_gemini.input]
+      }
+    }
+
+    // MLflow-specific batch processor for optimized trace export.
+    // Fans the batched stream out to all three per-CLI filters; each filter
+    // drops everything not matching its service.name.
+    otelcol.processor.batch "mlflow" {
+      send_batch_size     = ${toString cfg.mlflow.batchSize}
+      timeout             = "${cfg.mlflow.batchTimeout}"
+      send_batch_max_size = ${toString (cfg.mlflow.batchSize * 2)}
 
       output {
-        traces = [otelcol.exporter.otlphttp.langfuse.input]
+        traces = [
+          otelcol.processor.filter.mlflow_claude_code.input,
+          otelcol.processor.filter.mlflow_codex.input,
+          otelcol.processor.filter.mlflow_gemini.input,
+        ]
       }
     }
     ''}
@@ -474,109 +564,76 @@ in
       '';
     };
 
-    # Feature 132: Langfuse Integration
-    langfuse = {
-      enable = mkEnableOption "Langfuse trace export for AI observability";
+    # MLflow trace export - per-CLI experiment routing.
+    # Three exporters (one per LLM CLI) routed on resource.service.name; each
+    # ships traces to MLflow's /v1/traces with x-mlflow-experiment-id headers.
+    # Experiments are bootstrapped in the hub by the stacks Job
+    # Job-mlflow-llm-cli-experiment-bootstrap.yaml.
+    mlflow = {
+      enable = mkEnableOption "MLflow trace export for LLM CLI observability";
 
       endpoint = mkOption {
         type = types.str;
-        default = "https://cloud.langfuse.com/api/public/otel";
-        example = "https://us.cloud.langfuse.com/api/public/otel";
+        default = "https://mlflow-hub.tail286401.ts.net";
+        example = "http://mlflow-hub-egress.tailscale.svc.cluster.local:5000";
         description = ''
-          Langfuse OTEL HTTP endpoint URL.
-          - EU Cloud: https://cloud.langfuse.com/api/public/otel
-          - US Cloud: https://us.cloud.langfuse.com/api/public/otel
-          - Self-hosted: http://localhost:3000/api/public/otel
+          MLflow tracking server base URL. The OTLP receiver lives at
+          `<endpoint>/v1/traces`; Alloy's otlphttp exporter appends the path
+          automatically.
         '';
       };
 
-      publicKeyFile = mkOption {
-        type = types.nullOr types.path;
-        default = null;
+      experiments = mkOption {
+        type = types.submodule {
+          options = {
+            claudeCode = mkOption {
+              type = types.str;
+              default = "";
+              example = "12";
+              description = ''
+                MLflow experiment ID for Claude Code traces (service.name="claude-code").
+                Capture after running the stacks bootstrap Job:
+                kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
+              '';
+            };
+            codex = mkOption {
+              type = types.str;
+              default = "";
+              example = "13";
+              description = "MLflow experiment ID for Codex traces (service.name=\"codex\").";
+            };
+            gemini = mkOption {
+              type = types.str;
+              default = "";
+              example = "14";
+              description = "MLflow experiment ID for Gemini CLI traces (service.name=\"gemini-cli\").";
+            };
+          };
+        };
+        default = {};
         description = ''
-          Path to file containing Langfuse public key (pk-lf-...).
-          If null, uses LANGFUSE_PUBLIC_KEY environment variable.
-        '';
-      };
-
-      secretKeyFile = mkOption {
-        type = types.nullOr types.path;
-        default = null;
-        description = ''
-          Path to file containing Langfuse secret key (sk-lf-...).
-          If null, uses LANGFUSE_SECRET_KEY environment variable.
-          IMPORTANT: Use a secrets management solution (sops-nix, agenix)
-          to provide this file securely.
+          Numeric MLflow experiment IDs per LLM CLI. Pinned at config time
+          rather than auto-fetched because Alloy needs them at module render
+          time; the values are stable (MLflow create-by-name is idempotent).
         '';
       };
 
       batchTimeout = mkOption {
         type = types.str;
         default = "10s";
-        description = "Batch timeout for Langfuse export (traces sent after this duration)";
+        description = "Batch timeout for MLflow export (traces sent after this duration)";
       };
 
       batchSize = mkOption {
         type = types.int;
         default = 100;
-        description = "Maximum batch size for Langfuse export";
-      };
-
-      retryEnabled = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable retry on failure for Langfuse export";
+        description = "Maximum batch size for MLflow export";
       };
 
       queueSize = mkOption {
         type = types.int;
         default = 1000;
-        description = "Queue size for Langfuse export (traces buffered when endpoint unavailable)";
-      };
-
-      credentialSource = mkOption {
-        type = types.enum [ "env" "files" "1password" "azure" ];
-        default = "env";
-        description = ''
-          Source for Langfuse credentials:
-          - "env": Use LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables
-          - "files": Use publicKeyFile and secretKeyFile paths
-          - "1password": Use 1Password CLI to fetch keys
-          - "azure": Use Azure Key Vault to fetch keys
-        '';
-      };
-
-      azureKeyVaultName = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = ''
-          Azure Key Vault name (required when credentialSource = "azure").
-          Secrets expected: LANGFUSE-PUBLIC-KEY and LANGFUSE-SECRET-KEY.
-        '';
-      };
-
-      onePasswordRefs = mkOption {
-        type = types.nullOr (types.attrsOf types.str);
-        default = null;
-        example = {
-          publicKey = "op://Development/Langfuse/public_key";
-          secretKey = "op://Development/Langfuse/secret_key";
-        };
-        description = ''
-          1Password references for Langfuse keys (required when credentialSource = "1password").
-        '';
-      };
-
-      environmentFile = mkOption {
-        type = types.nullOr types.path;
-        default = null;
-        example = "/run/secrets/langfuse-env";
-        description = ''
-          Path to environment file containing LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY.
-          This is used as a fallback when 1Password or Azure Key Vault are unavailable.
-          File format: KEY=value (one per line, no quotes needed).
-          This file is loaded by systemd before the service starts.
-        '';
+        description = "Per-exporter sending queue size (traces buffered when endpoint unavailable)";
       };
     };
   };
@@ -601,113 +658,14 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
 
-      serviceConfig = let
-        # Feature 132: Generate Langfuse auth script based on credential source
-        langfuseAuthScript = pkgs.writeShellScript "alloy-with-langfuse" ''
-          set -euo pipefail
-
-          # Generate Langfuse auth header based on configured credential source
-          ${if cfg.langfuse.credentialSource == "env" then ''
-            # Source: environment variables
-            if [ -n "''${LANGFUSE_PUBLIC_KEY:-}" ] && [ -n "''${LANGFUSE_SECRET_KEY:-}" ]; then
-              export LANGFUSE_AUTH_HEADER="Basic $(echo -n "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | ${pkgs.coreutils}/bin/base64 -w0)"
-            else
-              echo "WARNING: LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY not set. Trace export will fail." >&2
-              export LANGFUSE_AUTH_HEADER=""
-            fi
-          '' else if cfg.langfuse.credentialSource == "files" then ''
-            # Source: key files
-            ${if cfg.langfuse.publicKeyFile != null && cfg.langfuse.secretKeyFile != null then ''
-              PUBLIC_KEY=$(${pkgs.coreutils}/bin/cat "${toString cfg.langfuse.publicKeyFile}" | ${pkgs.coreutils}/bin/tr -d '[:space:]')
-              SECRET_KEY=$(${pkgs.coreutils}/bin/cat "${toString cfg.langfuse.secretKeyFile}" | ${pkgs.coreutils}/bin/tr -d '[:space:]')
-              export LANGFUSE_AUTH_HEADER="Basic $(echo -n "$PUBLIC_KEY:$SECRET_KEY" | ${pkgs.coreutils}/bin/base64 -w0)"
-            '' else ''
-              echo "ERROR: credentialSource=files but publicKeyFile/secretKeyFile not configured" >&2
-              export LANGFUSE_AUTH_HEADER=""
-            ''}
-          '' else if cfg.langfuse.credentialSource == "1password" then ''
-            # Source: 1Password CLI
-            # Note: 1Password CLI requires user session, which may not be available in system services
-            if ! command -v ${pkgs._1password-cli}/bin/op &> /dev/null; then
-              echo "WARN: 1Password CLI not found, Langfuse disabled" >&2
-              export LANGFUSE_AUTH_HEADER=""
-            else
-              ${if cfg.langfuse.onePasswordRefs != null then ''
-                # Try to fetch credentials, but don't fail if 1Password isn't available
-                # (e.g., when running as system service without user session)
-                PUBLIC_KEY=""
-                SECRET_KEY=""
-                if PUBLIC_KEY=$(${pkgs._1password-cli}/bin/op read "${cfg.langfuse.onePasswordRefs.publicKey or "op://Development/Langfuse/public_key"}" 2>/dev/null); then
-                  if SECRET_KEY=$(${pkgs._1password-cli}/bin/op read "${cfg.langfuse.onePasswordRefs.secretKey or "op://Development/Langfuse/secret_key"}" 2>/dev/null); then
-                    export LANGFUSE_AUTH_HEADER="Basic $(echo -n "$PUBLIC_KEY:$SECRET_KEY" | ${pkgs.coreutils}/bin/base64 -w0)"
-                    echo "INFO: Langfuse credentials loaded from 1Password" >&2
-                  else
-                    echo "WARN: Failed to read secret_key from 1Password, Langfuse disabled" >&2
-                    export LANGFUSE_AUTH_HEADER=""
-                  fi
-                else
-                  # 1Password not available, try environment variables as fallback
-                  if [ -n "''${LANGFUSE_PUBLIC_KEY:-}" ] && [ -n "''${LANGFUSE_SECRET_KEY:-}" ]; then
-                    echo "INFO: 1Password not available, using LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY env vars" >&2
-                    export LANGFUSE_AUTH_HEADER="Basic $(echo -n "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | ${pkgs.coreutils}/bin/base64 -w0)"
-                  else
-                    echo "WARN: 1Password session not available (expected for system services)" >&2
-                    echo "WARN: Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY env vars, or use credentialSource=files" >&2
-                    export LANGFUSE_AUTH_HEADER=""
-                  fi
-                fi
-              '' else ''
-                echo "WARN: credentialSource=1password but onePasswordRefs not configured, Langfuse disabled" >&2
-                export LANGFUSE_AUTH_HEADER=""
-              ''}
-            fi
-          '' else if cfg.langfuse.credentialSource == "azure" then ''
-            # Source: Azure Key Vault
-            if ! command -v ${pkgs.azure-cli}/bin/az &> /dev/null; then
-              echo "ERROR: Azure CLI not found" >&2
-              export LANGFUSE_AUTH_HEADER=""
-            elif [ -z "${cfg.langfuse.azureKeyVaultName or ""}" ]; then
-              echo "ERROR: credentialSource=azure but azureKeyVaultName not configured" >&2
-              export LANGFUSE_AUTH_HEADER=""
-            else
-              PUBLIC_KEY=$(${pkgs.azure-cli}/bin/az keyvault secret show \
-                --vault-name "${cfg.langfuse.azureKeyVaultName}" \
-                --name "LANGFUSE-PUBLIC-KEY" \
-                --query "value" -o tsv)
-              SECRET_KEY=$(${pkgs.azure-cli}/bin/az keyvault secret show \
-                --vault-name "${cfg.langfuse.azureKeyVaultName}" \
-                --name "LANGFUSE-SECRET-KEY" \
-                --query "value" -o tsv)
-              if [ -n "$PUBLIC_KEY" ] && [ -n "$SECRET_KEY" ]; then
-                export LANGFUSE_AUTH_HEADER="Basic $(echo -n "$PUBLIC_KEY:$SECRET_KEY" | ${pkgs.coreutils}/bin/base64 -w0)"
-              else
-                echo "ERROR: Failed to fetch keys from Azure Key Vault" >&2
-                export LANGFUSE_AUTH_HEADER=""
-              fi
-            fi
-          '' else ''
-            echo "ERROR: Unknown credential source" >&2
-            export LANGFUSE_AUTH_HEADER=""
-          ''}
-
-          exec ${cfg.package}/bin/alloy run /etc/alloy/config.alloy
-        '';
-      in {
+      serviceConfig = {
         Type = "simple";
-        ExecStart =
-          if cfg.langfuse.enable then
-            "${langfuseAuthScript}"
-          else
-            "${cfg.package}/bin/alloy run /etc/alloy/config.alloy";
+        ExecStart = "${cfg.package}/bin/alloy run /etc/alloy/config.alloy";
         Restart = "always";
         RestartSec = "5s";
 
         # Limit shutdown wait time - telemetry data loss on reboot is acceptable
         TimeoutStopSec = cfg.stopTimeout;
-
-        # Feature 132: Load environment file for Langfuse credentials if configured
-        EnvironmentFile = lib.mkIf (cfg.langfuse.enable && cfg.langfuse.environmentFile != null)
-          [ (toString cfg.langfuse.environmentFile) ];
 
         # Security hardening
         DynamicUser = true;
@@ -718,12 +676,7 @@ in
 
         # Need read access to journald
         SupplementaryGroups = [ "systemd-journal" ];
-        ReadOnlyPaths = [ "/var/log/journal" ]
-          # Feature 132: Read access to Langfuse key files if configured
-          ++ lib.optionals (cfg.langfuse.enable && cfg.langfuse.publicKeyFile != null)
-            [ (toString cfg.langfuse.publicKeyFile) ]
-          ++ lib.optionals (cfg.langfuse.enable && cfg.langfuse.secretKeyFile != null)
-            [ (toString cfg.langfuse.secretKeyFile) ];
+        ReadOnlyPaths = [ "/var/log/journal" ];
 
         # Working directory for any state
         StateDirectory = "grafana-alloy";
