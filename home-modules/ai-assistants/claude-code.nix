@@ -53,6 +53,7 @@ let
         --set OTEL_TRACES_EXPORTER "otlp" \
         --set OTEL_EXPORTER_OTLP_PROTOCOL "http/protobuf" \
         --set OTEL_EXPORTER_OTLP_ENDPOINT "http://localhost:4318" \
+        --set OTEL_SERVICE_NAME "claude-code" \
         --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js" \
         --add-flags "--chrome"
     '';

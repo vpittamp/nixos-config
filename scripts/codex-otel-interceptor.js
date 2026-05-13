@@ -401,8 +401,14 @@ function spanStatusError(message = '') {
 function makeSpanRecord(session, span) {
   // Feature 137: Only include process.pid if we have the real client PID
   // Don't fall back to interceptor's PID as that would cause incorrect window correlation
+  //
+  // service.name is canonicalized to "codex" on every synthesized span, so MLflow / Alloy
+  // routing keys on resource.service.name match regardless of what the Rust binary emits
+  // (it ships as "codex_cli_rs" in 0.128+). The original is preserved as
+  // codex.raw_service_name for debugging.
   const resourceAttrs = [
-    { key: 'service.name', value: { stringValue: session.serviceName || 'codex' } },
+    { key: 'service.name', value: { stringValue: 'codex' } },
+    { key: 'codex.raw_service_name', value: { stringValue: session.serviceName || 'codex' } },
     { key: 'service.version', value: { stringValue: session.serviceVersion || 'unknown' } },
     { key: 'codex.interceptor.version', value: { stringValue: INTERCEPTOR_VERSION } },
     { key: 'host.name', value: { stringValue: os.hostname() } },
@@ -947,7 +953,9 @@ function emitExplicitRunFinishedLog(session, details) {
     : conversationId;
 
   const resourceAttrs = [
-    stringAttr('service.name', session.serviceName || 'codex'),
+    // Canonical service.name — see makeSpanRecord above for rationale.
+    stringAttr('service.name', 'codex'),
+    stringAttr('codex.raw_service_name', session.serviceName || 'codex'),
     stringAttr('service.version', session.serviceVersion || 'unknown'),
     stringAttr('host.name', os.hostname()),
     stringAttr('env', session.env || 'dev'),
