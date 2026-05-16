@@ -1,0 +1,15 @@
+{
+  "last_run": "2026-05-16T19:01:42Z",
+  "last_run_id": "25970233024",
+  "comments_made": [],
+  "prs_created": [
+    {
+      "branch": "repo-assist/fix-tests-project-models-ci-20260516",
+      "title": "test: fix project model tests and add Python CI workflow",
+      "description": "Fixes 9 failing tests in test_project_models.py, adds python-tests.yml CI"
+    }
+  ],
+  "monthly_activity_issue": "2026-05",
+  "notes": "PR #29 (tmux URL opener) is open since Dec 2025, last updated Mar 2026 - may need nudge. PR #31 (Copilot draft) is stale and should be closed.",
+  "backlog_cursor": null
+}
