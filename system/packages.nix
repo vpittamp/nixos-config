@@ -1,14 +1,19 @@
 # System-level packages that require root/build permissions
 # These packages contain custom derivations, chmod operations, or other
 # operations that fail in restricted container environments
-{ pkgs, ... }:
+{ pkgs, inputs ? { }, ... }:
 
 let
   # Custom packages
-  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
+  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix {
+    idpbuilderSrc = inputs.idpbuilder-src or null;
+  };
 
   # Azure CLI from stable nixpkgs for Python 3.11 compatibility
   azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
+
+  # GitHub Agentic Workflows — gh CLI extension (resolved via $PATH).
+  gh-aw = pkgs.callPackage ../packages/gh-aw.nix { };
 
   # Plugins are now managed through home-manager:
   # - Tmux plugins via programs.tmux.plugins
@@ -84,6 +89,9 @@ let
   ]) ++ [
     # Cloud tools (custom packages)
     azure-cli-bin
+
+    # gh CLI extensions (custom packages)
+    gh-aw
   ];
 
   # Kubernetes tools (often need system access)

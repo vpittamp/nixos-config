@@ -45,6 +45,7 @@ in
     # Editor configurations
     ../editors/neovim.nix
     ../tools/copilot-auth.nix        # GitHub Copilot authentication (1Password + hosts.json)
+    ../tools/gh-aw.nix               # Register gh-aw as a `gh` CLI extension (xdg link)
 
     # Tool configurations
     ../tools/git.nix
@@ -105,8 +106,8 @@ in
 
   home.packages =
     let
-      userPackages = import ../../user/packages.nix { inherit pkgs lib; };
-      packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
+      userPackages = import ../../user/packages.nix { inherit pkgs lib inputs; };
+      packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib inputs; };
     in
     packageConfig.getProfile.user ++ [ pkgs.papirus-icon-theme ];
 

@@ -240,6 +240,13 @@ EOF
       # Beyla eBPF auto-instrumentation
       beyla = pkgs.callPackage ../pkgs/beyla.nix { };
 
+      idpbuilder = pkgs.callPackage ./idpbuilder.nix {
+        idpbuilderSrc = inputs.idpbuilder-src;
+      };
+
+      # GitHub Agentic Workflows — gh CLI extension
+      gh-aw = pkgs.callPackage ./gh-aw.nix { };
+
       # Cachix Deploy specification
       # Build with: nix build .#deploy
       # Used by GitHub Actions to trigger deployments to agents
