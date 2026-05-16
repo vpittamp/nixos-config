@@ -345,11 +345,11 @@
     "idpbuilder-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1778972451,
-        "narHash": "sha256-4NtALQ/ZQCfnt9mCuPW1iyS4y6KJKuF2APdIqfCAwIM=",
+        "lastModified": 1778972689,
+        "narHash": "sha256-p8YZUGuXfL7oXrew1WAP9HW7nKj39T25eB+ISjTIyfA=",
         "owner": "vpittamp",
         "repo": "idpbuilder",
-        "rev": "4d70ed95fd51570a721ae65297996c1813ebebe5",
+        "rev": "7354deca9464a10f682335204ad7e7e9ce8d3e14",
         "type": "github"
       },
       "original": {
