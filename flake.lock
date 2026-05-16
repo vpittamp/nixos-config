@@ -32,11 +32,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1777936569,
-        "narHash": "sha256-lq4ty/Ihh4mQq81OW7sK/WIK4iyWlilpt+9c71F4iu8=",
+        "lastModified": 1778621214,
+        "narHash": "sha256-a01yQHAvpKSEgo22bKBtHOWtDb49U92dIBDV7WVIaEA=",
         "owner": "sadjow",
         "repo": "claude-code-nix",
-        "rev": "42680cd41f9cae4b2faf6e3312ab5c4c5913c77b",
+        "rev": "6c8a73cc749fff4b45ae26d86dbfc82e2093d12c",
         "type": "github"
       },
       "original": {
@@ -74,11 +74,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1777661972,
-        "narHash": "sha256-VmcoQGZ3BNFlsI2jKUQH33MvEgkU6pvdxq4tofVLgmo=",
+        "lastModified": 1778282716,
+        "narHash": "sha256-fHo9PlYWu970hmdVkDB2Jqeu0VmhmqQ5iKOnPjf/I1E=",
         "owner": "sadjow",
         "repo": "codex-cli-nix",
-        "rev": "828b885b1be90991a2bd1087f2afd722476bfaed",
+        "rev": "7f0f3802287581e04501e2fea26b56d63df18ebd",
         "type": "github"
       },
       "original": {
@@ -342,6 +342,23 @@
         "type": "github"
       }
     },
+    "idpbuilder-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1778972451,
+        "narHash": "sha256-4NtALQ/ZQCfnt9mCuPW1iyS4y6KJKuF2APdIqfCAwIM=",
+        "owner": "vpittamp",
+        "repo": "idpbuilder",
+        "rev": "4d70ed95fd51570a721ae65297996c1813ebebe5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "vpittamp",
+        "ref": "main",
+        "repo": "idpbuilder",
+        "type": "github"
+      }
+    },
     "nix-ai-help": {
       "inputs": {
         "flake-utils": "flake-utils_4",
@@ -598,6 +615,7 @@
         "elephant": "elephant",
         "flake-parts": "flake-parts_2",
         "home-manager": "home-manager_2",
+        "idpbuilder-src": "idpbuilder-src",
         "nix-ai-help": "nix-ai-help",
         "nixos-generators": "nixos-generators",
         "nixos-hardware": "nixos-hardware",

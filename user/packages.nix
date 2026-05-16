@@ -1,7 +1,7 @@
 # User-level packages safe for home-manager
 # These are all from nixpkgs and don't require special build permissions
 # Safe to use in restricted container environments
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs ? { }, ... }:
 
 let
   # Azure CLI from stable nixpkgs for Python 3.12 compatibility
@@ -9,7 +9,9 @@ let
   azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
 
   # IDP Builder - x86_64 only
-  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
+  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix {
+    idpbuilderSrc = inputs.idpbuilder-src or null;
+  };
 
   # Goose Desktop - AI Agent Desktop Application (x86_64 only)
   goose-desktop = pkgs.callPackage ../packages/goose-desktop.nix { };

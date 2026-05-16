@@ -86,6 +86,14 @@
       url = "github:cachix/cachix-deploy-flake";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Source for the Pittampalli idpbuilder fork.
+    # For local idpbuilder iteration, override this explicitly:
+    #   --override-input idpbuilder-src path:/home/vpittamp/repos/vpittamp/idpbuilder/main
+    idpbuilder-src = {
+      url = "github:vpittamp/idpbuilder/main";
+      flake = false;
+    };
   };
 
   outputs = inputs @ { self, flake-parts, ... }:
