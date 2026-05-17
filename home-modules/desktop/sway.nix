@@ -531,7 +531,7 @@ let
     };
     ipad = {
       name = "ipad";
-      description = "iPad Pro 12.9\" 5th gen via Moonlight (DP-1 @ 1.5x for 264 PPI viewing)";
+      description = "iPad Pro 12.9\" 5th gen via Moonlight (DP-1 @ 1600x1200 4:3 @ 1.25x — fills iPad screen)";
       outputs = [
         {
           name = "HDMI-A-1";
@@ -547,11 +547,11 @@ let
         {
           name = "DP-1";
           enabled = true;
-          scale = 1.5;
+          scale = 1.25;
           position = {
             x = 0;
             y = 0;
-            width = 1920;
+            width = 1600;
             height = 1200;
           };
         }

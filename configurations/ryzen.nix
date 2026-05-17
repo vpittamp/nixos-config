@@ -340,9 +340,11 @@ in
       # Higher bitrate for local/Tailscale network streaming
       bitrate = 40000;
       # Include ThinkPad's 1920x1200 (16:10) for native resolution streaming
-      # plus iPad Pro 12.9" 5th gen 4:3 resolutions (2732x2048 native, 2048x1536 half)
+      # plus iPad Pro 12.9" 5th gen 4:3 resolutions (1600x1200 DP-1 native 4:3,
+      # 2048x1536 half-iPad, 2732x2048 iPad native)
       resolutions = ''
         [
+          1600x1200,
           1920x1200,
           1920x1080,
           2048x1536,
