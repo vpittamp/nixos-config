@@ -529,6 +529,45 @@ let
         }
       ];
     };
+    ipad = {
+      name = "ipad";
+      description = "iPad Pro 12.9\" 5th gen via Moonlight (DP-1 @ 1.5x for 264 PPI viewing)";
+      outputs = [
+        {
+          name = "HDMI-A-1";
+          enabled = false;
+          scale = 1.0;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1080;
+          };
+        }
+        {
+          name = "DP-1";
+          enabled = true;
+          scale = 1.5;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+        {
+          name = "DP-2";
+          enabled = false;
+          scale = 1.0;
+          position = {
+            x = 3840;
+            y = 0;
+            width = 1920;
+            height = 1200;
+          };
+        }
+      ];
+    };
   };
   managedMonitorProfiles =
     if isHeadless then headlessMonitorProfiles
