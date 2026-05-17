@@ -1,0 +1,126 @@
+# Ryzen Rebuild Failure Modes
+
+## Stale Tailscale Names
+
+Symptoms:
+- Ingress hostname becomes `gitea-ryzen-2`, `workflow-builder-ryzen-2`, or similar.
+- ProxyGroup reports invalid ownership or cannot claim its API service.
+- `ryzen-k8s-api.tail286401.ts.net` times out or shows certificate provisioning failures after repeated rebuilds.
+
+Fix:
+
+```bash
+CLUSTER_NAME=ryzen deployment/scripts/tailscale/cleanup-old-devices.sh --cluster ryzen --wait
+kubectl get proxygroups.tailscale.com k8s-api-cluster -o yaml
+```
+
+The cleanup must include both device-backed hostnames and stale API service-hosts such as `svc:ryzen-api`, `svc:ryzen-k8s-api`, and `svc:k8s-api-ryzen`.
+
+If the old stable name hit the Let's Encrypt exact-name rate limit, use the declared alternate API hostname instead of waiting on the old certificate:
+
+```bash
+kubectl get proxygroup k8s-api-cluster
+deployment/scripts/tailscale/refresh-ryzen-kubeconfig.sh --cluster ryzen --strict-remote-verify
+kubectl --context ryzen-cluster get nodes
+```
+
+Expected current URL: `https://ryzen-api.tail286401.ts.net`.
+
+## Empty Gitea Registry
+
+Symptoms:
+- Fresh cluster reaches Argo sync but workload pods fail with `ImagePullBackOff`.
+- Gitea registry has no tags for active-development apps.
+
+Fix:
+
+```bash
+deployment/scripts/bootstrap/seed-ryzen-images.sh --mode critical
+deployment/scripts/bootstrap/seed-ryzen-images.sh --verify-only --mode critical
+```
+
+Use GHCR release pins as the bootstrap source. Do not wait for local Gitea or spoke-local Tekton builds to create the first usable images.
+The seed path also creates `:latest` compatibility aliases for critical images
+that are still referenced by runtime configuration values.
+
+Keep `openshell-sandbox` if it is referenced by workflow-builder/OpenShell sandbox template env vars. It is large, but the default sandbox templates still use it.
+
+## Wrong Active-Development Registry
+
+Symptoms:
+- Active-development manifests reference `gitea.cnoe.localtest.me:8443/giteaadmin`.
+- Host-side `skopeo inspect` or Gitea tag checks pass, but fresh workload pods still fail with `ImagePullBackOff` or kubelet reports the image is `not found`.
+- Loading images directly into kind node containerd does not clear the pull failure.
+
+Fix:
+
+```bash
+deployment/scripts/bootstrap/seed-ryzen-images.sh --rewrite-kustomizations . --skip-copy --quiet
+```
+
+Then rebuild/apply manifests and sync the affected ArgoCD apps. The expected rewrite registry is `gitea-ryzen.tail286401.ts.net/giteaadmin` for active-development manifests.
+
+For bootstrap images copied to `gitea.cnoe.localtest.me:8443/giteaadmin`, inspect the kind node registry mirror when pulls fail despite Gitea tags existing:
+
+```bash
+docker exec ryzen-worker crictl pull gitea.cnoe.localtest.me:8443/giteaadmin/code-runtime:latest
+docker exec ryzen-worker cat /etc/containerd/certs.d/gitea.cnoe.localtest.me:8443/hosts.toml
+```
+
+The fixed mirror should use the hostname endpoint `https://gitea.cnoe.localtest.me`, not a raw `https://<pod-ip>:443` endpoint that relies on host override behavior.
+
+## Gitea Repository Create Race
+
+Symptoms:
+- `idpbuilder stacks sync` or create logs show Gitea repo create returning HTTP 500.
+- The repository exists afterward and a retry works.
+
+Fix:
+
+Use an idpbuilder fork revision that tolerates this partial-create race by checking whether the repo exists after the failed create call. Do not add sleep-only retries in stacks scripts unless the forked command is unavailable.
+
+## Argo Hooks Or Old Images
+
+Symptoms:
+- `workflow-builder` sync waits on `db-migrate` or `db-seed`.
+- Hook image references an older tag that lacks current scripts or migrations.
+
+Fix the image provenance first: ensure the Gitea tag matches `release-pins/workflow-builder-images.yaml`, then hard refresh or resync the app. Avoid deleting hook jobs unless the desired image is already corrected.
+
+## Azure Workload Identity And External Secrets
+
+Symptoms:
+- ExternalSecrets remain not Ready.
+- Apps depending on Azure Key Vault fail after the root app sync.
+
+Check:
+
+```bash
+kubectl get clustersecretstore
+kubectl get externalsecrets -A
+deployment/scripts/cluster-readiness.sh wait --cohort gitops-core
+```
+
+JWKS sync must happen before workloads that require External Secrets are considered ready.
+
+## Kubeconfig Transfer
+
+Symptoms:
+- Local `kind-ryzen` works but `ryzen-cluster` does not.
+- ThinkPad still points at an old API endpoint.
+- `tailscale file cp` fails with peer ownership errors.
+- `ryzen-cluster` resolves to an old `100.x` address after the ProxyGroup recreated.
+
+Use the refresh script and prefer SSH/SCP:
+
+```bash
+deployment/scripts/tailscale/refresh-ryzen-kubeconfig.sh --cluster ryzen --strict-remote-verify
+deployment/scripts/tailscale/refresh-ryzen-kubeconfig.sh --cluster ryzen --push-host thinkpad
+```
+
+Verify with:
+
+```bash
+kubectl --context ryzen-cluster get nodes
+ssh thinkpad 'kubectl --context ryzen-cluster get nodes'
+```
