@@ -536,23 +536,23 @@ let
       routing_domains = [ "kargo-ryzen.tail286401.ts.net" ];
     }
 
-    # Headlamp (Ryzen K8s via Tailscale)
+    # Headlamp Hub (Hub K8s cluster via Tailscale)
     {
-      name = "Headlamp";
-      url = "https://headlamp-ryzen.tail286401.ts.net";
-      domain = "headlamp-ryzen.tail286401.ts.net";
-      icon = iconPath "headlamp.svg";
-      description = "Headlamp Kubernetes dashboard";
+      name = "Headlamp Hub";
+      url = "https://headlamp-hub.tail286401.ts.net";
+      domain = "headlamp-hub.tail286401.ts.net";
+      icon = iconPath "headlamp-hub.png";
+      description = "Headlamp Kubernetes dashboard - Hub cluster";
       categories = "Development;Network;System;";
-      keywords = "headlamp;kubernetes;dashboard;k8s;cluster;";
-      scope = "https://headlamp-ryzen.tail286401.ts.net/";
-      ulid = "01MEQFVCK5P4S8T3V6X0Y2Z7A1";  # Generated 2025-11-18
+      keywords = "headlamp;kubernetes;dashboard;k8s;cluster;hub;cncf;";
+      scope = "https://headlamp-hub.tail286401.ts.net/";
+      ulid = "4AVCVWN985ZH2QV9BAHDMMNTGA";  # Generated 2026-05-17
       # App registry metadata
       app_scope = "global";
-      preferred_workspace = 74;
+      preferred_workspace = 173;
       preferred_monitor_role = "secondary";
       # Feature 113: URL routing domains
-      routing_domains = [ "headlamp-ryzen.tail286401.ts.net" ];
+      routing_domains = [ "headlamp-hub.tail286401.ts.net" ];
     }
 
     # Kagent (Ryzen K8s via Tailscale)
