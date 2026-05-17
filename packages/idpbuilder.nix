@@ -29,7 +29,7 @@ if idpbuilderSrc != null then buildGoModule {
   version = forkVersion;
 
   src = idpbuilderSrc;
-  vendorHash = "sha256-jS5IQ/UIMGAR5ovNg1uunJHRyasGFjigzfFmvN8qsK4=";
+  vendorHash = "sha256-FDBdQjsNN5hPX2DBFVToBMOW5ZKwWmOwtpu+THObc94=";
 
   subPackages = [ "." ];
   doCheck = false;

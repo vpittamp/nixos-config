@@ -6,8 +6,8 @@
 # - Receives OTLP telemetry from AI CLIs (Claude Code, Codex, Gemini) on port 4318
 # - Forwards to otel-ai-monitor user service on port 4320 for local session tracking
 # - Exports all telemetry to Kubernetes LGTM stack via Tailscale
-# - Exports traces to MLflow with per-CLI experiment routing (routes spans by
-#   resource.service.name to claude-code/codex/gemini-cli experiments). Experiment
+# - Exports traces to MLflow with per-service experiment routing (routes spans by
+#   resource.service.name to claude-code/codex/gemini-cli/idpbuilder experiments). Experiment
 #   IDs are bootstrapped in the hub via the LLM CLI bootstrap Job in stacks.
 # - Collects system metrics via built-in node exporter
 # - Collects journald logs and forwards to Loki
@@ -286,6 +286,7 @@ let
     //   - "claude-code" (minimal-otel-interceptor.js)
     //   - "codex"       (codex-otel-interceptor.js)
     //   - "gemini-cli"  (gemini-otel-interceptor.js)
+    //   - "idpbuilder"  (idpbuilder stacks telemetry)
     // =============================================================================
 
     otelcol.exporter.otlphttp "mlflow_claude_code" {
@@ -354,6 +355,28 @@ let
       }
     }
 
+    otelcol.exporter.otlphttp "mlflow_idpbuilder" {
+      client {
+        endpoint = "${cfg.mlflow.endpoint}"
+        headers = {
+          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.idpbuilder}",
+        }
+      }
+
+      retry_on_failure {
+        enabled          = true
+        initial_interval = "5s"
+        max_interval     = "30s"
+        max_elapsed_time = "5m"
+      }
+
+      sending_queue {
+        enabled       = true
+        num_consumers = 4
+        queue_size    = ${toString cfg.mlflow.queueSize}
+      }
+    }
+
     // Per-CLI filter processors. Each drops spans whose `service.name` is
     // not the target CLI, so only matching spans reach the corresponding
     // exporter. (Alloy doesn't ship `otelcol.connector.routing`, so we
@@ -388,6 +411,16 @@ let
       }
     }
 
+    otelcol.processor.filter "mlflow_idpbuilder" {
+      error_mode = "ignore"
+      traces {
+        span = ["resource.attributes[\"service.name\"] != \"idpbuilder\""]
+      }
+      output {
+        traces = [otelcol.exporter.otlphttp.mlflow_idpbuilder.input]
+      }
+    }
+
     // MLflow-specific batch processor for optimized trace export.
     // Fans the batched stream out to all three per-CLI filters; each filter
     // drops everything not matching its service.name.
@@ -401,6 +434,7 @@ let
           otelcol.processor.filter.mlflow_claude_code.input,
           otelcol.processor.filter.mlflow_codex.input,
           otelcol.processor.filter.mlflow_gemini.input,
+          otelcol.processor.filter.mlflow_idpbuilder.input,
         ]
       }
     }
@@ -607,6 +641,12 @@ in
               default = "";
               example = "14";
               description = "MLflow experiment ID for Gemini CLI traces (service.name=\"gemini-cli\").";
+            };
+            idpbuilder = mkOption {
+              type = types.str;
+              default = "";
+              example = "36";
+              description = "MLflow experiment ID for idpbuilder stacks traces (service.name=\"idpbuilder\").";
             };
           };
         };
