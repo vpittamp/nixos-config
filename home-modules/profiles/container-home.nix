@@ -46,8 +46,8 @@
   home.enableNixpkgsReleaseCheck = false;
 
   home.packages = let
-    userPackages = import ../../user/packages.nix { inherit pkgs lib; };
-    packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
+    userPackages = import ../../user/packages.nix { inherit pkgs lib inputs; };
+    packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib inputs; };
   in
     packageConfig.getProfile.user ++ [ pkgs.papirus-icon-theme ];
 

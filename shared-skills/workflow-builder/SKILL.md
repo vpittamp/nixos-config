@@ -99,6 +99,17 @@ These are the failure modes that look like obscure bugs but are actually doing-i
 
 - **Official SWE-bench benchmark runs are not workflow rows.** The operator-visible path is `/workspaces/<slug>/benchmarks` backed by `benchmark_runs`, `benchmark_run_instances`, artifacts/provenance, `swebench-coordinator`, and a Kubernetes evaluator Job. Use this when a user asks for SWE-bench runs that show in the UI. The old `/api/evaluations/templates/swebench` path is only a legacy eval adapter. For deterministic smoke tests, direct DB seeding needs explicit `benchmark_run_instances.id` values and must respect `queued -> inferencing -> evaluating -> terminal` transitions. Coding benchmark agents should include the standard code tools, including `grep_search`, and run against prevalidated inference images. Random-run readiness is shared with coordinator preflight: exact static ConfigMap pins are acceptable even when they omit `environmentSetupCommit`, while dynamic DB rows must match the current `env_spec_hash`.
 
+- **SWE-bench agent comparisons are campaign-shaped.** Use the Benchmarks
+  launch sheet's `Compare agents` mode when the user wants DeepSeek vs Kimi, or
+  any other same-instance comparison. It creates one independent benchmark run
+  per agent/configuration using the same selected instance ids, applies one
+  shared campaign tag, and opens
+  `/workspaces/<slug>/benchmarks/compare?runs=A,B[,C,D]&tag=<tag>`. MLflow
+  should show one parent `swebench_run` per benchmark run, `swebench_instance`
+  child runs with `mlflow.parentRunId`, and a `swebench_mlflow_eval` child for
+  each completed benchmark run. Query the campaign with
+  `tags.\`workflow_builder.benchmark_tag.<tag>\` = 'true'`.
+
 - **SWE-bench concurrency is not just the launch slider.** Effective throughput is capped by runtime slots, per-sidecar Dapr workflow capacity, global benchmark caps, sandbox headroom, model caps, coordinator pacing, and evaluator parallelism. For limit changes or "why are only N running?" questions, switch to the evaluations skill and read `references/swebench-concurrency.md`.
 
 - **Seed-script `${JSON.stringify(spec)}::jsonb` can double-encode.** The standard upsert pattern in `scripts/upsert-*.mjs` uses postgres-js template literals with an explicit JSON.stringify + jsonb cast. Under some conditions (notably when running through `node --input-type=module -e`) the cast produces a JSONB *string* (a quote-wrapped JSON-text scalar) instead of a JSONB *object*. Symptom: `jsonb_typeof(spec) = 'string'` and `spec->'do'` returns null. Fix: re-upsert with `sql.json(workflow.spec)` — postgres-js handles serialization correctly without the explicit `::jsonb` cast.

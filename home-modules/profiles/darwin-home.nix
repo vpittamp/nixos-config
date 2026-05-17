@@ -69,8 +69,8 @@ in
   home.packages =
     let
       # Import user packages (need to handle potential Linux-specific packages)
-      userPackages = import ../../user/packages.nix { inherit pkgs lib; };
-      packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
+      userPackages = import ../../user/packages.nix { inherit pkgs lib inputs; };
+      packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib inputs; };
       basePackages = lib.filter (pkg: pkg.meta.available or true) (packageConfig.getProfile.user);
       darwinSpecificPackages = [
         pkgs._1password-cli  # 1Password CLI for macOS

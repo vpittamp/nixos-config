@@ -6,6 +6,7 @@ Symptoms:
 - Ingress hostname becomes `gitea-ryzen-2`, `workflow-builder-ryzen-2`, or similar.
 - ProxyGroup reports invalid ownership or cannot claim its API service.
 - `ryzen-k8s-api.tail286401.ts.net` times out or shows certificate provisioning failures after repeated rebuilds.
+- Device-backed app Ingresses are online but the canonical HTTPS endpoint fails certificate provisioning after repeated destructive rebuilds.
 
 Fix:
 
@@ -25,6 +26,12 @@ kubectl --context ryzen-cluster get nodes
 ```
 
 Expected current URL: `https://ryzen-api.tail286401.ts.net`.
+
+For disposable ryzen app Ingresses, a production Let's Encrypt exact-hostname rate limit can block browser-trusted certificate issuance even when Tailscale routing is otherwise healthy. If the Tailscale Ingress status and device are correct, use the ryzen `development` ProxyClass until the rate-limit window clears, then verify with a staging-cert-tolerant smoke test:
+
+```bash
+curl -k -sS -L --max-time 30 https://workflow-builder-ryzen.tail286401.ts.net/
+```
 
 ## Empty Gitea Registry
 
@@ -50,7 +57,7 @@ Keep `openshell-sandbox` if it is referenced by workflow-builder/OpenShell sandb
 Symptoms:
 - Active-development manifests reference `gitea.cnoe.localtest.me:8443/giteaadmin`.
 - Host-side `skopeo inspect` or Gitea tag checks pass, but fresh workload pods still fail with `ImagePullBackOff` or kubelet reports the image is `not found`.
-- Loading images directly into kind node containerd does not clear the pull failure.
+- Loading images directly into node containerd does not clear the pull failure.
 
 Fix:
 
@@ -60,14 +67,13 @@ deployment/scripts/bootstrap/seed-ryzen-images.sh --rewrite-kustomizations . --s
 
 Then rebuild/apply manifests and sync the affected ArgoCD apps. The expected rewrite registry is `gitea-ryzen.tail286401.ts.net/giteaadmin` for active-development manifests.
 
-For bootstrap images copied to `gitea.cnoe.localtest.me:8443/giteaadmin`, inspect the kind node registry mirror when pulls fail despite Gitea tags existing:
+For bootstrap images copied to `gitea.cnoe.localtest.me:8443/giteaadmin`, inspect the node registry/auth path when pulls fail despite Gitea tags existing:
 
 ```bash
-docker exec ryzen-worker crictl pull gitea.cnoe.localtest.me:8443/giteaadmin/code-runtime:latest
-docker exec ryzen-worker cat /etc/containerd/certs.d/gitea.cnoe.localtest.me:8443/hosts.toml
+kubectl --context admin@ryzen get pods -A | rg 'ImagePull|ErrImage|BackOff'
 ```
 
-The fixed mirror should use the hostname endpoint `https://gitea.cnoe.localtest.me`, not a raw `https://<pod-ip>:443` endpoint that relies on host override behavior.
+Do not replace the hostname registry contract with a raw pod IP endpoint.
 
 ## Gitea Repository Create Race
 
@@ -106,7 +112,7 @@ JWKS sync must happen before workloads that require External Secrets are conside
 ## Kubeconfig Transfer
 
 Symptoms:
-- Local `kind-ryzen` works but `ryzen-cluster` does not.
+- Local `admin@ryzen` works but `ryzen-cluster` does not.
 - ThinkPad still points at an old API endpoint.
 - `tailscale file cp` fails with peer ownership errors.
 - `ryzen-cluster` resolves to an old `100.x` address after the ProxyGroup recreated.
@@ -121,6 +127,7 @@ deployment/scripts/tailscale/refresh-ryzen-kubeconfig.sh --cluster ryzen --push-
 Verify with:
 
 ```bash
+kubectl --context admin@ryzen get nodes
 kubectl --context ryzen-cluster get nodes
 ssh thinkpad 'kubectl --context ryzen-cluster get nodes'
 ```

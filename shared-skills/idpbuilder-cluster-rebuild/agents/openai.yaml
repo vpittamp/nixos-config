@@ -1,4 +1,4 @@
 interface:
   display_name: "Idpbuilder Cluster Rebuild"
-  short_description: "Rebuild ryzen clusters with GitOps guardrails"
-  default_prompt: "Use $idpbuilder-cluster-rebuild to recreate the ryzen cluster and verify GitOps, Tailscale, images, readiness, and kubeconfig access."
+  short_description: "Rebuild the ryzen Talos Docker cluster with GitOps guardrails"
+  default_prompt: "Use $idpbuilder-cluster-rebuild to recreate the authoritative ryzen Talos Docker cluster and verify GitOps, Tailscale ingresses/API access, images, readiness, and kubeconfig access."

@@ -34,12 +34,11 @@ Do not pass `--impure` to the NixOS rebuild. If the forked source needs to move,
 
 ## Recreate
 
-Default destructive local rebuild:
+Default destructive local rebuild. The idpbuilder fork defaults to the authoritative ryzen Talos Docker setup: `--provider talos-docker`, `--cluster-name ryzen`, `--profile ryzen`, and `--overlay packages/overlays/ryzen`.
 
 ```bash
 idpbuilder stacks create \
   --recreate \
-  --cluster-name ryzen \
   --seed-images \
   --seed-images-mode release-pins \
   --skip-tekton-builds \
@@ -51,7 +50,6 @@ With ThinkPad kubeconfig sync:
 ```bash
 idpbuilder stacks create \
   --recreate \
-  --cluster-name ryzen \
   --seed-images \
   --seed-images-mode release-pins \
   --skip-tekton-builds \
@@ -69,7 +67,6 @@ log_file="$log_dir/timed-recreate-${run_id}.log"
 TIMEFORMAT='real %3R\nuser %3U\nsys %3S'
 { time idpbuilder stacks create \
   --recreate \
-  --cluster-name ryzen \
   --seed-images \
   --seed-images-mode release-pins \
   --skip-tekton-builds \
@@ -77,15 +74,25 @@ TIMEFORMAT='real %3R\nuser %3U\nsys %3S'
   --push-kubeconfig-host thinkpad; } 2>&1 | tee "$log_file"
 ```
 
-The current recreate path can run two Tailscale cleanup grace waits: one after deleting stale devices and another immediately before cluster creation. Expect this to add about four minutes when both waits are enabled; if the second cleanup finds nothing, it is an optimization target rather than a failure.
+The recreate path should only wait for Tailscale cleanup grace periods when it actually deleted stale devices or service-hosts. If a no-op cleanup waits anyway, treat that as a regression in the inner-loop rebuild path.
 
 The local developer bootstrap path should establish local credentials as `developer` and must not prompt for 1Password. If a run opens a 1Password UI around ArgoCD initialization, inspect the idpbuilder fork and `deployment/scripts/argocd-auth.sh`; the expected path is `ARGOCD_AUTH_1PASSWORD=disabled` with `ARGOCD_LOCAL_PASSWORD=developer`.
 
+## Sync Without Recreate
+
+Use `stacks sync` after local manifest edits, release-pin rewrites, or Tailscale ingress fixes when the cluster itself does not need to be rebuilt:
+
+```bash
+idpbuilder stacks sync
+```
+
+The sync path snapshots the local stacks worktree into in-cluster Gitea and rewrites release-pinned ryzen bootstrap image references into local Gitea references. It uses the same default provider, profile, and overlay as `stacks create`.
+
 ## Readiness Cohorts
 
-The readiness profile lives at `deployment/config/readiness/kind-ryzen.yaml`.
+The readiness profile lives at `deployment/config/readiness/ryzen.yaml`. The former `deployment/config/readiness/kind-ryzen.yaml` profile is legacy.
 
-- `bootstrap`: kind API, nodes, Gitea registry, and ArgoCD.
+- `bootstrap`: Talos Docker API, nodes, Gitea registry, and ArgoCD.
 - `gitops-core`: local-core GitOps, Azure WI, External Secrets, Dapr slim runtime, Tailscale operator, and platform dependencies.
 - `inner-loop`: workflow-builder system, OpenShell runtime, runtime images, Tekton runtime tasks, and SWE-bench services.
 - `access`: canonical Tailscale names, ProxyGroup API service, and local kubeconfig.
@@ -97,6 +104,7 @@ Useful commands:
 ```bash
 deployment/scripts/cluster-readiness.sh wait --cohort bootstrap
 deployment/scripts/cluster-readiness.sh wait --cohort inner-loop
+deployment/scripts/cluster-readiness.sh check --cohort inner-loop
 deployment/scripts/cluster-readiness.sh check --cohort all
 deployment/scripts/cluster-readiness.sh summary
 deployment/scripts/cluster-readiness.sh set-baseline
@@ -117,7 +125,7 @@ all: 1130s
 seed-bootstrap-images: 349s
 ```
 
-Image seeding remains the largest bootstrap phase. It currently runs serially; parallel copy is a valid optimization target, but keep dependency ordering and registry load in mind.
+Image seeding remains a major bootstrap phase. It now uses bounded parallelism by default; keep each image's pinned tag and `latest` alias ordered per image while allowing different images to copy concurrently.
 
 ## Image Seeding
 
@@ -136,7 +144,7 @@ deployment/scripts/bootstrap/seed-ryzen-images.sh --dry-run --mode critical
 Verify seeded Gitea images:
 
 ```bash
-deployment/scripts/bootstrap/seed-ryzen-images.sh --verify-only --mode critical
+deployment/scripts/bootstrap/seed-ryzen-images.sh --verify-only --mode critical --jobs 4 --no-latest-aliases --quiet
 ```
 
 The seed script has two registry concerns:
@@ -148,7 +156,7 @@ The seed script writes both provenance tags from release pins and `:latest`
 compatibility aliases for critical images, because several runtime paths still
 reference `latest` outside Kustomize image transformers.
 
-Keep the manifest rewrite target on the Tailscale Gitea hostname for active-development manifests. For node pulls of seeded bootstrap images, the current registry-auth fix uses a hostname mirror endpoint for `gitea.cnoe.localtest.me:8443`; verify `/etc/containerd/certs.d/gitea.cnoe.localtest.me:8443/hosts.toml` on kind nodes before changing that contract.
+Keep the manifest rewrite target on the Tailscale Gitea hostname for active-development manifests. Talos Docker node pulls should continue to resolve `gitea.cnoe.localtest.me:8443` through the ryzen registry-auth path; do not replace this with a hard-coded pod IP.
 
 Do not suppress these critical sandbox images while their runtime references remain:
 
@@ -181,10 +189,16 @@ deployment/scripts/tailscale/refresh-ryzen-kubeconfig.sh --cluster ryzen --push-
 Expected contexts:
 
 ```bash
-kubectl --context kind-ryzen get nodes
+kubectl --context admin@ryzen get nodes
 kubectl --context ryzen-cluster get nodes
 ```
 
 The refresh script should discover `ProxyGroup/k8s-api-cluster.spec.kubeAPIServer.hostname` and currently generate `https://ryzen-api.tail286401.ts.net`. Do not assume `ryzen-k8s-api.tail286401.ts.net`; it can be temporarily unusable after repeated rebuilds due to Let's Encrypt exact-name certificate rate limits.
+
+## Tailscale Ingresses
+
+Stable ryzen app ingress names remain `*-ryzen`, for example `workflow-builder-ryzen.tail286401.ts.net`. Do not rename them to `*-ryzen-talos`; the Talos Docker implementation replaced the old cluster substrate, not the external service names.
+
+Repeated destructive rebuilds can exhaust Let's Encrypt production exact-hostname issuance for disposable ryzen Ingresses. If canonical Tailscale Ingress devices are online but HTTPS provisioning stalls with a production certificate rate-limit error, use the `development` Tailscale ProxyClass for the ryzen minimal ingress set. This makes `curl -k https://workflow-builder-ryzen.tail286401.ts.net/` a valid smoke test while the browser-visible certificate is staging-issued. Switch back to the production ProxyClass only after the Let's Encrypt window clears and a browser-trusted cert is required.
 
 `argocd-server-tls` and `argocd-webhook-setup` can remain `OutOfSync` but `Healthy` because External Secret generated fields drift. Treat that as a cleanup item, not a blocker for the all-cohort readiness gate.

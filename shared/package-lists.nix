@@ -1,9 +1,11 @@
 # Shared package categorization and environment detection
 # This file provides utilities for selecting appropriate packages
 # based on the environment (container, WSL, full system)
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs ? { }, ... }:
 
 let
+  packageArgs = { inherit pkgs lib inputs; };
+
   # Environment detection
   isContainer = builtins.getEnv "NIXOS_CONTAINER" != "";
   isWSL = builtins.pathExists /proc/sys/fs/binfmt_misc/WSLInterop;
@@ -36,31 +38,31 @@ in rec {
     # Minimal container profile (for restricted environments)
     container-minimal = {
       system = [ ];  # No custom system packages
-      user = (import ../user/packages.nix { inherit pkgs lib; }).minimal;
+      user = (import ../user/packages.nix packageArgs).minimal;
     };
     
     # Essential container profile (for development containers)
     container-essential = {
-      system = (import ../system/packages.nix { inherit pkgs lib; }).essential;
-      user = (import ../user/packages.nix { inherit pkgs lib; }).essential;
+      system = (import ../system/packages.nix packageArgs).essential;
+      user = (import ../user/packages.nix packageArgs).essential;
     };
     
     # Full container profile (for unrestricted containers)
     container-full = {
-      system = (import ../system/packages.nix { inherit pkgs lib; }).all;
-      user = (import ../user/packages.nix { inherit pkgs lib; }).development;
+      system = (import ../system/packages.nix packageArgs).all;
+      user = (import ../user/packages.nix packageArgs).development;
     };
     
     # WSL profile (full desktop integration)
     wsl = {
-      system = (import ../system/packages.nix { inherit pkgs lib; }).all;
-      user = (import ../user/packages.nix { inherit pkgs lib; }).all;
+      system = (import ../system/packages.nix packageArgs).all;
+      user = (import ../user/packages.nix packageArgs).all;
     };
     
     # Development workstation profile
     workstation = {
-      system = (import ../system/packages.nix { inherit pkgs lib; }).all;
-      user = (import ../user/packages.nix { inherit pkgs lib; }).all;
+      system = (import ../system/packages.nix packageArgs).all;
+      user = (import ../user/packages.nix packageArgs).all;
     };
   };
   

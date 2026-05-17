@@ -1,6 +1,6 @@
 ---
 name: evaluations
-description: "Use for workflow-builder evals, official SWE-bench benchmark runs, Benchmarks UI, DeepSeek/Together SWE-bench provider canaries, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, benchmark cancellation/cleanup, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py grader rollout, the Braintrust-adoption analyst surfaces on the Benchmarks page (regression detection / scorer tiles / promote-to-dataset / composite trace view / cohort pivots / human annotations), benchmark_run_instance_scores + benchmark_run_instance_annotations tables, and the Phase G inline scorer-runner."
+description: "Use for workflow-builder evals, official SWE-bench benchmark runs, Benchmarks UI, DeepSeek/Kimi/Together SWE-bench provider canaries, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, benchmark cancellation/cleanup, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py grader rollout, the Braintrust-adoption analyst surfaces on the Benchmarks page (regression detection / scorer tiles / promote-to-dataset / composite trace view / cohort pivots / human annotations), benchmark_run_instance_scores + benchmark_run_instance_annotations tables, and the Phase G inline scorer-runner."
 ---
 
 # Workflow-Builder Evaluations
@@ -40,7 +40,7 @@ The official SWE-bench harness is deliberately separate from that eval-run model
 
 2. Decide the layer first: UI (Svelte), service (TypeScript), grader runtime (TS + Python), or operational (kubectl + Tekton). Keep changes scoped to that layer unless the symptom crosses boundaries.
 
-3. For deeper detail (tables, lifecycle, gotchas, smoke tests) read `references/system-model.md`. For SWE-bench concurrency/capacity questions, read `references/swebench-concurrency.md` before changing limits.
+3. For deeper detail (tables, lifecycle, gotchas, smoke tests) read `references/system-model.md`. For SWE-bench concurrency/capacity questions, read `references/swebench-concurrency.md` before changing limits. For same-instance agent/model comparison campaigns and MLflow grouping, read `references/swebench-mlflow-comparison.md`.
 
 ## Decision Table
 
@@ -59,6 +59,7 @@ The official SWE-bench harness is deliberately separate from that eval-run model
 | **Make a score_model judge return guaranteed JSON** | Set `responseSchema` (JSON Schema) + `responseToolName` (default `emit_evaluation`) on the grader config. The runtime forces a single Anthropic tool call constrained to that schema and returns `tool_use.input` as the parsed object — no prose, no JSON.parse fallback. See "Forced-tool LLM judge" below. |
 | **Use a reusable workflow for an eval** | Set `taskConfig.workflowId` on the eval definition. `startEvaluationRunItemWorkflow` (`service.ts:~1107`) loads the workflow from the `workflows` table, stamps `agentRef` into `trigger.input`, and runs that spec instead of generating one in TS. Edit the workflow JSON via the canonical seed file + `scripts/upsert-<workflow>-workflow.mjs` to roll prompts/maxTurns without a BFF redeploy. |
 | **Run/verify official SWE-bench in the UI** | Use `/workspaces/<slug>/benchmarks` and `/api/benchmarks/*`, not the eval wizard template. Normal run creation starts agent inference; deterministic operator smoke can seed `benchmark_runs`/`benchmark_run_instances` with known patches and then call coordinator helpers to write artifacts and launch the evaluator Job. Results must land back in the Benchmarks page with provenance, artifact SHA-256s, official result, and raw harness notes. |
+| **Compare multiple SWE-bench agents on the same instances** | Use the Benchmarks launch sheet's `Compare agents` mode. It creates one `benchmark_runs` row per selected agent with identical selected instance ids, adds a shared campaign tag, and redirects to `/workspaces/<slug>/benchmarks/compare?runs=A,B[,C,D]&tag=<tag>`. MLflow should show parent `swebench_run` runs, `swebench_instance` children, and `swebench_mlflow_eval` children with the same `workflow_builder.benchmark_tag.<tag>=true` tag. |
 | **Handle the legacy SWE-bench eval template** | It's still wired (`/api/evaluations/templates/swebench` + `buildSwebenchEvaluationWorkflowSpec`) but **not the official harness path**. Use it only when explicitly working on the old OpenAI-parity eval adapter. For real SWE-bench validation, use the Benchmarks page/coordinator/evaluator Job path. Prefer HumanEval+/MBPP+/BigCodeBench (sandbox-native pytest) for eval-wizard code-eval coverage. |
 
 ## Official SWE-bench Benchmarks
@@ -72,6 +73,20 @@ Use this path when the user asks for SWE-bench evals that should show up in work
 5. Provenance should include evaluator image/job name, resource class, max workers, timeout/deadline, dataset/prediction paths + SHA-256s, harness report path, environment image/digest summaries, and timestamps.
 
 Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Current dev concurrency is governed by the layered capacity model in `references/swebench-concurrency.md`; do not assume the launch-sheet value is the effective throughput. The post-2026-05-09 envelope (after workflow-builder `2a68cca7` lifted the function-router `workspace/profile` 300_000ms hard-cap) verified 72-way concurrent SWE-bench_Verified end-to-end; see the reference's "Verified Capacity Envelope" section for the recommended ramp ladder (120 → 144 → 177) and the canonical CLI invocation.
+
+**SWE-bench comparison campaigns and MLflow.** For agent/model/config
+comparisons, keep Dapr/workflow-builder as the execution owner and use MLflow
+as the tracking/evaluation projection. The recommended shape is one benchmark
+run per agent/configuration over the exact same suite and instance ids, grouped
+by a stable campaign tag. The launch sheet's `Compare agents` mode applies the
+tag and opens the compare route. MLflow should contain one parent
+`workflow_builder.kind=swebench_run` run per benchmark run, one
+`workflow_builder.kind=swebench_instance` child run per instance with
+`mlflow.parentRunId`, and one `workflow_builder.kind=swebench_mlflow_eval`
+child run when post-hoc evaluation runs. Campaign tags are queryable as
+`tags.\`workflow_builder.benchmark_tag.<tag>\` = 'true'`; do not rely on run
+names for grouping. Official SWE-bench resolved/unresolved remains the harness
+callback result, not an MLflow scorer override.
 
 **Random run readiness and preflight must agree.** Random SWE-bench launches require prevalidated inference environments before the run is inserted. The BFF has two valid readiness sources: exact static ConfigMap pins from `SWEBENCH_INFERENCE_ENVIRONMENTS_DIR` and dynamic build rows whose `environment_image_builds.env_spec_hash` matches the current `buildSwebenchEnvironmentSpec()` output. Static pins are exact when suite/repo/baseCommit/version and image digest match; they may omit `environmentSetupCommit`, and preflight still accepts them. Dynamic DB rows must match the current `envSpecHash`, not only repo/version/baseCommit, because harness spec generation can change while those coarse identifiers stay the same. Symptom of a readiness/preflight mismatch: the API accepts a random run, it remains `queued`, and `swebench-preflight-<run>` starts or waits on a hub `swe-env-*` build. Fix the shared readiness predicate instead of treating this as a model-specific DeepSeek/Kimi issue.
 

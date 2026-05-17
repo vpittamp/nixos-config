@@ -2029,6 +2029,24 @@ let
       preferred_monitor_role = "secondary";
       routing_domains = [ "kueueviz-staging.tail286401.ts.net" ];
     }
+
+    # Azure Portal
+    {
+      name = "Azure Portal";
+      url = "https://portal.azure.com/#home";
+      domain = "portal.azure.com";
+      icon = iconPath "azure.png";
+      description = "Microsoft Azure Portal - Cloud management console";
+      categories = "Network;Development;";
+      keywords = "azure;microsoft;cloud;portal;aks;resource;subscription;";
+      scope = "https://portal.azure.com/";
+      ulid = "4WHHK0AG1N6XAXP2R9AZHVVKV7";  # Generated 2026-05-13
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 172;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "portal.azure.com" ];
+    }
   ];
 
   # Filter and format sites

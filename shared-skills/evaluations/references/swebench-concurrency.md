@@ -42,6 +42,35 @@ MLflow is not a dispatch gate. With `MLFLOW_FAILURE_MODE=best_effort`, MLflow
 timeouts only leave tracking IDs null and log `[mlflow]` warnings; Dapr workflow
 IDs, sessions, token usage, and evaluator handoff should continue.
 
+## MLflow Tracking And Comparison Campaigns
+
+Use workflow-builder/Dapr as the execution owner and MLflow as the tracking
+projection. A benchmark run should have one parent `swebench_run` MLflow run,
+one `swebench_instance` child per instance, and one `swebench_mlflow_eval` child
+when post-hoc evaluation runs.
+
+For agent comparisons, launch one benchmark run per agent/configuration over
+the same suite and exact instance ids. The Benchmarks UI `Compare agents` mode
+does this automatically, applies a stable campaign tag, and opens:
+
+```text
+/workspaces/<slug>/benchmarks/compare?runs=<runA>,<runB>[,<runC>,<runD>]&tag=<campaign-tag>
+```
+
+The tag is copied into parent, instance, and eval MLflow runs as
+`workflow_builder.benchmark_tags` and
+`workflow_builder.benchmark_tag.<tag>=true`. Query campaigns with:
+
+```text
+tags.`workflow_builder.benchmark_tag.<campaign-tag>` = 'true'
+```
+
+For two agents over `N` instances, expect `2 + (2 * N) + 2` MLflow runs:
+two parents, `2 * N` instance children, and two eval children. Official
+resolved/unresolved still comes from the SWE-bench harness callback. See
+`swebench-mlflow-comparison.md` in this directory for the full operator
+runbook.
+
 ## Main Knobs
 
 ### Environment Preflight and Build Readiness
@@ -77,7 +106,7 @@ Files: `src/lib/components/benchmarks/launch-run-sheet.svelte`,
 | --- | ---: | --- |
 | `DEFAULT_INFERENCE_CONCURRENCY` | `10` | Launch-sheet initial inference request. |
 | `DEFAULT_EVALUATION_CONCURRENCY` | `24` | Launch-sheet initial evaluation request and BFF fallback. |
-| `MAX_INFERENCE_CONCURRENCY` | `128` | Launch-sheet slider maximum; backend still clamps. |
+| `MAX_INFERENCE_CONCURRENCY` | `500` | Launch-sheet slider maximum; backend still clamps. |
 | `MAX_EVALUATION_CONCURRENCY` | `128` | Launch-sheet evaluation slider maximum. |
 | `BENCHMARK_DEFAULT_CONCURRENCY` | `10` | BFF fallback when the request omits/invalidates inference concurrency. |
 | `BENCHMARK_MAX_ACTIVE_INFERENCE_INSTANCES` | `56` | Global active inference resource-lease cap. |

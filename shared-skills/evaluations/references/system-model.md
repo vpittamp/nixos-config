@@ -16,6 +16,14 @@ Use this reference when you need more detail than `SKILL.md`: implementation wor
 
 Official SWE-bench uses parallel benchmark objects instead of `evaluation_*`: `benchmark_suites`, `benchmark_instances`, `benchmark_runs`, `benchmark_run_instances`, `benchmark_artifacts`, and `benchmark_run_provenance`. Keep that model separate from the legacy `/api/evaluations/templates/swebench` adapter.
 
+Benchmark runs also project to MLflow when enabled. The current hierarchy is
+one experiment per env/suite family, one parent `swebench_run` MLflow run per
+`benchmark_runs` row, one child `swebench_instance` run per
+`benchmark_run_instances` row, and one child `swebench_mlflow_eval` run when
+post-hoc MLflow evaluation executes. Parent, instance, and eval runs carry
+`workflow_builder.benchmark_tag.<tag>=true` for each benchmark tag so campaigns
+can be queried directly in MLflow.
+
 ## Public Routes
 
 UI:
@@ -27,6 +35,7 @@ UI:
 - `/workspaces/<slug>/evaluations/datasets/<datasetId>` — dataset detail with rows table and side drawer.
 - `/workspaces/<slug>/evaluations/evals-legacy` — preserved monolith fallback.
 - `/workspaces/<slug>/benchmarks` — operator-visible SWE-bench suite/run list and run detail. Reads `benchmark_*` state and provenance; this is the surface to use when a SWE-bench run must show up in workflow-builder.
+- `/workspaces/<slug>/benchmarks/compare?runs=A,B[,C,D]&tag=<tag>` — side-by-side SWE-bench comparison. The launch sheet's `Compare agents` mode creates one run per selected agent over the same instance ids and redirects here. `?tag=<tag>` without `runs=` expands to the most recent tagged runs, up to four.
 
 Public API (`src/routes/api/evaluations/`):
 
@@ -111,6 +120,11 @@ Use this path for runs that should be visible at `/workspaces/<slug>/benchmarks`
 7. `_ensure_evaluator_job` transitions `inferencing -> evaluating`, records evaluator image/job/resource/max-workers/timeout/deadline provenance, and launches the evaluator Job with `ttlSecondsAfterFinished=3600`.
 8. The evaluator callback records official SWE-bench result semantics (`resolved`, `unresolved`, `empty_patch`, errors), report/stdout/stderr/test-output paths, raw counters when available, and raw harness notes for non-graded pytest errors.
 9. The run summary and Benchmarks page show official result separately from raw harness notes. Official resolved/unresolved is the source of truth.
+
+For comparison campaigns, repeat this lifecycle once per agent/configuration
+with the same `selected_instance_ids` and a shared campaign tag. The compare UI
+and MLflow campaign search are projections over those independent durable runs;
+do not merge multiple agents into one `benchmark_runs` row.
 
 Preflight data lands in `benchmark_runs.summary.preflight`. Valid static mappings have `buildId=null`, `pipelineRunName=null`, `validationStatus="validated"`, an `envSpecHash` from the static pin's `swebenchSpec.envSpecHash`, and a digest-pinned `sandboxImage`. If a run stays `queued`, compare that summary, coordinator logs, and hub Tekton `swe-env-*` PipelineRuns before looking at agent/model behavior.
 

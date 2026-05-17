@@ -6,6 +6,7 @@ Use this for promoted-spoke app Ingresses that use `ingressClassName: tailscale`
 
 Typical examples:
 - `workflow-builder-dev` / `workflow-builder-staging`
+- `workflow-builder-ryzen`
 - `mcp-gateway-dev` / `mcp-gateway-staging`
 - `phoenix-dev` / `phoenix-staging`
 
@@ -24,6 +25,8 @@ Device-backed Tailscale Ingresses create Tailscale devices, usually tagged `tag:
 A stale `svc:<hostname>` record can reserve the canonical DNS name. The live Ingress proxy then registers as `<hostname>-1`, which makes the app reachable only on the wrong suffix until the stale Service is removed.
 
 The operator stores device config and state in `tailscale/ts-<ingress-name>-<hash>-0`. If you manually repair that Secret, keep the operator metadata labels intact; otherwise the endpoint may work while Kubernetes/ArgoCD health stays `Progressing`.
+
+On disposable ryzen rebuilds, the device and DNS can be correct while certificate provisioning fails because repeated destructive recreates exhausted the Let's Encrypt production exact-hostname limit. For ryzen local development only, use the `development` Tailscale ProxyClass and verify with `curl -k` until the production issuance window clears.
 
 ## Diagnostic
 
@@ -71,6 +74,13 @@ curl -fsS -H "Authorization: Bearer ${token}" \
 
 For stale cleanup candidates, restrict deletion to Kubernetes/operator devices that are offline and carry retired tags such as `tag:spoke-ingress`, `tag:ts-spoke-ui`, or `tag:ts-ingress-proxy`. Do not delete personal user devices just because they are offline.
 
+For ryzen, also check whether the Ingress is using the expected local-development ProxyClass:
+
+```bash
+kubectl --context ryzen-cluster -n workflow-builder get ingress workflow-builder-tailscale \
+  -o jsonpath='{.metadata.annotations.tailscale\.com/proxy-class}{"\n"}'
+```
+
 ## Fix
 
 1. Fix the declared policy first.
@@ -109,6 +119,14 @@ kubectl --context staging -n tailscale annotate secret "$SECRET" \
 4. If the proxy lost auth entirely, re-auth carefully.
 
 Ingress proxy auth keys are read from the generated `cap-*.hujson` config inside the same Secret, not from a simple pod env var. If you inject a short-lived auth key manually, remove `AuthKey` from the config after the pod logs in, keep the current profile/state keys, and restore the labels above before verifying ArgoCD health.
+
+5. For ryzen production certificate rate limits, use the development ProxyClass.
+
+If the Tailscale device is online, canonical DNS resolves, and proxy logs show Let's Encrypt production exact-hostname rate limiting, keep the ryzen ingress host as `workflow-builder-ryzen` but switch the ryzen minimal ingress set to `tailscale.com/proxy-class: development`. This issues a staging certificate, so browser trust warnings are expected. Verify service reachability with:
+
+```bash
+curl -k -sS -L --max-time 30 https://workflow-builder-ryzen.tail286401.ts.net/
+```
 
 ## Verify
 
