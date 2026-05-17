@@ -16,6 +16,7 @@ Confirm the idpbuilder binary is the forked one when behavior matters:
 ```bash
 command -v idpbuilder
 idpbuilder stacks create --help
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--container-engine|--seed-image-push-engine'
 ```
 
 The expected steady state is the Nix profile binary, not a stale `~/.local/bin/idpbuilder`. On this system the Nix package is built from the local flake input `idpbuilder-src`, which points at `/home/vpittamp/repos/vpittamp/idpbuilder/main`.
@@ -29,9 +30,10 @@ nix build .#idpbuilder --no-link
 sudo nixos-rebuild switch --flake .#ryzen
 command -v idpbuilder
 idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--container-engine|--seed-image-push-engine'
 ```
 
-Do not pass `--impure` to the NixOS rebuild. If the forked source needs to move, change the flake input or lockfile instead of relying on an impure path lookup.
+Do not pass `--impure` to the NixOS rebuild. If the forked source needs to move, change the flake input or lockfile instead of relying on an impure path lookup. Do not leave a temporary `nix profile` idpbuilder overlay in place; the declarative profile should provide the active binary after rebuild.
 
 For the current Dockerless Talos-parity setup, verify rootful Podman before create or sync:
 
@@ -105,6 +107,40 @@ idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
 
 The sync path snapshots the local stacks worktree into in-cluster Gitea and rewrites release-pinned ryzen bootstrap image references into local Gitea references. It uses the same default provider, profile, and overlay as `stacks create`.
 
+Current sync behavior is cache-backed, not a fresh root commit per run:
+
+- Cache clone: `${XDG_CACHE_HOME:-~/.cache}/idpbuilder/stacks-sync/<cluster>/<owner>/<repo>`, overridable with `--cache-dir`.
+- Source selection preserves tracked files, tracked modifications, and untracked non-ignored files using Git's `ls-files --cached --others --exclude-standard` view.
+- Deleted files are removed from the cache tree before commit.
+- Release-pin rewrites happen only inside the sync/cache tree, never in the source worktree.
+- Unchanged sync trees skip commit, push, and ArgoCD refresh and should print `No changes to sync`.
+- Changed sync trees push a normal descendant commit and then refresh `root-application`; Gitea webhooks may also notify ArgoCD.
+
+The `cluster-update --container-engine podman --seed-image-push-engine skopeo` wrapper should delegate to this sync path and preserve those flags.
+
+For continuous local iteration:
+
+```bash
+idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-image-push-engine skopeo
+```
+
+`dev-watch-only` and `deployment/scripts/devenv-up.sh --watch` should start the direct idpbuilder watcher when the installed binary supports it. The legacy `watchexec` repeated one-shot sync loop is only a fallback for old binaries.
+
+If local Gitea history is unrelated, missing, or corrupted, normal sync should refuse a non-fast-forward push. Use this only as an explicit recovery action:
+
+```bash
+idpbuilder stacks sync --reset-local-history --container-engine podman --seed-image-push-engine skopeo
+```
+
+Expected quick checks:
+
+```bash
+cluster-update --container-engine podman --seed-image-push-engine skopeo
+timeout 6 deployment/scripts/devenv-up.sh --watch
+```
+
+A no-op `cluster-update` should print `No changes to sync`. The timed watch check should show the direct idpbuilder watch path starting; timeout interruption is expected.
+
 ## Readiness Cohorts
 
 The readiness profile lives at `deployment/config/readiness/ryzen.yaml`. The former `deployment/config/readiness/kind-ryzen.yaml` profile is legacy.
@@ -176,6 +212,14 @@ reference `latest` outside Kustomize image transformers.
 Keep the manifest rewrite target on the Tailscale Gitea hostname for active-development manifests. Talos Docker node pulls should continue to resolve `gitea.cnoe.localtest.me:8443` through the ryzen registry-auth path; do not replace this with a hard-coded pod IP.
 
 When creating the cluster through rootful Podman, pass `--seed-image-push-engine skopeo`. This makes the bootstrap seeding path use skopeo copy against the local Gitea registry instead of depending on a Docker daemon or Docker CLI.
+
+For large image mirrors or port-forward instability, copy through the Tailscale Gitea endpoint:
+
+```bash
+skopeo copy --dest-tls-verify=false docker://ghcr.io/pittampalliorg/<image>:<tag> docker://gitea-ryzen.tail286401.ts.net/giteaadmin/<image>:<tag>
+```
+
+Use `--tls-verify=false` or the destination-specific equivalent when local certificate verification blocks the copy. Keep both `openshell-sandbox` and `openshell-sandbox-xlsx` seeded while workflow-builder/OpenShell runtime configuration references them.
 
 Do not suppress these critical sandbox images while their runtime references remain:
 

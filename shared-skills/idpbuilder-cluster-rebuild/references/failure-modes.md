@@ -71,7 +71,13 @@ Use GHCR release pins as the bootstrap source. Do not wait for local Gitea or sp
 The seed path also creates `:latest` compatibility aliases for critical images
 that are still referenced by runtime configuration values.
 
-Keep `openshell-sandbox` if it is referenced by workflow-builder/OpenShell sandbox template env vars. It is large, but the default sandbox templates still use it.
+Keep `openshell-sandbox` and `openshell-sandbox-xlsx` if they are referenced by workflow-builder/OpenShell sandbox template env vars. They are large, but the default sandbox templates still use them.
+
+If port-forwarded registry copies are unstable for large images, mirror through the Tailscale Gitea endpoint instead:
+
+```bash
+skopeo copy --dest-tls-verify=false docker://ghcr.io/pittampalliorg/<image>:<tag> docker://gitea-ryzen.tail286401.ts.net/giteaadmin/<image>:<tag>
+```
 
 ## Wrong Active-Development Registry
 
@@ -105,6 +111,54 @@ Symptoms:
 Fix:
 
 Use an idpbuilder fork revision that tolerates this partial-create race by checking whether the repo exists after the failed create call. Do not add sleep-only retries in stacks scripts unless the forked command is unavailable.
+
+## Non-Fast-Forward Local Gitea History
+
+Symptoms:
+- `idpbuilder stacks sync` prints `Refusing non-fast-forward push; run with --reset-local-history to replace local Gitea history`.
+- The local Gitea `stacks` branch is unrelated to the cache clone or was manually rewritten.
+
+Fix:
+
+Prefer preserving local Gitea history. First confirm the installed fork supports cache-backed sync:
+
+```bash
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history'
+```
+
+If the branch is intentionally disposable or corrupted, run the explicit recovery path once:
+
+```bash
+idpbuilder stacks sync --reset-local-history --container-engine podman --seed-image-push-engine skopeo
+```
+
+Do not add `--force` to normal sync wrappers. The default `cluster-update` path should push descendant commits, skip no-op pushes, and leave unrelated-history replacement as a deliberate operator action.
+
+## Watch Path Falls Back To Repeated Syncs
+
+Symptoms:
+- `dev-watch-only` or `deployment/scripts/devenv-up.sh --watch` repeatedly invokes one-shot syncs through `watchexec`.
+- Rapid file edits produce multiple Gitea commits instead of one debounced commit.
+
+Fix:
+
+Install a fork revision whose sync command exposes watch flags, then rebuild the host:
+
+```bash
+cd /home/vpittamp/repos/vpittamp/nixos-config/main
+nix flake lock --update-input idpbuilder-src
+sudo nixos-rebuild switch --flake .#ryzen
+idpbuilder stacks sync --help | rg -- '--watch|--debounce'
+```
+
+After rebuild, this should start the direct watcher:
+
+```bash
+cd /home/vpittamp/repos/PittampalliOrg/stacks/main
+timeout 6 deployment/scripts/devenv-up.sh --watch
+```
+
+The timeout interruption is expected for a smoke test; the important signal is that it starts `idpbuilder stacks sync --watch --debounce 2s`.
 
 ## Argo Hooks Or Old Images
 
