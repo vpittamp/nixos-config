@@ -82,7 +82,7 @@ let
       home = "/home/vpittamp";
     };
 
-    # Home-manager with eww monitoring panel
+    # Home-manager desktop test profile
     home-manager = {
       useGlobalPkgs = true;
       useUserPackages = true;
@@ -124,11 +124,6 @@ let
         systemd.user.services.wayvnc = {
           Unit.ConditionPathExists = lib.mkForce "/nonexistent";  # Disable service
         };
-        systemd.user.services.eww-workspace-bar = {
-          Unit.ConditionPathExists = lib.mkForce "/nonexistent";  # Disable service
-        };
-
-
       };
     };
 
@@ -163,7 +158,6 @@ let
       git
       jq
       foot
-      eww
       wl-clipboard
       (python3.withPackages (ps: [ ps.i3ipc ps.pyxdg ps.pydantic ]))
       htop

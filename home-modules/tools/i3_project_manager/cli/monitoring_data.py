@@ -1251,38 +1251,6 @@ SERVICE_REGISTRY = {
     ],
     "ui": [
         {
-            "name": "eww-top-bar",
-            "display_name": "Eww Top Bar",
-            "is_user_service": True,
-            "socket_activated": False,
-            "conditional": False,
-            "description": "System metrics and status bar",
-        },
-        {
-            "name": "eww-workspace-bar",
-            "display_name": "Eww Workspace Bar",
-            "is_user_service": True,
-            "socket_activated": False,
-            "conditional": False,
-            "description": "Workspace navigation and project preview bar",
-        },
-        {
-            "name": "eww-monitoring-panel",
-            "display_name": "Eww Monitoring Panel",
-            "is_user_service": True,
-            "socket_activated": False,
-            "conditional": False,
-            "description": "Window/project/health monitoring panel",
-        },
-        {
-            "name": "eww-quick-panel",
-            "display_name": "Eww Quick Panel",
-            "is_user_service": True,
-            "socket_activated": False,
-            "conditional": False,
-            "description": "Quick settings panel",
-        },
-        {
             "name": "swaync",
             "display_name": "SwayNC",
             "is_user_service": True,

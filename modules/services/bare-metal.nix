@@ -104,8 +104,10 @@ in
     # virt-manager GUI for VM management
     programs.virt-manager.enable = mkIf cfg.enableVirtualization true;
 
-    # ========== PODMAN ROOTLESS CONTAINERS ==========
-    # Complement to Docker - better for user-space containers
+    # ========== PODMAN CONTAINERS ==========
+    # Complement to Docker - better for user-space containers. The Podman API
+    # socket at /run/podman/podman.sock can be targeted explicitly via
+    # DOCKER_HOST without replacing the docker CLI globally.
     virtualisation.podman = mkIf cfg.enablePodman {
       enable = true;
       dockerCompat = false;  # Don't replace docker - run alongside
@@ -118,8 +120,12 @@ in
       };
     };
 
-    # Container networking for Podman
+    # Container networking for Podman. Talos Docker-provider nodes run many
+    # nested Kubernetes processes; Podman's default 2048 PID cap is too low.
     virtualisation.containers.enable = mkIf cfg.enablePodman true;
+    virtualisation.containers.containersConf.settings = mkIf cfg.enablePodman {
+      containers.pids_limit = -1;
+    };
 
     # ========== PRINTING (CUPS) ==========
     # Not useful on: Hetzner (headless server), WSL2 (use Windows printing)
@@ -257,12 +263,19 @@ in
     users.users.vpittamp.extraGroups = mkMerge [
       [ "tss" ]  # TPM access
       (mkIf cfg.enableVirtualization [ "libvirtd" "kvm" ])
+      (mkIf cfg.enablePodman [ "podman" ])
       (mkIf cfg.enablePrinting [ "lp" ])
       (mkIf cfg.enableScanning [ "scanner" ])
     ];
 
     # ========== FIREWALL FOR LOCAL SERVICES ==========
     networking.firewall = mkMerge [
+      (mkIf cfg.enablePodman {
+        extraInputRules = ''
+          iifname "podman*" udp dport 53 accept comment "Podman bridge DNS"
+          iifname "podman*" tcp dport 53 accept comment "Podman bridge DNS"
+        '';
+      })
       (mkIf cfg.enablePrinting {
         allowedTCPPorts = [ 631 ];  # CUPS
         allowedUDPPorts = [ 631 ];

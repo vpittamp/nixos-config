@@ -6,7 +6,7 @@
 #
 # Includes:
 # - Sway Wayland compositor with full window management
-# - Project management (i3pm, eww bars, workspace management)
+# - Project management (i3pm, workspace management)
 # - 1Password CLI + GUI
 # - Terminal tools (ghostty, alacritty, tmux)
 # - Development tools (Docker, git, kubectl, etc.)
@@ -81,7 +81,7 @@
   };
 
   # ========== HOME-MANAGER ==========
-  # Full desktop setup with Sway config, eww bars, project management
+  # Full desktop setup with Sway config and project management
   home-manager = {
     useGlobalPkgs = true;
     useUserPackages = true;

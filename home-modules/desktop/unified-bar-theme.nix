@@ -62,7 +62,7 @@ let
 
 in {
   # Unified Bar Theme Configuration
-  # Centralized appearance config for all bar components (Swaybar, Eww, SwayNC)
+  # Centralized appearance config for desktop shell components.
   # Based on Feature 057: Unified Bar System with Enhanced Workspace Mode
 
   config = {
@@ -73,10 +73,9 @@ in {
     # Reload all bars after theme changes
     home.activation.reloadBarsAfterThemeChange = lib.hm.dag.entryAfter ["writeBoundary"] ''
       # Reload hooks will be triggered on next home-manager activation
-      # Manual reload: swaymsg reload && eww reload && swaync-client --reload-css
+      # Manual reload: swaymsg reload && swaync-client --reload-css
       $DRY_RUN_CMD echo "Theme reload hooks configured. Run after rebuild:"
       $DRY_RUN_CMD echo "  swaymsg reload              # Reload Swaybar"
-      $DRY_RUN_CMD echo "  eww reload                  # Reload workspace bar"
       $DRY_RUN_CMD echo "  swaync-client --reload-css  # Reload notification center CSS"
     '';
   };

@@ -28,9 +28,20 @@ nix flake lock --update-input idpbuilder-src
 nix build .#idpbuilder --no-link
 sudo nixos-rebuild switch --flake .#ryzen
 command -v idpbuilder
+idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
 ```
 
 Do not pass `--impure` to the NixOS rebuild. If the forked source needs to move, change the flake input or lockfile instead of relying on an impure path lookup.
+
+For the current Dockerless Talos-parity setup, verify rootful Podman before create or sync:
+
+```bash
+export DOCKER_HOST=unix:///run/podman/podman.sock
+podman info --format '{{.Host.Security.Rootless}}'  # expected: false
+idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
+```
+
+If this reports `true`, do not continue with `--provider talos-docker`. The Talos Docker provider needs rootful Podman on the Docker-compatible socket. Keep `virtualisation.podman.dockerCompat = false`; the idpbuilder flags select Podman explicitly rather than replacing the Docker CLI globally.
 
 ## Recreate
 
@@ -42,7 +53,9 @@ idpbuilder stacks create \
   --seed-images \
   --seed-images-mode release-pins \
   --skip-tekton-builds \
-  --refresh-kubeconfig
+  --refresh-kubeconfig \
+  --container-engine podman \
+  --seed-image-push-engine skopeo
 ```
 
 With ThinkPad kubeconfig sync:
@@ -54,7 +67,9 @@ idpbuilder stacks create \
   --seed-images-mode release-pins \
   --skip-tekton-builds \
   --refresh-kubeconfig \
-  --push-kubeconfig-host thinkpad
+  --push-kubeconfig-host thinkpad \
+  --container-engine podman \
+  --seed-image-push-engine skopeo
 ```
 
 Timed recreate with log capture:
@@ -71,7 +86,9 @@ TIMEFORMAT='real %3R\nuser %3U\nsys %3S'
   --seed-images-mode release-pins \
   --skip-tekton-builds \
   --refresh-kubeconfig \
-  --push-kubeconfig-host thinkpad; } 2>&1 | tee "$log_file"
+  --push-kubeconfig-host thinkpad \
+  --container-engine podman \
+  --seed-image-push-engine skopeo; } 2>&1 | tee "$log_file"
 ```
 
 The recreate path should only wait for Tailscale cleanup grace periods when it actually deleted stale devices or service-hosts. If a no-op cleanup waits anyway, treat that as a regression in the inner-loop rebuild path.
@@ -83,7 +100,7 @@ The local developer bootstrap path should establish local credentials as `develo
 Use `stacks sync` after local manifest edits, release-pin rewrites, or Tailscale ingress fixes when the cluster itself does not need to be rebuilt:
 
 ```bash
-idpbuilder stacks sync
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
 ```
 
 The sync path snapshots the local stacks worktree into in-cluster Gitea and rewrites release-pinned ryzen bootstrap image references into local Gitea references. It uses the same default provider, profile, and overlay as `stacks create`.
@@ -157,6 +174,8 @@ compatibility aliases for critical images, because several runtime paths still
 reference `latest` outside Kustomize image transformers.
 
 Keep the manifest rewrite target on the Tailscale Gitea hostname for active-development manifests. Talos Docker node pulls should continue to resolve `gitea.cnoe.localtest.me:8443` through the ryzen registry-auth path; do not replace this with a hard-coded pod IP.
+
+When creating the cluster through rootful Podman, pass `--seed-image-push-engine skopeo`. This makes the bootstrap seeding path use skopeo copy against the local Gitea registry instead of depending on a Docker daemon or Docker CLI.
 
 Do not suppress these critical sandbox images while their runtime references remain:
 

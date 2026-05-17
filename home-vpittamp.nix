@@ -9,9 +9,6 @@
     # Sway (Wayland) for M1 MacBook Pro (Feature 045)
     ./home-modules/desktop/sway.nix  # Sway window manager configuration
     ./home-modules/desktop/swaybar.nix  # Swaybar with event-driven status
-    ./home-modules/desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
-    ./home-modules/desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
-./home-modules/desktop/eww-device-controls.nix  # Feature 116: Unified device controls
     ./home-modules/desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
     ./home-modules/desktop/python-environment.nix   # Shared Python environment for Sway tools
     ./home-modules/profiles/declarative-cleanup.nix  # Automatic XDG cleanup
@@ -30,7 +27,6 @@
     # Application launcher and registry (Wayland-compatible)
     ./home-modules/desktop/walker.nix        # Walker: Modern GTK4 application launcher
     ./home-modules/desktop/app-registry.nix  # Feature 034: Application registry with desktop files
-    ./home-modules/tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
   ];
 
   home.username = "vpittamp";
@@ -79,17 +75,8 @@
     debounceMs = 500;  # Wait 500ms after last change before reloading
   };
 
-  programs.eww-workspace-bar.enable = true;
-
-  # Feature 060: Eww top bar with system metrics
-  programs.eww-top-bar.enable = true;  # ✅ Enabled - all features implemented (Phases 1-10)
-
-  # Feature 116: Unified device controls
-  # Hardware-adaptive device controls for bare metal NixOS machines
-  programs.eww-device-controls.enable = true;
-
   # Monitor configuration for Hetzner and Ryzen
-  # Passed to eww-monitoring-panel for correct display output
+  # Passed to runtime shell and project tooling for correct display output
   # 4-tier system: primary (WS 1-2), secondary (WS 3-4), tertiary (WS 5-6), quaternary (WS 7+)
   _module.args.monitorConfig = {
     "hetzner" = {

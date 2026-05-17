@@ -471,7 +471,7 @@ in
     enable = true;
   };
 
-  # Fonts - Nerd Fonts for SwayNC/Eww glyph icons
+  # Fonts - Nerd Fonts for desktop shell glyph icons
   fonts = {
     packages = let nerdFonts = pkgs."nerd-fonts"; in [
       nerdFonts.jetbrains-mono

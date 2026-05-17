@@ -1,13 +1,13 @@
 ---
 name: idpbuilder-cluster-rebuild
-description: Use this skill when recreating or updating the authoritative ryzen local development Kubernetes cluster with the vpittamp idpbuilder fork and Talos Docker, including destructive rebuilds, GitOps bootstrap, Azure Workload Identity/JWKS, Gitea image seeding, Tailscale ingress/API recovery, readiness timing, and kubeconfig sync to local or ThinkPad workstations.
+description: Use this skill when recreating or updating the authoritative ryzen local development Kubernetes cluster with the vpittamp idpbuilder fork and Talos Docker, including Dockerless Talos-parity runs through rootful Podman, destructive rebuilds, GitOps bootstrap, Azure Workload Identity/JWKS, Gitea image seeding, Tailscale ingress/API recovery, readiness timing, and kubeconfig sync to local or ThinkPad workstations.
 ---
 
 # Idpbuilder Cluster Rebuild
 
 ## Workflow
 
-Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster updates. Ryzen is now the Talos Docker local development cluster, not the former kind cluster. Keep the live cluster, the stacks repo, and the idpbuilder fork aligned; do not treat GitOps manifests as proof that a rebuild succeeded until the readiness cohorts pass.
+Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster updates. Ryzen is now the Talos Docker local development cluster, not the former kind cluster. The preferred Dockerless parity path runs the Talos Docker provider against rootful Podman's Docker-compatible socket; rootless Podman is explicitly unsupported for this provider. Keep the live cluster, the stacks repo, the Nix profile, and the idpbuilder fork aligned; do not treat GitOps manifests as proof that a rebuild succeeded until the readiness cohorts pass.
 
 1. Inspect the current worktree and live state before mutating anything:
    - stacks repo: `/home/vpittamp/repos/PittampalliOrg/stacks/main`
@@ -24,20 +24,27 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
    nix build .#idpbuilder --no-link
    sudo nixos-rebuild switch --flake .#ryzen
    ```
-3. Prefer the idpbuilder path. The fork defaults to `--provider talos-docker`, `--cluster-name ryzen`, `--profile ryzen`, and `--overlay packages/overlays/ryzen`; keep those defaults unless you are explicitly testing a legacy path:
+3. For Dockerless Talos parity, target rootful Podman explicitly. Do not rely on silent fallback to Docker:
    ```bash
-   idpbuilder stacks create --recreate --seed-images --seed-images-mode release-pins --skip-tekton-builds --refresh-kubeconfig
+   export DOCKER_HOST=unix:///run/podman/podman.sock
+   podman info --format '{{.Host.Security.Rootless}}'  # expected: false
+   idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
    ```
-4. Snapshot local manifest changes into the in-cluster Gitea repo without recreating:
+   If `podman info` reports rootless mode or `DOCKER_HOST` is unset/not a Podman socket, stop and fix the host setup first.
+4. Prefer the idpbuilder path. The fork defaults to `--provider talos-docker`, `--cluster-name ryzen`, `--profile ryzen`, and `--overlay packages/overlays/ryzen`; keep those defaults unless you are explicitly testing a legacy path:
    ```bash
-   idpbuilder stacks sync
+   idpbuilder stacks create --recreate --seed-images --seed-images-mode release-pins --skip-tekton-builds --refresh-kubeconfig --container-engine podman --seed-image-push-engine skopeo
+   ```
+5. Snapshot local manifest changes into the in-cluster Gitea repo without recreating. Use the same container engine flags as the create path so cleanup and Talos socket behavior stay consistent:
+   ```bash
+   idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
    ```
    The sync path rewrites release-pinned workflow-builder image references to local Gitea references for ryzen.
-5. If ThinkPad needs access, add:
+6. If ThinkPad needs access, add:
    ```bash
    --push-kubeconfig-host thinkpad
    ```
-6. Track readiness and timing with:
+7. Track readiness and timing with:
    ```bash
    deployment/scripts/cluster-readiness.sh check --cohort inner-loop
    deployment/scripts/cluster-readiness.sh check --cohort all
@@ -48,6 +55,9 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
 ## Rebuild Rules
 
 - Use destructive recreation for ryzen when the user leans that way. Preserve unrelated repo changes, but expect the old kind cluster and the temporary `ryzen-talos` cluster name to be disposable legacy state.
+- Use `--container-engine podman --seed-image-push-engine skopeo` for the current Dockerless Talos-parity setup. This keeps `talosctl cluster create docker` but points it at rootful Podman through `DOCKER_HOST`, avoiding Docker daemon and Docker CLI dependencies.
+- Do not use rootless Podman with `--provider talos-docker`. Rootless experiments belong on the `kind` provider, or on a future Talos QEMU path if that provider is implemented.
+- On NixOS, the expected Podman host setup enables `virtualisation.podman`, keeps `dockerCompat = false`, adds `vpittamp` to the `podman` group, disables the container PID cap with `containers.pids_limit = -1`, and allows Podman bridge DNS in the firewall. After changing group membership, start a fresh login/session or use an equivalent group-refresh path before depending on direct socket access.
 - Clean Tailscale before and after delete. Stale device names cause `-1`/`-2` suffixes, and stale API service-host records can block ProxyGroup readiness.
 - Treat `ryzen-api.tail286401.ts.net` as the current ryzen kube-apiserver ProxyGroup endpoint. Let `deployment/scripts/tailscale/refresh-ryzen-kubeconfig.sh` discover `ProxyGroup/k8s-api-cluster.spec.kubeAPIServer.hostname`; do not pass or document the old `ryzen-k8s-api` service name.
 - Bootstrap images from GHCR release pins into local Gitea before Argo syncs active-development workloads. Do not depend on fresh Gitea already having ryzen image tags, and do not require spoke-local Tekton to produce first-boot images.

@@ -168,7 +168,7 @@ let
   # Catppuccin Mocha CSS for SwayNC
   # Feature 057: User Story 1 - Unified Theming
   # Feature 090: Enhanced styling based on official Catppuccin SwayNC theme
-  # Updated to match eww-monitoring-panel transparency and modern design practices
+  # Updated for consistent desktop shell transparency and modern design practices
   swayNcStyle = ''
     /* Feature 057/090: Enhanced Catppuccin Mocha Theme for SwayNC */
     /* Based on official catppuccin/swaync design with custom improvements */
@@ -302,7 +302,7 @@ let
       color: ${mocha.base};
     }
 
-    /* Control Center Panel - Feature 090: Match eww monitoring panel styling */
+    /* Control Center Panel - Feature 090 styling */
     .control-center {
       background-color: rgba(24, 24, 37, 0.85);
       border: 2px solid rgba(137, 180, 250, 0.2);
@@ -570,7 +570,7 @@ in lib.mkIf (!nativeQuickshellNotifications) {
   # Notification center shows transient info (CPU, memory, network, disk) when toggled open
   xdg.configFile."swaync/config.json".text = builtins.toJSON {
     # Core notification settings
-    # Notifications pop up at the top right, while control center overlays the Eww panel
+    # Notifications pop up at the top right, while control center uses a compact edge offset
     positionX = "right";
     positionY = "top";
     "control-center-positionX" = "right";
@@ -581,7 +581,7 @@ in lib.mkIf (!nativeQuickshellNotifications) {
     cssPriority = "user";
     control-center-margin-top = 0;
     control-center-margin-bottom = 0;
-    control-center-margin-right = 8;  # Match Eww panel's 8px right gap
+    control-center-margin-right = 8;
     control-center-margin-left = 0;
     notification-2fa-action = false;
     notification-inline-replies = false;

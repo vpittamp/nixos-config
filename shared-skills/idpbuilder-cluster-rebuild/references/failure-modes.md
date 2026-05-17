@@ -1,5 +1,26 @@
 # Ryzen Rebuild Failure Modes
 
+## Podman Socket Or Rootless Mode
+
+Symptoms:
+- `idpbuilder stacks create --container-engine podman` fails before Talos creates nodes.
+- `talosctl cluster create docker` cannot connect to the engine.
+- Cleanup tries to use Docker despite the intended Dockerless path.
+- Podman reports rootless mode.
+
+Fix:
+
+```bash
+export DOCKER_HOST=unix:///run/podman/podman.sock
+command -v podman
+podman info --format '{{.Host.Security.Rootless}}'
+idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
+```
+
+Expected rootless value: `false`.
+
+If the current shell is not in the `podman` group after a NixOS rebuild, start a fresh login/session before relying on direct access to `/run/podman/podman.sock`. Do not fall back to Docker silently. For Talos Docker parity, use rootful Podman; rootless work belongs on the kind provider or a future Talos QEMU path.
+
 ## Stale Tailscale Names
 
 Symptoms:
