@@ -69,8 +69,8 @@ home-modules/       # User environment
 **Status**: ● teal=active | ● red=dirty | ↑↓ sync | 💤 stale | ✓ merged | ⚠ conflicts
 
 ```bash
-systemctl --user restart eww-monitoring-panel  # Restart
-journalctl --user -u eww-monitoring-panel -f   # Logs
+systemctl --user restart quickshell-runtime-shell  # Restart
+journalctl --user -u quickshell-runtime-shell -f   # Logs
 ```
 
 ## Project Management (i3pm)
@@ -104,7 +104,8 @@ Environment variables in launched apps: `I3PM_IS_WORKTREE`, `I3PM_PARENT_PROJECT
 
 ## Sway Configuration (Feature 047)
 
-**Dynamic** (hot-reload): `~/.config/sway/{window-rules,appearance,workspace-assignments}.json`
+**Dynamic** (hot-reload): `~/.config/sway/{window-rules,appearance}.json`
+**Nix-generated** (rebuild): `workspace-assignments.json`, `monitor-profiles/*.json`, `monitor-profile.default`, `active-outputs`
 **Static** (rebuild): `home-modules/desktop/sway-keybindings.nix`
 
 ```bash
@@ -113,11 +114,13 @@ swayconfig validate         # Validate
 swayconfig rollback <hash>  # Rollback
 ```
 
-## Bars & Device Controls (Features 057, 060, 116)
+## Bars & Device Controls
+
+Bars, panels, and on-screen widgets are driven by Quickshell (`home-modules/desktop/quickshell-runtime-shell/`).
 
 ```bash
-systemctl --user restart eww-top-bar           # Top bar
-systemctl --user restart swaync                # Notifications
+systemctl --user restart quickshell-runtime-shell  # Bar + panel
+systemctl --user restart swaync                    # Notifications
 ```
 
 **Device controls**: Volume 󰕾 | Brightness 󰃟 | Bluetooth 󰂯 | Battery 󰁹 (click to expand)
@@ -162,14 +165,14 @@ All AI CLIs (Claude Code, Codex CLI, Gemini CLI) emit OTEL telemetry tracked loc
 
 **Notifications**: `Enter` returns to terminal, `Escape` dismisses.
 
-**Session Tracking**: EWW panel shows working/completed status with cost metrics for all CLIs.
+**Session Tracking**: Quickshell panel shows working/completed status with cost metrics for all CLIs.
 
 **Providers**: Claude Code (Anthropic), Codex CLI (OpenAI), Gemini CLI (Google)
 
 ```bash
-systemctl --user status otel-ai-monitor        # Session tracker
-systemctl --user restart eww-monitoring-panel  # EWW panel
-journalctl --user -u otel-ai-monitor -f        # Watch telemetry
+systemctl --user status otel-ai-monitor            # Session tracker
+systemctl --user restart quickshell-runtime-shell  # Panel
+journalctl --user -u otel-ai-monitor -f            # Watch telemetry
 ```
 
 **Grafana Queries** (unified across all CLIs):
@@ -183,7 +186,7 @@ Unified telemetry collection via Grafana Alloy, exporting to Kubernetes LGTM sta
 
 **Architecture**:
 ```
-AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local EWW)
+AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell panel)
                                → K8s OTEL Collector (remote)
 System  → node exporter → Alloy → Mimir (K8s)
 Journald → Alloy → Loki (K8s)
@@ -193,7 +196,7 @@ Journald → Alloy → Loki (K8s)
 | Service | Port | Purpose |
 |---------|------|---------|
 | grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
-| otel-ai-monitor | 4320 | Local AI session tracking for EWW (all CLIs) |
+| otel-ai-monitor | 4320 | Local AI session tracking for Quickshell panel (all CLIs) |
 | grafana-beyla | - | eBPF auto-instrumentation (optional) |
 | pyroscope-agent | - | Continuous profiling (optional) |
 
@@ -221,7 +224,7 @@ services.grafana-alloy = {
 };
 ```
 
-**Graceful Degradation**: Local AI monitoring (EWW widgets) works when K8s offline. Remote telemetry queued (100MB buffer) and retried.
+**Graceful Degradation**: Local AI monitoring (Quickshell widgets) works when K8s offline. Remote telemetry queued (100MB buffer) and retried.
 
 **Known Issues / Troubleshooting**:
 - OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
@@ -262,32 +265,7 @@ journalctl --user -u i3-project-event-listener -f
 
 - **Daemon**: Python 3.11+, i3ipc.aio, Pydantic, asyncio
 - **CLI**: TypeScript/Deno 1.40+, Zod
-- **UI**: Eww 0.4+ (GTK3), SwayNC
+- **UI**: Quickshell (Qt/QML), SwayNC
 - **Config**: Nix flakes, JSON files in `~/.config/{i3,sway}/`
 
-## Active Technologies
-- Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools (117-improve-notification-progress-indicators)
-- File-based badges at `$XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json` (117-improve-notification-progress-indicators)
-- Nix (configuration), Bash (scripts), Yuck (eww widgets), CSS (styling) + eww 0.4+, swaymsg (Sway IPC), jq, bash (119-fix-window-close-actions)
-- N/A (eww state is in-memory, config in ~/.config/eww-monitoring-panel) (119-fix-window-close-actions)
-- Bash (cleanup script), Python 3.11 (daemon health endpoint), Nix (service configuration) + systemd, i3ipc.aio, bash coreutils (121-improve-socket-discovery)
-- N/A (runtime state only) (121-improve-socket-discovery)
-- Python 3.11+ (OTLP receiver), Nix (configuration), Yuck/SCSS (EWW widgets) + opentelemetry-proto (parsing), aiohttp/uvicorn (HTTP server), EWW deflisten (123-otel-tracing)
-- N/A (in-memory session state only, no persistence) (123-otel-tracing)
-- Nix (flakes), Yuck (eww widget DSL), SCSS, Bash (scripts), Python 3.11+ (backend) + eww 0.4+, Sway IPC (layer-shell protocol), GTK3, i3ipc.aio (125-convert-sidebar-split-pane)
-- File-based state persistence (`$XDG_STATE_HOME/eww-monitoring-panel/dock-mode`) (125-convert-sidebar-split-pane)
-- Nix (flakes), Alloy configuration language, Python 3.11+ (existing otel-ai-monitor) + Grafana Alloy 1.x, Grafana Beyla 1.x, Pyroscope agent, opentelemetry-collector-contrib (129-create-observability-nixos)
-- Remote only (Kubernetes LGTM stack); local memory buffer (100MB) for offline queuing (129-create-observability-nixos)
-- JavaScript (Node.js, Claude Code runtime) + Node.js `http` module (built-in), `node:buffer` (130-create-logical-multi)
-- N/A (stateless interceptor, memory-only during session) (130-create-logical-multi)
-- Nix (flakes), Python 3.11+ (otel-ai-monitor), Yuck/SCSS (EWW widgets) (125-tracing-parity-codex)
-- N/A (in-memory session state, file-based telemetry export) (125-tracing-parity-codex)
-- Python 3.11+ (otel-ai-monitor), Nix (configuration), Alloy config language + Grafana Alloy 1.x, opentelemetry-proto, aiohttp, Pydantic (125-tracing-parity-codex)
-- N/A (in-memory session state in otel-ai-monitor) (125-tracing-parity-codex)
-- Python 3.11+ (otel-ai-monitor), JavaScript/Node.js (interceptors) + opentelemetry-proto, aiohttp, Grafana Alloy, existing interceptor scripts (132-langfuse-compatibility)
-- N/A (in-memory session state, remote Langfuse storage) (132-langfuse-compatibility)
-- Python 3.11+ (otel-ai-monitor), Nix (configuration), Yuck/SCSS (EWW widgets) + Pydantic, aiohttp, EWW 0.4+, i3ipc.aio (136-multiple-indicators)
-- In-memory session state in otel-ai-monitor (no persistence changes needed) (136-multiple-indicators)
-
-## Recent Changes
-- 117-improve-notification-progress-indicators: Added Bash (hooks), Python 3.11+ (daemon/backend), Nix (configuration) + i3ipc.aio, Pydantic, eww (GTK3 widgets), swaync, inotify-tools
+For per-feature history, see `git log` or `ls specs/`. EWW is no longer in use; see Quickshell (`home-modules/desktop/quickshell-runtime-shell/`) for panel/widget code.

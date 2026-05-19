@@ -157,6 +157,28 @@ let
   # Feature 001: Always include all fallback outputs (daemon handles profile switching at runtime)
   headlessFallbackOutputs = primary:
     builtins.filter (o: o != primary) [ headlessPrimaryOutput headlessSecondaryOutput headlessTertiaryOutput ];
+
+  # Single source of truth: maps a monitor role ("primary"/"secondary"/"tertiary"/"quaternary")
+  # to a physical output name for the current host. Used by both the daemon-facing
+  # workspace-assignments.json (workspaceAssignments below) and the static sway
+  # `workspace N output X` directives (workspaceOutputAssign below). Adding a new host
+  # or changing role→output mapping happens here in ONE place.
+  hostRoleToOutput = role:
+    if isHeadless then headlessRoleToOutput role
+    else if isRyzen then
+      # Physical layout: HDMI-A-1 (left), DP-1 (center), DP-2 (right), DP-3 (optional bottom)
+      if role == "primary" then "DP-1"
+      else if role == "secondary" then "HDMI-A-1"
+      else if role == "tertiary" then "DP-2"
+      else "DP-3"
+    else if isHybrid then
+      # Physical + virtual: eDP-1 panel, HEADLESS-1/2 VNC outputs
+      if role == "secondary" then "HEADLESS-1"
+      else if role == "tertiary" then "HEADLESS-2"
+      else "eDP-1"
+    else
+      # Laptop default: everything on eDP-1, optional HDMI for secondary
+      if role == "secondary" then "HDMI-A-1" else "eDP-1";
   headlessMonitorProfiles = {
     single = {
       name = "single";
@@ -691,21 +713,15 @@ PY
   # This creates the declarative workspace-assignments.json that the daemon reads
   # to determine which monitor role (primary/secondary/tertiary) each workspace should use
   workspaceAssignments = let
-    # Map monitor roles → concrete outputs
-    monitorRoleToOutput = role:
-      if isHeadless then headlessRoleToOutput role
-      else if isHybrid then
-        if role == "secondary" then "HEADLESS-1"
-        else if role == "tertiary" then "HEADLESS-2"
-        else "eDP-1"
-      else
-        # Laptop default mapping: keep everything on eDP-1; allow HDMI for secondary
-        if role == "secondary" then "HDMI-A-1" else "eDP-1";
+    # Single source of truth lives at the top of this file (hostRoleToOutput)
+    monitorRoleToOutput = hostRoleToOutput;
 
     # Fallback outputs (avoid including primary in the list)
     fallbackOutputs = primary:
       if isHeadless then
         headlessFallbackOutputs primary
+      else if isRyzen then
+        builtins.filter (o: o != primary) [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]
       else if isHybrid then
         builtins.filter (o: o != primary) [ "eDP-1" "HEADLESS-1" "HEADLESS-2" ]
       else
@@ -746,6 +762,12 @@ PY
         primary = [ headlessPrimaryOutput ];     # HEADLESS-1
         secondary = [ headlessSecondaryOutput ]; # HEADLESS-2
         tertiary = [ headlessTertiaryOutput ];   # HEADLESS-3
+      }
+      else if isRyzen then {
+        # Physical layout: HDMI-A-1 (left), DP-1 (center), DP-2 (right), DP-3 (bottom)
+        primary = [ "DP-1" ];
+        secondary = [ "HDMI-A-1" ];
+        tertiary = [ "DP-2" ];
       }
       else if isHybrid then {
         primary = [ "eDP-1" ];
@@ -928,67 +950,14 @@ in
       };
 
       # Feature 001: Declarative workspace-to-monitor assignments
-      # Generate workspace assignments from app registry and PWA data
-      # Replaces Feature 049's hardcoded assignments (workspaces 1-9 only)
-      # with complete declarative system for all workspaces (1-70)
-      workspaceOutputAssign = if isHeadless then
-        let
-          # Map monitor roles to physical outputs
-          roleToOutput = role: headlessRoleToOutput role;
-
-          # Generate workspace assignment from app/PWA data
-          assignmentToOutput = assignment: {
-            workspace = toString assignment.workspace_number;
-            output = roleToOutput assignment.monitor_role;
-          };
-        in
-          # Convert all workspace assignments to Sway output assignments
-          map assignmentToOutput workspaceAssignments.assignments
-      else if isRyzen then
-        let
-          # Ryzen 4-monitor role-to-output mapping
-          # Based on physical layout: HDMI-A-1 (left), DP-1 (center), DP-2 (right), DP-3 (bottom)
-          ryzenRoleToOutput = role:
-            if role == "primary" then "DP-1"
-            else if role == "secondary" then "HDMI-A-1"
-            else if role == "tertiary" then "DP-2"
-            else "DP-3";  # quaternary
-
-          # Generate workspace assignment from app/PWA data
-          assignmentToOutput = assignment: {
-            workspace = toString assignment.workspace_number;
-            output = ryzenRoleToOutput assignment.monitor_role;
-          };
-        in
-          # Convert all workspace assignments to Sway output assignments
-          map assignmentToOutput workspaceAssignments.assignments
-      else if isHybrid then
-        let
-          hybridRoleToOutput = role:
-            if role == "primary" then "eDP-1"
-            else if role == "secondary" then "HEADLESS-1"
-            else "HEADLESS-2";
-
-          assignmentToOutput = assignment: {
-            workspace = toString assignment.workspace_number;
-            output = hybridRoleToOutput assignment.monitor_role;
-          };
-        in
-          map assignmentToOutput workspaceAssignments.assignments
-      else
-        let
-          # Laptop default mapping: eDP-1 primary, HDMI-A-1 secondary
-          laptopRoleToOutput = role:
-            if role == "secondary" then "HDMI-A-1" else "eDP-1";
-
-          # Generate workspace assignment from app/PWA data
-          assignmentToOutput = assignment: {
-            workspace = toString assignment.workspace_number;
-            output = laptopRoleToOutput assignment.monitor_role;
-          };
-        in
-          # Convert all workspace assignments to Sway output assignments
-          map assignmentToOutput workspaceAssignments.assignments;
+      # Generates `workspace N output X` directives from app registry data.
+      # Role→output mapping comes from hostRoleToOutput at the top of this file.
+      # Replaces Feature 049's hardcoded assignments (workspaces 1-9 only) with
+      # a complete declarative system for all workspaces (1-70+).
+      workspaceOutputAssign = map (assignment: {
+        workspace = toString assignment.workspace_number;
+        output = hostRoleToOutput assignment.monitor_role;
+      }) workspaceAssignments.assignments;
 
       # ═══════════════════════════════════════════════════════════════════════════
       # KEYBINDINGS (Static Nix Configuration)

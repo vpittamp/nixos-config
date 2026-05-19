@@ -1655,6 +1655,11 @@ REMOTE
     done < <(
       ${pkgs.jq}/bin/jq -r '(.layouts // [])[]' <<<"$snapshot"
     )
+
+    # On-demand: redistribute workspaces to their preferred monitors.
+    # Useful after expanding the profile (e.g. single → default) or any time
+    # workspaces have drifted from their primary/secondary/tertiary outputs.
+    echo "🔄 Redistribute workspaces	__redistribute__"
   '';
 
   # Feature 083: Walker monitor profile switch script
@@ -1674,6 +1679,10 @@ REMOTE
 
     if [ -z "$PROFILE_NAME" ]; then
       exit 0
+    fi
+
+    if [ "$PROFILE_NAME" = "__redistribute__" ]; then
+      exec i3pm monitors reassign
     fi
 
     exec i3pm display apply "$PROFILE_NAME"

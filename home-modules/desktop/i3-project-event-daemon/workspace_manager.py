@@ -167,65 +167,6 @@ async def get_monitor_configs(
     return monitors
 
 
-async def assign_workspaces_to_monitors(
-    i3,
-    monitors: List[MonitorConfig],
-    workspace_preferences: Optional[Dict[int, str]] = None,
-    config_manager: Optional[MonitorConfigManager] = None,
-) -> None:
-    """Assign workspaces to monitors based on declarative configuration.
-
-    Feature 033: Now uses workspace-monitor-mapping.json configuration instead
-    of hardcoded distribution rules. Respects workspace_preferences from config
-    file and optional runtime overrides.
-
-    Args:
-        i3: i3ipc.aio.Connection instance
-        monitors: List of MonitorConfig objects with roles
-        workspace_preferences: Optional runtime workspace preferences (overrides config)
-        config_manager: Optional MonitorConfigManager instance (creates new if None)
-
-    Examples:
-        >>> async with i3ipc.aio.Connection() as i3:
-        ...     monitors = await get_monitor_configs(i3)
-        ...     await assign_workspaces_to_monitors(i3, monitors)
-    """
-    # Build role-to-output-name mapping
-    role_map = {m.role: m.name for m in monitors}
-
-    # Load configuration (Feature 033)
-    if config_manager is None:
-        config_manager = MonitorConfigManager()
-
-    # Get workspace distribution from config
-    monitor_count = len(monitors)
-    distribution = config_manager.get_workspace_distribution(monitor_count)
-
-    # Apply distribution rules from config
-    for role, workspace_nums in distribution.items():
-        if role.value in role_map:
-            output_name = role_map[role.value]
-            for ws_num in workspace_nums:
-                logger.debug(f"Assigning workspace {ws_num} to {output_name} ({role.value})")
-                await i3.command(f"workspace number {ws_num} output {output_name}")
-
-    # Apply workspace preferences from config file
-    config = config_manager.load_config()
-    for ws_num, role in config.workspace_preferences.items():
-        if role.value in role_map:
-            output_name = role_map[role.value]
-            logger.debug(f"Applying config preference: workspace {ws_num} → {output_name} ({role})")
-            await i3.command(f"workspace number {ws_num} output {output_name}")
-
-    # Apply runtime workspace preferences (highest priority, overrides config)
-    if workspace_preferences:
-        for ws_num, preferred_role in workspace_preferences.items():
-            if preferred_role in role_map:
-                output_name = role_map[preferred_role]
-                logger.debug(f"Applying runtime preference: workspace {ws_num} → {output_name} ({preferred_role})")
-                await i3.command(f"workspace number {ws_num} output {output_name}")
-
-
 async def assign_workspaces_with_monitor_roles(
     i3,
     config_path: Optional[Path] = None
@@ -290,6 +231,13 @@ async def assign_workspaces_with_monitor_roles(
                 workspace = item.get("workspace")
             if workspace is None:
                 logger.error(f"[Feature 001] Missing workspace for {item.get('app_name')}")
+                continue
+
+            if not item.get("auto_reassign", True):
+                logger.debug(
+                    f"[Feature 001] Skipping workspace {workspace} "
+                    f"({item.get('app_name')}) — auto_reassign=false"
+                )
                 continue
 
             config = MonitorRoleConfig(
@@ -468,86 +416,6 @@ async def assign_workspaces_with_monitor_roles(
         f"workspace→output assignments"
     )
 
-    # Feature 001 T036: Persist MonitorStateV2
-    await persist_monitor_state_v2(
-        role_assignments=role_assignments,
-        workspace_assignments=workspace_to_config,
-        resolver=resolver
-    )
-
-
-async def persist_monitor_state_v2(
-    role_assignments: Dict,
-    workspace_assignments: Dict[int, MonitorRoleConfig],
-    resolver: MonitorRoleResolver,
-) -> None:
-    """Persist MonitorStateV2 with fallback metadata (Feature 001: T036).
-
-    Writes current monitor role assignments and workspace assignments to
-    ~/.config/sway/monitor-state.json for state recovery and debugging.
-
-    Args:
-        role_assignments: Dict[MonitorRole, MonitorRoleAssignment] from resolver
-        workspace_assignments: Dict[int, MonitorRoleConfig] mapping workspace → config
-        resolver: MonitorRoleResolver instance for output resolution
-    """
-    try:
-        from .models.monitor_config import MonitorStateV2, WorkspaceAssignment
-
-        # Build monitor_roles dict (role name → output name)
-        monitor_roles_dict = {
-            role.value: assignment.output
-            for role, assignment in role_assignments.items()
-        }
-
-        # Build workspaces dict (workspace num → WorkspaceAssignment)
-        workspaces_dict = {}
-        for ws_num, config in workspace_assignments.items():
-            output = resolver.get_output_for_workspace(
-                workspace_num=ws_num,
-                role_assignments=role_assignments,
-                config=config
-            )
-
-            if output:
-                # Determine monitor role (explicit or inferred)
-                monitor_role = config.preferred_monitor_role
-                if monitor_role is None:
-                    monitor_role = resolver.infer_monitor_role_from_workspace(ws_num)
-
-                workspaces_dict[ws_num] = WorkspaceAssignment(
-                    workspace_num=ws_num,
-                    output=output,
-                    monitor_role=monitor_role,
-                    app_name=config.app_name,
-                    source=config.source
-                )
-
-        # Create MonitorStateV2 model
-        state = MonitorStateV2(
-            monitor_roles=monitor_roles_dict,
-            workspaces=workspaces_dict
-        )
-
-        # Write to ~/.config/sway/monitor-state.json
-        state_path = Path.home() / ".config" / "sway" / "monitor-state.json"
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(state_path, "w") as f:
-            # Use model_dump_json for Pydantic v2 compatibility
-            if hasattr(state, 'model_dump_json'):
-                f.write(state.model_dump_json(indent=2))
-            else:
-                f.write(state.json(indent=2))  # Fallback for Pydantic v1
-
-        logger.info(
-            f"[Feature 001] Persisted MonitorStateV2 to {state_path} "
-            f"({len(monitor_roles_dict)} roles, {len(workspaces_dict)} workspaces)"
-        )
-
-    except Exception as e:
-        logger.error(f"[Feature 001] Failed to persist MonitorStateV2: {e}")
-
 
 async def force_move_existing_workspaces(
     i3,
@@ -702,34 +570,18 @@ async def validate_target_workspace(
 ) -> Tuple[bool, str]:
     """Validate that target workspace exists on an active output.
 
-    Feature 024: Multi-monitor workspace validation
-
-    Queries i3 GET_WORKSPACES and GET_OUTPUTS to verify the target workspace
-    is assigned to an active output. This prevents assigning windows to
-    workspaces on disconnected monitors.
-
-    Args:
-        conn: i3ipc.aio.Connection instance
-        workspace: Target workspace number (1-9)
+    Feature 024: Multi-monitor workspace validation. Used by
+    action_executor.execute_workspace_action before moving a window so we
+    don't end up sending it to a workspace pinned to a disconnected output.
 
     Returns:
-        Tuple of (valid: bool, error_message: str)
-        - (True, "") if workspace is valid and on active output
-        - (False, error_msg) if workspace is invalid or on inactive output
-
-    Examples:
-        >>> async with i3ipc.aio.Connection() as conn:
-        ...     valid, error = await validate_target_workspace(conn, 2)
-        ...     if valid:
-        ...         print("Workspace 2 is valid")
+        (True, "")  if workspace is on an active output or doesn't exist yet
+        (False, msg) if workspace exists but is on an inactive output
     """
     try:
-        # Query workspace assignments
         workspaces = await conn.get_workspaces()
         outputs = await conn.get_outputs()
 
-        # Build set of active output names
-        # Use output-states.json to determine which outputs are "active"
         from .output_state_manager import load_output_states
         output_states = load_output_states()
         active_outputs = {
@@ -740,20 +592,13 @@ async def validate_target_workspace(
         if not active_outputs:
             return (False, "No active outputs detected")
 
-        # Find workspace assignment
-        workspace_info = next(
-            (ws for ws in workspaces if ws.num == workspace),
-            None
-        )
+        workspace_info = next((ws for ws in workspaces if ws.num == workspace), None)
 
-        # If workspace doesn't exist yet, it's valid (will be created on current output)
+        # If the workspace doesn't exist yet, Sway will create it on the focused
+        # output — that's fine.
         if not workspace_info:
-            logger.debug(
-                f"Workspace {workspace} doesn't exist yet, will be created on current output"
-            )
             return (True, "")
 
-        # Check if workspace's output is active
         if workspace_info.output not in active_outputs:
             error_msg = (
                 f"Workspace {workspace} is on inactive output '{workspace_info.output}'. "
@@ -762,13 +607,10 @@ async def validate_target_workspace(
             logger.warning(error_msg)
             return (False, error_msg)
 
-        # Workspace is on active output
-        logger.debug(
-            f"Workspace {workspace} is valid (on active output '{workspace_info.output}')"
-        )
         return (True, "")
 
     except Exception as e:
         error_msg = f"Error validating workspace {workspace}: {e}"
         logger.error(error_msg)
         return (False, error_msg)
+

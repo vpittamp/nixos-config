@@ -153,15 +153,6 @@ async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
 
 
 # ============================================================================
-# Feature 001: Output Event Debouncing for Monitor Changes
-# ============================================================================
-
-# Global debounce state for output events
-_output_debounce_task: Optional[asyncio.Task] = None
-_output_debounce_timer: float = 0.5  # 500ms debounce
-
-
-# ============================================================================
 # Feature 053 Phase 6: Comprehensive Event Logging Utilities
 # ============================================================================
 
@@ -363,10 +354,6 @@ async def _delayed_property_recheck(
     except Exception as e:
         logger.error(f"Error in delayed property re-check for window {window_id}: {e}", exc_info=True)
 
-
-# Feature 033: Debouncing state for output change handler
-_output_change_task: Optional[asyncio.Task] = None
-_last_output_event_time: float = 0.0
 
 # ============================================================================
 # USER STORY 1 (P1): Real-time Project State Updates
@@ -2390,132 +2377,6 @@ async def on_workspace_focus(
 # ============================================================================
 
 
-async def _perform_workspace_reassignment(
-    conn: aio.Connection,
-    active_outputs: list,
-) -> None:
-    """Perform workspace reassignment after debounce delay.
-
-    Feature 033: T036-T038
-    Called after debounce_ms delay to reassign workspaces based on config.
-
-    Args:
-        conn: i3 async connection
-        active_outputs: List of active outputs from i3
-    """
-    try:
-        from .monitor_config_manager import MonitorConfigManager
-        from .workspace_manager import get_monitor_configs, assign_workspaces_to_monitors
-
-        # Load configuration
-        config_manager = MonitorConfigManager()
-        config = config_manager.load_config()
-
-        # Check if auto-reassign is enabled
-        if not config.enable_auto_reassign:
-            logger.info("Auto-reassign disabled in config - skipping workspace redistribution")
-            return
-
-        # Get monitor configurations with assigned roles
-        monitors = await get_monitor_configs(conn, config_manager)
-
-        if not monitors:
-            logger.warning("No active monitors found - skipping workspace reassignment")
-            return
-
-        monitor_count = len(monitors)
-        logger.info(f"Reassigning workspaces for {monitor_count} monitor(s)")
-
-        # Assign workspaces to monitors based on configuration
-        await assign_workspaces_to_monitors(conn, monitors, config_manager=config_manager)
-
-        # Get workspace distribution for logging
-        distribution = config_manager.get_workspace_distribution(monitor_count)
-        total_workspaces = sum(len(ws_list) for ws_list in distribution.values())
-
-        logger.info(
-            f"Workspace reassignment complete: {total_workspaces} workspaces "
-            f"distributed across {monitor_count} monitor(s)"
-        )
-
-    except Exception as e:
-        logger.error(f"Error during workspace reassignment: {e}")
-
-
-async def _schedule_workspace_reassignment(
-    conn: aio.Connection,
-    active_outputs: list,
-) -> None:
-    """Schedule workspace reassignment with debouncing.
-
-    Feature 033: T036 (debouncing)
-    Ensures that rapid monitor changes don't trigger multiple reassignments.
-
-    Args:
-        conn: i3 async connection
-        active_outputs: List of active outputs from i3
-    """
-    global _output_change_task, _last_output_event_time
-
-    try:
-        from .monitor_config_manager import MonitorConfigManager
-
-        # Load configuration for debounce settings
-        config_manager = MonitorConfigManager()
-        config = config_manager.load_config()
-        debounce_ms = config.debounce_ms
-
-        # Update last event time
-        _last_output_event_time = time.time()
-
-        # Cancel existing task if one is pending
-        if _output_change_task and not _output_change_task.done():
-            _output_change_task.cancel()
-            logger.debug(f"Cancelled pending workspace reassignment task")
-
-        # Schedule new task after debounce delay
-        async def _debounced_reassignment():
-            await asyncio.sleep(debounce_ms / 1000.0)
-            await _perform_workspace_reassignment(conn, active_outputs)
-
-        _output_change_task = asyncio.create_task(_debounced_reassignment())
-        logger.debug(f"Scheduled workspace reassignment after {debounce_ms}ms")
-
-    except Exception as e:
-        logger.error(f"Error scheduling workspace reassignment: {e}")
-
-
-async def _debounced_workspace_reassignment(
-    conn: aio.Connection,
-    active_outputs: List,
-) -> None:
-    """Stabilize output changes after debounce delay (Feature 001: T033, T034).
-
-    This function is called after the debounce timer expires. It triggers
-    output-change follow-up work without re-homing live workspaces.
-
-    Args:
-        conn: i3 async connection
-        active_outputs: List of active outputs from Sway IPC
-    """
-    global _output_debounce_task
-
-    try:
-        # Wait for debounce timer (500ms)
-        await asyncio.sleep(_output_debounce_timer)
-
-        logger.info(
-            f"[Feature 001] Debounce complete - preserving workspace placement across "
-            f"{len(active_outputs)} active output(s)"
-        )
-        logger.debug("[Feature 001] Automatic workspace reassignment skipped")
-
-    except Exception as e:
-        logger.error(f"[Feature 001] Error in debounced workspace reassignment: {e}")
-    finally:
-        _output_debounce_task = None
-
-
 async def on_output(
     conn: aio.Connection,
     event: OutputEvent,
@@ -2524,8 +2385,11 @@ async def on_output(
 ) -> None:
     """Handle output events - monitor connect/disconnect (Feature 024: R012, Feature 001: US2).
 
-    Detects when monitors are connected or disconnected and triggers debounced
-    workspace reassignment using Feature 001's monitor role system.
+    Observational handler: detects connect/disconnect/profile_changed transitions
+    via OutputEventService and records them in the event buffer. Workspace
+    redistribution on profile change is handled by
+    monitor_profile_service._redistribute_after_profile_change (atomic with the
+    profile switch itself), not by this handler.
 
     Feature 102 T043-T045: Uses OutputEventService to detect specific output
     change types (connected/disconnected/profile_changed) and publishes distinct events.
@@ -2536,8 +2400,6 @@ async def on_output(
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
     """
-    global _output_debounce_task
-
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
 
@@ -2599,21 +2461,6 @@ async def on_output(
                 )
             else:
                 logger.debug(f"  Inactive output: {output.name} (sway_active={output.active}, state_enabled={is_enabled})")
-
-        # Feature 001 T033: Cancel existing debounce task if present
-        if _output_debounce_task and not _output_debounce_task.done():
-            logger.debug("[Feature 001] Cancelling previous debounce task")
-            _output_debounce_task.cancel()
-            try:
-                await _output_debounce_task
-            except asyncio.CancelledError:
-                pass
-
-        # Feature 001 T034: Schedule debounced workspace reassignment
-        logger.debug(f"[Feature 001] Scheduling workspace reassignment (debounce: {_output_debounce_timer * 1000:.0f}ms)")
-        _output_debounce_task = asyncio.create_task(
-            _debounced_workspace_reassignment(conn, active_outputs)
-        )
 
     except Exception as e:
         error_msg = str(e)

@@ -518,6 +518,16 @@ class MonitorProfileService:
             logger.info(f"Updated output states for profile {new_profile_name}: "
                        f"enabled={enabled}, disabled={disabled}")
 
+            # Redistribute workspaces to their preferred monitor roles. On
+            # collapsing transitions (e.g. default → single) this is a no-op
+            # because migrate_workspaces_from_disabled_outputs has already
+            # consolidated everything onto the surviving output. On expanding
+            # transitions (e.g. single → default) this fans workspaces back
+            # out to their primary/secondary/tertiary outputs.
+            await self._redistribute_after_profile_change(
+                conn, profile, desired_output_states
+            )
+
             # Update current profile
             self._current_profile = new_profile_name
 
@@ -719,6 +729,92 @@ class MonitorProfileService:
             )
 
         return True
+
+    async def _redistribute_after_profile_change(
+        self,
+        conn,
+        profile: MonitorProfile,
+        desired_output_states: Dict[str, bool],
+    ) -> None:
+        """Redistribute workspaces to preferred monitor roles after a standard profile switch.
+
+        Mirrors hybrid mode's reassign_workspaces() by reusing the canonical
+        Feature 001 entrypoint (workspace_manager.assign_workspaces_with_monitor_roles).
+        Role→output resolution, fallback chains, and the `auto_reassign` per-assignment
+        opt-out all behave identically to startup-time assignment.
+
+        Safe to call on collapsing transitions (e.g. default → single): the function
+        short-circuits when only one output is enabled, since
+        migrate_workspaces_from_disabled_outputs already handled that case.
+
+        Args:
+            conn: i3ipc.aio.Connection
+            profile: The profile that was just applied
+            desired_output_states: Output→enabled map for the new profile
+        """
+        if not getattr(profile, "auto_redistribute_workspaces", True):
+            logger.info(
+                f"Profile '{profile.name}' has auto_redistribute_workspaces=false; "
+                f"skipping workspace redistribute"
+            )
+            return
+
+        enabled_count = sum(
+            1 for is_enabled in desired_output_states.values() if is_enabled
+        )
+        if enabled_count <= 1:
+            logger.debug(
+                f"Profile '{profile.name}' has {enabled_count} enabled output(s); "
+                f"workspace redistribute is a no-op"
+            )
+            return
+
+        # Give Sway a moment to register newly-enabled outputs in get_outputs().
+        await asyncio.sleep(0.1)
+
+        # Capture currently-focused workspace so we can restore focus after.
+        focused_num: Optional[int] = None
+        try:
+            tree = await conn.get_tree()
+            focused = tree.find_focused()
+            if focused is not None:
+                ws = focused.workspace()
+                if ws is not None:
+                    focused_num = ws.num
+        except Exception:
+            pass
+
+        try:
+            from .workspace_manager import (
+                assign_workspaces_with_monitor_roles,
+                force_move_existing_workspaces,
+            )
+            # Set preferred outputs (governs where future workspaces appear).
+            await assign_workspaces_with_monitor_roles(conn)
+            # Actually move existing workspaces whose current output differs
+            # from their preferred one. Sway's `workspace number N output X`
+            # only takes effect on workspace creation, so we need this second
+            # pass to relocate already-existing workspaces with windows on them.
+            move_result = await force_move_existing_workspaces(conn)
+            logger.info(
+                f"Redistributed workspaces after profile switch to '{profile.name}': "
+                f"moved={len(move_result.get('moved', []))}, "
+                f"skipped={move_result.get('skipped', 0)}, "
+                f"errors={move_result.get('errors', 0)}"
+            )
+        except Exception as exc:
+            # Don't let a redistribute failure abort the profile switch — the
+            # collapsed-but-functional state we already have is the fallback.
+            logger.warning(
+                f"Workspace redistribute after profile change failed: {exc}"
+            )
+
+        # Restore focus to the previously-focused workspace if it still exists.
+        if focused_num is not None:
+            try:
+                await conn.command(f"workspace number {focused_num}")
+            except Exception:
+                pass
 
     def reload_profiles(self) -> None:
         """Reload profiles from disk."""

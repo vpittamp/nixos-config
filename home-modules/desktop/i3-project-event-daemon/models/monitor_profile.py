@@ -87,6 +87,13 @@ class MonitorProfile(BaseModel):
                                          description="Output configurations (strings or ProfileOutput)")
     default: bool = Field(False, description="Whether this is the default profile")
     workspace_roles: Optional[dict] = Field(None, description="Workspace role assignments")
+    auto_redistribute_workspaces: bool = Field(
+        True,
+        description=(
+            "If False, do not auto-redistribute workspaces to their preferred "
+            "monitor roles when this profile is restored. Default True."
+        ),
+    )
 
     @field_validator("name")
     @classmethod

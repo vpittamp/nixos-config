@@ -15687,14 +15687,37 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             ]
 
             move_result = {"moved": [], "errors": 0}
-            if disabled_outputs and enabled_outputs and self.monitor_profile_service:
+            if enabled_outputs:
                 before = await self.i3_connection.get_workspaces()
                 before_by_name = {workspace.name: workspace.output for workspace in before}
-                await self.monitor_profile_service.migrate_workspaces_from_disabled_outputs(
-                    self.i3_connection.conn,
-                    disabled_outputs,
-                    fallback_output=enabled_outputs[0],
-                )
+
+                # Phase 1: collapse workspaces away from any disabled outputs.
+                if disabled_outputs and self.monitor_profile_service:
+                    await self.monitor_profile_service.migrate_workspaces_from_disabled_outputs(
+                        self.i3_connection.conn,
+                        disabled_outputs,
+                        fallback_output=enabled_outputs[0],
+                    )
+
+                # Phase 2: redistribute remaining workspaces to their preferred
+                # monitor roles. assign_workspaces_with_monitor_roles only sets
+                # the preferred output for future workspace creation; we also
+                # call force_move_existing_workspaces to actually relocate any
+                # already-open workspaces whose current output differs from the
+                # preferred one. Cheap no-op when only one output is enabled.
+                try:
+                    from .workspace_manager import (
+                        assign_workspaces_with_monitor_roles,
+                        force_move_existing_workspaces,
+                    )
+                    await assign_workspaces_with_monitor_roles(self.i3_connection.conn)
+                    await force_move_existing_workspaces(self.i3_connection.conn)
+                except Exception as exc:
+                    logger.warning(
+                        f"monitors.reassign redistribute step failed: {exc}"
+                    )
+                    move_result["errors"] += 1
+
                 after = await self.i3_connection.get_workspaces()
                 after_by_name = {workspace.name: workspace.output for workspace in after}
                 for workspace_name, previous_output in before_by_name.items():
