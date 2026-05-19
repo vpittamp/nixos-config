@@ -1,6 +1,6 @@
 ---
 name: workflow-builder
-description: "Author, visualize, and debug SW 1.0 workflows for the workflow-builder app. Use for agent durable/run steps, Prompt Workbench prompts/presets/previews, trigger schemas, jq expressions, action slugs, workflow or agent MCP connections, ActivePieces piece MCP auth, canvas JSON, DB-backed workflow rows, failed workflow runs, silent agents, prompt caching considerations, Dapr workflow sidecar readiness, pod 1/2 due to daprd, the boundary between workflows and Benchmarks/SWE-bench UI runs, and workflow-orchestrator/workspace-runtime/swebench-coordinator troubleshooting across PittampalliOrg/workflow-builder and PittampalliOrg/stacks."
+description: "Author, visualize, and debug SW 1.0 workflows for the workflow-builder app. Use for agent durable/run steps, Prompt Workbench prompts/presets/previews, trigger schemas, jq expressions, action slugs, workflow or agent MCP connections, ActivePieces piece MCP auth, canvas JSON, DB-backed workflow rows, failed workflow runs, silent agents, prompt caching considerations, Dapr workflow sidecar readiness, pod 1/2 due to daprd, the boundary between workflows and Benchmarks/SWE-bench UI runs, and workflow-orchestrator/openshell-agent-runtime/swebench-coordinator troubleshooting across PittampalliOrg/workflow-builder and PittampalliOrg/stacks."
 ---
 
 # Workflow Builder

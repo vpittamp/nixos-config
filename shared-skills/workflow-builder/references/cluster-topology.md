@@ -14,8 +14,7 @@ All in `workflow-builder` namespace unless noted.
 | --- | --- | --- | --- |
 | `workflow-builder` | SvelteKit BFF + UI | 3000 | `packages/components/active-development/manifests/workflow-builder/Deployment-workflow-builder.yaml` |
 | `workflow-orchestrator` | Python Dapr orchestrator | 8080 | `packages/components/active-development/manifests/workflow-orchestrator/Deployment-workflow-orchestrator.yaml` |
-| `workspace-runtime` | Durable workspace/file/command runtime; backs `workspace/*` flows | 8001 | `packages/components/active-development/manifests/workspace-runtime/` |
-| `swebench-coordinator` | Legacy SWE-bench Dapr coordinator and evaluator job launcher | 8080 | `packages/components/active-development/manifests/swebench-coordinator/` |
+| `swebench-coordinator` | SWE-bench Dapr coordinator + evaluator Job launcher (current operator-visible SWE-bench path; eval TaskRuns now Kueue-admitted) | 8080 | `packages/components/active-development/manifests/swebench-coordinator/` |
 | `agent-runtime-<slug>` | Per-agent runtime (one Deployment per published agent) | n/a (Dapr-app-id routed) | Created by `agent-runtime-controller` from `AgentRuntime` CR; image set via env var on the BFF Deployment |
 | `agent-runtime-controller` | Kopf operator that reconciles AgentRuntime CRs | n/a | `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (lives in `openshell` ns; `CONTROLLER_NAMESPACE=workflow-builder` env points it at our ns) |
 | `function-router` | Sync credential broker + Knative proxy | 8080 | `packages/components/active-development/manifests/function-router/` |
@@ -49,7 +48,7 @@ A Dapr sidecar refuses to start if it sees more than one Component with `actorSt
 
 | Component | actorStateStore | Scopes | Used by | File |
 | --- | --- | --- | --- | --- |
-| `workflowstatestore` | true | workspace-runtime, workflow-orchestrator, swebench-coordinator | Parent workflow/orchestrator history | `Component-workflowstatestore.yaml` |
+| `workflowstatestore` | true | workflow-orchestrator, swebench-coordinator | Parent workflow/orchestrator history | `Component-workflowstatestore.yaml` |
 | `dapr-agent-py-statestore` | true | dapr-agent-py plus `agent-runtime-<slug>` app ids enrolled by the controller | Per-agent pod durable actor state | `Component-dapr-agent-py-statestore.yaml` |
 | `agent-workflow` | true | legacy openshell-durable-agent / vanilla-durable-agent (no active consumers) | n/a | `Component-agent-workflow.yaml` |
 

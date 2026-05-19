@@ -166,7 +166,7 @@ Success looks like `[mcp-bootstrap] connected 1 server(s)` followed by tool regi
 Durable agent sessions require the sidecar to see exactly one actor state store:
 
 ```bash
-kubectl --context "$ctx" -n workflow-builder get component workflowstatestore -o yaml | rg 'name:|scopes:|workspace-runtime|workflow-orchestrator'
+kubectl --context "$ctx" -n workflow-builder get component workflowstatestore -o yaml | rg 'name:|scopes:|workflow-orchestrator|swebench-coordinator'
 kubectl --context "$ctx" -n workflow-builder get component dapr-agent-py-statestore -o yaml | rg 'name:|scopes:|dapr-agent-py|agent-runtime'
 ```
 

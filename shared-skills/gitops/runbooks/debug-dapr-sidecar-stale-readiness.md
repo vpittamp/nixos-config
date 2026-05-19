@@ -3,7 +3,7 @@
 ## Symptoms
 
 - A workflow-builder runtime Deployment shows `1/2` ready even though the app container is running.
-- `workspace-runtime`, `swebench-coordinator`, `workflow-orchestrator`, or another Dapr-enabled runtime is unavailable after Dapr control-plane churn.
+- `openshell-agent-runtime`, `swebench-coordinator`, `workflow-orchestrator`, or another Dapr-enabled runtime is unavailable after Dapr control-plane churn.
 - `daprd` readiness returns `ERR_HEALTH_NOT_READY` and names `grpc-api-server` or `grpc-internal-server`.
 - Logs mention `Actor runtime shutting down`, `Placement client shutting down`, or `Workflow engine stopped`.
 - `workflow-orchestrator` `/readyz` returns 503 with `workflowConnectedWorkers=0`
@@ -16,7 +16,7 @@ Confirm the target context and affected pod:
 
 ```bash
 kubectl config current-context
-kubectl get deploy,pod -A | rg 'workflow-builder|workspace-runtime|swebench-coordinator|workflow-orchestrator|dapr-agent-py'
+kubectl get deploy,pod -A | rg 'workflow-builder|openshell-agent-runtime|swebench-coordinator|workflow-orchestrator|dapr-agent-py'
 ```
 
 Check which container is not ready:
@@ -74,8 +74,8 @@ kubectl rollout status deployment/<deployment> -n workflow-builder --timeout=180
 For the known ryzen incident affecting both runtime services:
 
 ```bash
-kubectl rollout restart deployment/workspace-runtime deployment/swebench-coordinator -n workflow-builder
-kubectl rollout status deployment/workspace-runtime -n workflow-builder --timeout=180s
+kubectl rollout restart deployment/openshell-agent-runtime deployment/swebench-coordinator -n workflow-builder
+kubectl rollout status deployment/openshell-agent-runtime -n workflow-builder --timeout=180s
 kubectl rollout status deployment/swebench-coordinator -n workflow-builder --timeout=180s
 ```
 
@@ -105,7 +105,7 @@ kubectl delete pod -n workflow-builder -l app=workflow-orchestrator
 ## Verify
 
 ```bash
-kubectl get deploy,pod -n workflow-builder | rg 'workspace-runtime|swebench-coordinator|workflow-orchestrator|dapr-agent-py'
+kubectl get deploy,pod -n workflow-builder | rg 'openshell-agent-runtime|swebench-coordinator|workflow-orchestrator|dapr-agent-py'
 kubectl get pod -n workflow-builder <new-pod> -o jsonpath='{range .status.containerStatuses[*]}{.name} ready={.ready} restarts={.restartCount}{"\n"}{end}'
 kubectl exec -n workflow-builder <new-pod> -c <app-container> -- curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3501/v1.0/healthz
 kubectl exec -n workflow-builder <new-pod> -c <app-container> -- curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3500/v1.0/metadata

@@ -32,7 +32,7 @@
 - dev: `dev-cp-1/2/3` (178.156.225.243, .239.75, .226.121), `dev-worker-1/2` on `dev-network` (10.0.1.0/24)
 - staging: `staging-cp-1/2/3`, `staging-worker-1/2` on `staging-network`
 
-ryzen is the user's local workstation (`hostname` returns `ryzen`); the kind cluster is registered with the hub ArgoCD as cluster `ryzen`.
+ryzen is the user's local workstation (`hostname` returns `ryzen`); the Talos-docker cluster (formerly kind) is registered with the hub ArgoCD as cluster `ryzen`.
 
 ## Hub build lanes, two image-pin systems
 
@@ -95,7 +95,7 @@ Local/ryzen dev-image push to gitea-ryzen
     │
     ▼
 Hub ArgoCD syncs ryzen apps from gitea-ryzen/main
-   → manifests applied to ryzen kind cluster
+   → manifests applied to ryzen Talos-docker cluster
 ```
 
 **Key implications:**
@@ -197,7 +197,7 @@ Dapr durable workflows use actor state, and each sidecar must see exactly one `a
 
 | Component | Scope | Purpose |
 |---|---|---|
-| `workflowstatestore` | `workspace-runtime`, `workflow-orchestrator`, `swebench-coordinator` | Parent workflow/orchestrator durable state |
+| `workflowstatestore` | `workflow-orchestrator`, `swebench-coordinator` | Parent workflow/orchestrator durable state |
 | `dapr-agent-py-statestore` | `dapr-agent-py` plus per-agent app ids enrolled by agent-runtime-controller | Shared durable state for sandboxed per-agent runtimes |
 
 The agent-runtime controller mutates the shared `dapr-agent-py-statestore` `scopes` list when AgentRuntime CRs are created or updated. This keeps history centralized and avoids creating/deleting per-agent Dapr Components, while preserving Dapr's requirement that a sidecar has a single actor state store.
@@ -262,7 +262,7 @@ If production traffic depends on a service during hub outage, keep it per-spoke.
 
 ## Why ryzen is special
 
-Ryzen exists for **fast iteration** (DevSpace hot reload, local builds, kind image loading). It's intentionally outside the promoter chain:
+Ryzen exists for **fast iteration** (DevSpace hot reload, local builds, idpbuilder image seeding). It's intentionally outside the promoter chain:
 - ryzen pulls from the local gitea-ryzen registry (low-latency, free, unrestricted)
 - ryzen has its own Tekton (no waiting on hub builds)
 - ryzen's spoke-workloads AppSet writes to `env/spokes-ryzen` directly with no promoter gate
