@@ -20,7 +20,7 @@ The webhook path is: GitHub → Tailscale Funnel public DNS (`tekton-hub.tail286
 
 - `gh api repos/PittampalliOrg/workflow-builder/hooks/<id>/deliveries` shows recent deliveries with `status_code: 0` and `duration ~0.02s` (no response body received)
 - No PipelineRuns on hub Tekton: `kubectl --kubeconfig ~/.kube/hub-config get pipelineruns -A --sort-by=.metadata.creationTimestamp | tail`
-- Ryzen has built and committed `chore(dev-images): deploy ... to ryzen` commits on `gitea-ryzen/main` but the matching tag never appeared on ghcr.io
+- A workflow-builder source commit exists, but the matching `ghcr.io/pittampalliorg/<image>:git-<sha>` tag never appeared
 - `dig @1.1.1.1 tekton-hub.tail286401.ts.net` returns NXDOMAIN
 
 The almost-always cause: the proxy pod is tagged with a tag that's no longer in `policy.hujson` ("orphan tag"). Tailscale's control plane drops the funnel cap silently — the operator pod still claims `Funnel on` locally, but no public DNS gets registered.
@@ -207,20 +207,17 @@ kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines get pods -l app.kube
 ```bash
 kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines logs deploy/tekton-triggers-core-interceptors --tail=50 \
   | grep -E "Interceptor response is" | head -5
-# Should show recent traffic from el-workflow-builder-image-builds (the other EL) responding ok
+# Should show recent successful interceptor traffic from another EventListener, if one is active
 ```
 
-### Workaround (the path that has worked all session)
+### Recovery path
 
-Until the GitHub outer-loop root cause is fixed, use the hub Gitea/dev-image lane + manual mirror to ship images to ghcr.io:
+Keep recovery image provenance tied to the GitHub commit:
 
-1. Push to `gitea-ryzen` (this triggers the hub `workflow-builder-image-builds` EventListener through `https://el-workflow-builds-hub.tail286401.ts.net`):
-   ```bash
-   git push gitea-ryzen HEAD:main
-   ```
-2. Wait for `workflow-builder-image-build-*` PipelineRun on the hub cluster: `kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines get pipelinerun`.
-3. Mirror the new image: `runbooks/mirror-image-gitea-to-ghcr.md`.
-4. Promote the image with the normal direct-main or release-intent PR path, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
+1. Fix the GitHub → hub EventListener path or manually trigger the same hub outer-loop build for the exact GitHub SHA.
+2. Confirm the resulting image exists on `ghcr.io/pittampalliorg/<image>:git-<sha>` and capture the digest.
+3. Promote the image with the normal direct-main or release-intent PR path, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
+4. For ryzen-only validation, repoint the relevant `packages/components/active-development/manifests/<image>/kustomization.yaml` to that GHCR tag and run `idpbuilder stacks sync`.
 
 ### Open
 
@@ -232,5 +229,5 @@ Root cause not identified at the time this runbook was written. Hypotheses teste
 
 Next things to try:
 - Recreate the EL CR itself (`kubectl delete el github-outer-loop` then re-apply from stacks/manifests). Slightly destructive — will drop in-flight requests for ~30s — so do it during a quiet period.
-- Compare hub's `el-github-outer-loop` EL spec field-by-field to hub's working `el-workflow-builder-image-builds` for any structural difference (e.g., `resources` field set to `{}` vs unset).
+- Compare hub's `el-github-outer-loop` EL spec field-by-field to a known-working EventListener for any structural difference (e.g., `resources` field set to `{}` vs unset).
 - Bump Tekton Triggers to a newer patch version on hub.

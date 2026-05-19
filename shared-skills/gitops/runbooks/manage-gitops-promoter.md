@@ -70,14 +70,13 @@ kubectl kustomize packages/overlays/staging >/tmp/staging-render.yaml
 git diff --check
 ```
 
-6. Push to both remotes:
+6. Push to GitHub:
 
 ```bash
 git push origin HEAD:main
-git push gitea-ryzen HEAD:main
 ```
 
-7. Let source-hydrator and Promoter move `origin/main` through `env/hub-next` to `env/hub`. If hub promotion does not create/merge the PR, inspect `stacks-environments` and open/merge the `env/hub-next` → `env/hub` PR only if the diff is expected.
+7. Let source-hydrator and Promoter move `origin/main` through `env/hub-next` to `env/hub`. If the same manifest change needs local ryzen validation, run `idpbuilder stacks sync` from the intended stacks worktree. If hub promotion does not create/merge the PR, inspect `stacks-environments` and open/merge the `env/hub-next` → `env/hub` PR only if the diff is expected.
 
 If `env/hub-next` has advanced but `ChangeTransferPolicy/stacks-environments-env-hub-*` still proposes a prior dry SHA or prior PR, force a promoter refresh before bypassing the normal flow:
 

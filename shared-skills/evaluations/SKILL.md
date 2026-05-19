@@ -329,19 +329,27 @@ Forced-tool grader-evaluate gotchas seen during the strict-tool rollout:
 - **`system` and `tool_choice` were silently dropped from `_call_anthropic_sdk` request_kwargs** before the strict-tool work landed. Both are now forwarded into the streaming request. Pre-existing graders that supplied a `systemPrompt` to the prose path were running without it.
 - **DevSpace pods cache stale env vars** (`AGENT_RUNTIME_DEFAULT_IMAGE`, `SANDBOX_TEMPLATE_IMAGES_JSON`). When ArgoCD updates `Deployment-workflow-builder.yaml`, the standard ReplicaSet rolls but the long-lived `workflow-builder-devspace-*` pod doesn't restart. Run `devspace purge` to drop the override OR `kubectl delete pod workflow-builder-devspace-*` to force a refresh. Verify with `kubectl exec deploy/workflow-builder -- printenv AGENT_RUNTIME_DEFAULT_IMAGE`.
 
-**Ryzen path** (inner-loop):
+**Ryzen path**:
 
 ```bash
-# Push to gitea-ryzen — Tekton fires automatically
-git push gitea-ryzen main
+# Push source to GitHub when a new image is needed; hub Tekton builds GHCR tags.
+git push origin main
 
-# Watch builds (typical: 4-7 min for sandbox)
-kubectl -n tekton-pipelines get pipelinerun --sort-by='.metadata.creationTimestamp' | tail -10
+# Watch hub builds and capture the GHCR tag/digest.
+kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines \
+  get pipelinerun --sort-by='.metadata.creationTimestamp' | tail -10
 
-# After build succeeds, patch a target AgentRuntime CR. Existing pods don't auto-roll.
+# In stacks, repoint the relevant active-development image to the GHCR tag,
+# then deliver it to ryzen through affected-app sync.
+cd /home/vpittamp/repos/PittampalliOrg/stacks/main
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
+
+# Existing AgentRuntime CRs don't auto-roll when their publish-time image changes.
+# Patch a target CR only after the referenced image exists.
 SHA=$(git rev-parse HEAD)
 kubectl patch agentruntime agent-runtime-<slug> -n workflow-builder --type=merge \
-  -p "{\"spec\":{\"environment\":{\"imageTag\":\"gitea-ryzen.tail286401.ts.net/giteaadmin/dapr-agent-py-sandbox:git-${SHA}\"}}}"
+  -p "{\"spec\":{\"environment\":{\"imageTag\":\"ghcr.io/pittampalliorg/dapr-agent-py-sandbox:git-${SHA}\"}}}"
 
 # Sleep + wake to pull new image
 kubectl annotate agentruntime agent-runtime-<slug> -n workflow-builder \
@@ -349,6 +357,8 @@ kubectl annotate agentruntime agent-runtime-<slug> -n workflow-builder \
 kubectl annotate agentruntime agent-runtime-<slug> -n workflow-builder \
   agents.x-k8s.io/wake=$(date -Iseconds) --overwrite
 ```
+
+The deterministic ryzen path is GHCR image availability plus stacks `idpbuilder stacks sync`.
 
 **Dev/staging path** (outer-loop):
 

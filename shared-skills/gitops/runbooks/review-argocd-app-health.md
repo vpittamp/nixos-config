@@ -125,7 +125,7 @@ idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-ima
 idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
 ```
 
-Only push `gitea-ryzen` branches manually when the task is explicit branch reconciliation or the live Application targetRevision proves an older branch is still active.
+Use affected sync for local ryzen validation of the same manifest change.
 
 Hub changes hydrate from `origin/main` to `env/hub-next`; `stacks-environments` has `autoMerge: false`, so merge the generated `env/hub` PR after checking it:
 

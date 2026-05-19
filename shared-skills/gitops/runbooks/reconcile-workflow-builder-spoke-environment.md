@@ -22,7 +22,7 @@ Ryzen proves the local Talos Docker/idpbuilder shape. Dev and staging are promot
 | Hub/root ApplicationSet changes | `origin/main` → `env/hub-next` → `env/hub` through `stacks-environments` |
 | Dev/staging rendered workload changes | `origin/main` → `env/spokes-<env>-next` → `env/spokes-<env>` through `workflow-builder-release` |
 
-For app-spec or root-managed changes that also affect local ryzen, use `idpbuilder stacks sync` from the intended stacks worktree and let affected refresh handle `root-application` first. Do not push `gitea-ryzen/ryzen-main` unless the live root Application still tracks that legacy branch.
+For app-spec or root-managed changes that also affect local ryzen, use `idpbuilder stacks sync` from the intended stacks worktree and let affected refresh handle `root-application` first.
 
 ## Diagnostic
 

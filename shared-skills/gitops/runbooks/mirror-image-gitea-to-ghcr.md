@@ -2,7 +2,7 @@
 
 ## Symptoms / when to use
 
-A workflow-builder-system image tag exists on `gitea-ryzen.tail286401.ts.net/giteaadmin/<image>:git-<sha>` (because the hub Gitea/dev-image lane built it for ryzen) but is NOT on `ghcr.io/pittampalliorg/<image>:git-<sha>` (because the hub GHCR outer-loop didn't run — usually because the GitHub webhook isn't reaching the hub; see `debug-funnel-orphan-tag.md` for that).
+A legacy or locally-built workflow-builder-system image tag exists on `gitea-ryzen.tail286401.ts.net/giteaadmin/<image>:git-<sha>` but is NOT on `ghcr.io/pittampalliorg/<image>:git-<sha>` (usually because the GitHub outer-loop did not run for the corresponding source commit; see `debug-funnel-orphan-tag.md` for that).
 
 Concrete symptoms:
 - After bumping `release-pins/workflow-builder-images.yaml`, dev/staging Job pods sit in `Init:ImagePullBackOff` with `failed to resolve reference … ghcr.io/pittampalliorg/<image>:<tag>: not found`.
@@ -71,7 +71,7 @@ ssh vpittamp@ryzen 'set -e
 '
 ```
 
-Either case: typical "catch up dev/staging to ryzen" mirror set is `workflow-builder + workflow-orchestrator + browser-use-agent-sandbox`. For browserstation specifically, see `runbooks/bump-image-pin-not-in-release-pins.md` because its release-pin lives outside `release-pins/workflow-builder-images.yaml`.
+Either case: treat this as a recovery bridge, not the normal delivery path. Prefer rebuilding from the GitHub source commit into GHCR when possible. For browserstation specifically, see `runbooks/bump-image-pin-not-in-release-pins.md` because its release-pin lives outside `release-pins/workflow-builder-images.yaml`.
 
 ## Verify
 
@@ -95,5 +95,5 @@ When that flow is broken (typically: GitHub webhook → Tailscale Funnel → hub
 
 ## Risks
 
-- **The mirrored image is built from gitea-ryzen, not from the GitHub source repo.** If the gitea-ryzen image has any local divergence from the GitHub `git-<sha>` commit (uncommitted local changes baked in, different Dockerfile target, etc.), the manually-mirrored ghcr.io tag won't be byte-identical to what outer-loop would produce. For workflow-builder this rarely matters because the hub Gitea/dev-image lane builds from gitea-ryzen which mirrors the GitHub source, but **don't use this mirror procedure for production-only images** without confirming source provenance.
+- **The mirrored image is copied from the ryzen Gitea registry, not rebuilt from the GitHub source repo.** If that image has any local divergence from the GitHub `git-<sha>` commit (uncommitted local changes baked in, different Dockerfile target, etc.), the manually-mirrored GHCR tag will not be byte-identical to what outer-loop would produce. Do not use this mirror procedure for production-only images without confirming source provenance.
 - **You're using hub's `ghcr-push-credentials`** which has org-write scope. Treat the extracted authfile carefully and shred it as soon as the mirror is done.
