@@ -365,7 +365,7 @@ let
         items = ["project" "tmux_pane" "model" "tokens" "context" "mode"];
       };
     };
-    model.name = "gemini-3.1-pro-preview";
+    model.name = "gemini-3.5-flash";
     # Feature 123: OpenTelemetry configuration for OTLP export
     # Sends telemetry to otel-ai-monitor (via our local interceptor).
     telemetry = {
@@ -445,7 +445,7 @@ EOF
       # - preferredEditor/previewFeatures/vimMode -> general.*
       # - theme -> ui.theme
       WANT_ENDPOINT="http://127.0.0.1:4322"
-      WANT_MODEL="gemini-3.1-pro-preview"
+      WANT_MODEL="gemini-3.5-flash"
 
       $DRY_RUN_CMD ${pkgs.jq}/bin/jq --arg ep "$WANT_ENDPOINT" --arg model "$WANT_MODEL" --argjson mcp '${builtins.toJSON geminiMcpServers}' '
         # Migrate legacy top-level keys to the current schema.
@@ -580,12 +580,13 @@ EOF
     enable = true;
     package = geminiCliWrapped;  # Use wrapped version with IPv4-first fix
 
-    # Default model: Available options with preview features enabled:
-    # - Auto (let system choose based on task complexity)
-    # - gemini-3.1-pro (Gemini 3.1 Pro - latest, most capable)
-    # - gemini-3-flash-preview (Gemini 3 Flash - fast, 78% SWE-bench)
+    # Default model: Available options:
+    # - gemini-3.5-flash (Gemini 3.5 Flash — released 2026-05-19, Google's new default,
+    #   "most intelligent model for sustained frontier performance on agentic and coding tasks")
+    # - gemini-3.1-pro-preview (Gemini 3.1 Pro Preview — capable but slower)
+    # - gemini-3.1-flash-lite, gemini-3-flash-preview
     # - gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-    defaultModel = "gemini-3.1-pro-preview";
+    defaultModel = "gemini-3.5-flash";
 
     # NOTE: settings are NOT managed here to allow credential persistence
     # Settings are written via home.activation.setupGeminiConfig as a real file
