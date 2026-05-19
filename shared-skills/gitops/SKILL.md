@@ -48,6 +48,10 @@ Ryzen local manifest iteration now flows through `idpbuilder stacks sync`, which
 
 The Gitea system webhook to `http://argocd-server.argocd.svc.cluster.local/api/webhook` should remain active, but webhook-only refresh is best-effort. The push payload URL currently differs from the internal repoURL used by ryzen Applications, so targeted idpbuilder hard-refresh is the deterministic hot path.
 
+Ryzen has two watch modes. `dev-watch-only` is the foreground direct watch command. The home-manager-installed `ryzen-stacks-watch.service` is an opt-in supervised user service for the same affected-app watch path; use `cluster-watch-start`, `cluster-watch-status`, `cluster-watch-logs`, `cluster-watch-stop`, or `cluster-watch-enable` after sourcing `deployment/scripts/cluster-menu.sh`. Do not assume the service is active unless status says so.
+
+For hot-loop regression checks, use `deployment/scripts/benchmark-ryzen-hot-edit.sh` with `BENCHMARK_PURPOSE=normal|manual|threshold-test` and `BENCHMARK_CASE=child-service|app-definition|dependency-file`. The `app-definition` case uses a source-only child Application marker so it exercises root/app-definition planning without leaving live Application fields behind. The summary command defaults to `--purpose normal` and excludes failed threshold-test reports; use `--purpose all --include-failures` when auditing full history.
+
 MCP/auth has a third, non-image flow. `mcp_connection` and `app_connection` rows live in the workflow-builder DB; `activepieces-mcps` reconciles those rows into Knative services; `AgentRuntime` registry sync copies the resolved server list into the runtime CR/pod. A source push alone does not fix an already-published agent if its `AgentRuntime` still has stale MCP bootstrap JSON; run registry sync or patch/re-publish the AgentRuntime, then verify the generated Deployment env and runtime logs.
 
 ## Decision tree

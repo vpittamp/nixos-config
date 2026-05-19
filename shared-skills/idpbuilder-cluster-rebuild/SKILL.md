@@ -47,7 +47,7 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
    ```bash
    idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-image-push-engine skopeo
    ```
-   `dev-watch-only` and `deployment/scripts/devenv-up.sh --watch` should use this direct watch path when supported; the old `watchexec` loop is only a compatibility fallback.
+   `dev-watch-only` and `deployment/scripts/devenv-up.sh --watch` should use this direct watch path when supported; the old `watchexec` loop is only a compatibility fallback. Ryzen also has an opt-in home-manager user service for the same path: after sourcing `deployment/scripts/cluster-menu.sh`, use `cluster-watch-start`, `cluster-watch-status`, `cluster-watch-logs`, `cluster-watch-stop`, or `cluster-watch-enable`.
 7. If ThinkPad needs access, add:
    ```bash
    --push-kubeconfig-host thinkpad
@@ -66,6 +66,7 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
 - Use `--container-engine podman --seed-image-push-engine skopeo` for the current Dockerless Talos-parity setup. This keeps `talosctl cluster create docker` but points it at rootful Podman through `DOCKER_HOST`, avoiding Docker daemon and Docker CLI dependencies.
 - Use normal `idpbuilder stacks sync` for local GitOps updates. It preserves linear local Gitea history with descendant commits, skips commit/push/Argo refresh when the tree is unchanged, refreshes only affected ArgoCD Applications by default, and should be the implementation behind `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
 - Keep the Gitea system webhook active, but do not depend on webhook-only refresh for ryzen hot reloads. The current Gitea push event reports an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL, so targeted idpbuilder hard-refresh remains the deterministic path.
+- For hot-loop latency checks, use `deployment/scripts/benchmark-ryzen-hot-edit.sh` with `BENCHMARK_PURPOSE=normal|manual|threshold-test` and `BENCHMARK_CASE=child-service|app-definition|dependency-file`. `deployment/scripts/ryzen-hot-loop-summary.sh` defaults to clean normal reports; use `--purpose all --include-failures` when investigating deliberate threshold failures.
 - App-of-apps changes should refresh `root-application` first, then re-list child Applications and refresh affected children. Raw manifest Application directories should include a `kustomization.yaml` when the ArgoCD Application uses `source.kustomize` options or patches.
 - Use `idpbuilder stacks sync --reset-local-history` only as an explicit recovery action when local Gitea history is unrelated, missing, or corrupted. Normal syncs should fail with `Refusing non-fast-forward push; run with --reset-local-history to replace local Gitea history` rather than force-pushing.
 - Do not use rootless Podman with `--provider talos-docker`. Rootless experiments belong on the `kind` provider, or on a future Talos QEMU path if that provider is implemented.

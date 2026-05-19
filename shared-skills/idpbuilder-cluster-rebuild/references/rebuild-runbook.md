@@ -135,7 +135,7 @@ For continuous local iteration:
 idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-image-push-engine skopeo
 ```
 
-`dev-watch-only` and `deployment/scripts/devenv-up.sh --watch` should start the direct idpbuilder watcher when the installed binary supports it. The legacy `watchexec` repeated one-shot sync loop is only a fallback for old binaries.
+`dev-watch-only` and `deployment/scripts/devenv-up.sh --watch` should start the direct idpbuilder watcher when the installed binary supports it. The legacy `watchexec` repeated one-shot sync loop is only a fallback for old binaries. For a supervised opt-in watcher on ryzen, source `deployment/scripts/cluster-menu.sh` and use `cluster-watch-start`, `cluster-watch-status`, `cluster-watch-logs`, `cluster-watch-stop`, or `cluster-watch-enable`.
 
 If local Gitea history is unrelated, missing, or corrupted, normal sync should refuse a non-fast-forward push. Use this only as an explicit recovery action:
 

@@ -223,6 +223,10 @@ Current ryzen hot reload uses `idpbuilder stacks sync`. The command maintains a 
 
 The local Gitea system webhook to ArgoCD is kept active for best-effort notification, but webhook-only refresh is not authoritative. Gitea push payloads currently advertise an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL; targeted affected refresh avoids that mismatch.
 
+For automatic local iteration, `dev-watch-only` runs the native idpbuilder watch path in the foreground. The ryzen home-manager profile also installs an opt-in `ryzen-stacks-watch.service`; manage it through the `cluster-watch-*` helpers after sourcing `deployment/scripts/cluster-menu.sh`. The service is installed but not enabled by default.
+
+Latency reports come from `deployment/scripts/benchmark-ryzen-hot-edit.sh`. Use `BENCHMARK_PURPOSE=normal|manual|threshold-test` and `BENCHMARK_CASE=child-service|app-definition|dependency-file`; `ryzen-hot-loop-summary.sh` defaults to normal successful reports and requires `--purpose all --include-failures` to include deliberate threshold tests.
+
 ## Hub self-management and GitOps Promoter
 
 Hub changes follow the same GitOps shape as spoke changes, but with their own promotion strategy:
