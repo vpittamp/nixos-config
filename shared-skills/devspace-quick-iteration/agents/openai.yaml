@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevSpace Quick Iteration"
+  short_description: "Manage ryzen DevSpace loops, images, preflight, and cleanup."
+  default_prompt: "Use $devspace-quick-iteration to start or troubleshoot a ryzen DevSpace quick-iteration loop."

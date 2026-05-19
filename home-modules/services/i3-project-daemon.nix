@@ -51,8 +51,8 @@ let
   daemonSrc = ../desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon-v135.4";  # Serialize IPC to prevent socket corruption
-    version = "1.35.4";  # Lock i3ipc _message to prevent concurrent request interleaving
+    name = "i3-project-event-daemon-v135.5";  # Fix sock_recv partial-read truncation
+    version = "1.35.5";  # Replace i3ipc _message to read body in a loop (>32KB tree responses)
     src = daemonSrc;
 
     installPhase = ''

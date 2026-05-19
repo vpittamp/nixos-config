@@ -81,6 +81,18 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
 - Only set or update readiness baselines for clean runs. A run that needed imperative recovery, timed out before desired state, or required manual image rewrite should be recorded as evidence, not promoted as a baseline.
 - The developer bootstrap path should not trigger 1Password UI prompts. The idpbuilder fork initializes local passwords as `developer` by using the local ArgoCD auth path (`ARGOCD_AUTH_1PASSWORD=disabled`, `ARGOCD_LOCAL_PASSWORD=developer`) during `argocd-init`.
 
+## Workstation Capacity & Cascade Recovery (ryzen) — 2026-05-19
+
+Ryzen is a finite-RAM workstation (3 Talos-docker nodes ~30.5 GiB allocatable each; effectively ~2 workers schedulable for inference). **Agent inference/dispatch is NOT admission-controlled** — only the SWE-bench *eval* TaskRuns are Kueue-gated (`benchmark-fast` ClusterQueue, which advertises a fantasy 160Gi). Concurrent multi-agent / parallel benchmark load (e.g. 3 runs × conc 3 = 9 concurrent inference workflows + sandboxes) saturates the **single** `workflow-orchestrator` (`503 workflow_runtime_unavailable`, connection-pool exhaustion) and exhausts a worker's RAM → **its kubelet stops posting node status (NodeStatusUnknown, flapping) → `postgresql-0` + `workflow-orchestrator` (co-located on that worker, Burstable QoS, no PriorityClass/PDB; postgres on a node-bound `local-path` PVC) cascade down.**
+
+- **Rule: never run parallel multi-agent / benchmark load on ryzen — sequential only, concurrency ≤ 3** (proven-safe envelope). See the `evaluations` skill. The generalized admission-control + critical-pod-protection architecture is designed (`/home/vpittamp/.claude/plans/create-a-plan-to-hidden-kitten.md`) but **not yet implemented**.
+- **Recovery if it cascades** (order matters; the orderly cancel path itself needs the DB+coordinator that are down, so it's delicate):
+  1. **Shed load.** Set the offending runs+instances `status='cancelled'` in the DB, then `POST http://<bff>/api/internal/benchmarks/runs/<runId>/cleanup` (`x-internal-token`) — DB-cancel alone does NOT terminate the durable Dapr session workflows, which keep re-spawning openshell sandboxes. Expect to retry the cleanup.
+  2. **Force-recover the node.** `kubectl cordon <flapping-worker>`; force-delete the worker-bound critical pods (`kubectl -n workflow-builder delete pod postgresql-0 --grace-period=0 --force`, same for the orchestrator pod) so their controllers reschedule onto healthy nodes — postgres's `local-path` PV has `nodeAffinity` to its real data node, so it recreates there cleanly with no data loss; force-delete the `openshell` sandbox pods to drop memory; `kubectl uncordon` once the node is Ready again (it usually self-recovers within minutes once load is shed).
+  3. **Coordinator daprd crashloop.** After the churn the `swebench-coordinator` pod's **daprd sidecar** may crashloop (`127.0.0.1:50001 connection refused`, exit 137) even with a healthy Dapr control plane — recreate the coordinator pod; it self-settles once load is shed and the cluster is stable.
+  4. **Dapr control plane.** A node freeze (or ~3-day token-rotation aging) can disrupt placement/operator/sentry/sidecar-injector; if daprd sidecars crashloop cluster-wide, restart the `dapr-system` control-plane pods.
+  5. A stable ~4 `openshell` pods that respawn when deleted = the **SandboxWarmPool** (by-design), not incident residue — don't keep deleting them.
+
 ## References
 
 - Read `references/rebuild-runbook.md` before performing or planning a recreate.

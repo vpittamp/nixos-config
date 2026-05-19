@@ -8,18 +8,53 @@ Feature 121: Added socket health status for diagnostic CLI.
 import asyncio
 import logging
 import os
+import struct
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, Awaitable, Dict, Any
 from i3ipc import aio
+from i3ipc._private import MessageType
 from i3ipc.events import IpcBaseEvent
 
 from .state import StateManager
 from .worktree_utils import canonicalize_context_key
 
 logger = logging.getLogger(__name__)
+
+# Mirror i3ipc.aio.connection internals so we can replace its buggy `_message`
+# implementation. Upstream i3ipc 2.2.1 calls `sock_recv(sock, message_length)`
+# once, which returns *up to* message_length bytes — for Sway tree responses
+# larger than the kernel's per-recv buffer (~32–64 KB) the body is truncated
+# and json.loads raises "Unterminated string" / "Expecting value". The patched
+# `_message` below reads the body in a loop until the full payload arrives.
+_IPC_MAGIC = b'i3-ipc'
+_IPC_STRUCT_HEADER = f'={len(_IPC_MAGIC)}sII'
+_IPC_STRUCT_HEADER_SIZE = struct.calcsize(_IPC_STRUCT_HEADER)
+
+
+def _ipc_pack(msg_type: MessageType, payload: str) -> bytes:
+    pb = payload.encode()
+    s = struct.pack('=II', len(pb), msg_type.value)
+    return b''.join((_IPC_MAGIC, s, pb))
+
+
+def _ipc_unpack_header(data: bytes):
+    return struct.unpack(_IPC_STRUCT_HEADER, data[:_IPC_STRUCT_HEADER_SIZE])
+
+
+async def _recv_exact(loop: asyncio.AbstractEventLoop, sock, n: int) -> bytes:
+    """Read exactly n bytes from sock, looping over partial sock_recv reads."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = await loop.sock_recv(sock, n - len(buf))
+        if not chunk:
+            raise ConnectionError(
+                f"Sway IPC socket closed mid-message (got {len(buf)} of {n} bytes)"
+            )
+        buf.extend(chunk)
+    return bytes(buf)
 
 
 @dataclass
@@ -326,19 +361,71 @@ class ResilientI3Connection:
                 # Create async connection
                 self.conn = await aio.Connection(auto_reconnect=True).connect()
 
-                # Wrap the command-channel _message method with a lock to
-                # prevent concurrent IPC requests from interleaving bytes
-                # on the socket.  i3ipc's _message() does send+recv without
-                # any synchronization — two concurrent get_tree() calls
-                # corrupt the stream and raise AssertionError.
-                original_message = self.conn._message
+                # Replace the command-channel `_message` with a safe version.
+                # Two upstream bugs are fixed here:
+                #
+                # 1. Concurrent send+recv interleaves on the cmd socket: two
+                #    parallel get_tree() calls corrupt the stream and raise
+                #    AssertionError on the magic/reply_type header check.
+                #    We serialize with `_ipc_lock`.
+                #
+                # 2. Partial reads: upstream calls
+                #    `sock_recv(sock, message_length)` once, but `sock_recv`
+                #    returns *up to* that many bytes. For Sway tree responses
+                #    larger than the per-recv kernel buffer (~32–64 KB) the
+                #    body is truncated and json.loads raises "Unterminated
+                #    string" / "Expecting value". We loop until message_length
+                #    bytes are received via `_recv_exact`.
                 lock = self._ipc_lock
+                conn = self.conn
 
-                async def _locked_message(*args, **kwargs):
+                async def _safe_message(message_type: MessageType, payload: str = '') -> bytes:
+                    if message_type is MessageType.SUBSCRIBE:
+                        raise Exception('cannot subscribe on the command socket')
+
                     async with lock:
-                        return await original_message(*args, **kwargs)
+                        loop = conn._loop
+                        sock = conn._cmd_socket
+                        for _tries in range(5):
+                            try:
+                                await loop.sock_sendall(
+                                    sock, _ipc_pack(message_type, payload)
+                                )
+                                header = await _recv_exact(
+                                    loop, sock, _IPC_STRUCT_HEADER_SIZE
+                                )
+                                break
+                            except ConnectionError as e:
+                                if not conn._auto_reconnect:
+                                    raise e
+                                await conn._reconnect()
+                                sock = conn._cmd_socket
+                        else:
+                            return b''
 
-                self.conn._message = _locked_message
+                        if not header:
+                            return b''
+
+                        magic, message_length, reply_type = _ipc_unpack_header(header)
+                        assert magic == _IPC_MAGIC, (
+                            f"Sway IPC framing error: magic={magic!r}"
+                        )
+                        assert reply_type == message_type.value, (
+                            f"Sway IPC framing error: reply_type={reply_type} "
+                            f"expected {message_type.value}"
+                        )
+
+                        if message_length == 0:
+                            return b''
+
+                        try:
+                            return await _recv_exact(loop, sock, message_length)
+                        except ConnectionError as e:
+                            if conn._auto_reconnect:
+                                asyncio.ensure_future(conn._reconnect())
+                            raise e
+
+                self.conn._message = _safe_message
 
                 # Test connection by getting version
                 version = await self.conn.get_version()

@@ -15,9 +15,15 @@ Operational workflow for PittampalliOrg Talos clusters managed through the
 - Dev and staging should be treated as GitOps/Crossplane spokes, not manually
   maintained HCloud clusters. Prefer committed claims and compositions over
   one-off `hcloud` and `talosctl` steps.
+- The current Hetzner shape is tuned for US placement: `ash` maps to
+  `us-east`, `hil` maps to `us-west`, and dev may use Hillsboro when Ashburn
+  capacity is unavailable. Check server-type support before choosing a size.
 - The primary spoke API path is Tailscale ProxyGroup service-host DNS such as
   `dev-api-v2.tail286401.ts.net`. The break-glass path is the Crossplane
   kubeconfig secret on the hub.
+- Headlamp on the hub mirrors ArgoCD cluster secrets into a generated
+  kubeconfig at pod start. After a spoke is recreated or its Argo cluster secret
+  changes, restart `hub-headlamp` before judging the UI connection stale.
 - Promoted spoke workloads flow through source-hydrator and GitOps Promoter:
   `origin/main` -> dry source -> `env/spokes-<name>-next` ->
   `env/spokes-<name>` -> hub ArgoCD child Applications.
@@ -59,9 +65,23 @@ Operational workflow for PittampalliOrg Talos clusters managed through the
 
 ## Lessons From The Dev Rebuild
 
-- The correct dev shape for the 72-capacity target was conservative but large:
-  `3 x cpx41` control planes and `6 x cpx51` workers in `ash`, with all workers
-  labeled `stacks.io/swebench-pool=dev-benchmark`.
+- The correct dev shape for the 72-capacity target is conservative but large:
+  `3 x cpx41` control planes and `6 x cpx51` workers, with all workers labeled
+  `stacks.io/swebench-pool=dev-benchmark`. Prefer `ash` when capacity exists;
+  use `hil`/`us-west` when a US fallback is needed. Do not assume `cpx42` or
+  `cpx62` are placeable in US regions.
+- A direct Kubernetes `1.32` to `1.35` in-place upgrade is not the safe path for
+  these spokes. If Talos/Kubernetes compatibility blocks the stepwise path,
+  recreate the disposable spoke from the committed claim instead of forcing the
+  live cluster forward.
+- Worker labels have two layers. `machine.nodeLabels` belongs in Talos machine
+  config, but labels that must appear immediately on Kubernetes Nodes also need
+  kubelet `extraArgs.node-labels`. Only pass custom labels there; kubelet rejects
+  reserved labels such as `node-role.kubernetes.io/worker`.
+- Crossplane `Ready=False` after a rebuild can be a readiness aggregation
+  artifact. Inspect the composite resources, Terraform workspace generations,
+  jobs, Argo registration, and live spoke health before treating it as a failed
+  cluster.
 - Ordered hooks matter. `db-migrate` must complete before `db-seed`, and the
   SWE-bench fixture seed should be idempotent and restore only sanitized,
   runtime-required rows.
