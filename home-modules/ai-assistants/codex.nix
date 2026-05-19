@@ -416,7 +416,8 @@ network_access = true
 writable_roots = ["/home/vpittamp", "/tmp", "/etc/nixos"]
 
 [tui]
-status_line = ["project_root", "tmux_pane", "model", "git_branch", "context_stats"]
+# Show the active checkout first so Codex prompts always carry repo/branch context.
+status_line = ["project_root", "git_branch", "tmux_pane", "model", "context_stats"]
 TOMLEOF
 
     # If an existing mutable config has extra [projects.*] entries added by Codex
