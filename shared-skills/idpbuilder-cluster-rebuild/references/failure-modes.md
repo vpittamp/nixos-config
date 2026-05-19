@@ -123,7 +123,7 @@ Fix:
 Prefer preserving local Gitea history. First confirm the installed fork supports cache-backed sync:
 
 ```bash
-idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan'
 ```
 
 If the branch is intentionally disposable or corrupted, run the explicit recovery path once:
@@ -133,6 +133,43 @@ idpbuilder stacks sync --reset-local-history --container-engine podman --seed-im
 ```
 
 Do not add `--force` to normal sync wrappers. The default `cluster-update` path should push descendant commits, skip no-op pushes, and leave unrelated-history replacement as a deliberate operator action.
+
+## Affected Refresh Plan Fails Or Refreshes Too Much
+
+Symptoms:
+- `idpbuilder stacks sync` pushes a snapshot but fails before refreshing because a Kustomize dependency cannot be parsed.
+- `--print-refresh-plan` reports an unexpected app set, or a raw manifest Application stays `Unknown` with `kustomization file not found`.
+- A root/app-of-apps change refreshes `root-application` but child apps do not settle before the wait timeout.
+
+Fix:
+
+Plan first and fail closed by default:
+
+```bash
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
+```
+
+If a local dependency is missing or ambiguous, fix the Kustomize input rather than falling back silently. For raw manifest directories, add a minimal `kustomization.yaml` if the ArgoCD Application sets `source.kustomize` fields or patches. Use a longer wait for root/app-of-apps churn:
+
+```bash
+idpbuilder stacks sync --sync-wait-timeout=4m --container-engine podman --seed-image-push-engine skopeo
+```
+
+Use `--refresh-mode=all` only as explicit recovery when the affected planner cannot safely compute a plan. Use `--refresh-mode=none` only for snapshot/webhook tests or other cases where the caller will verify ArgoCD separately.
+
+## Gitea Webhook Delivered But ArgoCD Does Not Refresh
+
+Symptoms:
+- Gitea has an active system webhook to `http://argocd-server.argocd.svc.cluster.local/api/webhook`.
+- ArgoCD logs a push event, but affected Applications do not observe the pushed Gitea commit without an explicit refresh.
+
+Cause:
+
+The current Gitea webhook payload reports the external clone URL while ryzen Applications use `http://gitea-http.gitea.svc.cluster.local:3000/giteaadmin/stacks.git`. Stock ArgoCD webhook matching is therefore not reliable for the local stacks repo.
+
+Fix:
+
+Keep the webhook active as best-effort notification, but treat `idpbuilder stacks sync --refresh-mode=affected` as the authoritative hot path. Do not rewrite all Application repoURLs or Gitea `ROOT_URL` just to make webhook-only refresh work unless the user explicitly accepts that broader risk.
 
 ## Watch Path Falls Back To Repeated Syncs
 

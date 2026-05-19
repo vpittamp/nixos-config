@@ -87,11 +87,14 @@ git push origin HEAD:main
 git push gitea-ryzen HEAD:main
 ```
 
-If the merge includes ryzen root/child Application spec changes (for example app `ignoreDifferences`, new app resources, or root overlay changes), also fast-forward the branch tracked by ryzen's root Application:
+If the merge includes ryzen root/child Application spec changes (for example app `ignoreDifferences`, new app resources, or root overlay changes), do not assume `ryzen-main` is still in use. Current ryzen hot reload is `idpbuilder stacks sync` to local Gitea `main`; verify the live root Application first:
 
 ```bash
-git push gitea-ryzen HEAD:ryzen-main
+kubectl get application root-application -n argocd \
+  -o jsonpath='{.spec.source.repoURL} {.spec.source.targetRevision}{"\n"}'
 ```
+
+Only push a legacy branch such as `gitea-ryzen/ryzen-main` if the live Application still tracks it.
 
 ## Verify
 
@@ -99,7 +102,9 @@ git push gitea-ryzen HEAD:ryzen-main
 # Both main branches should now point at the same commit:
 git rev-parse origin/main gitea-ryzen/main
 
-# If ryzen app-spec changes were included, ryzen-main should also match:
+# If ryzen app-spec changes were included, verify the live root targetRevision before checking legacy ryzen-main:
+kubectl get application root-application -n argocd \
+  -o jsonpath='{.spec.source.targetRevision}{"\n"}'
 git ls-remote gitea-ryzen refs/heads/main refs/heads/ryzen-main
 
 # Hub ArgoCD picks up the new origin/main HEAD; check root-application revision:

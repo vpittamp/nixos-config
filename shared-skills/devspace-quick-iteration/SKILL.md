@@ -98,7 +98,7 @@ kubectl -n workflow-builder get deploy workflow-builder -o jsonpath='{.spec.temp
 kubectl -n workflow-builder exec deploy/workflow-builder -c workflow-builder -- sh -lc 'grep -rl "<signature-of-the-fix>" build .svelte-kit 2>/dev/null | head'
 ```
 
-If the fix isn't in the pinned image, deliver it as an image (GHCR-pin repoint + `idpbuilder stacks sync` — see the `gitops` skill's 2026-05-19 update), not via re-syncing devspace.
+If the fix isn't in the pinned image, deliver it as an image (GHCR-pin repoint + `idpbuilder stacks sync` — see the `gitops` skill's ryzen affected-sync guidance), not via re-syncing DevSpace. Normal ryzen sync should refresh only affected ArgoCD Applications; use `--print-refresh-plan` first when a change may touch root/app-of-apps resources.
 
 ## Verification Checklist
 

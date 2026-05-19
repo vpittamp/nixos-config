@@ -217,8 +217,13 @@ Ryzen also has a local source branch split:
 
 | Branch | Role |
 |---|---|
-| `gitea-ryzen/main` | Default branch used by ryzen child Applications and hub Gitea/dev-image image-pin commits |
-| `gitea-ryzen/ryzen-main` | Branch tracked by the ryzen root Application; fast-forward this for root/child Application spec changes such as ignoreDifferences or new app resources |
+| local Gitea `giteaadmin/stacks.git:main` | Current ryzen source for `root-application` and child Applications; written by `idpbuilder stacks sync` from the selected local stacks worktree |
+| `gitea-ryzen/main` remote | Historical/manual view of the ryzen Gitea repo and image-build branch reconciliation surface; verify live Application `targetRevision` before using it |
+| `gitea-ryzen/ryzen-main` | Legacy root branch from older ryzen layouts; do not push it for current local hot reload unless live `root-application.spec.source.targetRevision` still points there |
+
+Current ryzen hot reload should use `idpbuilder stacks sync`, not manual `git push` to Gitea. The command maintains a cache clone, pushes descendant snapshot commits, computes affected ArgoCD Applications from live app sources plus local Kustomize dependencies, and hard-refreshes only the affected apps. `root-application` is refreshed first when child Application definitions or `packages/overlays/ryzen` change.
+
+The local Gitea system webhook to ArgoCD is kept active for best-effort notification, but webhook-only refresh is not authoritative. Gitea push payloads currently advertise an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL; targeted affected refresh avoids that mismatch.
 
 ## Hub self-management and GitOps Promoter
 
@@ -296,7 +301,8 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Inner-loop pipeline definitions |
 | `scripts/gitops/validate-workflow-builder-release-pins.sh` | Validates release-pin schema and GHCR tag/digest existence |
-| `scripts/gitops/check-branch-drift.sh` | Checks origin/gitea-ryzen main and ryzen-main alignment |
+| `idpbuilder stacks sync --print-refresh-plan` | Current ryzen local manifest affected-app planning before pushing a snapshot |
+| `scripts/gitops/check-branch-drift.sh` | Checks origin/gitea-ryzen drift for legacy/image-build branch reconciliation |
 | `docs/hub-spoke-app-placement.md` | Hub-vs-spoke app placement policy |
 | `policy.hujson` | Tailscale ACL — synced via `.github/workflows/tailscale-acl.yml`; `svc:*` approvals are only for real service-host/ProxyGroup/Tailscale Services |
 

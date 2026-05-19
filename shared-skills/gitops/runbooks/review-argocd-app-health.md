@@ -116,10 +116,16 @@ For platform/app-spec changes:
 kubectl kustomize packages/overlays/hub >/tmp/hub-render.yaml
 git diff --check
 git push origin HEAD:main
-git push gitea-ryzen HEAD:main
 ```
 
-If ryzen root/child Application specs changed, also fast-forward `gitea-ryzen/ryzen-main`.
+For local ryzen validation of the same change, use affected sync from the intended stacks worktree:
+
+```bash
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
+```
+
+Only push `gitea-ryzen` branches manually when the task is explicit branch reconciliation or the live Application targetRevision proves an older branch is still active.
 
 Hub changes hydrate from `origin/main` to `env/hub-next`; `stacks-environments` has `autoMerge: false`, so merge the generated `env/hub` PR after checking it:
 

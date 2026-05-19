@@ -16,7 +16,7 @@ Confirm the idpbuilder binary is the forked one when behavior matters:
 ```bash
 command -v idpbuilder
 idpbuilder stacks create --help
-idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--container-engine|--seed-image-push-engine'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine'
 ```
 
 The expected steady state is the Nix profile binary, not a stale `~/.local/bin/idpbuilder`. On this system the Nix package is built from the local flake input `idpbuilder-src`, which points at `/home/vpittamp/repos/vpittamp/idpbuilder/main`.
@@ -30,7 +30,7 @@ nix build .#idpbuilder --no-link
 sudo nixos-rebuild switch --flake .#ryzen
 command -v idpbuilder
 idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
-idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--container-engine|--seed-image-push-engine'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine'
 ```
 
 Do not pass `--impure` to the NixOS rebuild. If the forked source needs to move, change the flake input or lockfile instead of relying on an impure path lookup. Do not leave a temporary `nix profile` idpbuilder overlay in place; the declarative profile should provide the active binary after rebuild.
@@ -114,7 +114,18 @@ Current sync behavior is cache-backed, not a fresh root commit per run:
 - Deleted files are removed from the cache tree before commit.
 - Release-pin rewrites happen only inside the sync/cache tree, never in the source worktree.
 - Unchanged sync trees skip commit, push, and ArgoCD refresh and should print `No changes to sync`.
-- Changed sync trees push a normal descendant commit and then refresh `root-application`; Gitea webhooks may also notify ArgoCD.
+- Changed sync trees push a normal descendant commit and then default to `--refresh-mode=affected`: compute affected ArgoCD Applications from live app sources plus local Kustomize dependency closures, hard-refresh only those apps, and wait for each refreshed app to observe the pushed commit.
+- App-of-apps changes refresh `root-application` first, re-list live Applications, then refresh affected children. Raw manifest Application directories should include a `kustomization.yaml` when the ArgoCD Application uses `source.kustomize` options or patches.
+- The Gitea system webhook to `http://argocd-server.argocd.svc.cluster.local/api/webhook` should exist and be active, but webhook-only refresh is not the ryzen hot path because the webhook payload repo URL does not match the internal repoURL used by Applications.
+
+Useful refresh flags:
+
+```bash
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --refresh-mode=affected --sync-wait-timeout=3m --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --refresh-mode=all --container-engine podman --seed-image-push-engine skopeo   # explicit recovery only
+idpbuilder stacks sync --refresh-mode=none --container-engine podman --seed-image-push-engine skopeo  # snapshot-only tests
+```
 
 The `cluster-update --container-engine podman --seed-image-push-engine skopeo` wrapper should delegate to this sync path and preserve those flags.
 

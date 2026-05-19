@@ -17,7 +17,7 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
    ```bash
    command -v idpbuilder
    idpbuilder stacks create --help
-   idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--container-engine|--seed-image-push-engine'
+   idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine'
    ```
    To update the binary on ryzen, update the flake input in `nixos-config/main`, build it, and rebuild without `--impure`:
    ```bash
@@ -41,6 +41,8 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
    idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
    ```
    The sync path maintains a persistent cache clone at `${XDG_CACHE_HOME:-~/.cache}/idpbuilder/stacks-sync/<cluster>/<owner>/<repo>`, commits only when the rendered tree changes, pushes without force by default, and rewrites release-pinned workflow-builder image references only inside the sync tree. A no-op should print `No changes to sync`.
+
+   Default refresh behavior is affected-app planning, not a fleet-wide ArgoCD refresh. `--refresh-mode=affected` lists live ArgoCD Applications backed by `giteaadmin/stacks.git`, indexes their Kustomize dependency closures, hard-refreshes only the affected apps, and waits for them to observe the pushed commit. Use `--refresh-mode=all` only as explicit recovery, `--refresh-mode=none` for snapshot-only tests, `--sync-wait-timeout` when root/app-of-apps syncs need more than the default, and `--print-refresh-plan` before a risky edit.
 6. For continuous local iteration, prefer the long-lived sync watcher:
    ```bash
    idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-image-push-engine skopeo
@@ -62,7 +64,9 @@ Use this skill for ryzen local-cluster rebuilds and idpbuilder-based cluster upd
 
 - Use destructive recreation for ryzen when the user leans that way. Preserve unrelated repo changes, but expect the old kind cluster and the temporary `ryzen-talos` cluster name to be disposable legacy state.
 - Use `--container-engine podman --seed-image-push-engine skopeo` for the current Dockerless Talos-parity setup. This keeps `talosctl cluster create docker` but points it at rootful Podman through `DOCKER_HOST`, avoiding Docker daemon and Docker CLI dependencies.
-- Use normal `idpbuilder stacks sync` for local GitOps updates. It preserves linear local Gitea history with descendant commits, skips commit/push/Argo refresh when the tree is unchanged, and should be the implementation behind `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
+- Use normal `idpbuilder stacks sync` for local GitOps updates. It preserves linear local Gitea history with descendant commits, skips commit/push/Argo refresh when the tree is unchanged, refreshes only affected ArgoCD Applications by default, and should be the implementation behind `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
+- Keep the Gitea system webhook active, but do not depend on webhook-only refresh for ryzen hot reloads. The current Gitea push event reports an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL, so targeted idpbuilder hard-refresh remains the deterministic path.
+- App-of-apps changes should refresh `root-application` first, then re-list child Applications and refresh affected children. Raw manifest Application directories should include a `kustomization.yaml` when the ArgoCD Application uses `source.kustomize` options or patches.
 - Use `idpbuilder stacks sync --reset-local-history` only as an explicit recovery action when local Gitea history is unrelated, missing, or corrupted. Normal syncs should fail with `Refusing non-fast-forward push; run with --reset-local-history to replace local Gitea history` rather than force-pushing.
 - Do not use rootless Podman with `--provider talos-docker`. Rootless experiments belong on the `kind` provider, or on a future Talos QEMU path if that provider is implemented.
 - On NixOS, the expected Podman host setup enables `virtualisation.podman`, keeps `dockerCompat = false`, adds `vpittamp` to the `podman` group, disables the container PID cap with `containers.pids_limit = -1`, and allows Podman bridge DNS in the firewall. After changing group membership, start a fresh login/session or use an equivalent group-refresh path before depending on direct socket access.

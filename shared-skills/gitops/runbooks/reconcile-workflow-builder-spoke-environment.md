@@ -12,7 +12,7 @@ Use this when workflow-builder or one of its system services works on ryzen but 
 
 ## Mental model
 
-Ryzen proves the local kind shape. Dev and staging are promoted spokes with different public hostnames and API access paths. Do not fix environment drift by patching live Deployments. Declare it in stacks:
+Ryzen proves the local Talos Docker/idpbuilder shape. Dev and staging are promoted spokes with different public hostnames and API access paths. Do not fix environment drift by patching live Deployments. Declare it in stacks:
 
 | Concern | Declarative owner |
 |---|---|
@@ -22,7 +22,7 @@ Ryzen proves the local kind shape. Dev and staging are promoted spokes with diff
 | Hub/root ApplicationSet changes | `origin/main` → `env/hub-next` → `env/hub` through `stacks-environments` |
 | Dev/staging rendered workload changes | `origin/main` → `env/spokes-<env>-next` → `env/spokes-<env>` through `workflow-builder-release` |
 
-For app-spec or root-managed changes that also affect ryzen, push `gitea-ryzen/ryzen-main` in addition to `origin/main` and `gitea-ryzen/main`.
+For app-spec or root-managed changes that also affect local ryzen, use `idpbuilder stacks sync` from the intended stacks worktree and let affected refresh handle `root-application` first. Do not push `gitea-ryzen/ryzen-main` unless the live root Application still tracks that legacy branch.
 
 ## Diagnostic
 
@@ -117,8 +117,9 @@ git add \
   policy.hujson
 git commit -m "fix(workflow-builder): declare dev spoke hostnames"
 git push origin HEAD:main
-git push gitea-ryzen HEAD:main
-git push gitea-ryzen HEAD:ryzen-main   # if app-spec/root-managed changes affect ryzen
+# For local ryzen validation of the same manifest change:
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
 ```
 
 6. Wait for GitHub checks. `Tailscale ACL GitOps` must succeed before expecting new or re-tagged Tailscale services to work.

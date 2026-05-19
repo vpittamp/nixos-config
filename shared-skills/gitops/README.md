@@ -4,7 +4,7 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 
 ## What it covers
 
-- **Image promotion lifecycle** — the two image-pin systems (release-pins vs active-development), how the hub GHCR/release and Gitea/dev-image Tekton lanes interact, direct-main vs PR-mode release handoffs, post-push ryzen/dev verification, and branch reconciliation between `origin/main` and `gitea-ryzen/main`.
+- **Image promotion and ryzen sync lifecycle** — the two image-pin systems (release-pins vs active-development), how the hub GHCR/release and Gitea/dev-image Tekton lanes interact, direct-main vs PR-mode release handoffs, affected-app `idpbuilder stacks sync` for ryzen local manifests, post-push ryzen/dev verification, and branch reconciliation when legacy/image-build Gitea history matters.
 - **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
 - **Workflow-builder MCP/auth runtime** — ActivePieces piece MCP KService reconciliation, searchable MCP catalog, OAuth connection binding, AgentRuntime bootstrap, Dapr statestore durability checks, and stale sidecar readiness recovery.
 - **GitOps Promoter operations** — controller upgrades, hub `stacks-environments` promotion, and the ArgoCD UI extension used to visualize Promoter resources.

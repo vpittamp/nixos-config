@@ -1,4 +1,4 @@
 interface:
   display_name: "Idpbuilder Cluster Rebuild"
-  short_description: "Rebuild and sync Ryzen GitOps"
-  default_prompt: "Use $idpbuilder-cluster-rebuild to update or recreate the authoritative ryzen Talos Docker cluster through rootful Podman, then verify cache-backed GitOps sync, images, Tailscale/API access, readiness, and kubeconfig access."
+  short_description: "Rebuild Ryzen and run affected GitOps sync"
+  default_prompt: "Use $idpbuilder-cluster-rebuild to update or recreate the authoritative ryzen Talos Docker cluster through rootful Podman, then verify cache-backed affected-app GitOps sync, images, Tailscale/API access, readiness, and kubeconfig access."
