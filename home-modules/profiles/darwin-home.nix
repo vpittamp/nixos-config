@@ -55,9 +55,9 @@ in
     # Users can install them manually on macOS:
     # - Claude Code: https://claude.ai/download
     # - Codex: https://github.com/codex/codex
-    # - Gemini CLI: https://github.com/google/gemini-cli
+    # - Antigravity CLI: https://antigravity.google/download (replaces Gemini CLI; 2026-06-18 sunset)
     # ../ai-assistants/codex.nix
-    # ../ai-assistants/gemini-cli.nix
+    # ../ai-assistants/antigravity-cli.nix
 
     # External modules (cross-platform)
     inputs.onepassword-shell-plugins.hmModules.default

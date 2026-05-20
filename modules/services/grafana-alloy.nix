@@ -3,11 +3,11 @@
 #
 # This module provides Grafana Alloy as the unified telemetry collector that:
 # - Replaces otel-ai-collector.nix with a more capable solution
-# - Receives OTLP telemetry from AI CLIs (Claude Code, Codex, Gemini) on port 4318
+# - Receives OTLP telemetry from AI CLIs (Claude Code, Codex) on port 4318
 # - Forwards to otel-ai-monitor user service on port 4320 for local session tracking
 # - Exports all telemetry to Kubernetes LGTM stack via Tailscale
 # - Exports traces to MLflow with per-service experiment routing (routes spans by
-#   resource.service.name to claude-code/codex/gemini-cli/idpbuilder experiments). Experiment
+#   resource.service.name to claude-code/codex/idpbuilder experiments). Experiment
 #   IDs are bootstrapped in the hub via the LLM CLI bootstrap Job in stacks.
 # - Collects system metrics via built-in node exporter
 # - Collects journald logs and forwards to Loki
@@ -285,7 +285,6 @@ let
     // which each interceptor sets to one of:
     //   - "claude-code" (minimal-otel-interceptor.js)
     //   - "codex"       (codex-otel-interceptor.js)
-    //   - "gemini-cli"  (gemini-otel-interceptor.js)
     //   - "idpbuilder"  (idpbuilder stacks telemetry)
     // =============================================================================
 
@@ -316,28 +315,6 @@ let
         endpoint = "${cfg.mlflow.endpoint}"
         headers = {
           "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.codex}",
-        }
-      }
-
-      retry_on_failure {
-        enabled          = true
-        initial_interval = "5s"
-        max_interval     = "30s"
-        max_elapsed_time = "5m"
-      }
-
-      sending_queue {
-        enabled       = true
-        num_consumers = 4
-        queue_size    = ${toString cfg.mlflow.queueSize}
-      }
-    }
-
-    otelcol.exporter.otlphttp "mlflow_gemini" {
-      client {
-        endpoint = "${cfg.mlflow.endpoint}"
-        headers = {
-          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.gemini}",
         }
       }
 
@@ -401,16 +378,6 @@ let
       }
     }
 
-    otelcol.processor.filter "mlflow_gemini" {
-      error_mode = "ignore"
-      traces {
-        span = ["resource.attributes[\"service.name\"] != \"gemini-cli\""]
-      }
-      output {
-        traces = [otelcol.exporter.otlphttp.mlflow_gemini.input]
-      }
-    }
-
     otelcol.processor.filter "mlflow_idpbuilder" {
       error_mode = "ignore"
       traces {
@@ -433,7 +400,6 @@ let
         traces = [
           otelcol.processor.filter.mlflow_claude_code.input,
           otelcol.processor.filter.mlflow_codex.input,
-          otelcol.processor.filter.mlflow_gemini.input,
           otelcol.processor.filter.mlflow_idpbuilder.input,
         ]
       }
@@ -635,12 +601,6 @@ in
               default = "";
               example = "13";
               description = "MLflow experiment ID for Codex traces (service.name=\"codex\").";
-            };
-            gemini = mkOption {
-              type = types.str;
-              default = "";
-              example = "14";
-              description = "MLflow experiment ID for Gemini CLI traces (service.name=\"gemini-cli\").";
             };
             idpbuilder = mkOption {
               type = types.str;

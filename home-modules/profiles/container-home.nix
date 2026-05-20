@@ -35,7 +35,7 @@
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix
     ../ai-assistants/codex.nix
-    ../ai-assistants/gemini-cli.nix
+    ../ai-assistants/antigravity-cli.nix
     ../ai-assistants/nix-ai-help.nix
 
     # External modules (excluding 1Password)

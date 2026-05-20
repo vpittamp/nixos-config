@@ -16,7 +16,6 @@
         "anthropic.claude-code",
         "github.copilot",
         "github.copilot-chat",
-        "Google.gemini-cli-vscode-ide-companion",
 
         // Git integration
         "eamodio.gitlens",

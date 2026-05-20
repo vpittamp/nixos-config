@@ -405,7 +405,6 @@ in
       experiments = {
         claudeCode = "9";
         codex      = "10";
-        gemini     = "11";
         idpbuilder = "36";
       };
       batchTimeout = "10s";

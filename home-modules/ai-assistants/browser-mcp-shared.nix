@@ -17,12 +17,10 @@ rec {
   chromeDevtoolsProfileDir = "${sharedBrowserProfilesRoot}/chrome-devtools";
 
   codexPlaywrightProfileDir = "${config.xdg.dataHome}/codex/browser-profiles/playwright";
-  geminiPlaywrightProfileDir = "${config.xdg.dataHome}/gemini/browser-profiles/playwright";
 
   assistantBrowserProfileDirs = [
     chromeDevtoolsProfileDir
     codexPlaywrightProfileDir
-    geminiPlaywrightProfileDir
   ];
 
   legacyBrowserProfileDirs = [

@@ -91,7 +91,7 @@ in
     ../ai-assistants/codex.nix
     ../ai-assistants/browser-mcp-lifecycle.nix
     ../ai-assistants/copilot-cli.nix
-    ../ai-assistants/gemini-cli.nix
+    ../ai-assistants/antigravity-cli.nix
     ../ai-assistants/holmesgpt.nix
     ../ai-assistants/nix-ai-help.nix
     ../ai-assistants/opencode.nix

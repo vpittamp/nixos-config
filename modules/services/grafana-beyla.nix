@@ -69,7 +69,7 @@ in
 
     executableNames = mkOption {
       type = types.str;
-      default = "(claude|gemini|codex|node|python3)";
+      default = "(claude|agy|codex|node|python3)";
       description = "Regex for executable names to instrument (process-based discovery)";
     };
 

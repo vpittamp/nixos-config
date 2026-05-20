@@ -17,7 +17,7 @@ let
     import sys
     import time
 
-    ASSISTANT_NAMES = {"claude", "codex", "codex-raw", "gemini"}
+    ASSISTANT_NAMES = {"claude", "codex", "codex-raw"}
     MANAGED_BROWSER_SERVICE = "${managedBrowserServiceName}"
     REAPER_TIMER = "${reaperTimerName}"
     HOST = "${shared.chromeDevtoolsBrowserHost}"

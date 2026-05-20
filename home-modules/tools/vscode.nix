@@ -102,7 +102,6 @@ let
     # anthropic.claude-code  # Using marketplace version instead (hash mismatch in nixpkgs)
     github.copilot
     github.copilot-chat
-    Google.gemini-cli-vscode-ide-companion
 
     # Git integration
     # eamodio.gitlens - using marketplace version instead (nixpkgs build fails)
@@ -151,7 +150,6 @@ let
     "anthropic.claude-code"
     "github.copilot"
     "github.copilot-chat"
-    "Google.gemini-cli-vscode-ide-companion"
     "eamodio.gitlens"
     "mhutchie.git-graph"
     "github.vscode-pull-request-github"
@@ -409,10 +407,6 @@ let
     };
     "github.copilot.editor.enableAutoCompletions" = true;
     "github.copilot.chat.followUps.enabled" = true;
-
-    # Gemini CLI settings
-    "gemini.autoStart" = true;
-    "gemini.enableCodeActions" = true;
 
     # Docker extension settings
     "docker.dockerPath" = "${pkgs.docker}/bin/docker";

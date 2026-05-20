@@ -89,12 +89,12 @@ let
       fi
 
       local host_found=0
-      for cli in claude codex gemini; do
+      for cli in claude codex antigravity; do
         local label pattern
         case "$cli" in
-          claude)  label="Claude Code"; pattern='\.claude-unwrapped' ;;
-          codex)   label="Codex CLI";   pattern='bin/codex' ;;
-          gemini)  label="Gemini CLI";  pattern='bin/gemini' ;;
+          claude)       label="Claude Code";    pattern='\.claude-unwrapped' ;;
+          codex)        label="Codex CLI";      pattern='bin/codex' ;;
+          antigravity)  label="Antigravity CLI"; pattern='bin/agy' ;;
         esac
 
         while IFS= read -r line; do
@@ -2331,7 +2331,6 @@ in
     backstage = "backstage-pwa"
     "backstage talos" = "backstage-pwa"
     "google ai" = "google-ai-pwa"
-    gemini = "google-gemini-pwa"
     gmail = "gmail-pwa"
     calendar = "google-calendar-pwa"
   '';

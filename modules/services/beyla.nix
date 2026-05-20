@@ -52,7 +52,7 @@ in
           discoveryServices = if cfg.monitorAiAssistants then [
             {
               name = "ai-assistants";
-              exe_path = ".*(claude|gemini|codex).*";
+              exe_path = ".*(claude|agy|codex).*";
             }
           ] else [];
           

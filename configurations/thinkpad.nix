@@ -426,7 +426,6 @@ in
       experiments = {
         claudeCode = "9";
         codex      = "10";
-        gemini     = "11";
       };
       batchTimeout = "10s";
       batchSize = 100;
