@@ -520,6 +520,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-antigravity-cli": {
+      "locked": {
+        "lastModified": 1779224168,
+        "narHash": "sha256-fOLtE9bHSQCtA8hpCWQqn2frShab/2jOsb54eDkPuYk=",
+        "owner": "deftdawg",
+        "repo": "nixpkgs",
+        "rev": "d123040893b2ff7a664dc9e3831cd03e328f3d84",
+        "type": "github"
+      },
+      "original": {
+        "owner": "deftdawg",
+        "repo": "nixpkgs",
+        "rev": "d123040893b2ff7a664dc9e3831cd03e328f3d84",
+        "type": "github"
+      }
+    },
     "nixpkgs-bleeding": {
       "locked": {
         "lastModified": 1770169770,
@@ -620,6 +636,7 @@
         "nixos-generators": "nixos-generators",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",
+        "nixpkgs-antigravity-cli": "nixpkgs-antigravity-cli",
         "nixpkgs-bleeding": "nixpkgs-bleeding",
         "nixpkgs-sunshine": "nixpkgs-sunshine",
         "onepassword-shell-plugins": "onepassword-shell-plugins",
