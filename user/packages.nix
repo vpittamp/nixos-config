@@ -16,6 +16,11 @@ let
   # Goose Desktop - AI Agent Desktop Application (x86_64 only)
   goose-desktop = pkgs.callPackage ../packages/goose-desktop.nix { };
 
+  # talosctl pinned to v1.13.x — nixpkgs lags at 1.12.x (as of Jan 2026) and
+  # the ryzen Talos OS + Kubernetes 1.36 upgrade flow needs v1.13+ (pruning
+  # support + 1.36 awareness). Remove this override once nixpkgs catches up.
+  talosctl-1-13 = pkgs.callPackage ../packages/talosctl-1-13.nix { };
+
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
     # vim is managed by programs.vim in home-manager
@@ -140,8 +145,11 @@ let
     kubectl # Kubernetes CLI
     kubernetes-helm # Helm package manager for Kubernetes
     k9s # Terminal UI for Kubernetes
-    talosctl # CLI for Talos Linux Kubernetes OS
+    # talosctl pinned to v1.13.x via ../packages/talosctl-1-13.nix
+    # (nixpkgs stuck at 1.12.x as of Jan 2026; 1.13+ required for
+    # K8s 1.36 upgrade + pruning support on ryzen).
     skaffold # Local Kubernetes development tool
+    talosctl-1-13 # CLI for Talos Linux Kubernetes OS (1.13.x pin)
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     idpbuilder # IDP builder tool (x86_64 only)
   ];
