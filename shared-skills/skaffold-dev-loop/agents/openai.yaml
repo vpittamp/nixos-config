@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skaffold Dev Loop"
+  short_description: "Run Skaffold inner-loop HMR and outer-loop GitOps commit-pin for workflow-builder services on ryzen."
+  default_prompt: "Use $skaffold-dev-loop to start, exit, or troubleshoot the Skaffold dev loop for workflow-builder system services."

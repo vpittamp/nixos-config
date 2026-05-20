@@ -1,9 +1,11 @@
 ---
 name: devspace-quick-iteration
-description: Manage PittampalliOrg DevSpace quick-iteration loops on ryzen and similar Kubernetes-backed development environments. Use when starting, rendering, debugging, or cleaning up DevSpace profiles; resolving DevSpace prompts, ImagePullBackOff, missing shared devcontainer images, ArgoCD pause/resume drift, profile-selected Deployment preflight, or workflow-builder DevSpace loops such as openshell-inner-loop and swebench-dev.
+description: Legacy DevSpace quick-iteration loop for PittampalliOrg on ryzen. Use ONLY for fn-system (Knative) or services not yet migrated to Skaffold; prefer the skaffold-dev-loop skill for the going-forward dev loop. Triggers on DevSpace prompts, ImagePullBackOff, missing shared devcontainer images, ArgoCD pause/resume drift, profile-selected Deployment preflight, or workflow-builder DevSpace loops such as openshell-inner-loop and swebench-dev.
 ---
 
-# DevSpace Quick Iteration
+# DevSpace Quick Iteration (Legacy)
+
+> **Skaffold is the going-forward dev loop.** This skill remains for `fn-system` (Knative; not migratable to Skaffold-style sync) and as a fallback if Skaffold misbehaves on a specific service. For everything else, use [`skaffold-dev-loop`](../skaffold-dev-loop/SKILL.md). devspace.yaml stays in-tree alongside Skaffold during the transition.
 
 ## Operating Model
 
