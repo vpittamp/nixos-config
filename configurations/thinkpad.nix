@@ -850,6 +850,7 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
+    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 ];  # OTEL remote-session sink from ryzen
     checkReversePath = "loose";  # For Tailscale
   };
 
