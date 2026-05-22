@@ -16,7 +16,7 @@ Confirm the idpbuilder binary is the forked one when behavior matters:
 ```bash
 command -v idpbuilder
 idpbuilder stacks create --help
-idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine|--seed-images'
 ```
 
 The expected steady state is the Nix profile binary, not a stale `~/.local/bin/idpbuilder`. On this system the Nix package is built from the local flake input `idpbuilder-src`, which points at `/home/vpittamp/repos/vpittamp/idpbuilder/main`.
@@ -30,7 +30,7 @@ nix build .#idpbuilder --no-link
 sudo nixos-rebuild switch --flake .#ryzen
 command -v idpbuilder
 idpbuilder stacks create --help | rg -- '--container-engine|--seed-image-push-engine'
-idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--container-engine|--seed-image-push-engine|--seed-images'
 ```
 
 Do not pass `--impure` to the NixOS rebuild. If the forked source needs to move, change the flake input or lockfile instead of relying on an impure path lookup. Do not leave a temporary `nix profile` idpbuilder overlay in place; the declarative profile should provide the active binary after rebuild.
@@ -102,17 +102,18 @@ The local developer bootstrap path should establish local credentials as `develo
 Use `stacks sync` after local manifest edits, release-pin rewrites, or Tailscale ingress fixes when the cluster itself does not need to be rebuilt:
 
 ```bash
-idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
-The sync path snapshots the local stacks worktree into in-cluster Gitea and rewrites release-pinned ryzen bootstrap image references into local Gitea references. It uses the same default provider, profile, and overlay as `stacks create`.
+The sync path snapshots the local stacks worktree into in-cluster Gitea and preserves active-development image pins by default. It uses the same default provider, profile, and overlay as `stacks create`. Seed-image rewrites are explicit bootstrap/recovery behavior: `stacks create` still seeds by default, while `stacks sync` requires `--seed-images=true` and warns when it rewrites active-development kustomizations.
 
 Current sync behavior is cache-backed, not a fresh root commit per run:
 
 - Cache clone: `${XDG_CACHE_HOME:-~/.cache}/idpbuilder/stacks-sync/<cluster>/<owner>/<repo>`, overridable with `--cache-dir`.
 - Source selection preserves tracked files, tracked modifications, and untracked non-ignored files using Git's `ls-files --cached --others --exclude-standard` view.
 - Deleted files are removed from the cache tree before commit.
-- Release-pin rewrites happen only inside the sync/cache tree, never in the source worktree.
+- Seed-image rewrites, when explicitly enabled, happen only inside the sync/cache tree, never in the source worktree.
+- A per-cluster/repo/branch lock is held for the full one-shot sync or watch lifetime. Lock contention should fail fast with cluster/repo/branch/cache context; stop the active watcher/sync or use a separate cache/branch intentionally.
 - Unchanged sync trees skip commit, push, and ArgoCD refresh and should print `No changes to sync`.
 - Changed sync trees push a normal descendant commit and then default to `--refresh-mode=affected`: compute affected ArgoCD Applications from live app sources plus local Kustomize dependency closures, hard-refresh only those apps, and wait for each refreshed app to observe the pushed commit.
 - App-of-apps changes refresh `root-application` first, re-list live Applications, then refresh affected children. Raw manifest Application directories should include a `kustomization.yaml` when the ArgoCD Application uses `source.kustomize` options or patches.
@@ -121,10 +122,10 @@ Current sync behavior is cache-backed, not a fresh root commit per run:
 Useful refresh flags:
 
 ```bash
-idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
-idpbuilder stacks sync --refresh-mode=affected --sync-wait-timeout=3m --container-engine podman --seed-image-push-engine skopeo
-idpbuilder stacks sync --refresh-mode=all --container-engine podman --seed-image-push-engine skopeo   # explicit recovery only
-idpbuilder stacks sync --refresh-mode=none --container-engine podman --seed-image-push-engine skopeo  # snapshot-only tests
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo --seed-images=false
+idpbuilder stacks sync --refresh-mode=affected --sync-wait-timeout=3m --container-engine podman --seed-image-push-engine skopeo --seed-images=false
+idpbuilder stacks sync --refresh-mode=all --container-engine podman --seed-image-push-engine skopeo --seed-images=false   # explicit recovery only
+idpbuilder stacks sync --refresh-mode=none --container-engine podman --seed-image-push-engine skopeo --seed-images=false  # snapshot-only tests
 ```
 
 The `cluster-update --container-engine podman --seed-image-push-engine skopeo` wrapper should delegate to this sync path and preserve those flags.
@@ -132,7 +133,7 @@ The `cluster-update --container-engine podman --seed-image-push-engine skopeo` w
 For continuous local iteration:
 
 ```bash
-idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
 `dev-watch-only` and `deployment/scripts/devenv-up.sh --watch` should start the direct idpbuilder watcher when the installed binary supports it. The legacy `watchexec` repeated one-shot sync loop is only a fallback for old binaries. For a supervised opt-in watcher on ryzen, source `deployment/scripts/cluster-menu.sh` and use `cluster-watch-start`, `cluster-watch-status`, `cluster-watch-logs`, `cluster-watch-stop`, or `cluster-watch-enable`.
@@ -140,7 +141,7 @@ idpbuilder stacks sync --watch --debounce 2s --container-engine podman --seed-im
 If local Gitea history is unrelated, missing, or corrupted, normal sync should refuse a non-fast-forward push. Use this only as an explicit recovery action:
 
 ```bash
-idpbuilder stacks sync --reset-local-history --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --reset-local-history --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
 Expected quick checks:

@@ -118,8 +118,8 @@ git add \
 git commit -m "fix(workflow-builder): declare dev spoke hostnames"
 git push origin HEAD:main
 # For local ryzen validation of the same manifest change:
-idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
-idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo --seed-images=false
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
 6. Wait for GitHub checks. `Tailscale ACL GitOps` must succeed before expecting new or re-tagged Tailscale services to work.

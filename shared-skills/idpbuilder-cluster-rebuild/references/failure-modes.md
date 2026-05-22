@@ -123,7 +123,7 @@ Fix:
 Prefer preserving local Gitea history. First confirm the installed fork supports cache-backed sync:
 
 ```bash
-idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan'
+idpbuilder stacks sync --help | rg -- '--watch|--debounce|--cache-dir|--reset-local-history|--refresh-mode|--sync-wait-timeout|--print-refresh-plan|--seed-images'
 ```
 
 If the branch is intentionally disposable or corrupted, run the explicit recovery path once:
@@ -146,7 +146,7 @@ Fix:
 Plan first and fail closed by default:
 
 ```bash
-idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
 If a local dependency is missing or ambiguous, fix the Kustomize input rather than falling back silently. For raw manifest directories, add a minimal `kustomization.yaml` if the ArgoCD Application sets `source.kustomize` fields or patches. Use a longer wait for root/app-of-apps churn:
@@ -195,7 +195,7 @@ cd /home/vpittamp/repos/PittampalliOrg/stacks/main
 timeout 6 deployment/scripts/devenv-up.sh --watch
 ```
 
-The timeout interruption is expected for a smoke test; the important signal is that it starts `idpbuilder stacks sync --watch --debounce 2s`.
+The timeout interruption is expected for a smoke test; the important signal is that it starts `idpbuilder stacks sync --watch --debounce 2s` with seed-image rewrites disabled for normal iteration.
 
 ## Argo Hooks Or Old Images
 

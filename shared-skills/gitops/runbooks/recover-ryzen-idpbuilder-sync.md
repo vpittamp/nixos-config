@@ -8,6 +8,7 @@ Use this when `idpbuilder stacks sync` on ryzen pushes unexpected image pins, ti
 - A sync times out waiting for commit `A`, but most apps already show a later revision `B`.
 - A sync fails with `sync to <A> superseded by <B>`.
 - Active-development apps suddenly reference `gitea.cnoe.localtest.me:9443/...:git-*` or another release-pin-derived local registry ref instead of an intentional `gitea-ryzen.tail286401.ts.net/...` or GHCR pin.
+- Ryzen `workflow-builder` rolls back to an older `ghcr.io/pittampalliorg/workflow-builder:git-*` tag while `dev-workflow-builder` still shows the intended release-pin override.
 - ArgoCD app `.operation.sync.revision` points at an older snapshot than `.status.sync.revision`, and the message waits for a Deployment that is using an old image.
 
 ## Diagnostic
@@ -31,8 +32,16 @@ git reflog show --date=iso gitea/main | sed -n '1,80p'
 Compare the suspect image pins across snapshots:
 
 ```bash
+git show <sha>:packages/components/active-development/manifests/workflow-builder/kustomization.yaml | sed -n '1,16p'
 git show <sha>:packages/components/active-development/manifests/openshell-agent-runtime/kustomization.yaml | sed -n '58,66p'
 git show <sha>:packages/components/active-development/manifests/swebench-coordinator/kustomization.yaml | sed -n '23,30p'
+```
+
+For workflow-builder, also compare the promoted dev override:
+
+```bash
+kubectl --context hub -n argocd get app dev-workflow-builder -o jsonpath='{.spec.source.kustomize.images}{"\n"}{.status.summary.images}{"\n"}'
+kubectl --context admin@ryzen -n workflow-builder get deploy workflow-builder -o jsonpath='{range .spec.template.spec.containers[*]}{.name}={.image}{"\n"}{end}'
 ```
 
 Check for stale Argo operations:
@@ -45,6 +54,7 @@ kubectl get app <app> -n argocd -o jsonpath='{.operation.sync.revision}{"\n"}{.s
 
 1. Stop duplicate one-shot syncs or watchers if the lock reports another active sync. Keep only the single sync source you intend to publish.
 2. Choose a source tree with the correct manifests. If preserving ryzen-local image pins, do not use a clean `origin/main` tree unless it contains those pins.
+   - For workflow-builder, the durable ryzen pin is `packages/components/active-development/manifests/workflow-builder/kustomization.yaml`; commit the intended GHCR `git-<sha>` tag to `origin/main` before syncing if the pin should survive future clean syncs.
 3. Publish recovery snapshots with seed rewrites disabled. Current `idpbuilder stacks sync` already defaults this way, but keep the flag explicit in recovery commands:
 
 ```bash
@@ -86,8 +96,17 @@ kubectl get app -n argocd dapr-runtime openshell-agent-runtime swebench-coordina
 Confirm live images and pods, not only Argo status:
 
 ```bash
+kubectl get deploy workflow-builder -n workflow-builder -o jsonpath='{range .spec.template.spec.containers[*]}{.name}={.image}{"\n"}{end}'
 kubectl get deploy,pod -n openshell -l app=dapr-agent-py -o wide
 kubectl get deploy,pod -n workflow-builder -l app=swebench-coordinator -o wide
+```
+
+For a workflow-builder image-pin recovery, finish by verifying both environments:
+
+```bash
+kubectl --context admin@ryzen -n argocd get app workflow-builder -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,OP:.status.operationState.phase,REV:.status.sync.revision
+kubectl --context hub -n argocd get app dev-workflow-builder -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,OP:.status.operationState.phase,REV:.status.sync.revision
+kubectl --context hub -n argocd get app dev-workflow-builder -o jsonpath='{.status.summary.images}{"\n"}'
 ```
 
 ## Current Tool Behavior

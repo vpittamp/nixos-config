@@ -1,6 +1,6 @@
 ---
 name: skaffold-dev-loop
-description: Manage PittampalliOrg Skaffold dev loops for the workflow-builder microservices system on ryzen. Use for starting/exiting `skaffold dev` inner-loop HMR sessions, building+pushing prod images and committing kustomize pins via the outer-loop wrapper, troubleshooting Argo pause/resume, SKAFFOLD_DEFAULT_REPO/gitea-ryzen registry issues, dev kustomize overlay drift, dedicated stacks-ryzen clone for commit-pin, Knative fn-system exclusion, and the inner/outer loop trade-offs between Skaffold and the legacy devspace.yaml fallback.
+description: Manage PittampalliOrg Skaffold dev loops for the workflow-builder microservices system on ryzen. Use for starting/exiting `skaffold dev` inner-loop HMR sessions, troubleshooting Argo pause/resume, SKAFFOLD_DEFAULT_REPO/gitea-ryzen registry issues, dev kustomize overlay drift, legacy ryzen-only commit-pin/image experiments, Knative fn-system exclusion, and choosing between Skaffold, idpbuilder stacks sync, GitHub/GHCR image delivery, and the legacy devspace.yaml fallback.
 ---
 
 # Skaffold Dev Loop
@@ -12,7 +12,9 @@ Skaffold is the in-cluster dev loop for the workflow-builder microservices syste
 There are two loops:
 
 - **Inner loop** (`pnpm dev:skaffold`) — Skaffold builds a dev image (`node:22-alpine` or `python:3.12-slim` + baked deps), deploys it as the workflow-builder Deployment (overwriting Argo's prod pod), then file-syncs `src/`/`lib/`/etc. into the running pod on every save. Vite HMRs the browser; uvicorn `--reload` restarts the Python service. Argo is paused for the session via the wrapper's `trap`.
-- **Outer loop** (`pnpm deploy:skaffold`) — Skaffold builds the prod multi-stage Dockerfile, pushes to gitea-ryzen, then a wrapper commits the new tag into `stacks/main/.../active-development/manifests/<service>/kustomization.yaml` on gitea-ryzen, and ArgoCD's `automated.selfHeal=true` rolls it out. The developer's primary stacks/main checkout (which tracks GitHub origin) is untouched.
+- **Legacy ryzen-only image loop** (`pnpm deploy:skaffold`) — Skaffold builds the prod multi-stage Dockerfile, pushes to gitea-ryzen, then a wrapper commits the new tag into `stacks/main/.../active-development/manifests/<service>/kustomization.yaml` on gitea-ryzen, and ArgoCD's `automated.selfHeal=true` rolls it out. Use this only for narrow ryzen-only recovery/testing. The durable system path is the GitHub/GHCR build lane plus an `origin/main` active-development pin and `idpbuilder stacks sync --seed-images=false`.
+
+Skaffold does **not** replace the ryzen idpbuilder manifest path. `idpbuilder stacks sync --seed-images=false` snapshots the selected local stacks worktree into in-cluster Gitea, computes affected ArgoCD Applications, hard-refreshes them, and waits for them to observe the pushed revision. Use idpbuilder/`clu` for manifest changes and durable ryzen pins, Skaffold inner loop for live source hot reload, Skaffold deploy only for narrow ryzen-only image-pin experiments, and release-pins/GitOps Promoter for dev/staging.
 
 The Skaffold module set covers 6 of the 7 services in the system:
 
@@ -21,11 +23,13 @@ The Skaffold module set covers 6 of the 7 services in the system:
 | `workflow-builder` | SvelteKit BFF (Node 22) | 3002 → 3000 | `src/**`, `lib/**`, `static/**`, `drizzle/**`, `scripts/**.{ts,js,mjs}`, `vite.config.ts`, … |
 | `workflow-orchestrator` | Python/FastAPI Dapr workflow | 3013 → 8080 | `services/workflow-orchestrator/**/*.py`, `*.toml`, `*.yaml` |
 | `function-router` | Node Express | 3014 → 8080 | `services/function-router/src/**`, `config/**`, `tsconfig.json` |
-| `fn-activepieces` | Node Express | 3016 → 8080 | `services/fn-activepieces/src/**` |
+| `fn-activepieces` | Node Express | 3016 → 8080 | `services/fn-activepieces/src/**` (inactive on current ryzen by default) |
 | `mcp-gateway` | Node Express | 3018 → 8080 | `services/mcp-gateway/src/**` |
 | `swebench-coordinator` | Python/FastAPI | 3019 → 8080 | `services/swebench-coordinator/src/**.py`, `pyproject.toml` |
 
 **`fn-system` is excluded** — it runs as a Knative Service (`ksvc fn-system`, scale-to-0). Inner-loop file-sync into a transient Knative pod is impractical. Fall back to `devspace-quick-iteration` for fn-system-specific work, or treat the existing Argo-managed fn-system as a stable dependency.
+
+**`fn-activepieces` is inactive by default** — the Skaffold config remains in tree for recovery/parity work, but the current ryzen cluster may not expose a matching regular Argo Application/Deployment. Default `ALL` runs skip it. Use `SKAFFOLD_ALLOW_INACTIVE=1 bash scripts/skaffold-dev.sh fn-activepieces` only when deliberately restoring or testing that path.
 
 ## When to use this skill
 
@@ -40,9 +44,10 @@ From `/home/vpittamp/repos/PittampalliOrg/workflow-builder/main` on ryzen (kubec
 ```bash
 pnpm dev:skaffold                              # workflow-builder (default)
 pnpm dev:skaffold:orchestrator                 # workflow-orchestrator
-pnpm dev:skaffold:all                          # all 6 modules (heavy)
+pnpm dev:skaffold:all                          # active modules (heavy)
 bash scripts/skaffold-dev.sh function-router   # any single module
 bash scripts/skaffold-dev.sh workflow-builder workflow-orchestrator  # subset
+pnpm skaffold:doctor                           # read-only Skaffold + idpbuilder preflight
 ```
 
 The wrapper:
@@ -53,7 +58,9 @@ The wrapper:
 
 Edits to a sync'd path (e.g. `src/**/*.svelte`) tar into the pod in ~1s; Vite HMRs the browser. Edits to `package.json` / `pnpm-lock.yaml` force a full image rebuild + pod restart (~30s).
 
-### Outer loop (deploy a new version via GitOps)
+`pnpm skaffold:doctor` is the preferred first command for LLM coding agents. It checks the kubectl context, required commands, active/inactive module state, Argo pause annotations, live Deployment images, gitea-ryzen pins, `idpbuilder stacks status`, read-only `idpbuilder stacks sync --print-refresh-plan`, and `clhot --ci-one-shot --check`. Use `pnpm --silent skaffold:doctor -- --json` or `bash scripts/skaffold-doctor.sh --json` for machine-readable output.
+
+### Legacy ryzen-only image loop
 
 ```bash
 pnpm deploy:skaffold                                # workflow-builder
@@ -71,6 +78,7 @@ bash scripts/skaffold-deploy.sh workflow-builder workflow-orchestrator  # batch
 - Maintains a dedicated cache clone at `~/.cache/skaffold/stacks-ryzen` tracking **gitea-ryzen exclusively** (NOT the developer's primary `stacks/main` checkout, which tracks GitHub origin and has a divergent lineage from gitea-ryzen).
 - Each run: `git fetch --depth 50 origin main` → `git reset --hard origin/main`, then a Python textual edit of the kustomization's `newName:`/`newTag:` lines (avoids the `kustomize edit` CLI), commit, push to `gitea-ryzen/main`.
 - Annotates ArgoCD app with `refresh=hard` to accelerate the poll. Argo's selfHeal + PreSync hook (`Job/db-migrate`) handle the rollout.
+- This cache clone is separate from idpbuilder's sync cache. Do not use commit-pin for general manifest edits or durable workflow-builder image pins; use `idpbuilder stacks sync --seed-images=false` / `clu` from the primary stacks worktree so affected-app planning and local worktree snapshot semantics stay intact.
 
 Override the gitea remote with `STACKS_REMOTE_URL=…` or branch with `STACKS_BRANCH=…`.
 
@@ -130,11 +138,11 @@ Before calling the inner loop done:
 - Ctrl-C resumes the ArgoCD app (verify `metadata.annotations` has no `skip-reconcile`)
 - Argo reconciles the Deployment back to the prod image within ~30s
 
-Before calling the outer loop done:
+Before calling the legacy ryzen-only image loop done:
 - `pnpm deploy:skaffold` finishes with `==> ✓ done`
 - The commit appears on `gitea-ryzen/main` (`git -C ~/.cache/skaffold/stacks-ryzen log -1`)
 - ArgoCD app shows `sync=Synced health=Healthy phase=Succeeded` and the live Deployment's image matches the new tag
-- Optional rollback: edit `~/.cache/skaffold/stacks-ryzen/.../kustomization.yaml` back to the prior pin, push, wait for Argo to roll the prod image
+- Optional rollback: edit `~/.cache/skaffold/stacks-ryzen/.../kustomization.yaml` back to the prior pin, push, wait for Argo to roll the prod image. If the image should survive clean idpbuilder syncs, also commit the intended active-development pin to `origin/main`.
 
 ## Gotchas (memorize these — they cost the most time)
 

@@ -121,8 +121,8 @@ git push origin HEAD:main
 For local ryzen validation of the same change, use affected sync from the intended stacks worktree:
 
 ```bash
-idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
-idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
+idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo --seed-images=false
+idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
 Use affected sync for local ryzen validation of the same manifest change.

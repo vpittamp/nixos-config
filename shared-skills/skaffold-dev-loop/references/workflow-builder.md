@@ -14,16 +14,33 @@ Stacks repo cache (auto-created by `commit-pin.sh`):
 ls ~/.cache/skaffold/stacks-ryzen
 ```
 
+Stacks repo used by idpbuilder (local manifest snapshot source):
+
+```bash
+cd /home/vpittamp/repos/PittampalliOrg/stacks/main
+idpbuilder stacks sync --print-refresh-plan --seed-images=false
+```
+
+The Skaffold cache and idpbuilder sync cache are separate. Use idpbuilder/`clu`
+for manifest edits because it snapshots the selected local stacks worktree into
+in-cluster Gitea, computes affected apps, hard-refreshes them, and waits for the
+pushed revision. Use Skaffold only for live source hot reload and narrow ryzen
+image-pin experiments; commit durable image pins to `origin/main` and deploy them
+with idpbuilder/`clu`.
+
 ## Inner loop — start
 
 ```bash
 pnpm dev:skaffold                                # workflow-builder (default)
 pnpm dev:skaffold:orchestrator                   # workflow-orchestrator
-pnpm dev:skaffold:all                            # all 6 modules
+pnpm dev:skaffold:all                            # active modules
 
 # Arbitrary subset:
 bash scripts/skaffold-dev.sh function-router
 bash scripts/skaffold-dev.sh workflow-builder workflow-orchestrator mcp-gateway
+
+# Inactive module, only when deliberately restoring/testing that path:
+SKAFFOLD_ALLOW_INACTIVE=1 bash scripts/skaffold-dev.sh fn-activepieces
 ```
 
 Steady-state for a single-module session: pod 2/2 Ready in ~3 min (Dapr sidecar dominates), then "Watching for changes..." and port-forward live (e.g. `http://localhost:3002` for workflow-builder).
@@ -64,7 +81,9 @@ kubectl get application workflow-builder -n argocd \
 # (should print blank)
 ```
 
-## Outer loop — deploy a new prod image
+## Legacy ryzen-only image loop
+
+Prefer the GitHub/GHCR build lane plus an `origin/main` active-development pin for durable workflow-builder images. Use the Skaffold deploy path only for narrow ryzen-only recovery/testing.
 
 ```bash
 pnpm deploy:skaffold                                  # workflow-builder
@@ -80,7 +99,7 @@ End-to-end timeline (workflow-builder, fresh build, no cache):
 - ArgoCD reconcile + PreSync `db-migrate` Job: ~30–90s
 - Deployment rolling update: ~30s
 
-## Outer loop — verify pin landed + Argo applied
+## Legacy ryzen-only loop — verify pin landed + Argo applied
 
 ```bash
 # Local cache repo state
@@ -106,7 +125,7 @@ kubectl get application workflow-builder -n argocd \
 
 `db-migrate` is a PreSync hook; check the Job pod logs (`kubectl -n workflow-builder logs job/workflow-builder-db-migrate-…`).
 
-## Outer loop — rollback / revert
+## Legacy ryzen-only loop — rollback / revert
 
 Edit the gitea-ryzen pin back to the prior tag and re-push from the cache clone:
 
@@ -132,12 +151,16 @@ kubectl -n argocd annotate application workflow-builder \
   argocd.argoproj.io/refresh=hard --overwrite
 ```
 
+If the reverted or restored image should be the durable ryzen image, apply the same pin in `/home/vpittamp/repos/PittampalliOrg/stacks/main/packages/components/active-development/manifests/workflow-builder/kustomization.yaml`, commit it to `origin/main`, and run `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
+
 ## Cluster-level preflight (before first session of a day)
 
 ```bash
+pnpm skaffold:doctor                # preferred; read-only Skaffold + idpbuilder checks
+pnpm --silent skaffold:doctor -- --json  # machine-readable for agents
 kubectl config current-context        # expect admin@ryzen
 kubectl get nodes                     # 3 nodes Ready
-kubectl -n workflow-builder get deploy workflow-builder workflow-orchestrator function-router fn-activepieces mcp-gateway swebench-coordinator
+kubectl -n workflow-builder get deploy workflow-builder workflow-orchestrator function-router mcp-gateway swebench-coordinator
 kubectl get application workflow-builder workflow-orchestrator -n argocd \
   -o jsonpath='{range .items[*]}{.metadata.name} sync={.status.sync.status} health={.status.health.status}{"\n"}{end}'
 docker info >/dev/null && echo "docker OK"
@@ -155,12 +178,13 @@ docker login -u giteaadmin gitea-ryzen.tail286401.ts.net
 
 - **workflow-builder**: SvelteKit's `.svelte-kit/tsconfig.json` doesn't exist on first start — `[WARNING] Cannot find base config file` is benign; vanishes after the first route hit.
 - **workflow-orchestrator**: uvicorn `--reload` watches `/app`; py edits trigger restart. Dapr's scheduler-disconnected logs at startup are normal — placement reconnects within seconds.
-- **fn-activepieces**: the prod Deployment file is a multi-doc YAML (Deployment + Service). The dev overlay's `resources:` references the file; both kinds render but only the Deployment is patched.
+- **fn-activepieces**: currently inactive by default on ryzen. The prod Deployment file is a multi-doc YAML (Deployment + Service). The dev overlay's `resources:` references the file; both kinds render but only the Deployment is patched.
 - **swebench-coordinator**: build context is the repo root (Dockerfile uses `services/swebench-coordinator/...` paths). Same .dockerignore exclusions as workflow-orchestrator.
 
 ## When to use devspace instead
 
 - The service is fn-system (Knative).
+- The service is fn-activepieces and the regular Argo Application/Deployment path is still inactive.
 - The service hasn't been added to the Skaffold module set yet.
 - You need devspace's profile-based multi-service composition for an experimental setup.
 

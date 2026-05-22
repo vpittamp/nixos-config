@@ -219,11 +219,13 @@ Ryzen also has a local snapshot repo:
 |---|---|
 | local Gitea `giteaadmin/stacks.git:main` | Current ryzen source for `root-application` and child Applications; written by `idpbuilder stacks sync` from the selected local stacks worktree |
 
-Current ryzen hot reload uses `idpbuilder stacks sync`. The command maintains a cache clone, pushes descendant snapshot commits, computes affected ArgoCD Applications from live app sources plus local Kustomize dependencies, and hard-refreshes only the affected apps. `root-application` is refreshed first when child Application definitions or `packages/overlays/ryzen` change.
+Current ryzen hot reload uses `idpbuilder stacks sync --seed-images=false`. The command maintains a cache clone, pushes descendant snapshot commits, preserves active-development image pins, computes affected ArgoCD Applications from live app sources plus local Kustomize dependencies, and hard-refreshes only the affected apps. `root-application` is refreshed first when child Application definitions or `packages/overlays/ryzen` change. Seed-image rewrites are bootstrap/recovery-only and require explicit `--seed-images=true`.
 
 The local Gitea system webhook to ArgoCD is kept active for best-effort notification, but webhook-only refresh is not authoritative. Gitea push payloads currently advertise an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL; targeted affected refresh avoids that mismatch.
 
 For automatic local iteration, `dev-watch-only` runs the native idpbuilder watch path in the foreground. The ryzen home-manager profile also installs an opt-in `ryzen-stacks-watch.service`; manage it through the `cluster-watch-*` helpers after sourcing `deployment/scripts/cluster-menu.sh`. The service is installed but not enabled by default.
+
+Do not run a one-shot sync while the foreground or supervised watcher is active. The current fork holds a per-cluster/repo/branch lock for the full mutating sync/watch lifetime and fails fast on contention.
 
 Latency reports come from `deployment/scripts/benchmark-ryzen-hot-edit.sh`. Use `BENCHMARK_PURPOSE=normal|manual|threshold-test` and `BENCHMARK_CASE=child-service|app-definition|dependency-file`; `ryzen-hot-loop-summary.sh` defaults to normal successful reports and requires `--purpose all --include-failures` to include deliberate threshold tests.
 
