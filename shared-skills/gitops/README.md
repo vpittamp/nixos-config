@@ -30,6 +30,7 @@ shared-skills/gitops/
     ├── bump-image-pin-not-in-release-pins.md  ← browserstation, chrome-sandbox, AGENT_RUNTIME_*_DEFAULT_IMAGE
     ├── upsert-workflow-json.md                ← workflow JSON spec → DB UPDATE (image rebuild does not roll specs)
     ├── mirror-image-gitea-to-ghcr.md
+    ├── recover-ryzen-idpbuilder-sync.md   ← concurrent syncs, seed-image rewrite recovery, stale Argo ops
     ├── manage-gitops-promoter.md          ← controller upgrades + ArgoCD Promoter UI extension
     ├── review-argocd-app-health.md        ← OutOfSync/Degraded fleet review + legacy cleanup decisions
     ├── recover-stuck-promotion.md

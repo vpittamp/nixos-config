@@ -29,11 +29,18 @@ let
       exit 127
     fi
 
+    seed_images_args=()
+    sync_help="$(idpbuilder stacks sync --help 2>/dev/null || true)"
+    if [[ "$sync_help" == *"--seed-images"* ]]; then
+      seed_images_args+=(--seed-images=false)
+    fi
+
     exec idpbuilder stacks sync \
       --cluster-name "$cluster_name" \
       --stacks-repo "$stacks_dir" \
       --watch \
       --debounce "$debounce" \
+      "''${seed_images_args[@]}" \
       --container-engine "$container_engine" \
       --seed-image-push-engine "$seed_image_push_engine" \
       --refresh-mode="$refresh_mode" \
