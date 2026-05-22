@@ -210,6 +210,9 @@ lib.mkIf enableClaudeCode {
     # Experimental: Agent Teams - multi-agent coordination
     # Session variable ensures it's set before Claude Code initializes
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+
+    # Experimental: Workflows - set before Claude Code initializes
+    CLAUDE_CODE_WORKFLOWS = "1";
   };
 
   # Chromium is installed via programs.chromium in tools/chromium.nix
@@ -311,6 +314,8 @@ lib.mkIf enableClaudeCode {
         # Experimental: Agent Teams - enables TeammateTool for multi-agent coordination
         # Multiple Claude instances work in parallel with shared task lists and peer messaging
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+        # Experimental: Workflows
+        CLAUDE_CODE_WORKFLOWS = "1";
       };
 
       # Hooks - Commands that run in response to Claude Code events
