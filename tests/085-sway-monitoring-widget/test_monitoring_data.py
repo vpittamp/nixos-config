@@ -1874,6 +1874,59 @@ class TestQueryMonitoringData:
         assert source
         assert source["connection_key"] == "vpittamp@ryzen:22"
 
+    def test_remote_otel_sessions_surface_without_ssh_window_candidate(self, monkeypatch, tmp_path):
+        """Remote sessions should surface from the sink even when no local SSH window matches."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        sink_file = tmp_path / "remote-otel-sink.json"
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SINK_FILE", sink_file)
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SOURCE_STALE_SECONDS", 300.0)
+        monitoring_data.REMOTE_OTEL_SINK_CACHE.update({"mtime_ns": None, "size": None, "payload": {}})
+
+        sink_payload = {
+            "schema_version": "1",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "session_schema_version": "11",
+                    "received_at": time.time(),
+                    "sessions": [
+                        {
+                            "tool": "claude-code",
+                            "state": "working",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_id": "claude:sid-no-window",
+                            "native_session_id": "claude:sid-no-window",
+                            "terminal_anchor_id": "anchor-no-window",
+                            "terminal_context": {
+                                "terminal_anchor_id": "anchor-no-window",
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "1:main",
+                                "tmux_pane": "%17",
+                            },
+                            "updated_at": "2026-02-23T19:02:00+00:00",
+                        }
+                    ],
+                }
+            },
+        }
+        monitoring_data._atomic_write_json(sink_file, sink_payload)
+
+        # No window candidates at all — should still surface the ryzen session.
+        sessions = monitoring_data._load_remote_otel_sessions_for_windows(window_candidates=[])
+        assert len(sessions) == 1
+        assert sessions[0]["execution_mode"] == "ssh"
+        assert sessions[0]["connection_key"] == "vpittamp@ryzen:22"
+        assert sessions[0]["native_session_id"] == "claude:sid-no-window"
+
+        # Window candidates with no SSH execution_mode — same result.
+        local_only_candidates = [
+            {"id": 100, "execution_mode": "local", "connection_key": "local@thinkpad"},
+        ]
+        sessions = monitoring_data._load_remote_otel_sessions_for_windows(local_only_candidates)
+        assert len(sessions) == 1
+        assert sessions[0]["connection_key"] == "vpittamp@ryzen:22"
+
 
 @pytest.mark.asyncio
 class TestQueryTailscaleData:

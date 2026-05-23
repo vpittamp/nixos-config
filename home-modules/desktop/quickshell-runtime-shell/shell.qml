@@ -5668,7 +5668,26 @@ ShellRoot {
         if (focusMode === "local_window") {
             return "local_window";
         }
+        if (sessionIsRemoteSpawnable(session)) {
+            return "remote_spawnable";
+        }
         return "unavailable";
+    }
+
+    function sessionIsRemoteSpawnable(session) {
+        if (!session) {
+            return false;
+        }
+        if (stringOrEmpty(session.execution_mode).toLowerCase() !== "ssh") {
+            return false;
+        }
+        const terminalContext = (session.terminal_context && typeof session.terminal_context === "object") ? session.terminal_context : {};
+        const remoteTarget = stringOrEmpty(session.remote_target) || stringOrEmpty(terminalContext.remote_target);
+        const connectionKey = stringOrEmpty(session.connection_key) || stringOrEmpty(terminalContext.connection_key);
+        if (!remoteTarget && !connectionKey) {
+            return false;
+        }
+        return true;
     }
 
     function sessionAvailabilityLabel(session) {
@@ -5678,6 +5697,9 @@ ShellRoot {
         }
         if (state === "remote_bridge_attachable") {
             return "Attach here";
+        }
+        if (state === "remote_spawnable") {
+            return "Open & attach";
         }
         if (state === "stale_source") {
             return "Stale source";
@@ -7195,6 +7217,11 @@ ShellRoot {
     function sessionFocusTarget(sessionOrKey) {
         if (sessionOrKey && typeof sessionOrKey === "object") {
             const explicitTarget = normalizedFocusTarget(sessionOrKey.focus_target);
+            const isSpawnable = sessionAvailabilityState(sessionOrKey) === "remote_spawnable";
+            const explicitMethod = explicitTarget ? stringOrEmpty(explicitTarget.method) : "";
+            if (isSpawnable && (!explicitTarget || explicitMethod === "session.focus")) {
+                return sessionSpawnRemoteAttachTarget(sessionOrKey);
+            }
             if (explicitTarget) {
                 return explicitTarget;
             }
@@ -7219,6 +7246,25 @@ ShellRoot {
             params: {
                 session_key: sessionKey,
             },
+        };
+    }
+
+    function sessionSpawnRemoteAttachTarget(session) {
+        const terminalContext = (session.terminal_context && typeof session.terminal_context === "object") ? session.terminal_context : {};
+        const params = {
+            session_key: stringOrEmpty(session.session_key),
+            connection_key: stringOrEmpty(session.connection_key) || stringOrEmpty(terminalContext.connection_key),
+            remote_target: stringOrEmpty(session.remote_target) || stringOrEmpty(terminalContext.remote_target),
+            host_name: stringOrEmpty(session.host_name) || stringOrEmpty(terminalContext.host_name),
+            native_session_id: stringOrEmpty(session.native_session_id),
+            tool: stringOrEmpty(session.tool),
+            project_name: stringOrEmpty(session.project_name) || stringOrEmpty(session.project),
+            working_dir: stringOrEmpty(session.working_dir) || stringOrEmpty(terminalContext.working_dir),
+            tmux_session: stringOrEmpty(terminalContext.tmux_session),
+        };
+        return {
+            method: "session.spawn_remote_attach",
+            params: params,
         };
     }
 

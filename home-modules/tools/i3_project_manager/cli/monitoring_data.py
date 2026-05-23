@@ -609,20 +609,30 @@ def _load_remote_otel_sessions_for_connection(
 
 
 def _load_remote_otel_sessions_for_windows(
-    window_candidates: Optional[List[Dict[str, Any]]],
+    window_candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch and merge remote OTEL sessions for active SSH window identities."""
+    """Fetch and merge all remote OTEL sessions in the deterministic sink.
+
+    Iterates every source the local sink has received from peers (e.g. ryzen
+    pushing to thinkpad), independent of whether the user has a matching SSH
+    window open. ``window_candidates`` is accepted for backwards compatibility
+    but no longer gates surfacing — bridge-window binding still happens later
+    via _resolve_otel_session_window_id at the call site.
+    """
     if not _remote_otel_merge_enabled():
         return []
-    if not window_candidates:
+
+    sink_payload = _load_remote_otel_sink()
+    sources = sink_payload.get("sources", {})
+    if not isinstance(sources, dict) or not sources:
         return []
 
     connection_keys: List[str] = []
     seen: set[str] = set()
-    for candidate in window_candidates:
-        if str(candidate.get("execution_mode") or "").strip().lower() != "ssh":
+    for source_key, source in sources.items():
+        if not isinstance(source, dict):
             continue
-        raw_connection = str(candidate.get("connection_key") or "").strip()
+        raw_connection = str(source.get("connection_key") or source_key or "").strip()
         if not raw_connection:
             continue
         normalized_connection = _normalize_connection_key(raw_connection)
@@ -633,7 +643,6 @@ def _load_remote_otel_sessions_for_windows(
         seen.add(normalized_connection)
         connection_keys.append(normalized_connection)
 
-    sink_payload = _load_remote_otel_sink()
     merged: List[Dict[str, Any]] = []
     for connection_key in connection_keys:
         merged.extend(

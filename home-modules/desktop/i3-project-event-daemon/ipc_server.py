@@ -856,6 +856,7 @@ class IPCServer:
             "context.ensure",
             "launch.open",
             "session.focus",
+            "session.spawn_remote_attach",
             "window.focus",
             "worktree.switch",
             "worktree.clear",
@@ -1015,6 +1016,8 @@ class IPCServer:
                 result = await self._session_list(params)
             elif method == "session.focus":
                 result = await self._session_focus(params)
+            elif method == "session.spawn_remote_attach":
+                result = await self._session_spawn_remote_attach(params)
             elif method == "session.close":
                 result = await self._session_close(params)
             elif method == "focus.state":
@@ -11060,6 +11063,47 @@ class IPCServer:
             "tmux": tmux_result,
             "verification": verification,
         }
+
+    async def _session_spawn_remote_attach(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Spawn a local SSH terminal that attaches to a remote AI session.
+
+        Used when the panel surfaces a remote session from the OTEL sink that
+        has no matching local SSH bridge window. Reuses the existing remote
+        attach machinery, which already handles the "no existing window →
+        launch" path.
+        """
+        session_key = str(params.get("session_key") or "").strip()
+        if not session_key:
+            raise ValueError("session_key is required")
+
+        sessions_result = await self._session_list({})
+        sessions = sessions_result.get("sessions", [])
+        session = next(
+            (
+                item for item in sessions
+                if isinstance(item, dict)
+                and str(item.get("session_key") or "").strip() == session_key
+            ),
+            None,
+        )
+        if not isinstance(session, dict):
+            raise RuntimeError(f"Unknown session_key: {session_key}")
+
+        execution_mode = str(session.get("execution_mode") or "").strip().lower()
+        if execution_mode != "ssh":
+            raise RuntimeError(
+                f"Session {session_key} is not remote (execution_mode={execution_mode!r})"
+            )
+
+        self._record_ai_session_seen(session_key)
+        self._acknowledge_stopped_session_notification(session)
+        self._acknowledge_user_input_session_notification(session)
+
+        return await self._focus_remote_session_attach(
+            session_key=session_key,
+            session=session,
+            intent_epoch=int(params.get("__intent_epoch") or 0),
+        )
 
     async def _session_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Close an AI session by killing its tracked tmux pane or fallback window."""
