@@ -84,6 +84,17 @@ let
       error_mode = "ignore"
 
       trace_statements {
+        context = "resource"
+        statements = [
+          // Backfill host.name resource attribute when the emitter omitted it.
+          // CLI wrappers (claude-code, codex) set this from $HOSTNAME, but a
+          // server-side default makes the future K8s session-aggregator able
+          // to discriminate hosts reliably even for future/forgetful emitters.
+          "set(attributes[\"host.name\"], \"${config.networking.hostName}\") where attributes[\"host.name\"] == nil",
+        ]
+      }
+
+      trace_statements {
         context = "span"
         statements = [
           // If span name is generic "api.request" but has tool name, rename it

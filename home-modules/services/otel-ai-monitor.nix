@@ -153,6 +153,24 @@ in
       };
     };
 
+    aggregatorUrl = mkOption {
+      type = types.str;
+      default = "";
+      description = ''
+        K8s session-aggregator URL the panel queries for cross-host sessions.
+        When set, monitoring_data.py prefers this over the local OTEL sink file
+        (the host-to-host push/sink path) and falls back to the sink only on
+        fetch failure. Empty string disables aggregator polling.
+        Example: https://ai-sessions.cnoe.localtest.me:8443/sessions
+      '';
+    };
+
+    aggregatorTimeoutSec = mkOption {
+      type = types.number;
+      default = 1.5;
+      description = "HTTP timeout (seconds) for aggregator GET requests";
+    };
+
     remotePush = {
       enable = mkOption {
         type = types.bool;
@@ -203,6 +221,16 @@ in
       {
         assertion = (!cfg.remotePush.enable) || ((cfg.remotePush.url != "") && (cfg.remotePush.connectionKey != ""));
         message = "services.otel-ai-monitor.remotePush requires both url and connectionKey when enabled.";
+      }
+    ];
+
+    # Expose aggregator URL + timeout to i3pm monitoring_data.py and Quickshell.
+    home.sessionVariables = lib.mkMerge [
+      (lib.mkIf (cfg.aggregatorUrl != "") {
+        I3PM_MONITORING_AGGREGATOR_URL = cfg.aggregatorUrl;
+      })
+      {
+        I3PM_MONITORING_AGGREGATOR_TIMEOUT = toString cfg.aggregatorTimeoutSec;
       }
     ];
 

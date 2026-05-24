@@ -128,6 +128,15 @@ REMOTE_OTEL_SINK_CACHE: Dict[str, Any] = {
     "size": None,
     "payload": {},
 }
+# K8s session-aggregator client cache. TTL-based since the aggregator returns
+# fresh aggregated state on every request; revalidating more than once per
+# broadcast interval (~5s) just wastes a round trip.
+AGGREGATOR_CACHE: Dict[str, Any] = {
+    "fetched_at": 0.0,
+    "url": "",
+    "payload": {},
+}
+AGGREGATOR_CACHE_TTL_SECONDS = 4.0
 REMOTE_OTEL_PUSH_STATE_CACHE: Dict[str, Any] = {
     "mtime_ns": None,
     "size": None,
@@ -608,21 +617,96 @@ def _load_remote_otel_sessions_for_connection(
     return merged
 
 
+def _aggregator_url() -> str:
+    """Return the configured K8s session-aggregator URL (or empty if disabled)."""
+    return str(os.environ.get("I3PM_MONITORING_AGGREGATOR_URL", "") or "").strip()
+
+
+def _aggregator_timeout() -> float:
+    raw = str(os.environ.get("I3PM_MONITORING_AGGREGATOR_TIMEOUT", "1.5") or "1.5").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 1.5
+    return value if value > 0 else 1.5
+
+
+def _fetch_remote_sessions_from_aggregator() -> Optional[Dict[str, Any]]:
+    """Fetch remote sessions payload from the K8s session-aggregator.
+
+    Returns a payload with the same shape as the deterministic sink
+    (``{"sources": {connection_key: {...}}}``) so downstream parsing can reuse
+    the existing sink-source code path. Returns None when the aggregator URL
+    is unset or any error occurs — callers should treat None as "fall back to
+    the on-disk sink file".
+    """
+    url = _aggregator_url()
+    if not url:
+        return None
+
+    now = time.time()
+    cached_url = str(AGGREGATOR_CACHE.get("url") or "")
+    fetched_at = float(AGGREGATOR_CACHE.get("fetched_at") or 0.0)
+    if cached_url == url and (now - fetched_at) < AGGREGATOR_CACHE_TTL_SECONDS:
+        cached_payload = AGGREGATOR_CACHE.get("payload")
+        if isinstance(cached_payload, dict):
+            return dict(cached_payload)
+
+    # Lazy import: keep the top-level import surface minimal and ensure the
+    # client works in environments where urllib is the only HTTP option.
+    import urllib.error
+    import urllib.request
+
+    timeout = _aggregator_timeout()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            if response.status != 200:
+                return None
+            raw = response.read()
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
+        return None
+
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("sources"), dict):
+        return None
+
+    AGGREGATOR_CACHE.update({
+        "url": url,
+        "fetched_at": now,
+        "payload": dict(payload),
+    })
+    return payload
+
+
 def _load_remote_otel_sessions_for_windows(
     window_candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch and merge all remote OTEL sessions in the deterministic sink.
+    """Fetch and merge all remote OTEL sessions.
 
-    Iterates every source the local sink has received from peers (e.g. ryzen
-    pushing to thinkpad), independent of whether the user has a matching SSH
-    window open. ``window_candidates`` is accepted for backwards compatibility
-    but no longer gates surfacing — bridge-window binding still happens later
-    via _resolve_otel_session_window_id at the call site.
+    Source-of-truth priority:
+    1. K8s session-aggregator (when ``I3PM_MONITORING_AGGREGATOR_URL`` is set
+       and reachable). This is the long-term cross-host data plane.
+    2. Deterministic on-disk sink (``remote-otel-sink.json``) written by the
+       host-to-host push transport. Used as a fallback when the aggregator
+       is unset/unreachable so the system degrades gracefully.
+
+    Iterates every source the chosen payload reports — independent of whether
+    the user has a matching local SSH window open. Bridge-window binding
+    still happens later via _resolve_otel_session_window_id at the call site.
+    ``window_candidates`` is retained for backwards compatibility only.
     """
     if not _remote_otel_merge_enabled():
         return []
 
-    sink_payload = _load_remote_otel_sink()
+    aggregator_payload = _fetch_remote_sessions_from_aggregator()
+    if isinstance(aggregator_payload, dict) and aggregator_payload.get("sources"):
+        sink_payload = aggregator_payload
+    else:
+        sink_payload = _load_remote_otel_sink()
     sources = sink_payload.get("sources", {})
     if not isinstance(sources, dict) or not sources:
         return []

@@ -1874,6 +1874,187 @@ class TestQueryMonitoringData:
         assert source
         assert source["connection_key"] == "vpittamp@ryzen:22"
 
+    def test_aggregator_unset_returns_none(self, monkeypatch):
+        """When the aggregator URL env var is unset, the fetcher returns None."""
+        monkeypatch.delenv("I3PM_MONITORING_AGGREGATOR_URL", raising=False)
+        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
+        assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
+
+    def test_aggregator_fetch_success_caches(self, monkeypatch):
+        """Successful aggregator fetch returns the payload and caches it."""
+        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_TIMEOUT", "0.5")
+        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
+
+        payload = {
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "session_schema_version": "11",
+                    "received_at": time.time(),
+                    "sessions": [],
+                }
+            }
+        }
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps(payload).encode("utf-8")
+        response.__enter__ = MagicMock(return_value=response)
+        response.__exit__ = MagicMock(return_value=False)
+
+        import urllib.request as _urlreq
+        with patch.object(_urlreq, "urlopen", return_value=response) as mock_open:
+            result = monitoring_data._fetch_remote_sessions_from_aggregator()
+            assert result is not None
+            assert "vpittamp@ryzen:22" in result["sources"]
+            # Second call should hit the cache, not the network.
+            cached = monitoring_data._fetch_remote_sessions_from_aggregator()
+            assert cached is not None
+            assert mock_open.call_count == 1
+
+    def test_aggregator_fetch_timeout_returns_none(self, monkeypatch):
+        """Aggregator timeout falls back to None (so caller uses sink file)."""
+        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
+
+        import urllib.error as _urlerr
+        import urllib.request as _urlreq
+        with patch.object(_urlreq, "urlopen", side_effect=_urlerr.URLError("timeout")):
+            assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
+
+    def test_aggregator_fetch_malformed_json_returns_none(self, monkeypatch):
+        """Malformed JSON response falls back to None."""
+        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
+
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b"not json {"
+        response.__enter__ = MagicMock(return_value=response)
+        response.__exit__ = MagicMock(return_value=False)
+
+        import urllib.request as _urlreq
+        with patch.object(_urlreq, "urlopen", return_value=response):
+            assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
+
+    def test_aggregator_preferred_over_sink_when_set(self, monkeypatch, tmp_path):
+        """When aggregator returns sources, sink file is ignored."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+        sink_file = tmp_path / "remote-otel-sink.json"
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SINK_FILE", sink_file)
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SOURCE_STALE_SECONDS", 300.0)
+        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
+        monitoring_data.REMOTE_OTEL_SINK_CACHE.update({"mtime_ns": None, "size": None, "payload": {}})
+
+        def _mk_session(tool: str, sid: str) -> dict:
+            return {
+                "tool": tool,
+                "state": "working",
+                "project": "PittampalliOrg/workflow-builder:main",
+                "session_id": sid,
+                "native_session_id": sid,
+                "terminal_anchor_id": f"anchor-{sid}",
+                "terminal_context": {
+                    "terminal_anchor_id": f"anchor-{sid}",
+                    "tmux_session": "workflow-builder/main",
+                    "tmux_window": "1:main",
+                    "tmux_pane": "%17",
+                },
+                "updated_at": "2026-02-23T19:02:00+00:00",
+            }
+
+        # Sink says: hetzner-only session
+        sink_payload = {
+            "schema_version": "1",
+            "sources": {
+                "vpittamp@hetzner:22": {
+                    "connection_key": "vpittamp@hetzner:22",
+                    "host_name": "hetzner",
+                    "session_schema_version": "11",
+                    "received_at": time.time(),
+                    "sessions": [_mk_session("codex", "from-sink")],
+                }
+            },
+        }
+        monitoring_data._atomic_write_json(sink_file, sink_payload)
+
+        # Aggregator says: ryzen-only session
+        agg_payload = {
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "session_schema_version": "11",
+                    "received_at": time.time(),
+                    "sessions": [_mk_session("claude-code", "from-agg")],
+                }
+            }
+        }
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps(agg_payload).encode("utf-8")
+        response.__enter__ = MagicMock(return_value=response)
+        response.__exit__ = MagicMock(return_value=False)
+
+        import urllib.request as _urlreq
+        with patch.object(_urlreq, "urlopen", return_value=response):
+            sessions = monitoring_data._load_remote_otel_sessions_for_windows()
+
+        # Should reflect aggregator (ryzen), not sink (hetzner)
+        assert len(sessions) == 1
+        assert sessions[0]["connection_key"] == "vpittamp@ryzen:22"
+        assert sessions[0]["native_session_id"] == "from-agg"
+
+    def test_sink_fallback_when_aggregator_unreachable(self, monkeypatch, tmp_path):
+        """Aggregator failure falls back to the on-disk sink — graceful degradation."""
+        monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
+        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+        sink_file = tmp_path / "remote-otel-sink.json"
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SINK_FILE", sink_file)
+        monkeypatch.setattr(monitoring_data, "REMOTE_OTEL_SOURCE_STALE_SECONDS", 300.0)
+        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
+        monitoring_data.REMOTE_OTEL_SINK_CACHE.update({"mtime_ns": None, "size": None, "payload": {}})
+
+        sink_payload = {
+            "schema_version": "1",
+            "sources": {
+                "vpittamp@ryzen:22": {
+                    "connection_key": "vpittamp@ryzen:22",
+                    "host_name": "ryzen",
+                    "session_schema_version": "11",
+                    "received_at": time.time(),
+                    "sessions": [
+                        {
+                            "tool": "claude-code",
+                            "state": "working",
+                            "project": "PittampalliOrg/workflow-builder:main",
+                            "session_id": "from-sink",
+                            "native_session_id": "from-sink",
+                            "terminal_anchor_id": "anchor-sink",
+                            "terminal_context": {
+                                "terminal_anchor_id": "anchor-sink",
+                                "tmux_session": "workflow-builder/main",
+                                "tmux_window": "1:main",
+                                "tmux_pane": "%17",
+                            },
+                            "updated_at": "2026-02-23T19:02:00+00:00",
+                        }
+                    ],
+                }
+            },
+        }
+        monitoring_data._atomic_write_json(sink_file, sink_payload)
+
+        import urllib.error as _urlerr
+        import urllib.request as _urlreq
+        with patch.object(_urlreq, "urlopen", side_effect=_urlerr.URLError("unreachable")):
+            sessions = monitoring_data._load_remote_otel_sessions_for_windows()
+
+        assert len(sessions) == 1
+        assert sessions[0]["native_session_id"] == "from-sink"
+
     def test_remote_otel_sessions_surface_without_ssh_window_candidate(self, monkeypatch, tmp_path):
         """Remote sessions should surface from the sink even when no local SSH window matches."""
         monkeypatch.setenv("I3PM_MONITORING_REMOTE_OTEL", "1")
