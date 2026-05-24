@@ -225,6 +225,18 @@ in
     ];
 
     # Expose aggregator URL + timeout to i3pm monitoring_data.py and Quickshell.
+    # systemd.user.sessionVariables is what reaches systemd user services like
+    # i3-project-daemon and quickshell-runtime-shell (via ~/.config/environment.d).
+    # home.sessionVariables is added too so login shells and `i3pm` CLI calls
+    # outside systemd also see the value.
+    systemd.user.sessionVariables = lib.mkMerge [
+      (lib.mkIf (cfg.aggregatorUrl != "") {
+        I3PM_MONITORING_AGGREGATOR_URL = cfg.aggregatorUrl;
+      })
+      {
+        I3PM_MONITORING_AGGREGATOR_TIMEOUT = toString cfg.aggregatorTimeoutSec;
+      }
+    ];
     home.sessionVariables = lib.mkMerge [
       (lib.mkIf (cfg.aggregatorUrl != "") {
         I3PM_MONITORING_AGGREGATOR_URL = cfg.aggregatorUrl;
