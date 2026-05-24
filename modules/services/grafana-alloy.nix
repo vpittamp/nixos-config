@@ -520,8 +520,14 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      default = "https://otel-collector.cnoe.localtest.me:8443";
-      description = "Kubernetes OTEL collector endpoint (via nginx ingress)";
+      # ryzen Talos cluster exposes otel-collector via the Tailscale Operator
+      # (device-backed Tailscale Ingress, see stacks
+      # packages/base/manifests/tailscale-ingresses/Ingress-otel-collector-tailscale.yaml).
+      # Previous default (otel-collector.cnoe.localtest.me:8443) was a vestigial
+      # idpbuilder/kind URL that resolved to ::1 on both hosts → never worked
+      # after the Talos migration.
+      default = "https://otel-collector-ryzen.tail286401.ts.net";
+      description = "Kubernetes OTEL collector endpoint (Tailscale-served Ingress on ryzen spoke).";
     };
 
     phoenixEndpoint = mkOption {
