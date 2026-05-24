@@ -654,12 +654,20 @@ def _fetch_remote_sessions_from_aggregator() -> Optional[Dict[str, Any]]:
 
     # Lazy import: keep the top-level import surface minimal and ensure the
     # client works in environments where urllib is the only HTTP option.
+    import ssl
     import urllib.error
     import urllib.request
 
     timeout = _aggregator_timeout()
+    # Tailscale-served ingresses present self-signed certs; tailnet membership
+    # is the authentication boundary, not the X509 chain. Skip verification
+    # only on the aggregator hostname so we don't broadly weaken TLS.
+    if url.startswith("https://") and url.split("/")[2].endswith(".ts.net"):
+        ssl_context = ssl._create_unverified_context()
+    else:
+        ssl_context = None
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        with urllib.request.urlopen(url, timeout=timeout, context=ssl_context) as response:
             if response.status != 200:
                 return None
             raw = response.read()

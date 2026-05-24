@@ -87,6 +87,9 @@ in
     enable = true;
     port = 4320;  # Non-standard port (collector uses 4318)
     enableNotifications = false;
+    # Phase 1: query the K8s-side session-aggregator first; sink fallback
+    # remains active when the aggregator is unreachable.
+    aggregatorUrl = "https://ai-sessions-ryzen.tail286401.ts.net/sessions";
     remoteSink.enable = true;
     remotePush = {
       enable = true;
