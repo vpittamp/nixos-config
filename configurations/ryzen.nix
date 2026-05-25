@@ -824,40 +824,13 @@ in
     extraUpFlags = [ "--ssh" "--accept-routes" ];
   };
 
-  # Keep `tailscale serve --tcp 443` pointed at whatever port the ryzen kind
-  # cluster's apiserver is currently exposed on. kind randomizes the host-side
-  # port on every cluster recreate, so a hardcoded forward goes stale and
-  # breaks remote kubeconfig access (e.g. Headlamp on thinkpad). This oneshot
-  # discovers the live `docker port ryzen-control-plane 6443` mapping and
-  # rewrites the serve entry on each boot or docker restart.
-  systemd.services.tailscale-serve-kind-ryzen = {
-    description = "Map tailscale serve :443 to the live kind ryzen API port";
-    after = [ "tailscaled.service" "docker.service" ];
-    wants = [ "tailscaled.service" "docker.service" ];
-    partOf = [ "docker.service" ];
-    wantedBy = [ "multi-user.target" ];
-    path = [ pkgs.docker pkgs.tailscale pkgs.gawk pkgs.coreutils ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = pkgs.writeShellScript "tailscale-serve-kind-ryzen" ''
-        set -euo pipefail
-        for _ in $(seq 1 60); do
-          mapping=$(docker port ryzen-control-plane 6443 2>/dev/null | head -n1 || true)
-          port=$(printf '%s\n' "$mapping" | awk -F: 'NF>1{print $NF}')
-          if [ -n "$port" ]; then
-            echo "kind ryzen apiserver detected on 127.0.0.1:$port"
-            tailscale serve --tcp 443 off >/dev/null 2>&1 || true
-            tailscale serve --bg --tcp 443 "tcp://127.0.0.1:$port"
-            exit 0
-          fi
-          sleep 2
-        done
-        echo "ryzen-control-plane apiserver port not discoverable after 120s" >&2
-        exit 1
-      '';
-    };
-  };
+  # tailscale-serve-kind-ryzen removed 2026-05-25: the legacy kind cluster
+  # (ryzen-control-plane container) was replaced by Talos (ryzen-controlplane-1,
+  # ryzen-worker-{1,2}). The kube-apiserver is now exposed via a Tailscale
+  # ProxyGroup managed in PittampalliOrg/stacks
+  # (packages/overlays/ryzen/manifests/ProxyGroup-kube-apiserver.yaml).
+  # The old oneshot kept failing on every nixos-rebuild with exit 1 because
+  # `docker port ryzen-control-plane 6443` returned nothing.
 
   # Firewall configuration
   networking.firewall = {
