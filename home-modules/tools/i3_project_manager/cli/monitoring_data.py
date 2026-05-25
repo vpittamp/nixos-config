@@ -639,10 +639,19 @@ def _fetch_remote_sessions_from_aggregator() -> Optional[Dict[str, Any]]:
     the existing sink-source code path. Returns None when the aggregator URL
     is unset or any error occurs — callers should treat None as "fall back to
     the on-disk sink file".
+
+    Passes ?exclude_host=<this hostname> so the aggregator omits our own
+    sessions from the response — they're already in the local sessions.json
+    and would otherwise show up as duplicates labeled as "remote".
     """
-    url = _aggregator_url()
-    if not url:
+    base_url = _aggregator_url()
+    if not base_url:
         return None
+    import socket
+    local_host = socket.gethostname().split(".", 1)[0]
+    # Build the request URL with exclude_host appended.
+    sep = "&" if "?" in base_url else "?"
+    url = f"{base_url}{sep}exclude_host={local_host}"
 
     now = time.time()
     cached_url = str(AGGREGATOR_CACHE.get("url") or "")
