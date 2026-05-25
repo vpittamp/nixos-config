@@ -35,7 +35,6 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from .remote_transport import RemoteSessionSinkStore
     from .session_tracker import SessionTracker
 
 logger = logging.getLogger(__name__)
@@ -231,18 +230,15 @@ class OTLPReceiver:
         self,
         port: int,
         tracker: "SessionTracker",
-        remote_sink: Optional["RemoteSessionSinkStore"] = None,
     ) -> None:
         """Initialize the OTLP receiver.
 
         Args:
             port: HTTP port to listen on (default 4318)
             tracker: Session tracker to notify of events
-            remote_sink: Optional deterministic remote session sink store
         """
         self.port = port
         self.tracker = tracker
-        self.remote_sink = remote_sink
         self.app = web.Application(client_max_size=_receiver_max_request_bytes())
         self.runner: Optional[web.AppRunner] = None
         self._setup_routes()
@@ -253,8 +249,6 @@ class OTLPReceiver:
         self.app.router.add_post("/v1/logs", self._handle_logs)
         self.app.router.add_post("/v1/traces", self._handle_traces)
         self.app.router.add_post("/v1/metrics", self._handle_metrics)
-        if self.remote_sink is not None:
-            self.app.router.add_post("/v1/i3pm/remote-sessions", self._handle_remote_sessions)
 
     @staticmethod
     def _infer_tool_from_service_name(service_name: Optional[str]) -> Optional[AITool]:
@@ -425,25 +419,6 @@ class OTLPReceiver:
             await self.tracker.process_heartbeat_for_tool(tool, pid)
 
         return self._create_empty_response(content_type)
-
-    async def _handle_remote_sessions(self, request: web.Request) -> web.Response:
-        """Ingest deterministic remote session snapshots from peer hosts."""
-        if self.remote_sink is None:
-            return web.json_response({"status": "disabled"}, status=404)
-
-        try:
-            payload = await request.json()
-        except Exception:
-            return web.json_response({"status": "error", "reason": "invalid_json"}, status=400)
-
-        accepted, reason, status = await self.remote_sink.ingest(
-            payload=payload if isinstance(payload, dict) else {},
-            authorization_header=request.headers.get("Authorization", ""),
-        )
-        return web.json_response(
-            {"status": "ok" if accepted else "rejected", "reason": reason},
-            status=status,
-        )
 
     async def _extract_tool_and_pid_from_metrics(
         self, request: web.Request, content_type: str

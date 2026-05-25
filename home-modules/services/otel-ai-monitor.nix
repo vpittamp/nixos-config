@@ -133,35 +133,13 @@ in
       description = "Enable verbose logging";
     };
 
-    remoteSink = {
-      enable = mkOption {
-        type = types.bool;
-        default = false;
-        description = "Enable deterministic remote session sink endpoint";
-      };
-
-      file = mkOption {
-        type = types.str;
-        default = "";
-        description = "Optional sink state file path override";
-      };
-
-      token = mkOption {
-        type = types.str;
-        default = "";
-        description = "Optional bearer token required for remote sink writes";
-      };
-    };
-
     aggregatorUrl = mkOption {
       type = types.str;
       default = "";
       description = ''
         K8s session-aggregator URL the panel queries for cross-host sessions.
-        When set, monitoring_data.py prefers this over the local OTEL sink file
-        (the host-to-host push/sink path) and falls back to the sink only on
-        fetch failure. Empty string disables aggregator polling.
-        Example: https://ai-sessions.cnoe.localtest.me:8443/sessions
+        Empty string disables aggregator polling (cross-host view goes blank).
+        Example: https://ai-sessions-ryzen.tail286401.ts.net/sessions
       '';
     };
 
@@ -170,60 +148,9 @@ in
       default = 1.5;
       description = "HTTP timeout (seconds) for aggregator GET requests";
     };
-
-    remotePush = {
-      enable = mkOption {
-        type = types.bool;
-        default = false;
-        description = "Enable deterministic remote session push to a peer sink URL";
-      };
-
-      url = mkOption {
-        type = types.str;
-        default = "";
-        description = "Peer sink URL (for example http://thinkpad:4320/v1/i3pm/remote-sessions)";
-      };
-
-      connectionKey = mkOption {
-        type = types.str;
-        default = "";
-        description = "Source connection key identity for pushed snapshots (for example user@host:22)";
-      };
-
-      hostName = mkOption {
-        type = types.str;
-        default = "";
-        description = "Source host label attached to pushed snapshots";
-      };
-
-      token = mkOption {
-        type = types.str;
-        default = "";
-        description = "Optional bearer token used when pushing to peer sink";
-      };
-
-      maxIntervalSec = mkOption {
-        type = types.number;
-        default = 8;
-        description = "Maximum interval between push heartbeats for unchanged snapshots";
-      };
-
-      timeoutSec = mkOption {
-        type = types.number;
-        default = 5;
-        description = "HTTP timeout for remote push requests";
-      };
-    };
   };
 
   config = mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = (!cfg.remotePush.enable) || ((cfg.remotePush.url != "") && (cfg.remotePush.connectionKey != ""));
-        message = "services.otel-ai-monitor.remotePush requires both url and connectionKey when enabled.";
-      }
-    ];
-
     # Expose aggregator URL + timeout to i3pm monitoring_data.py and Quickshell.
     # systemd.user.sessionVariables is what reaches systemd user services like
     # i3-project-daemon and quickshell-runtime-shell (via ~/.config/environment.d).
@@ -270,16 +197,7 @@ in
             "--broadcast-interval" (toString cfg.broadcastIntervalSec)
           ]
           ++ lib.optionals (!cfg.enableNotifications) [ "--no-notifications" ]
-          ++ lib.optionals cfg.verbose [ "--verbose" ]
-          ++ lib.optionals cfg.remoteSink.enable [ "--remote-sink" ]
-          ++ lib.optionals (cfg.remoteSink.file != "") [ "--remote-sink-file" cfg.remoteSink.file ]
-          ++ lib.optionals cfg.remotePush.enable [
-            "--remote-push-url" cfg.remotePush.url
-            "--remote-push-connection-key" cfg.remotePush.connectionKey
-            "--remote-push-max-interval" (toString cfg.remotePush.maxIntervalSec)
-            "--remote-push-timeout" (toString cfg.remotePush.timeoutSec)
-          ]
-          ++ lib.optionals (cfg.remotePush.hostName != "") [ "--remote-push-host-name" cfg.remotePush.hostName ];
+          ++ lib.optionals cfg.verbose [ "--verbose" ];
         in "${monitorPackage}/bin/otel-ai-monitor ${lib.concatStringsSep " " args}";
 
         # Quick restart on failure
@@ -294,9 +212,7 @@ in
         # Environment for notifications and tmux client lookup
         Environment = [
           "PATH=${pkgs.libnotify}/bin:${pkgs.sway}/bin:${pkgs.coreutils}/bin:${pkgs.tmux}/bin"
-        ]
-        ++ lib.optionals (cfg.remoteSink.token != "") [ "OTEL_AI_REMOTE_SINK_TOKEN=${cfg.remoteSink.token}" ]
-        ++ lib.optionals (cfg.remotePush.token != "") [ "OTEL_AI_REMOTE_PUSH_TOKEN=${cfg.remotePush.token}" ];
+        ];
 
         # Logging
         StandardOutput = "journal";

@@ -850,7 +850,9 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
-    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 ];  # OTEL remote-session sink from ryzen
+    # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
+    # sessions now flow through the K8s session-aggregator at
+    # ai-sessions-ryzen.tail286401.ts.net, not host-to-host push.
     checkReversePath = "loose";  # For Tailscale
   };
 

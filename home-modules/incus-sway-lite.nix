@@ -99,13 +99,11 @@
     logLevel = "INFO";
   };
 
-  # Lightweight AI monitoring: local-only service, no remote push/sink.
+  # Lightweight AI monitoring: local-only service.
   services.otel-ai-monitor = {
     enable = true;
     port = 4318;
     enableNotifications = false;
-    remoteSink.enable = false;
-    remotePush.enable = false;
   };
 
   programs.sway-config-manager = {

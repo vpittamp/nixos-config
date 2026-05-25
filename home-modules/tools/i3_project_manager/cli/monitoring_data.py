@@ -118,12 +118,11 @@ INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 # Remote sesh/tmux session discovery cache (for SSH project window augmentation)
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
 REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
-REMOTE_OTEL_SINK_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-sink.json"
 REMOTE_OTEL_PUSH_STATE_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-push-state.json"
 REMOTE_OTEL_SOURCE_STALE_SECONDS = float(
     os.environ.get("I3PM_MONITORING_REMOTE_OTEL_STALE_SECONDS", "20")
 )
-REMOTE_OTEL_SINK_CACHE: Dict[str, Any] = {
+REMOTE_OTEL_PUSH_STATE_CACHE: Dict[str, Any] = {
     "mtime_ns": None,
     "size": None,
     "payload": {},
@@ -137,11 +136,6 @@ AGGREGATOR_CACHE: Dict[str, Any] = {
     "payload": {},
 }
 AGGREGATOR_CACHE_TTL_SECONDS = 4.0
-REMOTE_OTEL_PUSH_STATE_CACHE: Dict[str, Any] = {
-    "mtime_ns": None,
-    "size": None,
-    "payload": {},
-}
 DISCOVERED_TMUX_PROJECT_HINT_CACHE: Dict[str, Any] = {
     "mtime_ns": None,
     "size": None,
@@ -309,40 +303,6 @@ def _canonical_host_context_key(qualified_name: Any, target_host: Any) -> str:
     if not qualified or not host:
         return ""
     return f"{qualified}::host::{host}"
-
-
-def _load_remote_otel_sink() -> Dict[str, Any]:
-    """Load deterministic remote OTEL sink payload."""
-    if not REMOTE_OTEL_SINK_FILE.exists():
-        REMOTE_OTEL_SINK_CACHE.update({
-            "mtime_ns": None,
-            "size": None,
-            "payload": {},
-        })
-        return {}
-    try:
-        stat_result = REMOTE_OTEL_SINK_FILE.stat()
-        cached_mtime = REMOTE_OTEL_SINK_CACHE.get("mtime_ns")
-        cached_size = REMOTE_OTEL_SINK_CACHE.get("size")
-        if (
-            cached_mtime == stat_result.st_mtime_ns
-            and cached_size == stat_result.st_size
-        ):
-            cached_payload = REMOTE_OTEL_SINK_CACHE.get("payload")
-            if isinstance(cached_payload, dict):
-                return dict(cached_payload)
-        with open(REMOTE_OTEL_SINK_FILE, "r") as f:
-            payload = json.load(f)
-            if isinstance(payload, dict):
-                REMOTE_OTEL_SINK_CACHE.update({
-                    "mtime_ns": stat_result.st_mtime_ns,
-                    "size": stat_result.st_size,
-                    "payload": dict(payload),
-                })
-                return payload
-    except (json.JSONDecodeError, IOError, OSError):
-        return {}
-    return {}
 
 
 def _load_remote_otel_push_state() -> Dict[str, Any]:
@@ -702,31 +662,24 @@ def _fetch_remote_sessions_from_aggregator() -> Optional[Dict[str, Any]]:
 def _load_remote_otel_sessions_for_windows(
     window_candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch and merge all remote OTEL sessions.
+    """Fetch all remote OTEL sessions from the K8s session-aggregator.
 
-    Source-of-truth priority:
-    1. K8s session-aggregator (when ``I3PM_MONITORING_AGGREGATOR_URL`` is set
-       and reachable). This is the long-term cross-host data plane.
-    2. Deterministic on-disk sink (``remote-otel-sink.json``) written by the
-       host-to-host push transport. Used as a fallback when the aggregator
-       is unset/unreachable so the system degrades gracefully.
+    Phase 4: this is now the sole source. The legacy on-disk sink fallback
+    was retired with the host-to-host push transport. If the aggregator is
+    unreachable or returns no sources, cross-host view degrades to empty.
 
-    Iterates every source the chosen payload reports — independent of whether
-    the user has a matching local SSH window open. Bridge-window binding
-    still happens later via _resolve_otel_session_window_id at the call site.
     ``window_candidates`` is retained for backwards compatibility only.
     """
     if not _remote_otel_merge_enabled():
         return []
 
     aggregator_payload = _fetch_remote_sessions_from_aggregator()
-    if isinstance(aggregator_payload, dict) and aggregator_payload.get("sources"):
-        sink_payload = aggregator_payload
-    else:
-        sink_payload = _load_remote_otel_sink()
-    sources = sink_payload.get("sources", {})
+    if not isinstance(aggregator_payload, dict):
+        return []
+    sources = aggregator_payload.get("sources", {})
     if not isinstance(sources, dict) or not sources:
         return []
+    sink_payload = aggregator_payload
 
     connection_keys: List[str] = []
     seen: set[str] = set()
@@ -1203,9 +1156,6 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if AI_SESSION_REVIEW_FILE.parent.exists():
         if str(AI_SESSION_REVIEW_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_REVIEW_FILE.parent))
-    if REMOTE_OTEL_SINK_FILE.parent.exists():
-        if str(REMOTE_OTEL_SINK_FILE.parent) not in watch_paths:
-            watch_paths.append(str(REMOTE_OTEL_SINK_FILE.parent))
     if REMOTE_OTEL_PUSH_STATE_FILE.parent.exists():
         if str(REMOTE_OTEL_PUSH_STATE_FILE.parent) not in watch_paths:
             watch_paths.append(str(REMOTE_OTEL_PUSH_STATE_FILE.parent))
@@ -1262,8 +1212,6 @@ async def read_inotify_events(
     review_tmp_filename = review_filename + ".tmp"
     seen_events_filename = AI_SESSION_SEEN_EVENTS_FILE.name
     seen_events_tmp_filename = seen_events_filename + ".tmp"
-    remote_otel_sink_filename = REMOTE_OTEL_SINK_FILE.name
-    remote_otel_sink_tmp_filename = remote_otel_sink_filename + ".tmp"
     remote_otel_push_state_filename = REMOTE_OTEL_PUSH_STATE_FILE.name
     remote_otel_push_state_tmp_filename = remote_otel_push_state_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
@@ -1298,10 +1246,9 @@ async def read_inotify_events(
             is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
             is_review_file = filename in (review_filename, review_tmp_filename)
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
-            is_remote_otel_sink_file = filename in (remote_otel_sink_filename, remote_otel_sink_tmp_filename)
             is_remote_otel_push_state_file = filename in (remote_otel_push_state_filename, remote_otel_push_state_tmp_filename)
 
-            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_sink_file or is_remote_otel_push_state_file:
+            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_push_state_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)

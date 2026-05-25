@@ -162,16 +162,9 @@ EOF
     port = 4320;  # Non-standard port (collector uses 4318)
     verbose = false;
     enableNotifications = false;  # Suppress "Claude Code Ready" alerts
-    # Phase 1: query the K8s-side session-aggregator first; sink fallback
-    # remains active when the aggregator is unreachable.
+    # Cross-host sessions come from the K8s session-aggregator only; the
+    # legacy host-to-host push/sink path was retired in Phase 4.
     aggregatorUrl = "https://ai-sessions-ryzen.tail286401.ts.net/sessions";
-    remoteSink.enable = true;
-    remotePush = {
-      enable = true;
-      url = "http://ryzen:4320/v1/i3pm/remote-sessions";
-      connectionKey = "vpittamp@thinkpad:22";
-      hostName = "thinkpad";
-    };
   };
 
   # Sway Dynamic Configuration Management

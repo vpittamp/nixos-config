@@ -863,7 +863,9 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 5901 ];  # SSH, VNC DP-1, VNC HDMI-A-1
-    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 4320 21116 21118 11434 ];  # OTEL sink, RustDesk direct IP, Ollama (services.ollama)
+    # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
+    # sessions now flow through the K8s session-aggregator instead.
+    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 21116 21118 11434 ];  # RustDesk direct IP, Ollama (services.ollama)
     interfaces."tailscale0".allowedUDPPorts = lib.mkAfter [ 21116 21119 ];  # RustDesk direct access transport
     extraInputRules = ''
       iifname "tailscale0" tcp dport { 21116, 21118 } accept comment "RustDesk over Tailscale"
