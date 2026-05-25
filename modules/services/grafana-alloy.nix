@@ -704,8 +704,10 @@ in
       };
     };
 
-    # Open firewall for OTLP port (only on localhost by default)
-    # If you need external access, configure firewall separately
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.otlpPort cfg.localForwardPort ];
+    # Both ports (cfg.otlpPort=4318 for Alloy OTLP receiver and
+    # cfg.localForwardPort=4320 for otel-ai-monitor) are local-only by design:
+    # CLIs push to localhost:4318, Alloy forwards to localhost:4320. No tailnet
+    # exposure is needed. The legacy host-to-host push to peer:4320 was retired
+    # in Phase 4.
   };
 }
