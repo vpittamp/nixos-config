@@ -68,6 +68,13 @@ def build_remote_attach_script(spec: dict, remote_dir: str) -> str:
     tmux_window_index = str(tmux_window).split(":", 1)[0].strip() or str(tmux_window)
     tmux_cmd = f"tmux -S {shlex.quote(tmux_socket)}" if tmux_socket else "tmux"
     script_lines = ["set -euo pipefail"]
+    # When no explicit socket is provided, default the remote tmux server to
+    # the NixOS XDG_RUNTIME_DIR location (/run/user/<uid>/tmux-<uid>/default)
+    # rather than the plain default (/tmp/tmux-<uid>/default). NixOS hosts run
+    # tmux out of $XDG_RUNTIME_DIR; an SSH session inherits a clean PATH
+    # without TMUX_TMPDIR set, so bare `tmux` would otherwise look in /tmp.
+    if not tmux_socket:
+        script_lines.append('export TMUX_TMPDIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"')
     if remote_dir:
         script_lines.append(f"cd {shlex.quote(remote_dir)}")
     script_lines.extend([
