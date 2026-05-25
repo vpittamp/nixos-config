@@ -8791,9 +8791,48 @@ class IPCServer:
         uid = os.getuid()
         return str(self._runtime_dir() / f"tmux-{uid}" / "default")
 
-    def _remote_sink_file(self) -> Path:
-        """Return the deterministic remote OTEL sink file path."""
-        return self._runtime_dir() / "eww-monitoring-panel" / "remote-otel-sink.json"
+    def _aggregator_remote_sources(self) -> Dict[str, Any]:
+        """Fetch cross-host AI session sources from the K8s session-aggregator.
+
+        Replaces the legacy on-disk sink file (retired in Phase 4). Returns a
+        dict with the same shape — {"sources": {connection_key: {...}}} — so
+        downstream session normalization works unchanged. Returns an empty
+        dict on any error (failure → no remote sessions surfaced, panel
+        gracefully shows local-only).
+        """
+        url = str(os.environ.get("I3PM_MONITORING_AGGREGATOR_URL", "") or "").strip()
+        if not url:
+            return {}
+        try:
+            timeout = float(os.environ.get("I3PM_MONITORING_AGGREGATOR_TIMEOUT", "1.5") or "1.5")
+        except ValueError:
+            timeout = 1.5
+        local_host = socket.gethostname().split(".", 1)[0]
+        sep = "&" if "?" in url else "?"
+        full_url = f"{url}{sep}exclude_host={local_host}"
+        import ssl
+        import urllib.error
+        import urllib.request
+
+        # Tailscale-served ingresses present self-signed certs; tailnet
+        # membership is the auth boundary, not the X509 chain.
+        ssl_ctx = None
+        if full_url.startswith("https://") and full_url.split("/")[2].endswith(".ts.net"):
+            ssl_ctx = ssl._create_unverified_context()
+        try:
+            with urllib.request.urlopen(full_url, timeout=timeout, context=ssl_ctx) as resp:
+                if resp.status != 200:
+                    return {}
+                raw = resp.read()
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
+            return {}
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return payload
 
     def _ai_session_seen_events_file(self) -> Path:
         """Return the review acknowledgement queue consumed by monitoring_data."""
@@ -8879,9 +8918,14 @@ class IPCServer:
         local_connection_key = self._normalize_connection_key(
             str(active_context.get("connection_key") or f"local@{self._local_host_alias()}")
         )
+        # Aggregator cache signature: bucket by 4-second window to match the
+        # aggregator's TTL. This forces session-items cache invalidation when
+        # the aggregator response would change, without an HTTP fetch each
+        # signature call (signature is computed every snapshot poll).
+        aggregator_bucket = int(time.time() / 4)
         return (
             self._file_signature(self._runtime_dir() / "otel-ai-sessions.json"),
-            self._file_signature(self._remote_sink_file()),
+            ("aggregator", aggregator_bucket),
             self._tracked_window_session_signature(tracked_windows),
             local_connection_key,
             str(active_context.get("context_key") or "").strip(),
@@ -10504,7 +10548,10 @@ class IPCServer:
                 tracked_windows=tracked_windows,
             )
 
-            remote_payload = self._load_json_file(self._remote_sink_file())
+            # Phase 4: read remote sessions from the K8s session-aggregator
+            # (was previously the on-disk remote-otel-sink.json, retired with
+            # the host-to-host push transport). Same payload shape.
+            remote_payload = self._aggregator_remote_sources()
             sources = remote_payload.get("sources", {})
             if isinstance(sources, dict):
                 for source_connection_key, source_data in sources.items():
