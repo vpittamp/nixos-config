@@ -182,12 +182,18 @@ journalctl --user -u otel-ai-monitor -f            # Watch telemetry
 
 ## Observability Stack (Feature 129)
 
-Unified telemetry collection via Grafana Alloy, exporting to Kubernetes LGTM stack.
+Unified telemetry collection via Grafana Alloy, exporting to the ryzen K8s cluster's OTEL collector over Tailscale.
 
 **Architecture**:
 ```
 AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell panel)
-                               → K8s OTEL Collector (remote)
+                               → otel-collector-ryzen.tail286401.ts.net (Tailscale Ingress)
+                                 → K8s otel-collector (observability ns)
+                                   → clickhouse-hub-egress    (durable storage on hub)
+                                   → otlphttp/mlflow          (per-CLI MLflow experiments)
+                                   → otlphttp/session-aggregator
+                                     → /sessions @ ai-sessions-ryzen.tail286401.ts.net
+                                       → each host's monitoring_data.py
 System  → node exporter → Alloy → Mimir (K8s)
 Journald → Alloy → Loki (K8s)
 ```
@@ -197,6 +203,7 @@ Journald → Alloy → Loki (K8s)
 |---------|------|---------|
 | grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
 | otel-ai-monitor | 4320 | Local AI session tracking for Quickshell panel (all CLIs) |
+| session-aggregator (K8s, observability ns) | 4318 internal | Cross-host AI session aggregation; queried by panel via `ai-sessions-ryzen.tail286401.ts.net` |
 | grafana-beyla | - | eBPF auto-instrumentation (optional) |
 | pyroscope-agent | - | Continuous profiling (optional) |
 
@@ -206,6 +213,8 @@ systemctl status grafana-alloy              # Service status
 journalctl -u grafana-alloy -f              # Logs
 curl -s localhost:4318/v1/traces            # Test OTLP endpoint
 curl -s localhost:12345/metrics             # Alloy metrics
+curl -sk https://ai-sessions-ryzen.tail286401.ts.net/healthz       # Aggregator state
+curl -sk https://ai-sessions-ryzen.tail286401.ts.net/debug/attrs   # Observed OTLP attr keys
 ```
 
 **Alloy UI**: http://localhost:12345 (live debugging enabled)
@@ -214,26 +223,38 @@ curl -s localhost:12345/metrics             # Alloy metrics
 ```nix
 services.grafana-alloy = {
   enable = true;
-  # Endpoints default to *.cnoe.localtest.me:8443 (local K8s cluster)
-  # k8sEndpoint = "https://otel-collector.cnoe.localtest.me:8443";
-  # lokiEndpoint = "https://loki.cnoe.localtest.me:8443";
-  # mimirEndpoint = "https://mimir.cnoe.localtest.me:8443";
-  enableNodeExporter = true;  # System metrics
-  enableJournald = true;      # Log collection
+  # k8sEndpoint default = https://otel-collector-ryzen.tail286401.ts.net (Tailscale Ingress)
+  # NOTE: lokiEndpoint/mimirEndpoint still default to legacy *.cnoe.localtest.me:8443 URLs
+  # and silently fail (Loki/Mimir aren't deployed on ryzen — they're hub-side via
+  # clickhouse-hub-egress). Logs/metrics flow through the K8s otel-collector instead.
+  enableNodeExporter = true;
+  enableJournald = true;
   journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
+};
+
+services.otel-ai-monitor = {
+  enable = true;
+  port = 4320;
+  # Phase 1: K8s session-aggregator URL; client falls back to legacy push/sink
+  # when this is empty or unreachable.
+  aggregatorUrl = "https://ai-sessions-ryzen.tail286401.ts.net/sessions";
+  remoteSink.enable = true;       # legacy fallback, retired in Phase 4
+  remotePush = { ... };           # legacy fallback
 };
 ```
 
-**Graceful Degradation**: Local AI monitoring (Quickshell widgets) works when K8s offline. Remote telemetry queued (100MB buffer) and retried.
+**Graceful Degradation**: Local AI monitoring (Quickshell widgets) works when K8s offline. Cross-host view degrades to the on-disk sink fallback when the aggregator is unreachable.
 
 **Known Issues / Troubleshooting**:
 - OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
-- If endpoints return `502` or `404`, verify the K8s cluster is running and ingresses exist.
+- `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. The Talos migration moved everything to Tailscale Ingresses (`*-ryzen.tail286401.ts.net`).
+- Aggregator image lives on GHCR (`ghcr.io/pittampalliorg/session-aggregator`), not Gitea — the in-cluster Gitea registry has a chronic chunked-upload race. See `images/session-aggregator/` in the stacks repo and the `gitops` skill notes.
+- If the aggregator pod is `ImagePullBackOff` with "ghcr-pull-credentials not found": the `ExternalSecret` needs ~30s to sync from Azure KeyVault on first deploy; delete the failing pod to force recreate with the secret attached.
   - Quick checks:
-    - `curl -sk https://otel-collector.cnoe.localtest.me:8443/`
-    - `curl -sk https://mimir.cnoe.localtest.me:8443/ready`
-    - `curl -sk https://loki.cnoe.localtest.me:8443/ready`
-    - `kubectl get ingress -n observability`
+    - `curl -sk https://otel-collector-ryzen.tail286401.ts.net/`         (HTTP 404 = healthy, no listener at /)
+    - `curl -sk https://ai-sessions-ryzen.tail286401.ts.net/healthz`     (HTTP 200 with counters)
+    - `kubectl get ingress -n observability`                              (otel-collector-tailscale + session-aggregator-tailscale)
+    - `kubectl get app -n argocd session-aggregator lgtm-otel-collector`  (Synced/Healthy)
 
 ## Testing
 
