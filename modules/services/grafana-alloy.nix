@@ -162,7 +162,7 @@ let
       send_batch_max_size = 2000
 
       output {
-        metrics = [otelcol.exporter.prometheus.mimir.input]
+        metrics = [${optionalString (cfg.mimirEndpoint != "") "otelcol.exporter.prometheus.mimir.input"}]
       }
     }
 
@@ -214,7 +214,7 @@ let
       output {
         metrics = [
           otelcol.exporter.otlphttp.local.input,
-          otelcol.exporter.prometheus.mimir.input,
+          ${optionalString (cfg.mimirEndpoint != "") "otelcol.exporter.prometheus.mimir.input,"}
         ]
         logs = [
           otelcol.exporter.otlphttp.local.input,
@@ -233,10 +233,12 @@ let
     // Exporters - Send to local otel-ai-monitor and remote K8s
     // =============================================================================
 
+    ${optionalString (cfg.mimirEndpoint != "") ''
     // Bridge: OTLP Metrics -> Prometheus Remote Write
     otelcol.exporter.prometheus "mimir" {
       forward_to = [prometheus.remote_write.k8s.receiver]
     }
+    ''}
 
     // Local: otel-ai-monitor for EWW widgets
     otelcol.exporter.otlphttp "local" {
@@ -417,9 +419,11 @@ let
     }
     ''}
 
-    ${optionalString cfg.enableNodeExporter ''
+    ${optionalString (cfg.enableNodeExporter && cfg.mimirEndpoint != "") ''
     // =============================================================================
     // Node Exporter - System metrics (CPU, memory, disk, network)
+    // Requires both enableNodeExporter AND a non-empty mimirEndpoint —
+    // collection without a forward target would just consume CPU for nothing.
     // =============================================================================
 
     prometheus.exporter.unix "default" {
@@ -445,9 +449,11 @@ let
     }
     ''}
 
-    ${optionalString cfg.enableJournald ''
+    ${optionalString (cfg.enableJournald && cfg.lokiEndpoint != "") ''
     // =============================================================================
     // Journald - Log collection from systemd services
+    // Requires both enableJournald AND a non-empty lokiEndpoint — collection
+    // without a forward target would just buffer journald reads for nothing.
     // =============================================================================
 
     ${journalSourceBlocks}
@@ -538,14 +544,26 @@ in
 
     lokiEndpoint = mkOption {
       type = types.str;
-      default = "https://loki.cnoe.localtest.me:8443";
-      description = "Loki push endpoint (via nginx ingress)";
+      default = "";
+      description = ''
+        Loki push endpoint for journald log forwarding. Empty default means
+        logs are collected (via enableJournald) but not forwarded — set this
+        explicitly when a reachable Loki is available on the tailnet (e.g.
+        the hub LGTM stack). The legacy *.cnoe.localtest.me:8443 default
+        never worked after the Talos migration; it resolved to ::1.
+      '';
     };
 
     mimirEndpoint = mkOption {
       type = types.str;
-      default = "https://mimir.cnoe.localtest.me:8443";
-      description = "Mimir remote write endpoint (via nginx ingress)";
+      default = "";
+      description = ''
+        Mimir remote_write endpoint for node-exporter metrics + spanmetrics.
+        Empty default means metrics are not forwarded. Set this explicitly
+        when a reachable Mimir is available on the tailnet. The legacy
+        *.cnoe.localtest.me:8443 default never worked after the Talos
+        migration; it resolved to ::1.
+      '';
     };
 
     enableNodeExporter = mkOption {
