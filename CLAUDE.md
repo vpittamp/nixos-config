@@ -235,11 +235,9 @@ services.grafana-alloy = {
 services.otel-ai-monitor = {
   enable = true;
   port = 4320;
-  # Phase 1: K8s session-aggregator URL; client falls back to legacy push/sink
-  # when this is empty or unreachable.
+  # K8s session-aggregator URL; cross-host view depends on this being reachable.
+  # No on-disk fallback — Phase 4 retired the legacy push/sink path.
   aggregatorUrl = "https://ai-sessions-ryzen.tail286401.ts.net/sessions";
-  remoteSink.enable = true;       # legacy fallback, retired in Phase 4
-  remotePush = { ... };           # legacy fallback
 };
 ```
 
