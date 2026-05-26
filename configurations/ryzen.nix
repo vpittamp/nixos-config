@@ -182,6 +182,9 @@ in
     # Chrome managed bookmarks (one entry per PWA, generated from pwa-sites.nix)
     ../modules/desktop/chrome-bookmarks.nix
 
+    # Chrome sign-in + sync policy (allow user to sign in, sync bookmarks etc.)
+    ../modules/desktop/chrome-sync.nix
+
     # Sunshine game streaming (NVIDIA NVENC hardware encoding)
     ../modules/desktop/sunshine.nix
 
