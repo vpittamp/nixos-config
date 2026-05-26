@@ -21,6 +21,11 @@ let
   # support + 1.36 awareness). Remove this override once nixpkgs catches up.
   talosctl-1-13 = pkgs.callPackage ../packages/talosctl-1-13.nix { };
 
+  # dapr-cli pinned to 1.17.x matching the Dapr runtime installed in
+  # PittampalliOrg/stacks (runtime 1.17.7). Nixpkgs currently ships 1.16.4.
+  # See packages/dapr-cli.nix for the rationale and Go-toolchain constraints.
+  dapr-cli = pkgs.callPackage ../packages/dapr-cli.nix { };
+
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
     # vim is managed by programs.vim in home-manager
@@ -150,6 +155,7 @@ let
     # K8s 1.36 upgrade + pruning support on ryzen).
     skaffold # Local Kubernetes development tool
     talosctl-1-13 # CLI for Talos Linux Kubernetes OS (1.13.x pin)
+    dapr-cli # CLI for Dapr distributed runtime (1.17.x pin, matches stacks runtime)
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     idpbuilder # IDP builder tool (x86_64 only)
   ];
