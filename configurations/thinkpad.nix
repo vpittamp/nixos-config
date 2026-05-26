@@ -320,6 +320,9 @@ in
     # Chrome policy for Claude-in-Chrome extension (force-install in all Chrome profiles)
     ../modules/desktop/chrome-claude.nix
 
+    # Chrome managed bookmarks (one entry per PWA, generated from pwa-sites.nix)
+    ../modules/desktop/chrome-bookmarks.nix
+
     # Sunshine game streaming (Intel Quick Sync hardware encoding)
     ../modules/desktop/sunshine.nix
 
