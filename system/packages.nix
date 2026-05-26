@@ -94,6 +94,10 @@ let
     gh-aw
   ];
 
+  # dapr-cli - pinned to match the Dapr runtime version (1.17.x) installed in
+  # PittampalliOrg/stacks. See packages/dapr-cli.nix for the rationale.
+  dapr-cli = pkgs.callPackage ../packages/dapr-cli.nix { };
+
   # Kubernetes tools (often need system access)
   kubernetesTools = with pkgs; [
     kubectl
@@ -102,6 +106,7 @@ let
     argocd
     vcluster
     kind
+    dapr-cli
   ];
 
   # Headlamp - custom package for Kubernetes web UI
