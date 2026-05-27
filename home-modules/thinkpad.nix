@@ -162,9 +162,11 @@ EOF
     port = 4320;  # Non-standard port (collector uses 4318)
     verbose = false;
     enableNotifications = false;  # Suppress "Claude Code Ready" alerts
-    # Cross-host sessions come from the K8s session-aggregator only; the
-    # legacy host-to-host push/sink path was retired in Phase 4.
-    aggregatorUrl = "https://ai-sessions-ryzen.tail286401.ts.net/sessions";
+    # Cross-host sessions come from a direct SQL query against the same
+    # ClickHouse instance the OTEL collector already writes every span to.
+    # No separate aggregator service; ClickHouse is the source of truth.
+    clickhouseUrl = "http://clickhouse-hub.tail286401.ts.net:8123/";
+    clickhousePassword = "otel_dev_password";  # TODO: move to a passwordFile / 1Password lookup
   };
 
   # Sway Dynamic Configuration Management

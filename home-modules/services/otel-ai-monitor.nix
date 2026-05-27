@@ -133,43 +133,79 @@ in
       description = "Enable verbose logging";
     };
 
-    aggregatorUrl = mkOption {
+    clickhouseUrl = mkOption {
       type = types.str;
       default = "";
       description = ''
-        K8s session-aggregator URL the panel queries for cross-host sessions.
-        Empty string disables aggregator polling (cross-host view goes blank).
-        Example: https://ai-sessions-ryzen.tail286401.ts.net/sessions
+        ClickHouse HTTP endpoint the panel queries for cross-host AI sessions.
+        Replaces the previous session-aggregator service: queries the same
+        ClickHouse instance the OTEL collector already writes every span to.
+        Empty string disables cross-host fetching (panel shows local only).
+        Example: http://clickhouse-hub.tail286401.ts.net:8123/
       '';
     };
 
-    aggregatorTimeoutSec = mkOption {
+    clickhouseUser = mkOption {
+      type = types.str;
+      default = "default";
+      description = "ClickHouse user for the panel's SQL queries";
+    };
+
+    clickhousePasswordFile = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Path to a file containing the ClickHouse password. The file is read
+        on activation and the value exported as I3PM_MONITORING_CLICKHOUSE_PASSWORD
+        via systemd.user.sessionVariables. Plain-text option avoided so the
+        password doesn't end up in the Nix store.
+      '';
+    };
+
+    clickhousePassword = mkOption {
+      type = types.str;
+      default = "";
+      description = ''
+        ClickHouse password (plaintext fallback when clickhousePasswordFile is
+        not set). Note: this lands in the Nix store. Prefer passwordFile.
+      '';
+    };
+
+    clickhouseTimeoutSec = mkOption {
       type = types.number;
-      default = 1.5;
-      description = "HTTP timeout (seconds) for aggregator GET requests";
+      default = 2.5;
+      description = "HTTP timeout (seconds) for ClickHouse SQL queries";
     };
   };
 
   config = mkIf cfg.enable {
-    # Expose aggregator URL + timeout to i3pm monitoring_data.py and Quickshell.
-    # systemd.user.sessionVariables is what reaches systemd user services like
-    # i3-project-daemon and quickshell-runtime-shell (via ~/.config/environment.d).
-    # home.sessionVariables is added too so login shells and `i3pm` CLI calls
-    # outside systemd also see the value.
+    # Expose ClickHouse URL + creds to i3pm monitoring_data.py + daemon +
+    # Quickshell. systemd.user.sessionVariables is what reaches systemd user
+    # services like i3-project-daemon and quickshell-runtime-shell (via
+    # ~/.config/environment.d). home.sessionVariables is added too so login
+    # shells and `i3pm` CLI calls outside systemd also see the value.
     systemd.user.sessionVariables = lib.mkMerge [
-      (lib.mkIf (cfg.aggregatorUrl != "") {
-        I3PM_MONITORING_AGGREGATOR_URL = cfg.aggregatorUrl;
+      (lib.mkIf (cfg.clickhouseUrl != "") {
+        I3PM_MONITORING_CLICKHOUSE_URL = cfg.clickhouseUrl;
+      })
+      (lib.mkIf (cfg.clickhousePassword != "") {
+        I3PM_MONITORING_CLICKHOUSE_PASSWORD = cfg.clickhousePassword;
       })
       {
-        I3PM_MONITORING_AGGREGATOR_TIMEOUT = toString cfg.aggregatorTimeoutSec;
+        I3PM_MONITORING_CLICKHOUSE_USER = cfg.clickhouseUser;
+        I3PM_MONITORING_CLICKHOUSE_TIMEOUT = toString cfg.clickhouseTimeoutSec;
       }
     ];
     home.sessionVariables = lib.mkMerge [
-      (lib.mkIf (cfg.aggregatorUrl != "") {
-        I3PM_MONITORING_AGGREGATOR_URL = cfg.aggregatorUrl;
+      (lib.mkIf (cfg.clickhouseUrl != "") {
+        I3PM_MONITORING_CLICKHOUSE_URL = cfg.clickhouseUrl;
+      })
+      (lib.mkIf (cfg.clickhousePassword != "") {
+        I3PM_MONITORING_CLICKHOUSE_PASSWORD = cfg.clickhousePassword;
       })
       {
-        I3PM_MONITORING_AGGREGATOR_TIMEOUT = toString cfg.aggregatorTimeoutSec;
+        I3PM_MONITORING_CLICKHOUSE_USER = cfg.clickhouseUser;
+        I3PM_MONITORING_CLICKHOUSE_TIMEOUT = toString cfg.clickhouseTimeoutSec;
       }
     ];
 

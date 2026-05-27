@@ -8792,47 +8792,152 @@ class IPCServer:
         return str(self._runtime_dir() / f"tmux-{uid}" / "default")
 
     def _aggregator_remote_sources(self) -> Dict[str, Any]:
-        """Fetch cross-host AI session sources from the K8s session-aggregator.
+        """Fetch cross-host AI session sources by querying ClickHouse directly.
 
-        Replaces the legacy on-disk sink file (retired in Phase 4). Returns a
-        dict with the same shape — {"sources": {connection_key: {...}}} — so
-        downstream session normalization works unchanged. Returns an empty
-        dict on any error (failure → no remote sessions surfaced, panel
-        gracefully shows local-only).
+        Replaces the K8s session-aggregator service path with a direct SQL
+        query against the same ClickHouse instance that the OTEL collector
+        already writes every span to. Returns the same shape downstream
+        normalization expects: {"sources": {connection_key: {host_name,
+        sessions: [...]}}}. Returns {} on any error so the panel degrades
+        to local-only.
         """
-        url = str(os.environ.get("I3PM_MONITORING_AGGREGATOR_URL", "") or "").strip()
+        url = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_URL", "") or "").strip()
         if not url:
             return {}
         try:
-            timeout = float(os.environ.get("I3PM_MONITORING_AGGREGATOR_TIMEOUT", "1.5") or "1.5")
+            timeout = float(os.environ.get("I3PM_MONITORING_CLICKHOUSE_TIMEOUT", "2.5") or "2.5")
         except ValueError:
-            timeout = 1.5
+            timeout = 2.5
+        user = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_USER", "default") or "default").strip()
+        password = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_PASSWORD", "") or "")
         local_host = socket.gethostname().split(".", 1)[0]
-        sep = "&" if "?" in url else "?"
-        full_url = f"{url}{sep}exclude_host={local_host}"
+
+        sql = """
+SELECT
+  ServiceName AS tool,
+  ResourceAttributes['host.name'] AS host_name,
+  coalesce(
+    SpanAttributes['session.id'],
+    SpanAttributes['conversation.id'],
+    SpanAttributes['thread_id']
+  ) AS native_session_id,
+  argMax(ResourceAttributes['i3pm.project_name'], Timestamp) AS project_name,
+  argMax(ResourceAttributes['i3pm.project_path'], Timestamp) AS project_path,
+  argMax(ResourceAttributes['terminal.tmux.session'], Timestamp) AS tmux_session,
+  argMax(ResourceAttributes['terminal.tmux.window'], Timestamp) AS tmux_window,
+  argMax(ResourceAttributes['terminal.tmux.pane'], Timestamp) AS tmux_pane,
+  argMax(coalesce(ResourceAttributes['i3pm.ai.connection_key'], ''), Timestamp) AS connection_key_hint,
+  argMax(coalesce(SpanAttributes['gen_ai.response.finish_reasons'], ''), Timestamp) AS latest_finish_reasons,
+  max(Timestamp) AS last_seen,
+  countIf(has(SpanAttributes, 'turn.number')) AS turn_spans
+FROM otel.otel_traces
+WHERE Timestamp > now() - INTERVAL 10 MINUTE
+  AND ServiceName IN ('claude-code','codex','antigravity-cli','gemini-cli')
+GROUP BY tool, host_name, native_session_id
+HAVING native_session_id != ''
+   AND tmux_session != ''
+   AND tmux_pane != ''
+ORDER BY last_seen DESC
+FORMAT JSONEachRow
+"""
+        import base64
         import ssl
         import urllib.error
         import urllib.request
 
-        # Tailscale-served ingresses present self-signed certs; tailnet
-        # membership is the auth boundary, not the X509 chain.
+        auth_header = "Basic " + base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+        req = urllib.request.Request(
+            url,
+            data=sql.encode("utf-8"),
+            headers={
+                "Authorization": auth_header,
+                "X-ClickHouse-Format": "JSONEachRow",
+                "Content-Type": "text/plain; charset=utf-8",
+            },
+            method="POST",
+        )
         ssl_ctx = None
-        if full_url.startswith("https://") and full_url.split("/")[2].endswith(".ts.net"):
+        if url.startswith("https://") and url.split("/")[2].endswith(".ts.net"):
             ssl_ctx = ssl._create_unverified_context()
         try:
-            with urllib.request.urlopen(full_url, timeout=timeout, context=ssl_ctx) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
                 if resp.status != 200:
                     return {}
                 raw = resp.read()
         except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
             return {}
-        try:
-            payload = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return {}
-        if not isinstance(payload, dict):
-            return {}
-        return payload
+
+        now_ts = time.time()
+        sources_by_key: Dict[str, Dict[str, Any]] = {}
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            host = str(row.get("host_name") or "").strip()
+            if not host or host.lower() == local_host:
+                continue
+            native_id = str(row.get("native_session_id") or "").strip()
+            tool = str(row.get("tool") or "").strip()
+            project = str(row.get("project_name") or "").strip() or str(row.get("project_path") or "").strip()
+            explicit_conn = str(row.get("connection_key_hint") or "").strip()
+            connection_key = explicit_conn or f"vpittamp@{host}:22"
+            last_seen_str = str(row.get("last_seen") or "").split(".")[0]
+            try:
+                last_seen_dt = datetime.strptime(last_seen_str, "%Y-%m-%d %H:%M:%S")
+                from datetime import timezone as _tz
+                last_seen_unix = last_seen_dt.replace(tzinfo=_tz.utc).timestamp()
+            except ValueError:
+                last_seen_unix = now_ts
+            fr = str(row.get("latest_finish_reasons") or "").lower()
+            tc = (int(row.get("turn_spans") or 0) > 0
+                  or ("end_turn" in fr and "tool_use" not in fr and "tool_call" not in fr))
+            state = "completed" if (tc or (now_ts - last_seen_unix) > 20) else "working"
+            tmux_session = str(row.get("tmux_session") or "")
+            tmux_window = str(row.get("tmux_window") or "")
+            tmux_pane = str(row.get("tmux_pane") or "")
+            session = {
+                "tool": tool,
+                "host_name": host,
+                "native_session_id": native_id,
+                "session_id": native_id,
+                "project_name": project,
+                "project": project,
+                "connection_key": connection_key,
+                "execution_mode": "ssh",
+                "remote_target": connection_key,
+                "terminal_context": {
+                    "tmux_session": tmux_session,
+                    "tmux_window": tmux_window,
+                    "tmux_pane": tmux_pane,
+                    "terminal_anchor_id": "",
+                    "host_name": host,
+                    "connection_key": connection_key,
+                    "execution_mode": "ssh",
+                    "remote_target": connection_key,
+                },
+                "tmux_session": tmux_session,
+                "tmux_window": tmux_window,
+                "tmux_pane": tmux_pane,
+                "state": state,
+                "focusable": True,
+                "last_seen_unix": last_seen_unix,
+            }
+            src = sources_by_key.get(connection_key)
+            if src is None:
+                src = {
+                    "connection_key": connection_key,
+                    "host_name": host,
+                    "session_schema_version": "11",
+                    "received_at": now_ts,
+                    "sessions": [],
+                }
+                sources_by_key[connection_key] = src
+            src["sessions"].append(session)
+        return {"schema_version": "1", "sources": sources_by_key}
 
     def _ai_session_seen_events_file(self) -> Path:
         """Return the review acknowledgement queue consumed by monitoring_data."""

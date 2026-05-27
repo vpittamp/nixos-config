@@ -1311,32 +1311,41 @@ class TestQueryMonitoringData:
         assert scoped_projects
         assert scoped_projects[0]["execution_mode"] == "ssh"
 
-    def test_aggregator_unset_returns_none(self, monkeypatch):
-        """When the aggregator URL env var is unset, the fetcher returns None."""
-        monkeypatch.delenv("I3PM_MONITORING_AGGREGATOR_URL", raising=False)
+    def test_clickhouse_unset_returns_none(self, monkeypatch):
+        """When the ClickHouse URL env var is unset, the fetcher returns None."""
+        monkeypatch.delenv("I3PM_MONITORING_CLICKHOUSE_URL", raising=False)
         monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
         assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
 
-    def test_aggregator_fetch_success_caches(self, monkeypatch):
-        """Successful aggregator fetch returns the payload and caches it."""
-        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
-        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_TIMEOUT", "0.5")
+    def test_clickhouse_fetch_success_caches(self, monkeypatch):
+        """ClickHouse query returns sink-shaped payload and caches it."""
+        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_URL", "http://ch.test:8123/")
+        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_PASSWORD", "x")
+        monkeypatch.setattr("socket.gethostname", lambda: "thinkpad")
         monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
 
-        payload = {
-            "sources": {
-                "vpittamp@ryzen:22": {
-                    "connection_key": "vpittamp@ryzen:22",
-                    "host_name": "ryzen",
-                    "session_schema_version": "11",
-                    "received_at": time.time(),
-                    "sessions": [],
-                }
+        # JSONEachRow format: one JSON per line
+        rows = [
+            {
+                "tool": "codex",
+                "host_name": "ryzen",
+                "native_session_id": "sid-1",
+                "project_name": "PittampalliOrg/stacks:main",
+                "project_path": "/home/x/stacks",
+                "tmux_session": "tmsx",
+                "tmux_window": "0:bash",
+                "tmux_pane": "%5",
+                "connection_key_hint": "",
+                "latest_finish_reasons": "",
+                "last_seen": "2026-05-27 18:00:00.000000000",
+                "turn_spans": 0,
+                "span_count": 1,
             }
-        }
+        ]
+        response_body = ("\n".join(json.dumps(r) for r in rows)).encode("utf-8")
         response = MagicMock()
         response.status = 200
-        response.read.return_value = json.dumps(payload).encode("utf-8")
+        response.read.return_value = response_body
         response.__enter__ = MagicMock(return_value=response)
         response.__exit__ = MagicMock(return_value=False)
 
@@ -1345,14 +1354,15 @@ class TestQueryMonitoringData:
             result = monitoring_data._fetch_remote_sessions_from_aggregator()
             assert result is not None
             assert "vpittamp@ryzen:22" in result["sources"]
+            assert result["sources"]["vpittamp@ryzen:22"]["sessions"][0]["tmux_pane"] == "%5"
             # Second call should hit the cache, not the network.
             cached = monitoring_data._fetch_remote_sessions_from_aggregator()
             assert cached is not None
             assert mock_open.call_count == 1
 
-    def test_aggregator_fetch_timeout_returns_none(self, monkeypatch):
-        """Aggregator timeout falls back to None (so caller uses sink file)."""
-        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+    def test_clickhouse_fetch_timeout_returns_none(self, monkeypatch):
+        """ClickHouse timeout returns None."""
+        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_URL", "http://ch.test:8123/")
         monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
 
         import urllib.error as _urlerr
@@ -1360,20 +1370,40 @@ class TestQueryMonitoringData:
         with patch.object(_urlreq, "urlopen", side_effect=_urlerr.URLError("timeout")):
             assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
 
-    def test_aggregator_fetch_malformed_json_returns_none(self, monkeypatch):
-        """Malformed JSON response falls back to None."""
-        monkeypatch.setenv("I3PM_MONITORING_AGGREGATOR_URL", "http://agg.test/sessions")
+    def test_clickhouse_fetch_filters_own_host(self, monkeypatch):
+        """Rows whose host_name matches the local hostname are excluded."""
+        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_URL", "http://ch.test:8123/")
+        monkeypatch.setattr("socket.gethostname", lambda: "thinkpad")
         monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
 
+        rows = [
+            {
+                "tool": "claude-code", "host_name": "thinkpad", "native_session_id": "x",
+                "project_name": "p", "project_path": "", "tmux_session": "s", "tmux_window": "0",
+                "tmux_pane": "%1", "connection_key_hint": "", "latest_finish_reasons": "",
+                "last_seen": "2026-05-27 18:00:00", "turn_spans": 0, "span_count": 1,
+            },
+            {
+                "tool": "codex", "host_name": "ryzen", "native_session_id": "y",
+                "project_name": "p", "project_path": "", "tmux_session": "s", "tmux_window": "0",
+                "tmux_pane": "%2", "connection_key_hint": "", "latest_finish_reasons": "",
+                "last_seen": "2026-05-27 18:00:00", "turn_spans": 0, "span_count": 1,
+            },
+        ]
+        response_body = ("\n".join(json.dumps(r) for r in rows)).encode("utf-8")
         response = MagicMock()
         response.status = 200
-        response.read.return_value = b"not json {"
+        response.read.return_value = response_body
         response.__enter__ = MagicMock(return_value=response)
         response.__exit__ = MagicMock(return_value=False)
 
         import urllib.request as _urlreq
         with patch.object(_urlreq, "urlopen", return_value=response):
-            assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
+            result = monitoring_data._fetch_remote_sessions_from_aggregator()
+            assert result is not None
+            hosts = [src["host_name"] for src in result["sources"].values()]
+            assert hosts == ["ryzen"]
+            assert "thinkpad" not in hosts
 
 
 @pytest.mark.asyncio

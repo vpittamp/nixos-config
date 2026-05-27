@@ -577,79 +577,219 @@ def _load_remote_otel_sessions_for_connection(
     return merged
 
 
-def _aggregator_url() -> str:
-    """Return the configured K8s session-aggregator URL (or empty if disabled)."""
-    return str(os.environ.get("I3PM_MONITORING_AGGREGATOR_URL", "") or "").strip()
+def _clickhouse_url() -> str:
+    """Return the configured ClickHouse HTTP endpoint (or empty if disabled)."""
+    return str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_URL", "") or "").strip()
 
 
-def _aggregator_timeout() -> float:
-    raw = str(os.environ.get("I3PM_MONITORING_AGGREGATOR_TIMEOUT", "1.5") or "1.5").strip()
+def _clickhouse_credentials() -> tuple[str, str]:
+    user = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_USER", "default") or "default").strip()
+    password = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_PASSWORD", "") or "")
+    return user, password
+
+
+def _clickhouse_timeout() -> float:
+    raw = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_TIMEOUT", "2.5") or "2.5").strip()
     try:
         value = float(raw)
     except ValueError:
-        return 1.5
-    return value if value > 0 else 1.5
+        return 2.5
+    return value if value > 0 else 2.5
+
+
+_CLICKHOUSE_SESSIONS_QUERY = """
+SELECT
+  ServiceName AS tool,
+  ResourceAttributes['host.name'] AS host_name,
+  coalesce(
+    SpanAttributes['session.id'],
+    SpanAttributes['conversation.id'],
+    SpanAttributes['thread_id']
+  ) AS native_session_id,
+  argMax(ResourceAttributes['i3pm.project_name'], Timestamp) AS project_name,
+  argMax(ResourceAttributes['i3pm.project_path'], Timestamp) AS project_path,
+  argMax(ResourceAttributes['terminal.tmux.session'], Timestamp) AS tmux_session,
+  argMax(ResourceAttributes['terminal.tmux.window'], Timestamp) AS tmux_window,
+  argMax(ResourceAttributes['terminal.tmux.pane'], Timestamp) AS tmux_pane,
+  argMax(coalesce(ResourceAttributes['i3pm.ai.connection_key'], ''), Timestamp) AS connection_key_hint,
+  argMax(coalesce(SpanAttributes['gen_ai.response.finish_reasons'], ''), Timestamp) AS latest_finish_reasons,
+  max(Timestamp) AS last_seen,
+  countIf(has(SpanAttributes, 'turn.number')) AS turn_spans,
+  count() AS span_count
+FROM otel.otel_traces
+WHERE Timestamp > now() - INTERVAL 10 MINUTE
+  AND ServiceName IN ('claude-code','codex','antigravity-cli','gemini-cli')
+GROUP BY tool, host_name, native_session_id
+HAVING native_session_id != ''
+   AND tmux_session != ''
+   AND tmux_pane != ''
+ORDER BY last_seen DESC
+FORMAT JSONEachRow
+"""
+
+
+def _row_to_session(row: Dict[str, Any], now_ts: float) -> Dict[str, Any]:
+    host_name = str(row.get("host_name") or "").strip()
+    native_id = str(row.get("native_session_id") or "").strip()
+    tool = str(row.get("tool") or "").strip()
+    project = str(row.get("project_name") or "").strip() or str(row.get("project_path") or "").strip()
+    explicit_conn = str(row.get("connection_key_hint") or "").strip()
+    connection_key = explicit_conn or f"vpittamp@{host_name}:22"
+    # ClickHouse returns Timestamp as "YYYY-MM-DD HH:MM:SS.ffffff" UTC.
+    last_seen_str = str(row.get("last_seen") or "")
+    try:
+        last_seen_dt = datetime.strptime(last_seen_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        from datetime import timezone as _tz
+        last_seen_unix = last_seen_dt.replace(tzinfo=_tz.utc).timestamp()
+    except (ValueError, IndexError):
+        last_seen_unix = now_ts
+    age = now_ts - last_seen_unix
+    # State machine:
+    # - turn-complete signal (gen_ai end_turn without tool_use, or any turn.number) → completed
+    # - else aged out > 20s → completed
+    # - else → working
+    fr = str(row.get("latest_finish_reasons") or "").lower()
+    is_turn_complete = (
+        int(row.get("turn_spans") or 0) > 0
+        or ("end_turn" in fr and "tool_use" not in fr and "tool_call" not in fr)
+    )
+    if is_turn_complete or age > 20:
+        state = "completed"
+    else:
+        state = "working"
+    tmux_session = str(row.get("tmux_session") or "")
+    tmux_window = str(row.get("tmux_window") or "")
+    tmux_pane = str(row.get("tmux_pane") or "")
+    terminal_context = {
+        "tmux_session": tmux_session,
+        "tmux_window": tmux_window,
+        "tmux_pane": tmux_pane,
+        "terminal_anchor_id": "",
+        "host_name": host_name,
+        "connection_key": connection_key,
+        "execution_mode": "ssh",
+        "remote_target": connection_key,
+    }
+    return {
+        "tool": tool,
+        "host_name": host_name,
+        "native_session_id": native_id,
+        "session_id": native_id,
+        "project_name": project,
+        "project": project,
+        "connection_key": connection_key,
+        "execution_mode": "ssh",
+        "remote_target": connection_key,
+        "terminal_context": terminal_context,
+        "tmux_session": tmux_session,
+        "tmux_window": tmux_window,
+        "tmux_pane": tmux_pane,
+        "state": state,
+        "focusable": True,
+        "last_seen_unix": last_seen_unix,
+        "updated_at": datetime.fromtimestamp(last_seen_unix).isoformat() + "+00:00",
+    }
 
 
 def _fetch_remote_sessions_from_aggregator() -> Optional[Dict[str, Any]]:
-    """Fetch remote sessions payload from the K8s session-aggregator.
+    """Fetch remote sessions by querying ClickHouse directly.
 
-    Returns a payload with the same shape as the deterministic sink
-    (``{"sources": {connection_key: {...}}}``) so downstream parsing can reuse
-    the existing sink-source code path. Returns None when the aggregator URL
-    is unset or any error occurs — callers should treat None as "fall back to
-    the on-disk sink file".
+    Replaces the previous K8s session-aggregator service with a direct SQL
+    query against the same ClickHouse instance that the OTEL collector
+    already writes every span to. This eliminates the bespoke aggregator
+    deployment and the coupling to the collector's exporter pipeline.
 
-    Passes ?exclude_host=<this hostname> so the aggregator omits our own
-    sessions from the response — they're already in the local sessions.json
-    and would otherwise show up as duplicates labeled as "remote".
+    Returns a payload shape compatible with the legacy sink path:
+    ``{"sources": {connection_key: {host_name, sessions: [...]}}}``.
+
+    Filters out the local host's sessions (they're already in the local
+    sessions.json). Returns None when the URL is unset or the query fails.
     """
-    base_url = _aggregator_url()
+    base_url = _clickhouse_url()
     if not base_url:
         return None
+    user, password = _clickhouse_credentials()
+    timeout = _clickhouse_timeout()
     import socket
     local_host = socket.gethostname().split(".", 1)[0]
-    # Build the request URL with exclude_host appended.
-    sep = "&" if "?" in base_url else "?"
-    url = f"{base_url}{sep}exclude_host={local_host}"
+    now_ts = time.time()
 
-    now = time.time()
-    cached_url = str(AGGREGATOR_CACHE.get("url") or "")
+    # Cache the response briefly to avoid hammering ClickHouse on every
+    # broadcast tick. TTL chosen to match the legacy aggregator's 4s.
+    cache_key = (base_url, local_host)
+    cached_url = AGGREGATOR_CACHE.get("url")
     fetched_at = float(AGGREGATOR_CACHE.get("fetched_at") or 0.0)
-    if cached_url == url and (now - fetched_at) < AGGREGATOR_CACHE_TTL_SECONDS:
+    if cached_url == cache_key and (now_ts - fetched_at) < AGGREGATOR_CACHE_TTL_SECONDS:
         cached_payload = AGGREGATOR_CACHE.get("payload")
         if isinstance(cached_payload, dict):
             return dict(cached_payload)
 
-    # Lazy import: keep the top-level import surface minimal and ensure the
-    # client works in environments where urllib is the only HTTP option.
+    import base64
     import ssl
     import urllib.error
     import urllib.request
 
-    timeout = _aggregator_timeout()
-    # Tailscale-served ingresses present self-signed certs; tailnet membership
-    # is the authentication boundary, not the X509 chain. Skip verification
-    # only on the aggregator hostname so we don't broadly weaken TLS.
-    if url.startswith("https://") and url.split("/")[2].endswith(".ts.net"):
+    auth_header = "Basic " + base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        base_url,
+        data=_CLICKHOUSE_SESSIONS_QUERY.encode("utf-8"),
+        headers={
+            "Authorization": auth_header,
+            "X-ClickHouse-Format": "JSONEachRow",
+            "Content-Type": "text/plain; charset=utf-8",
+        },
+        method="POST",
+    )
+    if base_url.startswith("https://") and base_url.split("/")[2].endswith(".ts.net"):
         ssl_context = ssl._create_unverified_context()
     else:
         ssl_context = None
     try:
-        with urllib.request.urlopen(url, timeout=timeout, context=ssl_context) as response:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as response:
             if response.status != 200:
                 return None
             raw = response.read()
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
         return None
 
-    try:
-        payload = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        return None
+    # Response is JSONEachRow: one JSON object per line.
+    sources_by_key: Dict[str, Dict[str, Any]] = {}
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        host = str(row.get("host_name") or "").strip().lower()
+        if not host or host == local_host:
+            continue  # Filter out own host (equivalent to legacy ?exclude_host).
+        session = _row_to_session(row, now_ts)
+        ck = session["connection_key"]
+        src = sources_by_key.get(ck)
+        if src is None:
+            src = {
+                "connection_key": ck,
+                "host_name": session["host_name"],
+                "remote_target": session["remote_target"],
+                "session_schema_version": AI_SESSION_SCHEMA_VERSION,
+                "received_at": now_ts,
+                "sessions": [],
+            }
+            sources_by_key[ck] = src
+        src["sessions"].append(session)
 
-    if not isinstance(payload, dict) or not isinstance(payload.get("sources"), dict):
-        return None
+    payload = {
+        "schema_version": "1",
+        "sources": sources_by_key,
+    }
+    AGGREGATOR_CACHE.update({
+        "url": cache_key,
+        "fetched_at": now_ts,
+        "payload": dict(payload),
+    })
+    return payload
 
     AGGREGATOR_CACHE.update({
         "url": url,
