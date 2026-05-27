@@ -60,9 +60,11 @@ Expected from the dev rebuild:
 
 ## Dapr Runtime Gates
 
-For pooled Kimi, `workflowstatestore` and `dapr-agent-py-statestore` must include
-`agent-runtime-pool-coding` in scopes, otherwise child workflow/session state can
-fail even when capacity looks good:
+For pooled SWE-bench agents, `workflowstatestore` must be the only visible
+`actorStateStore=true` Component. It is namespace-wide on current dev because
+per-session Kueue agent hosts use unique app IDs. `dapr-agent-py-statestore`
+should also be namespace-wide, but `actorStateStore=false`; it is agent
+application state, not durable workflow actor state:
 
 ```bash
 KUBECONFIG=/tmp/dev-kubeconfig kubectl get component -n workflow-builder \
@@ -86,6 +88,11 @@ If `workflowConnectedWorkers` stays zero, wait for the watchdog to replace the
 pod or delete only the `workflow-orchestrator` pod after confirming no active
 run depends on it. Replacing only the Python container is insufficient because a
 stale `daprd` sidecar can remain in the pod.
+
+Do not launch during workflow-builder rollout or hook activity. The BFF launch
+stability gate should show a stable workflow-builder Deployment, no active
+`db-migrate`/`db-seed`/`sync-platform-oauth-apps` hook Jobs, and a synced,
+healthy managing Argo Application before a capacity run is inserted.
 
 MLflow is restored but background best-effort. `[mlflow]` timeout logs should
 not block a capacity smoke; the health signal is run creation, Dapr instance
@@ -112,11 +119,25 @@ Launch gates:
 
 - `blockedBy` is empty.
 - Runtime slots are at least 72.
-- `schedulableSandboxCapacity >= 72`.
+- `schedulableKueueInstanceCapacity` is at least the requested effective
+  inference concurrency when the Kueue backend is active. This is the
+  full-instance bundle cap; do not rely on `schedulableSandboxCapacity` alone.
 - `diskPressureNodeCount == 0`.
 - Stale active leases/workflows/sessions are zero.
 
-Only after these pass should a 10/24/48/72 benchmark ramp be started. A
-`maxTurns=3` two-instance canary is useful after runtime changes: it is expected
-to finish unresolved or `empty_patch`, but it must create sessions, record LLM
-usage, and launch the evaluator.
+Only after these pass should a 10/24/48/72 benchmark ramp be started. Use
+distinct exact-ready SWE-bench_Verified instances. A `maxTurns=3` two-instance
+canary is useful after runtime changes: it is expected to finish unresolved or
+`empty_patch`, but it must create sessions, record LLM usage, and launch the
+evaluator. For infra-capacity cohorts, prefer `maxTurns=25`; it is long enough
+to exercise LLM/tool/sandbox behavior without creating very long cohort tails.
+
+Current clean checkpoint to compare against: run `W4ZmHxaEMEYQDCZ_Ypo41`
+completed 25 distinct exact-ready SWE-bench_Verified instances with DeepSeek V4
+Pro at `maxTurns=25`. It requested/effectively ran inference 25/25; evaluator
+requested/effective was 24/9 due `kueue_eval_capacity`. Results were 13
+resolved / 7 unresolved / 5 empty-patch, with zero evaluator errors, zero hard
+errors, zero active leases after cleanup, and no Dapr activity-registration
+failures. The next checkpoint should be 50 only after active runs/leases, stale
+pods, Dapr scheduler/placement, workflow-builder launch stability, and
+exact-ready coverage are all clean.

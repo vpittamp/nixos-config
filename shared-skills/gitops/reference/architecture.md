@@ -197,10 +197,10 @@ Dapr durable workflows use actor state, and each sidecar must see exactly one `a
 
 | Component | Scope | Purpose |
 |---|---|---|
-| `workflowstatestore` | `workflow-orchestrator`, `swebench-coordinator` | Parent workflow/orchestrator durable state |
-| `dapr-agent-py-statestore` | `dapr-agent-py` plus per-agent app ids enrolled by agent-runtime-controller | Shared durable state for sandboxed per-agent runtimes |
+| `workflowstatestore` | namespace-wide in `workflow-builder` | Shared Dapr workflow/actor durable state for parent workflows, child session workflows, timers, reminders, and activity bookkeeping |
+| `dapr-agent-py-statestore` | namespace-wide in `workflow-builder` | Non-actor agent application state APIs and task-output state |
 
-The agent-runtime controller mutates the shared `dapr-agent-py-statestore` `scopes` list when AgentRuntime CRs are created or updated. This keeps history centralized and avoids creating/deleting per-agent Dapr Components, while preserving Dapr's requirement that a sidecar has a single actor state store.
+Per-session Kueue agent hosts use unique Dapr app IDs, so Component scope mutation is intentionally avoided. Keep `workflowstatestore` as the only `actorStateStore=true` Component visible to workflow-enabled sidecars, and keep `dapr-agent-py-statestore` at `actorStateStore=false`.
 
 ## Branch model
 
@@ -293,8 +293,8 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-management/manifests/gitops-promoter/TimedCommitStatus-workflow-builder-soak.yaml` | timer gate (`dev=0s`, `staging=10m`) |
 | `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin Deployments |
 | `packages/components/active-development/manifests/workflow-builder/Service-gitops-inventory-hub-egress.yaml` | Spoke egress Service for inventory; points to `gitops-inventory-hub-node.tail286401.ts.net:8080` |
-| `packages/components/active-development/manifests/workflow-builder/Component-workflowstatestore.yaml` | Parent workflow Dapr actor state store |
-| `packages/components/active-development/manifests/openshell-agent-runtime/Component-dapr-agent-py-statestore.yaml` | Shared per-agent Dapr actor state store |
+| `packages/components/active-development/manifests/workflow-builder/Component-workflowstatestore.yaml` | Namespace-wide Dapr workflow/actor state store |
+| `packages/components/active-development/manifests/workflow-builder/Component-dapr-agent-py-statestore.yaml` | Namespace-wide non-actor agent application state store |
 | `packages/components/active-development/apps/workflow-builder.yaml` | Workflow-builder Argo app spec, including ignoreDifferences for operator-mutated egress Service fields |
 | `packages/base/manifests/agent-sandbox-crds/` | Required OpenShell/agent-runtime CRDs: `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, `SandboxWarmPool`. Do not remove as duplicate. |
 | `packages/components/hub-management/apps/gitops-promoter.yaml` | Promoter Helm chart app plus image tag override when chart appVersion lags |

@@ -4,7 +4,7 @@ Scope: the K8s mental model needed to reason about *where* a workflow runs and *
 
 ## One-paragraph mental model
 
-The user submits a workflow → SvelteKit **workflow-builder** BFF (port 3000) writes to Postgres + tells **workflow-orchestrator** (Python Dapr, port 8080) to start an instance. The orchestrator parses the SW 1.0 spec and walks `do[]`. For every task except `durable/run`, it does a Dapr service-invoke to **function-router**, which decrypts credentials, looks up the slug in the **function-registry ConfigMap**, and forwards to fn-system / fn-activepieces / openshell-agent-runtime / code-runtime. For `durable/run`, the orchestrator resolves project MCP connections when requested, then yields `ctx.call_child_workflow("session_workflow", app_id="agent-runtime-<slug>")` — a native Dapr child workflow, not HTTP — to a **per-agent runtime pod** in the same `workflow-builder` namespace. That pod was reconciled from an `AgentRuntime` CR by the **agent-runtime-controller** (Kopf operator). It scales 0↔1 on demand. Durable state is centralized in Dapr actor state stores, scoped so each pod sees exactly one actor state store.
+The user submits a workflow → SvelteKit **workflow-builder** BFF (port 3000) writes to Postgres + tells **workflow-orchestrator** (Python Dapr, port 8080) to start an instance. The orchestrator parses the SW 1.0 spec and walks `do[]`. For every task except `durable/run`, it does a Dapr service-invoke to **function-router**, which decrypts credentials, looks up the slug in the **function-registry ConfigMap**, and forwards to fn-system / fn-activepieces / openshell-agent-runtime / code-runtime. For `durable/run`, the orchestrator resolves project MCP connections when requested, then yields `ctx.call_child_workflow("session_workflow", app_id="agent-runtime-<slug>")` — a native Dapr child workflow, not HTTP — to a **per-agent runtime pod** or Kueue-admitted **agent-host/session-host** in the same `workflow-builder` namespace. Durable workflow state is centralized in `workflowstatestore`, and agent application state uses `dapr-agent-py-statestore`; each sidecar must see exactly one actor state store.
 
 ## Pods that matter
 
@@ -44,15 +44,15 @@ When the user publishes an agent, `src/lib/server/agents/registry-sync.ts` upser
 
 ## Dapr Component scoping (the invariant that bites)
 
-A Dapr sidecar refuses to start if it sees more than one Component with `actorStateStore=true`. The current architecture uses centralized state stores with narrow scopes:
+A Dapr sidecar refuses to start if it sees more than one Component with `actorStateStore=true`. The current architecture uses centralized namespace-wide state stores:
 
 | Component | actorStateStore | Scopes | Used by | File |
 | --- | --- | --- | --- | --- |
-| `workflowstatestore` | true | workflow-orchestrator, swebench-coordinator | Parent workflow/orchestrator history | `Component-workflowstatestore.yaml` |
-| `dapr-agent-py-statestore` | true | dapr-agent-py plus `agent-runtime-<slug>` app ids enrolled by the controller | Per-agent pod durable actor state | `Component-dapr-agent-py-statestore.yaml` |
-| `agent-workflow` | true | legacy openshell-durable-agent / vanilla-durable-agent (no active consumers) | n/a | `Component-agent-workflow.yaml` |
+| `workflowstatestore` | true | unscoped in `workflow-builder` | Parent workflow history, child agent/session workflow history, timers, reminders, activity bookkeeping | `Component-workflowstatestore.yaml` |
+| `dapr-agent-py-statestore` | false | unscoped in `workflow-builder` | Agent application state APIs and task-output state, not Dapr workflow actor state | `Component-dapr-agent-py-statestore.yaml` |
+| `agent-workflow` | false | legacy openshell-durable-agent / vanilla-durable-agent only | Legacy non-actor state component | `Component-agent-workflow.yaml` |
 
-When an `AgentRuntime` is created or updated, `agent-runtime-controller` patches `dapr-agent-py-statestore.scopes` with the runtime Dapr app id. Do not create per-agent Components as a workaround. If daprd crashes with actor-store errors, check that the shared Component exists, that the controller is running, and that the app id appears exactly once in the scopes list.
+Do not create per-agent Components as a workaround. If daprd crashes with actor-store errors, check that no legacy Component was made visible as `actorStateStore=true`, and that `workflowstatestore` is the only actor store in the namespace. Per-session Kueue agent hosts use unique app IDs, so component scope mutation is intentionally avoided.
 
 ## Dapr Configuration
 
@@ -98,6 +98,7 @@ Every `durable/run` step goes through a session bridge so workflow-driven runs a
 
 - `dapr-agent-py:git-<sha>` → legacy `dapr-agent-py` + `dapr-agent-py-testing` Deployments. Pinned by GitOps tag bump.
 - `dapr-agent-py-sandbox:latest` → per-agent runtime pods. Stamped into AgentRuntime CR `environment.imageTag` at agent-publish time. Uses `imagePullPolicy: Always`, so scaling 0→1 picks up new digests.
+- `dapr-agent-py-sandbox:git-<sha>` and `dapr-agent-py-testing-sandbox:git-<sha>` → current hub-built sandbox images used by SWE-bench agent/session hosts. A `services/dapr-agent-py` source change should roll both images, and the workflow-builder BFF pod must see the matching `AGENT_RUNTIME_*_DEFAULT_IMAGE` env values before new runtime CRs or session hosts are considered updated.
 
 A change in `services/dapr-agent-py/src/**` requires both the runtime image and sandbox image builds. The current build plane is centralized on hub; see the `gitops` skill for details.
 

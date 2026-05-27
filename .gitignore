@@ -50,5 +50,6 @@ Thumbs.db
 /.claude-trace-context.json
 Trace-*.json
 .codex-tmp/
+.antigravitycli/
 # Claude Code scheduled-task lock (local runtime state)
 .claude/scheduled_tasks.lock

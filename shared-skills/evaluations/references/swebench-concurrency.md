@@ -4,6 +4,19 @@ Use this when a user asks why only N SWE-bench instances are running, asks to
 raise/remove benchmark limits, or asks whether inference/evaluation is
 parallelized.
 
+## Contents
+
+- [Capacity Formula](#capacity-formula)
+- [Start-Path Readiness](#start-path-readiness)
+- [Control-Plane Stability Gate](#control-plane-stability-gate)
+- [MLflow Tracking And Comparison Campaigns](#mlflow-tracking-and-comparison-campaigns)
+- [Main Knobs](#main-knobs)
+- [Dapr Workflow And State-Store Constraints](#dapr-workflow-and-state-store-constraints)
+- [Metric-Driven Capacity Signals](#metric-driven-capacity-signals)
+- [Current Dev Capacity Baseline](#current-dev-capacity-baseline)
+- [SWE-bench Image Builds](#swe-bench-image-builds)
+- [Historical Verified Capacity Envelope](#historical-verified-capacity-envelope-post-2026-05-09-profile-timeout-fix)
+
 ## Capacity Formula
 
 Official SWE-bench Benchmarks store an effective inference concurrency, then
@@ -24,6 +37,23 @@ If a run asks for 20 but only 12 are active, inspect the run summary capacity
 first, then the `benchmark_resource_leases` blockers. Raising only the UI
 slider rarely changes throughput by itself.
 
+On dev and ryzen, treat one active SWE-bench instance as a full-instance
+bundle, not a single pod. The current architecture consumes the OpenShell
+sandbox/worker side and the agent-host/session-host side for each active
+instance. Capacity math, Kueue quota, node requests, and cleanup must account
+for both sides. A launcher that admits only sandbox capacity can still overrun
+the cluster through agent-host memory, Dapr workflow workers, or state-store
+pressure.
+
+The BFF should run with
+`BENCHMARK_KUEUE_INSTANCE_REQUEST_MODE=host-worker-composite` for the
+Kueue-backed path. In that mode, read `kueueInstanceRequest*`,
+`kueueInstancePodCount`, `kueueAvailableInstanceSlots`, and
+`schedulableKueueInstanceCapacity` from `benchmark_runs.summary.capacity`. A
+modeled `kueueInstancePodCount=3` is a quota budget for the composite
+worker/sandbox/agent-host shape, not a claim that three long-lived pods remain
+visible for every instance.
+
 ## Start-Path Readiness
 
 Benchmark instance start is also gated by parent Dapr runtime readiness. The
@@ -41,6 +71,24 @@ to `SWEBENCH_LEASE_RETRY_SECONDS`).
 MLflow is not a dispatch gate. With `MLFLOW_FAILURE_MODE=best_effort`, MLflow
 timeouts only leave tracking IDs null and log `[mlflow]` warnings; Dapr workflow
 IDs, sessions, token usage, and evaluator handoff should continue.
+
+## Control-Plane Stability Gate
+
+Benchmark launch is gated on workflow-builder control-plane stability before a
+new run is inserted. The BFF should refuse launch, and preview should surface
+the same diagnostics, when any of these are true:
+
+- the `workflow-builder` Deployment is rolling, has unavailable replicas, or
+  its ready pods are younger than the configured stable window;
+- workflow-builder hook Jobs such as `db-migrate`, `db-seed`, or
+  `sync-platform-oauth-apps` are active;
+- the managing Argo Application is not `Synced` + `Healthy`, has a running
+  operation, or finished an operation too recently.
+
+Do not bypass this with a manual run during capacity testing. Recent failures
+showed that launching during a BFF/orchestrator rollout can corrupt the
+checkpoint: startup cleanup may terminate active parents, and Dapr durable
+replay may hit activity-schedule mismatches if code changes mid-history.
 
 ## MLflow Tracking And Comparison Campaigns
 
@@ -96,6 +144,14 @@ on dev workers. If `benchmark_runs.status='queued'`, no
 active `swe-env-*`, the benchmark is waiting for environment validation rather
 than constrained by inference concurrency.
 
+For capacity checkpoints, prefer distinct exact-ready SWE-bench_Verified
+instances. Do not use repeated duplicate instances as the primary path. Exact
+readiness means the static ConfigMap or dynamic DB row matches the current
+environment spec hash; stale coarse repo/version/base-commit matches are not
+enough. Follow-up image-build work should improve hub Tekton cache hit rates and
+build throughput, but capacity runs should not wait on new images unless image
+coverage itself is the thing under test.
+
 ### Launch UI and BFF
 
 Files: `src/lib/components/benchmarks/launch-run-sheet.svelte`,
@@ -121,6 +177,11 @@ Files: `src/lib/components/benchmarks/launch-run-sheet.svelte`,
 | `MLFLOW_ENABLED` | true | Enables benchmark tracking metadata. |
 | `MLFLOW_FAILURE_MODE` | `best_effort` | Logs MLflow failures without blocking benchmark dispatch. |
 | `MLFLOW_REQUEST_TIMEOUT_MS` | `30000` | Per-request MLflow timeout; should not block start. |
+| `BENCHMARK_WORKFLOW_BUILDER_STABLE_SECONDS` | `120` | Launch-control-plane stable window for BFF rollout/hook/Argo checks. |
+| `BENCHMARK_WORKFLOW_BUILDER_NAMESPACE` | `workflow-builder` | Namespace sampled by the launch stability gate. |
+| `BENCHMARK_WORKFLOW_BUILDER_DEPLOYMENT` | `workflow-builder` | Deployment sampled by the launch stability gate. |
+| `BENCHMARK_ARGOCD_APPLICATION_NAME` | inferred from `APP_PUBLIC_URL` | Optional explicit Argo app name for launch stability. |
+| `BENCHMARK_ARGOCD_HUB_KUBECONFIG` | hub kubeconfig env fallback | Kubeconfig path used to inspect the hub Argo Application. |
 
 Sandbox headroom variables in `src/lib/server/benchmarks/sandbox-capacity.ts`:
 
@@ -216,7 +277,121 @@ Provider retry knobs such as `DEEPSEEK_RATE_LIMIT_MAX_RETRIES`,
 `AZURE_AI_FOUNDRY_RATE_LIMIT_*` are retry controls after 429s, not concurrency
 caps.
 
-## Verified Capacity Envelope (post-2026-05-09 profile-timeout fix)
+## Dapr Workflow And State-Store Constraints
+
+Dapr durable workflow history is replay-sensitive. Do not roll
+`workflow-orchestrator`, `swebench-coordinator`, `workflow-builder`, or
+`dapr-agent-py` mid-run unless the run is cancelled and cleanup is complete.
+Never gate a scheduled `ctx.call_activity` / `ctx.call_child_workflow` behind a
+new env flag after histories exist; keep the schedule stable and make the
+activity body no-op if an effect such as tracing must be disabled. A recent
+`emit_mlflow_node_span` schedule mismatch killed otherwise healthy histories.
+
+State-store layout on dev:
+
+- `workflowstatestore` is the namespace-wide Dapr workflow/actor store
+  (`actorStateStore=true`, `tablePrefix=wfstate_`). Parent orchestrations,
+  per-session agent workflows, timers, reminders, and activity bookkeeping all
+  share this durable backend. Its `maxConns` is intentionally above the old
+  value of 2; keep it below PgBouncer capacity but high enough for the configured
+  Dapr worker limits.
+- `dapr-agent-py-statestore` is a namespace-wide non-actor application state
+  store (`actorStateStore=false`, `tablePrefix=agent_py_`) used by the agent
+  state APIs. It should not be treated as the workflow actor store, and it
+  should not be cloned per agent/session.
+
+Dapr workflow status APIs can be stale after termination. We observed parent
+workflows that logged `TERMINATED` but still returned `RUNNING`, causing normal
+purge to refuse deletion. For terminal benchmark cleanup, verify DB state,
+leases, session/turn/parent workflows, pods, and state rows together. The BFF
+may force-delete scoped `wfstate_state` / `agent_py_state` rows only after the
+run is terminal and terminate/poll/purge has failed to clear stale Dapr state;
+do not use that path for active stalled-instance diagnosis.
+
+`CLEANUP_STALE_ON_STARTUP` should stay opt-in and must skip benchmark workflows
+unless intentionally doing a recovery. Startup cleanup killed active benchmark
+parents during a rollout; normal benchmark cleanup belongs in the terminal run
+cleanup endpoint.
+
+Dapr Agents 1.0.3 introduced native hooks and changed enough of the workflow
+surface that local compatibility shims became risky. For repo-owned custom
+activities in `services/dapr-agent-py`, register and call only scoped names via
+`self._activity_name(...)`; do not also register bare legacy names. If an old
+benchmark history still expects a bare activity name, cancel/cleanup/purge the
+old state rather than carrying dual registration forward.
+
+## Metric-Driven Capacity Signals
+
+Prefer live capacity signals over static caps whenever the data is available.
+Static env caps remain useful as circuit breakers, but the launch/admission
+decision should converge on:
+
+- Kueue available quota for the full-instance pod bundle;
+- live pod requests and node schedulability, including taints and benchmark-pool
+  labels;
+- OpenShell sandbox headroom and active `benchmark_resource_leases`;
+- Dapr workflow worker health, connected workers, sidecar readiness, and taskhub
+  reachability;
+- state-store/pgbouncer pressure and Dapr state API latency;
+- evaluator Job/TaskRun capacity and Kueue admission;
+- Kubernetes 1.36 node PSI / pressure metrics for debug and trend detection.
+
+Use PSI as an early warning and post-run forensic signal, not the sole admission
+gate. Pair PSI with resource requests, pod phase/admission, Kueue Workloads, and
+ClickHouse/OTEL historical pod resource samples. The workflow-builder capacity
+tab should show both current utilization and trend evidence; a memory chart at
+57% is only a cluster-level utilization slice, not proof that a two-pod
+SWE-bench instance bundle can be admitted safely.
+
+## Current Dev Capacity Baseline
+
+Current infra-capacity testing uses DeepSeek V4 Pro unless a canary proves the
+issue is model-independent. For infra work, `maxTurns=25` is the preferred
+checkpoint setting: it gives agents enough activity to exercise LLM/tool/sandbox
+paths while avoiding very long cohort tails. Higher turn caps are model-quality
+experiments, not required for capacity proof.
+
+The useful model-quality checkpoint was a 64-way DeepSeek V4 Pro,
+SWE-bench_Verified, distinct exact-ready cohort at `maxTurns=25`
+(`8ITGk-QSGX9rPz5cnTyiT`). It produced 33/64 resolved, which validates model
+quality for infra work, but it is not a clean capacity checkpoint because
+rollout, startup cleanup, and replay-schedule issues interfered with the run.
+
+The current clean infra checkpoint is `W4ZmHxaEMEYQDCZ_Ypo41`: 25 distinct
+exact-ready SWE-bench_Verified instances, DeepSeek V4 Pro, `maxTurns=25`,
+requested/effective inference concurrency 25/25, requested/effective evaluator
+concurrency 24/9 due `kueue_eval_capacity`, 13 resolved / 7 unresolved / 5
+empty-patch, zero evaluator errors, zero hard errors, zero active leases after
+cleanup, and no `Activity function named ... not registered` or Dapr workflow
+hard failures in log sweeps. Treat 25 as the proven clean baseline; the next
+capacity checkpoint should be 50 only after the launch gate, exact-ready
+coverage, leases, Dapr scheduler/placement, and stale pod checks are clean.
+
+Ryzen parity checkpoint: run `MPIlRkKWC7UdvHgwFQEiR` selected three distinct
+exact-ready SWE-bench_Verified instances at `maxTurns=10`, but correctly
+clamped requested/effective inference concurrency from 3/3 to 3/2 because
+`schedulableKueueInstanceCapacity=2`. All active sandbox and agent-host pods
+scheduled, the queued third instance started when a slot freed, all three
+instances reached 10 LLM calls and 10 tool calls, evaluation completed, and
+active leases returned to zero. Use this as ryzen evidence that the composite
+capacity model prevents the previous unschedulable agent-host failure.
+
+## SWE-bench Image Builds
+
+Image-building work is adjacent to capacity, but it should not be mixed into an
+inference-capacity checkpoint unless image coverage is the thing under test. See
+`swebench-image-builds.md` for the full runbook. The short version:
+
+- workflow-builder runtime images are built from the app repo and promoted via
+  GHCR/release-pins or explicit active-development pins;
+- per-instance SWE-bench inference images are built on hub Tekton as
+  `swe-env-*` PipelineRuns keyed by `envSpecHash`;
+- exact-ready coverage is suite/repo/base/version/digest plus current
+  `env_spec_hash`, not a coarse repo/version match;
+- the Buildah cache PVC and lock path are throughput-critical, but cache reuse
+  never overrides exact-ready validation.
+
+## Historical Verified Capacity Envelope (post-2026-05-09 profile-timeout fix)
 
 Use this section before launching the next dev SWE-bench capacity ramp. Both
 runs below targeted SWE-bench_Verified at `--max-turns 30` on the
@@ -228,8 +403,10 @@ slug `kimi-k26-swebench-canary`, project `OJi0fn1xt2cKlh6HdnpZP`.
 | `lkbeOLXlGbsAC5eZa8tri` (pre-fix) | 177 | Cancelled. 67 children failed with `Request to openshell-agent-runtime (workspace/profile) timed out after 300000ms`. |
 | `IxyOaK1w6gs2spe51QyoH` (post-fix) | 72 | Success. 72/72 workflow executions; 72/72 sessions recorded usage; evaluator job ran. Result: 22 resolved / 28 unresolved / 22 empty patch. Empty patches were `maxTurns`/model behavior, not infra. No profile-timeout errors. |
 
-**Recommended ramp ladder**: 120 → 144 → 177. Don't jump straight to 177
-unless you are specifically testing full burst saturation.
+This is historical Kimi evidence, not the current DeepSeek V4 Pro dev ramp
+plan. For the current infra-capacity goal, use the "Current Dev Capacity
+Baseline" above and increase only after the previous run has no
+benchmark-infra failures.
 
 **Idle-state preflight** (run before launching to confirm no active runs or
 dangling leases):
@@ -241,8 +418,7 @@ select status,count(*) from benchmark_resource_leases where status='active' grou
 
 Run via `kubectl --context dev -n workflow-builder exec postgresql-0 -- psql -U postgres -d workflow_builder -c "<sql>"`.
 
-**Canonical launch invocation** (substitute `--limit`/`--concurrency` per
-ladder step):
+**Historical launch invocation**:
 
 ```bash
 kubectl --context dev -n workflow-builder exec deploy/workflow-builder -c workflow-builder -- \
