@@ -28,7 +28,7 @@ grep -n "<image-name>" packages/components/hub-spoke-appsets/release-pins/workfl
 grep -n "<image-name>=ghcr" packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml
 
 # AgentRuntime env var?
-grep -n "AGENT_RUNTIME.*DEFAULT_IMAGE" packages/components/active-development/manifests/workflow-builder/Deployment-workflow-builder.yaml
+grep -n "AGENT_RUNTIME.*DEFAULT_IMAGE" packages/components/workloads/workflow-builder/manifests/Deployment-workflow-builder.yaml
 ```
 
 ## Fix steps
@@ -54,7 +54,7 @@ Commit + push to `origin/main`. Then because this is an ApplicationSet template 
 
 Two things must be updated together:
 
-1. **Edit the env var literal** in `packages/components/active-development/manifests/workflow-builder/Deployment-workflow-builder.yaml`:
+1. **Edit the env var literal** in `packages/components/workloads/workflow-builder/manifests/Deployment-workflow-builder.yaml`:
 
    ```yaml
    - name: AGENT_RUNTIME_BROWSER_USE_DEFAULT_IMAGE

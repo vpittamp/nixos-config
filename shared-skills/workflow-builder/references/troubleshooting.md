@@ -80,7 +80,7 @@ Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions
 | Crash message | Likely cause | Fix |
 | --- | --- | --- |
 | `detected duplicate actor state store` | Pod sees more than one Component with `actorStateStore=true`, or a legacy Component was made visible again | Current dev expects namespace-wide `workflowstatestore` as the only actor/workflow store and `dapr-agent-py-statestore` as `actorStateStore=false`. Do not create per-agent state stores. See `references/cluster-topology.md` § Dapr Component scoping. |
-| `no X509 SVID available / failed to get configuration` | The `dapr.io/config`-referenced Configuration is missing in pod's namespace | Ensure `Configuration/openshell-sandbox-dapr` exists in `workflow-builder` (file: `packages/components/active-development/manifests/workflow-builder/Configuration-openshell-sandbox-dapr.yaml`). |
+| `no X509 SVID available / failed to get configuration` | The `dapr.io/config`-referenced Configuration is missing in pod's namespace | Ensure `Configuration/openshell-sandbox-dapr` exists in `workflow-builder` (file: `packages/components/workloads/workflow-builder/manifests/Configuration-openshell-sandbox-dapr.yaml`). |
 | Pod has no daprd sidecar at all | Webhook didn't fire | Confirm `MutatingWebhookConfiguration/openshell-sandbox-dapr-webhook` exists and `namespaceSelector` includes `workflow-builder`. Re-publish the agent to retry the inject. |
 
 ### BFF / orchestrator connectivity

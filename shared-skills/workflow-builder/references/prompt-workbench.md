@@ -91,7 +91,7 @@ Prompt preset schema changes need both migration paths in this repo:
 - `drizzle/meta/_journal.json`
 - `atlas/migrations/20260501090000_add_resource_prompt_versions.sql`
 
-Production `db-migrate` runs Drizzle and is journal-gated; the atlas startup path is mainly effective in source-synced/devspace environments because the production image copies `drizzle/` and excludes `atlas/`.
+Production `db-migrate` runs Drizzle and is journal-gated; the atlas startup path is mainly effective in source-synced/Skaffold environments because the production image copies `drizzle/` and excludes `atlas/`.
 
 After a rollout, verify:
 

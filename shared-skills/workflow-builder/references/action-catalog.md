@@ -16,7 +16,7 @@ The orchestrator dispatches based on the slug *prefix*. Source: `services/workfl
 | `code/*` | code-runtime | Dapr invoke → function-router | `code/typescript-function`, `code/python-function` |
 | `*` (default fall-through) | fn-activepieces | Dapr invoke → function-router (credential decrypt + AP piece executor) | `@activepieces/piece-slack/send_message`, etc. |
 
-`function-router` is the credential broker + Knative proxy for everything **except** `durable/run`. Slug routing inside function-router is governed by the `function-registry` ConfigMap in stacks (`packages/components/active-development/manifests/function-router/ConfigMap-function-registry.yaml`) — that's authoritative.
+`function-router` is the credential broker + Knative proxy for everything **except** `durable/run`. Slug routing inside function-router is governed by the `function-registry` ConfigMap in stacks (`packages/components/workloads/function-router/manifests/ConfigMap-function-registry.yaml`) — that's authoritative.
 
 ## Rejected legacy slugs
 

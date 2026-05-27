@@ -5,7 +5,7 @@ Scope: a short checklist for confirming a freshly-inserted workflow is visible +
 ## Pre-flight (before opening the browser)
 
 ```bash
-# 1. The BFF pod is running (don't `pnpm dev` — it's DevSpace-synced)
+# 1. The BFF pod is running (don't `pnpm dev` — it's Skaffold-synced)
 kubectl -n workflow-builder get deploy/workflow-builder
 
 # 2. The row exists with a non-NULL project_id

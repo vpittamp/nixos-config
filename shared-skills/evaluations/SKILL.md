@@ -130,7 +130,7 @@ This session shipped + verified several SWE-bench changes (live on **ryzen and d
 - **Current Dapr state-store layout.** `workflowstatestore` is the namespace-wide Dapr workflow/actor store for parent workflows and per-session agent workflows. `dapr-agent-py-statestore` is namespace-wide but `actorStateStore=false`; it is the agent application state API store. Do not recreate the old per-agent actor-store architecture or add scopes for per-session agent-host app IDs.
 - **Dapr Agents 1.0.3 activity naming standard.** Repo-owned `services/dapr-agent-py` custom workflow activities must be registered and called only by their scoped names through `self._activity_name(...)`. Do not restore the old dual bare-name/scoped-name compatibility path. If stale histories require the old names, cancel/cleanup/purge the benchmark state instead of keeping two naming standards alive.
 - **Recovery: cleanup is Dapr-lifecycle, not DB.** A DB-cancel does not terminate the durable Dapr session workflows; they keep re-spawning openshell sandboxes regardless of DB state. Use `POST /api/internal/benchmarks/runs/<runId>/cleanup` (header `x-internal-token: $INTERNAL_API_TOKEN`, body `{}`) — it runs the documented terminal-cleanup teardown. The session-termination path fires only when the run is in a **cancelled** state, so set runs+instances `status='cancelled'` first, then call cleanup (expect to retry; coordinator + DB must be up). A stable floor of ~4 `openshell` pods that respawn when deleted is the **SandboxWarmPool** (by-design), not incident residue — don't fight it.
-- **Image delivery for these changes** is via the gitops skill's GHCR-pin path (the hub Gitea/dev-image 2nd EL is still dead 2026-05-19): ryzen `swebench-coordinator`/`swebench-evaluator`/`workflow-builder` images are pinned `ghcr.io/pittampalliorg/<img>:git-<sha>` in `active-development/manifests/<comp>/kustomization.yaml` + `idpbuilder stacks sync`; dev gets coordinator/evaluator from `active-development` @ origin/main HEAD (shared `dev-*` apps) and the BFF from release-pins. If an ArgoCD app won't advance to a new commit, `argocd app terminate-op <app> --grpc-web` (see gitops skill).
+- **Image delivery for these changes** is via the gitops skill's GHCR-pin path (the hub Gitea/dev-image 2nd EL is still dead 2026-05-19): ryzen `swebench-coordinator`/`swebench-evaluator`/`workflow-builder` images are pinned `ghcr.io/pittampalliorg/<img>:git-<sha>` in `workloads/<comp>/manifests/kustomization.yaml` + `idpbuilder stacks sync`; dev gets coordinator/evaluator from `workloads` @ origin/main HEAD (shared `dev-*` apps) and the BFF from release-pins. If an ArgoCD app won't advance to a new commit, `argocd app terminate-op <app> --grpc-web` (see gitops skill).
 
 ## Benchmarks UI: Braintrust-adoption surfaces (Phase F → K)
 
@@ -331,7 +331,7 @@ Forced-tool grader-evaluate gotchas seen during the strict-tool rollout:
 - **`_convert_tools_for_anthropic` originally only handled AgentTool-like objects** (attribute access `tool.name`). The grader endpoint passes already-formatted dicts. Converter now branches on `isinstance(tool, dict)` and reads from dict keys. Without this branch, tool calls fail with `'dict' object has no attribute 'name'`.
 - **`tool_choice={type:"tool", name: ...}` requires `tools[0].strict = true`** for grammar-constrained decoding. Drop the `strict: true` and the model can still emit free-form JSON-ish text inside the tool call.
 - **`system` and `tool_choice` were silently dropped from `_call_anthropic_sdk` request_kwargs** before the strict-tool work landed. Both are now forwarded into the streaming request. Pre-existing graders that supplied a `systemPrompt` to the prose path were running without it.
-- **DevSpace pods cache stale env vars** (`AGENT_RUNTIME_DEFAULT_IMAGE`, `SANDBOX_TEMPLATE_IMAGES_JSON`). When ArgoCD updates `Deployment-workflow-builder.yaml`, the standard ReplicaSet rolls but the long-lived `workflow-builder-devspace-*` pod doesn't restart. Run `devspace purge` to drop the override OR `kubectl delete pod workflow-builder-devspace-*` to force a refresh. Verify with `kubectl exec deploy/workflow-builder -- printenv AGENT_RUNTIME_DEFAULT_IMAGE`.
+- **Skaffold-owned dev pods cache stale env vars** (`AGENT_RUNTIME_DEFAULT_IMAGE`, `SANDBOX_TEMPLATE_IMAGES_JSON`). When ArgoCD updates `Deployment-workflow-builder.yaml`, the standard ReplicaSet rolls but the long-lived `workflow-builder-dev-*` pod doesn't restart. Exit `skaffold dev` (which removes the override) OR `kubectl delete pod workflow-builder-dev-*` to force a refresh. Verify with `kubectl exec deploy/workflow-builder -- printenv AGENT_RUNTIME_DEFAULT_IMAGE`.
 
 **Ryzen path**:
 
@@ -343,7 +343,7 @@ git push origin main
 kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines \
   get pipelinerun --sort-by='.metadata.creationTimestamp' | tail -10
 
-# In stacks, repoint the relevant active-development image to the GHCR tag,
+# In stacks, repoint the relevant workloads image to the GHCR tag,
 # then deliver it to ryzen through affected-app sync.
 cd /home/vpittamp/repos/PittampalliOrg/stacks/main
 idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
@@ -411,7 +411,7 @@ order by r.created_at desc limit 10;"
 ## Guardrails
 
 - Do NOT conflate the legacy SWE-bench eval template with `/api/benchmarks/*`. The OpenAI-parity wizard supersedes the old eval adapter, but `/api/benchmarks/*` plus `/workspaces/<slug>/benchmarks` is the current operator-visible official SWE-bench harness surface.
-- Do NOT start a local SvelteKit dev server. The dev loop on ryzen is **devspace sync** to the running pod; on dev/staging it's the hub Tekton outer-loop. Manual `pnpm dev` will not match the live environment.
+- Do NOT start a local SvelteKit dev server. The dev loop on ryzen is **Skaffold file-sync** to the running pod; on dev/staging it's the hub Tekton outer-loop. Manual `pnpm dev` will not match the live environment.
 - Do NOT bake workflow JSON specs into images — `services/<agent>/<name>.workflow.json` is excluded by `.dockerignore`. The workflows table reads from postgres at execution time.
 - DO NOT hand-edit `release-pins/workflow-builder-images.yaml` unless the hub Tekton path is broken AND `scripts/gitops/validate-workflow-builder-release-pins.sh` passes locally.
 - For score_model graders, the operator can override the transport with `EVALUATIONS_GRADER_URL` env var on the BFF. Useful for routing to a Cloudflare Worker or external rubric service without touching dapr-agent-py.

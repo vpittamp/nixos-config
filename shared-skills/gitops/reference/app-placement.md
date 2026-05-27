@@ -31,7 +31,7 @@ Run an app per spoke when it is part of workload runtime, owns environment data,
 Ryzen is intentionally not a promoted release stage. Keep these local unless there is a separate release use case:
 
 - Local Gitea registry and ryzen image tags.
-- DevSpace hot-reload flow and KIND-only iteration tooling.
+- Skaffold hot-reload flow and KIND-only iteration tooling.
 - Local-only build helpers that exist to shorten the edit-build-test loop.
 - Apps that require workstation-local services or KIND-specific infrastructure.
 

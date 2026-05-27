@@ -58,7 +58,7 @@ curl -k -sS -L --max-time 30 https://workflow-builder-ryzen.tail286401.ts.net/
 
 Symptoms:
 - Fresh cluster reaches Argo sync but workload pods fail with `ImagePullBackOff`.
-- Gitea registry has no tags for active-development apps.
+- Gitea registry has no tags for workloads apps.
 
 Fix:
 
@@ -92,7 +92,7 @@ Fix:
 deployment/scripts/bootstrap/seed-ryzen-images.sh --rewrite-kustomizations . --skip-copy --quiet
 ```
 
-Then rebuild/apply manifests and sync the affected ArgoCD apps. The expected rewrite registry is `gitea-ryzen.tail286401.ts.net/giteaadmin` for active-development manifests.
+Then rebuild/apply manifests and sync the affected ArgoCD apps. The expected rewrite registry is `gitea-ryzen.tail286401.ts.net/giteaadmin` for workloads manifests.
 
 For bootstrap images copied to `gitea.cnoe.localtest.me:8443/giteaadmin`, inspect the node registry/auth path when pulls fail despite Gitea tags existing:
 

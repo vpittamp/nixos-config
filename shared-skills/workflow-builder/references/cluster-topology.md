@@ -1,6 +1,6 @@
 # Cluster Topology
 
-Scope: the K8s mental model needed to reason about *where* a workflow runs and *why* a run might be stuck. Not GitOps — for image promotion / ArgoCD / Tailscale, use the `gitops` skill. Source: workflow-builder CLAUDE.md + stacks repo manifests in `packages/components/active-development/manifests/workflow-builder/` and `packages/base/manifests/openshell/`.
+Scope: the K8s mental model needed to reason about *where* a workflow runs and *why* a run might be stuck. Not GitOps — for image promotion / ArgoCD / Tailscale, use the `gitops` skill. Source: workflow-builder CLAUDE.md + stacks repo manifests in `packages/components/workloads/workflow-builder/manifests/` and `packages/base/manifests/openshell/`.
 
 ## One-paragraph mental model
 
@@ -12,15 +12,15 @@ All in `workflow-builder` namespace unless noted.
 
 | Pod | Role | Port | Source manifest |
 | --- | --- | --- | --- |
-| `workflow-builder` | SvelteKit BFF + UI | 3000 | `packages/components/active-development/manifests/workflow-builder/Deployment-workflow-builder.yaml` |
-| `workflow-orchestrator` | Python Dapr orchestrator | 8080 | `packages/components/active-development/manifests/workflow-orchestrator/Deployment-workflow-orchestrator.yaml` |
-| `swebench-coordinator` | SWE-bench Dapr coordinator + evaluator Job launcher (current operator-visible SWE-bench path; eval TaskRuns now Kueue-admitted) | 8080 | `packages/components/active-development/manifests/swebench-coordinator/` |
+| `workflow-builder` | SvelteKit BFF + UI | 3000 | `packages/components/workloads/workflow-builder/manifests/Deployment-workflow-builder.yaml` |
+| `workflow-orchestrator` | Python Dapr orchestrator | 8080 | `packages/components/workloads/workflow-orchestrator/manifests/Deployment-workflow-orchestrator.yaml` |
+| `swebench-coordinator` | SWE-bench Dapr coordinator + evaluator Job launcher (current operator-visible SWE-bench path; eval TaskRuns now Kueue-admitted) | 8080 | `packages/components/workloads/swebench-coordinator/manifests/` |
 | `agent-runtime-<slug>` | Per-agent runtime (one Deployment per published agent) | n/a (Dapr-app-id routed) | Created by `agent-runtime-controller` from `AgentRuntime` CR; image set via env var on the BFF Deployment |
 | `agent-runtime-controller` | Kopf operator that reconciles AgentRuntime CRs | n/a | `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (lives in `openshell` ns; `CONTROLLER_NAMESPACE=workflow-builder` env points it at our ns) |
-| `function-router` | Sync credential broker + Knative proxy | 8080 | `packages/components/active-development/manifests/function-router/` |
+| `function-router` | Sync credential broker + Knative proxy | 8080 | `packages/components/workloads/function-router/manifests/` |
 | `fn-system` | system/* slugs | 8080 | `fn-system` app |
 | `fn-activepieces` | AP piece executor | 8080 | `fn-activepieces` app |
-| `activepieces-mcps` | Reconciles project MCP rows into AP piece MCP KServices + catalog | n/a | `packages/components/active-development/manifests/activepieces-mcps/` |
+| `activepieces-mcps` | Reconciles project MCP rows into AP piece MCP KServices + catalog | n/a | `packages/components/workloads/activepieces-mcps/manifests/` |
 | `openshell-agent-runtime` | workspace/* + browser/* + openshell/* slugs | 8080 | `openshell-agent-runtime` app |
 | `dapr-agent-py` (legacy) | Legacy shared agent pod, kept for backwards compat | n/a | `dapr-agent-py` app (one Deployment) |
 | `mcp-gateway` | Hosted MCP gateway | 8080 | `mcp-gateway` app |
@@ -56,7 +56,7 @@ Do not create per-agent Components as a workaround. If daprd crashes with actor-
 
 ## Dapr Configuration
 
-The `openshell-sandbox-dapr` `Configuration` object MUST exist in the pod's namespace — daprd reads it for trace exporter config + log level + mTLS settings. It lives at `packages/components/active-development/manifests/workflow-builder/Configuration-openshell-sandbox-dapr.yaml`. If missing, daprd crashes with `no X509 SVID available / failed to get configuration`.
+The `openshell-sandbox-dapr` `Configuration` object MUST exist in the pod's namespace — daprd reads it for trace exporter config + log level + mTLS settings. It lives at `packages/components/workloads/workflow-builder/manifests/Configuration-openshell-sandbox-dapr.yaml`. If missing, daprd crashes with `no X509 SVID available / failed to get configuration`.
 
 ## Dapr Sidecar Readiness
 
@@ -80,7 +80,7 @@ For the operational runbook and verification sequence, use the gitops skill: `ru
 
 ## Function-router routing
 
-function-router consults the `function-registry` ConfigMap (`packages/components/active-development/manifests/function-router/ConfigMap-function-registry.yaml`) on every request to map slug → target service URL. The ConfigMap is **authoritative** (overrides built-in fallback registry — see `services/function-router/src/core/registry.ts::loadRegistry`).
+function-router consults the `function-registry` ConfigMap (`packages/components/workloads/function-router/manifests/ConfigMap-function-registry.yaml`) on every request to map slug → target service URL. The ConfigMap is **authoritative** (overrides built-in fallback registry — see `services/function-router/src/core/registry.ts::loadRegistry`).
 
 To add a new slug routing entry, edit the ConfigMap in the stacks repo via GitOps (don't direct-patch the cluster — see `gitops` skill).
 

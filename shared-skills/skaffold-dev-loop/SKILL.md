@@ -1,18 +1,18 @@
 ---
 name: skaffold-dev-loop
-description: Manage PittampalliOrg Skaffold dev loops for the workflow-builder microservices system on ryzen. Use for starting/exiting `skaffold dev` inner-loop HMR sessions, troubleshooting Argo pause/resume, SKAFFOLD_DEFAULT_REPO/gitea-ryzen registry issues, dev kustomize overlay drift, legacy ryzen-only commit-pin/image experiments, Knative fn-system exclusion, and choosing between Skaffold, idpbuilder stacks sync, GitHub/GHCR image delivery, and the legacy devspace.yaml fallback.
+description: Manage PittampalliOrg Skaffold dev loops for the workflow-builder microservices system on ryzen. Use for starting/exiting `skaffold dev` inner-loop HMR sessions, troubleshooting Argo pause/resume, SKAFFOLD_DEFAULT_REPO/gitea-ryzen registry issues, dev kustomize overlay drift, legacy ryzen-only commit-pin/image experiments, Knative fn-system exclusion, and choosing between Skaffold, idpbuilder stacks sync, GitHub/GHCR image delivery, and the retired devspace.yaml legacy path.
 ---
 
 # Skaffold Dev Loop
 
 ## Operating model
 
-Skaffold is the in-cluster dev loop for the workflow-builder microservices system. It replaces devspace as the going-forward path; devspace.yaml stays in-tree as a fallback for `fn-system` (Knative) and any service not yet migrated. See the [`devspace-quick-iteration`](../devspace-quick-iteration/SKILL.md) skill for the legacy flow.
+Skaffold is the in-cluster dev loop for the workflow-builder microservices system. It replaces the retired `devspace.yaml` + `devspace-dev-ryzen.sh` (deleted in Phase 1 of the active-development teardown). For `fn-system` (Knative), treat the cluster's Argo-managed pod as a stable dependency; `scripts/sandbox-dev.sh` is the experimental sandbox-based alternative.
 
 There are two loops:
 
 - **Inner loop** (`pnpm dev:skaffold`) — Skaffold builds a dev image (`node:22-alpine` or `python:3.12-slim` + baked deps), deploys it as the workflow-builder Deployment (overwriting Argo's prod pod), then file-syncs `src/`/`lib/`/etc. into the running pod on every save. Vite HMRs the browser; uvicorn `--reload` restarts the Python service. Argo is paused for the session via the wrapper's `trap`.
-- **Legacy ryzen-only image loop** (`pnpm deploy:skaffold`) — Skaffold builds the prod multi-stage Dockerfile, pushes to gitea-ryzen, then a wrapper commits the new tag into `stacks/main/.../active-development/manifests/<service>/kustomization.yaml` on gitea-ryzen, and ArgoCD's `automated.selfHeal=true` rolls it out. Use this only for narrow ryzen-only recovery/testing. The durable system path is the GitHub/GHCR build lane plus an `origin/main` active-development pin and `idpbuilder stacks sync --seed-images=false`.
+- **Legacy ryzen-only image loop** (`pnpm deploy:skaffold`) — Skaffold builds the prod multi-stage Dockerfile, pushes to gitea-ryzen, then a wrapper commits the new tag into `stacks/main/.../workloads/<service>/manifests/kustomization.yaml` on gitea-ryzen, and ArgoCD's `automated.selfHeal=true` rolls it out. Use this only for narrow ryzen-only recovery/testing. The durable system path is the GitHub/GHCR build lane plus an `origin/main` workloads pin and `idpbuilder stacks sync --seed-images=false`.
 
 Skaffold does **not** replace the ryzen idpbuilder manifest path. `idpbuilder stacks sync --seed-images=false` snapshots the selected local stacks worktree into in-cluster Gitea, computes affected ArgoCD Applications, hard-refreshes them, and waits for them to observe the pushed revision. Use idpbuilder/`clu` for manifest changes and durable ryzen pins, Skaffold inner loop for live source hot reload, Skaffold deploy only for narrow ryzen-only image-pin experiments, and release-pins/GitOps Promoter for dev/staging.
 
@@ -27,7 +27,7 @@ The Skaffold module set covers 6 of the 7 services in the system:
 | `mcp-gateway` | Node Express | 3018 → 8080 | `services/mcp-gateway/src/**` |
 | `swebench-coordinator` | Python/FastAPI | 3019 → 8080 | `services/swebench-coordinator/src/**.py`, `pyproject.toml` |
 
-**`fn-system` is excluded** — it runs as a Knative Service (`ksvc fn-system`, scale-to-0). Inner-loop file-sync into a transient Knative pod is impractical. Fall back to `devspace-quick-iteration` for fn-system-specific work, or treat the existing Argo-managed fn-system as a stable dependency.
+**`fn-system` is excluded** — it runs as a Knative Service (`ksvc fn-system`, scale-to-0). Inner-loop file-sync into a transient Knative pod is impractical. Treat the existing Argo-managed fn-system as a stable dependency.
 
 **`fn-activepieces` is inactive by default** — the Skaffold config remains in tree for recovery/parity work, but the current ryzen cluster may not expose a matching regular Argo Application/Deployment. Default `ALL` runs skip it. Use `SKAFFOLD_ALLOW_INACTIVE=1 bash scripts/skaffold-dev.sh fn-activepieces` only when deliberately restoring or testing that path.
 
@@ -142,7 +142,7 @@ Before calling the legacy ryzen-only image loop done:
 - `pnpm deploy:skaffold` finishes with `==> ✓ done`
 - The commit appears on `gitea-ryzen/main` (`git -C ~/.cache/skaffold/stacks-ryzen log -1`)
 - ArgoCD app shows `sync=Synced health=Healthy phase=Succeeded` and the live Deployment's image matches the new tag
-- Optional rollback: edit `~/.cache/skaffold/stacks-ryzen/.../kustomization.yaml` back to the prior pin, push, wait for Argo to roll the prod image. If the image should survive clean idpbuilder syncs, also commit the intended active-development pin to `origin/main`.
+- Optional rollback: edit `~/.cache/skaffold/stacks-ryzen/.../kustomization.yaml` back to the prior pin, push, wait for Argo to roll the prod image. If the image should survive clean idpbuilder syncs, also commit the intended workloads pin to `origin/main`.
 
 ## Gotchas (memorize these — they cost the most time)
 
@@ -151,14 +151,13 @@ Before calling the legacy ryzen-only image loop done:
 - **Skaffold v2.17's tar walker mis-parses allowlist-style `.dockerignore`.** With `inputDigest` tag policy it errors "file pattern [package.json] must match at least one file" before docker even sees the context. Use `gitCommit:AbbrevCommitSha` tag policy for dev images instead.
 - **`context: .` in a module yaml resolves to the module file's directory** (`skaffold/`), not the repo root. Use `context: ..` and adjust `dockerfile:` accordingly so build context = `workflow-builder/main/`.
 - **PodSecurity warning at apply time is expected.** The dev container runs as root for hot-reload; the namespace's `restricted:latest` profile warns but doesn't block. Don't try to "fix" by going non-root.
-- **fn-system is Knative-only.** It doesn't appear in the cluster as `deploy/fn-system` (only `deploy/fn-system-00001-deployment` scaled 0/0). Skaffold-style sync doesn't work for transient Knative pods. Use devspace or treat fn-system as a stable cluster dependency.
+- **fn-system is Knative-only.** It doesn't appear in the cluster as `deploy/fn-system` (only `deploy/fn-system-00001-deployment` scaled 0/0). Skaffold-style sync doesn't work for transient Knative pods. Treat fn-system as a stable cluster dependency.
 - **Skaffold artifact hooks skip on cache hits.** A re-run of `skaffold build` against unchanged source skips `hooks.after`. That's why the outer-loop wrapper runs commit-pin out-of-band.
 - **`workflow-orchestrator/.venv` from prior devspace runs bloats the build context.** The dev `.dockerignore` now excludes `**/.venv`, `**/__pycache__`, `**/.pytest_cache`. If you see a multi-hundred-MB build context, suspect a missed exclude.
 - **The dev image is push-required even on a local cluster.** kind nodes have their own containerd image store; `kind load docker-image` isn't wired into our Skaffold flow. `SKAFFOLD_DEFAULT_REPO=gitea-ryzen.tail286401.ts.net/giteaadmin` is the canonical pull path.
 
 ## Related skills
 
-- [`devspace-quick-iteration`](../devspace-quick-iteration/SKILL.md) — legacy DevSpace flow. Use only for fn-system or when Skaffold is not yet wired for a service.
 - [`workflow-builder`](../workflow-builder/SKILL.md) — authoring SW 1.0 workflows + diagnosing runtime failures in the same system. The Skaffold loop deploys the BFF; the workflow-builder skill covers how to author/debug what the BFF executes.
 - [`gitops`](../gitops/SKILL.md) — broader ArgoCD reconcile flow + ryzen affected-app sync. The outer-loop wrapper commits to the same kustomization files that the GitOps skill manages; bigger image promotions (release-pins, dev/staging) go through the GitOps path, not Skaffold.
 

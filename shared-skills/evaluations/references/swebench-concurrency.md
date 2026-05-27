@@ -383,7 +383,7 @@ inference-capacity checkpoint unless image coverage is the thing under test. See
 `swebench-image-builds.md` for the full runbook. The short version:
 
 - workflow-builder runtime images are built from the app repo and promoted via
-  GHCR/release-pins or explicit active-development pins;
+  GHCR/release-pins or explicit workloads pins;
 - per-instance SWE-bench inference images are built on hub Tekton as
   `swe-env-*` PipelineRuns keyed by `envSpecHash`;
 - exact-ready coverage is suite/repo/base/version/digest plus current

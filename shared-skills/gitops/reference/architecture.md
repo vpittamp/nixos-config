@@ -36,7 +36,7 @@ ryzen is the user's local workstation (`hostname` returns `ryzen`); the Talos-do
 
 ## Hub build lane, image pins, and ryzen sync
 
-This is **the** mental model for this system. The same workflow-builder base manifests at `packages/components/active-development/manifests/workflow-builder/` are used by all three spokes, but the image tags come from **different files**:
+This is **the** mental model for this system. The same workflow-builder base manifests at `packages/components/workloads/workflow-builder/manifests/` are used by all three spokes, but the image tags come from **different files**:
 
 ```
 GitHub push to PittampalliOrg/workflow-builder
@@ -219,7 +219,7 @@ Ryzen also has a local snapshot repo:
 |---|---|
 | local Gitea `giteaadmin/stacks.git:main` | Current ryzen source for `root-application` and child Applications; written by `idpbuilder stacks sync` from the selected local stacks worktree |
 
-Current ryzen hot reload uses `idpbuilder stacks sync --seed-images=false`. The command maintains a cache clone, pushes descendant snapshot commits, preserves active-development image pins, computes affected ArgoCD Applications from live app sources plus local Kustomize dependencies, and hard-refreshes only the affected apps. `root-application` is refreshed first when child Application definitions or `packages/overlays/ryzen` change. Seed-image rewrites are bootstrap/recovery-only and require explicit `--seed-images=true`.
+Current ryzen hot reload uses `idpbuilder stacks sync --seed-images=false`. The command maintains a cache clone, pushes descendant snapshot commits, preserves workloads image pins, computes affected ArgoCD Applications from live app sources plus local Kustomize dependencies, and hard-refreshes only the affected apps. `root-application` is refreshed first when child Application definitions or `packages/overlays/ryzen` change. Seed-image rewrites are bootstrap/recovery-only and require explicit `--seed-images=true`.
 
 The local Gitea system webhook to ArgoCD is kept active for best-effort notification, but webhook-only refresh is not authoritative. Gitea push payloads currently advertise an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL; targeted affected refresh avoids that mismatch.
 
@@ -265,14 +265,14 @@ Default placement policy:
 
 - **Hub**: multi-cluster control plane, release automation, lifecycle automation, cross-cluster inventory/reporting, and shared operator UIs. Examples: ArgoCD, GitOps Promoter, hub Tekton outer-loop, Crossplane, deployment inventory, NocoDB, Redash, and any future shared Backstage/Keycloak deployment.
 - **Spokes**: workload runtime and failure-domain-local infrastructure. Examples: workflow-builder runtime services, Dapr runtime, cert-manager, External Secrets Operator, Azure Workload Identity, CNI/ingress/storage, Tailscale resources needed for that cluster, and per-environment databases/caches/queues.
-- **Ryzen-local**: local development velocity and KIND-only services. Examples: local Gitea registry, DevSpace/hot-reload flow, workstation-only build helpers, and KIND-specific integrations.
+- **Ryzen-local**: local development velocity and KIND-only services. Examples: local Gitea registry, Skaffold hot-reload flow, workstation-only build helpers, and KIND-specific integrations.
 
 If production traffic depends on a service during hub outage, keep it per-spoke. If operators use it to manage multiple clusters, centralize it on hub and add spoke agents/access only where needed. See `reference/app-placement.md`.
 
 ## Why ryzen is special
 
-Ryzen exists for **fast iteration** (DevSpace hot reload, local builds, idpbuilder image seeding). It's intentionally outside the promoter chain:
-- ryzen uses local DevSpace for live source iteration
+Ryzen exists for **fast iteration** (Skaffold hot reload, local builds, idpbuilder image seeding). It's intentionally outside the promoter chain:
+- ryzen uses local Skaffold (`bash scripts/skaffold-dev.sh`) for live source iteration
 - ryzen manifest changes are delivered by `idpbuilder stacks sync` into local Gitea
 - ryzen ArgoCD refresh is affected-app scoped instead of fleet-wide
 
@@ -287,21 +287,21 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` | dev/staging release metadata: tags, digests, image refs, source SHAs, PipelineRuns |
 | `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` | Matrix AppSet generator + Kustomize patches per spoke, including promoted-spoke MCP/Phoenix runtime env |
 | `packages/base/manifests/tailscale-ingresses/` | Shared device-backed Tailscale Ingresses with `*-CLUSTER` placeholders for dev/staging/talos app hostnames |
-| `packages/components/active-development/manifests/activepieces-mcps/` | CronJob/RBAC/script that turns workflow-builder DB `mcp_connection` rows into piece MCP Knative Services and catalog entries |
+| `packages/components/workloads/activepieces-mcps/manifests/` | CronJob/RBAC/script that turns workflow-builder DB `mcp_connection` rows into piece MCP Knative Services and catalog entries |
 | `packages/base/manifests/knative-serving/kustomization.yaml` | Knative Serving and autoscaler settings, including `allow-zero-initial-scale` for piece MCP scale-to-zero |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | dev → staging promotion (autoMerge true; gates: argocd-health + timer) |
 | `packages/components/hub-management/manifests/gitops-promoter/TimedCommitStatus-workflow-builder-soak.yaml` | timer gate (`dev=0s`, `staging=10m`) |
 | `packages/components/hub-management/manifests/gitops-promoter/gitops-deployment-inventory.yaml` | Hub inventory API consumed by workflow-builder admin Deployments |
-| `packages/components/active-development/manifests/workflow-builder/Service-gitops-inventory-hub-egress.yaml` | Spoke egress Service for inventory; points to `gitops-inventory-hub-node.tail286401.ts.net:8080` |
-| `packages/components/active-development/manifests/workflow-builder/Component-workflowstatestore.yaml` | Namespace-wide Dapr workflow/actor state store |
-| `packages/components/active-development/manifests/workflow-builder/Component-dapr-agent-py-statestore.yaml` | Namespace-wide non-actor agent application state store |
-| `packages/components/active-development/apps/workflow-builder.yaml` | Workflow-builder Argo app spec, including ignoreDifferences for operator-mutated egress Service fields |
+| `packages/components/workloads/workflow-builder/manifests/Service-gitops-inventory-hub-egress.yaml` | Spoke egress Service for inventory; points to `gitops-inventory-hub-node.tail286401.ts.net:8080` |
+| `packages/components/workloads/workflow-builder/manifests/Component-workflowstatestore.yaml` | Namespace-wide Dapr workflow/actor state store |
+| `packages/components/workloads/workflow-builder/manifests/Component-dapr-agent-py-statestore.yaml` | Namespace-wide non-actor agent application state store |
+| `packages/components/workloads/workflow-builder/Application-workflow-builder.yaml` | Workflow-builder Argo app spec, including ignoreDifferences for operator-mutated egress Service fields |
 | `packages/base/manifests/agent-sandbox-crds/` | Required OpenShell/agent-runtime CRDs: `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, `SandboxWarmPool`. Do not remove as duplicate. |
 | `packages/components/hub-management/apps/gitops-promoter.yaml` | Promoter Helm chart app plus image tag override when chart appVersion lags |
 | `packages/components/hub-management/apps/argocd-gitops-promoter-ui.yaml` | ArgoCD app that manages the Promoter UI extension patch resources |
 | `packages/components/hub-management/manifests/argocd-gitops-promoter-ui/` | UI extension initContainer patch Job, RBAC, and ArgoCD resource links |
 | `deployment/config/argocd-values.yaml` | Bootstrap ArgoCD values; keep Promoter UI extension config synchronized here |
-| `packages/components/active-development/manifests/<image>/kustomization.yaml` | ryzen image-pin per workload |
+| `packages/components/workloads/<image>/manifests/kustomization.yaml` | ryzen image-pin per workload |
 | `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Workflow-builder build pipeline definitions |
 | `scripts/gitops/validate-workflow-builder-release-pins.sh` | Validates release-pin schema and GHCR tag/digest existence |
@@ -309,4 +309,4 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `docs/hub-spoke-app-placement.md` | Hub-vs-spoke app placement policy |
 | `policy.hujson` | Tailscale ACL — synced via `.github/workflows/tailscale-acl.yml`; `svc:*` approvals are only for real service-host/ProxyGroup/Tailscale Services |
 
-For the original full architecture write-up (covers DevSpace, OpenShell, Dapr workflows), see `docs/gitops-architecture-overview.md` and `docs/outer-loop-promotion.md` in the stacks repo.
+For the original full architecture write-up (covers OpenShell, Dapr workflows, and the (now-retired) DevSpace inner loop), see `docs/gitops-architecture-overview.md` and `docs/outer-loop-promotion.md` in the stacks repo.

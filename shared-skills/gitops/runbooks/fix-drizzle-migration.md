@@ -36,12 +36,12 @@ This repo has TWO migration runners that read from different directories:
 
 | Runner | Reads from | Tracking table | Active where |
 |---|---|---|---|
-| `src/lib/server/startup.ts` (BFF process) | `atlas/migrations/` (timestamp-prefixed) | `_app_migrations` | Ryzen devspace pod ONLY (file-syncs source) — production image excludes `atlas/` via `.dockerignore` |
+| `src/lib/server/startup.ts` (BFF process) | `atlas/migrations/` (timestamp-prefixed) | `_app_migrations` | Ryzen Skaffold dev pod ONLY (file-syncs source) — production image excludes `atlas/` via `.dockerignore` |
 | `npx drizzle-kit migrate` (`db-migrate` Sync hook) | `drizzle/` (incremental-prefixed, gated by `_journal.json`) | `__drizzle_migrations` | Dev + staging (every sync) |
 
 So a new migration must usually live in BOTH dirs:
 - `drizzle/<NNNN>_<name>.sql` + matching `_journal.json` entry → covers dev/staging.
-- `atlas/migrations/<YYYYMMDDhhmmss>_<name>.sql` → covers ryzen devspace.
+- `atlas/migrations/<YYYYMMDDhhmmss>_<name>.sql` → covers ryzen Skaffold dev loop.
 
 Both copies should be **idempotent** (`ADD COLUMN IF NOT EXISTS`, named CHECK constraint guards) so running on a DB that already has them is a no-op.
 
@@ -67,7 +67,7 @@ console.log("added entry idx=" + next);
 '
 ```
 
-2. **Also drop a copy into `atlas/migrations/`** if you want the ryzen devspace pod to apply it on its next restart:
+2. **Also drop a copy into `atlas/migrations/`** if you want the ryzen Skaffold dev pod to apply it on its next restart:
 
 ```bash
 cp drizzle/<NNNN>_<name>.sql atlas/migrations/$(date -u +%Y%m%d%H%M%S)_<name>.sql
@@ -90,7 +90,7 @@ git commit -m "fix(migrations): register <NNNN>_<name> in drizzle journal"
 git push origin main
 ```
 
-4. **Wait for the new image to build + roll** through the normal GHCR outer-loop, then bump or verify release-pins per `promote-image-to-spokes.md`. For ryzen validation, update the relevant stacks active-development pin to the GHCR tag and run `idpbuilder stacks sync`.
+4. **Wait for the new image to build + roll** through the normal GHCR outer-loop, then bump or verify release-pins per `promote-image-to-spokes.md`. For ryzen validation, update the relevant stacks workloads pin to the GHCR tag and run `idpbuilder stacks sync`.
 
 5. The next dev sync will run `db-migrate` with the updated image; the `__drizzle_migrations` table will get a row, and the `ADD COLUMN` will execute.
 
@@ -116,8 +116,8 @@ curl -sk https://workflow-builder-dev.tail286401.ts.net/api/<endpoint-using-new-
 
 - **The journal-skip behavior bites every new migration**, not just yours. There's currently a backlog of files in `drizzle/` (including old ones like `0006_*`, `0020_*`, `0032_*`, plus newer `0037_*`–`0043_*`) that lack journal entries. Don't add them all en masse — many will fail `ADD COLUMN` without `IF NOT EXISTS`, and their columns are already present on dev/staging from prior out-of-band application.
 - **idx must be unique and incrementing.** If two PRs in flight both add idx=N+1, the second to merge will need a rebase to bump to N+2.
-- **Make migrations idempotent.** Use `ADD COLUMN IF NOT EXISTS`, named CHECK constraint guards (`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='...') THEN ALTER TABLE ... ADD CONSTRAINT ... END IF; END $$`), `CREATE INDEX IF NOT EXISTS`. Re-runs are common (every spoke + the ryzen devspace pod restart cycle) and a non-idempotent migration breaks one of those paths.
+- **Make migrations idempotent.** Use `ADD COLUMN IF NOT EXISTS`, named CHECK constraint guards (`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='...') THEN ALTER TABLE ... ADD CONSTRAINT ... END IF; END $$`), `CREATE INDEX IF NOT EXISTS`. Re-runs are common (every spoke + the ryzen Skaffold dev pod restart cycle) and a non-idempotent migration breaks one of those paths.
 
 ## Why it's like this
 
-Drizzle Kit was originally designed for greenfield schemas where every migration is generated from a schema diff and the journal is auto-maintained. This repo deviated by adding hand-written SQL files for ops migrations (NOT NULL backfills, JSONB columns, indexes) without re-running `drizzle-kit generate`, so the journal stopped reflecting the directory contents. The atlas-runner in startup.ts was an experiment to get around this; it's effective only inside the ryzen devspace pod because production builds drop `atlas/`. A proper fix would be to either (a) regenerate the journal to include all current files (risky — see Risks), or (b) replace `db-migrate` with a runner that just globs the dir and tracks via a custom table. Until then, every new SQL file needs its journal entry by hand.
+Drizzle Kit was originally designed for greenfield schemas where every migration is generated from a schema diff and the journal is auto-maintained. This repo deviated by adding hand-written SQL files for ops migrations (NOT NULL backfills, JSONB columns, indexes) without re-running `drizzle-kit generate`, so the journal stopped reflecting the directory contents. The atlas-runner in startup.ts was an experiment to get around this; it's effective only inside the ryzen Skaffold dev pod because production builds drop `atlas/`. A proper fix would be to either (a) regenerate the journal to include all current files (risky — see Risks), or (b) replace `db-migrate` with a runner that just globs the dir and tracks via a custom table. Until then, every new SQL file needs its journal entry by hand.

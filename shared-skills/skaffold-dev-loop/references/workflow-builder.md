@@ -83,7 +83,7 @@ kubectl get application workflow-builder -n argocd \
 
 ## Legacy ryzen-only image loop
 
-Prefer the GitHub/GHCR build lane plus an `origin/main` active-development pin for durable workflow-builder images. Use the Skaffold deploy path only for narrow ryzen-only recovery/testing.
+Prefer the GitHub/GHCR build lane plus an `origin/main` workloads pin for durable workflow-builder images. Use the Skaffold deploy path only for narrow ryzen-only recovery/testing.
 
 ```bash
 pnpm deploy:skaffold                                  # workflow-builder
@@ -136,14 +136,14 @@ git reset --hard origin/main
 
 python3 - <<'PY'
 import pathlib, re
-p = pathlib.Path("packages/components/active-development/manifests/workflow-builder/kustomization.yaml")
+p = pathlib.Path("packages/components/workloads/workflow-builder/manifests/kustomization.yaml")
 t = p.read_text()
 pattern = re.compile(r'(\n  - name: workflow-builder\n)(    newName: )[^\n]+(\n)(    newTag: )[^\n]+(\n)')
 new, _ = pattern.subn(r'\g<1>\g<2>ghcr.io/pittampalliorg/workflow-builder\g<3>\g<4>git-<prior-sha>\g<5>', t)
 p.write_text(new)
 PY
 
-git add packages/components/active-development/manifests/workflow-builder/kustomization.yaml
+git add packages/components/workloads/workflow-builder/manifests/kustomization.yaml
 git commit -m "chore(workflow-builder): revert pin to prod tag"
 git push origin main
 
@@ -151,7 +151,7 @@ kubectl -n argocd annotate application workflow-builder \
   argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-If the reverted or restored image should be the durable ryzen image, apply the same pin in `/home/vpittamp/repos/PittampalliOrg/stacks/main/packages/components/active-development/manifests/workflow-builder/kustomization.yaml`, commit it to `origin/main`, and run `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
+If the reverted or restored image should be the durable ryzen image, apply the same pin in `/home/vpittamp/repos/PittampalliOrg/stacks/main/packages/components/workloads/workflow-builder/manifests/kustomization.yaml`, commit it to `origin/main`, and run `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
 
 ## Cluster-level preflight (before first session of a day)
 
@@ -181,11 +181,10 @@ docker login -u giteaadmin gitea-ryzen.tail286401.ts.net
 - **fn-activepieces**: currently inactive by default on ryzen. The prod Deployment file is a multi-doc YAML (Deployment + Service). The dev overlay's `resources:` references the file; both kinds render but only the Deployment is patched.
 - **swebench-coordinator**: build context is the repo root (Dockerfile uses `services/swebench-coordinator/...` paths). Same .dockerignore exclusions as workflow-orchestrator.
 
-## When to use devspace instead
+## When Skaffold is NOT the right path
 
-- The service is fn-system (Knative).
-- The service is fn-activepieces and the regular Argo Application/Deployment path is still inactive.
-- The service hasn't been added to the Skaffold module set yet.
-- You need devspace's profile-based multi-service composition for an experimental setup.
+- **`fn-system` (Knative)** — treat the cluster's Argo-managed pod as an external dependency. Skaffold sync into a transient Knative revision is impractical. `scripts/sandbox-dev.sh` is the experimental sandbox-based alternative for Knative-style workloads.
+- **`fn-activepieces`** — currently inactive on ryzen; the Skaffold module is wired but excluded from default `ALL` sessions. Set `SKAFFOLD_ALLOW_INACTIVE=1` to opt in deliberately.
+- **Services not in the Skaffold module set** — add them to `skaffold/<svc>.skaffold.yaml` and the root `requires:` list rather than using a side-channel inner-loop.
 
-See the [`devspace-quick-iteration`](../../devspace-quick-iteration/SKILL.md) skill.
+

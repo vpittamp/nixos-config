@@ -12,7 +12,7 @@ There are two separate image lanes:
   `swebench-coordinator`, `swebench-evaluator`, `dapr-agent-py`,
   `dapr-agent-py-sandbox`, and `dapr-agent-py-testing-sandbox`. These are built
   by the hub GitHub webhook lane, pushed to GHCR, and delivered through stacks
-  release metadata or explicit active-development pins.
+  release metadata or explicit workloads pins.
 - SWE-bench inference environment images: per repo/base/version/env-spec images
   built by hub Tekton PipelineRuns named `swe-env-<envSpecHash-prefix>`. These
   are selected by benchmark preflight and recorded as exact-ready static

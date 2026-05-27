@@ -105,7 +105,7 @@ Use `stacks sync` after local manifest edits, release-pin rewrites, or Tailscale
 idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo --seed-images=false
 ```
 
-The sync path snapshots the local stacks worktree into in-cluster Gitea and preserves active-development image pins by default. It uses the same default provider, profile, and overlay as `stacks create`. Seed-image rewrites are explicit bootstrap/recovery behavior: `stacks create` still seeds by default, while `stacks sync` requires `--seed-images=true` and warns when it rewrites active-development kustomizations.
+The sync path snapshots the local stacks worktree into in-cluster Gitea and preserves workloads image pins by default. It uses the same default provider, profile, and overlay as `stacks create`. Seed-image rewrites are explicit bootstrap/recovery behavior: `stacks create` still seeds by default, while `stacks sync` requires `--seed-images=true` and warns when it rewrites workloads kustomizations.
 
 Current sync behavior is cache-backed, not a fresh root commit per run:
 
@@ -215,13 +215,13 @@ deployment/scripts/bootstrap/seed-ryzen-images.sh --verify-only --mode critical 
 The seed script has two registry concerns:
 
 - `DEST_REGISTRY` / `--dest-registry`: where images are copied during bootstrap. Default: `gitea.cnoe.localtest.me:8443/giteaadmin`.
-- `REWRITE_REGISTRY` / `--rewrite-registry`: what active-development Kustomize image transforms should reference. Default: `gitea-ryzen.tail286401.ts.net/giteaadmin`.
+- `REWRITE_REGISTRY` / `--rewrite-registry`: what workloads Kustomize image transforms should reference. Default: `gitea-ryzen.tail286401.ts.net/giteaadmin`.
 
 The seed script writes both provenance tags from release pins and `:latest`
 compatibility aliases for critical images, because several runtime paths still
 reference `latest` outside Kustomize image transformers.
 
-Keep the manifest rewrite target on the Tailscale Gitea hostname for active-development manifests. Talos Docker node pulls should continue to resolve `gitea.cnoe.localtest.me:8443` through the ryzen registry-auth path; do not replace this with a hard-coded pod IP.
+Keep the manifest rewrite target on the Tailscale Gitea hostname for workloads manifests. Talos Docker node pulls should continue to resolve `gitea.cnoe.localtest.me:8443` through the ryzen registry-auth path; do not replace this with a hard-coded pod IP.
 
 When creating the cluster through rootful Podman, pass `--seed-image-push-engine skopeo`. This makes the bootstrap seeding path use skopeo copy against the local Gitea registry instead of depending on a Docker daemon or Docker CLI.
 

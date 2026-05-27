@@ -32,9 +32,9 @@ git reflog show --date=iso gitea/main | sed -n '1,80p'
 Compare the suspect image pins across snapshots:
 
 ```bash
-git show <sha>:packages/components/active-development/manifests/workflow-builder/kustomization.yaml | sed -n '1,16p'
-git show <sha>:packages/components/active-development/manifests/openshell-agent-runtime/kustomization.yaml | sed -n '58,66p'
-git show <sha>:packages/components/active-development/manifests/swebench-coordinator/kustomization.yaml | sed -n '23,30p'
+git show <sha>:packages/components/workloads/workflow-builder/manifests/kustomization.yaml | sed -n '1,16p'
+git show <sha>:packages/components/workloads/openshell-agent-runtime/manifests/kustomization.yaml | sed -n '58,66p'
+git show <sha>:packages/components/workloads/swebench-coordinator/manifests/kustomization.yaml | sed -n '23,30p'
 ```
 
 For workflow-builder, also compare the promoted dev override:
@@ -54,7 +54,7 @@ kubectl get app <app> -n argocd -o jsonpath='{.operation.sync.revision}{"\n"}{.s
 
 1. Stop duplicate one-shot syncs or watchers if the lock reports another active sync. Keep only the single sync source you intend to publish.
 2. Choose a source tree with the correct manifests. If preserving ryzen-local image pins, do not use a clean `origin/main` tree unless it contains those pins.
-   - For workflow-builder, the durable ryzen pin is `packages/components/active-development/manifests/workflow-builder/kustomization.yaml`; commit the intended GHCR `git-<sha>` tag to `origin/main` before syncing if the pin should survive future clean syncs.
+   - For workflow-builder, the durable ryzen pin is `packages/components/workloads/workflow-builder/manifests/kustomization.yaml`; commit the intended GHCR `git-<sha>` tag to `origin/main` before syncing if the pin should survive future clean syncs.
 3. Publish recovery snapshots with seed rewrites disabled. Current `idpbuilder stacks sync` already defaults this way, but keep the flag explicit in recovery commands:
 
 ```bash
@@ -113,5 +113,5 @@ kubectl --context hub -n argocd get app dev-workflow-builder -o jsonpath='{.stat
 
 - Mutating `idpbuilder stacks sync` takes a nonblocking lock beside the sync cache for the full one-shot sync or watch lifetime. Lock contention reports the cluster, repo, branch, cache, and lock path.
 - `idpbuilder stacks sync` defaults `--seed-images=false`; `idpbuilder stacks create` still seeds by default for bootstrap/recreate.
-- Explicit `idpbuilder stacks sync --seed-images=true` warns when it rewrites active-development kustomizations in the local Gitea snapshot.
+- Explicit `idpbuilder stacks sync --seed-images=true` warns when it rewrites workloads kustomizations in the local Gitea snapshot.
 - While waiting for commit `A`, idpbuilder detects watched apps or the Gitea branch moving to a descendant commit `B` and reports `sync to <A> superseded by <B>` instead of a generic timeout.
