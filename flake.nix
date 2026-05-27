@@ -11,20 +11,18 @@
     nixpkgs-sunshine.url = "github:NixOS/nixpkgs/b5ad8986fecea232ef2e1ee9eecce5b972dc4114";
 
     # Antigravity CLI — Google's Gemini-CLI successor (announced 2026-05-19, I/O 2026).
-    # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18, so we
-    # need a working replacement before then. The upstream package is not yet in
-    # nixos-unstable: it lives in open nixpkgs PR #522045
-    # (https://github.com/NixOS/nixpkgs/pull/522045) by @deftdawg.
+    # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
     #
-    # SHA-pinned to the PR head so deftdawg's force-pushes don't silently break
-    # builds. To consume from a home-module:
-    #   antigravityCli = inputs.nixpkgs-antigravity-cli.legacyPackages.${pkgs.system}.antigravity-cli;
+    # Status as of 2026-05-27: antigravity-cli 1.0.3 landed on nixpkgs master
+    # via PR #524900 (merged 2026-05-27), but nixos-unstable is still ~2240
+    # commits behind that merge commit, so `pkgs.antigravity-cli` isn't yet
+    # available via our main `nixpkgs` input. Pin to the master merge commit
+    # directly until the channel catches up.
     #
-    # TODO(antigravity-cli): once PR #522045 merges into nixos-unstable, delete
-    # this input and switch consumers to `pkgs.antigravity-cli` (or
-    # `pkgs-unstable.antigravity-cli`). Track:
-    #   https://github.com/NixOS/nixpkgs/pull/522045
-    nixpkgs-antigravity-cli.url = "github:deftdawg/nixpkgs/d123040893b2ff7a664dc9e3831cd03e328f3d84";
+    # TODO(antigravity-cli): once nixos-unstable advances past 3a1ee2b4a (the
+    # 1.0.3 merge), delete this input and switch consumers to
+    # `pkgs.antigravity-cli` (or `pkgs-unstable.antigravity-cli`).
+    nixpkgs-antigravity-cli.url = "github:NixOS/nixpkgs/3a1ee2b4a58de0939ce747fc004461fc44e2c26e";
 
     # Flake organization
     flake-parts = {
