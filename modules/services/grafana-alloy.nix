@@ -526,14 +526,13 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      # ryzen Talos cluster exposes otel-collector via the Tailscale Operator
-      # (device-backed Tailscale Ingress, see stacks
-      # packages/base/manifests/tailscale-ingresses/Ingress-otel-collector-tailscale.yaml).
-      # Previous default (otel-collector.cnoe.localtest.me:8443) was a vestigial
-      # idpbuilder/kind URL that resolved to ::1 on both hosts → never worked
-      # after the Talos migration.
-      default = "https://otel-collector-ryzen.tail286401.ts.net";
-      description = "Kubernetes OTEL collector endpoint (Tailscale-served Ingress on ryzen spoke).";
+      # Post-A6 hub-managed migration retired the ryzen-local tailscale Ingress
+      # (otel-collector-ryzen.tail286401.ts.net) — that hostname no longer
+      # resolves. The canonical OTEL collector endpoint is now the dev spoke's
+      # tailscale Ingress, which terminates TLS on port 443 and writes to the
+      # same hub ClickHouse via clickhouse-hub-egress.
+      default = "https://otel-collector-dev.tail286401.ts.net";
+      description = "Kubernetes OTEL collector endpoint (Tailscale-served Ingress on dev spoke).";
     };
 
     phoenixEndpoint = mkOption {
