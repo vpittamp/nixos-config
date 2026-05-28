@@ -1,5 +1,61 @@
 # Failure modes during ryzen spoke bootstrap
 
+## Tailscale ACL pattern: APISERVER_PROXY hardcoded false in source manifest
+
+**Symptom**: Cluster Secret with `bearerToken: "unused"` (per Tailscale ACL guide) gets "the server has asked for the client to provide credentials" when ArgoCD's application-controller tries to use it. Curl to `https://<spoke-operator>.tail286401.ts.net:443` returns "Connection refused".
+
+**Cause**: Although `bootstrap-spoke-cluster.sh` passes `apiServerProxyConfig.mode=true` to the Tailscale operator helm chart, ArgoCD's reconcile of `packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml` overwrites it with `APISERVER_PROXY: "false"` shortly after. The operator pod restarts without the API server proxy running, so port 443 on the operator's tailnet device returns Connection Refused, and the Tailscale ACL impersonation flow has no proxy to honor it.
+
+**Fix**: Already committed in stacks `83ce11f0f` (2026-05-28). Source `Deployment-operator.yaml` now has `APISERVER_PROXY: "true"`. Operators upgrading an existing cluster need ArgoCD to sync `ryzen-tailscale-operator` Application AND must NOT block on Kueue webhook (see next mode); during the validation we had to direct-patch the live Deployment to break a chicken-and-egg deadlock — `kubectl --context admin@ryzen patch deployment operator -n tailscale ...` with the desired env block.
+
+## Tailscale ACL pattern: TLS SNI mismatch — cluster Secret needs tlsClientConfig.serverName
+
+**Symptom**: After enabling APISERVER_PROXY=true and adding the ACL grant, ArgoCD's cluster-list shows the spoke as Failed with `tls: internal error`. Operator pod logs show `TLS handshake error from <hub-egress-IP>:NNNN: 500 Internal Server Error: invalid domain "ryzen-api-egress.tailscale.svc.cluster.local"; must be one of ["ryzen-operator.tail286401.ts.net"]`.
+
+**Cause**: The operator's API server proxy validates the TLS SNI against its own tailnet hostname. Our cluster Secret's `server` field is the in-cluster ExternalName (`ryzen-api-egress.tailscale.svc.cluster.local`) so ArgoCD's client sends that as SNI. The proxy rejects.
+
+**Fix**: Already committed in stacks `42ddb16cd` (2026-05-28). The cluster Secret now sets `tlsClientConfig.serverName: "ryzen-operator.tail286401.ts.net"` so ArgoCD overrides SNI on the TLS handshake to match what the proxy accepts. Pattern is the same for any spoke — set serverName to `<spoke-operator-hostname>.tail286401.ts.net` (the OPERATOR_HOSTNAME env on the spoke's operator Deployment).
+
+## Tailscale ACL pattern: tag mismatch between hub egress and spoke operator (need explicit ACL grant)
+
+**Symptom**: After APISERVER_PROXY=true and Secret with serverName, the proxy log shows the connection arrives but no impersonation header is injected — kube-apiserver rejects with auth required.
+
+**Cause**: ACL impersonation matches `src tag → dst tag`. Hub-side Tailscale egress pods carry `tag:k8s` (from operator's `PROXY_TAGS`), but the spoke operator pod carries `tag:k8s-operator` (from `OPERATOR_INITIAL_TAGS`). The existing `policy.hujson` grants `tag:k8s-operator → tag:k8s-operator` and `tag:spoke-api → tag:k8s` but NOT `tag:k8s → tag:k8s-operator`. The hub-to-spoke-operator path is uncovered.
+
+**Fix**: Already committed in stacks `83ce11f0f` (2026-05-28). New grant added to `policy.hujson`:
+```hujson
+{
+  "src": ["tag:k8s"],
+  "dst": ["tag:k8s-operator"],
+  "app": {
+    "tailscale.com/cap/kubernetes": [
+      { "impersonate": { "groups": ["system:masters"] } }
+    ]
+  }
+}
+```
+The `.github/workflows/tailscale-acl.yml` GitHub Action applies it to the tailnet on push to main.
+
+## Kueue label mismatch — kueue-webhook-service has zero endpoints
+
+**Symptom**: Any Deployment update (including the Tailscale operator's APISERVER_PROXY=true sync) fails admission with `failed calling webhook "mdeployment.kb.io": ... connect: connection refused`. `kubectl get endpoints kueue-webhook-service -n kueue-system` shows `ENDPOINTS: <none>`.
+
+**Cause**: The upstream Kueue release manifest's `kueue-controller-manager` Deployment template carries labels `app.kubernetes.io/name=kueue, control-plane=controller-manager` — but the helm-rendered `kueue-webhook-service`'s selector ALSO requires `app.kubernetes.io/instance=kueue`. The Service selector doesn't match the pod, so endpoints stay empty and every admission webhook call timeouts.
+
+**Fix**: Already committed in stacks `a9da1d030` (2026-05-28). `bootstrap-spoke-cluster.sh` step 6c now patches the Deployment template to add the missing `app.kubernetes.io/instance=kueue` label immediately after applying the release manifest. Manual recovery for an existing cluster:
+```bash
+kubectl --context admin@<cluster> patch deployment kueue-controller-manager -n kueue-system \
+  -p '{"spec":{"template":{"metadata":{"labels":{"app.kubernetes.io/instance":"kueue"}}}}}'
+```
+
+## Kueue rollout race — webhook port not ready when wait Available returns
+
+**Symptom**: After the label patch in `bootstrap-spoke-cluster.sh` step 6c, the script proceeds to step 7 (spoke-registration kustomize apply) and fails immediately with the same webhook timeout (`mjob.kb.io`: connection refused) — even though `kubectl wait --for=condition=Available` returned success.
+
+**Cause**: `kubectl wait Available` checks the Deployment-level Available condition, which requires `availableReplicas >= minAvailable`. During a Recreate-strategy rollout triggered by the label patch, the OLD pod is briefly Available right after the patch is applied — the wait returns immediately on that pod, even though it's already being terminated. The NEW pod's webhook port (:9443) hasn't started accepting connections yet.
+
+**Fix**: Already committed in stacks `85ed6fbca` (2026-05-28). Bootstrap now uses `kubectl rollout status` (waits for new replicaset to fully roll over) followed by an explicit poll of `kubectl get endpoints kueue-webhook-service -n kueue-system` until at least one address populates. Replaces the bare `kubectl wait Available`.
+
 ## bootstrap-spoke-cluster.sh STACKS_DIR resolves to wrong repo when run from another cwd
 
 **Symptom**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate` destroys the cluster, runs helms successfully, then fails at step 7: `error: must build at directory: not a valid directory: evalsymlink failure on '/home/vpittamp/repos/vpittamp/nixos-config/main/packages/overlays/ryzen-spoke-registration' : lstat ... : no such file or directory`. The script's exit code may still come back 0 because the calling shell piped to tee without pipefail, masking the actual non-zero exit.

@@ -4,14 +4,28 @@
 - **P0 items**: ✅ implemented in stacks `32ecea8a7` (2026-05-28). Validated end-to-end in 48m 16s wall-clock.
 - **P1.A / P1.B / P1.C**: ✅ implemented + validated in stacks `e619d0ddd`, `d98d6d7a7`, `0d2f5a9bf`, `f74becf81`, `78a4c6979` (2026-05-28).
 - **P1.2** (Tailscale device rename): demoted to P2 — `cleanup-tailnet-devices.sh` pre-destroy step prevents collision in practice.
+- **P2 Tailscale ACL spoke registration**: ✅ implemented + validated in stacks `83ce11f0f`, `42ddb16cd`, `a9da1d030`, `85ed6fbca` (2026-05-28). `bash bootstrap-spoke-cluster.sh --recreate --ts-acl-mode` completes bootstrap + register in **8m30s** (vs 31m for the bearer-token path on the prior validation). Convergence to ~50/67 SH happens within an additional ~5-10 min.
 
-**Validation outcome (2026-05-28 attempt 2)**: Wall-clock 46m to plateau (45 Synced+Healthy + 2 Synced+Progressing + 5 OutOfSync+Healthy = **52 effectively operational** of 67). Missed the ≤32 min target because validation surfaced four new bugs that each needed a fix-of-fix mini-cycle:
-1. `STACKS_DIR` cwd-sensitivity (stacks `d98d6d7a7`) — script broke when run from nixos-config dir
-2. Polluted shell env from legacy `kind.env` (stacks `0d2f5a9bf`) — JWKS uploaded to wrong storage account
-3. Egress-restart step ordering vs CSS poll (stacks `f74becf81`) — circular deadlock
-4. Pod-only delete leaves stale Tailscale state Secret (stacks `78a4c6979`) — CrashLoopBackOff on egress recreate
+**Measured wall-clock (2026-05-28 attempt 3, --ts-acl-mode)**:
+| Phase | Time |
+|---|---|
+| Pre-destroy cleanup (Tailscale devices, kubeconfig) | ~10s |
+| talosctl cluster destroy + create | ~1m40s |
+| Helms (cert-manager, ESO, AWI, Tailscale operator) | ~3m |
+| Kueue pre-install + label patch + rollout-status wait | ~1m20s |
+| Spoke-registration manifests | ~5s |
+| Tailscale ProxyGroup advertise wait | ~2m |
+| register-spoke-with-hub.sh (steps 1, 5.5, 7, 8, 8.5 only) | ~30s |
+| **Total bootstrap + register** | **8m30s** |
+| Convergence to 50/67 SH (background) | +5-10 min |
 
-**Estimated next clean recreate (all 5 fixes baked in, no fix-discovery overhead)**: **~25–30 min** wall-clock. The remaining bottleneck is the ~10 min AAD federated-credential cache wait in step 6. The plateau ceiling (~55-58 ops) is set by known-dead apps + cosmetic OOS+Healthy drift, not by remaining bugs.
+**~85% reduction** vs 2026-05-28 P1 baseline of 48m. Steps 2-6 of register-spoke-with-hub.sh (token extract, KV push, ESO annotate, JWKS sync, CSS Ready poll) are entirely skipped under `--ts-acl-mode` because hub→spoke auth is via Tailscale ACL impersonation, not a per-spoke bearer token. JWKS sync still runs (in background) for spoke-side ESO's other KV secrets.
+
+**Validation outcome of the prior 2026-05-28 attempt 2 (bearer-token path, retained for comparison)**: Wall-clock 46m to plateau (45 SH + 2 SP + 5 OOS/H = 52 effectively operational of 67). Missed the ≤32 min target because validation surfaced four new bugs:
+1. `STACKS_DIR` cwd-sensitivity (stacks `d98d6d7a7`)
+2. Polluted shell env from legacy `kind.env` (stacks `0d2f5a9bf`)
+3. Egress-restart step ordering vs CSS poll (stacks `f74becf81`)
+4. Pod-only delete leaves stale Tailscale state Secret (stacks `78a4c6979`)
 
 ---
 
@@ -117,9 +131,20 @@ kubectl label namespace tailscale pod-security.kubernetes.io/enforce=privileged 
 
 **P1.2 — Auto-rename new Tailscale device to canonical name** (demoted to P2): if `cleanup-tailnet-devices.sh` ran successfully, the new device should get the canonical name on first registration. The pre-destroy cleanup makes this collision unlikely in practice — kept as a belt-and-suspenders item.
 
-### P2 — architectural evaluation: Tailscale ACL impersonation in place of Azure WI for spoke registration
+### P2 — architectural evaluation: Tailscale ACL impersonation in place of Azure WI for spoke registration  ✅ DONE
 
-**Premise** (researched 2026-05-28 from `tailscale.com/blog/workload-identity-ga`, `…/docs/solutions/sync-kubernetes-secrets-across-clusters-external-secrets`, and `…/docs/solutions/manage-multi-cluster-kubernetes-deployments-argocd`): the Tailscale ArgoCD multi-cluster pattern uses a hub cluster Secret whose `server` field is `https://<spoke-tailnet-fqdn>` and whose bearer token field is `"unused"`. The actual auth is via a Tailscale ACL grant of `impersonate.groups: ['system:masters']` for the hub's operator identity → spoke kube-api proxy. No per-spoke bearer token; no JWKS sync; no AAD federated-credential cache wait.
+**Outcome** (2026-05-28): Validated end-to-end on ryzen. Measured wall-clock improvement: bootstrap + register-spoke went from ~31 min (bearer-token path) to **8m30s** (Tailscale ACL path). Steps 2-6 of register-spoke-with-hub.sh entirely eliminated. Pattern works exactly as documented in the Tailscale ArgoCD multi-cluster guide, with three architectural requirements that we had to surface during validation (now codified — see failure-modes.md):
+
+1. **APISERVER_PROXY=true** on the spoke operator Deployment so it actually listens on port 443 of its tailnet device (commit `83ce11f0f`).
+2. **policy.hujson grant** `tag:k8s → tag:k8s-operator` with `system:masters` impersonation (the hub egress carries tag:k8s, the operator carries tag:k8s-operator; existing grants don't cover this path) (commit `83ce11f0f`).
+3. **tlsClientConfig.serverName** in the cluster Secret pointing at the operator's tailnet hostname so ArgoCD's TLS SNI matches what the proxy accepts (commit `42ddb16cd`).
+
+Plus two side-discoveries unrelated to the ACL pattern but required for the path to work end-to-end:
+
+4. **Kueue label patch** — upstream Kueue release manifest's Deployment is missing the `app.kubernetes.io/instance=kueue` label that helm's webhook-service selector requires; without it, every admission webhook call timeouts (commit `a9da1d030`).
+5. **Kueue rollout-status wait** — `kubectl wait Available` returns on the still-terminating OLD pod after the label patch triggers a rollout; needed explicit `kubectl rollout status` + endpoint-population poll (commit `85ed6fbca`).
+
+**Premise** (researched 2026-05-28 from `tailscale.com/blog/workload-identity-ga`, `…/docs/solutions/sync-kubernetes-secrets-across-clusters-external-secrets`, and `…/docs/solutions/manage-multi-cluster-kubernetes-deployments-argocd`): the Tailscale ArgoCD multi-cluster pattern uses a hub cluster Secret whose `server` field is `https://<spoke-tailnet-fqdn>` (or the in-cluster ExternalName that bridges to it) and whose bearer token field is `"unused"`. The actual auth is via a Tailscale ACL grant of `impersonate.groups: ['system:masters']` for the hub's operator identity → spoke kube-api proxy. No per-spoke bearer token; no JWKS sync for the registration path; no AAD federated-credential cache wait.
 
 **What we'd eliminate from `register-spoke-with-hub.sh`**:
 - Step 2 (kubectl create token + extract CA)
