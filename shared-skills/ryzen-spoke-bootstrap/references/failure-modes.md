@@ -1,5 +1,46 @@
 # Failure modes during ryzen spoke bootstrap
 
+## Kueue CRDs partial-apply during transient hub→ryzen instability
+
+**Symptom**: After cluster recreate, ~14 ryzen-* Deployment-bearing Apps stuck OutOfSync with admission webhook errors like `failed calling webhook "vworkload.kb.io"`. `kubectl get pods -n kueue-system` shows `kueue-controller-manager` CrashLoopBackOff with `no resource matches the kind "Workload"` or similar missing-CRD errors. `kubectl get crds | grep kueue.x-k8s.io | wc -l` returns less than the expected 16.
+
+**Cause**: ArgoCD's ryzen-kueue Application syncs at sync-wave 40 via Helm. If hub→ryzen network is briefly flaky (operator first-contact phase, egress pod reconnecting), Helm's apply may complete some CRDs and fail on others. ArgoCD marks syncResult Failed but doesn't retry the failed CRDs automatically. Controller-manager starts before all CRDs exist, crashes, then auto-sync hits max-retry-backoff before Kueue stabilizes.
+
+**Fix**: `bootstrap-spoke-cluster.sh` step 6c now pre-installs Kueue from upstream release manifest BEFORE any ArgoCD sync (Phase 1 of P1 backlog, 2026-05-28). ArgoCD's later helm sync becomes a no-op via `--server-side --force-conflicts` field-ownership handover. If running an older script:
+```bash
+KUEUE_VERSION=v0.17.3
+kubectl apply --server-side -f \
+  "https://github.com/kubernetes-sigs/kueue/releases/download/${KUEUE_VERSION}/manifests.yaml" \
+  --force-conflicts
+kubectl wait --for=condition=Available deployment/kueue-controller-manager \
+  -n kueue-system --timeout=3m
+```
+
+## Hub egress pod retains stale Tailscale auth after spoke recreate
+
+**Symptom**: After fresh cluster recreate + new Tailscale device registration, `argocd cluster list` keeps showing the spoke as `Unknown` or "Connection refused" for many minutes (51 min observed on 2026-05-28). The hub-side `ts-${CLUSTER_NAME}-api-egress-0` pod is Running but its connection state is stale (still trying old auth).
+
+**Cause**: Tailscale operator's egress pod caches auth state at pod create. The spoke's Tailscale device key rotates on cluster recreate but the hub-side pod doesn't observe Secret changes or device re-registration.
+
+**Fix**: `register-spoke-with-hub.sh` step 6.5 now force-deletes the hub egress pods after CSS Ready (Phase 2 of P1 backlog, 2026-05-28) and waits for the operator to spin a fresh one. Manual recovery:
+```bash
+kubectl --kubeconfig ~/.kube/hub-config delete pods -n tailscale \
+  -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
+```
+
+## Ryzen-* Applications stuck OutOfSync after Kueue webhook timeout during initial sync
+
+**Symptom**: After CSS Ready and Headlamp restart, many ryzen-* apps remain OutOfSync. Their `operationState.message` references admission webhook timeouts or "webhook not ready". Auto-sync isn't retrying because it hit max-retry-backoff during the initial reconcile window.
+
+**Cause**: ArgoCD's auto-sync exponential backoff caps at ~5 min. If Kueue's webhook took longer than that to become Ready during the initial reconcile window, the backed-off apps don't retry until external operator action or a meaningful event.
+
+**Fix**: `register-spoke-with-hub.sh` step 8.5 now lists ryzen-* Apps via the argocd CLI and force-syncs any OOS/Degraded ones asynchronously (Phase 3 of P1 backlog, 2026-05-28). Manual recovery:
+```bash
+for app in $(argocd --server argocd-hub.tail286401.ts.net app list --grpc-web --insecure -o name | grep '^argocd/ryzen-'); do
+  argocd --server argocd-hub.tail286401.ts.net app sync "$app" --grpc-web --insecure --async
+done
+```
+
 ## talosctl flag drift after Talos version bump (script bug)
 
 **Symptom**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate` destroys the existing cluster, then immediately fails `talosctl cluster create docker` with `unknown flag: --cidr` (or `--memory`, or `--cpus`). The cluster is gone but not recreated — host now has no kube-api.
@@ -52,7 +93,7 @@ kubectl label namespace local-path-storage pod-security.kubernetes.io/enforce=pr
 kubectl --kubeconfig ~/.kube/hub-config delete pods -n tailscale \
   -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
 ```
-`register-spoke-with-hub.sh` doesn't currently handle this automatically — P1 backlog item.
+`register-spoke-with-hub.sh` step 6.5 now handles this automatically after CSS Ready (Phase 2 of P1 backlog, 2026-05-28). Same recovery applies if running an older script.
 
 ## ESO ClusterSecretStore stays `InvalidProviderConfig` forever
 
@@ -62,7 +103,7 @@ kubectl --kubeconfig ~/.kube/hub-config delete pods -n tailscale \
 
 **Fix**:
 ```bash
-bash /home/vpittamp/repos/PittampalliOrg/stacks/122-crawl4ai/ref-implementation/azure-workload-identity/sync-jwks-to-azure.sh
+bash /home/vpittamp/repos/PittampalliOrg/stacks/main/deployment/scripts/sync-jwks-to-azure.sh
 # Wait 1-15 minutes for Azure AD's metadata cache to invalidate
 # Verify the cluster's KID matches the published JWKS:
 curl -s https://oidcissuer65846b7df97b.z13.web.core.windows.net/openid/v1/jwks | jq -r '.keys[0].kid'

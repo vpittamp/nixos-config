@@ -1,6 +1,9 @@
 # Ryzen Recreate — Friction Log + Automation Backlog
 
-**Status**: P0 items implemented in stacks `32ecea8a7` (2026-05-28). The next recreate should be ~30-45 min wall-clock with zero manual kubectl/az commands. P1 items remain pending.
+**Status**:
+- **P0 items**: ✅ implemented in stacks `32ecea8a7` (2026-05-28). Validated end-to-end in 48m 16s wall-clock.
+- **P1.A / P1.B / P1.C**: ✅ implemented in stacks (Phase 1+2+3 of the 48m→32m P1 backlog, 2026-05-28). Target wall-clock for next recreate: **≤32 min**.
+- **P1.2** (Tailscale device rename): demoted to P2 — `cleanup-tailnet-devices.sh` pre-destroy step prevents collision in practice.
 
 ---
 
@@ -98,9 +101,13 @@ kubectl label namespace tailscale pod-security.kubernetes.io/enforce=privileged 
 
 ### P1 — quality of life
 
-**P1.1 — Annotation-change auto-rotates egress pods**: the Tailscale operator's `ryzen-api-egress` egress pod doesn't pick up `tailscale.com/tailnet-fqdn` changes without pod delete. The registration script should detect annotation changes and force pod delete.
+**P1.A — ✅ DONE: Pre-install Kueue in bootstrap-spoke-cluster.sh**: bootstrap step 6c now applies the upstream Kueue release manifest server-side and waits for kueue-controller-manager Available before any ArgoCD sync. Eliminates the CRD partial-apply race + controller crashloop that wedged ~14 ryzen-* Apps for ~10 min during the 48m validation. `KUEUE_VERSION` env var (default `v0.17.3`) must match `packages/components/workloads/kueue/Application-kueue.yaml` targetRevision.
 
-**P1.2 — Auto-rename new Tailscale device to canonical name**: if `cleanup-tailnet-devices.sh` ran successfully, the new device should get the canonical name on first registration. Belt-and-suspenders: if `${CLUSTER_NAME}-api-v3-N` is registered (suffix N>0), invoke the Tailscale API to rename it to `${CLUSTER_NAME}-api-v3`.
+**P1.B — ✅ DONE: Hub egress pod auto-rotate**: `register-spoke-with-hub.sh` step 6.5 now force-deletes hub-side `ts-${CLUSTER_NAME}-api-egress-*` pods after CSS Ready and waits for the operator to spin a fresh one. Eliminates the 51-min stale-Tailscale-auth wait observed during the 48m validation.
+
+**P1.C — ✅ DONE: Force-sync OOS ryzen-* apps**: `register-spoke-with-hub.sh` step 8.5 now lists ryzen-* Apps via the argocd CLI and force-syncs any in OutOfSync/Degraded state asynchronously, after hub→spoke is verified Successful. Eliminates the ~5 min manual `argocd app sync ryzen-<name>` toil.
+
+**P1.2 — Auto-rename new Tailscale device to canonical name** (demoted to P2): if `cleanup-tailnet-devices.sh` ran successfully, the new device should get the canonical name on first registration. The pre-destroy cleanup makes this collision unlikely in practice — kept as a belt-and-suspenders item.
 
 ### P2 — eventual
 
