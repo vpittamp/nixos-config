@@ -271,8 +271,10 @@ in
 
   # ========== INCUS VIRTUALIZATION FOR NIXOS VM TESTING ==========
   # Uses NAT bridge networking and directory-backed storage on ext4.
+  # Disabled 2026-05-28 to free ~80 MB host RAM for the cluster.
+  # Re-enable if NixOS VM testing is needed.
   virtualisation.incus = {
-    enable = true;
+    enable = false;
     ui.enable = true;
     preseed = {
       networks = [
@@ -1105,10 +1107,14 @@ in
   # at http://ryzen.tail286401.ts.net:11434/v1, configured by the
   # workflow-builder Dapr conversation Component (llm-ollama-llama32-3b)
   # and the OpenShell agent runtime ConfigMap in PittampalliOrg/stacks.
+  # Disabled 2026-05-28 to free host RAM for the Talos/SWE-bench cluster.
+  # No in-cluster consumer remains (ollama-host-egress Service was removed
+  # post-A6, Dapr conversation component repointed to MLflow AI Gateway on
+  # hub). Re-enable if local LLM serving is needed again.
   services.ollama = {
-    enable = true;
-    package = pkgs.ollama-cuda; # CUDA-enabled build for the RTX 5070
-    host = "0.0.0.0"; # bind on all interfaces so kind pods + tailnet can reach
+    enable = false;
+    package = pkgs.ollama-cuda;
+    host = "0.0.0.0";
     port = 11434;
     loadModels = [ "llama3.2:3b" ];
   };
@@ -1119,9 +1125,14 @@ in
   # ========== LIBRECHAT AI CHAT PLATFORM ==========
   # Open-source AI chat UI with MongoDB backend
   # Access at http://localhost:3080
+  # Disabled 2026-05-28 to free host RAM for the Talos/SWE-bench cluster.
+  # Service was crash-looping for weeks (Failed to load environment files,
+  # restart counter > 100), and we have MLflow AI Gateway on hub for LLM
+  # access. Disabling both LibreChat and its auto-provisioned MongoDB
+  # frees ~1.6 GB of orphaned node + uvicorn + mongodb processes.
   services.librechat = {
-    enable = true;
-    enableLocalDB = true;  # Auto-provisions MongoDB
+    enable = false;
+    enableLocalDB = false;
 
     # Credentials file with secrets (CREDS_KEY, CREDS_IV, JWT_SECRET, JWT_REFRESH_SECRET)
     # Generate with: for v in CREDS_KEY JWT_SECRET JWT_REFRESH_SECRET; do echo "$v=$(openssl rand -hex 32)"; done; echo "CREDS_IV=$(openssl rand -hex 16)"
