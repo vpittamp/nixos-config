@@ -11,6 +11,8 @@ Bootstrap a fresh ryzen Talos Docker cluster so the hub ArgoCD (running on talos
 
 **Quick reference for the steady-state architecture**: `references/desired-state.md` — describes the component inventory, networking paths, GitOps source-of-truth, and what a healthy ryzen cluster looks like. Read this first if you're trying to understand the current system without going through the full bootstrap.
 
+**Automation backlog**: `references/automation-backlog.md` — friction log from the 2026-05-28 recreate, prioritized list of script-level fixes (P0 = `register-spoke-with-hub.sh`, P0 = move `sync-jwks-to-azure.sh` into main, P0 = `cleanup-tailnet-devices.sh`, etc.). Reduces manual steps from ~10 to ~3 on next recreate.
+
 **Architecture (post-A6, May 2026):**
 - Ryzen: Talos Docker cluster, no local ArgoCD, no local Gitea, no local Tekton
 - Hub: sole ArgoCD instance; renders `packages/overlays/ryzen` and applies Application CRDs to its own argocd namespace, each with `destination.name: ryzen`
