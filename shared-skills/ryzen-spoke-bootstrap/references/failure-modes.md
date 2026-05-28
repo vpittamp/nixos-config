@@ -95,3 +95,27 @@ kubectl --context hub get svc ryzen-api-egress -n tailscale -o jsonpath='{.spec.
 **Cause**: Ryzen has no nginx-ingress-controller — only `tailscale` IngressClass is available. External access on ryzen goes via Tailscale, not nginx.
 
 **Fix**: Add ryzen-overlay kustomize patches that `$patch: delete` the nginx Ingresses for affected Apps. dev/staging still get them (they run nginx-ingress).
+
+## SWE-bench sandbox pods stuck Pending for ~6 min — node labels missing
+
+**Symptom**: `kubectl get pod -n openshell` shows a `swebench-*` pod Pending with `FailedScheduling` events: "0/3 nodes are available: 1 node(s) had untolerated taint(s), 2 node(s) didn't match Pod's node affinity/selector". Workflow status sits at `workspace_profile` `running` indefinitely. After ~6 min it may timeout entirely.
+
+**Cause**: The Kueue ResourceFlavor `dev-benchmark` (in `packages/components/workloads/kueue-capacity`) selects nodes by BOTH `stacks.io/swebench-pool=dev-benchmark` AND `node-role.kubernetes.io/worker=""`. Pre-A6 KIND ryzen applied these via `kind-config.yaml` kubeadm extraArgs at cluster create. Post-A6 Talos doesn't auto-apply them.
+
+**Fix (one-shot)**:
+```bash
+kubectl --kubeconfig ~/.kube/config label node \
+  $(kubectl get nodes -o name | grep -E 'worker') \
+  stacks.io/swebench-pool=dev-benchmark \
+  node-role.kubernetes.io/worker= --overwrite
+```
+
+**Fix (durable)**: `bootstrap-spoke-cluster.sh` was patched to label worker nodes after kube-api comes up (commit 9871c7217). If you rebuild ryzen with an older script, re-apply the labels manually.
+
+## SWE-bench launch paused with "argocd_application_not_stable"
+
+**Symptom**: SWE-bench UI shows `SWE-bench launch is paused while workflow-builder control plane stabilizes: argocd_application_not_stable` and no workflow starts.
+
+**Cause**: The ryzen overlay's workflow-builder Deployment patch was setting `BENCHMARK_ARGOCD_APPLICATION_NAME=workflow-builder` + `BENCHMARK_ARGOCD_KUBECONFIG_MODE=in-cluster` (pre-A6 these pointed at ryzen's local ArgoCD). Post-A6 there is no local ArgoCD on ryzen, so the in-cluster lookup hits the empty `argocd` namespace and fails.
+
+**Fix**: Removed in commit `bda45c3a5`. If it reappears, ensure neither env var is set on the workflow-builder Deployment on ryzen — dev/staging leave them unset so the launch-stability check short-circuits to `stable: true`.
