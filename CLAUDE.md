@@ -187,7 +187,7 @@ Unified telemetry collection via Grafana Alloy, exporting to the ryzen K8s clust
 **Architecture**:
 ```
 AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell panel)
-                               → otel-collector-ryzen.tail286401.ts.net (Tailscale Ingress)
+                               → otel-collector-dev.tail286401.ts.net (Tailscale Ingress on dev spoke)
                                  → K8s otel-collector (observability ns)
                                    → clickhouse-hub-egress    (durable storage on hub)
                                    → otlphttp/mlflow          (per-CLI MLflow experiments)
@@ -222,7 +222,7 @@ curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping   # ClickHouse reacha
 ```nix
 services.grafana-alloy = {
   enable = true;
-  # k8sEndpoint default = https://otel-collector-ryzen.tail286401.ts.net (Tailscale Ingress)
+  # k8sEndpoint default = https://otel-collector-dev.tail286401.ts.net (Tailscale Ingress on dev spoke; ryzen Ingress was retired post-A6)
   # NOTE: lokiEndpoint/mimirEndpoint still default to legacy *.cnoe.localtest.me:8443 URLs
   # and silently fail (Loki/Mimir aren't deployed on ryzen — they're hub-side via
   # clickhouse-hub-egress). Logs/metrics flow through the K8s otel-collector instead.
@@ -249,7 +249,7 @@ services.otel-ai-monitor = {
 - `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. The Talos migration moved everything to Tailscale Ingresses (`*-ryzen.tail286401.ts.net`) and hub-side ClickHouse (`clickhouse-hub.tail286401.ts.net`).
 - Quick checks for cross-host panel view:
   - `curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping`       (returns "Ok.")
-  - `curl -sk https://otel-collector-ryzen.tail286401.ts.net/`         (HTTP 404 = healthy, no listener at /)
+  - `curl -sk https://otel-collector-dev.tail286401.ts.net/`           (HTTP 404 = healthy, no listener at /)
   - Run the same SQL the panel runs: see `_CLICKHOUSE_SESSIONS_QUERY` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`.
 
 ## Testing
