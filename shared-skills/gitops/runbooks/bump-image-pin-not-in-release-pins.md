@@ -44,8 +44,6 @@ patch: |
     value:
       images:
         # Bump the tag here:
-        - 'gitea-ryzen.tail286401.ts.net/giteaadmin/browserstation=ghcr.io/pittampalliorg/browserstation:git-<NEW-SHA>'
-        - 'gitea-ryzen.tail286401.ts.net/giteaadmin/chrome-sandbox=ghcr.io/pittampalliorg/chrome-sandbox:latest'
 ```
 
 Commit + push to `origin/main`. Then because this is an ApplicationSet template change (NOT a release-pins change), the matrix-generator will not re-template until the env/hub PR is merged. See "ApplicationSet template-only re-render" in SKILL.md gotchas — push an empty commit on `origin/main` to bump the dry SHA if hydration appears stalled.

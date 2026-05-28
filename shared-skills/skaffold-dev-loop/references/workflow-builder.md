@@ -14,19 +14,20 @@ Stacks repo cache (auto-created by `commit-pin.sh`):
 ls ~/.cache/skaffold/stacks-ryzen
 ```
 
-Stacks repo used by idpbuilder (local manifest snapshot source):
+Stacks repo (canonical GitOps source consumed by hub):
 
 ```bash
 cd /home/vpittamp/repos/PittampalliOrg/stacks/main
-idpbuilder stacks sync --print-refresh-plan --seed-images=false
+git log --oneline origin/main -5
+git ls-remote origin env/hub-next env/hub  # see what's pending Promoter merge
 ```
 
-The Skaffold cache and idpbuilder sync cache are separate. Use idpbuilder/`clu`
-for manifest edits because it snapshots the selected local stacks worktree into
-in-cluster Gitea, computes affected apps, hard-refreshes them, and waits for the
-pushed revision. Use Skaffold only for live source hot reload and narrow ryzen
-image-pin experiments; commit durable image pins to `origin/main` and deploy them
-with idpbuilder/`clu`.
+Post-A6 (May 2026), ryzen has no local Gitea and no idpbuilder. All manifest
+changes flow through GitHub: commit to `main` for dev/staging-affecting changes
+(then merge the env/hub-next → env/hub Promoter PR), or push to `inner-loop` for
+ryzen-only image-tag bumps (via commit-pin.sh; hub Source Hydrator picks them up
+directly). Use Skaffold inner loop for live source hot reload and outer loop
+(`pnpm deploy:skaffold`) for image bake + commit-pin to inner-loop.
 
 ## Inner loop — start
 
@@ -156,7 +157,7 @@ If the reverted or restored image should be the durable ryzen image, apply the s
 ## Cluster-level preflight (before first session of a day)
 
 ```bash
-pnpm skaffold:doctor                # preferred; read-only Skaffold + idpbuilder checks
+pnpm skaffold:doctor                # preferred; read-only Skaffold preflight
 pnpm --silent skaffold:doctor -- --json  # machine-readable for agents
 kubectl config current-context        # expect admin@ryzen
 kubectl get nodes                     # 3 nodes Ready

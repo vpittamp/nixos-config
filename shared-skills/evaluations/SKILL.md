@@ -130,7 +130,7 @@ This session shipped + verified several SWE-bench changes (live on **ryzen and d
 - **Current Dapr state-store layout.** `workflowstatestore` is the namespace-wide Dapr workflow/actor store for parent workflows and per-session agent workflows. `dapr-agent-py-statestore` is namespace-wide but `actorStateStore=false`; it is the agent application state API store. Do not recreate the old per-agent actor-store architecture or add scopes for per-session agent-host app IDs.
 - **Dapr Agents 1.0.3 activity naming standard.** Repo-owned `services/dapr-agent-py` custom workflow activities must be registered and called only by their scoped names through `self._activity_name(...)`. Do not restore the old dual bare-name/scoped-name compatibility path. If stale histories require the old names, cancel/cleanup/purge the benchmark state instead of keeping two naming standards alive.
 - **Recovery: cleanup is Dapr-lifecycle, not DB.** A DB-cancel does not terminate the durable Dapr session workflows; they keep re-spawning openshell sandboxes regardless of DB state. Use `POST /api/internal/benchmarks/runs/<runId>/cleanup` (header `x-internal-token: $INTERNAL_API_TOKEN`, body `{}`) — it runs the documented terminal-cleanup teardown. The session-termination path fires only when the run is in a **cancelled** state, so set runs+instances `status='cancelled'` first, then call cleanup (expect to retry; coordinator + DB must be up). A stable floor of ~4 `openshell` pods that respawn when deleted is the **SandboxWarmPool** (by-design), not incident residue — don't fight it.
-- **Image delivery for these changes** is via the gitops skill's GHCR-pin path (the hub Gitea/dev-image 2nd EL is still dead 2026-05-19): ryzen `swebench-coordinator`/`swebench-evaluator`/`workflow-builder` images are pinned `ghcr.io/pittampalliorg/<img>:git-<sha>` in `workloads/<comp>/manifests/kustomization.yaml` + `idpbuilder stacks sync`; dev gets coordinator/evaluator from `workloads` @ origin/main HEAD (shared `dev-*` apps) and the BFF from release-pins. If an ArgoCD app won't advance to a new commit, `argocd app terminate-op <app> --grpc-web` (see gitops skill).
+- **Image delivery for these changes** is via the gitops skill's GHCR-pin path: ryzen `swebench-coordinator`/`swebench-evaluator`/`workflow-builder` images are pinned `ghcr.io/pittampalliorg/<img>:git-<sha>` in `workloads/<comp>/manifests/kustomization.yaml` on the `inner-loop` branch (hub Source Hydrator picks it up, no Promoter step on ryzen); dev gets coordinator/evaluator via PR `inner-loop → main` (or direct main commits) + Promoter. If an ArgoCD app won't advance to a new commit, `argocd app terminate-op <app> --grpc-web` (see gitops skill).
 
 ## Benchmarks UI: Braintrust-adoption surfaces (Phase F → K)
 
@@ -281,7 +281,7 @@ Existing BigCodeBench rows created before the shared-globals header can retain s
 
 When writing files in a workflow, use the **slug-as-operation** form: `workspace/write_file`, `workspace/read_file`, `workspace/edit_file`, etc. There is NO `workspace/file` slug with an `operation:` field. The function-router's openshell-agent-runtime returns `workspace-runtime HTTP 400: operation is required and must be one of read_file, write_file, edit_file, list_files, delete_file, mkdir, file_stat` if you call `workspace/file`. The error message is the canonical list of valid operation names — each is its own action slug.
 
-The `code-eval` sandbox template image (`gitea-ryzen.tail286401.ts.net/giteaadmin/openshell-sandbox-code-eval`) bakes pytest + EvalPlus + the BigCodeBench top-of-funnel library pool (numpy, pandas, scipy, scikit-learn, sympy, networkx, pillow, requests, beautifulsoup4, ...). Built from `services/openshell-sandbox/environments/Dockerfile.code-eval` via Tekton's `environment-image-build` pipeline (commit subject prefix `environment(code-eval):` is the trigger filter). The image is registered in `SANDBOX_TEMPLATE_IMAGES_JSON` on the workflow-builder Deployment.
+The `code-eval` sandbox template image (`ghcr.io/pittampalliorg/openshell-sandbox-code-eval`) bakes pytest + EvalPlus + the BigCodeBench top-of-funnel library pool (numpy, pandas, scipy, scikit-learn, sympy, networkx, pillow, requests, beautifulsoup4, ...). Built from `services/openshell-sandbox/environments/Dockerfile.code-eval` via Tekton's `environment-image-build` pipeline (commit subject prefix `environment(code-eval):` is the trigger filter). The image is registered in `SANDBOX_TEMPLATE_IMAGES_JSON` on the workflow-builder Deployment.
 
 ## Wizard Shape
 
@@ -346,8 +346,8 @@ kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines \
 # In stacks, repoint the relevant workloads image to the GHCR tag,
 # then deliver it to ryzen through affected-app sync.
 cd /home/vpittamp/repos/PittampalliOrg/stacks/main
-idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo
-idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo
+# Inspect ryzen-side: ssh vpittamp@ryzen 'kubectl --kubeconfig ~/.kube/hub-kubeconfig get app -n argocd | grep ^ryzen-'
+# Force a hub refresh: ssh vpittamp@ryzen 'kubectl --kubeconfig ~/.kube/hub-kubeconfig annotate app -n argocd ryzen-<name> argocd.argoproj.io/refresh=hard --overwrite'
 
 # Existing AgentRuntime CRs don't auto-roll when their publish-time image changes.
 # Patch a target CR only after the referenced image exists.
@@ -362,7 +362,7 @@ kubectl annotate agentruntime agent-runtime-<slug> -n workflow-builder \
   agents.x-k8s.io/wake=$(date -Iseconds) --overwrite
 ```
 
-The deterministic ryzen path is GHCR image availability plus stacks `idpbuilder stacks sync`.
+The deterministic ryzen path is GHCR image availability plus a commit-pin on the `inner-loop` branch (hub Source Hydrator handles the rest).
 
 **Dev/staging path** (outer-loop):
 

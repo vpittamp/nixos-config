@@ -90,7 +90,7 @@ git commit -m "fix(migrations): register <NNNN>_<name> in drizzle journal"
 git push origin main
 ```
 
-4. **Wait for the new image to build + roll** through the normal GHCR outer-loop, then bump or verify release-pins per `promote-image-to-spokes.md`. For ryzen validation, update the relevant stacks workloads pin to the GHCR tag and run `idpbuilder stacks sync`.
+4. **Wait for the new image to build + roll** through the normal GHCR outer-loop, then bump or verify release-pins per `promote-image-to-spokes.md`. For ryzen-only validation, commit the workloads pin bump to the `inner-loop` branch; hub Source Hydrator applies it to ryzen (~3 min).
 
 5. The next dev sync will run `db-migrate` with the updated image; the `__drizzle_migrations` table will get a row, and the `ADD COLUMN` will execute.
 

@@ -4,7 +4,7 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 
 ## What it covers
 
-- **Image promotion and ryzen sync lifecycle** — the two image-pin systems (release-pins vs workloads), how the hub GHCR/release lane feeds promoted spokes, direct-main vs PR-mode release handoffs, affected-app `idpbuilder stacks sync` for ryzen local manifests, and post-push ryzen/dev verification.
+- **Image promotion and ryzen sync lifecycle** — the two image-pin systems (release-pins vs workloads), how the hub GHCR/release lane feeds promoted spokes, direct-main vs PR-mode release handoffs, ryzen-only image pins on the `inner-loop` branch (no Promoter step), and post-push ryzen/dev verification.
 - **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
 - **Workflow-builder MCP/auth runtime** — ActivePieces piece MCP KService reconciliation, searchable MCP catalog, OAuth connection binding, AgentRuntime bootstrap, Dapr statestore durability checks, and stale sidecar readiness recovery.
 - **GitOps Promoter operations** — controller upgrades, hub `stacks-environments` promotion, and the ArgoCD UI extension used to visualize Promoter resources.
@@ -30,7 +30,6 @@ shared-skills/gitops/
     ├── bump-image-pin-not-in-release-pins.md  ← browserstation, chrome-sandbox, AGENT_RUNTIME_*_DEFAULT_IMAGE
     ├── upsert-workflow-json.md                ← workflow JSON spec → DB UPDATE (image rebuild does not roll specs)
     ├── mirror-image-gitea-to-ghcr.md
-    ├── recover-ryzen-idpbuilder-sync.md   ← concurrent syncs, seed-image rewrite recovery, stale Argo ops
     ├── manage-gitops-promoter.md          ← controller upgrades + ArgoCD Promoter UI extension
     ├── review-argocd-app-health.md        ← OutOfSync/Degraded fleet review + legacy cleanup decisions
     ├── recover-stuck-promotion.md

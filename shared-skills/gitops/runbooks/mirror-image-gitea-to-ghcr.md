@@ -1,4 +1,6 @@
-# Runbook: Mirror an image from gitea-ryzen → ghcr.io
+# Runbook: Mirror an image from gitea-ryzen → ghcr.io (LEGACY)
+
+> **Status:** Retired post-A6 (May 2026). The local Gitea image registry on ryzen no longer exists in normal operation. Keep this runbook only for one-off recovery of legacy artifacts still living on a pre-A6 ryzen PVC backup. For all new image delivery, push directly to `ghcr.io/pittampalliorg/<image>`.
 
 ## Symptoms / when to use
 

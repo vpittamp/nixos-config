@@ -217,7 +217,7 @@ Keep recovery image provenance tied to the GitHub commit:
 1. Fix the GitHub → hub EventListener path or manually trigger the same hub outer-loop build for the exact GitHub SHA.
 2. Confirm the resulting image exists on `ghcr.io/pittampalliorg/<image>:git-<sha>` and capture the digest.
 3. Promote the image with the normal direct-main or release-intent PR path, or manually update and validate `release-pins/workflow-builder-images.yaml`: `runbooks/promote-image-to-spokes.md`.
-4. For ryzen-only validation, repoint the relevant `packages/components/workloads/<image>/manifests/kustomization.yaml` to that GHCR tag and run `idpbuilder stacks sync`.
+4. For ryzen-only validation, repoint the relevant `packages/components/workloads/<image>/manifests/kustomization.yaml` to that GHCR tag and push to the `inner-loop` branch (hub Source Hydrator picks it up, ~3 min).
 
 ### Open
 

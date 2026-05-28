@@ -12,7 +12,7 @@ Use this when workflow-builder or one of its system services works on ryzen but 
 
 ## Mental model
 
-Ryzen proves the local Talos Docker/idpbuilder shape. Dev and staging are promoted spokes with different public hostnames and API access paths. Do not fix environment drift by patching live Deployments. Declare it in stacks:
+Ryzen proves the hub-managed-spoke shape on local Talos Docker. Dev and staging are promoted spokes with different public hostnames and API access paths. Do not fix environment drift by patching live Deployments. Declare it in stacks:
 
 | Concern | Declarative owner |
 |---|---|
@@ -22,7 +22,7 @@ Ryzen proves the local Talos Docker/idpbuilder shape. Dev and staging are promot
 | Hub/root ApplicationSet changes | `origin/main` → `env/hub-next` → `env/hub` through `stacks-environments` |
 | Dev/staging rendered workload changes | `origin/main` → `env/spokes-<env>-next` → `env/spokes-<env>` through `workflow-builder-release` |
 
-For app-spec or root-managed changes that also affect local ryzen, use `idpbuilder stacks sync` from the intended stacks worktree and let affected refresh handle `root-application` first.
+For app-spec or root-managed changes, push to GitHub `main` (or `inner-loop` for ryzen-only validation). Hub Source Hydrator + spoke-* AppSets reconcile within ~3 min.
 
 ## Diagnostic
 
@@ -118,8 +118,8 @@ git add \
 git commit -m "fix(workflow-builder): declare dev spoke hostnames"
 git push origin HEAD:main
 # For local ryzen validation of the same manifest change:
-idpbuilder stacks sync --print-refresh-plan --container-engine podman --seed-image-push-engine skopeo --seed-images=false
-idpbuilder stacks sync --container-engine podman --seed-image-push-engine skopeo --seed-images=false
+# Verify hub sees the change: git ls-remote origin env/spokes-ryzen
+# Force a hub refresh: ssh vpittamp@ryzen 'kubectl --kubeconfig ~/.kube/hub-kubeconfig annotate app -n argocd ryzen-<name> argocd.argoproj.io/refresh=hard --overwrite'
 ```
 
 6. Wait for GitHub checks. `Tailscale ACL GitOps` must succeed before expecting new or re-tagged Tailscale services to work.

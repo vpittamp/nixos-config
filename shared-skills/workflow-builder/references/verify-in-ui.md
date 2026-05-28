@@ -22,7 +22,7 @@ If `spec_bytes = 0` or NULL, you only ran the POST and skipped the PUT. Run the 
 
 ## Open the canvas
 
-URL pattern: `http://workflow-builder.cnoe.localtest.me:3000/workspaces/<workspace-slug>/workflows/<workflow-id>` (or whatever Ingress hostname your cluster exposes — see `Ingress-workflow-builder.yaml` in stacks).
+URL pattern: `https://workflow-builder-{cluster}.tail286401.ts.net/workspaces/<workspace-slug>/workflows/<workflow-id>` for promoted spokes; on ryzen typically `https://workflow-builder-ryzen.tail286401.ts.net/...`. See `Ingress-workflow-builder.yaml` in stacks for canonical hostnames.
 
 Look for:
 

@@ -155,7 +155,7 @@ def upsert_via_psql(payload: dict, args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Upsert a workflow into workflow-builder")
     parser.add_argument("file", help="Workflow JSON file (see header for shape)")
-    parser.add_argument("--bff-url", default=os.getenv("WORKFLOW_BUILDER_URL", "http://workflow-builder.cnoe.localtest.me:3000"))
+    parser.add_argument("--bff-url", default=os.getenv("WORKFLOW_BUILDER_URL", "https://workflow-builder-ryzen.tail286401.ts.net"))
     parser.add_argument("--api-key", default=os.getenv("WORKFLOW_BUILDER_API_KEY"))
     parser.add_argument("--cookie", default=os.getenv("WORKFLOW_BUILDER_COOKIE"))
     parser.add_argument("--psql", action="store_true", help="Bypass BFF and INSERT/UPSERT directly via kubectl exec psql")

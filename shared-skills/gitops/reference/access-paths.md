@@ -97,11 +97,10 @@ Spoke clusters do **not** have a ready-made talosconfig file in `~/.talos/`. If 
 | Registry | URL | Auth | Reachable from |
 |---|---|---|---|
 | ghcr.io | `ghcr.io/pittampalliorg/<image>` | `ghcr-push-credentials` Secret in `tekton-pipelines` ns on hub (org PAT); local `~/.docker/config.json` for read | Hub Tekton, dev/staging spokes (public reads), local |
-| gitea-ryzen | `gitea-ryzen.tail286401.ts.net/giteaadmin/<image>` | Anonymous reads OK; pushes need `gitea-registry-credentials` Secret | Ryzen, hub via Tailscale **egress** service, local ryzen workstation |
-| gitea-hub / cnoe.localtest.me | `gitea-hub.tail286401.ts.net/giteaadmin/<image>` and `gitea.cnoe.localtest.me/giteaadmin/<image>` | Same as gitea-ryzen | Mostly historical/local-dev; spoke-workloads AppSet rewrites these to ghcr.io |
+| ~~gitea-ryzen~~ (retired post-A6) | n/a | All clusters now pull from ghcr.io; the local Gitea image registry on ryzen no longer exists | n/a |
+| ~~gitea-hub / cnoe.localtest.me~~ (retired post-A6) | n/a | Historical; spoke-workloads AppSet still rewrites these to ghcr.io if found | n/a |
 
-**Hub pods cannot resolve `gitea-ryzen.tail286401.ts.net` through cluster DNS.** Two workarounds:
-- Use the Tailscale **egress** Service `gitea-ryzen-egress.tailscale.svc.cluster.local` and add an `/etc/hosts` mapping at runtime (the gitea-build Tasks demonstrate this pattern)
+**Hub pods reach ryzen kube-api via Tailscale egress.** Pattern: `ryzen-api-egress.tailscale.svc.cluster.local` ExternalName Service points at the operator-rendered headless egress pod for the `ryzen-api-v3.tail286401.ts.net` device. For other hub→ryzen traffic, follow the same `tailscale.com/tailnet-fqdn` egress pattern
 - Run the command from ryzen host, where the Tailscale daemon resolves the hostname natively
 
 ## GitHub & Azure

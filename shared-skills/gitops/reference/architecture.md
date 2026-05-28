@@ -78,29 +78,25 @@ Hub ArgoCD syncs spoke apps from env/spokes-{spoke}
 
 ============================================================
 
-Local/ryzen manifest sync
+Hub→ryzen spoke sync (post-A6, May 2026)
     │
-    │  edit stacks worktree
+    │  edit stacks worktree → commit to inner-loop branch on GitHub
     ▼
 ┌──────────────────────────────────────────────┐
-│  idpbuilder stacks sync                        │
-│  - Copies selected stacks worktree to cache    │
-│  - Commits only rendered tree changes          │
-│  - Pushes descendant snapshot to local Gitea   │
-│    giteaadmin/stacks.git:main                  │
-│  - Computes affected apps from live ArgoCD     │
-│    source paths + Kustomize dependency closure │
-│  - Hard-refreshes only affected apps and waits │
+│  Hub Source Hydrator                           │
+│  - Polls GitHub inner-loop branch (~3 min)     │
+│  - Hydrates to env/spokes-ryzen (no Promoter)  │
+│  - Hub argocd-application-controller applies   │
+│    to ryzen via cluster Secret + Tailscale     │
 └──────────────────────────────────────────────┘
     │
     ▼
-Ryzen ArgoCD syncs local apps from local Gitea
-   → manifests applied to ryzen Talos-docker cluster
+ryzen Talos-docker cluster (no local ArgoCD)
 ```
 
 **Key implications:**
-- A bump validated on ryzen does **not** propagate to dev/staging. Bumping dev/staging normally means the hub Tekton `update-stacks` task writes `release-pins/workflow-builder-images.yaml` to `origin/main` directly, or opens a release-intent PR that must be merged.
-- A tag/digest bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it and records the digest/provenance in the release metadata. If an old Gitea-only image is being recovered, mirror it explicitly and record provenance; do not treat Gitea as the normal promoted source.
+- A bump validated on ryzen does **not** propagate to dev/staging. Ryzen bumps live on `inner-loop`; dev/staging require a PR merge of `inner-loop → main` (or a direct main commit via the hub Tekton `update-stacks` task writing `release-pins/workflow-builder-images.yaml`).
+- A tag/digest bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it and records the digest/provenance in the release metadata.
 - `release-pins/workflow-builder-images.yaml` is schema v2: `images` remains the compatibility tag map; `digests`, `imageRefs`, `sourceShas`, `pipelineRuns`, and `updatedAts` hold immutable/provenance metadata. Dev/staging templates render tag+digest refs when a digest is present.
 - `agent-runtime-controller` is the exception: bumped directly in `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (no per-cluster override). Single bump applies to all spokes once on `origin/main`.
 - Spokes should not run Buildah for this path. If a `workflow-builder-builds-local` or spoke `gitea-builds-egress` resource appears, treat it as stale until proven otherwise.
@@ -211,21 +207,10 @@ Per-session Kueue agent hosts use unique Dapr app IDs, so Component scope mutati
 | `env/hub` | `origin` only | What hub root-application syncs from |
 | `env/spokes-dev-next` / `env/spokes-staging-next` | `origin` only | Source-hydrator output per spoke |
 | `env/spokes-dev` / `env/spokes-staging` | `origin` only | What spoke ArgoCD apps sync from (`workflow-builder-release` PromotionStrategy promotes to these) |
-| (no `env/spokes-ryzen-next`) | — | Ryzen does not go through promoter; it is delivered by local idpbuilder snapshots |
+| `inner-loop` | `origin` (GitHub) | Ryzen-only image-tag bumps via `commit-pin.sh`; hub Source Hydrator picks it up directly |
+| `env/spokes-ryzen` | `origin` (GitHub) | Source-hydrator output for ryzen overlay (no `-next`, no Promoter step on ryzen) |
 
-Ryzen also has a local snapshot repo:
-
-| Source | Role |
-|---|---|
-| local Gitea `giteaadmin/stacks.git:main` | Current ryzen source for `root-application` and child Applications; written by `idpbuilder stacks sync` from the selected local stacks worktree |
-
-Current ryzen hot reload uses `idpbuilder stacks sync --seed-images=false`. The command maintains a cache clone, pushes descendant snapshot commits, preserves workloads image pins, computes affected ArgoCD Applications from live app sources plus local Kustomize dependencies, and hard-refreshes only the affected apps. `root-application` is refreshed first when child Application definitions or `packages/overlays/ryzen` change. Seed-image rewrites are bootstrap/recovery-only and require explicit `--seed-images=true`.
-
-The local Gitea system webhook to ArgoCD is kept active for best-effort notification, but webhook-only refresh is not authoritative. Gitea push payloads currently advertise an external clone URL while ryzen Applications use the internal `gitea-http.gitea.svc` repo URL; targeted affected refresh avoids that mismatch.
-
-For automatic local iteration, `dev-watch-only` runs the native idpbuilder watch path in the foreground. The ryzen home-manager profile also installs an opt-in `ryzen-stacks-watch.service`; manage it through the `cluster-watch-*` helpers after sourcing `deployment/scripts/cluster-menu.sh`. The service is installed but not enabled by default.
-
-Do not run a one-shot sync while the foreground or supervised watcher is active. The current fork holds a per-cluster/repo/branch lock for the full mutating sync/watch lifetime and fails fast on contention.
+Post-A6 (May 2026), ryzen does not have a local ArgoCD or local Gitea. Hub's argocd-application-controller applies all 60+ ryzen-* Applications to the ryzen cluster via the cluster Secret (`cluster-ryzen` in hub argocd ns) + Tailscale-routed kube-api URL (`https://ryzen-api-v3.tail286401.ts.net`).
 
 Latency reports come from `deployment/scripts/benchmark-ryzen-hot-edit.sh`. Use `BENCHMARK_PURPOSE=normal|manual|threshold-test` and `BENCHMARK_CASE=child-service|app-definition|dependency-file`; `ryzen-hot-loop-summary.sh` defaults to normal successful reports and requires `--purpose all --include-failures` to include deliberate threshold tests.
 
@@ -265,16 +250,16 @@ Default placement policy:
 
 - **Hub**: multi-cluster control plane, release automation, lifecycle automation, cross-cluster inventory/reporting, and shared operator UIs. Examples: ArgoCD, GitOps Promoter, hub Tekton outer-loop, Crossplane, deployment inventory, NocoDB, Redash, and any future shared Backstage/Keycloak deployment.
 - **Spokes**: workload runtime and failure-domain-local infrastructure. Examples: workflow-builder runtime services, Dapr runtime, cert-manager, External Secrets Operator, Azure Workload Identity, CNI/ingress/storage, Tailscale resources needed for that cluster, and per-environment databases/caches/queues.
-- **Ryzen-local**: local development velocity and KIND-only services. Examples: local Gitea registry, Skaffold hot-reload flow, workstation-only build helpers, and KIND-specific integrations.
+- **Ryzen-local**: developer-workstation paths only — Skaffold inner-loop hot reload (HMR sync into a running pod via local kubeconfig). Local Gitea/Tekton/ArgoCD are retired (post-A6).
 
 If production traffic depends on a service during hub outage, keep it per-spoke. If operators use it to manage multiple clusters, centralize it on hub and add spoke agents/access only where needed. See `reference/app-placement.md`.
 
 ## Why ryzen is special
 
-Ryzen exists for **fast iteration** (Skaffold hot reload, local builds, idpbuilder image seeding). It's intentionally outside the promoter chain:
+Ryzen exists for **fast iteration** (Skaffold hot reload + ryzen-only image pins on the `inner-loop` branch). It's intentionally outside the Promoter chain:
 - ryzen uses local Skaffold (`bash scripts/skaffold-dev.sh`) for live source iteration
-- ryzen manifest changes are delivered by `idpbuilder stacks sync` into local Gitea
-- ryzen ArgoCD refresh is affected-app scoped instead of fleet-wide
+- ryzen-only manifest changes (image tag bumps) land on the `inner-loop` branch via `commit-pin.sh`; hub Source Hydrator picks them up and applies them to ryzen
+- Dev/staging are unaffected until `inner-loop` is PR-merged into `main`
 
 ryzen **proves the stack works in the local platform shape**. The outer-loop **proves the release artifact and rendered manifests are promotable**. Those are different validations.
 
@@ -305,7 +290,7 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Workflow-builder build pipeline definitions |
 | `scripts/gitops/validate-workflow-builder-release-pins.sh` | Validates release-pin schema and GHCR tag/digest existence |
-| `idpbuilder stacks sync --print-refresh-plan` | Current ryzen local manifest affected-app planning before pushing a snapshot |
+| `git ls-remote origin env/spokes-ryzen` + hub `argocd app get spoke-ryzen` | Inspect current hub-driven ryzen state instead of running a local sync (no local ArgoCD on ryzen post-A6) |
 | `docs/hub-spoke-app-placement.md` | Hub-vs-spoke app placement policy |
 | `policy.hujson` | Tailscale ACL — synced via `.github/workflows/tailscale-acl.yml`; `svc:*` approvals are only for real service-host/ProxyGroup/Tailscale Services |
 
