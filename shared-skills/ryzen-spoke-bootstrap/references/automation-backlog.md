@@ -2,8 +2,16 @@
 
 **Status**:
 - **P0 items**: ✅ implemented in stacks `32ecea8a7` (2026-05-28). Validated end-to-end in 48m 16s wall-clock.
-- **P1.A / P1.B / P1.C**: ✅ implemented in stacks (Phase 1+2+3 of the 48m→32m P1 backlog, 2026-05-28). Target wall-clock for next recreate: **≤32 min**.
+- **P1.A / P1.B / P1.C**: ✅ implemented + validated in stacks `e619d0ddd`, `d98d6d7a7`, `0d2f5a9bf`, `f74becf81`, `78a4c6979` (2026-05-28).
 - **P1.2** (Tailscale device rename): demoted to P2 — `cleanup-tailnet-devices.sh` pre-destroy step prevents collision in practice.
+
+**Validation outcome (2026-05-28 attempt 2)**: Wall-clock 46m to plateau (45 Synced+Healthy + 2 Synced+Progressing + 5 OutOfSync+Healthy = **52 effectively operational** of 67). Missed the ≤32 min target because validation surfaced four new bugs that each needed a fix-of-fix mini-cycle:
+1. `STACKS_DIR` cwd-sensitivity (stacks `d98d6d7a7`) — script broke when run from nixos-config dir
+2. Polluted shell env from legacy `kind.env` (stacks `0d2f5a9bf`) — JWKS uploaded to wrong storage account
+3. Egress-restart step ordering vs CSS poll (stacks `f74becf81`) — circular deadlock
+4. Pod-only delete leaves stale Tailscale state Secret (stacks `78a4c6979`) — CrashLoopBackOff on egress recreate
+
+**Estimated next clean recreate (all 5 fixes baked in, no fix-discovery overhead)**: **~25–30 min** wall-clock. The remaining bottleneck is the ~10 min AAD federated-credential cache wait in step 6. The plateau ceiling (~55-58 ops) is set by known-dead apps + cosmetic OOS+Healthy drift, not by remaining bugs.
 
 ---
 
@@ -108,6 +116,31 @@ kubectl label namespace tailscale pod-security.kubernetes.io/enforce=privileged 
 **P1.C — ✅ DONE: Force-sync OOS ryzen-* apps**: `register-spoke-with-hub.sh` step 8.5 now lists ryzen-* Apps via the argocd CLI and force-syncs any in OutOfSync/Degraded state asynchronously, after hub→spoke is verified Successful. Eliminates the ~5 min manual `argocd app sync ryzen-<name>` toil.
 
 **P1.2 — Auto-rename new Tailscale device to canonical name** (demoted to P2): if `cleanup-tailnet-devices.sh` ran successfully, the new device should get the canonical name on first registration. The pre-destroy cleanup makes this collision unlikely in practice — kept as a belt-and-suspenders item.
+
+### P2 — architectural evaluation: Tailscale ACL impersonation in place of Azure WI for spoke registration
+
+**Premise** (researched 2026-05-28 from `tailscale.com/blog/workload-identity-ga`, `…/docs/solutions/sync-kubernetes-secrets-across-clusters-external-secrets`, and `…/docs/solutions/manage-multi-cluster-kubernetes-deployments-argocd`): the Tailscale ArgoCD multi-cluster pattern uses a hub cluster Secret whose `server` field is `https://<spoke-tailnet-fqdn>` and whose bearer token field is `"unused"`. The actual auth is via a Tailscale ACL grant of `impersonate.groups: ['system:masters']` for the hub's operator identity → spoke kube-api proxy. No per-spoke bearer token; no JWKS sync; no AAD federated-credential cache wait.
+
+**What we'd eliminate from `register-spoke-with-hub.sh`**:
+- Step 2 (kubectl create token + extract CA)
+- Step 3 (push to Azure KV as ARGOCD-CLUSTER-RYZEN-{TOKEN,CA})
+- Step 4 (annotate hub ExternalSecret for ESO refresh)
+- Step 5 (sync-jwks-to-azure.sh — eliminates the script and the failure modes above)
+- Step 6 (ClusterSecretStore Ready poll — eliminates the ~10 min AAD cache wait, the largest remaining bottleneck)
+
+What stays: step 5.5 (egress pod rotation — Tailscale device identity still rotates), step 7 (Headlamp restart), step 8 (verify), step 8.5 (force-sync OOS).
+
+**Expected savings**: ~10–15 min off the recreate wall-clock. Combined with the P1 fixes, a clean recreate could land near **~15–20 min** instead of 25–30.
+
+**Tradeoffs / costs**:
+- Tailscale ACL `impersonate.groups: ['system:masters']` is broader than per-cluster bearer-token RBAC. Need careful tag scoping (e.g., `tag:argocd-operator → ryzen-cluster: system:masters`, not `* → *`).
+- The hub still needs Azure Workload Identity for **other** KV secrets (GHCR PATs, OAuth credentials, Tailscale OAuth client, AAD app credentials). This refactor doesn't eliminate AWI; it only removes the spoke-registration-specific KV roundtrip.
+- Conflicts with `[[feedback_workload_identity_use_app_registration]]` user memory only for the spoke-registration-Secret subcase; the broader AAD App Registration pattern remains the default for everything else.
+- Requires Tailscale `apiServerProxyConfig.allowImpersonation=true` on the spoke (already set) plus an ACL grant on the hub side.
+
+**Recommended approach**: prototype on a `talos-test` spoke first (separate from ryzen), validate end-to-end including a destructive recreate, then promote to ryzen if the savings hold. Document any new failure modes in `failure-modes.md`.
+
+**Complementary, smaller bite**: also evaluate Tailscale Workload Identity (GA, blog 2026-05) — lets the in-cluster Tailscale operator authenticate to Tailscale's control plane via the cluster's native OIDC tokens, removing the `TS_OAUTH_CLIENT_ID/SECRET` env var dance from `bootstrap-spoke-cluster.sh` step 1. Smaller-blast-radius change than the ACL impersonation pivot.
 
 ### P2 — eventual
 

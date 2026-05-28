@@ -1,5 +1,42 @@
 # Failure modes during ryzen spoke bootstrap
 
+## bootstrap-spoke-cluster.sh STACKS_DIR resolves to wrong repo when run from another cwd
+
+**Symptom**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate` destroys the cluster, runs helms successfully, then fails at step 7: `error: must build at directory: not a valid directory: evalsymlink failure on '/home/vpittamp/repos/vpittamp/nixos-config/main/packages/overlays/ryzen-spoke-registration' : lstat ... : no such file or directory`. The script's exit code may still come back 0 because the calling shell piped to tee without pipefail, masking the actual non-zero exit.
+
+**Cause**: The previous `STACKS_DIR="${STACKS_DIR:-$(git rev-parse --show-toplevel)}"` derived STACKS_DIR from the operator's current working directory, not from the script's location. Running from any other repo (e.g., from `~/repos/vpittamp/nixos-config/main` after committing skill docs there) pointed STACKS_DIR at the wrong tree.
+
+**Fix**: Already committed in stacks `d98d6d7a7` (2026-05-28). STACKS_DIR is now derived from SCRIPT_DIR (`$SCRIPT_DIR/../..`), location-independent. Operators with a real need to override can still set STACKS_DIR explicitly in env.
+
+## sync-jwks-to-azure.sh uploads to wrong storage account due to polluted shell env
+
+**Symptom**: `register-spoke-with-hub.sh` step 5 (JWKS sync) prints `Storage Account: oidcissuerryzen` then fails to upload with `Failed to resolve 'oidcissuerryzen.blob.core.windows.net' ([Errno -2] Name or service not known)`. The Talos cluster's actual issuer is `oidcissuer65846b7df97b` — the shell's `AZURE_STORAGE_ACCOUNT=oidcissuerryzen` overrode the script's default.
+
+**Cause**: Operator previously sourced `.env-files/kind.env` (legacy KIND setup) in their shell. That file exports `AZURE_STORAGE_ACCOUNT`, `SERVICE_ACCOUNT_ISSUER`, and `RESOURCE_GROUP` with KIND-era values. `sync-jwks-to-azure.sh` respects them via `${VAR:-default}`, so the legacy values take precedence and JWKS gets uploaded to a non-existent storage account. ESO then stays InvalidProviderConfig indefinitely.
+
+**Fix**: Already committed in stacks `0d2f5a9bf` (2026-05-28). `register-spoke-with-hub.sh` now wraps the invocation with `env -u AZURE_STORAGE_ACCOUNT -u SERVICE_ACCOUNT_ISSUER -u RESOURCE_GROUP` so the sync script's hardcoded Talos defaults always take effect. To genuinely override (e.g., for a non-prod test issuer), set the vars *immediately before* calling register-spoke-with-hub.sh; sourcing kind.env earlier in the session no longer leaks through.
+
+## register-spoke-with-hub.sh circular deadlock: CSS poll → ArgoCD App → hub→spoke kube-api → egress pod
+
+**Symptom**: `register-spoke-with-hub.sh` step 6 CSS Ready poll runs for 30 min then times out. The log shows repeating `status=Error from server (NotFound): clustersecretstores.external-secrets.io "azure-keyvault-store" not found`. Meanwhile `argocd cluster list` shows the spoke as Failed with `dial tcp ... i/o timeout` or `lookup ... no such host`.
+
+**Cause**: The spoke's `azure-keyvault-store` CSS is itself synced from hub by ArgoCD (via the `ryzen-azure-keyvault-store` Application). Hub can't sync that App until hub→spoke kube-api works. Hub→spoke depends on a fresh hub-side `ts-ryzen-api-egress-*-0` Tailscale egress pod (the previous spoke's auth state is stale after recreate). Previous step ordering — step 6 (CSS poll) followed by step 6.5 (egress restart) — created a circular wait: CSS would never appear because step 6.5 to enable the App sync hadn't run yet.
+
+**Fix**: Already committed in stacks `f74becf81` (2026-05-28). Step ordering changed: egress restart is now step **5.5** (between JWKS sync and CSS poll). With hub→spoke connectivity restored before the poll begins, the CSS appears within ~30s of the egress pod becoming Ready and the AAD federated-cred cache invalidating (~10 min typical).
+
+## Force-deleting hub egress pod leaves Tailscale state Secret malformed (CrashLoopBackOff)
+
+**Symptom**: After `register-spoke-with-hub.sh` step 5.5 force-deletes the hub-side egress pod (`ts-ryzen-api-egress-zwnbx-0`), the StatefulSet recreates it but the new pod CrashLoopBackOffs with: `boot: 2026/... invalid state: tailscaled daemon started with a config file, but tailscale is not logged in: ensure you pass a valid auth key in the config file.` Hub→spoke kube-api stays broken.
+
+**Cause**: The Tailscale operator stores the egress pod's tailscaled state in a per-pod Secret named after the pod (`TS_KUBE_SECRET=$POD_NAME`). When the pod is force-deleted but the Secret is left in place, the new pod boots reading the existing Secret — which references a stale machineAuthorization that's no longer valid. The pod can't re-register because the auth-key is missing (the original was consumed on first registration; the operator only generates fresh auth-keys when the Secret is absent).
+
+**Fix**: Already committed in stacks `78a4c6979` (2026-05-28). Step 5.5 now deletes both the per-pod Secret (`kubectl delete secret <pod-name>`) AND the pod, in that order. The operator's reconciler then provisions a fresh OAuth-based auth-key into a new Secret before the new pod boots. Manual recovery if the script ran an older version:
+```bash
+POD=ts-ryzen-api-egress-zwnbx-0  # from kubectl get pods -n tailscale | grep ryzen-api-egress
+kubectl --kubeconfig ~/.kube/hub-config -n tailscale delete secret "$POD" --ignore-not-found
+kubectl --kubeconfig ~/.kube/hub-config -n tailscale delete pod "$POD" --grace-period=0 --force
+```
+
 ## Kueue CRDs partial-apply during transient hub→ryzen instability
 
 **Symptom**: After cluster recreate, ~14 ryzen-* Deployment-bearing Apps stuck OutOfSync with admission webhook errors like `failed calling webhook "vworkload.kb.io"`. `kubectl get pods -n kueue-system` shows `kueue-controller-manager` CrashLoopBackOff with `no resource matches the kind "Workload"` or similar missing-CRD errors. `kubectl get crds | grep kueue.x-k8s.io | wc -l` returns less than the expected 16.
