@@ -191,9 +191,10 @@ AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell 
                                  → K8s otel-collector (observability ns)
                                    → clickhouse-hub-egress    (durable storage on hub)
                                    → otlphttp/mlflow          (per-CLI MLflow experiments)
-                                   → otlphttp/session-aggregator
-                                     → /sessions @ ai-sessions-ryzen.tail286401.ts.net
-                                       → each host's monitoring_data.py
+
+Cross-host panel view:
+  each host's monitoring_data.py → clickhouse-hub.tail286401.ts.net:8123 (direct SQL)
+
 System  → node exporter → Alloy → Mimir (K8s)
 Journald → Alloy → Loki (K8s)
 ```
@@ -203,7 +204,6 @@ Journald → Alloy → Loki (K8s)
 |---------|------|---------|
 | grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
 | otel-ai-monitor | 4320 | Local AI session tracking for Quickshell panel (all CLIs) |
-| session-aggregator (K8s, observability ns) | 4318 internal | Cross-host AI session aggregation; queried by panel via `ai-sessions-ryzen.tail286401.ts.net` |
 | grafana-beyla | - | eBPF auto-instrumentation (optional) |
 | pyroscope-agent | - | Continuous profiling (optional) |
 
@@ -213,8 +213,7 @@ systemctl status grafana-alloy              # Service status
 journalctl -u grafana-alloy -f              # Logs
 curl -s localhost:4318/v1/traces            # Test OTLP endpoint
 curl -s localhost:12345/metrics             # Alloy metrics
-curl -sk https://ai-sessions-ryzen.tail286401.ts.net/healthz       # Aggregator state
-curl -sk https://ai-sessions-ryzen.tail286401.ts.net/debug/attrs   # Observed OTLP attr keys
+curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping   # ClickHouse reachable
 ```
 
 **Alloy UI**: http://localhost:12345 (live debugging enabled)
@@ -235,24 +234,23 @@ services.grafana-alloy = {
 services.otel-ai-monitor = {
   enable = true;
   port = 4320;
-  # K8s session-aggregator URL; cross-host view depends on this being reachable.
-  # No on-disk fallback — Phase 4 retired the legacy push/sink path.
-  aggregatorUrl = "https://ai-sessions-ryzen.tail286401.ts.net/sessions";
+  # Cross-host sessions come from a direct SQL query against the same
+  # ClickHouse instance the OTEL collector already writes every span to.
+  # The bespoke session-aggregator service was retired 2026-05-27.
+  clickhouseUrl = "http://clickhouse-hub.tail286401.ts.net:8123/";
+  clickhousePassword = "otel_dev_password";  # TODO: move to passwordFile
 };
 ```
 
-**Graceful Degradation**: Local AI monitoring (Quickshell widgets) works when K8s offline. Cross-host view degrades to the on-disk sink fallback when the aggregator is unreachable.
+**Graceful Degradation**: Local AI monitoring (Quickshell widgets) works when ClickHouse is offline. Cross-host view goes empty (no fallback) — the SQL client returns empty on failure rather than caching stale state.
 
 **Known Issues / Troubleshooting**:
 - OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
-- `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. The Talos migration moved everything to Tailscale Ingresses (`*-ryzen.tail286401.ts.net`).
-- Aggregator image lives on GHCR (`ghcr.io/pittampalliorg/session-aggregator`), not Gitea — the in-cluster Gitea registry has a chronic chunked-upload race. See `images/session-aggregator/` in the stacks repo and the `gitops` skill notes.
-- If the aggregator pod is `ImagePullBackOff` with "ghcr-pull-credentials not found": the `ExternalSecret` needs ~30s to sync from Azure KeyVault on first deploy; delete the failing pod to force recreate with the secret attached.
-  - Quick checks:
-    - `curl -sk https://otel-collector-ryzen.tail286401.ts.net/`         (HTTP 404 = healthy, no listener at /)
-    - `curl -sk https://ai-sessions-ryzen.tail286401.ts.net/healthz`     (HTTP 200 with counters)
-    - `kubectl get ingress -n observability`                              (otel-collector-tailscale + session-aggregator-tailscale)
-    - `kubectl get app -n argocd session-aggregator lgtm-otel-collector`  (Synced/Healthy)
+- `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. The Talos migration moved everything to Tailscale Ingresses (`*-ryzen.tail286401.ts.net`) and hub-side ClickHouse (`clickhouse-hub.tail286401.ts.net`).
+- Quick checks for cross-host panel view:
+  - `curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping`       (returns "Ok.")
+  - `curl -sk https://otel-collector-ryzen.tail286401.ts.net/`         (HTTP 404 = healthy, no listener at /)
+  - Run the same SQL the panel runs: see `_CLICKHOUSE_SESSIONS_QUERY` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`.
 
 ## Testing
 
