@@ -42,66 +42,64 @@ az account show --query name -o tsv  # expected: "Subscription 2"
 
 If recreating an existing cluster, run the destroy + cleanup steps before bootstrap — see `references/recreate-runbook.md`.
 
-### 2. Run the bootstrap script
+### 2. Run the bootstrap script (does everything end-to-end)
 
 ```bash
 cd /home/vpittamp/repos/PittampalliOrg/stacks/main
-bash deployment/scripts/bootstrap-spoke-cluster.sh
+bash deployment/scripts/bootstrap-spoke-cluster.sh                # fresh cluster
+bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate     # destroy + recreate
+bash deployment/scripts/bootstrap-spoke-cluster.sh --no-register  # bootstrap only, skip hub registration
 ```
 
 The script does, in order:
-1. `talosctl cluster create docker --name ryzen --subnet 10.6.0.0/24 --workers 2 --memory-controlplanes 6GiB --cpus-controlplanes 4.0 --memory-workers 10GiB --cpus-workers 5.0 --exposed-ports 9443:443/tcp --config-patch ...`
-2. Helm install cert-manager (jetstack 1.14.4) — Tailscale operator prereq
+0. (If `--recreate`) Auto-load `TS_OAUTH_*` from KV if env vars unset, then run `cleanup-tailnet-devices.sh` to delete stale devices, `talosctl cluster destroy`, and `kubectl config delete-{context,cluster,user}` for the old context
+1. `talosctl cluster create docker --name ryzen --subnet 10.6.0.0/24 --workers 2 --memory-controlplanes 4GiB --memory-workers 13GiB --cpus-workers 5 --exposed-ports 9443:443/tcp --config-patch <OIDC issuer URL>`
+2. Helm install cert-manager (jetstack 1.14.4)
 3. Helm install external-secrets (0.9.13)
 4. Helm install azure-workload-identity-webhook (uses `AZURE_TENANT_ID`)
-5. Helm install tailscale-operator (uses `TS_OAUTH_*`)
-6. `kubectl apply -k packages/overlays/ryzen-spoke-registration` → ProxyGroup + ProxyClass + ServiceAccount `argocd-hub-spoke-sa` + ClusterRoleBinding (cluster-admin) + token-extractor Job
+5. Helm install tailscale-operator (chart v1.98.x: `apiServerProxyConfig.mode=true` + `allowImpersonation=true`)
+6. Label `tailscale` + `local-path-storage` namespaces with `pod-security.kubernetes.io/enforce=privileged` so the operator's proxy pods + provisioner can launch
+7. `kubectl apply -k packages/overlays/ryzen-spoke-registration` → SA `argocd-hub-spoke-sa` + ClusterRoleBinding (cluster-admin) + the `tailscale.com/expose: true` Service that registers `ryzen-api-v3` on the tailnet
+8. Wait for `ryzen-api-v3` to appear on the tailnet
+9. **Auto-invoke `register-spoke-with-hub.sh`** — see step 3 below
 
-### 3. Register the cluster with hub (operator runbook)
+### 3. Hub registration (automated)
 
-Extract a long-lived bearer token + the cluster CA, push to Azure Key Vault, refresh hub's ESO so the `cluster-ryzen` Secret on hub gets the right credentials:
+The bootstrap script calls `deployment/scripts/register-spoke-with-hub.sh` automatically at step 9. It performs (idempotently — safe to re-run on failure):
 
+1. Verify local kube-api reachable on `admin@<cluster>` context
+2. `kubectl create token argocd-hub-spoke-sa --duration=8760h` (1-year token)
+3. Extract `kube-root-ca.crt`, base64-encode
+4. `az keyvault secret set` for `ARGOCD-CLUSTER-<NAME>-{TOKEN,CA}`
+5. `kubectl annotate externalsecret argocd-cluster-<name> force-sync=<ts>` on hub to trigger ESO refresh
+6. `bash deployment/scripts/sync-jwks-to-azure.sh` to upload the new Talos signing key to the Azure storage account that backs the OIDC issuer
+7. Poll `kubectl get clustersecretstore azure-keyvault-store` until Ready (timeout 30 min — first sync after JWKS update waits on Azure AD federated-credential cache)
+8. `kubectl rollout restart deploy -n headlamp hub-headlamp hub-headlamp-embedded` so Headlamp re-renders its in-memory kubeconfig with the new ryzen token
+9. Verify `argocd cluster list` shows the spoke as Successful
+
+To run the registration step manually (e.g., after `--no-register` bootstrap or to re-register an existing cluster):
 ```bash
-# Long-lived (8760h = 1 year) token for the cluster-admin SA
-TOKEN=$(kubectl --context admin@ryzen create token argocd-hub-spoke-sa -n kube-system --duration=8760h)
-CA=$(kubectl --context admin@ryzen get configmap kube-root-ca.crt -n kube-system -o jsonpath='{.data.ca\.crt}' | base64 -w 0)
-az keyvault secret set --vault-name keyvault-thcmfmoo5oeow --name ARGOCD-CLUSTER-RYZEN-TOKEN --value "$TOKEN"
-az keyvault secret set --vault-name keyvault-thcmfmoo5oeow --name ARGOCD-CLUSTER-RYZEN-CA --value "$CA"
-
-# Refresh ESO so cluster-ryzen Secret on hub gets the new token
-ssh vpittamp@ryzen "kubectl --kubeconfig ~/.kube/hub-kubeconfig annotate externalsecret argocd-cluster-ryzen -n argocd force-sync=$(date +%s) --overwrite"
+CLUSTER_NAME=ryzen bash deployment/scripts/register-spoke-with-hub.sh
 ```
 
-### 4. Sync the Azure Workload Identity JWKS
+### 4. Verify (Phase F in `references/desired-state.md`)
 
-Talos's kube-apiserver issuer key changes every time the cluster is recreated. Azure AD won't accept federated tokens until the new JWKS is uploaded to the OIDC issuer storage account:
-
-```bash
-bash /home/vpittamp/repos/PittampalliOrg/stacks/122-crawl4ai/ref-implementation/azure-workload-identity/sync-jwks-to-azure.sh
-```
-
-After this, wait 1-5 minutes for Azure AD's federated-credential cache to refresh, then verify ESO's ClusterSecretStore becomes Ready:
+Run the checks in `references/desired-state.md` "What a healthy state looks like" section. The most important:
 
 ```bash
-kubectl get clustersecretstore azure-keyvault-store -o jsonpath='{.status.conditions[0].status},{.status.conditions[0].reason}'
-# expected: True,Valid (initially: False,InvalidProviderConfig — wait + retry)
+# All ryzen-* apps on hub Synced + Healthy (excluding known-Degraded like gitea-secretstore, nginx-tls-secret)
+ssh vpittamp@ryzen "kubectl --kubeconfig ~/.kube/hub-config get app -n argocd | grep '^ryzen-' | grep -v 'Synced.*Healthy'"
+
+# Talos worker memory limit
+ssh vpittamp@ryzen "docker stats --no-stream --format '{{.Name}}: {{.MemUsage}}' | grep ryzen-worker"
+# expect ~12.7GiB / 12.7GiB limits
+
+# Kueue benchmark-fast nominal memory
+ssh vpittamp@ryzen "kubectl get clusterqueue benchmark-fast -o jsonpath='{.spec.resourceGroups[0].flavors[0].resources[1].nominalQuota}'"
+# expect: 9Gi
 ```
 
-### 5. Verify hub→ryzen connectivity
-
-```bash
-# Hub's cluster Secret should have the right URL
-ssh vpittamp@ryzen "kubectl --kubeconfig ~/.kube/hub-kubeconfig get secret cluster-ryzen -n argocd -o jsonpath='{.data.server}' | base64 -d"
-# expected: https://ryzen-api-egress.tailscale.svc.cluster.local
-
-# argocd CLI should see ryzen Connected
-ssh vpittamp@ryzen "argocd --server argocd-hub.tail286401.ts.net cluster list"
-# expected: row for "ryzen" with ServerVersion populated
-```
-
-If the hub-side `ryzen-api-egress` Service has stale tailnet-target (pointing at an old device hostname from a previous cluster), see `references/tailscale-egress-fix.md`.
-
-### 6. Push spoke-ryzen Application + bootstrap-merge env/hub PR
+### 5. Push spoke-ryzen Application + bootstrap-merge env/hub PR
 
 The hub's `spoke-ryzen` Application (in `packages/components/hub-management/...`) hydrates `packages/overlays/ryzen` from GitHub `inner-loop` branch to `env/spokes-ryzen`. Hub's ArgoCD then applies the rendered Application CRDs to its own argocd namespace, each with `destination.name: ryzen`. From there, hub's controller propagates workloads to ryzen via the cluster Secret.
 
@@ -109,7 +107,7 @@ When ryzen-related changes are committed to `main`, the GitOps Promoter creates 
 
 Spokes-level workloads (`packages/overlays/ryzen`) are picked up by hub's spoke-ryzen Application directly from `inner-loop` — no Promoter needed for those.
 
-### 7. Post-bootstrap one-time data migrations
+### 6. Post-bootstrap one-time data migrations
 
 Some workloads on ryzen need data restored from dev:
 

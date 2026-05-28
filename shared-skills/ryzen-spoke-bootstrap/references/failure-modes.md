@@ -1,5 +1,59 @@
 # Failure modes during ryzen spoke bootstrap
 
+## talosctl flag drift after Talos version bump (script bug)
+
+**Symptom**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate` destroys the existing cluster, then immediately fails `talosctl cluster create docker` with `unknown flag: --cidr` (or `--memory`, or `--cpus`). The cluster is gone but not recreated — host now has no kube-api.
+
+**Cause**: talosctl v1.13 renamed CLI flags vs older versions:
+- `--cidr` → `--subnet`
+- `--memory` (control plane) → `--memory-controlplanes`
+- `--cpus` (control plane) → `--cpus-controlplanes`
+
+**Fix**: Already committed in stacks `fdc45ff85` (2026-05-28). If the script silently destroyed the cluster on a future talosctl upgrade, re-run after pulling latest, or run `talosctl cluster create docker --help` to find new flag names.
+
+## Tailscale operator chart drift (script bug)
+
+**Symptom**: After helm install, the operator pod is CrashLoopBackOff with `panic: unknown APISERVER_PROXY value "auth"`. `helm list -n tailscale` shows the chart upgraded to a newer version than the script knows about.
+
+**Cause**: tailscale-operator chart v1.98+ renamed `apiServerProxyConfig.mode` values:
+- Old: `"auth"` (single value)
+- New: `mode: "true"|"false"|"noauth"` PLUS separate `allowImpersonation: "true"|"false"` for the ClusterRole grants
+
+**Fix**: Already committed in stacks `f3c345e1e`. Script now sets both `apiServerProxyConfig.mode=true` and `apiServerProxyConfig.allowImpersonation=true`. If a future chart drops these too, check the live chart's `helm show values tailscale/tailscale-operator | grep -A 15 apiServerProxyConfig`.
+
+## OIDC issuer YAML key in config-patch (script bug)
+
+**Symptom**: `talosctl cluster create docker` errors with `error parsing config patch: unknown keys found during decoding: cluster.serviceAccount.issuerURL`.
+
+**Cause**: `cluster.serviceAccount.issuerURL` is NOT a valid v1alpha1 Talos config key. The correct path is `cluster.apiServer.extraArgs.service-account-issuer`.
+
+**Fix**: Already committed in stacks `1ce550054`. Verifies via reference: https://docs.siderolabs.com/talos/v1.13/reference/configuration/v1alpha1/config/
+
+## `tailscale` + `local-path-storage` namespaces need `pod-security.kubernetes.io/enforce=privileged`
+
+**Symptom**: After Tailscale operator install, when the operator tries to create a kube-api proxy pod (or when local-path-provisioner tries to bind a PVC), the apiserver returns: `would violate PodSecurity "restricted:latest": privileged (containers must not set securityContext.privileged=true)`. Pods never schedule; PVCs stay Pending.
+
+**Cause**: Talos's apiserver defaults to PSA `restricted:latest` enforcement. The Tailscale operator's egress/ingress proxy pods + the local-path provisioner both require privileged + capabilities to bring up network interfaces / manage host paths.
+
+**Fix**: bootstrap-spoke-cluster.sh now labels both namespaces automatically (step 6 in the workflow). If running on an older script:
+```bash
+kubectl label namespace tailscale pod-security.kubernetes.io/enforce=privileged --overwrite
+kubectl label namespace local-path-storage pod-security.kubernetes.io/enforce=privileged --overwrite
+```
+
+## Hub `ryzen-api-egress` Service doesn't auto-rotate egress pod on annotation change
+
+**Symptom**: After updating `tailscale.com/tailnet-fqdn` annotation on the hub-side `ryzen-api-egress` Service (e.g., to point at a renamed device after recreate), `argocd cluster list` keeps showing connection-refused / i/o timeout. The egress proxy pod (`ts-ryzen-api-egress-*-0`) is still trying to reach the OLD device.
+
+**Cause**: The Tailscale operator reads the `tailnet-fqdn` annotation when creating the StatefulSet pod; subsequent annotation changes don't trigger a pod rotate.
+
+**Fix**: Force the StatefulSet pod to recreate:
+```bash
+kubectl --kubeconfig ~/.kube/hub-config delete pods -n tailscale \
+  -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
+```
+`register-spoke-with-hub.sh` doesn't currently handle this automatically — P1 backlog item.
+
 ## ESO ClusterSecretStore stays `InvalidProviderConfig` forever
 
 **Symptom**: `kubectl get clustersecretstore azure-keyvault-store -o jsonpath='{.status.conditions}'` keeps showing `reason: InvalidProviderConfig, message: unable to create client`. Events show AADSTS7000272 — "certificate with identifier X used to sign the federated credential could not be found in the metadata of identity provider".

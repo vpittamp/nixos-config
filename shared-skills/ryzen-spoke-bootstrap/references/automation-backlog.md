@@ -1,4 +1,9 @@
-# Ryzen Recreate — Friction Log + Automation Backlog (2026-05-28)
+# Ryzen Recreate — Friction Log + Automation Backlog
+
+**Status**: P0 items implemented in stacks `32ecea8a7` (2026-05-28). The next recreate should be ~30-45 min wall-clock with zero manual kubectl/az commands. P1 items remain pending.
+
+---
+
 
 Observed during today's destroy + recreate of the ryzen Talos Docker cluster (commits `e11e8ba06` and after). Cluster came up healthy, but the path was bumpier than the documented runbook. This log times each manual step and proposes concrete script-level fixes.
 
@@ -39,9 +44,9 @@ These were silent failures that destroyed the cluster but failed to recreate it.
 
 ## Prioritized automation backlog
 
-### P0 — must-have for next clean recreate
+### P0 — must-have for next clean recreate (ALL IMPLEMENTED in stacks 32ecea8a7)
 
-**P0.1 — `register-spoke-with-hub.sh`** (new script in `deployment/scripts/`):
+**P0.1 — ✅ DONE: `register-spoke-with-hub.sh`** (new script in `deployment/scripts/`):
 
 ```
 Inputs:
@@ -70,11 +75,11 @@ Exit codes:
   4 = ClusterSecretStore polling timed out (>30 min)
 ```
 
-**P0.2 — Move `sync-jwks-to-azure.sh` into main**: currently lives only on `122-crawl4ai` (and other feature) branches. The script is identical across them — copy to `deployment/scripts/` so it's branch-independent. The skill's hard-coded path is fragile.
+**P0.2 — ✅ DONE: Move `sync-jwks-to-azure.sh` into main**: currently lives only on `122-crawl4ai` (and other feature) branches. The script is identical across them — copy to `deployment/scripts/` so it's branch-independent. The skill's hard-coded path is fragile.
 
-**P0.3 — Auto-load Tailscale OAuth from KV in bootstrap**: if `TS_OAUTH_CLIENT_ID` / `_SECRET` env vars unset AND `az` is logged in, source from `TAILSCALE-OAUTH-CLIENT-ID` / `-SECRET` automatically. Same for `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` (use defaults from cluster history). Eliminates the manual env-var dance.
+**P0.3 — ✅ DONE: Auto-load Tailscale OAuth from KV in bootstrap**: if `TS_OAUTH_CLIENT_ID` / `_SECRET` env vars unset AND `az` is logged in, source from `TAILSCALE-OAUTH-CLIENT-ID` / `-SECRET` automatically. Same for `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` (use defaults from cluster history). Eliminates the manual env-var dance.
 
-**P0.4 — `--recreate` flag should clean kubeconfig**: add to bootstrap-spoke-cluster.sh:
+**P0.4 — ✅ DONE: `--recreate` flag cleans kubeconfig**: bootstrap-spoke-cluster.sh now runs:
 ```bash
 if $RECREATE; then
   talosctl cluster destroy --name "$CLUSTER_NAME" || true
@@ -84,9 +89,9 @@ if $RECREATE; then
 fi
 ```
 
-**P0.5 — `cleanup-tailnet-devices.sh`** (new script). Calls Tailscale API to delete devices matching `^${CLUSTER_NAME}-`, `-${CLUSTER_NAME}($|-)`, `^k8s-api-cluster-`, plus offline `*-${CLUSTER_NAME}*` devices. Invoked automatically by `--recreate` BEFORE `talosctl cluster destroy` (so the OAuth Secret is still in cluster) OR uses `TS_OAUTH_*` from env/KV.
+**P0.5 — ✅ DONE: `cleanup-tailnet-devices.sh`** (new script at `deployment/scripts/`). Calls Tailscale API to delete devices matching `^${CLUSTER_NAME}-`, `-${CLUSTER_NAME}($|-)`, `^k8s-api-cluster-`, plus offline `*-${CLUSTER_NAME}*` devices. Invoked automatically by `--recreate` BEFORE `talosctl cluster destroy` (so the OAuth Secret is still in cluster) OR uses `TS_OAUTH_*` from env/KV.
 
-**P0.6 — Bootstrap should label `tailscale` namespace privileged**: add after the Tailscale operator helm install:
+**P0.6 — ✅ DONE: Bootstrap labels `tailscale` + `local-path-storage` namespaces privileged**: now in bootstrap-spoke-cluster.sh after the Tailscale operator helm install:
 ```bash
 kubectl label namespace tailscale pod-security.kubernetes.io/enforce=privileged --overwrite
 ```
