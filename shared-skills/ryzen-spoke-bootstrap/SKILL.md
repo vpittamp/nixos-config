@@ -9,6 +9,8 @@ description: Use this skill when creating, recreating, or repairing the ryzen lo
 
 Bootstrap a fresh ryzen Talos Docker cluster so the hub ArgoCD (running on talos-hub at Hetzner) can register it as a spoke and apply all workloads (workflow-builder, dapr, observability, etc.) via cluster Secret + bearer token. This replaces the retired idpbuilder-based standalone-ryzen flow.
 
+**Quick reference for the steady-state architecture**: `references/desired-state.md` — describes the component inventory, networking paths, GitOps source-of-truth, and what a healthy ryzen cluster looks like. Read this first if you're trying to understand the current system without going through the full bootstrap.
+
 **Architecture (post-A6, May 2026):**
 - Ryzen: Talos Docker cluster, no local ArgoCD, no local Gitea, no local Tekton
 - Hub: sole ArgoCD instance; renders `packages/overlays/ryzen` and applies Application CRDs to its own argocd namespace, each with `destination.name: ryzen`
@@ -148,3 +150,6 @@ kubectl exec -n workflow-builder postgresql-0 -- psql -U postgres -d workflow_bu
 - **Hub's `ryzen-api-egress` Service stays pinned to the OLD device** after recreate. Patch the annotation OR force the operator's StatefulSet pod to recreate.
 - **PodSecurity admission** blocks Tailscale proxy + local-path-provisioner helper pods if their namespaces enforce `baseline:latest`. Label `tailscale` and `local-path-storage` namespaces `pod-security.kubernetes.io/enforce=privileged`.
 - **GHCR_PAT username matters** — use `PittampalliOrg` (org name), not personal username, for image pulls. Source the PAT from KV secret `GITHUB-PAT` (NOT `GHCR-PAT` which doesn't exist).
+- **SWE-bench sandbox pods stay Pending without worker node labels.** The Kueue ResourceFlavor `dev-benchmark` selects nodes by both `stacks.io/swebench-pool=dev-benchmark` AND `node-role.kubernetes.io/worker=""`. Pre-A6 KIND ryzen got these from kind-config kubeadm extraArgs; post-A6 Talos doesn't. `bootstrap-spoke-cluster.sh` now applies the labels after kube-api is up (commit 9871c7217); if you bootstrap with an older script, apply them manually.
+- **Headlamp's per-cluster bearer tokens are baked into a kubeconfig at pod start.** The init container reads cluster Secrets ONCE and renders them into an emptyDir volume. If the ryzen cluster Secret is rotated (e.g., after recreate), restart both Headlamp Deployments (`hub-headlamp` + `hub-headlamp-embedded`) so the kubeconfig regenerates — otherwise the UI shows "Failed to get authentication information: ryzen".
+- **ArgoCD 3.4 stricter ServerSideApply rejects unknown schema fields.** Examples we hit: `terminationGracePeriodSeconds` on Knative Service (gated behind a feature flag) and Tekton Pipelines/Tasks where the mutating webhook injects empty defaults (`computeResources: {}`, `metadata: {}`, etc.). Either remove the field from source or add `ignoreDifferences` with jq path expressions covering the operator-injected paths.

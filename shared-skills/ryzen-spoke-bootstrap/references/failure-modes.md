@@ -119,3 +119,103 @@ kubectl --kubeconfig ~/.kube/config label node \
 **Cause**: The ryzen overlay's workflow-builder Deployment patch was setting `BENCHMARK_ARGOCD_APPLICATION_NAME=workflow-builder` + `BENCHMARK_ARGOCD_KUBECONFIG_MODE=in-cluster` (pre-A6 these pointed at ryzen's local ArgoCD). Post-A6 there is no local ArgoCD on ryzen, so the in-cluster lookup hits the empty `argocd` namespace and fails.
 
 **Fix**: Removed in commit `bda45c3a5`. If it reappears, ensure neither env var is set on the workflow-builder Deployment on ryzen — dev/staging leave them unset so the launch-stability check short-circuits to `stable: true`.
+
+## workflow-builder UI not reachable on ryzen (no Ingress)
+
+**Symptom**: `https://workflow-builder-ryzen.tail286401.ts.net/` doesn't resolve. `kubectl get ingress -A` on ryzen shows nothing.
+
+**Cause**: Ryzen has no nginx-ingress-controller; the base `Ingress-workflow-builder.yaml` uses `ingressClassName: nginx`. Post-A6 the ryzen overlay deletes it, but historically the replacement (a Tailscale-class Ingress) wasn't added.
+
+**Fix**: The ryzen overlay's workflow-builder kustomize patches list now includes JSON-6902 ops that mutate the base Ingress in place: replace `ingressClassName` → `tailscale`, replace `host` → `workflow-builder-ryzen`, add `tailscale.com/hostname` annotation + `tailscale.com/proxy-class: development-prod-cert` label, remove nginx-specific annotations. The Tailscale operator then registers a tailnet device named `workflow-builder-ryzen` automatically. (Commit `502bccd3c`.)
+
+Note: `$patch: replace` strategic merge DOES NOT fully replace an Ingress in kustomize — fields end up merged, not replaced. Use JSON-6902 `op: replace` per field instead.
+
+## Headlamp UI: "Failed to get authentication information: ryzen"
+
+**Symptom**: Open `https://headlamp-hub.tail286401.ts.net/` → click the `ryzen` cluster tab → red banner "Failed to get authentication information". Hub Headlamp Pod is otherwise healthy.
+
+**Cause**: Headlamp's `generate-kubeconfig` initContainer reads the `cluster-ryzen` Secret ONCE at pod start and writes a kubeconfig into an emptyDir. If the cluster Secret's bearer token rotates after the pod started (typical after a ryzen recreate), the in-memory kubeconfig still has the old token. The new token in the Secret never reaches the running Headlamp container.
+
+**Fix**:
+```bash
+kubectl --context hub-cluster rollout restart deploy -n headlamp hub-headlamp hub-headlamp-embedded
+```
+
+To make this automatic going forward, consider adding the Reloader annotation (`reloader.stakater.com/auto: "true"`) on the Headlamp Deployments so they restart whenever the `cluster-ryzen` Secret changes.
+
+## Tekton Pipelines/Tasks stuck OutOfSync after ArgoCD 3.4 upgrade
+
+**Symptom**: `hub-workflow-builder-builds` (or any Application managing Tekton resources) shows OutOfSync on multiple Pipeline + Task resources. `argocd app diff` reports zero lines — no visible drift. Health stays Healthy.
+
+**Cause**: Tekton's mutating admission webhook injects empty defaults after every apply: `computeResources: {}`, `metadata: {}`, `spec: null`, `description: ""`. Pre-3.4 ArgoCD's looser comparison didn't surface these. 3.4's stricter SSA-based compare flags them.
+
+**Fix**: extend `ignoreDifferences` on the Application with jq path expressions covering the nested taskSpec paths:
+```yaml
+ignoreDifferences:
+  - group: tekton.dev
+    kind: Pipeline
+    jqPathExpressions:
+      - .spec.results[]?.description
+      - .spec.tasks[]?.taskRef.kind
+      - .spec.finally[]?.taskRef.kind
+      - .spec.tasks[]?.taskSpec.metadata
+      - .spec.tasks[]?.taskSpec.spec
+      - .spec.tasks[]?.taskSpec.steps[]?.computeResources
+      - .spec.tasks[]?.taskSpec.results[]?.description
+      - .spec.finally[]?.taskSpec.metadata
+      - .spec.finally[]?.taskSpec.spec
+      - .spec.finally[]?.taskSpec.steps[]?.computeResources
+      - .spec.finally[]?.taskSpec.results[]?.description
+  - group: tekton.dev
+    kind: Task
+    jqPathExpressions:
+      - .spec.steps[]?.computeResources
+      - .spec.results[]?.description
+```
+
+Make sure `syncOptions` includes `RespectIgnoreDifferences=true`. (Commit `003e414ed`.)
+
+## Knative Service rejected by ArgoCD 3.4: `terminationGracePeriodSeconds: field not declared in schema`
+
+**Symptom**: `ryzen-fn-system` (or any Application with a Knative Service) shows sync Failed with: `failed to create typed patch object: .spec.template.spec.terminationGracePeriodSeconds: field not declared in schema`.
+
+**Cause**: Knative's RevisionSpec schema gates `terminationGracePeriodSeconds` behind the `kubernetes.podspec-terminationgraceperiodseconds` feature flag (in `config-features` ConfigMap). Without the flag, the field doesn't exist in the CRD schema. Pre-3.4 ArgoCD silently sent it and Knative silently dropped it. 3.4's stricter typed-patch validation rejects the apply outright.
+
+**Fix**: Either enable the feature flag in `knative-serving/config-features` ConfigMap, or remove the field from the source manifest (and from any `ignoreDifferences` for that field). We chose remove. (Commit `7c3d22e49`.)
+
+## ArgoCD Application stuck on retired PostSync hook (e.g., gitea-ryzen webhook setup)
+
+**Symptom**: `hub-workflow-builder-builds` or `ryzen-workflow-builder` op phase = `Running` indefinitely, message: "waiting for completion of hook batch/Job/<name>". The Job spins in CrashLoopBackOff or sits at "Ensuring repo exists..." forever.
+
+**Cause**: A PostSync hook that calls a now-retired service (e.g., `gitea-http.gitea.svc.cluster.local` or `gitea-ryzen.tail286401.ts.net`). With `BeforeHookCreation` delete-policy, deleting the live Job re-creates it on next attempt, so the wedge survives.
+
+**Fix**: Remove the hook from the source kustomization, NOT just from the cluster. Examples already removed: `workflow-builder-build-webhook-setup` (commit `fb434a340`), `sync-gitea-oauth-app` on ryzen (commit `c9b19aeb6`). Then terminate the wedged op via `kubectl patch app <name> -n argocd --type=json -p='[{"op":"replace","path":"/operation","value":null}]'`.
+
+## ArgoCD Application perpetually OutOfSync with empty `kustomize.images: []`
+
+**Symptom**: A child Application rendered by a parent app-of-apps shows OutOfSync but `argocd app diff` shows only an added `kustomize.images: []` block. SSA never accepts the empty array.
+
+**Cause**: ArgoCD's ServerSideApply strips empty arrays during apply (they don't get propagated to managedFields). The compare engine then re-detects them as "missing" on next reconcile. Perpetual drift.
+
+**Fix**: Remove the empty-array patches from the parent overlay. Per-cluster image-override scaffolding with no actual images serves no purpose. (Commit `b07ca4519`.)
+
+## Two ArgoCD Apps dual-own the same resource (tracking-id flip-flops)
+
+**Symptom**: An OutOfSync resource has tracking-id from App A in the live state but App B's compare engine claims it. `argocd app diff` for App B shows only the tracking-id annotation differing.
+
+**Cause**: Two Application sources both declare a resource with the same kind/name/namespace. Whichever applied last wins the tracking-id; the other App perpetually reports drift.
+
+**Fix**: In the App that should NOT own the resource, add a `$patch: delete` patch in its kustomize.patches. Don't remove the manifest from the shared base — other Apps may still reference it. Example pattern from `packages/components/hub-tekton/apps/workflow-builder-builds.yaml`: cache PVCs are declared in the shared manifest dir but explicitly $patch:delete'd in this Application so only `hub-outer-loop-builds` claims them.
+
+## ArgoCD Application stuck with stale `operationState.phase: Failed`
+
+**Symptom**: Application shows `sync=Synced, health=Healthy, opPhase=Failed`. The "Failed" message references an issue that was already fixed (e.g., the ProxyClass null-spec fix from earlier in the session). No active operation.
+
+**Cause**: ArgoCD's `operationState` is only updated when a new Operation runs. If selfHeal didn't fire (because live already matches desired) and no manual sync was triggered after the fix, the failed state stays in the API even though the underlying issue is resolved.
+
+**Fix**: Trigger a clean sync to overwrite the operationState:
+```bash
+kubectl --context hub-cluster patch app <name> -n argocd --type=merge \
+  -p '{"operation":{"sync":{"syncOptions":["ServerSideApply=true"]}}}'
+```
+If still stuck (Argo's cached comparison), add `argocd.argoproj.io/refresh=hard` annotation first to bust the repo-server cache.
