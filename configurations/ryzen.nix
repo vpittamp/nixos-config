@@ -832,13 +832,42 @@ in
     extraUpFlags = [ "--ssh" "--accept-routes" ];
   };
 
-  # tailscale-serve-kind-ryzen removed 2026-05-25: the legacy kind cluster
-  # (ryzen-control-plane container) was replaced by Talos (ryzen-controlplane-1,
-  # ryzen-worker-{1,2}). The kube-apiserver is now exposed via a Tailscale
-  # ProxyGroup managed in PittampalliOrg/stacks
-  # (packages/overlays/ryzen/manifests/ProxyGroup-kube-apiserver.yaml).
-  # The old oneshot kept failing on every nixos-rebuild with exit 1 because
-  # `docker port ryzen-control-plane 6443` returned nothing.
+  # Expose the Talos kube-apiserver on the tailnet for hub ArgoCD — the durable
+  # hub→ryzen connectivity path (replaces the operator apiserver-proxy + its
+  # Let's Encrypt cert, whose 5-dup-certs/week limit broke the fleet on recreate
+  # churn). RAW TCP passthrough (--tcp, NOT --tls-terminated-tcp) so the Talos
+  # apiserver's OWN serving cert reaches the hub end-to-end; the hub verifies it
+  # against the Talos CA (the apiserver cert carries certSANs
+  # ryzen.tail286401.ts.net + 100.96.102.1, set by the stacks bootstrap
+  # --config-patch). Auth is a per-recreate SA bearer token (dev/staging model).
+  #
+  # Talos-in-Docker maps kube-api 6443 to a RANDOM host port per cluster create,
+  # so the target is discovered via `docker port` at start. Idempotent and
+  # fail-safe: exits 0 (no serve) when the cluster isn't up yet, so it never
+  # blocks a rebuild (the failure mode that retired the old kind oneshot). The
+  # stacks bootstrap restarts this unit after each `talosctl cluster create` to
+  # re-point it at the new port.
+  systemd.services.tailscale-serve-ryzen-apiserver = {
+    description = "Expose Talos kube-apiserver on the tailnet (raw TCP passthrough for hub ArgoCD)";
+    after = [ "tailscaled.service" "docker.service" ];
+    wants = [ "tailscaled.service" "docker.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "tailscale-serve-ryzen-apiserver-up" ''
+        set -uo pipefail
+        port="$(${pkgs.docker}/bin/docker port ryzen-controlplane-1 6443 2>/dev/null | ${pkgs.coreutils}/bin/head -n1 | ${pkgs.gnused}/bin/sed 's/.*://')"
+        if [ -z "$port" ]; then
+          echo "ryzen-controlplane-1 not running / no 6443 mapping yet; skipping serve (cluster not up)"
+          exit 0
+        fi
+        echo "exposing tailnet :6443 -> 127.0.0.1:$port (raw TCP passthrough)"
+        ${pkgs.tailscale}/bin/tailscale serve --bg --tcp=6443 "tcp://127.0.0.1:$port"
+      '';
+      ExecStop = "${pkgs.tailscale}/bin/tailscale serve --tcp=6443 off";
+    };
+  };
 
   # Firewall configuration
   networking.firewall = {
